@@ -54,7 +54,7 @@ export default function NavBar() {
     >
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Link href="/" style={navButton}>
-          Home
+          Home TEST
         </Link>
 
         {currentUserId && (
