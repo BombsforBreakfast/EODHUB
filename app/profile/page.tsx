@@ -21,6 +21,7 @@ type Profile = {
   status: string | null;
   years_experience: string | null;
   skill_badge: string | null;
+  is_admin: boolean | null;
 };
 
 type SavedJob = {
@@ -314,6 +315,14 @@ export default function MyAccountPage() {
                 >
                   Edit Profile
                 </button>
+                {profile?.is_admin && (
+                  <a
+                    href="/admin"
+                    style={{ display: "inline-block", background: "black", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer", textDecoration: "none", fontSize: 14 }}
+                  >
+                    Admin Panel
+                  </a>
+                )}
               </div>
             </div>
 
