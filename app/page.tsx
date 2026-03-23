@@ -1356,6 +1356,11 @@ export default function HomePage() {
 
         if (!isMounted) return;
 
+        if (!currentUserId) {
+          window.location.href = "/login";
+          return;
+        }
+
         setUserId(currentUserId);
 
         if (currentUserId) {
