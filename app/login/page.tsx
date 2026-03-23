@@ -2,17 +2,13 @@
 
 import { useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
-import { useRouter } from "next/navigation";
 
-const TECH_OPTIONS = [
-  "Military EOD",
-  "UXO Technician",
-  "Civilian Bomb Tech",
-];
+const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civilian Bomb Tech"];
+const STATUS_OPTIONS = ["Active", "Former", "Retired", "Civil Service"];
+const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "Civil Service"];
+const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
 
 export default function LoginPage() {
-  const router = useRouter();
-
   const [mode, setMode] = useState<"login" | "signup">("login");
 
   const [email, setEmail] = useState("");
@@ -20,78 +16,94 @@ export default function LoginPage() {
 
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [techTypes, setTechTypes] = useState<string[]>([]);
-
-  function toggleTech(type: string) {
-    if (techTypes.includes(type)) {
-      setTechTypes(techTypes.filter((t) => t !== type));
-    } else {
-      setTechTypes([...techTypes, type]);
-    }
-  }
+  const [service, setService] = useState("");
+  const [status, setStatus] = useState("");
+  const [yearsExperience, setYearsExperience] = useState("");
+  const [skillBadge, setSkillBadge] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   async function handleLogin() {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      setSubmitting(true);
 
-    if (error) {
-      alert("Login error: " + error.message);
-      return;
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (error) {
+        alert("Login error: " + error.message);
+        return;
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session) {
+        alert("Login succeeded, but no session was found yet. Please try again.");
+        return;
+      }
+
+      window.location.href = "/";
+    } finally {
+      setSubmitting(false);
     }
-
-    router.push("/");
   }
 
   async function handleSignup() {
-  if (!firstName || !lastName || techTypes.length === 0) {
-    alert("Please complete all required fields.");
-    return;
+    if (!firstName || !lastName || !service || !status) {
+      alert("Please complete all required fields (First Name, Last Name, Service, and Status).");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      const { error: signUpError } = await supabase.auth.signUp({ email, password });
+
+      if (signUpError) {
+        alert("Signup error: " + signUpError.message);
+        return;
+      }
+
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (signInError || !signInData.user) {
+        alert("Sign-in after signup failed: " + (signInError?.message ?? "No user"));
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          first_name: firstName,
+          last_name: lastName,
+          service: service || null,
+          status: status || null,
+          years_experience: yearsExperience || null,
+          skill_badge: skillBadge || null,
+          verification_status: "pending",
+        })
+        .eq("user_id", signInData.user.id);
+
+      if (profileError) {
+        alert("Profile setup error: " + profileError.message);
+        return;
+      }
+
+      alert("Signup complete. Awaiting verification.");
+      window.location.href = "/profile";
+    } finally {
+      setSubmitting(false);
+    }
   }
 
-  const { error: signUpError } = await supabase.auth.signUp({
-    email,
-    password,
-  });
-
-  if (signUpError) {
-    alert("Signup error: " + signUpError.message);
-    return;
-  }
-
-  const { data: signInData, error: signInError } =
-    await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-
-  if (signInError || !signInData.user) {
-    alert("Sign-in after signup failed: " + (signInError?.message ?? "No user"));
-    return;
-  }
-
-  // small delay to let the auth trigger create the profile row
-  await new Promise((resolve) => setTimeout(resolve, 500));
-
-  const { error: profileError } = await supabase
-    .from("profiles")
-    .update({
-      first_name: firstName,
-      last_name: lastName,
-      tech_types: techTypes,
-      verification_status: "pending",
-    })
-    .eq("user_id", signInData.user.id);
-
-  if (profileError) {
-    alert("Profile setup error: " + profileError.message);
-    return;
-  }
-
-  alert("Signup complete. Awaiting verification.");
-  router.push("/profile");
-}
+  const selectStyle: React.CSSProperties = {
+    width: "100%",
+    padding: 10,
+    borderRadius: 10,
+    border: "1px solid #ccc",
+    fontSize: 15,
+    background: "white",
+  };
 
   return (
     <div style={{ padding: 40, maxWidth: 500, margin: "0 auto" }}>
@@ -104,11 +116,7 @@ export default function LoginPage() {
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          style={{
-            padding: 10,
-            borderRadius: 10,
-            border: "1px solid #ccc",
-          }}
+          style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
         />
 
         <input
@@ -116,88 +124,74 @@ export default function LoginPage() {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          style={{
-            padding: 10,
-            borderRadius: 10,
-            border: "1px solid #ccc",
-          }}
+          style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
         />
 
         {mode === "signup" && (
           <>
             <input
-              placeholder="First Name"
+              placeholder="First Name *"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              style={{
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ccc",
-              }}
+              style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
             />
 
             <input
-              placeholder="Last Name"
+              placeholder="Last Name *"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
-              style={{
-                padding: 10,
-                borderRadius: 10,
-                border: "1px solid #ccc",
-              }}
+              style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
             />
 
             <div>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                Tech Type (select all that apply)
-              </div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Service Branch *</div>
+              <select value={service} onChange={(e) => setService(e.target.value)} style={selectStyle}>
+                <option value="">Select service...</option>
+                {SERVICE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
 
-              {TECH_OPTIONS.map((type) => (
-                <label
-                  key={type}
-                  style={{ display: "block", marginBottom: 6 }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={techTypes.includes(type)}
-                    onChange={() => toggleTech(type)}
-                  />{" "}
-                  {type}
-                </label>
-              ))}
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Status *</div>
+              <select value={status} onChange={(e) => setStatus(e.target.value)} style={selectStyle}>
+                <option value="">Select status...</option>
+                {STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Skill Badge</div>
+              <select value={skillBadge} onChange={(e) => setSkillBadge(e.target.value)} style={selectStyle}>
+                <option value="">Select badge...</option>
+                {SKILL_BADGE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Years of Experience</div>
+              <select value={yearsExperience} onChange={(e) => setYearsExperience(e.target.value)} style={selectStyle}>
+                <option value="">Select years...</option>
+                {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+              </select>
             </div>
           </>
         )}
 
         {mode === "login" ? (
           <>
-            <button
-              onClick={handleLogin}
-              style={buttonPrimary}
-            >
-              Login
+            <button onClick={handleLogin} disabled={submitting} style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1 }}>
+              {submitting ? "Logging In..." : "Login"}
             </button>
-
-            <button
-              onClick={() => setMode("signup")}
-              style={buttonSecondary}
-            >
+            <button onClick={() => setMode("signup")} disabled={submitting} style={buttonSecondary}>
               Need an account? Sign Up
             </button>
           </>
         ) : (
           <>
-            <button
-              onClick={handleSignup}
-              style={buttonPrimary}
-            >
-              Complete Signup
+            <button onClick={handleSignup} disabled={submitting} style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1 }}>
+              {submitting ? "Creating Account..." : "Complete Signup"}
             </button>
-
-            <button
-              onClick={() => setMode("login")}
-              style={buttonSecondary}
-            >
+            <button onClick={() => setMode("login")} disabled={submitting} style={buttonSecondary}>
               Back to Login
             </button>
           </>
@@ -207,7 +201,7 @@ export default function LoginPage() {
   );
 }
 
-const buttonPrimary = {
+const buttonPrimary: React.CSSProperties = {
   padding: 12,
   borderRadius: 12,
   border: "none",
@@ -217,7 +211,7 @@ const buttonPrimary = {
   cursor: "pointer",
 };
 
-const buttonSecondary = {
+const buttonSecondary: React.CSSProperties = {
   padding: 12,
   borderRadius: 12,
   border: "1px solid black",

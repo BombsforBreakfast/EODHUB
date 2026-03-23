@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { extractMetadata } from "../../lib/metadata/extractMetadata";
+import { extractMetadata } from "@/app/lib/metadata/extractMetadata";
 
 export async function POST(req: NextRequest) {
   try {
