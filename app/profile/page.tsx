@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 
@@ -267,14 +267,11 @@ export default function MyAccountPage() {
     init();
   }, []);
 
-  if (loading) {
-    return (
-      <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" as const }}>
-        <NavBar />
-        <div style={{ marginTop: 20 }}>Loading...</div>
-      </div>
-    );
-  }
+  const skeletonBase: React.CSSProperties = {
+    background: "linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%)",
+    backgroundSize: "200% 100%",
+    borderRadius: 8,
+  };
 
   const fullName =
     profile?.display_name ||
@@ -289,6 +286,18 @@ export default function MyAccountPage() {
       <h1 style={{ fontSize: 32, fontWeight: 900, marginTop: 20 }}>My Account</h1>
 
       <div style={{ marginTop: 24, border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, background: "white" }}>
+        {loading ? (
+          <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+            <div style={{ ...skeletonBase, width: 120, height: 120, borderRadius: "50%", flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ ...skeletonBase, height: 28, width: "40%", marginBottom: 10 }} />
+              <div style={{ ...skeletonBase, height: 14, width: "25%", marginBottom: 16 }} />
+              <div style={{ display: "flex", gap: 8 }}>
+                {[80,100,90].map((w,i) => <div key={i} style={{ ...skeletonBase, height: 30, width: w }} />)}
+              </div>
+            </div>
+          </div>
+        ) : (
         <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
           {/* Avatar */}
           <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#666", fontWeight: 700, flexShrink: 0 }}>
@@ -348,6 +357,7 @@ export default function MyAccountPage() {
 
           </div>
         </div>
+        )}
       </div>
 
       {/* Edit Profile Form */}

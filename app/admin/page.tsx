@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 
@@ -43,7 +43,19 @@ type UserProfile = {
   created_at: string | null;
 };
 
-type Tab = "businesses" | "jobs" | "users";
+type Tab = "businesses" | "jobs" | "users" | "flags";
+
+type Flag = {
+  id: string;
+  created_at: string;
+  reporter_id: string | null;
+  content_type: string;
+  content_id: string;
+  reason: string | null;
+  reviewed: boolean;
+  reporter_name?: string | null;
+  content_preview?: string | null;
+};
 
 export default function AdminPage() {
   const [loading, setLoading] = useState(true);
@@ -53,6 +65,7 @@ export default function AdminPage() {
   const [businesses, setBusinesses] = useState<BusinessListing[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [flags, setFlags] = useState<Flag[]>([]);
 
   const [pendingOnly, setPendingOnly] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -96,6 +109,46 @@ export default function AdminPage() {
     setUsers((data ?? []) as UserProfile[]);
   }
 
+  async function loadFlags() {
+    const { data, error } = await supabase
+      .from("flags")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (error) { console.error(error); return; }
+
+    const rawFlags = (data ?? []) as Flag[];
+
+    // Enrich with reporter names and content previews
+    const reporterIds = [...new Set(rawFlags.map((f) => f.reporter_id).filter(Boolean))] as string[];
+    const postIds = rawFlags.filter((f) => f.content_type === "post").map((f) => f.content_id);
+    const commentIds = rawFlags.filter((f) => f.content_type === "comment").map((f) => f.content_id);
+
+    const [profilesRes, postsRes, commentsRes] = await Promise.all([
+      reporterIds.length > 0 ? supabase.from("profiles").select("user_id, first_name, last_name, display_name").in("user_id", reporterIds) : { data: [] },
+      postIds.length > 0 ? supabase.from("posts").select("id, content").in("id", postIds) : { data: [] },
+      commentIds.length > 0 ? supabase.from("post_comments").select("id, content").in("id", commentIds) : { data: [] },
+    ]);
+
+    type ProfileRow = { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null };
+    type ContentRow = { id: string; content: string | null };
+
+    const profileMap = new Map<string, string>();
+    ((profilesRes.data ?? []) as ProfileRow[]).forEach((p) => {
+      profileMap.set(p.user_id, p.display_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown");
+    });
+
+    const contentMap = new Map<string, string>();
+    ([...(postsRes.data ?? []), ...(commentsRes.data ?? [])] as ContentRow[]).forEach((c) => {
+      contentMap.set(c.id, c.content || "");
+    });
+
+    setFlags(rawFlags.map((f) => ({
+      ...f,
+      reporter_name: f.reporter_id ? profileMap.get(f.reporter_id) ?? null : null,
+      content_preview: contentMap.get(f.content_id) ?? null,
+    })));
+  }
+
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -114,7 +167,7 @@ export default function AdminPage() {
       }
 
       setAuthorized(true);
-      await Promise.all([loadBusinesses(), loadJobs(), loadUsers()]);
+      await Promise.all([loadBusinesses(), loadJobs(), loadUsers(), loadFlags()]);
       setLoading(false);
     }
     init();
@@ -125,6 +178,7 @@ export default function AdminPage() {
     if (activeTab === "businesses") loadBusinesses();
     if (activeTab === "jobs") loadJobs();
     if (activeTab === "users") loadUsers();
+    if (activeTab === "flags") loadFlags();
   }, [pendingOnly, activeTab, authorized]);
 
   async function approveBusiness(id: string, featured = false) {
@@ -175,6 +229,25 @@ export default function AdminPage() {
     setActionLoading(null);
   }
 
+  async function dismissFlag(id: string) {
+    setActionLoading(id);
+    const { error } = await supabase.from("flags").update({ reviewed: true }).eq("id", id);
+    if (error) { alert(error.message); } else { showToast("Flag dismissed."); await loadFlags(); }
+    setActionLoading(null);
+  }
+
+  async function removeFlaggedContent(flag: Flag) {
+    if (!confirm(`Permanently delete this ${flag.content_type}?`)) return;
+    setActionLoading(flag.id + "-remove");
+    const table = flag.content_type === "post" ? "posts" : "post_comments";
+    const { error } = await supabase.from(table).delete().eq("id", flag.content_id);
+    if (error) { alert(error.message); return; }
+    await supabase.from("flags").update({ reviewed: true }).eq("id", flag.id);
+    showToast(`${flag.content_type === "post" ? "Post" : "Comment"} removed.`);
+    await loadFlags();
+    setActionLoading(null);
+  }
+
   const tabStyle = (tab: Tab): React.CSSProperties => ({
     padding: "9px 20px",
     borderRadius: 10,
@@ -221,6 +294,7 @@ export default function AdminPage() {
 
   const pendingBizCount = businesses.filter((b) => !b.is_approved).length;
   const pendingJobCount = jobs.filter((j) => !j.is_approved).length;
+  const unreviewedFlagCount = flags.filter((f) => !f.reviewed).length;
 
   return (
     <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" }}>
@@ -249,6 +323,9 @@ export default function AdminPage() {
           </button>
           <button style={tabStyle("users")} onClick={() => setActiveTab("users")}>
             Users
+          </button>
+          <button style={tabStyle("flags")} onClick={() => setActiveTab("flags")}>
+            Flags {unreviewedFlagCount > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{unreviewedFlagCount}</span>}
           </button>
 
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: "#555" }}>
@@ -354,6 +431,57 @@ export default function AdminPage() {
                             Reject
                           </button>
                         </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── FLAGS TAB ── */}
+        {activeTab === "flags" && (
+          <div style={{ marginTop: 20 }}>
+            {flags.length === 0 && (
+              <div style={{ padding: 32, textAlign: "center", color: "#888", border: "1px solid #e5e7eb", borderRadius: 14, background: "white" }}>
+                No flags yet.
+              </div>
+            )}
+            <div style={{ display: "grid", gap: 12 }}>
+              {flags.map((flag) => (
+                <div key={flag.id} style={{ border: `1px solid ${flag.reviewed ? "#e5e7eb" : "#fca5a5"}`, borderRadius: 14, padding: 16, background: flag.reviewed ? "white" : "#fff5f5" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
+                        <span style={{ background: flag.content_type === "post" ? "#dbeafe" : "#fef9c3", color: flag.content_type === "post" ? "#1d4ed8" : "#854d0e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>
+                          {flag.content_type}
+                        </span>
+                        {flag.reviewed && <span style={{ background: "#f3f4f6", color: "#666", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Reviewed</span>}
+                        <span style={{ fontSize: 12, color: "#999" }}>{new Date(flag.created_at).toLocaleString()}</span>
+                      </div>
+                      {flag.reporter_name && (
+                        <div style={{ fontSize: 13, color: "#666", marginBottom: 4 }}>Flagged by: <strong>{flag.reporter_name}</strong></div>
+                      )}
+                      {flag.content_preview && (
+                        <div style={{ fontSize: 14, color: "#333", lineHeight: 1.5, background: "#f9fafb", borderRadius: 8, padding: "8px 12px", marginTop: 6, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                          {flag.content_preview}
+                        </div>
+                      )}
+                      {!flag.content_preview && (
+                        <div style={{ fontSize: 13, color: "#999", fontStyle: "italic" }}>Content may have been deleted already.</div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                      {!flag.reviewed && (
+                        <button style={actionBtn("#6b7280")} disabled={actionLoading === flag.id} onClick={() => dismissFlag(flag.id)}>
+                          {actionLoading === flag.id ? "..." : "Dismiss"}
+                        </button>
+                      )}
+                      {flag.content_preview && (
+                        <button style={actionBtn("#ef4444")} disabled={actionLoading === flag.id + "-remove"} onClick={() => removeFlaggedContent(flag)}>
+                          {actionLoading === flag.id + "-remove" ? "..." : "Remove Content"}
+                        </button>
                       )}
                     </div>
                   </div>

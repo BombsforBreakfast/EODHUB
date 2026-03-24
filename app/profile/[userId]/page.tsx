@@ -863,16 +863,7 @@ export default function PublicProfilePage() {
     };
   }, [userId, currentUserId]);
 
-  if (loading) {
-    return (
-      <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
-        <NavBar />
-        <div style={{ marginTop: 20 }}>Loading wall...</div>
-      </div>
-    );
-  }
-
-  if (!profile) {
+  if (!loading && !profile) {
     return (
       <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
         <NavBar />
@@ -881,16 +872,21 @@ export default function PublicProfilePage() {
     );
   }
 
-  const fullName =
-    profile.display_name ||
-    `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
-    "User";
+  const skeletonBase: React.CSSProperties = {
+    background: "linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%)",
+    backgroundSize: "200% 100%",
+    borderRadius: 8,
+  };
 
-  const techTypesText = Array.isArray(profile.tech_types)
-    ? profile.tech_types.join(", ")
-    : profile.tech_types || "Not added yet";
+  const fullName = profile
+    ? profile.display_name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "User"
+    : "";
 
-  const isOwnWall = currentUserId === profile.user_id;
+  const techTypesText = profile
+    ? Array.isArray(profile.tech_types) ? profile.tech_types.join(", ") : profile.tech_types || "Not added yet"
+    : "";
+
+  const isOwnWall = currentUserId === profile?.user_id;
   const wastaScore = workedWithCount + knowCount;
 
   const pinnedPhotos = photos.filter((photo) => photo.is_pinned).slice(0, 4);
@@ -901,8 +897,44 @@ export default function PublicProfilePage() {
     <div style={{ padding: "24px 16px" }}>
       <NavBar />
 
+      {/* Skeleton while loading */}
+      {loading && (
+        <div style={{ display: "flex", gap: 20, marginTop: 20, alignItems: "flex-start" }}>
+          <div style={{ width: 260, flexShrink: 0, border: "1px solid #e5e7eb", borderRadius: 16, padding: 16, background: "white" }}>
+            <div style={{ ...skeletonBase, height: 14, width: "50%", marginBottom: 12 }} />
+            {[1,2,3].map((i) => <div key={i} style={{ ...skeletonBase, height: 80, marginBottom: 8, borderRadius: 10 }} />)}
+          </div>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, background: "white" }}>
+              <div style={{ display: "flex", gap: 20 }}>
+                <div style={{ ...skeletonBase, width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ ...skeletonBase, height: 24, width: "40%", marginBottom: 10 }} />
+                  <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 8 }} />
+                  <div style={{ ...skeletonBase, height: 14, width: "60%" }} />
+                </div>
+              </div>
+            </div>
+            {[1,2,3].map((i) => (
+              <div key={i} style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
+                <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+                  <div style={{ ...skeletonBase, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 6 }} />
+                    <div style={{ ...skeletonBase, height: 11, width: "20%" }} />
+                  </div>
+                </div>
+                <div style={{ ...skeletonBase, height: 13, marginBottom: 6 }} />
+                <div style={{ ...skeletonBase, height: 13, width: "75%", marginBottom: 6 }} />
+                <div style={{ ...skeletonBase, height: 13, width: "50%" }} />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Two-column page layout */}
-      <div style={{ display: "flex", gap: 20, marginTop: 20, alignItems: "flex-start" }}>
+      {!loading && profile && <div style={{ display: "flex", gap: 20, marginTop: 20, alignItems: "flex-start" }}>
 
         {/* ── LEFT PANE: Photos ── */}
         <div
@@ -1510,7 +1542,7 @@ export default function PublicProfilePage() {
             </div>
           </div>
         </div>
-      </div>
+      </div>}
     </div>
 
     {/* Photo Lightbox Modal */}

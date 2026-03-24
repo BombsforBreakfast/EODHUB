@@ -240,18 +240,32 @@ export default function NavBar() {
   };
 
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30, flexWrap: "wrap", gap: 12 }}>
+    <>
+    <style>{`
+      @media (max-width: 640px) {
+        .nav-root { gap: 6px !important; margin-bottom: 16px !important; flex-wrap: nowrap !important; }
+        .nav-left { gap: 5px !important; flex-wrap: nowrap !important; }
+        .nav-btn { padding: 6px 9px !important; font-size: 12px !important; border-radius: 8px !important; white-space: nowrap; }
+        .nav-avatar { width: 30px !important; height: 30px !important; font-size: 13px !important; }
+        .nav-search { flex: 1 1 80px !important; min-width: 60px !important; }
+        .nav-search input { font-size: 12px !important; }
+        .nav-search > div { padding: 4px 8px !important; }
+        .nav-logout { padding: 6px 9px !important; font-size: 12px !important; border-radius: 8px !important; }
+      }
+    `}</style>
+    <div className="nav-root" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30, flexWrap: "wrap", gap: 12 }}>
       {/* Left: avatar + nav links + flame */}
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <div className="nav-left" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <Link
           href="/profile"
+          className="nav-avatar"
           style={{ width: 38, height: 38, borderRadius: "50%", background: "black", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, textDecoration: "none", flexShrink: 0 }}
         >
           {userInitial}
         </Link>
-        {currentUserId && <Link href={`/profile/${currentUserId}`} style={navButton}>My Wall</Link>}
-        <Link href="/events" style={navButton}>Events</Link>
-        <Link href="/" style={navButton}>EOD Hub</Link>
+        {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn" style={navButton}>My Wall</Link>}
+        <Link href="/events" className="nav-btn" style={navButton}>Events</Link>
+        <Link href="/" className="nav-btn" style={navButton}>EOD Hub</Link>
 
         {/* Flame notification — sits right after EOD Hub */}
         {currentUserId && (
@@ -326,7 +340,7 @@ export default function NavBar() {
       </div>
 
       {/* Center: search bar */}
-      <div ref={searchRef} style={{ position: "relative", flex: "0 1 340px", minWidth: 200 }}>
+      <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "0 1 340px", minWidth: 200 }}>
         <div style={{ display: "flex", alignItems: "center", border: "1px solid #d1d5db", borderRadius: 10, background: "white", padding: "6px 12px", gap: 8 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.2" strokeLinecap="round">
             <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
@@ -389,11 +403,12 @@ export default function NavBar() {
       {/* Right: logout */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         {!authLoaded ? null : currentUserId ? (
-          <button onClick={handleLogout} style={{ ...navButton, cursor: "pointer" }}>Log Out</button>
+          <button onClick={handleLogout} className="nav-logout" style={{ ...navButton, cursor: "pointer" }}>Log Out</button>
         ) : (
-          <Link href="/login" style={navButton}>Log In</Link>
+          <Link href="/login" className="nav-logout" style={navButton}>Log In</Link>
         )}
       </div>
     </div>
+    </>
   );
 }

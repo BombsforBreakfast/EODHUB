@@ -270,7 +270,12 @@ export default function HomePage() {
   >([]);
 
   const [loading, setLoading] = useState(true);
+  const [postsLoaded, setPostsLoaded] = useState(false);
+  const [jobsLoaded, setJobsLoaded] = useState(false);
+  const [bizLoaded, setBizLoaded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileTab, setMobileTab] = useState<"feed" | "jobs" | "businesses">("feed");
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
 
   // Biz/Org submission form
@@ -318,6 +323,7 @@ export default function HomePage() {
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
+  const [flaggingId, setFlaggingId] = useState<string | null>(null);
 
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
   const [galleryIndex, setGalleryIndex] = useState(0);
@@ -340,6 +346,13 @@ export default function HomePage() {
   useEffect(() => {
     selectedPostImagesRef.current = selectedPostImages;
   }, [selectedPostImages]);
+
+  useEffect(() => {
+    function check() { setIsMobile(window.innerWidth <= 640); }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     selectedCommentImagesRef.current = selectedCommentImages;
@@ -387,6 +400,7 @@ export default function HomePage() {
     }
 
     setBusinessListings((data ?? []) as BusinessListing[]);
+    setBizLoaded(true);
   }
 
   async function loadJobs() {
@@ -403,6 +417,7 @@ export default function HomePage() {
     }
 
     setJobs((data ?? []) as Job[]);
+    setJobsLoaded(true);
   }
 
   async function loadTodayMemorials() {
@@ -535,6 +550,7 @@ export default function HomePage() {
 
     if (rawPosts.length === 0) {
       setPosts([]);
+      setPostsLoaded(true);
       return;
     }
 
@@ -696,6 +712,7 @@ export default function HomePage() {
     });
 
     setPosts(mergedPosts);
+    setPostsLoaded(true);
   }
 
   function openPostImagePicker() {
@@ -1334,6 +1351,15 @@ export default function HomePage() {
     }
   }
 
+  async function flagContent(contentType: "post" | "comment", contentId: string) {
+    if (!userId) return;
+    if (!window.confirm(`Flag this ${contentType} for admin review?`)) return;
+    setFlaggingId(contentId);
+    const { error } = await supabase.from("flags").insert([{ reporter_id: userId, content_type: contentType, content_id: contentId }]);
+    if (error) { alert(error.message); } else { alert("Flagged for review. Thank you."); }
+    setFlaggingId(null);
+  }
+
   function toggleComments(postId: string) {
     setExpandedComments((prev) => ({
       ...prev,
@@ -1373,21 +1399,13 @@ export default function HomePage() {
           if (isMounted) setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
         }
 
-        await loadJobs().catch((err) => console.error("loadJobs failed:", err));
-        await loadPosts(currentUserId).catch((err) =>
-          console.error("loadPosts failed:", err)
-        );
-        await loadBusinessListings().catch((err) =>
-          console.error("loadBusinessListings failed:", err)
-        );
-        if (currentUserId) {
-          await loadSavedJobs(currentUserId).catch((err) =>
-            console.error("loadSavedJobs failed:", err)
-          );
-        }
-        await loadTodayMemorials().catch((err) =>
-          console.error("loadTodayMemorials failed:", err)
-        );
+        await Promise.all([
+          loadJobs().catch((err) => console.error("loadJobs failed:", err)),
+          loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err)),
+          loadBusinessListings().catch((err) => console.error("loadBusinessListings failed:", err)),
+          loadSavedJobs(currentUserId).catch((err) => console.error("loadSavedJobs failed:", err)),
+          loadTodayMemorials().catch((err) => console.error("loadTodayMemorials failed:", err)),
+        ]);
       } catch (error) {
         console.error("Homepage init error:", error);
       } finally {
@@ -1452,19 +1470,39 @@ export default function HomePage() {
     };
   }, []);
 
-  if (loading) {
+  const skeletonStyle: React.CSSProperties = {
+    background: "linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%)",
+    backgroundSize: "200% 100%",
+    borderRadius: 8,
+  };
+
+  function SkeletonBlock({ width = "100%", height = 14 }: { width?: string | number; height?: number }) {
+    return <div style={{ ...skeletonStyle, width, height, marginBottom: 8 }} />;
+  }
+
+  function SkeletonCard() {
     return (
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 1800,
-          margin: "0 auto",
-          padding: "24px 20px",
-          boxSizing: "border-box",
-        }}
-      >
-        <NavBar />
-        <div style={{ marginTop: 20 }}>Loading...</div>
+      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, background: "white" }}>
+        <SkeletonBlock width="55%" height={14} />
+        <SkeletonBlock width="75%" height={11} />
+        <SkeletonBlock width="40%" height={11} />
+      </div>
+    );
+  }
+
+  function SkeletonPost() {
+    return (
+      <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
+        <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
+          <div style={{ ...skeletonStyle, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <SkeletonBlock width="35%" height={14} />
+            <SkeletonBlock width="20%" height={11} />
+          </div>
+        </div>
+        <SkeletonBlock width="100%" height={13} />
+        <SkeletonBlock width="85%" height={13} />
+        <SkeletonBlock width="60%" height={13} />
       </div>
     );
   }
@@ -1481,8 +1519,34 @@ export default function HomePage() {
     >
       <NavBar />
 
+      {/* Mobile tab bar */}
+      {isMobile && (
+        <div style={{ display: "flex", gap: 0, marginTop: 12, borderRadius: 12, overflow: "hidden", border: "1px solid #e5e7eb", background: "#f9fafb" }}>
+          {(["feed", "jobs", "businesses"] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setMobileTab(tab)}
+              style={{
+                flex: 1,
+                padding: "10px 4px",
+                border: "none",
+                background: mobileTab === tab ? "black" : "transparent",
+                color: mobileTab === tab ? "white" : "#555",
+                fontWeight: 800,
+                fontSize: 13,
+                cursor: "pointer",
+                textTransform: "capitalize",
+                transition: "background 0.15s",
+              }}
+            >
+              {tab === "feed" ? "EOD Hub" : tab === "jobs" ? "Jobs" : "Businesses"}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div
-        style={{
+        style={isMobile ? { marginTop: 12 } : {
           display: "grid",
           gridTemplateColumns: "280px minmax(0, 1fr) 360px",
           gap: 24,
@@ -1491,12 +1555,14 @@ export default function HomePage() {
           width: "100%",
         }}
       >
+        {/* Jobs pane */}
         <aside
           style={{
+            display: isMobile ? (mobileTab === "jobs" ? "block" : "none") : undefined,
             border: "1px solid #e5e7eb",
             borderRadius: 14,
             padding: 16,
-            position: "sticky",
+            position: isMobile ? "static" : "sticky",
             top: 20,
             background: "white",
           }}
@@ -1511,13 +1577,14 @@ export default function HomePage() {
           </div>
 
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-            {jobs.length === 0 && (
+            {!jobsLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
+            {jobsLoaded && jobs.length === 0 && (
               <div style={{ fontSize: 14, color: "#666" }}>
                 No approved jobs yet.
               </div>
             )}
 
-            {jobs.map((job) => (
+            {jobsLoaded && jobs.map((job) => (
               <div
                 key={job.id}
                 style={{
@@ -1616,7 +1683,7 @@ export default function HomePage() {
           </div>
         </aside>
 
-        <main style={{ minWidth: 0, border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
+        <main style={{ display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined, minWidth: 0, border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
           <h2 style={{ fontSize: 20, fontWeight: 900, margin: 0 }}>EOD Hub</h2>
 
           <div
@@ -1789,6 +1856,7 @@ export default function HomePage() {
           </div>
 
           <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+            {!postsLoaded && [0,1,2,3].map((i) => <SkeletonPost key={i} />)}
             {/* Memorial anniversary cards — auto-injected on anniversary date */}
             {todayMemorials.map((m) => (
               <div key={`memorial-${m.id}`} style={{ border: "2px solid #7c3aed", borderRadius: 14, padding: 20, background: "#faf5ff" }}>
@@ -1869,43 +1937,23 @@ export default function HomePage() {
                       </div>
                     </div>
 
-                    {isOwnPost && (
-                      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                        {!isEditingPost && (
-                          <button
-                            type="button"
-                            onClick={() => startEditPost(post.id, post.content)}
-                            style={{
-                              background: "transparent",
-                              border: "none",
-                              padding: 0,
-                              cursor: "pointer",
-                              color: "#777",
-                              fontWeight: 700,
-                            }}
-                          >
-                            Edit
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => deletePost(post.id)}
-                          disabled={deletingPostId === post.id}
-                          style={{
-                            background: "transparent",
-                            border: "none",
-                            padding: 0,
-                            cursor: deletingPostId === post.id ? "not-allowed" : "pointer",
-                            color: "#777",
-                            fontWeight: 700,
-                            opacity: deletingPostId === post.id ? 0.6 : 1,
-                          }}
-                        >
+                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                      {isOwnPost && !isEditingPost && (
+                        <button type="button" onClick={() => startEditPost(post.id, post.content)} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#777", fontWeight: 700 }}>
+                          Edit
+                        </button>
+                      )}
+                      {isOwnPost && (
+                        <button type="button" onClick={() => deletePost(post.id)} disabled={deletingPostId === post.id} style={{ background: "transparent", border: "none", padding: 0, cursor: deletingPostId === post.id ? "not-allowed" : "pointer", color: "#777", fontWeight: 700, opacity: deletingPostId === post.id ? 0.6 : 1 }}>
                           {deletingPostId === post.id ? "Deleting..." : "Delete"}
                         </button>
-                      </div>
-                    )}
+                      )}
+                      {!isOwnPost && (
+                        <button type="button" onClick={() => flagContent("post", post.id)} disabled={flaggingId === post.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === post.id ? "not-allowed" : "pointer", color: "#ccc", fontSize: 15, lineHeight: 1 }}>
+                          ⚑
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {isEditingPost ? (
@@ -2166,7 +2214,13 @@ export default function HomePage() {
                                   </div>
                                 </div>
 
-                                {isOwnComment && (
+                                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                                  {!isOwnComment && (
+                                    <button type="button" onClick={() => flagContent("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: "#ccc", fontSize: 13, lineHeight: 1 }}>
+                                      ⚑
+                                    </button>
+                                  )}
+                                  {isOwnComment && (
                                   <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                                     {!isEditingComment && (
                                       <button
@@ -2211,6 +2265,7 @@ export default function HomePage() {
                                   </div>
                                 )}
                               </div>
+                            </div>
 
                               {isEditingComment ? (
                                 <div style={{ marginTop: 8 }}>
@@ -2493,10 +2548,11 @@ export default function HomePage() {
 
         <aside
           style={{
+            display: isMobile ? (mobileTab === "businesses" ? "block" : "none") : undefined,
             border: "1px solid #e5e7eb",
             borderRadius: 14,
             padding: 16,
-            position: "sticky",
+            position: isMobile ? "static" : "sticky",
             top: 20,
             background: "white",
           }}
@@ -2574,13 +2630,14 @@ export default function HomePage() {
           )}
 
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-            {businessListings.length === 0 && (
+            {!bizLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
+            {bizLoaded && businessListings.length === 0 && (
               <div style={{ fontSize: 14, color: "#666" }}>
                 No approved businesses yet.
               </div>
             )}
 
-            {businessListings.map((listing) => {
+            {bizLoaded && businessListings.map((listing) => {
               const displayTitle =
                 listing.og_title ||
                 listing.business_name ||
