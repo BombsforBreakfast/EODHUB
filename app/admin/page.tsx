@@ -82,7 +82,7 @@ export default function AdminPage() {
       .select("*")
       .order("created_at", { ascending: false });
     const { data, error } = pendingOnly
-      ? await query.eq("is_approved", false)
+      ? await query.neq("is_approved", true)
       : await query;
     if (error) { console.error(error); return; }
     setBusinesses((data ?? []) as BusinessListing[]);
@@ -94,7 +94,7 @@ export default function AdminPage() {
       .select("id, created_at, title, company_name, location, category, description, apply_url, is_approved, source_type")
       .order("created_at", { ascending: false });
     const { data, error } = pendingOnly
-      ? await query.eq("is_approved", false)
+      ? await query.neq("is_approved", true)
       : await query;
     if (error) { console.error(error); return; }
     setJobs((data ?? []) as Job[]);
