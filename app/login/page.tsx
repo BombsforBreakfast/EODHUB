@@ -101,8 +101,17 @@ export default function LoginPage() {
     padding: 10,
     borderRadius: 10,
     border: "1px solid #ccc",
-    fontSize: 15,
+    fontSize: 16,
     background: "white",
+  };
+
+  const inputStyle: React.CSSProperties = {
+    padding: 10,
+    borderRadius: 10,
+    border: "1px solid #ccc",
+    fontSize: 16,
+    width: "100%",
+    boxSizing: "border-box",
   };
 
   return (
@@ -111,12 +120,16 @@ export default function LoginPage() {
         {mode === "login" ? "Login" : "Sign Up"}
       </h1>
 
-      <div style={{ display: "grid", gap: 12, marginTop: 20 }}>
+      <form
+        onSubmit={(e) => { e.preventDefault(); mode === "login" ? handleLogin() : handleSignup(); }}
+        style={{ display: "grid", gap: 12, marginTop: 20 }}
+      >
         <input
+          type="email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+          style={inputStyle}
         />
 
         <input
@@ -124,7 +137,7 @@ export default function LoginPage() {
           type="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+          style={inputStyle}
         />
 
         {mode === "signup" && (
@@ -133,14 +146,14 @@ export default function LoginPage() {
               placeholder="First Name *"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+              style={inputStyle}
             />
 
             <input
               placeholder="Last Name *"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
-              style={{ padding: 10, borderRadius: 10, border: "1px solid #ccc" }}
+              style={inputStyle}
             />
 
             <div>
@@ -196,7 +209,7 @@ export default function LoginPage() {
             </button>
           </>
         )}
-      </div>
+      </form>
     </div>
   );
 }
