@@ -57,6 +57,15 @@ type Flag = {
   content_preview?: string | null;
 };
 
+type BizEdit = {
+  id: string;
+  business_name: string;
+  og_title: string;
+  og_description: string;
+  og_image: string;
+  custom_blurb: string;
+};
+
 export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
@@ -70,6 +79,8 @@ export default function AdminPage() {
   const [pendingOnly, setPendingOnly] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -236,6 +247,45 @@ export default function AdminPage() {
     setActionLoading(null);
   }
 
+  function startEditBiz(biz: BusinessListing) {
+    setEditingBiz({
+      id: biz.id,
+      business_name: biz.business_name || "",
+      og_title: biz.og_title || "",
+      og_description: biz.og_description || "",
+      og_image: biz.og_image || "",
+      custom_blurb: biz.custom_blurb || "",
+    });
+  }
+
+  async function handleImageUpload(file: File) {
+    setUploadingImage(true);
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `biz-${Date.now()}.${ext}`;
+    const { error } = await supabase.storage.from("business-images").upload(path, file, { upsert: true });
+    if (error) { alert("Upload error: " + error.message); setUploadingImage(false); return; }
+    const { data } = supabase.storage.from("business-images").getPublicUrl(path);
+    setEditingBiz((prev) => prev ? { ...prev, og_image: data.publicUrl } : prev);
+    setUploadingImage(false);
+  }
+
+  async function saveBizEdit() {
+    if (!editingBiz) return;
+    setActionLoading(editingBiz.id + "-edit");
+    const { error } = await supabase
+      .from("business_listings")
+      .update({
+        business_name: editingBiz.business_name || null,
+        og_title: editingBiz.og_title || null,
+        og_description: editingBiz.og_description || null,
+        og_image: editingBiz.og_image || null,
+        custom_blurb: editingBiz.custom_blurb || null,
+      })
+      .eq("id", editingBiz.id);
+    if (error) { alert(error.message); } else { showToast("Listing updated!"); setEditingBiz(null); await loadBusinesses(); }
+    setActionLoading(null);
+  }
+
   async function removeFlaggedContent(flag: Flag) {
     if (!confirm(`Permanently delete this ${flag.content_type}?`)) return;
     setActionLoading(flag.id + "-remove");
@@ -382,10 +432,95 @@ export default function AdminPage() {
                               </button>
                             </>
                           )}
+                          <button
+                            style={actionBtn(editingBiz?.id === biz.id ? "#6b7280" : "#374151")}
+                            onClick={() => editingBiz?.id === biz.id ? setEditingBiz(null) : startEditBiz(biz)}
+                          >
+                            {editingBiz?.id === biz.id ? "Cancel" : "Edit"}
+                          </button>
                         </div>
                       </div>
                     </div>
                   </div>
+                  {/* Inline edit form */}
+                  {editingBiz?.id === biz.id && (
+                    <div style={{ borderTop: "1px solid #e5e7eb", padding: 16, background: "#f9fafb", display: "grid", gap: 10 }}>
+                      <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 2 }}>Edit Listing</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 4 }}>Business Name</label>
+                          <input
+                            value={editingBiz.business_name}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, business_name: e.target.value })}
+                            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, boxSizing: "border-box" }}
+                            placeholder="Business Name"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 4 }}>OG Title</label>
+                          <input
+                            value={editingBiz.og_title}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, og_title: e.target.value })}
+                            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, boxSizing: "border-box" }}
+                            placeholder="Page title from website"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 4 }}>Description / Blurb</label>
+                        <textarea
+                          value={editingBiz.custom_blurb || editingBiz.og_description}
+                          onChange={(e) => setEditingBiz({ ...editingBiz, custom_blurb: e.target.value })}
+                          rows={3}
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, resize: "vertical", boxSizing: "border-box" }}
+                          placeholder="Custom description shown on the listing"
+                        />
+                      </div>
+                      <div>
+                        <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 4 }}>Photo</label>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                          {editingBiz.og_image && (
+                            <img src={editingBiz.og_image} alt="" style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6, border: "1px solid #e5e7eb" }} />
+                          )}
+                          <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 6 }}>
+                            <input
+                              value={editingBiz.og_image}
+                              onChange={(e) => setEditingBiz({ ...editingBiz, og_image: e.target.value })}
+                              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }}
+                              placeholder="Image URL (paste or upload below)"
+                            />
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <label style={{ padding: "6px 12px", borderRadius: 8, background: "#374151", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                                {uploadingImage ? "Uploading..." : "Upload Photo"}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  style={{ display: "none" }}
+                                  disabled={uploadingImage}
+                                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); }}
+                                />
+                              </label>
+                              {editingBiz.og_image && (
+                                <button style={{ ...actionBtn("#ef4444"), fontSize: 12 }} onClick={() => setEditingBiz({ ...editingBiz, og_image: "" })}>
+                                  Remove Photo
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", paddingTop: 4 }}>
+                        <button style={actionBtn("#6b7280")} onClick={() => setEditingBiz(null)}>Cancel</button>
+                        <button
+                          style={actionBtn("#16a34a")}
+                          disabled={actionLoading === editingBiz.id + "-edit" || uploadingImage}
+                          onClick={saveBizEdit}
+                        >
+                          {actionLoading === editingBiz.id + "-edit" ? "Saving..." : "Save Changes"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

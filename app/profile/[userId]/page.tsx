@@ -182,6 +182,8 @@ export default function PublicProfilePage() {
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [togglingPinnedId, setTogglingPinnedId] = useState<string | null>(null);
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
+  const [galleryExpanded, setGalleryExpanded] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const [editingProfile, setEditingProfile] = useState(false);
   const [editRole, setEditRole] = useState("");
@@ -785,6 +787,13 @@ export default function PublicProfilePage() {
   }
 
   useEffect(() => {
+    function checkMobile() { setIsMobile(window.innerWidth <= 900); }
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  useEffect(() => {
     async function init() {
       if (!userId || userId === "undefined") {
         setLoading(false);
@@ -899,57 +908,42 @@ export default function PublicProfilePage() {
 
       {/* Skeleton while loading */}
       {loading && (
-        <div style={{ display: "flex", gap: 20, marginTop: 20, alignItems: "flex-start" }}>
-          <div style={{ width: 260, flexShrink: 0, border: "1px solid #e5e7eb", borderRadius: 16, padding: 16, background: "white" }}>
-            <div style={{ ...skeletonBase, height: 14, width: "50%", marginBottom: 12 }} />
-            {[1,2,3].map((i) => <div key={i} style={{ ...skeletonBase, height: 80, marginBottom: 8, borderRadius: 10 }} />)}
-          </div>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, background: "white" }}>
-              <div style={{ display: "flex", gap: 20 }}>
-                <div style={{ ...skeletonBase, width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ ...skeletonBase, height: 24, width: "40%", marginBottom: 10 }} />
-                  <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 8 }} />
-                  <div style={{ ...skeletonBase, height: 14, width: "60%" }} />
-                </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20 }}>
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, background: "white" }}>
+            <div style={{ display: "flex", gap: 20 }}>
+              <div style={{ ...skeletonBase, width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ ...skeletonBase, height: 24, width: "40%", marginBottom: 10 }} />
+                <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 8 }} />
+                <div style={{ ...skeletonBase, height: 14, width: "60%" }} />
               </div>
             </div>
-            {[1,2,3].map((i) => (
-              <div key={i} style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
-                <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
-                  <div style={{ ...skeletonBase, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 6 }} />
-                    <div style={{ ...skeletonBase, height: 11, width: "20%" }} />
-                  </div>
-                </div>
-                <div style={{ ...skeletonBase, height: 13, marginBottom: 6 }} />
-                <div style={{ ...skeletonBase, height: 13, width: "75%", marginBottom: 6 }} />
-                <div style={{ ...skeletonBase, height: 13, width: "50%" }} />
-              </div>
-            ))}
           </div>
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 16, background: "white", display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ ...skeletonBase, height: 14, width: 56, flexShrink: 0 }} />
+            {[1,2,3,4].map((i) => <div key={i} style={{ ...skeletonBase, width: 100, height: 100, borderRadius: 10, flexShrink: 0 }} />)}
+          </div>
+          {[1,2,3].map((i) => (
+            <div key={i} style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
+              <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+                <div style={{ ...skeletonBase, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 6 }} />
+                  <div style={{ ...skeletonBase, height: 11, width: "20%" }} />
+                </div>
+              </div>
+              <div style={{ ...skeletonBase, height: 13, marginBottom: 6 }} />
+              <div style={{ ...skeletonBase, height: 13, width: "75%", marginBottom: 6 }} />
+              <div style={{ ...skeletonBase, height: 13, width: "50%" }} />
+            </div>
+          ))}
         </div>
       )}
 
-      {/* Two-column page layout */}
-      {!loading && profile && <div style={{ display: "flex", gap: 20, marginTop: 20, alignItems: "flex-start" }}>
+      {/* Single-column page layout */}
+      {!loading && profile && <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 20 }}>
 
-        {/* ── LEFT PANE: Photos ── */}
-        <div
-          style={{
-            width: 260,
-            flexShrink: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: 0,
-            border: "1px solid #e5e7eb",
-            borderRadius: 16,
-            background: "white",
-            padding: 16,
-          }}
-        >
+        {false && <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div style={{ fontSize: 16, fontWeight: 900 }}>Photos</div>
             {isOwnWall && (
@@ -1125,10 +1119,9 @@ export default function PublicProfilePage() {
           {galleryPhotos.length === 0 && pinnedPhotos.length === 0 && (
             <div style={{ color: "#aaa", fontSize: 13 }}>No photos yet.</div>
           )}
-        </div>
+        </div>}
 
-        {/* ── RIGHT PANE: Profile card + Wall ── */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* ── Content ── */}
 
           {/* Profile / Contact Card */}
           <div
@@ -1139,141 +1132,229 @@ export default function PublicProfilePage() {
               background: "white",
             }}
           >
-            <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
-              {/* Identity: photo + name + stats + buttons */}
-              <div
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 14,
-                  flexShrink: 0,
-                  width: 180,
-                }}
-              >
-                <div
-                  style={{
-                    width: 120,
-                    height: 120,
-                    borderRadius: "50%",
-                    overflow: "hidden",
-                    background: "#f3f4f6",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontWeight: 700,
-                    color: "#666",
-                    boxSizing: "border-box",
-                    border: getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined,
-                  }}
-                >
-                  {profile.photo_url ? (
-                    <img
-                      src={profile.photo_url}
-                      alt={fullName}
-                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                    />
-                  ) : (
-                    "Photo"
-                  )}
-                </div>
-
-                <div style={{ textAlign: "center" }}>
-                  <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>
-                    {fullName}
-                  </h1>
-                  <div style={{ marginTop: 4, fontSize: 13, color: "#666" }}>
-                    {isOwnWall ? "My Wall" : "User Wall"}
+            {isMobile ? (
+              /* ── Mobile profile card layout ── */
+              <div>
+                {/* Top row: avatar + name + stats */}
+                <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  <div style={{ width: 76, height: 76, borderRadius: "50%", overflow: "hidden", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#666", flexShrink: 0, boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined }}>
+                    {profile.photo_url
+                      ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      : fullName[0]?.toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
+                    <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{isOwnWall ? "My Wall" : "User Wall"}</div>
+                    <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontWeight: 900, fontSize: 17 }}>{workedWithCount}</div>
+                        <div style={{ fontSize: 10, color: "#666" }}>Worked With</div>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontWeight: 900, fontSize: 17 }}>{knowCount}</div>
+                        <div style={{ fontSize: 10, color: "#666" }}>Know</div>
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontWeight: 900, fontSize: 17 }}>{wastaScore}</div>
+                        <div style={{ fontSize: 10, color: "#666" }}>Wasta</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%" }}>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontWeight: 900, fontSize: 20 }}>{workedWithCount}</div>
-                    <div style={{ fontSize: 12, color: "#666" }}>Worked With</div>
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontWeight: 900, fontSize: 20 }}>{knowCount}</div>
-                    <div style={{ fontSize: 12, color: "#666" }}>Know</div>
-                  </div>
-                  <div style={{ textAlign: "center" }}>
-                    <div style={{ fontWeight: 900, fontSize: 20 }}>{wastaScore}</div>
-                    <div style={{ fontSize: 12, color: "#666" }}>Wasta</div>
-                  </div>
-                </div>
-
+                {/* Connection buttons */}
                 {!isOwnWall && currentUserId && (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-                    <button
-                      type="button"
-                      onClick={() => toggleConnection("worked_with")}
-                      disabled={togglingConnection === "worked_with"}
-                      style={{
-                        background: currentUserWorkedWith ? "black" : "white",
-                        color: currentUserWorkedWith ? "white" : "black",
-                        border: "1px solid #d1d5db",
-                        borderRadius: 10,
-                        padding: "9px 14px",
-                        fontWeight: 700,
-                        cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer",
-                        opacity: togglingConnection === "worked_with" ? 0.7 : 1,
-                        width: "100%",
-                      }}
-                    >
+                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                    <button type="button" onClick={() => toggleConnection("worked_with")} disabled={togglingConnection === "worked_with"} style={{ flex: 1, background: currentUserWorkedWith ? "black" : "white", color: currentUserWorkedWith ? "white" : "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer", opacity: togglingConnection === "worked_with" ? 0.7 : 1 }}>
                       {togglingConnection === "worked_with" ? "Saving..." : currentUserWorkedWith ? "Worked With ✓" : "Worked With"}
                     </button>
-
-                    <button
-                      type="button"
-                      onClick={() => toggleConnection("know")}
-                      disabled={togglingConnection === "know"}
-                      style={{
-                        background: currentUserKnows ? "black" : "white",
-                        color: currentUserKnows ? "white" : "black",
-                        border: "1px solid #d1d5db",
-                        borderRadius: 10,
-                        padding: "9px 14px",
-                        fontWeight: 700,
-                        cursor: togglingConnection === "know" ? "not-allowed" : "pointer",
-                        opacity: togglingConnection === "know" ? 0.7 : 1,
-                        width: "100%",
-                      }}
-                    >
+                    <button type="button" onClick={() => toggleConnection("know")} disabled={togglingConnection === "know"} style={{ flex: 1, background: currentUserKnows ? "black" : "white", color: currentUserKnows ? "white" : "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: togglingConnection === "know" ? "not-allowed" : "pointer", opacity: togglingConnection === "know" ? 0.7 : 1 }}>
                       {togglingConnection === "know" ? "Saving..." : currentUserKnows ? "Know ✓" : "Know"}
                     </button>
                   </div>
                 )}
+
+                {/* Profile details — full width below */}
+                <div style={{ marginTop: 14, borderTop: "1px solid #f0f0f0", paddingTop: 12, color: "#555", fontSize: 14, lineHeight: 1.7 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
+                    <div><strong>Role:</strong> {profile.role || "—"}</div>
+                    <div><strong>Service:</strong> {profile.service || "—"}</div>
+                    <div><strong>Status:</strong> {profile.status || "—"}</div>
+                    <div><strong>Experience:</strong> {profile.years_experience || "—"}</div>
+                    <div><strong>Badge:</strong> {profile.skill_badge || "—"}</div>
+                    <div><strong>Verified:</strong> {profile.verification_status || "—"}</div>
+                  </div>
+                  {profile.bio && (
+                    <div style={{ marginTop: 12, borderTop: "1px solid #f0f0f0", paddingTop: 12, color: "#444", lineHeight: 1.6 }}>
+                      {profile.bio}
+                    </div>
+                  )}
+                </div>
               </div>
+            ) : (
+              /* ── Desktop profile card layout ── */
+              <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
+                {/* Identity: photo + name + stats + buttons */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flexShrink: 0, width: 180 }}>
+                  <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#666", boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined }}>
+                    {profile.photo_url ? (
+                      <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    ) : ("Photo")}
+                  </div>
 
-              {/* Divider */}
-              <div style={{ width: 1, alignSelf: "stretch", background: "#e5e7eb", flexShrink: 0 }} />
+                  <div style={{ textAlign: "center" }}>
+                    <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
+                    <div style={{ marginTop: 4, fontSize: 13, color: "#666" }}>{isOwnWall ? "My Wall" : "User Wall"}</div>
+                  </div>
 
-              {/* Profile details */}
-              <div style={{ flex: 1, color: "#555", lineHeight: 1.8 }}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
-                  <div><strong>Role:</strong> {profile.role || "Not added yet"}</div>
-                  <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
-                  <div><strong>Status:</strong> {profile.status || "Not added yet"}</div>
-                  <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
-                  <div><strong>Skill Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
-                  <div><strong>Verification:</strong> {profile.verification_status || "Not verified"}</div>
+                  <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%" }}>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontWeight: 900, fontSize: 20 }}>{workedWithCount}</div>
+                      <div style={{ fontSize: 12, color: "#666" }}>Worked With</div>
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontWeight: 900, fontSize: 20 }}>{knowCount}</div>
+                      <div style={{ fontSize: 12, color: "#666" }}>Know</div>
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontWeight: 900, fontSize: 20 }}>{wastaScore}</div>
+                      <div style={{ fontSize: 12, color: "#666" }}>Wasta</div>
+                    </div>
+                  </div>
+
+                  {!isOwnWall && currentUserId && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
+                      <button type="button" onClick={() => toggleConnection("worked_with")} disabled={togglingConnection === "worked_with"} style={{ background: currentUserWorkedWith ? "black" : "white", color: currentUserWorkedWith ? "white" : "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer", opacity: togglingConnection === "worked_with" ? 0.7 : 1, width: "100%" }}>
+                        {togglingConnection === "worked_with" ? "Saving..." : currentUserWorkedWith ? "Worked With ✓" : "Worked With"}
+                      </button>
+                      <button type="button" onClick={() => toggleConnection("know")} disabled={togglingConnection === "know"} style={{ background: currentUserKnows ? "black" : "white", color: currentUserKnows ? "white" : "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: togglingConnection === "know" ? "not-allowed" : "pointer", opacity: togglingConnection === "know" ? 0.7 : 1, width: "100%" }}>
+                        {togglingConnection === "know" ? "Saving..." : currentUserKnows ? "Know ✓" : "Know"}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                {profile.bio && (
-                  <div
-                    style={{
-                      marginTop: 14,
-                      color: "#444",
-                      lineHeight: 1.6,
-                      borderTop: "1px solid #f0f0f0",
-                      paddingTop: 14,
-                    }}
-                  >
-                    {profile.bio}
+                {/* Divider */}
+                <div style={{ width: 1, alignSelf: "stretch", background: "#e5e7eb", flexShrink: 0 }} />
+
+                {/* Profile details */}
+                <div style={{ flex: 1, color: "#555", lineHeight: 1.8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
+                    <div><strong>Role:</strong> {profile.role || "Not added yet"}</div>
+                    <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
+                    <div><strong>Status:</strong> {profile.status || "Not added yet"}</div>
+                    <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
+                    <div><strong>Skill Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
+                    <div><strong>Verification:</strong> {profile.verification_status || "Not verified"}</div>
+                  </div>
+                  {profile.bio && (
+                    <div style={{ marginTop: 14, color: "#444", lineHeight: 1.6, borderTop: "1px solid #f0f0f0", paddingTop: 14 }}>
+                      {profile.bio}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── Photo Strip ── */}
+          <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, background: "white", overflow: "hidden" }}>
+            <div style={{ padding: 16, display: "flex", alignItems: "flex-start", gap: 12 }}>
+              <div style={{ fontSize: 15, fontWeight: 900, paddingTop: 6, flexShrink: 0 }}>Photos</div>
+
+              {/* Pinned photos — horizontal scroll */}
+              <div style={{ flex: 1, display: "flex", gap: 8, overflowX: "auto", minWidth: 0, paddingBottom: 4 }}>
+                {pinnedPhotos.length === 0 && (
+                  <div style={{ color: "#aaa", fontSize: 13, alignSelf: "center" }}>
+                    {photos.length > 0 ? "Pin photos from the gallery to feature them here." : "No photos yet."}
                   </div>
                 )}
+                {pinnedPhotos.map((photo) => (
+                  <div key={photo.id} style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div
+                      onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
+                      style={{ width: 100, height: 100, borderRadius: 10, overflow: "hidden", background: "#f3f4f6", cursor: "pointer" }}
+                    >
+                      <img src={photo.photo_url} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    </div>
+                    {isOwnWall && (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button
+                          onClick={() => togglePinned(photo)}
+                          disabled={togglingPinnedId === photo.id}
+                          style={{ flex: 1, border: "1px solid #d1d5db", background: "white", borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1 }}
+                        >
+                          {togglingPinnedId === photo.id ? "..." : "Unpin"}
+                        </button>
+                        <button
+                          onClick={() => deletePhoto(photo)}
+                          disabled={deletingPhotoId === photo.id}
+                          style={{ flex: 1, border: "1px solid #d1d5db", background: "white", borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1 }}
+                        >
+                          {deletingPhotoId === photo.id ? "..." : "Del"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {/* Right-side controls */}
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {galleryPhotos.length > 0 && (
+                  <button
+                    onClick={() => setGalleryExpanded(!galleryExpanded)}
+                    style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    Gallery ({galleryPhotos.length}) {galleryExpanded ? "▲" : "▼"}
+                  </button>
+                )}
+                {isOwnWall && (
+                  <label style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: "white", whiteSpace: "nowrap", display: "inline-block" }}>
+                    + Add
+                    <input type="file" accept="image/*" onChange={handleGalleryUpload} style={{ display: "none" }} />
+                  </label>
+                )}
+                {uploadingGallery && <span style={{ fontSize: 12, color: "#666" }}>Uploading...</span>}
               </div>
             </div>
+
+            {/* Expanded gallery grid */}
+            {galleryExpanded && galleryPhotos.length > 0 && (
+              <div style={{ borderTop: "1px solid #e5e7eb", padding: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#888", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Gallery</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
+                  {galleryPhotos.map((photo) => (
+                    <div key={photo.id}>
+                      <div
+                        onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
+                        style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: "#f3f4f6", cursor: "pointer" }}
+                      >
+                        <img src={photo.photo_url} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      </div>
+                      {isOwnWall && (
+                        <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                          <button
+                            onClick={() => togglePinned(photo)}
+                            disabled={togglingPinnedId === photo.id}
+                            style={{ flex: 1, border: "1px solid #d1d5db", background: "white", borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1 }}
+                          >
+                            {togglingPinnedId === photo.id ? "..." : "Pin"}
+                          </button>
+                          <button
+                            onClick={() => deletePhoto(photo)}
+                            disabled={deletingPhotoId === photo.id}
+                            style={{ flex: 1, border: "1px solid #d1d5db", background: "white", borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1 }}
+                          >
+                            {deletingPhotoId === photo.id ? "..." : "Del"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Wall */}
@@ -1541,7 +1622,6 @@ export default function PublicProfilePage() {
               })}
             </div>
           </div>
-        </div>
       </div>}
     </div>
 
