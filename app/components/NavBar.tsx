@@ -240,20 +240,6 @@ export default function NavBar() {
   };
 
   return (
-    <>
-    <style>{`
-      @media (max-width: 900px) {
-        .nav-root { flex-wrap: wrap !important; gap: 6px !important; margin-bottom: 10px !important; }
-        .nav-left { gap: 5px !important; flex-wrap: nowrap !important; flex: 1 !important; }
-        .nav-right { flex-shrink: 0 !important; }
-        .nav-btn { padding: 6px 9px !important; font-size: 12px !important; border-radius: 8px !important; white-space: nowrap; }
-        .nav-avatar { width: 30px !important; height: 30px !important; font-size: 13px !important; }
-        .nav-search { order: 3 !important; flex: 0 0 100% !important; min-width: 0 !important; }
-        .nav-search input { font-size: 14px !important; }
-        .nav-search > div { padding: 6px 10px !important; }
-        .nav-logout { padding: 6px 9px !important; font-size: 12px !important; border-radius: 8px !important; }
-      }
-    `}</style>
     <div className="nav-root" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30, flexWrap: "wrap", gap: 12 }}>
       {/* Left: avatar + nav links + flame */}
       <div className="nav-left" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -410,6 +396,5 @@ export default function NavBar() {
         )}
       </div>
     </div>
-    </>
   );
 }
