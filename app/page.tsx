@@ -348,7 +348,7 @@ export default function HomePage() {
   }, [selectedPostImages]);
 
   useEffect(() => {
-    function check() { setIsMobile(window.innerWidth <= 640); }
+    function check() { setIsMobile(window.innerWidth <= 900); }
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
