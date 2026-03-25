@@ -69,6 +69,7 @@ type BusinessListing = {
   og_site_name: string | null;
   is_approved: boolean;
   is_featured: boolean;
+  like_count: number;
 };
 
 type ProfileName = {
@@ -301,6 +302,9 @@ export default function HomePage() {
     string | null
   >(null);
 
+  const [likedBizIds, setLikedBizIds] = useState<Set<string>>(new Set());
+  const [togglingBizLikeFor, setTogglingBizLikeFor] = useState<string | null>(null);
+
   const [togglingLikeFor, setTogglingLikeFor] = useState<string | null>(null);
   const [togglingCommentLikeFor, setTogglingCommentLikeFor] = useState<
     string | null
@@ -391,8 +395,8 @@ export default function HomePage() {
       .select("*")
       .eq("is_approved", true)
       .order("is_featured", { ascending: false })
-      .order("created_at", { ascending: false })
-      .limit(12);
+      .order("business_name", { ascending: true, nullsFirst: false })
+      .limit(50);
 
     if (error) {
       console.error("Business listings load error:", error);
@@ -401,6 +405,37 @@ export default function HomePage() {
 
     setBusinessListings((data ?? []) as BusinessListing[]);
     setBizLoaded(true);
+  }
+
+  async function loadBizLikes(uid: string) {
+    const { data } = await supabase
+      .from("business_likes")
+      .select("business_id")
+      .eq("user_id", uid);
+    setLikedBizIds(new Set((data ?? []).map((r: { business_id: string }) => r.business_id)));
+  }
+
+  async function handleBizLike(e: React.MouseEvent, bizId: string) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!userId || togglingBizLikeFor === bizId) return;
+    setTogglingBizLikeFor(bizId);
+
+    const already = likedBizIds.has(bizId);
+    if (already) {
+      await supabase.from("business_likes").delete().eq("user_id", userId).eq("business_id", bizId);
+      setLikedBizIds((prev) => { const s = new Set(prev); s.delete(bizId); return s; });
+      setBusinessListings((prev) => prev.map((b) => b.id === bizId ? { ...b, like_count: Math.max(0, (b.like_count ?? 0) - 1) } : b));
+    } else {
+      await supabase.from("business_likes").insert({ user_id: userId, business_id: bizId });
+      setLikedBizIds((prev) => new Set(prev).add(bizId));
+      setBusinessListings((prev) => prev.map((b) => b.id === bizId ? { ...b, like_count: (b.like_count ?? 0) + 1 } : b));
+    }
+    // Sync accurate count back to DB
+    const { count } = await supabase.from("business_likes").select("*", { count: "exact", head: true }).eq("business_id", bizId);
+    await supabase.from("business_listings").update({ like_count: count ?? 0 }).eq("id", bizId);
+
+    setTogglingBizLikeFor(null);
   }
 
   async function loadJobs() {
@@ -1404,6 +1439,7 @@ export default function HomePage() {
           loadJobs().catch((err) => console.error("loadJobs failed:", err)),
           loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err)),
           loadBusinessListings().catch((err) => console.error("loadBusinessListings failed:", err)),
+          loadBizLikes(currentUserId).catch((err) => console.error("loadBizLikes failed:", err)),
           loadSavedJobs(currentUserId).catch((err) => console.error("loadSavedJobs failed:", err)),
           loadTodayMemorials().catch((err) => console.error("loadTodayMemorials failed:", err)),
         ]);
@@ -2634,65 +2670,59 @@ export default function HomePage() {
               const displayDescription =
                 listing.custom_blurb || listing.og_description || "Visit website";
 
+              const isLiked = likedBizIds.has(listing.id);
               return (
-                <a
+                <div
                   key={listing.id}
-                  href={listing.website_url}
-                  target="_blank"
-                  rel="noreferrer"
                   style={{
-                    display: "block",
                     border: "1px solid #e5e7eb",
                     borderRadius: 12,
                     overflow: "hidden",
-                    textDecoration: "none",
-                    color: "inherit",
                     background: "white",
                   }}
                 >
-                  {listing.og_image ? (
-                    <img
-                      src={listing.og_image}
-                      alt={displayTitle}
-                      style={{
-                        width: "100%",
-                        height: 180,
-                        objectFit: "cover",
-                        display: "block",
-                      }}
-                    />
-                  ) : null}
+                  <a
+                    href={listing.website_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: "block", textDecoration: "none", color: "inherit" }}
+                  >
+                    {listing.og_image ? (
+                      <img
+                        src={listing.og_image}
+                        alt={displayTitle}
+                        style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
+                      />
+                    ) : null}
 
-                  <div style={{ padding: 14 }}>
-                    <div style={{ fontWeight: 800, lineHeight: 1.3, fontSize: 18 }}>
-                      {displayTitle}
-                    </div>
-
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 14,
-                        color: "#666",
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {displayDescription}
-                    </div>
-
-                    {listing.is_featured && (
-                      <div
-                        style={{
-                          marginTop: 12,
-                          fontSize: 12,
-                          fontWeight: 800,
-                          color: "#111",
-                        }}
-                      >
-                        Featured
+                    <div style={{ padding: 14, paddingBottom: 10 }}>
+                      <div style={{ fontWeight: 800, lineHeight: 1.3, fontSize: 18 }}>
+                        {displayTitle}
                       </div>
-                    )}
+                      <div style={{ marginTop: 8, fontSize: 14, color: "#666", lineHeight: 1.5 }}>
+                        {displayDescription}
+                      </div>
+                    </div>
+                  </a>
+
+                  <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    {listing.is_featured ? (
+                      <span style={{ fontSize: 11, fontWeight: 800, color: "#111", background: "#fef9c3", padding: "2px 8px", borderRadius: 20 }}>
+                        Featured
+                      </span>
+                    ) : <span />}
+                    <button
+                      onClick={(e) => handleBizLike(e, listing.id)}
+                      disabled={togglingBizLikeFor === listing.id || !userId}
+                      style={{ background: "none", border: "none", cursor: userId ? "pointer" : "default", display: "flex", alignItems: "center", gap: 5, padding: "4px 0", opacity: togglingBizLikeFor === listing.id ? 0.5 : 1 }}
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill={isLiked ? "black" : "none"} stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                      </svg>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{listing.like_count ?? 0}</span>
+                    </button>
                   </div>
-                </a>
+                </div>
               );
             })}
           </div>
