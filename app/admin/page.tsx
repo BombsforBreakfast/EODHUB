@@ -556,7 +556,12 @@ export default function AdminPage() {
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
                       {job.is_approved ? (
-                        <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Live</span>
+                        <>
+                          <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Live</span>
+                          <button style={actionBtn("#ef4444")} disabled={actionLoading === job.id} onClick={() => rejectJob(job.id)}>
+                            {actionLoading === job.id ? "..." : "Delete"}
+                          </button>
+                        </>
                       ) : (
                         <>
                           <button style={actionBtn("#16a34a")} disabled={actionLoading === job.id} onClick={() => approveJob(job.id)}>
