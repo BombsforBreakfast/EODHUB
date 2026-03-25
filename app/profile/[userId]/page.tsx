@@ -1259,11 +1259,12 @@ export default function PublicProfilePage() {
 
           {/* ── Photo Strip ── */}
           <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, background: "white", overflow: "hidden" }}>
-            <div style={{ padding: 16, display: "flex", alignItems: "flex-start", gap: 12 }}>
-              <div style={{ fontSize: 15, fontWeight: 900, paddingTop: 6, flexShrink: 0 }}>Photos</div>
+            <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+              {/* Title row */}
+              <div style={{ fontSize: 15, fontWeight: 900 }}>Photos</div>
 
-              {/* Pinned photos — horizontal scroll */}
-              <div style={{ flex: 1, display: "flex", gap: 8, overflowX: "auto", minWidth: 0, paddingBottom: 4 }}>
+              {/* Pinned photos — horizontal scroll, full width */}
+              <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
                 {pinnedPhotos.length === 0 && (
                   <div style={{ color: "#aaa", fontSize: 13, alignSelf: "center" }}>
                     {photos.length > 0 ? "Pin photos from the gallery to feature them here." : "No photos yet."}
@@ -1299,24 +1300,26 @@ export default function PublicProfilePage() {
                 ))}
               </div>
 
-              {/* Right-side controls */}
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {galleryPhotos.length > 0 && (
-                  <button
-                    onClick={() => setGalleryExpanded(!galleryExpanded)}
-                    style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
-                  >
-                    Gallery ({galleryPhotos.length}) {galleryExpanded ? "▲" : "▼"}
-                  </button>
-                )}
-                {isOwnWall && (
-                  <label style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: "white", whiteSpace: "nowrap", display: "inline-block" }}>
-                    + Add
-                    <input type="file" accept="image/*" onChange={handleGalleryUpload} style={{ display: "none" }} />
-                  </label>
-                )}
-                {uploadingGallery && <span style={{ fontSize: 12, color: "#666" }}>Uploading...</span>}
-              </div>
+              {/* Controls row — below photos */}
+              {(galleryPhotos.length > 0 || isOwnWall) && (
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {galleryPhotos.length > 0 && (
+                    <button
+                      onClick={() => setGalleryExpanded(!galleryExpanded)}
+                      style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                    >
+                      Gallery ({galleryPhotos.length}) {galleryExpanded ? "▲" : "▼"}
+                    </button>
+                  )}
+                  {isOwnWall && (
+                    <label style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: "white", whiteSpace: "nowrap", display: "inline-block" }}>
+                      + Add Photo
+                      <input type="file" accept="image/*" onChange={handleGalleryUpload} style={{ display: "none" }} />
+                    </label>
+                  )}
+                  {uploadingGallery && <span style={{ fontSize: 12, color: "#666" }}>Uploading...</span>}
+                </div>
+              )}
             </div>
 
             {/* Expanded gallery grid */}
@@ -1358,15 +1361,8 @@ export default function PublicProfilePage() {
           </div>
 
           {/* Wall */}
-          <div
-            style={{
-              border: "1px solid #e5e7eb",
-              borderRadius: 16,
-              padding: 24,
-              background: "white",
-            }}
-          >
-            <div style={{ fontSize: 22, fontWeight: 900 }}>Wall</div>
+          <div style={{ paddingTop: 4 }}>
+            <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 4 }}>Wall</div>
 
             {isOwnWall && (
               <div style={{ marginTop: 16, border: "1px solid #e5e7eb", borderRadius: 14, padding: 16 }}>

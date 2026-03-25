@@ -74,6 +74,8 @@ export default function EventsPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const [allUpcomingEvents, setAllUpcomingEvents] = useState<CalendarEvent[]>([]);
+
   const [savedEventIds, setSavedEventIds] = useState<Set<string>>(new Set());
   const [togglingEventSaveFor, setTogglingEventSaveFor] = useState<string | null>(null);
 
@@ -151,8 +153,8 @@ export default function EventsPage() {
       if (uid && r.user_id === uid) mine[r.event_id] = r.status;
     });
 
-    setAttendance(counts);
-    setMyAttendance(mine);
+    setAttendance((prev) => ({ ...prev, ...counts }));
+    setMyAttendance((prev) => ({ ...prev, ...mine }));
   }
 
   async function toggleAttendance(eventId: string, status: "interested" | "going") {
@@ -201,6 +203,29 @@ export default function EventsPage() {
 
     setAttendees((profileData ?? []) as AttendeeProfile[]);
     setLoadingAttendees(false);
+  }
+
+  function getNext5pm(): string {
+    const now = new Date();
+    const target = new Date(now);
+    target.setHours(17, 0, 0, 0);
+    if (now >= target) target.setDate(target.getDate() + 1);
+    return target.toISOString();
+  }
+
+  async function loadAllUpcomingEvents() {
+    const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate());
+    const { data, error } = await supabase
+      .from("events")
+      .select("*")
+      .gte("date", todayStr)
+      .order("date", { ascending: true });
+    if (error) { console.error("Upcoming events load error:", error); return; }
+    const result = (data ?? []) as CalendarEvent[];
+    setAllUpcomingEvents(result);
+    if (result.length > 0) {
+      await loadAttendance(result.map((e) => e.id), userId);
+    }
   }
 
   async function loadMemorials() {
@@ -304,15 +329,25 @@ export default function EventsPage() {
         return;
       }
 
-      setEventForm({
-        title: "",
-        description: "",
-        date: "",
-        organization: "",
-        signup_url: "",
-      });
+      // Create a feed post scheduled for next 5pm
+      const formattedDate = formatEventDate(eventForm.date);
+      const lines = [
+        `📅 New Event: ${eventForm.title.trim()}`,
+        `📆 ${formattedDate}`,
+        eventForm.organization.trim() ? `🏢 ${eventForm.organization.trim()}` : null,
+        eventForm.description.trim() ? `\n${eventForm.description.trim()}` : null,
+        eventForm.signup_url.trim() ? `\nSign up: ${eventForm.signup_url.trim()}` : null,
+      ].filter(Boolean);
+
+      await supabase.from("posts").insert([{
+        user_id: userId,
+        content: lines.join("\n"),
+        created_at: getNext5pm(),
+      }]);
+
+      setEventForm({ title: "", description: "", date: "", organization: "", signup_url: "" });
       setShowEventForm(false);
-      await loadEvents();
+      await Promise.all([loadEvents(), loadAllUpcomingEvents()]);
     } finally {
       setSubmittingEvent(false);
     }
@@ -414,6 +449,7 @@ export default function EventsPage() {
       const [eventsResult] = await Promise.all([
         loadEvents(),
         loadMemorials(),
+        loadAllUpcomingEvents(),
         uid ? loadSavedEvents(uid) : Promise.resolve(),
       ]);
       if (eventsResult && eventsResult.length > 0) {
@@ -1143,6 +1179,109 @@ export default function EventsPage() {
           ))}
         </div>
       )}
+
+      {/* ── Upcoming Events List View ── */}
+      <div style={{ marginTop: 24, border: "1px solid #e5e7eb", borderRadius: 16, background: "white", overflow: "hidden" }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ fontSize: 18, fontWeight: 900 }}>
+            Upcoming Events
+            {allUpcomingEvents.length > 0 && (
+              <span style={{ marginLeft: 10, fontSize: 13, fontWeight: 700, color: "#888" }}>{allUpcomingEvents.length} event{allUpcomingEvents.length !== 1 ? "s" : ""}</span>
+            )}
+          </div>
+        </div>
+
+        {allUpcomingEvents.length === 0 ? (
+          <div style={{ padding: "32px 20px", textAlign: "center", color: "#aaa", fontSize: 14 }}>
+            No upcoming events. Be the first to add one!
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 0 }}>
+            {allUpcomingEvents.map((ev, idx) => {
+              const evDate = new Date(`${ev.date}T12:00:00`);
+              const isToday = ev.date === todayStr;
+              const tomorrow = new Date(today);
+              tomorrow.setDate(today.getDate() + 1);
+              const tomorrowStr = toDateStr(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate());
+              const isTomorrow = ev.date === tomorrowStr;
+              const dayLabel = isToday ? "Today" : isTomorrow ? "Tomorrow" : null;
+
+              return (
+                <div
+                  key={ev.id}
+                  style={{
+                    display: "flex",
+                    gap: 16,
+                    padding: "16px 20px",
+                    borderBottom: idx < allUpcomingEvents.length - 1 ? "1px solid #f3f4f6" : "none",
+                    background: isToday ? "#fffbeb" : "white",
+                  }}
+                >
+                  {/* Date badge */}
+                  <div style={{ flexShrink: 0, width: 52, background: isToday ? "#f59e0b" : "#1a1a1a", color: "white", borderRadius: 10, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "8px 4px", gap: 1 }}>
+                    <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: 1, textTransform: "uppercase", opacity: 0.85 }}>
+                      {evDate.toLocaleDateString("en-US", { month: "short" })}
+                    </div>
+                    <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1 }}>
+                      {evDate.getDate()}
+                    </div>
+                    {dayLabel && (
+                      <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase", opacity: 0.9, marginTop: 2 }}>
+                        {dayLabel}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Event details */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.2 }}>{ev.title}</div>
+                    {ev.organization && (
+                      <div style={{ fontSize: 13, color: "#555", marginTop: 3 }}>{ev.organization}</div>
+                    )}
+                    {ev.description && (
+                      <div style={{ fontSize: 13, color: "#666", marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                        {ev.description}
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleAttendance(ev.id, "interested")}
+                        style={{ background: myAttendance[ev.id] === "interested" ? "black" : "white", color: myAttendance[ev.id] === "interested" ? "white" : "#555", border: "1px solid #d1d5db", borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                      >
+                        Interested {(attendance[ev.id]?.interested ?? 0) > 0 ? `· ${attendance[ev.id].interested}` : ""}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => toggleAttendance(ev.id, "going")}
+                        style={{ background: myAttendance[ev.id] === "going" ? "black" : "white", color: myAttendance[ev.id] === "going" ? "white" : "#555", border: "1px solid #d1d5db", borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                      >
+                        Going {(attendance[ev.id]?.going ?? 0) > 0 ? `· ${attendance[ev.id].going}` : ""}
+                      </button>
+                      {ev.signup_url && (
+                        <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: "#1d4ed8", textDecoration: "none" }}>
+                          Sign Up ↗
+                        </a>
+                      )}
+                      {userId && (
+                        <button
+                          type="button"
+                          onClick={() => toggleSaveEvent(ev.id)}
+                          disabled={togglingEventSaveFor === ev.id}
+                          style={{ marginLeft: "auto", background: savedEventIds.has(ev.id) ? "#ecfdf5" : "white", color: savedEventIds.has(ev.id) ? "#0f766e" : "#555", border: "1px solid #d1d5db", borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: togglingEventSaveFor === ev.id ? "not-allowed" : "pointer", opacity: togglingEventSaveFor === ev.id ? 0.6 : 1 }}
+                        >
+                          {togglingEventSaveFor === ev.id ? "..." : savedEventIds.has(ev.id) ? "Saved ✓" : "Save"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {memorials.length > 0 && (
         <div

@@ -539,7 +539,8 @@ export default function HomePage() {
 
     const { data: rankedPostsData, error: postsError } = await supabase
       .from("ranked_posts")
-      .select("id, user_id, content, created_at, score, ranking_score");
+      .select("id, user_id, content, created_at, score, ranking_score")
+      .lte("created_at", new Date().toISOString());
 
     if (postsError) {
       console.error("Feed load error:", postsError);
