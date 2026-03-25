@@ -7,6 +7,11 @@ const EOD_KEYWORDS = [
   "unexploded ordnance",
   "bomb technician",
   "CIED",
+  "C-IED",
+  "explosive safety",
+  "UAS",
+  "unmanned aerial systems",
+  "CUAS",
 ];
 
 const TITLE_RELEVANT_TERMS = [
@@ -14,6 +19,7 @@ const TITLE_RELEVANT_TERMS = [
   "explosive ordnance",
   "explosives specialist",
   "explosives handler",
+  "explosive safety",
   "uxo",
   "unexploded",
   "ordnance",
@@ -21,9 +27,15 @@ const TITLE_RELEVANT_TERMS = [
   "bomb squad",
   "demining",
   "cied",
+  "c-ied",
   "disposal",
   "ammunition",
   "tss-e",
+  "uas",
+  "unmanned aerial",
+  "cuas",
+  "counter-uas",
+  "counter uas",
 ];
 
 const MILITARY_RECRUITMENT_FILTERS = [
@@ -34,6 +46,7 @@ const MILITARY_RECRUITMENT_FILTERS = [
   "officer training",
   "enlistment",
   "enlisting",
+  "national guard",
 ];
 
 const STALE_DAYS = 30;
