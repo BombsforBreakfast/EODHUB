@@ -66,4 +66,7 @@ body {
   .nav-events {
     display: none !important;
   }
+  .nav-messages-btn {
+    display: none !important;
+  }
 }

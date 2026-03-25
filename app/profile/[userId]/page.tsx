@@ -184,6 +184,7 @@ export default function PublicProfilePage() {
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
   const [galleryExpanded, setGalleryExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState(0);
 
   const [editingProfile, setEditingProfile] = useState(false);
   const [editRole, setEditRole] = useState("");
@@ -813,6 +814,16 @@ export default function PublicProfilePage() {
         const { data: nameData } = await supabase.from("profiles").select("first_name, last_name").eq("user_id", signedInUserId).maybeSingle();
         const nd = nameData as { first_name: string | null; last_name: string | null } | null;
         setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
+
+        // Load unread message count for own wall badge
+        if (signedInUserId === userId) {
+          const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
+          const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);
+          if (convIds.length > 0) {
+            const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("is_read", false).neq("sender_id", signedInUserId).in("conversation_id", convIds);
+            setUnreadMessages(count ?? 0);
+          }
+        }
       }
 
       const [,, photoResults] = await Promise.all([
@@ -905,6 +916,34 @@ export default function PublicProfilePage() {
     <>
     <div style={{ padding: "24px 16px" }}>
       <NavBar />
+
+      {/* Mobile unread messages banner — own wall only */}
+      {isMobile && isOwnWall && unreadMessages > 0 && (
+        <a
+          href="/messages"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginTop: 10,
+            padding: "11px 16px",
+            borderRadius: 10,
+            border: "1px solid #d1d5db",
+            background: "white",
+            textDecoration: "none",
+            color: "black",
+            fontWeight: 700,
+            fontSize: 14,
+            width: "100%",
+            boxSizing: "border-box",
+          }}
+        >
+          <span>My Messages</span>
+          <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 20, height: 20, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
+            {unreadMessages > 9 ? "9+" : unreadMessages}
+          </span>
+        </a>
+      )}
 
       {/* Skeleton while loading */}
       {loading && (

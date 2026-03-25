@@ -293,7 +293,7 @@ export default function NavBar() {
 
         {/* Messages button */}
         {currentUserId && (
-          <Link href="/messages" className="nav-btn" style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}>
+          <Link href="/messages" className="nav-btn nav-messages-btn" style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}>
             Messages
             {unreadMessages > 0 && (
               <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>

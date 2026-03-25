@@ -12,6 +12,7 @@ const EOD_KEYWORDS = [
   "UAS",
   "unmanned aerial systems",
   "CUAS",
+  "C-UAS",
 ];
 
 const TITLE_RELEVANT_TERMS = [
