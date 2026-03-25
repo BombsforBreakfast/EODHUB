@@ -1362,7 +1362,6 @@ export default function PublicProfilePage() {
 
           {/* Wall */}
           <div style={{ paddingTop: 4 }}>
-            <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 4 }}>Wall</div>
 
             {isOwnWall && (
               <div style={{ marginTop: 16, border: "1px solid #e5e7eb", borderRadius: 14, padding: 16 }}>

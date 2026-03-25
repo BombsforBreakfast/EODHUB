@@ -1560,18 +1560,11 @@ export default function HomePage() {
         <aside
           style={{
             display: isMobile ? (mobileTab === "jobs" ? "block" : "none") : undefined,
-            border: "1px solid #e5e7eb",
-            borderRadius: 14,
-            padding: 16,
             position: isMobile ? "static" : "sticky",
             top: 20,
-            background: "white",
           }}
         >
-          <div
-            style={{ display: "flex", justifyContent: "space-between", gap: 10 }}
-          >
-            <h2 style={{ fontSize: 20, fontWeight: 900, margin: 0 }}>Jobs</h2>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
             <Link href="/post-job" style={{ background: "black", color: "white", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
               Post Job
             </Link>
@@ -1684,12 +1677,10 @@ export default function HomePage() {
           </div>
         </aside>
 
-        <main style={{ display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined, minWidth: 0, border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
-          <h2 style={{ fontSize: 20, fontWeight: 900, margin: 0 }}>EOD Hub</h2>
-
+        <main style={{ display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined, minWidth: 0 }}>
           <div
             style={{
-              marginTop: 16,
+              marginTop: 0,
               border: "1px solid #e5e7eb",
               borderRadius: 14,
               padding: 16,
@@ -2550,16 +2541,11 @@ export default function HomePage() {
         <aside
           style={{
             display: isMobile ? (mobileTab === "businesses" ? "block" : "none") : undefined,
-            border: "1px solid #e5e7eb",
-            borderRadius: 14,
-            padding: 16,
             position: isMobile ? "static" : "sticky",
             top: 20,
-            background: "white",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h2 style={{ fontSize: 20, fontWeight: 900, margin: 0 }}>EOD Businesses</h2>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
             <button
               type="button"
               onClick={() => { setShowBizForm((p) => !p); setBizSubmitSuccess(false); }}
