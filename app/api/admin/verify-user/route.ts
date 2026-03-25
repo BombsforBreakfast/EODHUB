@@ -75,20 +75,20 @@ export async function POST(req: NextRequest) {
   const { error: emailError } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? "EOD HUB <noreply@resend.dev>",
     to: email,
-    subject: "You're verified — Welcome to EOD HUB",
+    subject: "EOD Verification Complete",
     html: `
       <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 24px;">
         <div style="font-size: 32px; font-weight: 900; letter-spacing: -1px; margin-bottom: 24px;">EOD HUB</div>
-        <h2 style="font-size: 22px; font-weight: 800; margin: 0 0 16px;">You're verified, ${firstName}.</h2>
-        <p style="font-size: 16px; color: #444; line-height: 1.6; margin: 0 0 24px;">
-          Your EOD HUB account has been reviewed and approved. You now have full access to the community — connect with fellow EOD professionals, browse job listings, and join the conversation.
+        <p style="font-size: 16px; color: #222; line-height: 1.7; margin: 0 0 24px;">
+          Good news, ${firstName} — you're verified!<br><br>
+          Navigate to the link below to sign in to EOD HUB.
         </p>
-        <a href="${process.env.NEXT_PUBLIC_APP_URL ?? "https://eodhub.com"}/login"
+        <a href="https://eod-hub.com/login"
            style="display: inline-block; background: black; color: white; padding: 14px 28px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 16px;">
-          Log In Now
+          https://eod-hub.com/login
         </a>
         <p style="font-size: 13px; color: #999; margin-top: 32px;">
-          EOD HUB — Built by the community, for the community.
+          Built for EOD Techs, by an EOD Tech.
         </p>
       </div>
     `,
