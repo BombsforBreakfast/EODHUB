@@ -918,7 +918,7 @@ export default function PublicProfilePage() {
       <NavBar />
 
       {/* Mobile unread messages banner — own wall only */}
-      {isMobile && isOwnWall && unreadMessages > 0 && (
+      {isMobile && isOwnWall && (
         <a
           href="/messages"
           style={{

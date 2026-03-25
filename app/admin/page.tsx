@@ -237,8 +237,30 @@ export default function AdminPage() {
 
   async function setVerification(userId: string, status: string) {
     setActionLoading(userId + "-verify");
-    const { error } = await supabase.from("profiles").update({ verification_status: status }).eq("user_id", userId);
-    if (error) { alert(error.message); } else { showToast(`Verification set to "${status}"`); await loadUsers(); }
+
+    if (status === "verified") {
+      // Use API route — updates DB + sends verification email
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/verify-user", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ userId }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error ?? "Verification failed");
+      } else {
+        showToast("User verified — email sent!");
+        await loadUsers();
+      }
+    } else {
+      const { error } = await supabase.from("profiles").update({ verification_status: status }).eq("user_id", userId);
+      if (error) { alert(error.message); } else { showToast(`Verification set to "${status}"`); await loadUsers(); }
+    }
+
     setActionLoading(null);
   }
 
