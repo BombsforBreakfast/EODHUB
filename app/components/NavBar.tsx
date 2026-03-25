@@ -39,6 +39,7 @@ export default function NavBar() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -47,6 +48,22 @@ export default function NavBar() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  async function loadUnreadMessages(uid: string) {
+    const { count } = await supabase
+      .from("messages")
+      .select("*", { count: "exact", head: true })
+      .eq("is_read", false)
+      .neq("sender_id", uid)
+      .in("conversation_id",
+        (await supabase
+          .from("conversations")
+          .select("id")
+          .or(`participant_1.eq.${uid},participant_2.eq.${uid}`)
+        ).data?.map((c: { id: string }) => c.id) ?? []
+      );
+    setUnreadMessages(count ?? 0);
+  }
 
   async function loadNotifications(uid: string) {
     const { data } = await supabase
@@ -107,6 +124,7 @@ export default function NavBar() {
         const name = data as { first_name: string | null; display_name: string | null } | null;
         setUserInitial((name?.first_name?.[0] || name?.display_name?.[0] || "?").toUpperCase());
         await loadNotifications(uid);
+        await loadUnreadMessages(uid);
       }
     }
 
@@ -135,6 +153,25 @@ export default function NavBar() {
         table: "notifications",
         filter: `user_id=eq.${currentUserId}`,
       }, () => loadNotifications(currentUserId))
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [currentUserId]);
+
+  // Realtime: new message comes in → bump unread count
+  useEffect(() => {
+    if (!currentUserId) return;
+    const channel = supabase
+      .channel(`nav-messages-${currentUserId}`)
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "messages",
+      }, (payload) => {
+        const msg = payload.new as { sender_id: string; is_read: boolean };
+        if (msg.sender_id !== currentUserId && !msg.is_read) {
+          setUnreadMessages((prev) => prev + 1);
+        }
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId]);
@@ -253,6 +290,18 @@ export default function NavBar() {
         {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn" style={navButton}>My Wall</Link>}
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         <Link href="/" className="nav-btn" style={navButton}>EOD Hub</Link>
+
+        {/* Messages button */}
+        {currentUserId && (
+          <Link href="/messages" className="nav-btn" style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}>
+            Messages
+            {unreadMessages > 0 && (
+              <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
+                {unreadMessages > 9 ? "9+" : unreadMessages}
+              </span>
+            )}
+          </Link>
+        )}
 
         {/* Notifications button — sits right after EOD Hub */}
         {currentUserId && (

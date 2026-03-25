@@ -1171,6 +1171,9 @@ export default function PublicProfilePage() {
                     <button type="button" onClick={() => toggleConnection("know")} disabled={togglingConnection === "know"} style={{ flex: 1, background: currentUserKnows ? "black" : "white", color: currentUserKnows ? "white" : "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: togglingConnection === "know" ? "not-allowed" : "pointer", opacity: togglingConnection === "know" ? 0.7 : 1 }}>
                       {togglingConnection === "know" ? "Saving..." : currentUserKnows ? "Know ✓" : "Know"}
                     </button>
+                    <a href={`/messages?with=${userId}`} style={{ flex: 1, background: "white", color: "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      Message
+                    </a>
                   </div>
                 )}
 
@@ -1230,6 +1233,9 @@ export default function PublicProfilePage() {
                       <button type="button" onClick={() => toggleConnection("know")} disabled={togglingConnection === "know"} style={{ background: currentUserKnows ? "black" : "white", color: currentUserKnows ? "white" : "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: togglingConnection === "know" ? "not-allowed" : "pointer", opacity: togglingConnection === "know" ? 0.7 : 1, width: "100%" }}>
                         {togglingConnection === "know" ? "Saving..." : currentUserKnows ? "Know ✓" : "Know"}
                       </button>
+                      <a href={`/messages?with=${userId}`} style={{ background: "white", color: "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "block", width: "100%", boxSizing: "border-box" }}>
+                        Message
+                      </a>
                     </div>
                   )}
                 </div>
