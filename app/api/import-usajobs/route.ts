@@ -36,6 +36,8 @@ const MILITARY_RECRUITMENT_FILTERS = [
   "enlisting",
 ];
 
+const STALE_DAYS = 30;
+
 function isRelevantTitle(title: string): boolean {
   const lower = title.toLowerCase();
   return TITLE_RELEVANT_TERMS.some((kw) => lower.includes(kw));
@@ -124,9 +126,18 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Collect all position URIs seen this run to deduplicate across keyword searches
-  const seenPositionIds = new Set<string>();
+  // 1. Purge stale USAJobs entries not seen in the last STALE_DAYS days
+  const cutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const { count: purged } = await supabase
+    .from("jobs")
+    .delete({ count: "exact" })
+    .eq("source_type", "usajobs")
+    .lt("last_seen_at", cutoff);
+
+  // 2. Scrape and upsert
+  const seenPositionURIs = new Set<string>();
   let imported = 0;
+  let refreshed = 0;
   let skipped = 0;
   const importedTitles: string[] = [];
 
@@ -135,20 +146,19 @@ export async function GET(req: NextRequest) {
 
     for (const item of items) {
       const pos = item.MatchedObjectDescriptor;
-      const positionId = pos.PositionID;
+      const positionURI = pos.PositionURI; // stable canonical URL — used as dedup key
       const title = pos.PositionTitle;
-      const applyUrl = pos.ApplyURI?.[0] ?? pos.PositionURI;
       const location = pos.PositionLocationDisplay;
       const orgName = pos.OrganizationName;
       const summary =
         pos.UserArea?.Details?.JobSummary ?? pos.QualificationSummary ?? "";
 
       // Skip dupes within this run
-      if (seenPositionIds.has(positionId)) {
+      if (seenPositionURIs.has(positionURI)) {
         skipped++;
         continue;
       }
-      seenPositionIds.add(positionId);
+      seenPositionURIs.add(positionURI);
 
       // Skip if title isn't EOD-relevant (avoids description-match noise)
       if (!isRelevantTitle(title)) {
@@ -162,29 +172,36 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // Skip if already in database
+      // Check if already in database (by stable PositionURI)
       const { data: existing } = await supabase
         .from("jobs")
         .select("id")
-        .eq("apply_url", applyUrl)
+        .eq("apply_url", positionURI)
         .maybeSingle();
 
       if (existing) {
-        skipped++;
+        // Job still active — refresh last_seen_at to reset the 30-day clock
+        await supabase
+          .from("jobs")
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq("id", existing.id);
+        refreshed++;
         continue;
       }
 
+      // New job — insert as pending
       const { error } = await supabase.from("jobs").insert({
         title,
         company_name: orgName,
         location,
-        apply_url: applyUrl,
+        apply_url: positionURI,
         description: summary,
         og_description: summary,
         og_site_name: "USAJobs.gov",
         category: detectCategory(title),
         is_approved: false,
         source_type: "usajobs",
+        last_seen_at: new Date().toISOString(),
       });
 
       if (!error) {
@@ -196,6 +213,8 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     imported,
+    refreshed,
+    purged: purged ?? 0,
     skipped,
     sample: importedTitles.slice(0, 10),
   });
