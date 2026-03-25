@@ -2661,23 +2661,7 @@ export default function HomePage() {
                         display: "block",
                       }}
                     />
-                  ) : (
-                    <div
-                      style={{
-                        width: "100%",
-                        height: 180,
-                        background: "#f3f4f6",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 13,
-                        color: "#666",
-                        fontWeight: 700,
-                      }}
-                    >
-                      No Preview Image
-                    </div>
-                  )}
+                  ) : null}
 
                   <div style={{ padding: 14 }}>
                     <div style={{ fontWeight: 800, lineHeight: 1.3, fontSize: 18 }}>
