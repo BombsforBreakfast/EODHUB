@@ -254,39 +254,19 @@ export default function NavBar() {
         <Link href="/events" className="nav-btn" style={navButton}>Events</Link>
         <Link href="/" className="nav-btn" style={navButton}>EOD Hub</Link>
 
-        {/* Flame notification — sits right after EOD Hub */}
+        {/* Notifications button — sits right after EOD Hub */}
         {currentUserId && (
           <div ref={dropdownRef} style={{ position: "relative" }}>
             <button
               onClick={() => setShowNotifications((prev) => !prev)}
-              style={{ background: "none", border: "none", cursor: "pointer", padding: "4px 6px", position: "relative", display: "flex", alignItems: "center", lineHeight: 1 }}
+              className="nav-btn"
+              style={{ ...navButton, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
             >
-              {unreadCount > 0 ? (
-                /* Filled black bomb with starburst spark — has notifications */
-                <svg viewBox="0 0 28 30" width="28" height="30" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="12" cy="20" r="9.5" fill="black"/>
-                  <path d="M18 12.5 Q20.5 8.5 20.5 6" stroke="#555" strokeWidth="2" strokeLinecap="round"/>
-                  {/* 8-pointed starburst at (20.5, 3.5) outer r=3, inner r=1.4 */}
-                  <path d="M23.5,3.5 L22.1,2.9 L22.6,1.4 L21.4,2.4 L20.5,1 L19.6,2.4 L18.4,1.4 L18.9,2.9 L17.5,3.5 L18.9,4.1 L18.4,5.6 L19.6,4.6 L20.5,6 L21.4,4.6 L22.6,5.6 L22.1,4.1 Z" fill="#fbbf24"/>
-                  <circle cx="20.5" cy="3.5" r="1.4" fill="#dc2626"/>
-                  {/* small sparkle dots around burst */}
-                  <circle cx="16.2" cy="2" r="0.7" fill="#fbbf24"/>
-                  <circle cx="24.5" cy="6.5" r="0.6" fill="#fbbf24"/>
-                  <circle cx="25" cy="2" r="0.55" fill="#fbbf24"/>
-                </svg>
-              ) : (
-                /* Hollow outline bomb — no notifications */
-                <svg viewBox="0 0 28 30" width="28" height="30" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <circle cx="12" cy="20" r="9.5" stroke="black" strokeWidth="1.8"/>
-                  <path d="M18 12.5 Q20.5 8.5 20.5 6" stroke="black" strokeWidth="1.8" strokeLinecap="round"/>
-                  {/* unlit fuse tip */}
-                  <circle cx="20.5" cy="5" r="1.3" stroke="black" strokeWidth="1.4"/>
-                </svg>
-              )}
+              Alerts
               {unreadCount > 0 && (
-                <div style={{ position: "absolute", top: -2, right: -2, background: "#ef4444", color: "white", borderRadius: "50%", minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", lineHeight: 1 }}>
+                <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
                   {unreadCount > 9 ? "9+" : unreadCount}
-                </div>
+                </span>
               )}
             </button>
 
