@@ -220,8 +220,18 @@ export default function AdminPage() {
   async function rejectJob(id: string) {
     if (!confirm("Delete this job permanently?")) return;
     setActionLoading(id);
-    const { error } = await supabase.from("jobs").delete().eq("id", id);
-    if (error) { alert(error.message); } else { showToast("Job removed."); await loadJobs(); }
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`/api/admin/delete-job?id=${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(err.error ?? "Delete failed");
+    } else {
+      showToast("Job removed.");
+      setJobs((prev) => prev.filter((j) => j.id !== id));
+    }
     setActionLoading(null);
   }
 
