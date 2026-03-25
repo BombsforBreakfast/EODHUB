@@ -1579,6 +1579,26 @@ export default function HomePage() {
               {tab === "feed" ? "EOD Hub" : tab === "jobs" ? "Jobs" : "Businesses"}
             </button>
           ))}
+          <a
+            href="/events"
+            style={{
+              flex: 1,
+              padding: "10px 4px",
+              border: "none",
+              background: "transparent",
+              color: "#555",
+              fontWeight: 800,
+              fontSize: 13,
+              cursor: "pointer",
+              textAlign: "center",
+              textDecoration: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            Events
+          </a>
         </div>
       )}
 

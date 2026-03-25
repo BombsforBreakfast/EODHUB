@@ -251,7 +251,7 @@ export default function NavBar() {
           {userInitial}
         </Link>
         {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn" style={navButton}>My Wall</Link>}
-        <Link href="/events" className="nav-btn" style={navButton}>Events</Link>
+        <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         <Link href="/" className="nav-btn" style={navButton}>EOD Hub</Link>
 
         {/* Notifications button — sits right after EOD Hub */}

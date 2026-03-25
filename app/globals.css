@@ -63,4 +63,7 @@ body {
     font-size: 12px !important;
     border-radius: 8px !important;
   }
+  .nav-events {
+    display: none !important;
+  }
 }
