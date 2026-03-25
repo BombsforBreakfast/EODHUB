@@ -116,6 +116,11 @@ export default function LoginPage() {
 
   return (
     <div style={{ padding: 40, maxWidth: 500, margin: "0 auto" }}>
+      <div style={{ textAlign: "center", marginBottom: 32 }}>
+        <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>EOD HUB</div>
+        <div style={{ fontSize: 14, color: "#888", marginTop: 6, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>EOD Professional Community</div>
+      </div>
+
       <h1 style={{ fontSize: 28, fontWeight: 700 }}>
         {mode === "login" ? "Login" : "Sign Up"}
       </h1>
