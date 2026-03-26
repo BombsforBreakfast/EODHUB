@@ -22,6 +22,7 @@ type Profile = {
   years_experience: string | null;
   skill_badge: string | null;
   is_admin: boolean | null;
+  seeking_employment: boolean | null;
 };
 
 type SavedJob = {
@@ -59,6 +60,9 @@ export default function MyAccountPage() {
   const [editYearsExp, setEditYearsExp] = useState("");
   const [editSkillBadge, setEditSkillBadge] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+
+  const [seekingEmployment, setSeekingEmployment] = useState(false);
+  const [togglingSeek, setTogglingSeek] = useState(false);
 
   const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
   const [unsavingJobId, setUnsavingJobId] = useState<string | null>(null);
@@ -166,7 +170,9 @@ export default function MyAccountPage() {
       return;
     }
 
-    setProfile((data as Profile | null) ?? null);
+    const p = (data as Profile | null) ?? null;
+    setProfile(p);
+    setSeekingEmployment(p?.seeking_employment ?? false);
   }
 
   function openEdit() {
@@ -200,6 +206,19 @@ export default function MyAccountPage() {
     } finally {
       setSavingProfile(false);
     }
+  }
+
+  async function toggleSeekingEmployment() {
+    if (!currentUserId || togglingSeek) return;
+    const next = !seekingEmployment;
+    setSeekingEmployment(next);
+    setTogglingSeek(true);
+    const { error } = await supabase
+      .from("profiles")
+      .update({ seeking_employment: next })
+      .eq("user_id", currentUserId);
+    if (error) setSeekingEmployment(!next); // revert on failure
+    setTogglingSeek(false);
   }
 
   async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
@@ -359,6 +378,35 @@ export default function MyAccountPage() {
         </div>
         )}
       </div>
+
+      {/* Seeking Employment Toggle */}
+      {!loading && (
+        <div style={{ marginTop: 16, border: "1px solid #e5e7eb", borderRadius: 16, padding: "18px 24px", background: "white", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
+            <div style={{ fontWeight: 800, fontSize: 15 }}>Open to Opportunities</div>
+            <div style={{ fontSize: 13, color: "#666", marginTop: 3, lineHeight: 1.5 }}>
+              Only visible to verified employer accounts — never shown to other members or publicly.
+            </div>
+          </div>
+          <button
+            onClick={toggleSeekingEmployment}
+            disabled={togglingSeek}
+            style={{
+              width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer", flexShrink: 0,
+              background: seekingEmployment ? "#16a34a" : "#d1d5db",
+              position: "relative", transition: "background 0.2s", padding: 0,
+            }}
+            aria-label="Toggle seeking employment"
+          >
+            <span style={{
+              position: "absolute", top: 3, left: seekingEmployment ? 27 : 3,
+              width: 22, height: 22, borderRadius: "50%", background: "white",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s",
+              display: "block",
+            }} />
+          </button>
+        </div>
+      )}
 
       {/* Edit Profile Form */}
       {editing && (
