@@ -5,6 +5,7 @@ import { supabase } from "../lib/lib/supabaseClient";
 
 export default function PendingPage() {
   const [email, setEmail] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
     async function check() {
@@ -16,9 +17,21 @@ export default function PendingPage() {
       // If already verified, send them to the app
       const { data: profile } = await supabase
         .from("profiles")
-        .select("verification_status")
+        .select("verification_status, first_name")
         .eq("user_id", user.id)
         .maybeSingle();
+
+      setStatus(profile?.verification_status ?? null);
+
+      // Sync Google OAuth name to profile if missing
+      const googleName = user.user_metadata?.full_name || user.user_metadata?.name;
+      if (profile && !profile.first_name && googleName) {
+        const parts = (googleName as string).trim().split(/\s+/);
+        await supabase.from("profiles").update({
+          first_name: parts[0] || "",
+          last_name: parts.slice(1).join(" ") || "",
+        }).eq("user_id", user.id);
+      }
 
       if (profile?.verification_status === "verified") {
         window.location.href = "/";
@@ -41,22 +54,35 @@ export default function PendingPage() {
           Built for EOD Techs, by an EOD Tech.
         </div>
 
-        <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: 28 }}>
-          ⏳
-        </div>
-
-        <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 12px" }}>
-          Awaiting Verification
-        </h2>
-
-        <p style={{ fontSize: 15, color: "#555", lineHeight: 1.7, margin: "0 0 8px" }}>
-          Your account is pending review. Once an admin verifies you, you'll receive a confirmation email and can log in to EOD HUB.
-        </p>
-
-        {email && (
-          <p style={{ fontSize: 14, color: "#888", margin: "0 0 32px" }}>
-            We'll notify you at <strong>{email}</strong>
-          </p>
+        {status === "denied" ? (
+          <>
+            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: 28 }}>
+              🚫
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 12px" }}>
+              Access Denied
+            </h2>
+            <p style={{ fontSize: 15, color: "#555", lineHeight: 1.7, margin: "0 0 32px" }}>
+              Your account was not approved. If you believe this is an error, please contact an administrator.
+            </p>
+          </>
+        ) : (
+          <>
+            <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: 28 }}>
+              ⏳
+            </div>
+            <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 12px" }}>
+              Awaiting Verification
+            </h2>
+            <p style={{ fontSize: 15, color: "#555", lineHeight: 1.7, margin: "0 0 8px" }}>
+              Your account is pending review. Once an admin verifies you, you'll receive a confirmation email and can log in to EOD HUB.
+            </p>
+            {email && (
+              <p style={{ fontSize: 14, color: "#888", margin: "0 0 32px" }}>
+                We'll notify you at <strong>{email}</strong>
+              </p>
+            )}
+          </>
         )}
 
         <button

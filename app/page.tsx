@@ -1430,7 +1430,16 @@ export default function HomePage() {
           .eq("user_id", currentUserId)
           .maybeSingle();
 
-        if (!profileCheck || profileCheck.verification_status !== "verified") {
+        // Sync Google OAuth name to profile if first_name is missing
+        const googleName = data.user?.user_metadata?.full_name || data.user?.user_metadata?.name;
+        if (profileCheck && !profileCheck.first_name && googleName) {
+          const parts = (googleName as string).trim().split(/\s+/);
+          const fn = parts[0] || "";
+          const ln = parts.slice(1).join(" ") || "";
+          await supabase.from("profiles").update({ first_name: fn, last_name: ln }).eq("user_id", currentUserId);
+        }
+
+        if (!profileCheck || (profileCheck.verification_status !== "verified")) {
           window.location.href = "/pending";
           return;
         }

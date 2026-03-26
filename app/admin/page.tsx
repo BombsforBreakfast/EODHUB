@@ -36,6 +36,7 @@ type UserProfile = {
   first_name: string | null;
   last_name: string | null;
   display_name: string | null;
+  email: string | null;
   role: string | null;
   service: string | null;
   verification_status: string | null;
@@ -112,12 +113,13 @@ export default function AdminPage() {
   }
 
   async function loadUsers() {
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, created_at")
-      .order("created_at", { ascending: false });
-    if (error) { console.error(error); return; }
-    setUsers((data ?? []) as UserProfile[]);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/admin/users", {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+    });
+    if (!res.ok) { console.error("Failed to load users"); return; }
+    const json = await res.json();
+    setUsers((json.users ?? []) as UserProfile[]);
   }
 
   async function loadFlags() {
@@ -237,31 +239,44 @@ export default function AdminPage() {
 
   async function setVerification(userId: string, status: string) {
     setActionLoading(userId + "-verify");
-
-    if (status === "verified") {
-      // Use API route — updates DB + sends verification email
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/admin/verify-user", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token ?? ""}`,
-        },
-        body: JSON.stringify({ userId }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        alert(err.error ?? "Verification failed");
+    try {
+      if (status === "verified") {
+        // Use API route — updates DB + sends verification email
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch("/api/admin/verify-user", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+          body: JSON.stringify({ userId }),
+        });
+        let json: { error?: string } = {};
+        try { json = await res.json(); } catch { /* ignore */ }
+        if (!res.ok) {
+          alert(json.error ?? "Verification failed");
+        } else {
+          showToast("User verified — email sent!");
+          await loadUsers();
+        }
       } else {
-        showToast("User verified — email sent!");
-        await loadUsers();
+        const { error } = await supabase.from("profiles").update({ verification_status: status }).eq("user_id", userId);
+        if (error) { alert(error.message); } else { showToast(`Verification set to "${status}"`); await loadUsers(); }
       }
-    } else {
-      const { error } = await supabase.from("profiles").update({ verification_status: status }).eq("user_id", userId);
-      if (error) { alert(error.message); } else { showToast(`Verification set to "${status}"`); await loadUsers(); }
+    } finally {
+      setActionLoading(null);
     }
+  }
 
-    setActionLoading(null);
+  async function denyUser(userId: string) {
+    if (!confirm("Deny this user's access? They will be blocked from the app.")) return;
+    setActionLoading(userId + "-deny");
+    try {
+      const { error } = await supabase.from("profiles").update({ verification_status: "denied" }).eq("user_id", userId);
+      if (error) { alert(error.message); } else { showToast("User denied."); await loadUsers(); }
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   async function toggleAdmin(userId: string, current: boolean | null) {
@@ -671,17 +686,20 @@ export default function AdminPage() {
                 const name = u.display_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Unnamed User";
                 const isVerified = u.verification_status === "verified";
                 const isPending = u.verification_status === "pending";
+                const isDenied = u.verification_status === "denied";
                 return (
-                  <div key={u.user_id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: "12px 16px", background: "white", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                  <div key={u.user_id} style={{ border: `1px solid ${isDenied ? "#fca5a5" : "#e5e7eb"}`, borderRadius: 12, padding: "12px 16px", background: isDenied ? "#fff5f5" : "white", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 200 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span style={{ fontWeight: 800, fontSize: 15 }}>{name}</span>
                         {u.is_admin && <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>ADMIN</span>}
                         {isVerified && <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Verified</span>}
                         {isPending && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
+                        {isDenied && <span style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Denied</span>}
                       </div>
                       <div style={{ fontSize: 13, color: "#666", marginTop: 3 }}>
                         {[u.role, u.service].filter(Boolean).join(" · ")}
+                        {u.email && <span style={{ color: "#9ca3af", marginLeft: u.role || u.service ? 6 : 0 }}>{u.role || u.service ? "· " : ""}{u.email}</span>}
                       </div>
                     </div>
 
@@ -694,6 +712,15 @@ export default function AdminPage() {
                           onClick={() => setVerification(u.user_id, "verified")}
                         >
                           {actionLoading === u.user_id + "-verify" ? "..." : "Verify"}
+                        </button>
+                      )}
+                      {!isVerified && !isDenied && (
+                        <button
+                          style={actionBtn("#ef4444")}
+                          disabled={actionLoading === u.user_id + "-deny"}
+                          onClick={() => denyUser(u.user_id)}
+                        >
+                          {actionLoading === u.user_id + "-deny" ? "..." : "Deny"}
                         </button>
                       )}
                       {isVerified && (
