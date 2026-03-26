@@ -117,7 +117,15 @@ export default function AdminPage() {
     const res = await fetch("/api/admin/users", {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
-    if (!res.ok) { console.error("Failed to load users"); return; }
+    if (!res.ok) {
+      // Fallback: direct query (works if RLS allows admin to read all profiles)
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, created_at")
+        .order("created_at", { ascending: false });
+      if (!error) setUsers((data ?? []).map((u) => ({ ...u, email: null })) as UserProfile[]);
+      return;
+    }
     const json = await res.json();
     setUsers((json.users ?? []) as UserProfile[]);
   }
@@ -681,6 +689,9 @@ export default function AdminPage() {
         {/* ── USERS TAB ── */}
         {activeTab === "users" && (
           <div style={{ marginTop: 20 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+              <button onClick={loadUsers} style={actionBtn("#374151")}>↻ Refresh</button>
+            </div>
             <div style={{ display: "grid", gap: 10 }}>
               {users.map((u) => {
                 const name = u.display_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Unnamed User";
