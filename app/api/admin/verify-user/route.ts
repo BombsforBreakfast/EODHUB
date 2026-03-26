@@ -3,10 +3,15 @@ import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 
 export async function POST(req: NextRequest) {
+  try {
   // Verify caller is admin
   const authHeader = req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json({ error: "Server misconfiguration: missing service role key" }, { status: 500 });
   }
 
   const token = authHeader.slice(7);
@@ -16,7 +21,8 @@ export async function POST(req: NextRequest) {
     { global: { headers: { Authorization: `Bearer ${token}` } } }
   );
 
-  const { data: { user } } = await userClient.auth.getUser();
+  const { data: authData } = await userClient.auth.getUser();
+  const user = authData?.user;
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data: adminProfile } = await userClient
@@ -34,7 +40,7 @@ export async function POST(req: NextRequest) {
 
   const adminClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 
   // Update verification status
@@ -44,12 +50,12 @@ export async function POST(req: NextRequest) {
     .eq("user_id", userId);
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    return NextResponse.json({ error: "DB update failed: " + updateError.message }, { status: 500 });
   }
 
   // Get user email via admin API
   const { data: userData, error: userError } = await adminClient.auth.admin.getUserById(userId);
-  if (userError || !userData.user?.email) {
+  if (userError || !userData?.user?.email) {
     // Verification succeeded even if email fails — return success
     return NextResponse.json({ success: true, emailSent: false });
   }
@@ -95,4 +101,8 @@ export async function POST(req: NextRequest) {
   });
 
   return NextResponse.json({ success: true, emailSent: !emailError });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: "Unexpected error: " + msg }, { status: 500 });
+  }
 }
