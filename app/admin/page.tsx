@@ -82,10 +82,15 @@ export default function AdminPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
 
   function showToast(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
+  }
+
+  function askConfirm(message: string, onConfirm: () => void) {
+    setConfirmDialog({ message, onConfirm });
   }
 
   async function loadBusinesses() {
@@ -213,11 +218,12 @@ export default function AdminPage() {
   }
 
   async function rejectBusiness(id: string) {
-    if (!confirm("Delete this listing permanently?")) return;
-    setActionLoading(id);
-    const { error } = await supabase.from("business_listings").delete().eq("id", id);
-    if (error) { alert(error.message); } else { showToast("Listing removed."); await loadBusinesses(); }
-    setActionLoading(null);
+    askConfirm("Delete this business listing?", async () => {
+      setActionLoading(id);
+      const { error } = await supabase.from("business_listings").delete().eq("id", id);
+      if (error) { alert(error.message); } else { showToast("Listing removed."); await loadBusinesses(); }
+      setActionLoading(null);
+    });
   }
 
   async function approveJob(id: string) {
@@ -228,21 +234,46 @@ export default function AdminPage() {
   }
 
   async function rejectJob(id: string) {
-    if (!confirm("Delete this job permanently?")) return;
-    setActionLoading(id);
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`/api/admin/delete-job?id=${id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+    askConfirm("Delete this job posting?", async () => {
+      setActionLoading(id);
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/delete-job?id=${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (!res.ok) {
+        let err: { error?: string } = {};
+        try { err = await res.json(); } catch { /* ignore */ }
+        alert(err.error ?? "Delete failed");
+      } else {
+        showToast("Job removed.");
+        setJobs((prev) => prev.filter((j) => j.id !== id));
+      }
+      setActionLoading(null);
     });
-    if (!res.ok) {
-      const err = await res.json();
-      alert(err.error ?? "Delete failed");
-    } else {
-      showToast("Job removed.");
-      setJobs((prev) => prev.filter((j) => j.id !== id));
-    }
-    setActionLoading(null);
+  }
+
+  async function deleteUser(userId: string) {
+    askConfirm("Delete this user account?", async () => {
+      setActionLoading(userId + "-delete");
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`/api/admin/delete-user?id=${userId}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+        });
+        let json: { error?: string } = {};
+        try { json = await res.json(); } catch { /* ignore */ }
+        if (!res.ok) {
+          alert(json.error ?? "Delete failed");
+        } else {
+          showToast("User deleted.");
+          await loadUsers();
+        }
+      } finally {
+        setActionLoading(null);
+      }
+    });
   }
 
   async function setVerification(userId: string, status: string) {
@@ -412,6 +443,30 @@ export default function AdminPage() {
         </div>
       )}
 
+      {/* Confirm Dialog */}
+      {confirmDialog && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: "white", borderRadius: 16, padding: "28px 32px", maxWidth: 400, width: "100%", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>{confirmDialog.message}</div>
+            <div style={{ fontSize: 14, color: "#ef4444", fontWeight: 700, marginBottom: 24 }}>This action cannot be undone.</div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setConfirmDialog(null)}
+                style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid #d1d5db", background: "white", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }}
+                style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "#ef4444", color: "white", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ maxWidth: 1000, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 20, flexWrap: "wrap" }}>
           <h1 style={{ fontSize: 32, fontWeight: 900, margin: 0 }}>Admin Panel</h1>
@@ -482,11 +537,11 @@ export default function AdminPage() {
                               <button style={actionBtn("#f59e0b")} disabled={actionLoading === biz.id} onClick={() => approveBusiness(biz.id, true)}>
                                 Approve + Feature
                               </button>
-                              <button style={actionBtn("#ef4444")} disabled={actionLoading === biz.id} onClick={() => rejectBusiness(biz.id)}>
-                                Reject
-                              </button>
                             </>
                           )}
+                          <button style={actionBtn("#ef4444")} disabled={actionLoading === biz.id} onClick={() => rejectBusiness(biz.id)}>
+                            {actionLoading === biz.id ? "..." : "Delete"}
+                          </button>
                           <button
                             style={actionBtn(editingBiz?.id === biz.id ? "#6b7280" : "#374151")}
                             onClick={() => editingBiz?.id === biz.id ? setEditingBiz(null) : startEditBiz(biz)}
@@ -610,23 +665,17 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
-                      {job.is_approved ? (
-                        <>
-                          <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Live</span>
-                          <button style={actionBtn("#ef4444")} disabled={actionLoading === job.id} onClick={() => rejectJob(job.id)}>
-                            {actionLoading === job.id ? "..." : "Delete"}
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button style={actionBtn("#16a34a")} disabled={actionLoading === job.id} onClick={() => approveJob(job.id)}>
-                            {actionLoading === job.id ? "..." : "Approve"}
-                          </button>
-                          <button style={actionBtn("#ef4444")} disabled={actionLoading === job.id} onClick={() => rejectJob(job.id)}>
-                            Reject
-                          </button>
-                        </>
+                      {job.is_approved && (
+                        <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Live</span>
                       )}
+                      {!job.is_approved && (
+                        <button style={actionBtn("#16a34a")} disabled={actionLoading === job.id} onClick={() => approveJob(job.id)}>
+                          {actionLoading === job.id ? "..." : "Approve"}
+                        </button>
+                      )}
+                      <button style={actionBtn("#ef4444")} disabled={actionLoading === job.id} onClick={() => rejectJob(job.id)}>
+                        {actionLoading === job.id ? "..." : "Delete"}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -757,6 +806,15 @@ export default function AdminPage() {
                       <a href={`/profile/${u.user_id}`} target="_blank" rel="noreferrer" style={{ ...actionBtn("#374151"), textDecoration: "none", display: "inline-block" }}>
                         View
                       </a>
+
+                      {/* Delete user */}
+                      <button
+                        style={actionBtn("#ef4444")}
+                        disabled={actionLoading === u.user_id + "-delete"}
+                        onClick={() => deleteUser(u.user_id)}
+                      >
+                        {actionLoading === u.user_id + "-delete" ? "..." : "Delete"}
+                      </button>
                     </div>
                   </div>
                 );
