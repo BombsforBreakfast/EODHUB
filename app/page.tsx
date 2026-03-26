@@ -1423,17 +1423,22 @@ export default function HomePage() {
           return;
         }
 
+        // Check verification status — unverified users go to /pending
+        const { data: profileCheck } = await supabase
+          .from("profiles")
+          .select("verification_status, first_name, last_name")
+          .eq("user_id", currentUserId)
+          .maybeSingle();
+
+        if (!profileCheck || profileCheck.verification_status !== "verified") {
+          window.location.href = "/pending";
+          return;
+        }
+
         setUserId(currentUserId);
 
-        if (currentUserId) {
-          const { data: nameData } = await supabase
-            .from("profiles")
-            .select("first_name, last_name")
-            .eq("user_id", currentUserId)
-            .maybeSingle();
-          const nd = nameData as { first_name: string | null; last_name: string | null } | null;
-          if (isMounted) setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
-        }
+        const nd = profileCheck as { first_name: string | null; last_name: string | null } | null;
+        if (isMounted) setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
 
         await Promise.all([
           loadJobs().catch((err) => console.error("loadJobs failed:", err)),

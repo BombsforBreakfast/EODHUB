@@ -41,7 +41,17 @@ export default function LoginPage() {
         return;
       }
 
-      window.location.href = "/";
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("verification_status")
+        .eq("user_id", session.user.id)
+        .maybeSingle();
+
+      if (profile?.verification_status === "verified") {
+        window.location.href = "/";
+      } else {
+        window.location.href = "/pending";
+      }
     } finally {
       setSubmitting(false);
     }
@@ -94,8 +104,7 @@ export default function LoginPage() {
         return;
       }
 
-      alert("Signup complete. Awaiting verification.");
-      window.location.href = "/profile";
+      window.location.href = "/pending";
     } finally {
       setSubmitting(false);
     }
