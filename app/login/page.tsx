@@ -3,10 +3,6 @@
 import { useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 
-const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civilian Bomb Tech"];
-const STATUS_OPTIONS = ["Active", "Former", "Retired", "Civil Service"];
-const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "Civil Service"];
-const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
 
 export default function LoginPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
@@ -14,13 +10,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [service, setService] = useState("");
-  const [status, setStatus] = useState("");
-  const [yearsExperience, setYearsExperience] = useState("");
-  const [skillBadge, setSkillBadge] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   async function handleLogin() {
@@ -58,10 +47,6 @@ export default function LoginPage() {
   }
 
   async function handleSignup() {
-    if (!firstName || !lastName || !service || !status) {
-      alert("Please complete all required fields (First Name, Last Name, Service, and Status).");
-      return;
-    }
     if (password !== confirmPassword) {
       alert("Passwords do not match.");
       return;
@@ -84,40 +69,11 @@ export default function LoginPage() {
         return;
       }
 
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
-          first_name: firstName,
-          last_name: lastName,
-          service: service || null,
-          status: status || null,
-          years_experience: yearsExperience || null,
-          skill_badge: skillBadge || null,
-          verification_status: "pending",
-        })
-        .eq("user_id", signInData.user.id);
-
-      if (profileError) {
-        alert("Profile setup error: " + profileError.message);
-        return;
-      }
-
-      window.location.href = "/pending";
+      window.location.href = "/onboarding";
     } finally {
       setSubmitting(false);
     }
   }
-
-  const selectStyle: React.CSSProperties = {
-    width: "100%",
-    padding: 10,
-    borderRadius: 10,
-    border: "1px solid #ccc",
-    fontSize: 16,
-    background: "white",
-  };
 
   const inputStyle: React.CSSProperties = {
     padding: 10,
@@ -172,55 +128,6 @@ export default function LoginPage() {
           />
         )}
 
-        {mode === "signup" && (
-          <>
-            <input
-              placeholder="First Name *"
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-              style={inputStyle}
-            />
-
-            <input
-              placeholder="Last Name *"
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-              style={inputStyle}
-            />
-
-            <div>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Service Branch *</div>
-              <select value={service} onChange={(e) => setService(e.target.value)} style={selectStyle}>
-                <option value="">Select service...</option>
-                {SERVICE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Status *</div>
-              <select value={status} onChange={(e) => setStatus(e.target.value)} style={selectStyle}>
-                <option value="">Select status...</option>
-                {STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Skill Badge</div>
-              <select value={skillBadge} onChange={(e) => setSkillBadge(e.target.value)} style={selectStyle}>
-                <option value="">Select badge...</option>
-                {SKILL_BADGE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
-
-            <div>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Years of Experience</div>
-              <select value={yearsExperience} onChange={(e) => setYearsExperience(e.target.value)} style={selectStyle}>
-                <option value="">Select years...</option>
-                {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
-              </select>
-            </div>
-          </>
-        )}
 
         {mode === "login" ? (
           <>
@@ -234,7 +141,7 @@ export default function LoginPage() {
             </div>
             <button
               type="button"
-              onClick={() => supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/` } })}
+              onClick={() => supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/onboarding` } })}
               disabled={submitting}
               style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
             >
@@ -257,7 +164,7 @@ export default function LoginPage() {
             </div>
             <button
               type="button"
-              onClick={() => supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/` } })}
+              onClick={() => supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/onboarding` } })}
               disabled={submitting}
               style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
             >

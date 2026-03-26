@@ -1426,7 +1426,7 @@ export default function HomePage() {
         // Check verification status — unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
-          .select("verification_status, first_name, last_name")
+          .select("verification_status, first_name, last_name, service, company_name")
           .eq("user_id", currentUserId)
           .maybeSingle();
 
@@ -1437,6 +1437,12 @@ export default function HomePage() {
           const fn = parts[0] || "";
           const ln = parts.slice(1).join(" ") || "";
           await supabase.from("profiles").update({ first_name: fn, last_name: ln }).eq("user_id", currentUserId);
+        }
+
+        // If profile not yet set up, send to onboarding
+        if (profileCheck && !profileCheck.service && !profileCheck.company_name) {
+          window.location.href = "/onboarding";
+          return;
         }
 
         if (!profileCheck || (profileCheck.verification_status !== "verified")) {
