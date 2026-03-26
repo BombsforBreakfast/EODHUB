@@ -78,6 +78,7 @@ export default function AdminPage() {
   const [flags, setFlags] = useState<Flag[]>([]);
 
   const [pendingOnly, setPendingOnly] = useState(true);
+  const [userFilter, setUserFilter] = useState<"all" | "pending" | "verified" | "denied">("pending");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
@@ -738,11 +739,31 @@ export default function AdminPage() {
         {/* ── USERS TAB ── */}
         {activeTab === "users" && (
           <div style={{ marginTop: 20 }}>
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["all", "pending", "verified", "denied"] as const).map((f) => (
+                  <button
+                    key={f}
+                    onClick={() => setUserFilter(f)}
+                    style={{
+                      padding: "6px 14px", borderRadius: 20, fontSize: 13, fontWeight: 700, cursor: "pointer",
+                      border: userFilter === f ? "none" : "1px solid #d1d5db",
+                      background: userFilter === f ? "#111" : "white",
+                      color: userFilter === f ? "white" : "#374151",
+                    }}
+                  >
+                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                    {" "}
+                    <span style={{ opacity: 0.7 }}>
+                      ({users.filter((u) => f === "all" || u.verification_status === f).length})
+                    </span>
+                  </button>
+                ))}
+              </div>
               <button onClick={loadUsers} style={actionBtn("#374151")}>↻ Refresh</button>
             </div>
             <div style={{ display: "grid", gap: 10 }}>
-              {users.map((u) => {
+              {users.filter((u) => userFilter === "all" || u.verification_status === userFilter).map((u) => {
                 const name = u.display_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Unnamed User";
                 const isVerified = u.verification_status === "verified";
                 const isPending = u.verification_status === "pending";
