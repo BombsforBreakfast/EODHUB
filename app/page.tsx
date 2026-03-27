@@ -81,6 +81,15 @@ type ProfileName = {
   service: string | null;
 };
 
+type DiscoverProfile = {
+  user_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  photo_url: string | null;
+  service: string | null;
+  status: string | null;
+};
+
 function getServiceRingColor(service: string | null | undefined): string | null {
   switch (service) {
     case "Army": return "#556b2f";
@@ -324,6 +333,7 @@ export default function HomePage() {
   const [togglingJobSaveFor, setTogglingJobSaveFor] = useState<string | null>(null);
 
   const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
+  const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
 
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingPostContent, setEditingPostContent] = useState("");
@@ -478,6 +488,25 @@ export default function HomePage() {
     });
 
     setTodayMemorials(todayAnniversaries as { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]);
+  }
+
+  async function loadDiscoverProfiles(currentUserId: string) {
+    const { data } = await supabase
+      .from("profiles")
+      .select("user_id, first_name, last_name, photo_url, service, status")
+      .neq("user_id", currentUserId)
+      .not("first_name", "is", null)
+      .limit(40);
+
+    if (!data || data.length === 0) return;
+
+    // Fisher-Yates shuffle, pick 5
+    const arr = [...data] as DiscoverProfile[];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    setDiscoverProfiles(arr.slice(0, 5));
   }
 
   async function loadSavedJobs(currentUserId: string) {
@@ -1468,6 +1497,7 @@ export default function HomePage() {
           loadBizLikes(currentUserId).catch((err) => console.error("loadBizLikes failed:", err)),
           loadSavedJobs(currentUserId).catch((err) => console.error("loadSavedJobs failed:", err)),
           loadTodayMemorials().catch((err) => console.error("loadTodayMemorials failed:", err)),
+          loadDiscoverProfiles(currentUserId).catch((err) => console.error("loadDiscoverProfiles failed:", err)),
         ]);
       } catch (error) {
         console.error("Homepage init error:", error);
@@ -1769,6 +1799,42 @@ export default function HomePage() {
         </aside>
 
         <main style={{ display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined, minWidth: 0 }}>
+
+          {/* People You May Know strip */}
+          {discoverProfiles.length > 0 && (
+            <div style={{ marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 12 }}>
+                People You May Know
+              </div>
+              <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
+                {discoverProfiles.map((p) => {
+                  const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
+                  const ringColor = getServiceRingColor(p.service);
+                  return (
+                    <a
+                      key={p.user_id}
+                      href={`/profile/${p.user_id}`}
+                      style={{ textDecoration: "none", color: "inherit", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, width: 88, padding: "10px 8px", borderRadius: 12, background: t.surfaceHover, border: `1px solid ${t.borderLight}`, transition: "border-color 0.15s" }}
+                    >
+                      <div style={{ width: 52, height: 52, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 18, boxSizing: "border-box", border: ringColor ? `3px solid ${ringColor}` : `2px solid ${t.border}` }}>
+                        {p.photo_url
+                          ? <img src={p.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          : (fullName[0] || "U").toUpperCase()
+                        }
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: t.text, lineHeight: 1.3, wordBreak: "break-word" }}>{fullName}</div>
+                        {p.service && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{p.service}</div>}
+                        {p.status && <div style={{ fontSize: 10, color: t.textFaint, marginTop: 1 }}>{p.status}</div>}
+                      </div>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "#6366f1", marginTop: "auto" }}>View Profile</div>
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div
             style={{
               marginTop: 0,

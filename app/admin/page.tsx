@@ -231,21 +231,15 @@ export default function AdminPage() {
   }
 
   async function approveJob(id: string) {
-    setActionLoading(id);
+    // Optimistically remove from pending list immediately
+    if (pendingOnly) setJobs((prev) => prev.filter((j) => j.id !== id));
+    showToast("Job approved!");
+
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`/api/admin/approve-job?id=${id}`, {
+    await fetch(`/api/admin/approve-job?id=${id}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
-    if (!res.ok) {
-      let err: { error?: string } = {};
-      try { err = await res.json(); } catch { /* ignore */ }
-      alert(err.error ?? "Approve failed");
-    } else {
-      showToast("Job approved!");
-      if (pendingOnly) setJobs((prev) => prev.filter((j) => j.id !== id));
-    }
-    setActionLoading(null);
   }
 
   async function rejectJob(id: string) {
