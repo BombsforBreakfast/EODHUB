@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
+import { useTheme } from "../lib/ThemeContext";
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civilian Bomb Tech"];
 const STATUS_OPTIONS = ["Active", "Former", "Retired", "Civil Service"];
@@ -286,11 +287,20 @@ export default function MyAccountPage() {
     init();
   }, []);
 
+  const { t, isDark, toggleDark } = useTheme();
+
   const skeletonBase: React.CSSProperties = {
-    background: "linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%)",
+    background: isDark
+      ? "linear-gradient(90deg, #222 25%, #2a2a2a 50%, #222 75%)"
+      : "linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%)",
     backgroundSize: "200% 100%",
     borderRadius: 8,
   };
+
+  const card: React.CSSProperties = { border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface };
+  const inputStyle: React.CSSProperties = { width: "100%", padding: 10, borderRadius: 10, border: `1px solid ${t.inputBorder}`, boxSizing: "border-box", background: t.input, color: t.text };
+  const selectStyle: React.CSSProperties = { ...inputStyle, cursor: "pointer" };
+  const pill: React.CSSProperties = { background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "4px 12px", fontSize: 13, fontWeight: 700 };
 
   const fullName =
     profile?.display_name ||
@@ -298,13 +308,14 @@ export default function MyAccountPage() {
     "User";
 
   return (
-    <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" as const }}>
+    <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" as const, background: t.bg, minHeight: "100vh", color: t.text }}>
       <NavBar />
 
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
-      <h1 style={{ fontSize: 32, fontWeight: 900, marginTop: 20 }}>My Account</h1>
+      <h1 style={{ fontSize: 32, fontWeight: 900, marginTop: 20, color: t.text }}>My Account</h1>
 
-      <div style={{ marginTop: 24, border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, background: "white" }}>
+      {/* Profile card */}
+      <div style={{ marginTop: 24, ...card }}>
         {loading ? (
           <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
             <div style={{ ...skeletonBase, width: 120, height: 120, borderRadius: "50%", flexShrink: 0 }} />
@@ -318,143 +329,134 @@ export default function MyAccountPage() {
           </div>
         ) : (
         <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-          {/* Avatar */}
-          <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", color: "#666", fontWeight: 700, flexShrink: 0 }}>
+          <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontWeight: 700, flexShrink: 0 }}>
             {profile?.photo_url ? (
               <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             ) : "Photo"}
           </div>
 
-          {/* Info + actions */}
           <div style={{ flex: 1, minWidth: 260 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
               <div>
-                <div style={{ fontSize: 28, fontWeight: 900 }}>{fullName}</div>
-                <div style={{ marginTop: 4, color: "#666" }}>{profile?.role || "No role added yet"}</div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: t.text }}>{fullName}</div>
+                <div style={{ marginTop: 4, color: t.textMuted }}>{profile?.role || "No role added yet"}</div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <label style={{ display: "inline-block", background: "white", color: "black", border: "1px solid #ccc", padding: "8px 16px", borderRadius: 10, fontWeight: 700, cursor: uploadingAvatar ? "not-allowed" : "pointer", opacity: uploadingAvatar ? 0.6 : 1 }}>
+                <label style={{ display: "inline-block", background: t.surface, color: t.text, border: `1px solid ${t.inputBorder}`, padding: "8px 16px", borderRadius: 10, fontWeight: 700, cursor: uploadingAvatar ? "not-allowed" : "pointer", opacity: uploadingAvatar ? 0.6 : 1 }}>
                   {uploadingAvatar ? "Uploading..." : "Update Photo"}
                   <input type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} />
                 </label>
-                <button
-                  onClick={openEdit}
-                  style={{ background: "white", border: "1px solid #ccc", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}
-                >
+                <button onClick={openEdit} style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}>
                   Edit Profile
                 </button>
                 {profile?.is_admin && (
-                  <a
-                    href="/admin"
-                    style={{ display: "inline-block", background: "black", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer", textDecoration: "none", fontSize: 14 }}
-                  >
+                  <a href="/admin" style={{ display: "inline-block", background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer", textDecoration: "none", fontSize: 14 }}>
                     Admin Panel
                   </a>
                 )}
               </div>
             </div>
 
-            {/* Profile detail pills */}
             <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {profile?.service && (
-                <span style={{ background: "#f3f4f6", borderRadius: 20, padding: "4px 12px", fontSize: 13, fontWeight: 700 }}>{profile.service}</span>
-              )}
-              {profile?.status && (
-                <span style={{ background: "#f3f4f6", borderRadius: 20, padding: "4px 12px", fontSize: 13, fontWeight: 700 }}>{profile.status}</span>
-              )}
-              {profile?.skill_badge && (
-                <span style={{ background: "#f3f4f6", borderRadius: 20, padding: "4px 12px", fontSize: 13, fontWeight: 700 }}>{profile.skill_badge} Badge</span>
-              )}
-              {profile?.years_experience && (
-                <span style={{ background: "#f3f4f6", borderRadius: 20, padding: "4px 12px", fontSize: 13, fontWeight: 700 }}>{profile.years_experience} yrs exp</span>
-              )}
+              {profile?.service && <span style={pill}>{profile.service}</span>}
+              {profile?.status && <span style={pill}>{profile.status}</span>}
+              {profile?.skill_badge && <span style={pill}>{profile.skill_badge} Badge</span>}
+              {profile?.years_experience && <span style={pill}>{profile.years_experience} yrs exp</span>}
             </div>
 
             {profile?.bio && (
-              <div style={{ marginTop: 12, color: "#444", lineHeight: 1.6 }}>{profile.bio}</div>
+              <div style={{ marginTop: 12, color: t.textMuted, lineHeight: 1.6 }}>{profile.bio}</div>
             )}
-
           </div>
         </div>
         )}
       </div>
 
-      {/* Seeking Employment Toggle */}
+      {/* Toggles row */}
       {!loading && (
-        <div style={{ marginTop: 16, border: "1px solid #e5e7eb", borderRadius: 16, padding: "18px 24px", background: "white", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ fontWeight: 800, fontSize: 15 }}>Open to Opportunities</div>
-            <div style={{ fontSize: 13, color: "#666", marginTop: 3, lineHeight: 1.5 }}>
-              Only visible to verified employer accounts — never shown to other members or publicly.
+        <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+          {/* Dark Mode Toggle */}
+          <div style={{ ...card, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Dark Mode</div>
+              <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>Black &amp; greyscale theme across all pages.</div>
             </div>
+            <button
+              onClick={toggleDark}
+              style={{ width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer", flexShrink: 0, background: isDark ? "#6366f1" : "#d1d5db", position: "relative", transition: "background 0.2s", padding: 0 }}
+              aria-label="Toggle dark mode"
+            >
+              <span style={{ position: "absolute", top: 3, left: isDark ? 27 : 3, width: 22, height: 22, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s", display: "block" }} />
+            </button>
           </div>
-          <button
-            onClick={toggleSeekingEmployment}
-            disabled={togglingSeek}
-            style={{
-              width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer", flexShrink: 0,
-              background: seekingEmployment ? "#16a34a" : "#d1d5db",
-              position: "relative", transition: "background 0.2s", padding: 0,
-            }}
-            aria-label="Toggle seeking employment"
-          >
-            <span style={{
-              position: "absolute", top: 3, left: seekingEmployment ? 27 : 3,
-              width: 22, height: 22, borderRadius: "50%", background: "white",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s",
-              display: "block",
-            }} />
-          </button>
+
+          {/* Seeking Employment Toggle */}
+          <div style={{ ...card, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Open to Opportunities</div>
+              <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3, lineHeight: 1.5 }}>
+                Only visible to verified employer accounts — never shown to other members or publicly.
+              </div>
+            </div>
+            <button
+              onClick={toggleSeekingEmployment}
+              disabled={togglingSeek}
+              style={{ width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer", flexShrink: 0, background: seekingEmployment ? "#16a34a" : "#d1d5db", position: "relative", transition: "background 0.2s", padding: 0 }}
+              aria-label="Toggle seeking employment"
+            >
+              <span style={{ position: "absolute", top: 3, left: seekingEmployment ? 27 : 3, width: 22, height: 22, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s", display: "block" }} />
+            </button>
+          </div>
         </div>
       )}
 
       {/* Edit Profile Form */}
       {editing && (
-        <div style={{ marginTop: 16, border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, background: "white" }}>
-          <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>Edit Profile</div>
+        <div style={{ marginTop: 16, ...card }}>
+          <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 16, color: t.text }}>Edit Profile</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <div>
-              <label style={{ fontWeight: 700, display: "block", marginBottom: 5 }}>Role / Job Title</label>
-              <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="e.g. EOD Tech" style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ccc", boxSizing: "border-box" }} />
+              <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Role / Job Title</label>
+              <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="e.g. EOD Tech" style={inputStyle} />
             </div>
             <div>
-              <label style={{ fontWeight: 700, display: "block", marginBottom: 5 }}>Service Branch</label>
-              <select value={editService} onChange={(e) => setEditService(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ccc", background: "white" }}>
+              <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Service Branch</label>
+              <select value={editService} onChange={(e) => setEditService(e.target.value)} style={selectStyle}>
                 <option value="">Select service...</option>
                 {SERVICE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ fontWeight: 700, display: "block", marginBottom: 5 }}>Status</label>
-              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ccc", background: "white" }}>
+              <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Status</label>
+              <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} style={selectStyle}>
                 <option value="">Select status...</option>
                 {STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ fontWeight: 700, display: "block", marginBottom: 5 }}>Skill Badge</label>
-              <select value={editSkillBadge} onChange={(e) => setEditSkillBadge(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ccc", background: "white" }}>
+              <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Skill Badge</label>
+              <select value={editSkillBadge} onChange={(e) => setEditSkillBadge(e.target.value)} style={selectStyle}>
                 <option value="">Select badge...</option>
                 {SKILL_BADGE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div>
-              <label style={{ fontWeight: 700, display: "block", marginBottom: 5 }}>Years of Experience</label>
-              <select value={editYearsExp} onChange={(e) => setEditYearsExp(e.target.value)} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ccc", background: "white" }}>
+              <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Years of Experience</label>
+              <select value={editYearsExp} onChange={(e) => setEditYearsExp(e.target.value)} style={selectStyle}>
                 <option value="">Select years...</option>
                 {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
             <div style={{ gridColumn: "1 / -1" }}>
-              <label style={{ fontWeight: 700, display: "block", marginBottom: 5 }}>Bio</label>
-              <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell people about yourself..." rows={4} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #ccc", resize: "vertical", boxSizing: "border-box", fontSize: 14, fontFamily: "inherit" }} />
+              <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Bio</label>
+              <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell people about yourself..." rows={4} style={{ ...inputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }} />
             </div>
           </div>
           <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
-            <button onClick={handleSaveProfile} disabled={savingProfile} style={{ background: "black", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: savingProfile ? "not-allowed" : "pointer", opacity: savingProfile ? 0.7 : 1 }}>
+            <button onClick={handleSaveProfile} disabled={savingProfile} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: savingProfile ? "not-allowed" : "pointer", opacity: savingProfile ? 0.7 : 1 }}>
               {savingProfile ? "Saving..." : "Save Changes"}
             </button>
-            <button onClick={() => setEditing(false)} style={{ background: "white", border: "1px solid #ccc", borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: "pointer" }}>
+            <button onClick={() => setEditing(false)} style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: "pointer" }}>
               Cancel
             </button>
           </div>
@@ -462,73 +464,25 @@ export default function MyAccountPage() {
       )}
 
       {/* Saved Jobs */}
-      <div
-        style={{
-          marginTop: 24,
-          border: "1px solid #e5e7eb",
-          borderRadius: 16,
-          padding: 24,
-          background: "white",
-        }}
-      >
-        <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 16 }}>Saved Jobs</div>
-
+      <div style={{ marginTop: 24, ...card }}>
+        <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 16, color: t.text }}>Saved Jobs</div>
         {savedJobs.length === 0 ? (
-          <div style={{ color: "#666" }}>No saved jobs yet. Save jobs from the feed to see them here.</div>
+          <div style={{ color: t.textMuted }}>No saved jobs yet. Save jobs from the feed to see them here.</div>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
             {savedJobs.map((job) => (
-              <div
-                key={job.id}
-                style={{
-                  border: "1px solid #e5e7eb",
-                  borderRadius: 12,
-                  padding: 16,
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  gap: 12,
-                }}
-              >
+              <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 16, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: 16 }}>
-                    {job.title || "Untitled Job"}
-                  </div>
-                  <div style={{ marginTop: 4, fontSize: 14, color: "#444" }}>
-                    {job.company_name || "Unknown Company"}
-                  </div>
-                  <div style={{ marginTop: 4, fontSize: 13, color: "#666" }}>
-                    {[job.location, job.category].filter(Boolean).join(" • ")}
-                  </div>
+                  <div style={{ fontWeight: 800, fontSize: 16, color: t.text }}>{job.title || "Untitled Job"}</div>
+                  <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>{job.company_name || "Unknown Company"}</div>
+                  <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>{[job.location, job.category].filter(Boolean).join(" • ")}</div>
                   {job.apply_url && (
-                    <a
-                      href={job.apply_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ display: "inline-block", marginTop: 10, fontWeight: 700, fontSize: 14 }}
-                    >
+                    <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 10, fontWeight: 700, fontSize: 14, color: t.text }}>
                       View Job
                     </a>
                   )}
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => unsaveJob(job.id)}
-                  disabled={unsavingJobId === job.id}
-                  style={{
-                    background: "transparent",
-                    border: "1px solid #d1d5db",
-                    borderRadius: 8,
-                    padding: "6px 12px",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    cursor: unsavingJobId === job.id ? "not-allowed" : "pointer",
-                    opacity: unsavingJobId === job.id ? 0.6 : 1,
-                    flexShrink: 0,
-                    color: "#555",
-                  }}
-                >
+                <button type="button" onClick={() => unsaveJob(job.id)} disabled={unsavingJobId === job.id} style={{ background: "transparent", border: `1px solid ${t.border}`, color: t.textMuted, borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: unsavingJobId === job.id ? "not-allowed" : "pointer", opacity: unsavingJobId === job.id ? 0.6 : 1, flexShrink: 0 }}>
                   {unsavingJobId === job.id ? "Removing..." : "Remove"}
                 </button>
               </div>
@@ -538,37 +492,26 @@ export default function MyAccountPage() {
       </div>
 
       {/* Saved Events */}
-      <div style={{ marginTop: 24, border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, background: "white" }}>
-        <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 16 }}>Saved Events</div>
-
+      <div style={{ marginTop: 24, marginBottom: 40, ...card }}>
+        <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 16, color: t.text }}>Saved Events</div>
         {savedEvents.length === 0 ? (
-          <div style={{ color: "#666" }}>No saved events yet. Save events from the Events calendar to see them here.</div>
+          <div style={{ color: t.textMuted }}>No saved events yet. Save events from the Events calendar to see them here.</div>
         ) : (
           <div style={{ display: "grid", gap: 12 }}>
             {savedEvents.map((ev) => (
-              <div key={ev.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <div key={ev.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 16, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: 16 }}>{ev.title || "Untitled Event"}</div>
-                  {ev.organization && <div style={{ marginTop: 4, fontSize: 14, color: "#444" }}>{ev.organization}</div>}
-                  {ev.date && (
-                    <div style={{ marginTop: 4, fontSize: 13, color: "#666" }}>
-                      {new Date(ev.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric", year: "numeric" })}
-                    </div>
-                  )}
-                  {ev.description && <div style={{ marginTop: 6, fontSize: 13, color: "#555", lineHeight: 1.5 }}>{ev.description}</div>}
+                  <div style={{ fontWeight: 800, fontSize: 16, color: t.text }}>{ev.title || "Untitled Event"}</div>
+                  {ev.organization && <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>{ev.organization}</div>}
+                  {ev.date && <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>{new Date(ev.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric", year: "numeric" })}</div>}
+                  {ev.description && <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>{ev.description}</div>}
                   {ev.signup_url && (
-                    <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 10, fontWeight: 700, fontSize: 14 }}>
+                    <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 10, fontWeight: 700, fontSize: 14, color: t.text }}>
                       View / Sign Up →
                     </a>
                   )}
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => unsaveEvent(ev.id)}
-                  disabled={unsavingEventId === ev.id}
-                  style={{ background: "transparent", border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: unsavingEventId === ev.id ? "not-allowed" : "pointer", opacity: unsavingEventId === ev.id ? 0.6 : 1, flexShrink: 0, color: "#555" }}
-                >
+                <button type="button" onClick={() => unsaveEvent(ev.id)} disabled={unsavingEventId === ev.id} style={{ background: "transparent", border: `1px solid ${t.border}`, color: t.textMuted, borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: unsavingEventId === ev.id ? "not-allowed" : "pointer", opacity: unsavingEventId === ev.id ? 0.6 : 1, flexShrink: 0 }}>
                   {unsavingEventId === ev.id ? "Removing..." : "Remove"}
                 </button>
               </div>

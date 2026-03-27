@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../lib/lib/supabaseClient";
 import NavBar from "../../components/NavBar";
+import { useTheme } from "../../lib/ThemeContext";
 
 type Profile = {
   user_id: string;
@@ -117,16 +118,17 @@ function renderContent(text: string): React.ReactNode[] {
 }
 
 function OgCard({ og }: { og: OgPreview }) {
+  const { t: ogT } = useTheme();
   return (
-    <a href={og.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 12, border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden", background: "#f9fafb", textDecoration: "none", color: "inherit" }}>
+    <a href={og.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 12, border: `1px solid ${ogT.border}`, borderRadius: 12, overflow: "hidden", background: ogT.bg, textDecoration: "none", color: "inherit" }}>
       {og.image && (
         <img src={og.image} alt={og.title || ""} style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
       )}
       <div style={{ padding: "10px 14px" }}>
-        {og.siteName && <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{og.siteName}</div>}
+        {og.siteName && <div style={{ fontSize: 11, color: ogT.textFaint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{og.siteName}</div>}
         {og.title && <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.3 }}>{og.title}</div>}
-        {og.description && <div style={{ fontSize: 13, color: "#555", marginTop: 4, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>{og.description}</div>}
-        <div style={{ marginTop: 6, fontSize: 12, color: "#888", wordBreak: "break-all" }}>{og.url}</div>
+        {og.description && <div style={{ fontSize: 13, color: ogT.textMuted, marginTop: 4, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>{og.description}</div>}
+        <div style={{ marginTop: 6, fontSize: 12, color: ogT.textFaint, wordBreak: "break-all" }}>{og.url}</div>
       </div>
     </a>
   );
@@ -157,6 +159,8 @@ export default function PublicProfilePage() {
       : Array.isArray(rawUserId)
       ? rawUserId[0]
       : null;
+
+  const { t } = useTheme();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -914,7 +918,7 @@ export default function PublicProfilePage() {
 
   return (
     <>
-    <div style={{ padding: "24px 16px" }}>
+    <div style={{ padding: "24px 16px", background: t.bg, minHeight: "100vh", color: t.text }}>
       <NavBar />
 
       {/* Mobile unread messages banner — own wall only */}
@@ -928,10 +932,10 @@ export default function PublicProfilePage() {
             marginTop: 10,
             padding: "11px 16px",
             borderRadius: 10,
-            border: "1px solid #d1d5db",
-            background: "white",
+            border: `1px solid ${t.border}`,
+            background: t.surface,
             textDecoration: "none",
-            color: "black",
+            color: t.text,
             fontWeight: 700,
             fontSize: 14,
             width: "100%",
@@ -948,7 +952,7 @@ export default function PublicProfilePage() {
       {/* Skeleton while loading */}
       {loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20 }}>
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 24, background: "white" }}>
+          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
             <div style={{ display: "flex", gap: 20 }}>
               <div style={{ ...skeletonBase, width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
               <div style={{ flex: 1 }}>
@@ -958,12 +962,12 @@ export default function PublicProfilePage() {
               </div>
             </div>
           </div>
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, padding: 16, background: "white", display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 16, background: t.surface, display: "flex", gap: 8, alignItems: "center" }}>
             <div style={{ ...skeletonBase, height: 14, width: 56, flexShrink: 0 }} />
             {[1,2,3,4].map((i) => <div key={i} style={{ ...skeletonBase, width: 100, height: 100, borderRadius: 10, flexShrink: 0 }} />)}
           </div>
           {[1,2,3].map((i) => (
-            <div key={i} style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
+            <div key={i} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
               <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
                 <div style={{ ...skeletonBase, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
                 <div style={{ flex: 1 }}>
@@ -992,10 +996,11 @@ export default function PublicProfilePage() {
                     fontSize: 12,
                     fontWeight: 700,
                     cursor: "pointer",
-                    border: "1px solid #d1d5db",
+                    border: `1px solid ${t.border}`,
                     borderRadius: 8,
                     padding: "5px 10px",
-                    background: "white",
+                    background: t.surface,
+                    color: t.text,
                   }}
                 >
                   + Add
@@ -1007,7 +1012,7 @@ export default function PublicProfilePage() {
                   />
                 </label>
                 {uploadingGallery && (
-                  <div style={{ marginTop: 6, color: "#666", fontSize: 12 }}>Uploading...</div>
+                  <div style={{ marginTop: 6, color: t.textMuted, fontSize: 12 }}>Uploading...</div>
                 )}
               </div>
             )}
@@ -1016,7 +1021,7 @@ export default function PublicProfilePage() {
           {/* Pinned Photos */}
           {pinnedPhotos.length > 0 && (
             <>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "#888", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
                 Pinned
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
@@ -1028,7 +1033,7 @@ export default function PublicProfilePage() {
                         aspectRatio: "1 / 1",
                         borderRadius: 10,
                         overflow: "hidden",
-                        background: "#f3f4f6",
+                        background: t.bg,
                         cursor: "pointer",
                       }}
                     >
@@ -1045,8 +1050,9 @@ export default function PublicProfilePage() {
                           disabled={togglingPinnedId === photo.id}
                           style={{
                             flex: 1,
-                            border: "1px solid #d1d5db",
-                            background: "white",
+                            border: `1px solid ${t.border}`,
+                            background: t.surface,
+                            color: t.text,
                             borderRadius: 6,
                             padding: "5px 0",
                             fontWeight: 700,
@@ -1062,8 +1068,9 @@ export default function PublicProfilePage() {
                           disabled={deletingPhotoId === photo.id}
                           style={{
                             flex: 1,
-                            border: "1px solid #d1d5db",
-                            background: "white",
+                            border: `1px solid ${t.border}`,
+                            background: t.surface,
+                            color: t.text,
                             borderRadius: 6,
                             padding: "5px 0",
                             fontWeight: 700,
@@ -1083,13 +1090,13 @@ export default function PublicProfilePage() {
           )}
 
           {pinnedPhotos.length === 0 && (
-            <div style={{ color: "#aaa", fontSize: 13, marginBottom: 16 }}>No pinned photos.</div>
+            <div style={{ color: t.textFaint, fontSize: 13, marginBottom: 16 }}>No pinned photos.</div>
           )}
 
           {/* Gallery Photos */}
           {galleryPhotos.length > 0 && (
             <>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "#888", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>
                 Gallery
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -1101,7 +1108,7 @@ export default function PublicProfilePage() {
                         aspectRatio: "1 / 1",
                         borderRadius: 10,
                         overflow: "hidden",
-                        background: "#f3f4f6",
+                        background: t.bg,
                         cursor: "pointer",
                       }}
                     >
@@ -1118,8 +1125,9 @@ export default function PublicProfilePage() {
                           disabled={togglingPinnedId === photo.id}
                           style={{
                             flex: 1,
-                            border: "1px solid #d1d5db",
-                            background: "white",
+                            border: `1px solid ${t.border}`,
+                            background: t.surface,
+                            color: t.text,
                             borderRadius: 6,
                             padding: "5px 0",
                             fontWeight: 700,
@@ -1135,8 +1143,9 @@ export default function PublicProfilePage() {
                           disabled={deletingPhotoId === photo.id}
                           style={{
                             flex: 1,
-                            border: "1px solid #d1d5db",
-                            background: "white",
+                            border: `1px solid ${t.border}`,
+                            background: t.surface,
+                            color: t.text,
                             borderRadius: 6,
                             padding: "5px 0",
                             fontWeight: 700,
@@ -1156,7 +1165,7 @@ export default function PublicProfilePage() {
           )}
 
           {galleryPhotos.length === 0 && pinnedPhotos.length === 0 && (
-            <div style={{ color: "#aaa", fontSize: 13 }}>No photos yet.</div>
+            <div style={{ color: t.textFaint, fontSize: 13 }}>No photos yet.</div>
           )}
         </div>}
 
@@ -1165,10 +1174,10 @@ export default function PublicProfilePage() {
           {/* Profile / Contact Card */}
           <div
             style={{
-              border: "1px solid #e5e7eb",
+              border: `1px solid ${t.border}`,
               borderRadius: 16,
               padding: 24,
-              background: "white",
+              background: t.surface,
             }}
           >
             {isMobile ? (
@@ -1176,26 +1185,26 @@ export default function PublicProfilePage() {
               <div>
                 {/* Top row: avatar + name + stats */}
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                  <div style={{ width: 76, height: 76, borderRadius: "50%", overflow: "hidden", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#666", flexShrink: 0, boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined }}>
+                  <div style={{ width: 76, height: 76, borderRadius: "50%", overflow: "hidden", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined }}>
                     {profile.photo_url
                       ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       : fullName[0]?.toUpperCase()}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
-                    <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>{isOwnWall ? "My Wall" : "User Wall"}</div>
+                    <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2 }}>{isOwnWall ? "My Profile" : "Member Profile"}</div>
                     <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
                       <div style={{ textAlign: "center" }}>
                         <div style={{ fontWeight: 900, fontSize: 17 }}>{workedWithCount}</div>
-                        <div style={{ fontSize: 10, color: "#666" }}>Worked With</div>
+                        <div style={{ fontSize: 10, color: t.textMuted }}>Worked With</div>
                       </div>
                       <div style={{ textAlign: "center" }}>
                         <div style={{ fontWeight: 900, fontSize: 17 }}>{knowCount}</div>
-                        <div style={{ fontSize: 10, color: "#666" }}>Know</div>
+                        <div style={{ fontSize: 10, color: t.textMuted }}>Know</div>
                       </div>
                       <div style={{ textAlign: "center" }}>
                         <div style={{ fontWeight: 900, fontSize: 17 }}>{wastaScore}</div>
-                        <div style={{ fontSize: 10, color: "#666" }}>Wasta</div>
+                        <div style={{ fontSize: 10, color: t.textMuted }}>Wasta</div>
                       </div>
                     </div>
                   </div>
@@ -1204,20 +1213,20 @@ export default function PublicProfilePage() {
                 {/* Connection buttons */}
                 {!isOwnWall && currentUserId && (
                   <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                    <button type="button" onClick={() => toggleConnection("worked_with")} disabled={togglingConnection === "worked_with"} style={{ flex: 1, background: currentUserWorkedWith ? "black" : "white", color: currentUserWorkedWith ? "white" : "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer", opacity: togglingConnection === "worked_with" ? 0.7 : 1 }}>
+                    <button type="button" onClick={() => toggleConnection("worked_with")} disabled={togglingConnection === "worked_with"} style={{ flex: 1, background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer", opacity: togglingConnection === "worked_with" ? 0.7 : 1 }}>
                       {togglingConnection === "worked_with" ? "Saving..." : currentUserWorkedWith ? "Worked With ✓" : "Worked With"}
                     </button>
-                    <button type="button" onClick={() => toggleConnection("know")} disabled={togglingConnection === "know"} style={{ flex: 1, background: currentUserKnows ? "black" : "white", color: currentUserKnows ? "white" : "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: togglingConnection === "know" ? "not-allowed" : "pointer", opacity: togglingConnection === "know" ? 0.7 : 1 }}>
+                    <button type="button" onClick={() => toggleConnection("know")} disabled={togglingConnection === "know"} style={{ flex: 1, background: currentUserKnows ? "#111" : t.surface, color: currentUserKnows ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: togglingConnection === "know" ? "not-allowed" : "pointer", opacity: togglingConnection === "know" ? 0.7 : 1 }}>
                       {togglingConnection === "know" ? "Saving..." : currentUserKnows ? "Know ✓" : "Know"}
                     </button>
-                    <a href={`/messages?with=${userId}`} style={{ flex: 1, background: "white", color: "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <a href={`/messages?with=${userId}`} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       Message
                     </a>
                   </div>
                 )}
 
                 {/* Profile details — full width below */}
-                <div style={{ marginTop: 14, borderTop: "1px solid #f0f0f0", paddingTop: 12, color: "#555", fontSize: 14, lineHeight: 1.7 }}>
+                <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
                     <div><strong>Role:</strong> {profile.role || "—"}</div>
                     <div><strong>Service:</strong> {profile.service || "—"}</div>
@@ -1227,7 +1236,7 @@ export default function PublicProfilePage() {
                     <div><strong>Verified:</strong> {profile.verification_status || "—"}</div>
                   </div>
                   {profile.bio && (
-                    <div style={{ marginTop: 12, borderTop: "1px solid #f0f0f0", paddingTop: 12, color: "#444", lineHeight: 1.6 }}>
+                    <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, lineHeight: 1.6 }}>
                       {profile.bio}
                     </div>
                   )}
@@ -1238,7 +1247,7 @@ export default function PublicProfilePage() {
               <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
                 {/* Identity: photo + name + stats + buttons */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flexShrink: 0, width: 180 }}>
-                  <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", background: "#f3f4f6", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#666", boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined }}>
+                  <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined }}>
                     {profile.photo_url ? (
                       <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     ) : ("Photo")}
@@ -1246,33 +1255,33 @@ export default function PublicProfilePage() {
 
                   <div style={{ textAlign: "center" }}>
                     <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
-                    <div style={{ marginTop: 4, fontSize: 13, color: "#666" }}>{isOwnWall ? "My Wall" : "User Wall"}</div>
+                    <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>{isOwnWall ? "My Profile" : "Member Profile"}</div>
                   </div>
 
                   <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%" }}>
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontWeight: 900, fontSize: 20 }}>{workedWithCount}</div>
-                      <div style={{ fontSize: 12, color: "#666" }}>Worked With</div>
+                      <div style={{ fontSize: 12, color: t.textMuted }}>Worked With</div>
                     </div>
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontWeight: 900, fontSize: 20 }}>{knowCount}</div>
-                      <div style={{ fontSize: 12, color: "#666" }}>Know</div>
+                      <div style={{ fontSize: 12, color: t.textMuted }}>Know</div>
                     </div>
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontWeight: 900, fontSize: 20 }}>{wastaScore}</div>
-                      <div style={{ fontSize: 12, color: "#666" }}>Wasta</div>
+                      <div style={{ fontSize: 12, color: t.textMuted }}>Wasta</div>
                     </div>
                   </div>
 
                   {!isOwnWall && currentUserId && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-                      <button type="button" onClick={() => toggleConnection("worked_with")} disabled={togglingConnection === "worked_with"} style={{ background: currentUserWorkedWith ? "black" : "white", color: currentUserWorkedWith ? "white" : "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer", opacity: togglingConnection === "worked_with" ? 0.7 : 1, width: "100%" }}>
+                      <button type="button" onClick={() => toggleConnection("worked_with")} disabled={togglingConnection === "worked_with"} style={{ background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer", opacity: togglingConnection === "worked_with" ? 0.7 : 1, width: "100%" }}>
                         {togglingConnection === "worked_with" ? "Saving..." : currentUserWorkedWith ? "Worked With ✓" : "Worked With"}
                       </button>
-                      <button type="button" onClick={() => toggleConnection("know")} disabled={togglingConnection === "know"} style={{ background: currentUserKnows ? "black" : "white", color: currentUserKnows ? "white" : "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: togglingConnection === "know" ? "not-allowed" : "pointer", opacity: togglingConnection === "know" ? 0.7 : 1, width: "100%" }}>
+                      <button type="button" onClick={() => toggleConnection("know")} disabled={togglingConnection === "know"} style={{ background: currentUserKnows ? "#111" : t.surface, color: currentUserKnows ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: togglingConnection === "know" ? "not-allowed" : "pointer", opacity: togglingConnection === "know" ? 0.7 : 1, width: "100%" }}>
                         {togglingConnection === "know" ? "Saving..." : currentUserKnows ? "Know ✓" : "Know"}
                       </button>
-                      <a href={`/messages?with=${userId}`} style={{ background: "white", color: "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "block", width: "100%", boxSizing: "border-box" }}>
+                      <a href={`/messages?with=${userId}`} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "block", width: "100%", boxSizing: "border-box" }}>
                         Message
                       </a>
                     </div>
@@ -1280,10 +1289,10 @@ export default function PublicProfilePage() {
                 </div>
 
                 {/* Divider */}
-                <div style={{ width: 1, alignSelf: "stretch", background: "#e5e7eb", flexShrink: 0 }} />
+                <div style={{ width: 1, alignSelf: "stretch", background: t.border, flexShrink: 0 }} />
 
                 {/* Profile details */}
-                <div style={{ flex: 1, color: "#555", lineHeight: 1.8 }}>
+                <div style={{ flex: 1, color: t.textMuted, lineHeight: 1.8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
                     <div><strong>Role:</strong> {profile.role || "Not added yet"}</div>
                     <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
@@ -1293,7 +1302,7 @@ export default function PublicProfilePage() {
                     <div><strong>Verification:</strong> {profile.verification_status || "Not verified"}</div>
                   </div>
                   {profile.bio && (
-                    <div style={{ marginTop: 14, color: "#444", lineHeight: 1.6, borderTop: "1px solid #f0f0f0", paddingTop: 14 }}>
+                    <div style={{ marginTop: 14, color: t.textMuted, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14 }}>
                       {profile.bio}
                     </div>
                   )}
@@ -1303,7 +1312,7 @@ export default function PublicProfilePage() {
           </div>
 
           {/* ── Photo Strip ── */}
-          <div style={{ border: "1px solid #e5e7eb", borderRadius: 16, background: "white", overflow: "hidden" }}>
+          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, overflow: "hidden" }}>
             <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
               {/* Title row */}
               <div style={{ fontSize: 15, fontWeight: 900 }}>Photos</div>
@@ -1311,7 +1320,7 @@ export default function PublicProfilePage() {
               {/* Pinned photos — horizontal scroll, full width */}
               <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
                 {pinnedPhotos.length === 0 && (
-                  <div style={{ color: "#aaa", fontSize: 13, alignSelf: "center" }}>
+                  <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center" }}>
                     {photos.length > 0 ? "Pin photos from the gallery to feature them here." : "No photos yet."}
                   </div>
                 )}
@@ -1319,7 +1328,7 @@ export default function PublicProfilePage() {
                   <div key={photo.id} style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
                     <div
                       onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
-                      style={{ width: 100, height: 100, borderRadius: 10, overflow: "hidden", background: "#f3f4f6", cursor: "pointer" }}
+                      style={{ width: 100, height: 100, borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
                     >
                       <img src={photo.photo_url} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     </div>
@@ -1328,14 +1337,14 @@ export default function PublicProfilePage() {
                         <button
                           onClick={() => togglePinned(photo)}
                           disabled={togglingPinnedId === photo.id}
-                          style={{ flex: 1, border: "1px solid #d1d5db", background: "white", borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1 }}
+                          style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1, color: t.text }}
                         >
                           {togglingPinnedId === photo.id ? "..." : "Unpin"}
                         </button>
                         <button
                           onClick={() => deletePhoto(photo)}
                           disabled={deletingPhotoId === photo.id}
-                          style={{ flex: 1, border: "1px solid #d1d5db", background: "white", borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1 }}
+                          style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1, color: t.text }}
                         >
                           {deletingPhotoId === photo.id ? "..." : "Del"}
                         </button>
@@ -1351,32 +1360,32 @@ export default function PublicProfilePage() {
                   {galleryPhotos.length > 0 && (
                     <button
                       onClick={() => setGalleryExpanded(!galleryExpanded)}
-                      style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                      style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
                     >
                       Gallery ({galleryPhotos.length}) {galleryExpanded ? "▲" : "▼"}
                     </button>
                   )}
                   {isOwnWall && (
-                    <label style={{ border: "1px solid #d1d5db", borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: "white", whiteSpace: "nowrap", display: "inline-block" }}>
+                    <label style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: t.surface, color: t.text, whiteSpace: "nowrap", display: "inline-block" }}>
                       + Add Photo
                       <input type="file" accept="image/*" onChange={handleGalleryUpload} style={{ display: "none" }} />
                     </label>
                   )}
-                  {uploadingGallery && <span style={{ fontSize: 12, color: "#666" }}>Uploading...</span>}
+                  {uploadingGallery && <span style={{ fontSize: 12, color: t.textMuted }}>Uploading...</span>}
                 </div>
               )}
             </div>
 
             {/* Expanded gallery grid */}
             {galleryExpanded && galleryPhotos.length > 0 && (
-              <div style={{ borderTop: "1px solid #e5e7eb", padding: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: "#888", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Gallery</div>
+              <div style={{ borderTop: `1px solid ${t.border}`, padding: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Gallery</div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
                   {galleryPhotos.map((photo) => (
                     <div key={photo.id}>
                       <div
                         onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
-                        style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: "#f3f4f6", cursor: "pointer" }}
+                        style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
                       >
                         <img src={photo.photo_url} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       </div>
@@ -1385,14 +1394,14 @@ export default function PublicProfilePage() {
                           <button
                             onClick={() => togglePinned(photo)}
                             disabled={togglingPinnedId === photo.id}
-                            style={{ flex: 1, border: "1px solid #d1d5db", background: "white", borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1 }}
+                            style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1 }}
                           >
                             {togglingPinnedId === photo.id ? "..." : "Pin"}
                           </button>
                           <button
                             onClick={() => deletePhoto(photo)}
                             disabled={deletingPhotoId === photo.id}
-                            style={{ flex: 1, border: "1px solid #d1d5db", background: "white", borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1 }}
+                            style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1 }}
                           >
                             {deletingPhotoId === photo.id ? "..." : "Del"}
                           </button>
@@ -1409,15 +1418,15 @@ export default function PublicProfilePage() {
           <div style={{ paddingTop: 4 }}>
 
             {isOwnWall && (
-              <div style={{ marginTop: 16, border: "1px solid #e5e7eb", borderRadius: 14, padding: 16 }}>
+              <div style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                 <textarea
                   placeholder="Post to your wall..."
                   value={postContent}
                   onChange={(e) => handlePostContentChange(e.target.value)}
-                  style={{ width: "100%", minHeight: 80, border: "none", outline: "none", resize: "vertical", fontSize: 16, boxSizing: "border-box" }}
+                  style={{ width: "100%", minHeight: 80, border: "none", outline: "none", resize: "vertical", fontSize: 16, boxSizing: "border-box", background: t.input, color: t.text }}
                 />
 
-                {fetchingOg && <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>Fetching link preview...</div>}
+                {fetchingOg && <div style={{ fontSize: 12, color: t.textFaint, marginTop: 4 }}>Fetching link preview...</div>}
                 {ogPreview && (
                   <div style={{ position: "relative" }}>
                     <OgCard og={ogPreview} />
@@ -1448,11 +1457,11 @@ export default function PublicProfilePage() {
                 {selectedPostImages.length > 0 && (
                   <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
                     {selectedPostImages.map((item, i) => (
-                      <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", border: "1px solid #e5e7eb", background: "#f9fafb" }}>
+                      <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.bg }}>
                         {item.file.type.startsWith("video/") ? (
                           <video src={item.previewUrl} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : item.file.type === "application/pdf" ? (
-                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: "#555" }}>
+                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: t.textMuted }}>
                             <span style={{ fontSize: 28 }}>📄</span>
                             <span style={{ textAlign: "center", padding: "0 4px", wordBreak: "break-all" }}>{item.file.name}</span>
                           </div>
@@ -1475,7 +1484,7 @@ export default function PublicProfilePage() {
                       <button
                         type="button"
                         onClick={() => setSelectedPostImages((prev) => { prev.forEach((item) => URL.revokeObjectURL(item.previewUrl)); return []; })}
-                        style={{ background: "transparent", border: "1px solid #d1d5db", borderRadius: 10, padding: "8px 12px", fontWeight: 700, cursor: "pointer" }}
+                        style={{ background: "transparent", border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 12px", fontWeight: 700, cursor: "pointer", color: t.text }}
                       >
                         Remove All Photos
                       </button>
@@ -1485,7 +1494,7 @@ export default function PublicProfilePage() {
                     <button
                       type="button"
                       onClick={() => postImageInputRef.current?.click()}
-                      style={{ background: "white", color: "black", border: "1px solid #d1d5db", borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
+                      style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
                     >
                       {selectedPostImages.length > 0 ? "Add More Photos" : "Add Photo"}
                     </button>
@@ -1502,25 +1511,25 @@ export default function PublicProfilePage() {
             )}
 
             <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
-              {posts.length === 0 && <div style={{ color: "#666" }}>No wall posts yet.</div>}
+              {posts.length === 0 && <div style={{ color: t.textMuted }}>No wall posts yet.</div>}
 
               {posts.map((post) => {
                 const commentsOpen = expandedComments[post.id] || false;
                 const isOwnPost = currentUserId === post.user_id;
 
                 return (
-                  <div key={post.id} style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
+                  <div key={post.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                     {/* Post header */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                        <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: "#f3f4f6", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: "#666", fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined }}>
+                        <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined }}>
                           {profile.photo_url
                             ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                             : fullName[0]?.toUpperCase()}
                         </div>
                         <div>
                           <div style={{ fontWeight: 800 }}>{fullName}</div>
-                          <div style={{ fontSize: 13, color: "#777", marginTop: 2 }}>{formatDate(post.created_at)}</div>
+                          <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{formatDate(post.created_at)}</div>
                         </div>
                       </div>
                       {isOwnPost && (
@@ -1528,7 +1537,7 @@ export default function PublicProfilePage() {
                           type="button"
                           onClick={() => deleteWallPost(post.id)}
                           disabled={deletingPostId === post.id}
-                          style={{ background: "transparent", border: "none", padding: 0, cursor: deletingPostId === post.id ? "not-allowed" : "pointer", color: "#777", fontWeight: 700, opacity: deletingPostId === post.id ? 0.6 : 1 }}
+                          style={{ background: "transparent", border: "none", padding: 0, cursor: deletingPostId === post.id ? "not-allowed" : "pointer", color: t.textMuted, fontWeight: 700, opacity: deletingPostId === post.id ? 0.6 : 1 }}
                         >
                           {deletingPostId === post.id ? "Deleting..." : "Delete"}
                         </button>
@@ -1549,7 +1558,7 @@ export default function PublicProfilePage() {
                       return (
                         <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: visible.length === 1 ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 8, maxWidth: 420 }}>
                           {visible.map((url, i) => (
-                            <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: "1px solid #e5e7eb", background: "#f9fafb" }}>
+                            <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: t.bg }}>
                               <img src={url} alt={`Post image ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                               {i === 2 && remaining > 0 && (
                                 <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 24, fontWeight: 800 }}>
@@ -1568,40 +1577,40 @@ export default function PublicProfilePage() {
                         type="button"
                         onClick={() => toggleLike(post.id, post.likedByCurrentUser)}
                         disabled={togglingLikeFor === post.id}
-                        style={{ background: "transparent", border: "none", padding: 0, cursor: togglingLikeFor === post.id ? "not-allowed" : "pointer", fontWeight: 700, color: post.likedByCurrentUser ? "black" : "#666", opacity: togglingLikeFor === post.id ? 0.6 : 1 }}
+                        style={{ background: "transparent", border: "none", padding: 0, cursor: togglingLikeFor === post.id ? "not-allowed" : "pointer", fontWeight: 700, color: post.likedByCurrentUser ? t.text : t.textMuted, opacity: togglingLikeFor === post.id ? 0.6 : 1 }}
                       >
                         {post.likedByCurrentUser ? "Unlike" : "Like"}
                       </button>
                       <button
                         type="button"
                         onClick={() => setExpandedComments((prev) => ({ ...prev, [post.id]: !commentsOpen }))}
-                        style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: "#666" }}
+                        style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: t.textMuted }}
                       >
                         {commentsOpen ? "Hide Comments" : "Comment"}
                       </button>
-                      <div style={{ fontSize: 14, color: "#777" }}>{post.likeCount} {post.likeCount === 1 ? "like" : "likes"}</div>
-                      <div style={{ fontSize: 14, color: "#777" }}>{post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}</div>
+                      <div style={{ fontSize: 14, color: t.textMuted }}>{post.likeCount} {post.likeCount === 1 ? "like" : "likes"}</div>
+                      <div style={{ fontSize: 14, color: t.textMuted }}>{post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}</div>
                     </div>
 
                     {/* Comments section */}
                     {commentsOpen && (
-                      <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid #e5e7eb" }}>
+                      <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${t.border}` }}>
                         <div style={{ display: "grid", gap: 12 }}>
-                          {post.comments.length === 0 && <div style={{ color: "#777", fontSize: 14 }}>No comments yet.</div>}
+                          {post.comments.length === 0 && <div style={{ color: t.textMuted, fontSize: 14 }}>No comments yet.</div>}
                           {post.comments.map((comment) => (
-                            <div key={comment.id} style={{ background: "#f9fafb", borderRadius: 10, padding: 12 }}>
+                            <div key={comment.id} style={{ background: t.bg, borderRadius: 10, padding: 12 }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                                 <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                                  <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", background: "#e5e7eb", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#555", boxSizing: "border-box", border: getServiceRingColor(comment.authorService) ? `3px solid ${getServiceRingColor(comment.authorService)}` : undefined }}>
+                                  <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", background: t.border, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: getServiceRingColor(comment.authorService) ? `3px solid ${getServiceRingColor(comment.authorService)}` : undefined }}>
                                     {comment.authorPhotoUrl
                                       ? <img src={comment.authorPhotoUrl} alt={comment.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                                       : comment.authorName[0]?.toUpperCase()}
                                   </div>
                                   <div>
-                                    <Link href={`/profile/${comment.user_id}`} style={{ fontWeight: 700, fontSize: 14, color: "black", textDecoration: "none" }}>
+                                    <Link href={`/profile/${comment.user_id}`} style={{ fontWeight: 700, fontSize: 14, color: t.text, textDecoration: "none" }}>
                                       {comment.authorName}
                                     </Link>
-                                    <div style={{ fontSize: 12, color: "#777", marginTop: 2 }}>{formatDate(comment.created_at)}</div>
+                                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{formatDate(comment.created_at)}</div>
                                   </div>
                                 </div>
                                 {currentUserId === comment.user_id && (
@@ -1609,7 +1618,7 @@ export default function PublicProfilePage() {
                                     type="button"
                                     onClick={() => deleteWallComment(comment.id)}
                                     disabled={deletingCommentId === comment.id}
-                                    style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#777", fontWeight: 700, fontSize: 13, opacity: deletingCommentId === comment.id ? 0.6 : 1 }}
+                                    style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontWeight: 700, fontSize: 13, opacity: deletingCommentId === comment.id ? 0.6 : 1 }}
                                   >
                                     {deletingCommentId === comment.id ? "..." : "Delete"}
                                   </button>
@@ -1617,7 +1626,7 @@ export default function PublicProfilePage() {
                               </div>
                               {comment.content && <div style={{ marginTop: 8, lineHeight: 1.5, fontSize: 14 }}>{comment.content}</div>}
                               {comment.image_url && (
-                                <div style={{ marginTop: 10, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: "1px solid #e5e7eb" }}>
+                                <div style={{ marginTop: 10, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
                                   <img src={comment.image_url} alt="Comment image" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
                                 </div>
                               )}
@@ -1626,11 +1635,11 @@ export default function PublicProfilePage() {
                                   type="button"
                                   onClick={() => toggleCommentLike(comment.id, comment.likedByCurrentUser)}
                                   disabled={togglingCommentLikeFor === comment.id}
-                                  style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, fontSize: 13, color: comment.likedByCurrentUser ? "black" : "#666", opacity: togglingCommentLikeFor === comment.id ? 0.6 : 1 }}
+                                  style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, fontSize: 13, color: comment.likedByCurrentUser ? t.text : t.textMuted, opacity: togglingCommentLikeFor === comment.id ? 0.6 : 1 }}
                                 >
                                   {comment.likedByCurrentUser ? "Unlike" : "Like"}
                                 </button>
-                                <div style={{ fontSize: 13, color: "#777" }}>{comment.likeCount} {comment.likeCount === 1 ? "like" : "likes"}</div>
+                                <div style={{ fontSize: 13, color: t.textMuted }}>{comment.likeCount} {comment.likeCount === 1 ? "like" : "likes"}</div>
                               </div>
                             </div>
                           ))}
@@ -1642,7 +1651,7 @@ export default function PublicProfilePage() {
                             placeholder="Write a comment..."
                             value={commentInputs[post.id] || ""}
                             onChange={(e) => setCommentInputs((prev) => ({ ...prev, [post.id]: e.target.value }))}
-                            style={{ width: "100%", minHeight: 60, border: "1px solid #d1d5db", borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box" }}
+                            style={{ width: "100%", minHeight: 60, border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: t.input, color: t.text }}
                           />
                           <div style={{ marginTop: 8, textAlign: "right" }}>
                             <button
@@ -1673,7 +1682,7 @@ export default function PublicProfilePage() {
       >
         <div
           onClick={(e) => e.stopPropagation()}
-          style={{ background: "white", borderRadius: 16, overflow: "hidden", maxWidth: 680, width: "100%", maxHeight: "90vh", display: "flex", flexDirection: "column" }}
+          style={{ background: t.surface, borderRadius: 16, overflow: "hidden", maxWidth: 680, width: "100%", maxHeight: "90vh", display: "flex", flexDirection: "column" }}
         >
           {/* Full-size image */}
           <div style={{ position: "relative", background: "#000", flexShrink: 0 }}>
@@ -1698,26 +1707,26 @@ export default function PublicProfilePage() {
                 type="button"
                 onClick={() => togglePhotoLike(lightboxPhoto.id)}
                 disabled={togglingPhotoLikeFor === lightboxPhoto.id}
-                style={{ background: "transparent", border: "none", padding: 0, cursor: togglingPhotoLikeFor === lightboxPhoto.id ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 15, color: photoLikes[lightboxPhoto.id]?.likedByMe ? "black" : "#666", opacity: togglingPhotoLikeFor === lightboxPhoto.id ? 0.6 : 1 }}
+                style={{ background: "transparent", border: "none", padding: 0, cursor: togglingPhotoLikeFor === lightboxPhoto.id ? "not-allowed" : "pointer", fontWeight: 700, fontSize: 15, color: photoLikes[lightboxPhoto.id]?.likedByMe ? t.text : t.textMuted, opacity: togglingPhotoLikeFor === lightboxPhoto.id ? 0.6 : 1 }}
               >
                 {photoLikes[lightboxPhoto.id]?.likedByMe ? "Unlike" : "Like"}
               </button>
-              <div style={{ fontSize: 14, color: "#777" }}>
+              <div style={{ fontSize: 14, color: t.textMuted }}>
                 {photoLikes[lightboxPhoto.id]?.count ?? 0} {(photoLikes[lightboxPhoto.id]?.count ?? 0) === 1 ? "like" : "likes"}
               </div>
             </div>
 
             {/* Comments */}
-            <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14 }}>
+            <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 14 }}>
               <div style={{ fontWeight: 800, marginBottom: 10, fontSize: 15 }}>Comments</div>
               <div style={{ display: "grid", gap: 10, marginBottom: 14 }}>
                 {(photoComments[lightboxPhoto.id] || []).length === 0 && (
-                  <div style={{ color: "#777", fontSize: 14 }}>No comments yet.</div>
+                  <div style={{ color: t.textMuted, fontSize: 14 }}>No comments yet.</div>
                 )}
                 {(photoComments[lightboxPhoto.id] || []).map((c) => (
-                  <div key={c.id} style={{ background: "#f9fafb", borderRadius: 10, padding: 10 }}>
+                  <div key={c.id} style={{ background: t.bg, borderRadius: 10, padding: 10 }}>
                     <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                      <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", background: "#e5e7eb", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: "#555" }}>
+                      <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", background: t.border, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: t.textMuted }}>
                         {c.authorPhotoUrl
                           ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                           : c.authorName[0]?.toUpperCase()}
@@ -1725,7 +1734,7 @@ export default function PublicProfilePage() {
                       <div>
                         <div style={{ fontWeight: 700, fontSize: 13 }}>{c.authorName}</div>
                         <div style={{ fontSize: 13, marginTop: 3, lineHeight: 1.4 }}>{c.content}</div>
-                        <div style={{ fontSize: 11, color: "#999", marginTop: 4 }}>{formatDate(c.created_at)}</div>
+                        <div style={{ fontSize: 11, color: t.textFaint, marginTop: 4 }}>{formatDate(c.created_at)}</div>
                       </div>
                     </div>
                   </div>
@@ -1738,7 +1747,7 @@ export default function PublicProfilePage() {
                   placeholder="Write a comment..."
                   value={photoCommentInput}
                   onChange={(e) => setPhotoCommentInput(e.target.value)}
-                  style={{ flex: 1, minHeight: 52, border: "1px solid #d1d5db", borderRadius: 10, padding: 10, resize: "none", fontSize: 14, boxSizing: "border-box", fontFamily: "inherit" }}
+                  style={{ flex: 1, minHeight: 52, border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: 10, resize: "none", fontSize: 14, boxSizing: "border-box", fontFamily: "inherit", background: t.input, color: t.text }}
                 />
                 <button
                   type="button"

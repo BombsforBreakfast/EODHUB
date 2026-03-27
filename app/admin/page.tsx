@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
+import { useTheme } from "../lib/ThemeContext";
 
 type BusinessListing = {
   id: string;
@@ -84,6 +85,8 @@ export default function AdminPage() {
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+
+  const { t } = useTheme();
 
   function showToast(msg: string) {
     setToast(msg);
@@ -392,8 +395,8 @@ export default function AdminPage() {
     fontWeight: 700,
     fontSize: 14,
     cursor: "pointer",
-    background: activeTab === tab ? "black" : "#f3f4f6",
-    color: activeTab === tab ? "white" : "#333",
+    background: activeTab === tab ? "#111" : t.badgeBg,
+    color: activeTab === tab ? "white" : t.text,
   });
 
   const actionBtn = (color: string): React.CSSProperties => ({
@@ -409,21 +412,21 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" }}>
+      <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box", background: t.bg, minHeight: "100vh", color: t.text }}>
         <NavBar />
-        <div style={{ marginTop: 40, textAlign: "center", color: "#666" }}>Loading...</div>
+        <div style={{ marginTop: 40, textAlign: "center", color: t.textMuted }}>Loading...</div>
       </div>
     );
   }
 
   if (!authorized) {
     return (
-      <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" }}>
+      <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box", background: t.bg, minHeight: "100vh", color: t.text }}>
         <NavBar />
         <div style={{ marginTop: 60, textAlign: "center" }}>
           <div style={{ fontSize: 48 }}>🚫</div>
           <div style={{ fontSize: 22, fontWeight: 900, marginTop: 12 }}>Access Denied</div>
-          <div style={{ color: "#666", marginTop: 8 }}>You don&apos;t have admin privileges.</div>
+          <div style={{ color: t.textMuted, marginTop: 8 }}>You don&apos;t have admin privileges.</div>
         </div>
       </div>
     );
@@ -434,7 +437,7 @@ export default function AdminPage() {
   const unreviewedFlagCount = flags.filter((f) => !f.reviewed).length;
 
   return (
-    <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" }}>
+    <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box", background: t.bg, minHeight: "100vh", color: t.text }}>
       <NavBar />
 
       {/* Toast */}
@@ -447,13 +450,13 @@ export default function AdminPage() {
       {/* Confirm Dialog */}
       {confirmDialog && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div style={{ background: "white", borderRadius: 16, padding: "28px 32px", maxWidth: 400, width: "100%", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
-            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8 }}>{confirmDialog.message}</div>
+          <div style={{ background: t.surface, borderRadius: 16, padding: "28px 32px", maxWidth: 400, width: "100%", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8, color: t.text }}>{confirmDialog.message}</div>
             <div style={{ fontSize: 14, color: "#ef4444", fontWeight: 700, marginBottom: 24 }}>This action cannot be undone.</div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button
                 onClick={() => setConfirmDialog(null)}
-                style={{ padding: "10px 20px", borderRadius: 10, border: "1px solid #d1d5db", background: "white", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+                style={{ padding: "10px 20px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, cursor: "pointer", fontSize: 14 }}
               >
                 Cancel
               </button>
@@ -470,7 +473,7 @@ export default function AdminPage() {
 
       <div style={{ maxWidth: 1000, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 20, flexWrap: "wrap" }}>
-          <h1 style={{ fontSize: 32, fontWeight: 900, margin: 0 }}>Admin Panel</h1>
+          <h1 style={{ fontSize: 32, fontWeight: 900, margin: 0, color: t.text }}>Admin Panel</h1>
           <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5 }}>Admin Only</span>
         </div>
 
@@ -489,7 +492,7 @@ export default function AdminPage() {
             Flags {unreviewedFlagCount > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{unreviewedFlagCount}</span>}
           </button>
 
-          <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: "#555" }}>
+          <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: t.textMuted }}>
             <input type="checkbox" checked={pendingOnly} onChange={(e) => setPendingOnly(e.target.checked)} style={{ width: 16, height: 16, cursor: "pointer" }} />
             Pending only
           </label>
@@ -499,13 +502,13 @@ export default function AdminPage() {
         {activeTab === "businesses" && (
           <div style={{ marginTop: 20 }}>
             {businesses.length === 0 && (
-              <div style={{ padding: 32, textAlign: "center", color: "#888", border: "1px solid #e5e7eb", borderRadius: 14, background: "white" }}>
+              <div style={{ padding: 32, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
                 {pendingOnly ? "No pending business submissions." : "No business listings found."}
               </div>
             )}
             <div style={{ display: "grid", gap: 14 }}>
               {businesses.map((biz) => (
-                <div key={biz.id} style={{ border: "1px solid #e5e7eb", borderRadius: 14, background: "white", overflow: "hidden" }}>
+                <div key={biz.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface, overflow: "hidden" }}>
                   <div style={{ display: "flex", gap: 0 }}>
                     {biz.og_image && (
                       <img src={biz.og_image} alt="" style={{ width: 140, height: 110, objectFit: "cover", flexShrink: 0 }} />
@@ -513,11 +516,11 @@ export default function AdminPage() {
                     <div style={{ padding: 16, flex: 1 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                         <div>
-                          <div style={{ fontWeight: 900, fontSize: 17 }}>{biz.business_name || biz.og_title || biz.og_site_name || "Unnamed"}</div>
+                          <div style={{ fontWeight: 900, fontSize: 17, color: t.text }}>{biz.business_name || biz.og_title || biz.og_site_name || "Unnamed"}</div>
                           <a href={biz.website_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "#1d4ed8", wordBreak: "break-all" }}>{biz.website_url}</a>
-                          {biz.custom_blurb && <div style={{ marginTop: 6, fontSize: 14, color: "#555", lineHeight: 1.5 }}>{biz.custom_blurb}</div>}
-                          {biz.og_description && !biz.custom_blurb && <div style={{ marginTop: 6, fontSize: 13, color: "#777", lineHeight: 1.5 }}>{biz.og_description}</div>}
-                          <div style={{ marginTop: 6, fontSize: 12, color: "#999" }}>{new Date(biz.created_at).toLocaleDateString()}</div>
+                          {biz.custom_blurb && <div style={{ marginTop: 6, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>{biz.custom_blurb}</div>}
+                          {biz.og_description && !biz.custom_blurb && <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>{biz.og_description}</div>}
+                          <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint }}>{new Date(biz.created_at).toLocaleDateString()}</div>
                         </div>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
                           {biz.is_approved ? (
@@ -555,49 +558,49 @@ export default function AdminPage() {
                   </div>
                   {/* Inline edit form */}
                   {editingBiz?.id === biz.id && (
-                    <div style={{ borderTop: "1px solid #e5e7eb", padding: 16, background: "#f9fafb", display: "grid", gap: 10 }}>
-                      <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 2 }}>Edit Listing</div>
+                    <div style={{ borderTop: `1px solid ${t.border}`, padding: 16, background: t.bg, display: "grid", gap: 10 }}>
+                      <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 2, color: t.text }}>Edit Listing</div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                         <div>
-                          <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 4 }}>Business Name</label>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 4 }}>Business Name</label>
                           <input
                             value={editingBiz.business_name}
                             onChange={(e) => setEditingBiz({ ...editingBiz, business_name: e.target.value })}
-                            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, boxSizing: "border-box" }}
+                            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 14, boxSizing: "border-box", background: t.input, color: t.text }}
                             placeholder="Business Name"
                           />
                         </div>
                         <div>
-                          <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 4 }}>OG Title</label>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 4 }}>OG Title</label>
                           <input
                             value={editingBiz.og_title}
                             onChange={(e) => setEditingBiz({ ...editingBiz, og_title: e.target.value })}
-                            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, boxSizing: "border-box" }}
+                            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 14, boxSizing: "border-box", background: t.input, color: t.text }}
                             placeholder="Page title from website"
                           />
                         </div>
                       </div>
                       <div>
-                        <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 4 }}>Description / Blurb</label>
+                        <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 4 }}>Description / Blurb</label>
                         <textarea
                           value={editingBiz.custom_blurb || editingBiz.og_description}
                           onChange={(e) => setEditingBiz({ ...editingBiz, custom_blurb: e.target.value })}
                           rows={3}
-                          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 14, resize: "vertical", boxSizing: "border-box" }}
+                          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 14, resize: "vertical", boxSizing: "border-box", background: t.input, color: t.text }}
                           placeholder="Custom description shown on the listing"
                         />
                       </div>
                       <div>
-                        <label style={{ fontSize: 12, fontWeight: 700, color: "#555", display: "block", marginBottom: 4 }}>Photo</label>
+                        <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 4 }}>Photo</label>
                         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                           {editingBiz.og_image && (
-                            <img src={editingBiz.og_image} alt="" style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6, border: "1px solid #e5e7eb" }} />
+                            <img src={editingBiz.og_image} alt="" style={{ width: 80, height: 60, objectFit: "cover", borderRadius: 6, border: `1px solid ${t.border}` }} />
                           )}
                           <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 6 }}>
                             <input
                               value={editingBiz.og_image}
                               onChange={(e) => setEditingBiz({ ...editingBiz, og_image: e.target.value })}
-                              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }}
+                              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, boxSizing: "border-box", background: t.input, color: t.text }}
                               placeholder="Image URL (paste or upload below)"
                             />
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -642,27 +645,27 @@ export default function AdminPage() {
         {activeTab === "jobs" && (
           <div style={{ marginTop: 20 }}>
             {jobs.length === 0 && (
-              <div style={{ padding: 32, textAlign: "center", color: "#888", border: "1px solid #e5e7eb", borderRadius: 14, background: "white" }}>
+              <div style={{ padding: 32, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
                 {pendingOnly ? "No pending job submissions." : "No jobs found."}
               </div>
             )}
             <div style={{ display: "grid", gap: 14 }}>
               {jobs.map((job) => (
-                <div key={job.id} style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
+                <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 900, fontSize: 17 }}>{job.title || "Untitled Job"}</div>
-                      <div style={{ marginTop: 4, fontSize: 14, color: "#444" }}>{job.company_name || "Unknown company"}</div>
-                      <div style={{ marginTop: 2, fontSize: 13, color: "#666" }}>{[job.location, job.category].filter(Boolean).join(" · ")}</div>
+                      <div style={{ fontWeight: 900, fontSize: 17, color: t.text }}>{job.title || "Untitled Job"}</div>
+                      <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>{job.company_name || "Unknown company"}</div>
+                      <div style={{ marginTop: 2, fontSize: 13, color: t.textMuted }}>{[job.location, job.category].filter(Boolean).join(" · ")}</div>
                       {job.description && (
-                        <div style={{ marginTop: 8, fontSize: 13, color: "#666", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                        <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
                           {job.description}
                         </div>
                       )}
-                      <div style={{ marginTop: 6, fontSize: 12, color: "#999", display: "flex", gap: 12, flexWrap: "wrap" }}>
+                      <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint, display: "flex", gap: 12, flexWrap: "wrap" }}>
                         {job.apply_url && <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8" }}>View posting ↗</a>}
                         <span>{job.created_at ? new Date(job.created_at).toLocaleDateString() : ""}</span>
-                        <span style={{ background: "#f3f4f6", borderRadius: 20, padding: "1px 8px" }}>{job.source_type || "community"}</span>
+                        <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "1px 8px" }}>{job.source_type || "community"}</span>
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
@@ -689,32 +692,32 @@ export default function AdminPage() {
         {activeTab === "flags" && (
           <div style={{ marginTop: 20 }}>
             {flags.length === 0 && (
-              <div style={{ padding: 32, textAlign: "center", color: "#888", border: "1px solid #e5e7eb", borderRadius: 14, background: "white" }}>
+              <div style={{ padding: 32, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
                 No flags yet.
               </div>
             )}
             <div style={{ display: "grid", gap: 12 }}>
               {flags.map((flag) => (
-                <div key={flag.id} style={{ border: `1px solid ${flag.reviewed ? "#e5e7eb" : "#fca5a5"}`, borderRadius: 14, padding: 16, background: flag.reviewed ? "white" : "#fff5f5" }}>
+                <div key={flag.id} style={{ border: `1px solid ${flag.reviewed ? t.border : "#fca5a5"}`, borderRadius: 14, padding: 16, background: flag.reviewed ? t.surface : "#fff5f5" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
                         <span style={{ background: flag.content_type === "post" ? "#dbeafe" : "#fef9c3", color: flag.content_type === "post" ? "#1d4ed8" : "#854d0e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>
                           {flag.content_type}
                         </span>
-                        {flag.reviewed && <span style={{ background: "#f3f4f6", color: "#666", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Reviewed</span>}
-                        <span style={{ fontSize: 12, color: "#999" }}>{new Date(flag.created_at).toLocaleString()}</span>
+                        {flag.reviewed && <span style={{ background: t.badgeBg, color: t.badgeText, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Reviewed</span>}
+                        <span style={{ fontSize: 12, color: t.textFaint }}>{new Date(flag.created_at).toLocaleString()}</span>
                       </div>
                       {flag.reporter_name && (
-                        <div style={{ fontSize: 13, color: "#666", marginBottom: 4 }}>Flagged by: <strong>{flag.reporter_name}</strong></div>
+                        <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 4 }}>Flagged by: <strong>{flag.reporter_name}</strong></div>
                       )}
                       {flag.content_preview && (
-                        <div style={{ fontSize: 14, color: "#333", lineHeight: 1.5, background: "#f9fafb", borderRadius: 8, padding: "8px 12px", marginTop: 6, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                        <div style={{ fontSize: 14, color: t.text, lineHeight: 1.5, background: t.surfaceHover, borderRadius: 8, padding: "8px 12px", marginTop: 6, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
                           {flag.content_preview}
                         </div>
                       )}
                       {!flag.content_preview && (
-                        <div style={{ fontSize: 13, color: "#999", fontStyle: "italic" }}>Content may have been deleted already.</div>
+                        <div style={{ fontSize: 13, color: t.textFaint, fontStyle: "italic" }}>Content may have been deleted already.</div>
                       )}
                     </div>
                     <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
@@ -747,9 +750,9 @@ export default function AdminPage() {
                     onClick={() => setUserFilter(f)}
                     style={{
                       padding: "6px 14px", borderRadius: 20, fontSize: 13, fontWeight: 700, cursor: "pointer",
-                      border: userFilter === f ? "none" : "1px solid #d1d5db",
-                      background: userFilter === f ? "#111" : "white",
-                      color: userFilter === f ? "white" : "#374151",
+                      border: userFilter === f ? "none" : `1px solid ${t.border}`,
+                      background: userFilter === f ? "#111" : t.surface,
+                      color: userFilter === f ? "white" : t.badgeText,
                     }}
                   >
                     {f.charAt(0).toUpperCase() + f.slice(1)}
@@ -769,18 +772,18 @@ export default function AdminPage() {
                 const isPending = u.verification_status === "pending";
                 const isDenied = u.verification_status === "denied";
                 return (
-                  <div key={u.user_id} style={{ border: `1px solid ${isDenied ? "#fca5a5" : "#e5e7eb"}`, borderRadius: 12, padding: "12px 16px", background: isDenied ? "#fff5f5" : "white", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                  <div key={u.user_id} style={{ border: `1px solid ${isDenied ? "#fca5a5" : t.border}`, borderRadius: 12, padding: "12px 16px", background: isDenied ? "#fff5f5" : t.surface, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 200 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span style={{ fontWeight: 800, fontSize: 15 }}>{name}</span>
+                        <span style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{name}</span>
                         {u.is_admin && <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>ADMIN</span>}
                         {isVerified && <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Verified</span>}
                         {isPending && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
                         {isDenied && <span style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Denied</span>}
                       </div>
-                      <div style={{ fontSize: 13, color: "#666", marginTop: 3 }}>
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
                         {[u.role, u.service].filter(Boolean).join(" · ")}
-                        {u.email && <span style={{ color: "#9ca3af", marginLeft: u.role || u.service ? 6 : 0 }}>{u.role || u.service ? "· " : ""}{u.email}</span>}
+                        {u.email && <span style={{ color: t.textFaint, marginLeft: u.role || u.service ? 6 : 0 }}>{u.role || u.service ? "· " : ""}{u.email}</span>}
                       </div>
                     </div>
 

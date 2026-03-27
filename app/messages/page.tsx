@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
+import { useTheme } from "../lib/ThemeContext";
 
 type Conversation = {
   id: string;
@@ -53,6 +54,7 @@ export default function MessagesPage() {
   const [inboxTab, setInboxTab] = useState<"messages" | "requests">("messages");
   const bottomRef = useRef<HTMLDivElement>(null);
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const { t } = useTheme();
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 900);
@@ -281,24 +283,24 @@ export default function MessagesPage() {
 
   const avatarStyle = (name: string, photo: string | null, size = 40): React.CSSProperties => ({
     width: size, height: size, borderRadius: "50%", flexShrink: 0,
-    background: photo ? "transparent" : "black",
+    background: photo ? "transparent" : "#111",
     color: "white", fontWeight: 700, fontSize: size * 0.4,
     display: "flex", alignItems: "center", justifyContent: "center",
     overflow: "hidden",
   });
 
-  if (loading) return <div style={{ padding: 40 }}><NavBar /></div>;
+  if (loading) return <div style={{ padding: 40, background: t.bg, minHeight: "100vh" }}><NavBar /></div>;
 
   const InboxPane = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", borderRight: isMobile ? "none" : "1px solid #e5e7eb" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", borderRight: isMobile ? "none" : `1px solid ${t.border}` }}>
       {/* Tabs */}
-      <div style={{ display: "flex", borderBottom: "1px solid #e5e7eb" }}>
+      <div style={{ display: "flex", borderBottom: `1px solid ${t.border}` }}>
         <button
           onClick={() => setInboxTab("messages")}
           style={{
             flex: 1, padding: "14px 8px", fontWeight: 800, fontSize: 14, cursor: "pointer",
-            border: "none", borderBottom: inboxTab === "messages" ? "2px solid black" : "2px solid transparent",
-            background: "white", color: inboxTab === "messages" ? "black" : "#888",
+            border: "none", borderBottom: inboxTab === "messages" ? `2px solid ${t.text}` : "2px solid transparent",
+            background: t.surface, color: inboxTab === "messages" ? t.text : t.textFaint,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
           }}
         >
@@ -313,8 +315,8 @@ export default function MessagesPage() {
           onClick={() => setInboxTab("requests")}
           style={{
             flex: 1, padding: "14px 8px", fontWeight: 800, fontSize: 14, cursor: "pointer",
-            border: "none", borderBottom: inboxTab === "requests" ? "2px solid black" : "2px solid transparent",
-            background: "white", color: inboxTab === "requests" ? "black" : "#888",
+            border: "none", borderBottom: inboxTab === "requests" ? `2px solid ${t.text}` : "2px solid transparent",
+            background: t.surface, color: inboxTab === "requests" ? t.text : t.textFaint,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
           }}
         >
@@ -332,7 +334,7 @@ export default function MessagesPage() {
         {inboxTab === "messages" && (
           <>
             {acceptedConvs.length === 0 && sentPending.length === 0 && (
-              <div style={{ padding: 32, textAlign: "center", color: "#888", fontSize: 14 }}>
+              <div style={{ padding: 32, textAlign: "center", color: t.textFaint, fontSize: 14 }}>
                 No conversations yet. Visit someone&apos;s profile to start a DM.
               </div>
             )}
@@ -343,11 +345,11 @@ export default function MessagesPage() {
                 onClick={() => selectConversation(conv.id)}
                 style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "14px 20px",
-                  cursor: "pointer", borderBottom: "1px solid #f3f4f6",
-                  background: activeConvId === conv.id ? "#f9fafb" : "white",
+                  cursor: "pointer", borderBottom: `1px solid ${t.border}`,
+                  background: activeConvId === conv.id ? t.surfaceHover : t.surface,
                 }}
-                onMouseEnter={(e) => { if (activeConvId !== conv.id) e.currentTarget.style.background = "#fafafa"; }}
-                onMouseLeave={(e) => { if (activeConvId !== conv.id) e.currentTarget.style.background = "white"; }}
+                onMouseEnter={(e) => { if (activeConvId !== conv.id) e.currentTarget.style.background = t.surfaceHover; }}
+                onMouseLeave={(e) => { if (activeConvId !== conv.id) e.currentTarget.style.background = t.surface; }}
               >
                 <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
                   {conv.other_user_photo
@@ -356,11 +358,11 @@ export default function MessagesPage() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontWeight: conv.unread_count > 0 ? 800 : 600, fontSize: 14 }}>{conv.other_user_name}</span>
-                    <span style={{ fontSize: 11, color: "#999", flexShrink: 0 }}>{timeAgo(conv.last_message_at)}</span>
+                    <span style={{ fontWeight: conv.unread_count > 0 ? 800 : 600, fontSize: 14, color: t.text }}>{conv.other_user_name}</span>
+                    <span style={{ fontSize: 11, color: t.textFaint, flexShrink: 0 }}>{timeAgo(conv.last_message_at)}</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                    <div style={{ fontSize: 13, color: "#666", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>
+                    <div style={{ fontSize: 13, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>
                       {conv.last_message_preview ?? "Start a conversation"}
                     </div>
                     {conv.unread_count > 0 && (
@@ -379,8 +381,8 @@ export default function MessagesPage() {
                 onClick={() => selectConversation(conv.id)}
                 style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "14px 20px",
-                  cursor: "pointer", borderBottom: "1px solid #f3f4f6",
-                  background: activeConvId === conv.id ? "#f9fafb" : "white", opacity: 0.7,
+                  cursor: "pointer", borderBottom: `1px solid ${t.border}`,
+                  background: activeConvId === conv.id ? t.surfaceHover : t.surface, opacity: 0.7,
                 }}
               >
                 <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
@@ -390,10 +392,10 @@ export default function MessagesPage() {
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{conv.other_user_name}</span>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{conv.other_user_name}</span>
                     <span style={{ background: "#fef9c3", color: "#92400e", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 20, flexShrink: 0 }}>Pending</span>
                   </div>
-                  <div style={{ fontSize: 13, color: "#888", marginTop: 2 }}>Request sent</div>
+                  <div style={{ fontSize: 13, color: t.textFaint, marginTop: 2 }}>Request sent</div>
                 </div>
               </div>
             ))}
@@ -404,14 +406,14 @@ export default function MessagesPage() {
         {inboxTab === "requests" && (
           <>
             {receivedRequests.length === 0 && (
-              <div style={{ padding: 32, textAlign: "center", color: "#888", fontSize: 14 }}>
+              <div style={{ padding: 32, textAlign: "center", color: t.textFaint, fontSize: 14 }}>
                 No pending requests.
               </div>
             )}
             {receivedRequests.map((conv) => {
               const isEmployer = conv.other_user_account_type === "employer";
               return (
-                <div key={conv.id} style={{ padding: "16px 20px", borderBottom: "1px solid #f3f4f6" }}>
+                <div key={conv.id} style={{ padding: "16px 20px", borderBottom: `1px solid ${t.border}` }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
                     <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
                       {conv.other_user_photo
@@ -420,29 +422,29 @@ export default function MessagesPage() {
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                        <span style={{ fontWeight: 800, fontSize: 14 }}>{conv.other_user_name}</span>
+                        <span style={{ fontWeight: 800, fontSize: 14, color: t.text }}>{conv.other_user_name}</span>
                         {isEmployer && (
                           <span style={{ background: "#dbeafe", color: "#1d4ed8", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>EMPLOYER</span>
                         )}
                       </div>
-                      <div style={{ fontSize: 13, color: "#555", marginTop: 2 }}>
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
                         {isEmployer
                           ? "An employer wants to send you a message."
                           : "wants to send you a message."}
                       </div>
-                      <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>{timeAgo(conv.last_message_at)}</div>
+                      <div style={{ fontSize: 11, color: t.textFaint, marginTop: 2 }}>{timeAgo(conv.last_message_at)}</div>
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <button
                       onClick={() => acceptRequest(conv.id)}
-                      style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: "black", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                      style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "none", background: "#111", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                     >
                       Accept
                     </button>
                     <button
                       onClick={() => declineRequest(conv.id)}
-                      style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: "1px solid #d1d5db", background: "white", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                      style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                     >
                       Decline
                     </button>
@@ -461,9 +463,9 @@ export default function MessagesPage() {
   const ThreadPane = (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Thread header */}
-      <div style={{ padding: "14px 20px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "center", gap: 12 }}>
         {isMobile && (
-          <button onClick={() => setMobileView("list")} style={{ background: "none", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 18, padding: "0 4px 0 0", color: "#444" }}>
+          <button onClick={() => setMobileView("list")} style={{ background: "none", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 18, padding: "0 4px 0 0", color: t.textMuted }}>
             ←
           </button>
         )}
@@ -484,7 +486,7 @@ export default function MessagesPage() {
             )}
           </>
         ) : (
-          <span style={{ color: "#888", fontSize: 14 }}>Select a conversation</span>
+          <span style={{ color: t.textFaint, fontSize: 14 }}>Select a conversation</span>
         )}
       </div>
 
@@ -492,13 +494,13 @@ export default function MessagesPage() {
       {isPendingSent ? (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, textAlign: "center", gap: 16 }}>
           <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>⏳</div>
-          <div style={{ fontWeight: 800, fontSize: 16 }}>Request sent to {activeConv?.other_user_name}</div>
-          <div style={{ fontSize: 14, color: "#666", maxWidth: 280, lineHeight: 1.6 }}>
+          <div style={{ fontWeight: 800, fontSize: 16, color: t.text }}>Request sent to {activeConv?.other_user_name}</div>
+          <div style={{ fontSize: 14, color: t.textMuted, maxWidth: 280, lineHeight: 1.6 }}>
             Your message request is waiting to be accepted. You&apos;ll be able to chat once they accept.
           </div>
           <button
             onClick={() => activeConvId && cancelRequest(activeConvId)}
-            style={{ padding: "9px 20px", borderRadius: 10, border: "1px solid #d1d5db", background: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#ef4444" }}
+            style={{ padding: "9px 20px", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#ef4444" }}
           >
             Cancel Request
           </button>
@@ -508,7 +510,7 @@ export default function MessagesPage() {
           {/* Messages */}
           <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
             {!activeConvId && (
-              <div style={{ margin: "auto", color: "#aaa", fontSize: 14, textAlign: "center" }}>
+              <div style={{ margin: "auto", color: t.textFaint, fontSize: 14, textAlign: "center" }}>
                 Select a conversation or start a new one from someone&apos;s profile.
               </div>
             )}
@@ -519,8 +521,8 @@ export default function MessagesPage() {
                   <div style={{
                     maxWidth: "72%", padding: "10px 14px",
                     borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                    background: isMe ? "black" : "#f3f4f6",
-                    color: isMe ? "white" : "black",
+                    background: isMe ? "#111" : t.badgeBg,
+                    color: isMe ? "white" : t.text,
                     fontSize: 14, lineHeight: 1.5,
                   }}>
                     {msg.content}
@@ -536,18 +538,18 @@ export default function MessagesPage() {
 
           {/* Input */}
           {activeConvId && (
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #e5e7eb", display: "flex", gap: 10 }}>
+            <div style={{ padding: "12px 16px", borderTop: `1px solid ${t.border}`, display: "flex", gap: 10 }}>
               <input
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                 placeholder="Type a message..."
-                style={{ flex: 1, padding: "10px 14px", borderRadius: 20, border: "1px solid #d1d5db", fontSize: 14, outline: "none" }}
+                style={{ flex: 1, padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
               />
               <button
                 onClick={sendMessage}
                 disabled={!newMessage.trim() || sending}
-                style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "black", color: "white", fontWeight: 700, cursor: "pointer", opacity: !newMessage.trim() || sending ? 0.5 : 1 }}
+                style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: !newMessage.trim() || sending ? 0.5 : 1 }}
               >
                 Send
               </button>
@@ -559,22 +561,24 @@ export default function MessagesPage() {
   );
 
   return (
-    <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
-      <NavBar />
-      <div style={{
-        border: "1px solid #e5e7eb", borderRadius: 16, overflow: "hidden", background: "white",
-        display: "grid",
-        gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
-        height: isMobile ? "calc(100dvh - 120px)" : "calc(100dvh - 140px)",
-      }}>
-        {isMobile ? (
-          mobileView === "list" ? InboxPane : ThreadPane
-        ) : (
-          <>
-            {InboxPane}
-            {ThreadPane}
-          </>
-        )}
+    <div style={{ background: t.bg, minHeight: "100vh", color: t.text }}>
+      <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
+        <NavBar />
+        <div style={{
+          border: `1px solid ${t.border}`, borderRadius: 16, overflow: "hidden", background: t.surface,
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
+          height: isMobile ? "calc(100dvh - 120px)" : "calc(100dvh - 140px)",
+        }}>
+          {isMobile ? (
+            mobileView === "list" ? InboxPane : ThreadPane
+          ) : (
+            <>
+              {InboxPane}
+              {ThreadPane}
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

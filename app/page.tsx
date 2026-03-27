@@ -4,6 +4,7 @@ import Link from "next/link";
 import React, { ChangeEvent, useEffect, useRef, useState } from "react";
 import { supabase } from "./lib/lib/supabaseClient";
 import NavBar from "./components/NavBar";
+import { useTheme } from "./lib/ThemeContext";
 
 type Job = {
   id: string;
@@ -172,16 +173,17 @@ function renderContent(text: string): React.ReactNode[] {
 }
 
 function OgCard({ og }: { og: OgPreview }) {
+  const { t } = useTheme();
   return (
-    <a href={og.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 12, border: "1px solid #e5e7eb", borderRadius: 12, overflow: "hidden", background: "#f9fafb", textDecoration: "none", color: "inherit" }}>
+    <a href={og.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 12, border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.bg, textDecoration: "none", color: "inherit" }}>
       {og.image && (
         <img src={og.image} alt={og.title || ""} style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
       )}
       <div style={{ padding: "10px 14px" }}>
-        {og.siteName && <div style={{ fontSize: 11, color: "#888", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{og.siteName}</div>}
-        {og.title && <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.3 }}>{og.title}</div>}
-        {og.description && <div style={{ fontSize: 13, color: "#555", marginTop: 4, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>{og.description}</div>}
-        <div style={{ marginTop: 6, fontSize: 12, color: "#888", wordBreak: "break-all" }}>{og.url}</div>
+        {og.siteName && <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{og.siteName}</div>}
+        {og.title && <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.3, color: t.text }}>{og.title}</div>}
+        {og.description && <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>{og.description}</div>}
+        <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint, wordBreak: "break-all" }}>{og.url}</div>
       </div>
     </a>
   );
@@ -221,6 +223,7 @@ function Avatar({
   size?: number;
   service?: string | null;
 }) {
+  const { t } = useTheme();
   const ringColor = getServiceRingColor(service);
   return (
     <div
@@ -229,13 +232,13 @@ function Avatar({
         height: size,
         borderRadius: "50%",
         overflow: "hidden",
-        background: "#f3f4f6",
+        background: t.badgeBg,
         flexShrink: 0,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         fontWeight: 700,
-        color: "#666",
+        color: t.textMuted,
         fontSize: size * 0.32,
         boxSizing: "border-box",
         border: ringColor ? `${size <= 36 ? 3 : 4}px solid ${ringColor}` : undefined,
@@ -260,6 +263,7 @@ function Avatar({
 }
 
 export default function HomePage() {
+  const { t } = useTheme();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [businessListings, setBusinessListings] = useState<BusinessListing[]>(
@@ -1539,7 +1543,7 @@ export default function HomePage() {
 
   function SkeletonCard() {
     return (
-      <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, background: "white" }}>
+      <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
         <SkeletonBlock width="55%" height={14} />
         <SkeletonBlock width="75%" height={11} />
         <SkeletonBlock width="40%" height={11} />
@@ -1549,7 +1553,7 @@ export default function HomePage() {
 
   function SkeletonPost() {
     return (
-      <div style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 16, background: "white" }}>
+      <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
         <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
           <div style={{ ...skeletonStyle, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
           <div style={{ flex: 1 }}>
@@ -1572,13 +1576,16 @@ export default function HomePage() {
         margin: "0 auto",
         padding: "24px 20px",
         boxSizing: "border-box",
+        background: t.bg,
+        minHeight: "100vh",
+        color: t.text,
       }}
     >
       <NavBar />
 
       {/* Mobile tab bar */}
       {isMobile && (
-        <div style={{ display: "flex", gap: 0, marginTop: 12, borderRadius: 12, overflow: "hidden", border: "1px solid #e5e7eb", background: "#f9fafb" }}>
+        <div style={{ display: "flex", gap: 0, marginTop: 12, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: t.bg }}>
           {(["feed", "jobs", "businesses"] as const).map((tab) => (
             <button
               key={tab}
@@ -1587,8 +1594,8 @@ export default function HomePage() {
                 flex: 1,
                 padding: "10px 4px",
                 border: "none",
-                background: mobileTab === tab ? "black" : "transparent",
-                color: mobileTab === tab ? "white" : "#555",
+                background: mobileTab === tab ? "#111" : "transparent",
+                color: mobileTab === tab ? "white" : t.textMuted,
                 fontWeight: 800,
                 fontSize: 13,
                 cursor: "pointer",
@@ -1606,7 +1613,7 @@ export default function HomePage() {
               padding: "10px 4px",
               border: "none",
               background: "transparent",
-              color: "#555",
+              color: t.textMuted,
               fontWeight: 800,
               fontSize: 13,
               cursor: "pointer",
@@ -1641,7 +1648,7 @@ export default function HomePage() {
           }}
         >
           <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-            <Link href="/post-job" style={{ background: "black", color: "white", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
+            <Link href="/post-job" style={{ background: "#111", color: "white", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
               Post Job
             </Link>
           </div>
@@ -1649,7 +1656,7 @@ export default function HomePage() {
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
             {!jobsLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
             {jobsLoaded && jobs.length === 0 && (
-              <div style={{ fontSize: 14, color: "#666" }}>
+              <div style={{ fontSize: 14, color: t.textMuted }}>
                 No approved jobs yet.
               </div>
             )}
@@ -1658,10 +1665,10 @@ export default function HomePage() {
               <div
                 key={job.id}
                 style={{
-                  border: "1px solid #e5e7eb",
+                  border: `1px solid ${t.border}`,
                   borderRadius: 12,
                   overflow: "hidden",
-                  background: "white",
+                  background: t.surface,
                 }}
               >
                 {job.og_image && (
@@ -1682,15 +1689,15 @@ export default function HomePage() {
                     {job.title || job.og_title || "Untitled Job"}
                   </div>
 
-                  <div style={{ marginTop: 4, fontSize: 14, color: "#444" }}>
+                  <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>
                     {job.company_name || job.og_site_name || "Unknown Company"}
                   </div>
 
-                  <div style={{ marginTop: 6, fontSize: 13, color: "#666" }}>
+                  <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted }}>
                     {job.location || "Location not listed"}
                   </div>
 
-                  <div style={{ marginTop: 4, fontSize: 13, color: "#666" }}>
+                  <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>
                     {job.category || "General"}
                     {job.created_at
                       ? ` • ${new Date(job.created_at).toLocaleDateString()}`
@@ -1702,7 +1709,7 @@ export default function HomePage() {
                       style={{
                         marginTop: 8,
                         fontSize: 13,
-                        color: "#666",
+                        color: t.textMuted,
                         lineHeight: 1.4,
                         display: "-webkit-box",
                         WebkitLineClamp: 4,
@@ -1732,9 +1739,9 @@ export default function HomePage() {
                         onClick={() => toggleSaveJob(job.id)}
                         disabled={togglingJobSaveFor === job.id}
                         style={{
-                          background: savedJobIds.has(job.id) ? "black" : "white",
-                          color: savedJobIds.has(job.id) ? "white" : "#555",
-                          border: "1px solid #d1d5db",
+                          background: savedJobIds.has(job.id) ? "#111" : t.surface,
+                          color: savedJobIds.has(job.id) ? "white" : t.textMuted,
+                          border: `1px solid ${t.border}`,
                           borderRadius: 8,
                           padding: "5px 10px",
                           fontSize: 12,
@@ -1757,10 +1764,10 @@ export default function HomePage() {
           <div
             style={{
               marginTop: 0,
-              border: "1px solid #e5e7eb",
+              border: `1px solid ${t.border}`,
               borderRadius: 14,
               padding: 16,
-              background: "white",
+              background: t.surface,
             }}
           >
             <textarea
@@ -1775,10 +1782,12 @@ export default function HomePage() {
                 resize: "vertical",
                 fontSize: 16,
                 boxSizing: "border-box",
+                background: t.input,
+                color: t.text,
               }}
             />
 
-            {fetchingOg && <div style={{ fontSize: 12, color: "#888", marginTop: 4 }}>Fetching link preview...</div>}
+            {fetchingOg && <div style={{ fontSize: 12, color: t.textFaint, marginTop: 4 }}>Fetching link preview...</div>}
             {ogPreview && (
               <div style={{ position: "relative" }}>
                 <OgCard og={ogPreview} />
@@ -1796,7 +1805,7 @@ export default function HomePage() {
             />
 
             {selectedPostImages.length > 0 && (
-              <div style={{ marginTop: 8, fontSize: 13, color: "#666" }}>
+              <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted }}>
                 {selectedPostImages.length} of 10 photos selected
               </div>
             )}
@@ -1817,8 +1826,8 @@ export default function HomePage() {
                       position: "relative",
                       borderRadius: 12,
                       overflow: "hidden",
-                      border: "1px solid #e5e7eb",
-                      background: "#f9fafb",
+                      border: `1px solid ${t.border}`,
+                      background: t.bg,
                       aspectRatio: "1 / 1",
                     }}
                   >
@@ -1874,11 +1883,12 @@ export default function HomePage() {
                     onClick={clearSelectedPostImages}
                     style={{
                       background: "transparent",
-                      border: "1px solid #d1d5db",
+                      border: `1px solid ${t.border}`,
                       borderRadius: 10,
                       padding: "8px 12px",
                       fontWeight: 700,
                       cursor: "pointer",
+                      color: t.text,
                     }}
                   >
                     Remove All Photos
@@ -1891,9 +1901,9 @@ export default function HomePage() {
                   type="button"
                   onClick={openPostImagePicker}
                   style={{
-                    background: "white",
-                    color: "black",
-                    border: "1px solid #d1d5db",
+                    background: t.surface,
+                    color: t.text,
+                    border: `1px solid ${t.border}`,
                     borderRadius: 10,
                     padding: "10px 14px",
                     fontWeight: 700,
@@ -1907,7 +1917,7 @@ export default function HomePage() {
                   onClick={submitPost}
                   disabled={submittingPost}
                   style={{
-                    background: "black",
+                    background: "#111",
                     color: "white",
                     border: "none",
                     borderRadius: 10,
@@ -1944,7 +1954,7 @@ export default function HomePage() {
                       {" · "}
                       {new Date().getFullYear() - parseInt(m.death_date.split("-")[0])} years ago
                     </div>
-                    {m.bio && <div style={{ marginTop: 10, lineHeight: 1.6, color: "#444" }}>{m.bio}</div>}
+                    {m.bio && <div style={{ marginTop: 10, lineHeight: 1.6, color: t.textMuted }}>{m.bio}</div>}
                   </div>
                 </div>
               </div>
@@ -1960,10 +1970,10 @@ export default function HomePage() {
                 <div
                   key={post.id}
                   style={{
-                    border: "1px solid #e5e7eb",
+                    border: `1px solid ${t.border}`,
                     borderRadius: 14,
                     padding: 16,
-                    background: "white",
+                    background: t.surface,
                   }}
                 >
                   <div
@@ -1992,14 +2002,14 @@ export default function HomePage() {
                           href={`/profile/${post.user_id}`}
                           style={{
                             fontWeight: 800,
-                            color: "black",
+                            color: t.text,
                             textDecoration: "none",
                           }}
                         >
                           {post.authorName}
                         </Link>
 
-                        <div style={{ fontSize: 13, color: "#777", marginTop: 2 }}>
+                        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
                           {formatDate(post.created_at)}
                         </div>
                       </div>
@@ -2007,17 +2017,17 @@ export default function HomePage() {
 
                     <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                       {isOwnPost && !isEditingPost && (
-                        <button type="button" onClick={() => startEditPost(post.id, post.content)} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#777", fontWeight: 700 }}>
+                        <button type="button" onClick={() => startEditPost(post.id, post.content)} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontWeight: 700 }}>
                           Edit
                         </button>
                       )}
                       {isOwnPost && (
-                        <button type="button" onClick={() => deletePost(post.id)} disabled={deletingPostId === post.id} style={{ background: "transparent", border: "none", padding: 0, cursor: deletingPostId === post.id ? "not-allowed" : "pointer", color: "#777", fontWeight: 700, opacity: deletingPostId === post.id ? 0.6 : 1 }}>
+                        <button type="button" onClick={() => deletePost(post.id)} disabled={deletingPostId === post.id} style={{ background: "transparent", border: "none", padding: 0, cursor: deletingPostId === post.id ? "not-allowed" : "pointer", color: t.textMuted, fontWeight: 700, opacity: deletingPostId === post.id ? 0.6 : 1 }}>
                           {deletingPostId === post.id ? "Deleting..." : "Delete"}
                         </button>
                       )}
                       {!isOwnPost && (
-                        <button type="button" onClick={() => flagContent("post", post.id)} disabled={flaggingId === post.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === post.id ? "not-allowed" : "pointer", color: "#ccc", fontSize: 15, lineHeight: 1 }}>
+                        <button type="button" onClick={() => flagContent("post", post.id)} disabled={flaggingId === post.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === post.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 15, lineHeight: 1 }}>
                           ⚑
                         </button>
                       )}
@@ -2032,12 +2042,14 @@ export default function HomePage() {
                         style={{
                           width: "100%",
                           minHeight: 90,
-                          border: "1px solid #d1d5db",
+                          border: `1px solid ${t.inputBorder}`,
                           borderRadius: 10,
                           padding: 10,
                           resize: "vertical",
                           fontSize: 15,
                           boxSizing: "border-box",
+                          background: t.input,
+                          color: t.text,
                         }}
                       />
 
@@ -2054,11 +2066,12 @@ export default function HomePage() {
                           onClick={cancelEditPost}
                           style={{
                             background: "transparent",
-                            border: "1px solid #d1d5db",
+                            border: `1px solid ${t.border}`,
                             borderRadius: 10,
                             padding: "8px 14px",
                             fontWeight: 700,
                             cursor: "pointer",
+                            color: t.text,
                           }}
                         >
                           Cancel
@@ -2069,7 +2082,7 @@ export default function HomePage() {
                           onClick={() => savePostEdit(post.id)}
                           disabled={savingPostId === post.id}
                           style={{
-                            background: "black",
+                            background: "#111",
                             color: "white",
                             border: "none",
                             borderRadius: 10,
@@ -2125,8 +2138,8 @@ export default function HomePage() {
                                       position: "relative",
                                       borderRadius: 12,
                                       overflow: "hidden",
-                                      border: "1px solid #e5e7eb",
-                                      background: "#f9fafb",
+                                      border: `1px solid ${t.border}`,
+                                      background: t.bg,
                                       aspectRatio: "1 / 1",
                                       padding: 0,
                                       cursor: "pointer",
@@ -2188,7 +2201,7 @@ export default function HomePage() {
                         padding: 0,
                         cursor: togglingLikeFor === post.id ? "not-allowed" : "pointer",
                         fontWeight: 700,
-                        color: post.likedByCurrentUser ? "black" : "#666",
+                        color: post.likedByCurrentUser ? t.text : t.textMuted,
                         opacity: togglingLikeFor === post.id ? 0.6 : 1,
                       }}
                     >
@@ -2204,17 +2217,17 @@ export default function HomePage() {
                         padding: 0,
                         cursor: "pointer",
                         fontWeight: 700,
-                        color: "#666",
+                        color: t.textMuted,
                       }}
                     >
                       {commentsOpen ? "Hide Comments" : "Comment"}
                     </button>
 
-                    <div style={{ fontSize: 14, color: "#777" }}>
+                    <div style={{ fontSize: 14, color: t.textMuted }}>
                       {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
                     </div>
 
-                    <div style={{ fontSize: 14, color: "#777" }}>
+                    <div style={{ fontSize: 14, color: t.textMuted }}>
                       {post.commentCount}{" "}
                       {post.commentCount === 1 ? "comment" : "comments"}
                     </div>
@@ -2225,7 +2238,7 @@ export default function HomePage() {
                       style={{
                         marginTop: 16,
                         paddingTop: 16,
-                        borderTop: "1px solid #e5e7eb",
+                        borderTop: `1px solid ${t.border}`,
                       }}
                     >
                       <div style={{ display: "grid", gap: 12 }}>
@@ -2237,7 +2250,7 @@ export default function HomePage() {
                             <div
                               key={comment.id}
                               style={{
-                                background: "#f9fafb",
+                                background: t.bg,
                                 borderRadius: 10,
                                 padding: 12,
                               }}
@@ -2269,14 +2282,14 @@ export default function HomePage() {
                                       style={{
                                         fontWeight: 700,
                                         fontSize: 14,
-                                        color: "black",
+                                        color: t.text,
                                         textDecoration: "none",
                                       }}
                                     >
                                       {comment.authorName}
                                     </Link>
 
-                                    <div style={{ fontSize: 12, color: "#777", marginTop: 2 }}>
+                                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
                                       {formatDate(comment.created_at)}
                                     </div>
                                   </div>
@@ -2284,7 +2297,7 @@ export default function HomePage() {
 
                                 <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                                   {!isOwnComment && (
-                                    <button type="button" onClick={() => flagContent("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: "#ccc", fontSize: 13, lineHeight: 1 }}>
+                                    <button type="button" onClick={() => flagContent("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 13, lineHeight: 1 }}>
                                       ⚑
                                     </button>
                                   )}
@@ -2301,7 +2314,7 @@ export default function HomePage() {
                                           border: "none",
                                           padding: 0,
                                           cursor: "pointer",
-                                          color: "#777",
+                                          color: t.textMuted,
                                           fontWeight: 700,
                                         }}
                                       >
@@ -2321,7 +2334,7 @@ export default function HomePage() {
                                           deletingCommentId === comment.id
                                             ? "not-allowed"
                                             : "pointer",
-                                        color: "#777",
+                                        color: t.textMuted,
                                         fontWeight: 700,
                                         opacity: deletingCommentId === comment.id ? 0.6 : 1,
                                       }}
@@ -2343,12 +2356,14 @@ export default function HomePage() {
                                     style={{
                                       width: "100%",
                                       minHeight: 70,
-                                      border: "1px solid #d1d5db",
+                                      border: `1px solid ${t.inputBorder}`,
                                       borderRadius: 10,
                                       padding: 10,
                                       resize: "vertical",
                                       fontSize: 14,
                                       boxSizing: "border-box",
+                                      background: t.input,
+                                      color: t.text,
                                     }}
                                   />
 
@@ -2365,11 +2380,12 @@ export default function HomePage() {
                                       onClick={cancelEditComment}
                                       style={{
                                         background: "transparent",
-                                        border: "1px solid #d1d5db",
+                                        border: `1px solid ${t.border}`,
                                         borderRadius: 10,
                                         padding: "8px 14px",
                                         fontWeight: 700,
                                         cursor: "pointer",
+                                        color: t.text,
                                       }}
                                     >
                                       Cancel
@@ -2380,7 +2396,7 @@ export default function HomePage() {
                                       onClick={() => saveCommentEdit(comment.id)}
                                       disabled={savingCommentId === comment.id}
                                       style={{
-                                        background: "black",
+                                        background: "#111",
                                         color: "white",
                                         border: "none",
                                         borderRadius: 10,
@@ -2412,7 +2428,7 @@ export default function HomePage() {
                                         maxWidth: 180,
                                         borderRadius: 10,
                                         overflow: "hidden",
-                                        border: "1px solid #e5e7eb",
+                                        border: `1px solid ${t.border}`,
                                       }}
                                     >
                                       <img
@@ -2454,7 +2470,7 @@ export default function HomePage() {
                                         ? "not-allowed"
                                         : "pointer",
                                     fontWeight: 700,
-                                    color: comment.likedByCurrentUser ? "black" : "#666",
+                                    color: comment.likedByCurrentUser ? t.text : t.textMuted,
                                     opacity:
                                       togglingCommentLikeFor === comment.id ? 0.6 : 1,
                                   }}
@@ -2462,7 +2478,7 @@ export default function HomePage() {
                                   {comment.likedByCurrentUser ? "Unlike" : "Like"}
                                 </button>
 
-                                <div style={{ fontSize: 13, color: "#777" }}>
+                                <div style={{ fontSize: 13, color: t.textMuted }}>
                                   {comment.likeCount}{" "}
                                   {comment.likeCount === 1 ? "like" : "likes"}
                                 </div>
@@ -2472,7 +2488,7 @@ export default function HomePage() {
                         })}
 
                         {post.comments.length === 0 && (
-                          <div style={{ color: "#777", fontSize: 14 }}>
+                          <div style={{ color: t.textMuted, fontSize: 14 }}>
                             No comments yet.
                           </div>
                         )}
@@ -2491,12 +2507,14 @@ export default function HomePage() {
                           style={{
                             width: "100%",
                             minHeight: 70,
-                            border: "1px solid #d1d5db",
+                            border: `1px solid ${t.inputBorder}`,
                             borderRadius: 10,
                             padding: 10,
                             resize: "vertical",
                             fontSize: 14,
                             boxSizing: "border-box",
+                            background: t.input,
+                            color: t.text,
                           }}
                         />
 
@@ -2519,7 +2537,7 @@ export default function HomePage() {
                                 maxWidth: "100%",
                                 borderRadius: 10,
                                 overflow: "hidden",
-                                border: "1px solid #e5e7eb",
+                                border: `1px solid ${t.border}`,
                               }}
                             >
                               <img
@@ -2570,9 +2588,9 @@ export default function HomePage() {
                             type="button"
                             onClick={() => openCommentImagePicker(post.id)}
                             style={{
-                              background: "white",
-                              color: "black",
-                              border: "1px solid #d1d5db",
+                              background: t.surface,
+                              color: t.text,
+                              border: `1px solid ${t.border}`,
                               borderRadius: 10,
                               padding: "8px 12px",
                               fontWeight: 700,
@@ -2587,7 +2605,7 @@ export default function HomePage() {
                             onClick={() => submitComment(post.id)}
                             disabled={submittingCommentFor === post.id}
                             style={{
-                              background: "black",
+                              background: "#111",
                               color: "white",
                               border: "none",
                               borderRadius: 10,
@@ -2625,7 +2643,7 @@ export default function HomePage() {
             <button
               type="button"
               onClick={() => { setShowBizForm((p) => !p); setBizSubmitSuccess(false); }}
-              style={{ background: "black", color: "white", border: "none", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+              style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
             >
               {showBizForm ? "Cancel" : "Submit Biz/Org"}
             </button>
@@ -2633,7 +2651,7 @@ export default function HomePage() {
 
           {/* Submission form */}
           {showBizForm && (
-            <div style={{ marginTop: 14, border: "1px solid #e5e7eb", borderRadius: 12, padding: 14, background: "#fafafa" }}>
+            <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
               {bizSubmitSuccess ? (
                 <div style={{ textAlign: "center", padding: "16px 0", color: "#16a34a", fontWeight: 700, fontSize: 14 }}>
                   ✓ Submitted! Our team will review and approve your listing.
@@ -2647,9 +2665,9 @@ export default function HomePage() {
                       value={bizUrl}
                       onChange={(e) => handleBizUrlChange(e.target.value)}
                       placeholder="https://yourbusiness.com"
-                      style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }}
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, boxSizing: "border-box", background: t.input, color: t.text }}
                     />
-                    {fetchingBizOg && <div style={{ fontSize: 11, color: "#888", marginTop: 4 }}>Fetching preview...</div>}
+                    {fetchingBizOg && <div style={{ fontSize: 11, color: t.textFaint, marginTop: 4 }}>Fetching preview...</div>}
                     {bizOgPreview && <OgCard og={bizOgPreview} />}
                   </div>
 
@@ -2660,7 +2678,7 @@ export default function HomePage() {
                       value={bizName}
                       onChange={(e) => setBizName(e.target.value)}
                       placeholder="Branded Apparel Company"
-                      style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }}
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, boxSizing: "border-box", background: t.input, color: t.text }}
                     />
                   </div>
 
@@ -2671,11 +2689,11 @@ export default function HomePage() {
                       onChange={(e) => setBizBlurb(e.target.value)}
                       placeholder="Brief description of your business or org..."
                       rows={3}
-                      style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, resize: "vertical", boxSizing: "border-box", fontFamily: "inherit" }}
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, resize: "vertical", boxSizing: "border-box", fontFamily: "inherit", background: t.input, color: t.text }}
                     />
                   </div>
 
-                  <div style={{ fontSize: 11, color: "#888", marginBottom: 10 }}>
+                  <div style={{ fontSize: 11, color: t.textFaint, marginBottom: 10 }}>
                     Submissions are reviewed by our team before going live.
                   </div>
 
@@ -2683,7 +2701,7 @@ export default function HomePage() {
                     type="button"
                     onClick={submitBizListing}
                     disabled={submittingBiz || !bizUrl.trim() || !bizName.trim()}
-                    style={{ width: "100%", background: "black", color: "white", border: "none", borderRadius: 10, padding: "10px 0", fontWeight: 700, fontSize: 14, cursor: submittingBiz || !bizUrl.trim() || !bizName.trim() ? "not-allowed" : "pointer", opacity: submittingBiz || !bizUrl.trim() || !bizName.trim() ? 0.5 : 1 }}
+                    style={{ width: "100%", background: "#111", color: "white", border: "none", borderRadius: 10, padding: "10px 0", fontWeight: 700, fontSize: 14, cursor: submittingBiz || !bizUrl.trim() || !bizName.trim() ? "not-allowed" : "pointer", opacity: submittingBiz || !bizUrl.trim() || !bizName.trim() ? 0.5 : 1 }}
                   >
                     {submittingBiz ? "Submitting..." : "Submit for Review"}
                   </button>
@@ -2695,7 +2713,7 @@ export default function HomePage() {
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
             {!bizLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
             {bizLoaded && businessListings.length === 0 && (
-              <div style={{ fontSize: 14, color: "#666" }}>
+              <div style={{ fontSize: 14, color: t.textMuted }}>
                 No approved businesses yet.
               </div>
             )}
@@ -2715,10 +2733,10 @@ export default function HomePage() {
                 <div
                   key={listing.id}
                   style={{
-                    border: "1px solid #e5e7eb",
+                    border: `1px solid ${t.border}`,
                     borderRadius: 12,
                     overflow: "hidden",
-                    background: "white",
+                    background: t.surface,
                   }}
                 >
                   <a
@@ -2739,7 +2757,7 @@ export default function HomePage() {
                       <div style={{ fontWeight: 800, lineHeight: 1.3, fontSize: 18 }}>
                         {displayTitle}
                       </div>
-                      <div style={{ marginTop: 8, fontSize: 14, color: "#666", lineHeight: 1.5 }}>
+                      <div style={{ marginTop: 8, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>
                         {displayDescription}
                       </div>
                     </div>
@@ -2756,7 +2774,7 @@ export default function HomePage() {
                       disabled={togglingBizLikeFor === listing.id || !userId}
                       style={{ background: "none", border: "none", cursor: userId ? "pointer" : "default", display: "flex", alignItems: "center", gap: 5, padding: "4px 0", opacity: togglingBizLikeFor === listing.id ? 0.5 : 1 }}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill={isLiked ? "black" : "none"} stroke="black" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill={isLiked ? t.text : "none"} stroke={t.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
                       </svg>
                       <span style={{ fontSize: 13, fontWeight: 700 }}>{listing.like_count ?? 0}</span>

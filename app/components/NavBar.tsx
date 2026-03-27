@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
+import { useTheme } from "../lib/ThemeContext";
 
 type Notification = {
   id: string;
@@ -256,14 +257,16 @@ export default function NavBar() {
     window.location.href = "/login";
   }
 
+  const { t } = useTheme();
+
   const navButton: React.CSSProperties = {
     padding: "10px 16px",
     borderRadius: 10,
-    border: "1px solid #ccc",
+    border: `1px solid ${t.navBorder}`,
     textDecoration: "none",
     fontWeight: 700,
-    background: "white",
-    color: "black",
+    background: t.navBg,
+    color: t.text,
   };
 
   const primaryButton: React.CSSProperties = {
@@ -272,8 +275,8 @@ export default function NavBar() {
     border: "none",
     textDecoration: "none",
     fontWeight: 700,
-    background: "black",
-    color: "white",
+    background: t.text,
+    color: t.navBg,
   };
 
   return (
@@ -283,11 +286,11 @@ export default function NavBar() {
         <Link
           href="/profile"
           className="nav-avatar"
-          style={{ width: 38, height: 38, borderRadius: "50%", background: "black", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, textDecoration: "none", flexShrink: 0 }}
+          style={{ width: 38, height: 38, borderRadius: "50%", background: t.text, color: t.navBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, textDecoration: "none", flexShrink: 0 }}
         >
           {userInitial}
         </Link>
-        {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn" style={navButton}>My Wall</Link>}
+        {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn" style={navButton}>My Profile</Link>}
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         <Link href="/" className="nav-btn" style={navButton}>EOD Hub</Link>
 
@@ -320,31 +323,31 @@ export default function NavBar() {
             </button>
 
             {showNotifications && (
-              <div style={{ position: "absolute", top: 46, left: 0, width: 320, background: "white", border: "1px solid #e5e7eb", borderRadius: 14, boxShadow: "0 8px 32px rgba(0,0,0,0.14)", zIndex: 200, overflow: "hidden" }}>
-                <div style={{ padding: "12px 16px", fontWeight: 800, fontSize: 15, borderBottom: "1px solid #e5e7eb", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ position: "absolute", top: 46, left: 0, width: 320, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, boxShadow: "0 8px 32px rgba(0,0,0,0.24)", zIndex: 200, overflow: "hidden" }}>
+                <div style={{ padding: "12px 16px", fontWeight: 800, fontSize: 15, borderBottom: `1px solid ${t.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", color: t.text }}>
                   <span>Notifications</span>
                   {unreadCount > 0 && (
-                    <button onClick={markAllRead} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#666", fontWeight: 700 }}>
+                    <button onClick={markAllRead} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: t.textMuted, fontWeight: 700 }}>
                       Mark all read
                     </button>
                   )}
                 </div>
                 <div style={{ maxHeight: 380, overflowY: "auto" }}>
                   {notifications.length === 0 && (
-                    <div style={{ padding: 20, color: "#888", fontSize: 14, textAlign: "center" }}>No notifications yet.</div>
+                    <div style={{ padding: 20, color: t.textMuted, fontSize: 14, textAlign: "center" }}>No notifications yet.</div>
                   )}
                   {notifications.map((n) => (
                     <div
                       key={n.id}
                       onClick={() => handleNotificationClick(n)}
-                      style={{ padding: "12px 16px", background: n.is_read ? "white" : "#fef9ec", cursor: "pointer", borderBottom: "1px solid #f3f4f6", display: "flex", gap: 10, alignItems: "flex-start" }}
+                      style={{ padding: "12px 16px", background: n.is_read ? t.surface : (t.surface === "#1c1c1c" ? "#232010" : "#fef9ec"), cursor: "pointer", borderBottom: `1px solid ${t.borderLight}`, display: "flex", gap: 10, alignItems: "flex-start", color: t.text }}
                     >
                       {!n.is_read && (
                         <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#f97316", flexShrink: 0, marginTop: 5 }} />
                       )}
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 14, fontWeight: n.is_read ? 400 : 600, lineHeight: 1.4 }}>{n.message}</div>
-                        <div style={{ fontSize: 12, color: "#999", marginTop: 3 }}>{timeAgo(n.created_at)}</div>
+                        <div style={{ fontSize: 12, color: t.textFaint, marginTop: 3 }}>{timeAgo(n.created_at)}</div>
                       </div>
                     </div>
                   ))}
@@ -357,7 +360,7 @@ export default function NavBar() {
 
       {/* Center: search bar */}
       <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "0 1 340px", minWidth: 200 }}>
-        <div style={{ display: "flex", alignItems: "center", border: "1px solid #d1d5db", borderRadius: 10, background: "white", padding: "6px 12px", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: "6px 12px", gap: 8 }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.2" strokeLinecap="round">
             <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
           </svg>
@@ -367,15 +370,15 @@ export default function NavBar() {
             onChange={(e) => handleSearchChange(e.target.value)}
             onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
             placeholder="Search people, jobs, businesses..."
-            style={{ border: "none", outline: "none", fontSize: 14, width: "100%", background: "transparent" }}
+            style={{ border: "none", outline: "none", fontSize: 14, width: "100%", background: "transparent", color: t.text }}
           />
           {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
         </div>
 
         {showSearchDropdown && (
-          <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: "white", border: "1px solid #e5e7eb", borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.12)", zIndex: 300, overflow: "hidden", maxHeight: 420, overflowY: "auto" }}>
+          <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.22)", zIndex: 300, overflow: "hidden", maxHeight: 420, overflowY: "auto" }}>
             {searchResults.length === 0 && !searching && (
-              <div style={{ padding: "16px 16px", fontSize: 14, color: "#888", textAlign: "center" }}>No results found.</div>
+              <div style={{ padding: "16px 16px", fontSize: 14, color: t.textMuted, textAlign: "center" }}>No results found.</div>
             )}
 
             {(["user", "job", "business"] as const).map((type) => {
@@ -386,21 +389,21 @@ export default function NavBar() {
               const badgeText: Record<string, string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e" };
               return (
                 <div key={type}>
-                  <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: "#999", textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
+                  <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
                   {group.map((result) => (
                     <div
                       key={result.id}
                       onClick={() => handleSearchResultClick(result)}
-                      style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, borderTop: "1px solid #f3f4f6" }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = "#f9fafb")}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = "white")}
+                      style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${t.borderLight}`, background: t.surface, color: t.text }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = t.surface)}
                     >
                       <span style={{ background: badge[type], color: badgeText[type], fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>
                         {type === "user" ? "Person" : type === "job" ? "Job" : "Biz"}
                       </span>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.title}</div>
-                        <div style={{ fontSize: 12, color: "#666", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.subtitle}</div>
+                        <div style={{ fontSize: 12, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.subtitle}</div>
                       </div>
                       {result.external && (
                         <svg style={{ flexShrink: 0, marginLeft: "auto" }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2.2" strokeLinecap="round">
