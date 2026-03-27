@@ -43,6 +43,7 @@ function timeAgo(dateString: string) {
 
 export default function MessagesPage() {
   const [userId, setUserId] = useState<string | null>(null);
+  const [myName, setMyName] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -52,6 +53,8 @@ export default function MessagesPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileView, setMobileView] = useState<"list" | "thread">("list");
   const [inboxTab, setInboxTab] = useState<"messages" | "requests">("messages");
+  const [requestTarget, setRequestTarget] = useState<{ userId: string; name: string; photo: string | null } | null>(null);
+  const [requestDraft, setRequestDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const { t } = useTheme();
@@ -68,6 +71,13 @@ export default function MessagesPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.href = "/login"; return; }
       setUserId(user.id);
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("first_name, last_name, display_name")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const n = profile as { first_name: string | null; last_name: string | null; display_name: string | null } | null;
+      setMyName(n?.display_name || `${n?.first_name ?? ""} ${n?.last_name ?? ""}`.trim() || "Someone");
       await loadConversations(user.id);
       setLoading(false);
     }
@@ -104,23 +114,23 @@ export default function MessagesPage() {
       display_name: string | null; photo_url: string | null; account_type: string | null;
     }) => [p.user_id, p]));
 
-    // Only fetch message previews/unread for accepted conversations
-    const acceptedIds = data.filter((c) => c.status === "accepted").map((c) => c.id);
+    const acceptedIds = new Set(data.filter((c) => c.status === "accepted").map((c) => c.id));
+    const allIds = data.map((c) => c.id);
     const unreadMap = new Map<string, number>();
     const previewMap = new Map<string, string>();
 
-    if (acceptedIds.length > 0) {
+    if (allIds.length > 0) {
       const { data: msgData } = await supabase
         .from("messages")
         .select("conversation_id, content, is_read, sender_id, created_at")
-        .in("conversation_id", acceptedIds)
+        .in("conversation_id", allIds)
         .order("created_at", { ascending: false });
 
       (msgData ?? []).forEach((m: { conversation_id: string; content: string; is_read: boolean; sender_id: string }) => {
         if (!previewMap.has(m.conversation_id)) {
           previewMap.set(m.conversation_id, m.content);
         }
-        if (m.sender_id !== uid && !m.is_read) {
+        if (acceptedIds.has(m.conversation_id) && m.sender_id !== uid && !m.is_read) {
           unreadMap.set(m.conversation_id, (unreadMap.get(m.conversation_id) ?? 0) + 1);
         }
       });
@@ -159,7 +169,6 @@ export default function MessagesPage() {
       .maybeSingle();
 
     if (existing) {
-      // If I received a request from them, switch to requests tab
       if (existing.status === "pending" && existing.initiated_by !== userId) {
         setInboxTab("requests");
       } else {
@@ -170,18 +179,48 @@ export default function MessagesPage() {
       return;
     }
 
-    // Create new pending request
-    const { data: created } = await supabase
-      .from("conversations")
-      .insert({ participant_1: p1, participant_2: p2, status: "pending", initiated_by: userId })
-      .select("id")
-      .single();
+    // New conversation — show compose area, don't auto-create yet
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("first_name, last_name, display_name, photo_url")
+      .eq("user_id", otherId)
+      .maybeSingle();
+    const p = profile as { first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null } | null;
+    const name = p?.display_name || `${p?.first_name ?? ""} ${p?.last_name ?? ""}`.trim() || "EOD Member";
+    setRequestTarget({ userId: otherId, name, photo: p?.photo_url ?? null });
+    setActiveConvId(null);
+    if (isMobile) setMobileView("thread");
+  }
 
-    await loadConversations(userId);
-
-    if (created?.id) {
+  async function sendRequest() {
+    if (!userId || !requestTarget || !requestDraft.trim() || sending) return;
+    const otherId = requestTarget.userId;
+    const p1 = userId < otherId ? userId : otherId;
+    const p2 = userId < otherId ? otherId : userId;
+    setSending(true);
+    try {
+      const { data: created } = await supabase
+        .from("conversations")
+        .insert({ participant_1: p1, participant_2: p2, status: "pending", initiated_by: userId, last_message_at: new Date().toISOString() })
+        .select("id")
+        .single();
+      if (!created?.id) return;
+      await supabase.from("messages").insert({ conversation_id: created.id, sender_id: userId, content: requestDraft.trim() });
+      // Notify recipient
+      await supabase.from("notifications").insert([{
+        user_id: otherId,
+        actor_id: userId,
+        actor_name: myName,
+        type: "activity",
+        message: `${myName} sent you a message request`,
+        post_owner_id: userId,
+      }]);
+      setRequestTarget(null);
+      setRequestDraft("");
+      await loadConversations(userId);
       selectConversation(created.id);
-      if (isMobile) setMobileView("thread");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -395,7 +434,9 @@ export default function MessagesPage() {
                     <span style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{conv.other_user_name}</span>
                     <span style={{ background: "#fef9c3", color: "#92400e", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 20, flexShrink: 0 }}>Pending</span>
                   </div>
-                  <div style={{ fontSize: 13, color: t.textFaint, marginTop: 2 }}>Request sent</div>
+                  <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {conv.last_message_preview ?? "Request sent"}
+                  </div>
                 </div>
               </div>
             ))}
@@ -428,11 +469,14 @@ export default function MessagesPage() {
                         )}
                       </div>
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
-                        {isEmployer
-                          ? "An employer wants to send you a message."
-                          : "wants to send you a message."}
+                        {isEmployer ? "An employer wants to connect." : "wants to send you a message."}
                       </div>
-                      <div style={{ fontSize: 11, color: t.textFaint, marginTop: 2 }}>{timeAgo(conv.last_message_at)}</div>
+                      {conv.last_message_preview && (
+                        <div style={{ fontSize: 13, color: t.text, marginTop: 5, padding: "7px 10px", background: t.bg, borderRadius: 8, fontStyle: "italic", lineHeight: 1.4 }}>
+                          &ldquo;{conv.last_message_preview}&rdquo;
+                        </div>
+                      )}
+                      <div style={{ fontSize: 11, color: t.textFaint, marginTop: 4 }}>{timeAgo(conv.last_message_at)}</div>
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8 }}>
@@ -459,26 +503,64 @@ export default function MessagesPage() {
   );
 
   const isPendingSent = activeConv?.status === "pending" && activeConv?.initiated_by === userId;
+  const threadName = requestTarget?.name ?? activeConv?.other_user_name ?? null;
+  const threadPhoto = requestTarget?.photo ?? activeConv?.other_user_photo ?? null;
+  const threadUserId = requestTarget?.userId ?? activeConv?.other_user_id ?? null;
+
+  const MessageBubbles = (
+    <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+      {messages.map((msg) => {
+        const isMe = msg.sender_id === userId;
+        return (
+          <div key={msg.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
+            <div style={{
+              maxWidth: "72%", padding: "10px 14px",
+              borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+              background: isMe ? "#111" : t.badgeBg,
+              color: isMe ? "white" : t.text,
+              fontSize: 14, lineHeight: 1.5,
+            }}>
+              {msg.content}
+              <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: isMe ? "right" : "left" }}>
+                {timeAgo(msg.created_at)}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+      <div ref={bottomRef} />
+    </div>
+  );
 
   const ThreadPane = (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Thread header */}
       <div style={{ padding: "14px 20px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "center", gap: 12 }}>
         {isMobile && (
-          <button onClick={() => setMobileView("list")} style={{ background: "none", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 18, padding: "0 4px 0 0", color: t.textMuted }}>
+          <button
+            onClick={() => { setMobileView("list"); setRequestTarget(null); }}
+            style={{ background: "none", border: "none", cursor: "pointer", fontWeight: 700, fontSize: 18, padding: "0 4px 0 0", color: t.textMuted }}
+          >
             ←
           </button>
         )}
-        {activeConv ? (
+        {threadName ? (
           <>
-            <div style={avatarStyle(activeConv.other_user_name, activeConv.other_user_photo)}>
-              {activeConv.other_user_photo
-                ? <img src={activeConv.other_user_photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : activeConv.other_user_name[0]?.toUpperCase()}
+            <div style={avatarStyle(threadName, threadPhoto)}>
+              {threadPhoto
+                ? <img src={threadPhoto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                : threadName[0]?.toUpperCase()}
             </div>
-            <a href={`/profile/${activeConv.other_user_id}`} style={{ fontWeight: 800, fontSize: 16, textDecoration: "none", color: "inherit" }}>
-              {activeConv.other_user_name}
-            </a>
+            {threadUserId && !requestTarget ? (
+              <a href={`/profile/${threadUserId}`} style={{ fontWeight: 800, fontSize: 16, textDecoration: "none", color: "inherit" }}>
+                {threadName}
+              </a>
+            ) : (
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 16, color: t.text }}>{threadName}</div>
+                <div style={{ fontSize: 12, color: t.textFaint, marginTop: 1 }}>New message request</div>
+              </div>
+            )}
             {isPendingSent && (
               <span style={{ marginLeft: "auto", background: "#fef9c3", color: "#92400e", fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 20 }}>
                 Request Pending
@@ -490,53 +572,58 @@ export default function MessagesPage() {
         )}
       </div>
 
-      {/* Pending sent state */}
-      {isPendingSent ? (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 32, textAlign: "center", gap: 16 }}>
-          <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>⏳</div>
-          <div style={{ fontWeight: 800, fontSize: 16, color: t.text }}>Request sent to {activeConv?.other_user_name}</div>
-          <div style={{ fontSize: 14, color: t.textMuted, maxWidth: 280, lineHeight: 1.6 }}>
-            Your message request is waiting to be accepted. You&apos;ll be able to chat once they accept.
-          </div>
-          <button
-            onClick={() => activeConvId && cancelRequest(activeConvId)}
-            style={{ padding: "9px 20px", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#ef4444" }}
-          >
-            Cancel Request
-          </button>
-        </div>
-      ) : (
+      {/* Compose new request */}
+      {requestTarget ? (
         <>
-          {/* Messages */}
-          <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
-            {!activeConvId && (
-              <div style={{ margin: "auto", color: t.textFaint, fontSize: 14, textAlign: "center" }}>
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 24px", textAlign: "center" }}>
+            <div style={{ color: t.textMuted, fontSize: 14, lineHeight: 1.7, maxWidth: 300 }}>
+              Your message will be sent as a request.<br />{requestTarget.name} can choose to accept or decline.
+            </div>
+          </div>
+          <div style={{ padding: "12px 16px", borderTop: `1px solid ${t.border}`, display: "flex", gap: 10 }}>
+            <input
+              autoFocus
+              value={requestDraft}
+              onChange={(e) => setRequestDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && requestDraft.trim()) { e.preventDefault(); sendRequest(); } }}
+              placeholder={`Message ${requestTarget.name}...`}
+              style={{ flex: 1, padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
+            />
+            <button
+              onClick={sendRequest}
+              disabled={!requestDraft.trim() || sending}
+              style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: !requestDraft.trim() || sending ? 0.5 : 1 }}
+            >
+              {sending ? "..." : "Send"}
+            </button>
+          </div>
+        </>
+      ) : isPendingSent ? (
+        /* Pending sent — show the message they sent + waiting footer */
+        <>
+          {MessageBubbles}
+          <div style={{ padding: "14px 20px", borderTop: `1px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>
+              Waiting for <strong>{activeConv?.other_user_name}</strong> to accept your request.
+            </div>
+            <button
+              onClick={() => activeConvId && cancelRequest(activeConvId)}
+              style={{ padding: "7px 16px", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, fontWeight: 700, fontSize: 12, cursor: "pointer", color: "#ef4444", flexShrink: 0 }}
+            >
+              Cancel Request
+            </button>
+          </div>
+        </>
+      ) : (
+        /* Normal accepted thread */
+        <>
+          {activeConvId ? MessageBubbles : (
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ color: t.textFaint, fontSize: 14, textAlign: "center" }}>
                 Select a conversation or start a new one from someone&apos;s profile.
               </div>
-            )}
-            {messages.map((msg) => {
-              const isMe = msg.sender_id === userId;
-              return (
-                <div key={msg.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
-                  <div style={{
-                    maxWidth: "72%", padding: "10px 14px",
-                    borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-                    background: isMe ? "#111" : t.badgeBg,
-                    color: isMe ? "white" : t.text,
-                    fontSize: 14, lineHeight: 1.5,
-                  }}>
-                    {msg.content}
-                    <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: isMe ? "right" : "left" }}>
-                      {timeAgo(msg.created_at)}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            <div ref={bottomRef} />
-          </div>
-
-          {/* Input */}
+            </div>
+          )}
           {activeConvId && (
             <div style={{ padding: "12px 16px", borderTop: `1px solid ${t.border}`, display: "flex", gap: 10 }}>
               <input
