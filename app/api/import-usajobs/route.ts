@@ -9,11 +9,16 @@ const EOD_KEYWORDS = [
   "CIED",
   "C-IED",
   "explosive safety",
+  "TSS-E",
+  "Transportation Security Specialist Explosives",
+  "explosives specialist",
   "UAS",
   "unmanned aerial systems",
   "CUAS",
   "C-UAS",
 ];
+
+const MAX_PAGES_PER_KEYWORD = 5;
 
 const TITLE_RELEVANT_TERMS = [
   "eod",
@@ -156,7 +161,9 @@ export async function GET(req: NextRequest) {
   const importedTitles: string[] = [];
 
   for (const keyword of EOD_KEYWORDS) {
-    const items = await fetchUSAJobsPage(keyword, 1);
+    for (let page = 1; page <= MAX_PAGES_PER_KEYWORD; page++) {
+    const items = await fetchUSAJobsPage(keyword, page);
+    if (items.length === 0) break;
 
     for (const item of items) {
       const pos = item.MatchedObjectDescriptor;
@@ -223,7 +230,9 @@ export async function GET(req: NextRequest) {
         importedTitles.push(title);
       }
     }
-  }
+    if (items.length < 25) break; // fewer than a full page = last page
+    } // end page loop
+  } // end keyword loop
 
   return NextResponse.json({
     imported,

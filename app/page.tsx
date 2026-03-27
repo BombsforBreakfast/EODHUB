@@ -277,6 +277,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [postsLoaded, setPostsLoaded] = useState(false);
   const [jobsLoaded, setJobsLoaded] = useState(false);
+  const [jobsLastUpdated, setJobsLastUpdated] = useState<string | null>(null);
   const [bizLoaded, setBizLoaded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -443,20 +444,21 @@ export default function HomePage() {
   }
 
   async function loadJobs() {
-    const { data, error } = await supabase
-      .from("jobs")
-      .select("*")
-      .eq("is_approved", true)
-      .order("created_at", { ascending: false })
-      .limit(20);
+    const [jobsRes, lastSeenRes] = await Promise.all([
+      supabase.from("jobs").select("*").eq("is_approved", true).order("created_at", { ascending: false }).limit(20),
+      supabase.from("jobs").select("last_seen_at").eq("source_type", "usajobs").order("last_seen_at", { ascending: false }).limit(1).maybeSingle(),
+    ]);
 
-    if (error) {
-      console.error("Jobs load error:", error);
+    if (jobsRes.error) {
+      console.error("Jobs load error:", jobsRes.error);
       return;
     }
 
-    setJobs((data ?? []) as Job[]);
+    setJobs((jobsRes.data ?? []) as Job[]);
     setJobsLoaded(true);
+    if (lastSeenRes.data?.last_seen_at) {
+      setJobsLastUpdated(lastSeenRes.data.last_seen_at);
+    }
   }
 
   async function loadTodayMemorials() {
@@ -1647,7 +1649,13 @@ export default function HomePage() {
             top: 20,
           }}
         >
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            {jobsLastUpdated ? (
+              <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 600 }}>
+                Updated {new Date(jobsLastUpdated).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}{" "}
+                {new Date(jobsLastUpdated).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+              </div>
+            ) : <div />}
             <Link href="/post-job" style={{ background: "#111", color: "white", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
               Post Job
             </Link>
