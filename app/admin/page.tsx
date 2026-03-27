@@ -112,15 +112,13 @@ export default function AdminPage() {
   }
 
   async function loadJobs() {
-    const query = supabase
-      .from("jobs")
-      .select("id, created_at, title, company_name, location, category, description, apply_url, is_approved, source_type")
-      .order("created_at", { ascending: false });
-    const { data, error } = pendingOnly
-      ? await query.neq("is_approved", true)
-      : await query;
-    if (error) { console.error(error); return; }
-    setJobs((data ?? []) as Job[]);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`/api/admin/jobs?pendingOnly=${pendingOnly}`, {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+    });
+    if (!res.ok) { console.error("loadJobs API error", res.status); return; }
+    const json = await res.json();
+    setJobs((json.jobs ?? []) as Job[]);
   }
 
   async function loadUsers() {
