@@ -1806,7 +1806,7 @@ export default function HomePage() {
               <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 12 }}>
                 People You May Know
               </div>
-              <div style={{ display: "flex", gap: 12, overflowX: "auto", paddingBottom: 4 }}>
+              <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 4 }}>
                 {discoverProfiles.map((p) => {
                   const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
                   const ringColor = getServiceRingColor(p.service);
@@ -1814,20 +1814,15 @@ export default function HomePage() {
                     <a
                       key={p.user_id}
                       href={`/profile/${p.user_id}`}
-                      style={{ textDecoration: "none", color: "inherit", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, width: 88, padding: "10px 8px", borderRadius: 12, background: t.surfaceHover, border: `1px solid ${t.borderLight}`, transition: "border-color 0.15s" }}
+                      style={{ textDecoration: "none", color: "inherit", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 64 }}
                     >
-                      <div style={{ width: 52, height: 52, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 18, boxSizing: "border-box", border: ringColor ? `3px solid ${ringColor}` : `2px solid ${t.border}` }}>
+                      <div style={{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 16, boxSizing: "border-box", border: ringColor ? `3px solid ${ringColor}` : `2px solid ${t.border}` }}>
                         {p.photo_url
                           ? <img src={p.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                           : (fullName[0] || "U").toUpperCase()
                         }
                       </div>
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: t.text, lineHeight: 1.3, wordBreak: "break-word" }}>{fullName}</div>
-                        {p.service && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{p.service}</div>}
-                        {p.status && <div style={{ fontSize: 10, color: t.textFaint, marginTop: 1 }}>{p.status}</div>}
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#6366f1", marginTop: "auto" }}>View Profile</div>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: t.text, textAlign: "center", lineHeight: 1.3, wordBreak: "break-word" }}>{fullName}</div>
                     </a>
                   );
                 })}
