@@ -37,6 +37,7 @@ const TITLE_RELEVANT_TERMS = [
   "disposal",
   "ammunition",
   "tss-e",
+  "transportation security specialist",
   "uas",
   "unmanned aerial",
   "cuas",

@@ -232,8 +232,19 @@ export default function AdminPage() {
 
   async function approveJob(id: string) {
     setActionLoading(id);
-    const { error } = await supabase.from("jobs").update({ is_approved: true }).eq("id", id);
-    if (error) { alert(error.message); } else { showToast("Job approved!"); await loadJobs(); }
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`/api/admin/approve-job?id=${id}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+    });
+    if (!res.ok) {
+      let err: { error?: string } = {};
+      try { err = await res.json(); } catch { /* ignore */ }
+      alert(err.error ?? "Approve failed");
+    } else {
+      showToast("Job approved!");
+      if (pendingOnly) setJobs((prev) => prev.filter((j) => j.id !== id));
+    }
     setActionLoading(null);
   }
 
