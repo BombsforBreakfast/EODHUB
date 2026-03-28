@@ -1461,7 +1461,7 @@ export default function HomePage() {
         // Check verification status — unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
-          .select("verification_status, first_name, last_name, service, company_name")
+          .select("verification_status, first_name, last_name, service, company_name, account_type, subscription_status")
           .eq("user_id", currentUserId)
           .maybeSingle();
 
@@ -1483,6 +1483,16 @@ export default function HomePage() {
         if (!profileCheck || (profileCheck.verification_status !== "verified")) {
           window.location.href = "/pending";
           return;
+        }
+
+        // Paywall check — employers always pass; members/businesses need active subscription
+        const paywallEnabled = process.env.NEXT_PUBLIC_PAYWALL_ENABLED === "true";
+        if (paywallEnabled && profileCheck.account_type !== "employer") {
+          const subStatus = profileCheck.subscription_status;
+          if (subStatus !== "active" && subStatus !== "trialing") {
+            window.location.href = "/subscribe";
+            return;
+          }
         }
 
         setUserId(currentUserId);

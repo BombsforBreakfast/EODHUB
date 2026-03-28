@@ -5,6 +5,83 @@ import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 
+function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null }) {
+  const { t } = useTheme();
+  const [loading, setLoading] = useState(false);
+  const isActive = subscriptionStatus === "active" || subscriptionStatus === "trialing";
+
+  async function handleSubscribe() {
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/stripe/checkout", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      const json = await res.json();
+      if (json.url) window.location.href = json.url;
+      else alert(json.error ?? "Something went wrong.");
+    } finally { setLoading(false); }
+  }
+
+  async function handlePortal() {
+    setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/stripe/portal", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      const json = await res.json();
+      if (json.url) window.location.href = json.url;
+      else alert(json.error ?? "Something went wrong.");
+    } finally { setLoading(false); }
+  }
+
+  const statusLabel: Record<string, string> = {
+    active: "Active",
+    trialing: "Trial",
+    past_due: "Past Due",
+    cancelled: "Cancelled",
+  };
+  const statusColor: Record<string, string> = {
+    active: "#16a34a",
+    trialing: "#2563eb",
+    past_due: "#dc2626",
+    cancelled: "#6b7280",
+  };
+  const label = subscriptionStatus ? (statusLabel[subscriptionStatus] ?? subscriptionStatus) : "No subscription";
+  const color = subscriptionStatus ? (statusColor[subscriptionStatus] ?? "#6b7280") : "#6b7280";
+
+  return (
+    <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: "18px 24px", background: t.surface, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+      <div style={{ flex: 1, minWidth: 200 }}>
+        <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Membership</div>
+        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
+          $2/month · <span style={{ fontWeight: 700, color }}>{label}</span>
+        </div>
+      </div>
+      {isActive ? (
+        <button
+          onClick={handlePortal}
+          disabled={loading}
+          style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", color: t.text, opacity: loading ? 0.6 : 1 }}
+        >
+          {loading ? "..." : "Manage Billing"}
+        </button>
+      ) : (
+        <button
+          onClick={handleSubscribe}
+          disabled={loading}
+          style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1 }}
+        >
+          {loading ? "..." : "Subscribe — $2/mo"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civilian Bomb Tech"];
 const STATUS_OPTIONS = ["Active", "Former", "Retired", "Civil Service"];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "Civil Service"];
@@ -24,6 +101,8 @@ type Profile = {
   skill_badge: string | null;
   is_admin: boolean | null;
   seeking_employment: boolean | null;
+  account_type: string | null;
+  subscription_status: string | null;
 };
 
 type SavedJob = {
@@ -407,6 +486,13 @@ export default function MyAccountPage() {
               <span style={{ position: "absolute", top: 3, left: seekingEmployment ? 27 : 3, width: 22, height: 22, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s", display: "block" }} />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Billing Card — employers are always free, members/businesses show subscription status */}
+      {!loading && profile?.account_type !== "employer" && (
+        <div style={{ marginTop: 16 }}>
+          <BillingCard subscriptionStatus={profile?.subscription_status ?? null} />
         </div>
       )}
 
