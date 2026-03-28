@@ -1674,7 +1674,7 @@ export default function HomePage() {
         {/* Jobs pane */}
         <aside
           style={{
-            display: isMobile ? (mobileTab === "jobs" ? "flex" : "none") : "flex",
+            display: isMobile ? (mobileTab === "jobs" ? "block" : "none") : "flex",
             flexDirection: "column",
             position: isMobile ? "static" : "sticky",
             top: 20,
@@ -1693,7 +1693,7 @@ export default function HomePage() {
             </Link>
           </div>
 
-          <div style={{ flex: 1, overflowY: "auto", marginTop: 4, display: "grid", gap: 12, alignContent: "start" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "grid", gap: 12, alignContent: "start" }}>
             {!jobsLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
             {jobsLoaded && jobs.length === 0 && (
               <div style={{ fontSize: 14, color: t.textMuted }}>

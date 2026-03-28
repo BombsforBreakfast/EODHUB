@@ -20,6 +20,8 @@ const EOD_KEYWORDS = [
   "chemical",
   "biological",
   "radiological",
+  "Emergency Management Specialist",
+  "Nuclear Materials Courier",
 ];
 
 const MAX_PAGES_PER_KEYWORD = 5;
@@ -48,6 +50,8 @@ const TITLE_RELEVANT_TERMS = [
   "radiological",
   "cbrn",
   "cbrne",
+  "emergency management specialist",
+  "nuclear materials courier",
   "uas",
   "unmanned aerial",
   "cuas",
