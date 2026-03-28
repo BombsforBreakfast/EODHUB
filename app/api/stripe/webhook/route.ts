@@ -28,19 +28,26 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  async function updateByCustomer(customerId: string, status: string) {
+  async function updateByCustomer(customerId: string, status: string, autoVerify = false) {
+    const update: Record<string, string> = { subscription_status: status };
+    if (autoVerify) update.verification_status = "verified";
     await adminClient
       .from("profiles")
-      .update({ subscription_status: status })
+      .update(update)
       .eq("stripe_customer_id", customerId);
   }
 
   switch (event.type) {
-    case "customer.subscription.created":
+    case "customer.subscription.created": {
+      const sub = event.data.object as Stripe.Subscription;
+      const status = sub.status === "active" || sub.status === "trialing" ? sub.status : sub.status;
+      // Auto-verify so user can access the feed immediately when trial starts
+      await updateByCustomer(sub.customer as string, status, true);
+      break;
+    }
     case "customer.subscription.updated": {
       const sub = event.data.object as Stripe.Subscription;
-      const status = sub.status === "active" || sub.status === "trialing" ? "active" : sub.status;
-      await updateByCustomer(sub.customer as string, status);
+      await updateByCustomer(sub.customer as string, sub.status);
       break;
     }
     case "customer.subscription.deleted": {
