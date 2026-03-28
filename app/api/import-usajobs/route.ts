@@ -54,6 +54,10 @@ const MILITARY_RECRUITMENT_FILTERS = [
   "enlistment",
   "enlisting",
   "national guard",
+  "reserve",
+  "inspector",
+  "title 32",
+  "mechanic",
 ];
 
 const STALE_DAYS = 30;
