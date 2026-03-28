@@ -1674,14 +1674,14 @@ export default function HomePage() {
         {/* Jobs pane */}
         <aside
           style={{
-            display: isMobile ? (mobileTab === "jobs" ? "block" : "none") : "flex",
-            flexDirection: "column",
+            display: isMobile ? (mobileTab === "jobs" ? "block" : "none") : "block",
             position: isMobile ? "static" : "sticky",
             top: 20,
-            height: isMobile ? "auto" : "calc(100vh - 100px)",
+            maxHeight: isMobile ? undefined : "calc(100vh - 80px)",
+            overflowY: isMobile ? undefined : "auto",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexShrink: 0 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             {jobsLastUpdated ? (
               <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 600 }}>
                 Updated {new Date(jobsLastUpdated).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}{" "}
@@ -1693,7 +1693,7 @@ export default function HomePage() {
             </Link>
           </div>
 
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
             {!jobsLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
             {jobsLoaded && jobs.length === 0 && (
               <div style={{ fontSize: 14, color: t.textMuted }}>
