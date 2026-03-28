@@ -16,6 +16,10 @@ const EOD_KEYWORDS = [
   "unmanned aerial systems",
   "CUAS",
   "C-UAS",
+  "nuclear",
+  "chemical",
+  "biological",
+  "radiological",
 ];
 
 const MAX_PAGES_PER_KEYWORD = 5;
@@ -38,6 +42,12 @@ const TITLE_RELEVANT_TERMS = [
   "ammunition",
   "tss-e",
   "transportation security specialist",
+  "nuclear",
+  "chemical",
+  "biological",
+  "radiological",
+  "cbrn",
+  "cbrne",
   "uas",
   "unmanned aerial",
   "cuas",
