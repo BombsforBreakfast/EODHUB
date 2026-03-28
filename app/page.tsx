@@ -1693,7 +1693,7 @@ export default function HomePage() {
             </Link>
           </div>
 
-          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "grid", gap: 12, alignContent: "start" }}>
+          <div style={{ flex: 1, minHeight: 0, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
             {!jobsLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
             {jobsLoaded && jobs.length === 0 && (
               <div style={{ fontSize: 14, color: t.textMuted }}>
