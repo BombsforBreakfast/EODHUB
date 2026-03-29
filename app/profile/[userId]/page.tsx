@@ -93,6 +93,10 @@ const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "
 
 type ConnectionType = "worked_with" | "know";
 
+function isVideoUrl(url: string): boolean {
+  return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
+}
+
 const BARE_DOMAIN_RE = /\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/;
 const URL_PATTERN_SRC = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/.source;
 
@@ -636,7 +640,12 @@ export default function PublicProfilePage() {
           uploadedUrls.push(url);
         }
         await supabase.from("post_images").insert(
-          uploadedUrls.map((url, i) => ({ post_id: postId, image_url: url, sort_order: i }))
+          uploadedUrls.map((url, i) => ({
+            post_id: postId,
+            image_url: url,
+            sort_order: i,
+            file_type: imagesToUpload[i]?.file.type.startsWith("video/") ? "video" : "image",
+          }))
         );
         await supabase.from("posts").update({ image_url: uploadedUrls[0] }).eq("id", postId);
       }
@@ -1450,6 +1459,13 @@ export default function PublicProfilePage() {
                   onChange={(e) => {
                     const files = Array.from(e.target.files ?? []);
                     if (files.length === 0) return;
+                    const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
+                    const oversized = files.filter((f) => f.type.startsWith("video/") && f.size > MAX_VIDEO_BYTES);
+                    if (oversized.length > 0) {
+                      alert(`Video files must be under 200 MB. "${oversized[0].name}" is too large.`);
+                      if (postImageInputRef.current) postImageInputRef.current.value = "";
+                      return;
+                    }
                     setSelectedPostImages((prev) => {
                       const slots = 10 - prev.length;
                       const toAdd = files.slice(0, slots).map((f) => ({ file: f, previewUrl: URL.createObjectURL(f) }));
@@ -1566,7 +1582,20 @@ export default function PublicProfilePage() {
                         <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: visible.length === 1 ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 8, maxWidth: 420 }}>
                           {visible.map((url, i) => (
                             <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: t.bg }}>
-                              <img src={url} alt={`Post image ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                              {isVideoUrl(url) ? (
+                                <>
+                                  <video src={url} preload="metadata" muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                                  {!(i === 2 && remaining > 0) && (
+                                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                                      <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                        <span style={{ color: "white", fontSize: 16, paddingLeft: 2 }}>▶</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <img src={url} alt={`Post image ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                              )}
                               {i === 2 && remaining > 0 && (
                                 <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 24, fontWeight: 800 }}>
                                   +{remaining}

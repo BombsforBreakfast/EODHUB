@@ -157,6 +157,10 @@ function formatDate(dateString: string) {
   return new Date(dateString).toLocaleString();
 }
 
+function isVideoUrl(url: string): boolean {
+  return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
+}
+
 function normalizeUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return "";
@@ -842,6 +846,13 @@ export default function HomePage() {
 
       if (files.length > remainingSlots) {
         alert("Only the first images were added. Max is 10 per post.");
+      }
+
+      const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // 200 MB
+      const oversized = filesToAdd.filter((f) => f.type.startsWith("video/") && f.size > MAX_VIDEO_BYTES);
+      if (oversized.length > 0) {
+        alert(`Video files must be under 200 MB. "${oversized[0].name}" is too large.`);
+        return prev;
       }
 
       const newItems = filesToAdd.map((file) => ({
@@ -2240,16 +2251,30 @@ export default function HomePage() {
                                       cursor: "pointer",
                                     }}
                                   >
-                                    <img
-                                      src={url}
-                                      alt={`Post image ${index + 1}`}
-                                      style={{
-                                        width: "100%",
-                                        height: "100%",
-                                        display: "block",
-                                        objectFit: "cover",
-                                      }}
-                                    />
+                                    {isVideoUrl(url) ? (
+                                      <>
+                                        <video
+                                          src={url}
+                                          preload="metadata"
+                                          muted
+                                          playsInline
+                                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                        />
+                                        {!showOverlay && (
+                                          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                                            <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                              <span style={{ color: "white", fontSize: 16, paddingLeft: 2 }}>▶</span>
+                                            </div>
+                                          </div>
+                                        )}
+                                      </>
+                                    ) : (
+                                      <img
+                                        src={url}
+                                        alt={`Post image ${index + 1}`}
+                                        style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }}
+                                      />
+                                    )}
 
                                     {showOverlay && (
                                       <div
@@ -2985,17 +3010,22 @@ export default function HomePage() {
                 justifyContent: "center",
               }}
             >
-              <img
-                src={galleryImages[galleryIndex]}
-                alt={`Gallery image ${galleryIndex + 1}`}
-                style={{
-                  maxWidth: "100%",
-                  maxHeight: "80vh",
-                  objectFit: "contain",
-                  borderRadius: 12,
-                  display: "block",
-                }}
-              />
+              {isVideoUrl(galleryImages[galleryIndex]) ? (
+                <video
+                  key={galleryImages[galleryIndex]}
+                  src={galleryImages[galleryIndex]}
+                  controls
+                  autoPlay
+                  playsInline
+                  style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12, display: "block", background: "#000" }}
+                />
+              ) : (
+                <img
+                  src={galleryImages[galleryIndex]}
+                  alt={`Gallery image ${galleryIndex + 1}`}
+                  style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12, display: "block" }}
+                />
+              )}
             </div>
 
             <div
