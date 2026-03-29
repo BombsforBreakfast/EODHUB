@@ -24,6 +24,7 @@ type Memorial = {
   photo_url: string | null;
   death_date: string;
   created_at: string;
+  source_url: string | null;
 };
 
 type AttendanceRow = {
@@ -1098,6 +1099,17 @@ export default function EventsPage() {
                       {m.bio}
                     </div>
                   )}
+
+                  {m.source_url && (
+                    <a
+                      href={m.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: "inline-block", marginTop: 12, fontSize: 13, fontWeight: 700, color: "#7c3aed", textDecoration: "none" }}
+                    >
+                      View Full Memorial →
+                    </a>
+                  )}
                 </div>
               </div>
             </div>
@@ -1386,6 +1398,17 @@ export default function EventsPage() {
                       <div style={{ marginTop: 6, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>
                         {m.bio}
                       </div>
+                    )}
+
+                    {m.source_url && (
+                      <a
+                        href={m.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ display: "inline-block", marginTop: 8, fontSize: 13, fontWeight: 700, color: "#7c3aed", textDecoration: "none" }}
+                      >
+                        View Full Memorial →
+                      </a>
                     )}
                   </div>
                 </div>

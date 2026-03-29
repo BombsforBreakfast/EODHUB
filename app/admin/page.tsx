@@ -47,7 +47,7 @@ type UserProfile = {
   created_at: string | null;
 };
 
-type Tab = "businesses" | "jobs" | "users" | "flags";
+type Tab = "businesses" | "jobs" | "users" | "flags" | "tools";
 
 type Flag = {
   id: string;
@@ -89,6 +89,8 @@ export default function AdminPage() {
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [batchActing, setBatchActing] = useState(false);
+  const [importingMemorials, setImportingMemorials] = useState(false);
+  const [importResult, setImportResult] = useState<{ imported: number; skipped: number; total: number; errors: string[] } | null>(null);
 
   const { t } = useTheme();
 
@@ -443,6 +445,25 @@ export default function AdminPage() {
     setActionLoading(null);
   }
 
+  async function importMemorials() {
+    setImportingMemorials(true);
+    setImportResult(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/import-memorials", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Import failed");
+      setImportResult(json);
+    } catch (err) {
+      setImportResult({ imported: 0, skipped: 0, total: 0, errors: [err instanceof Error ? err.message : String(err)] });
+    } finally {
+      setImportingMemorials(false);
+    }
+  }
+
   const tabStyle = (tab: Tab): React.CSSProperties => ({
     padding: "9px 20px",
     borderRadius: 10,
@@ -545,6 +566,9 @@ export default function AdminPage() {
           </button>
           <button style={tabStyle("flags")} onClick={() => setActiveTab("flags")}>
             Flags {unreviewedFlagCount > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{unreviewedFlagCount}</span>}
+          </button>
+          <button style={tabStyle("tools")} onClick={() => setActiveTab("tools")}>
+            Tools
           </button>
 
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: t.textMuted }}>
@@ -945,6 +969,47 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+        {/* ── TOOLS TAB ── */}
+        {activeTab === "tools" && (
+          <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+
+            {/* Import Memorials */}
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
+              <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Import Memorials from EOD-WF</div>
+              <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
+                Scrapes <strong>eod-wf.org/category/virtual-memorial</strong> and imports each fallen soldier&apos;s
+                name, death date, and memorial URL. Already-imported entries are skipped.
+                This may take a minute — the scraper paginates all listing pages.
+              </div>
+              <button
+                onClick={importMemorials}
+                disabled={importingMemorials}
+                style={{ background: importingMemorials ? t.badgeBg : "#7c3aed", color: importingMemorials ? t.textMuted : "white", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: importingMemorials ? "not-allowed" : "pointer", opacity: importingMemorials ? 0.7 : 1 }}
+              >
+                {importingMemorials ? "Importing... (this takes ~1–2 min)" : "Run Memorial Import"}
+              </button>
+
+              {importResult && (
+                <div style={{ marginTop: 16, padding: 16, borderRadius: 10, background: t.bg, border: `1px solid ${t.border}` }}>
+                  <div style={{ fontWeight: 800, marginBottom: 8 }}>
+                    {importResult.errors.length === 0 && importResult.imported === 0 && importResult.skipped > 0
+                      ? "All memorials already imported — nothing new."
+                      : `Done: ${importResult.imported} imported, ${importResult.skipped} skipped (${importResult.total} total found)`
+                    }
+                  </div>
+                  {importResult.errors.length > 0 && (
+                    <div style={{ fontSize: 13, color: "#ef4444" }}>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>{importResult.errors.length} errors:</div>
+                      {importResult.errors.map((e, i) => <div key={i} style={{ marginBottom: 2 }}>• {e}</div>)}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+          </div>
+        )}
+
       </div>
     </div>
   );
