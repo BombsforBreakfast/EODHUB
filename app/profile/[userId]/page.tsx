@@ -533,6 +533,9 @@ export default function PublicProfilePage() {
         await supabase.from("profile_photo_likes").delete().eq("photo_id", photoId).eq("user_id", currentUserId);
       } else {
         await supabase.from("profile_photo_likes").insert([{ photo_id: photoId, user_id: currentUserId }]);
+        if (profile && currentUserId !== profile.user_id) {
+          notify(profile.user_id, `${currentUserName} liked your photo`, profile.user_id);
+        }
       }
       await loadPhotoInteractions(photos.map((p) => p.id));
     } finally { setTogglingPhotoLikeFor(null); }
@@ -545,6 +548,9 @@ export default function PublicProfilePage() {
     try {
       setSubmittingPhotoComment(true);
       await supabase.from("profile_photo_comments").insert([{ photo_id: photoId, user_id: currentUserId, content: text }]);
+      if (profile && currentUserId !== profile.user_id) {
+        notify(profile.user_id, `${currentUserName} commented on your photo`, profile.user_id);
+      }
       setPhotoCommentInput("");
       await loadPhotoInteractions(photos.map((p) => p.id));
     } finally { setSubmittingPhotoComment(false); }
@@ -680,6 +686,11 @@ export default function PublicProfilePage() {
           }))
         );
         await supabase.from("posts").update({ image_url: uploadedUrls[0] }).eq("id", postId);
+      }
+
+      // Notify wall owner when someone else posts on their wall
+      if (!isOwnWall && userId && currentUserId !== userId) {
+        notify(userId, `${currentUserName} posted on your wall`, userId);
       }
 
       setPostContent("");
