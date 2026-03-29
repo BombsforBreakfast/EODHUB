@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
+import { useTheme } from "../lib/ThemeContext";
 
 type CalendarEvent = {
   id: string;
@@ -108,6 +109,8 @@ export default function EventsPage() {
   const [memorialPhotoPreview, setMemorialPhotoPreview] = useState<string | null>(null);
   const [submittingMemorial, setSubmittingMemorial] = useState(false);
   const memorialPhotoRef = useRef<HTMLInputElement>(null);
+
+  const { t, isDark } = useTheme();
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayOfMonth = new Date(year, month, 1).getDay();
@@ -484,7 +487,7 @@ export default function EventsPage() {
 
   if (loading) {
     return (
-      <div style={{ padding: "24px 16px" }}>
+      <div style={{ padding: "24px 16px", background: t.bg, color: t.text, minHeight: "100vh" }}>
         <NavBar />
         <div style={{ marginTop: 20 }}>Loading events...</div>
       </div>
@@ -501,11 +504,13 @@ export default function EventsPage() {
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
-    border: "1px solid #d1d5db",
+    border: `1px solid ${t.inputBorder}`,
     borderRadius: 8,
     padding: "8px 12px",
     fontSize: 14,
     boxSizing: "border-box",
+    background: t.input,
+    color: t.text,
   };
 
   const labelStyle: React.CSSProperties = {
@@ -514,10 +519,11 @@ export default function EventsPage() {
     fontSize: 13,
     marginBottom: 4,
     marginTop: 12,
+    color: t.text,
   };
 
   return (
-    <div style={{ padding: "24px 16px" }}>
+    <div style={{ padding: "24px 16px", background: t.bg, color: t.text, minHeight: "100vh" }}>
       <NavBar />
 
       <div
@@ -542,11 +548,12 @@ export default function EventsPage() {
                   setShowEventForm(false);
                 }}
                 style={{
-                  border: "1px solid #d1d5db",
+                  border: `1px solid ${t.border}`,
                   borderRadius: 10,
                   padding: "9px 16px",
                   fontWeight: 700,
-                  background: "white",
+                  background: t.surface,
+                  color: t.text,
                   cursor: "pointer",
                 }}
               >
@@ -560,8 +567,8 @@ export default function EventsPage() {
                   setShowMemorialForm(false);
                 }}
                 style={{
-                  background: "black",
-                  color: "white",
+                  background: t.text,
+                  color: t.surface,
                   border: "none",
                   borderRadius: 10,
                   padding: "9px 16px",
@@ -580,10 +587,10 @@ export default function EventsPage() {
         <div
           style={{
             marginTop: 20,
-            border: "1px solid #e5e7eb",
+            border: `1px solid ${t.border}`,
             borderRadius: 16,
             padding: 24,
-            background: "white",
+            background: t.surface,
           }}
         >
           <div
@@ -603,7 +610,7 @@ export default function EventsPage() {
                 border: "none",
                 fontSize: 20,
                 cursor: "pointer",
-                color: "#666",
+                color: t.textMuted,
               }}
             >
               ×
@@ -655,11 +662,12 @@ export default function EventsPage() {
               type="button"
               onClick={() => setShowEventForm(false)}
               style={{
-                border: "1px solid #d1d5db",
+                border: `1px solid ${t.border}`,
                 borderRadius: 10,
                 padding: "9px 16px",
                 fontWeight: 700,
-                background: "white",
+                background: t.surface,
+                color: t.text,
                 cursor: "pointer",
               }}
             >
@@ -671,8 +679,8 @@ export default function EventsPage() {
               onClick={submitEvent}
               disabled={submittingEvent}
               style={{
-                background: "black",
-                color: "white",
+                background: t.text,
+                color: t.surface,
                 border: "none",
                 borderRadius: 10,
                 padding: "9px 16px",
@@ -691,10 +699,10 @@ export default function EventsPage() {
         <div
           style={{
             marginTop: 20,
-            border: "1px solid #e5e7eb",
+            border: `1px solid ${t.border}`,
             borderRadius: 16,
             padding: 24,
-            background: "white",
+            background: t.surface,
           }}
         >
           <div
@@ -714,7 +722,7 @@ export default function EventsPage() {
                 border: "none",
                 fontSize: 20,
                 cursor: "pointer",
-                color: "#666",
+                color: t.textMuted,
               }}
             >
               ×
@@ -762,7 +770,7 @@ export default function EventsPage() {
                 height: 100,
                 borderRadius: "50%",
                 overflow: "hidden",
-                border: "2px solid #e5e7eb",
+                border: `2px solid ${t.border}`,
               }}
             >
               <img
@@ -778,11 +786,12 @@ export default function EventsPage() {
               type="button"
               onClick={() => setShowMemorialForm(false)}
               style={{
-                border: "1px solid #d1d5db",
+                border: `1px solid ${t.border}`,
                 borderRadius: 10,
                 padding: "9px 16px",
                 fontWeight: 700,
-                background: "white",
+                background: t.surface,
+                color: t.text,
                 cursor: "pointer",
               }}
             >
@@ -794,8 +803,8 @@ export default function EventsPage() {
               onClick={submitMemorial}
               disabled={submittingMemorial}
               style={{
-                background: "black",
-                color: "white",
+                background: t.text,
+                color: t.surface,
                 border: "none",
                 borderRadius: 10,
                 padding: "9px 16px",
@@ -813,9 +822,9 @@ export default function EventsPage() {
       <div
         style={{
           marginTop: 24,
-          border: "1px solid #e5e7eb",
+          border: `1px solid ${t.border}`,
           borderRadius: 16,
-          background: "white",
+          background: t.surface,
           overflow: "hidden",
         }}
       >
@@ -825,18 +834,19 @@ export default function EventsPage() {
             alignItems: "center",
             justifyContent: "space-between",
             padding: "16px 20px",
-            borderBottom: "1px solid #e5e7eb",
+            borderBottom: `1px solid ${t.border}`,
           }}
         >
           <button
             type="button"
             onClick={prevMonth}
             style={{
-              border: "1px solid #d1d5db",
+              border: `1px solid ${t.border}`,
               borderRadius: 8,
               padding: "6px 14px",
               fontWeight: 700,
-              background: "white",
+              background: t.surface,
+              color: t.text,
               cursor: "pointer",
               fontSize: 18,
             }}
@@ -852,11 +862,12 @@ export default function EventsPage() {
             type="button"
             onClick={nextMonth}
             style={{
-              border: "1px solid #d1d5db",
+              border: `1px solid ${t.border}`,
               borderRadius: 8,
               padding: "6px 14px",
               fontWeight: 700,
-              background: "white",
+              background: t.surface,
+              color: t.text,
               cursor: "pointer",
               fontSize: 18,
             }}
@@ -869,7 +880,7 @@ export default function EventsPage() {
           style={{
             display: "grid",
             gridTemplateColumns: "repeat(7, 1fr)",
-            borderBottom: "1px solid #e5e7eb",
+            borderBottom: `1px solid ${t.border}`,
           }}
         >
           {DAY_LABELS.map((d) => (
@@ -880,7 +891,7 @@ export default function EventsPage() {
                 textAlign: "center",
                 fontSize: 12,
                 fontWeight: 700,
-                color: "#888",
+                color: t.textMuted,
               }}
             >
               {d}
@@ -896,9 +907,9 @@ export default function EventsPage() {
                   key={`empty-${idx}`}
                   style={{
                     minHeight: 80,
-                    borderRight: "1px solid #f3f4f6",
-                    borderBottom: "1px solid #f3f4f6",
-                    background: "#fafafa",
+                    borderRight: `1px solid ${t.borderLight}`,
+                    borderBottom: `1px solid ${t.borderLight}`,
+                    background: t.bg,
                   }}
                 />
               );
@@ -919,11 +930,11 @@ export default function EventsPage() {
                 onClick={() => setSelectedDay(isSelected ? null : dateStr)}
                 style={{
                   minHeight: 80,
-                  borderRight: "1px solid #f3f4f6",
-                  borderBottom: "1px solid #f3f4f6",
+                  borderRight: `1px solid ${t.borderLight}`,
+                  borderBottom: `1px solid ${t.borderLight}`,
                   padding: "6px 8px",
                   cursor: hasContent ? "pointer" : "default",
-                  background: isSelected ? "#f0f0f0" : isToday ? "#fffbeb" : "white",
+                  background: isSelected ? t.surfaceHover : isToday ? (isDark ? "#2a1800" : "#fffbeb") : t.surface,
                   transition: "background 0.1s",
                 }}
               >
@@ -934,8 +945,8 @@ export default function EventsPage() {
                     width: 24,
                     height: 24,
                     borderRadius: "50%",
-                    background: isToday ? "black" : "transparent",
-                    color: isToday ? "white" : "#333",
+                    background: isToday ? t.text : "transparent",
+                    color: isToday ? t.surface : t.text,
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -976,7 +987,7 @@ export default function EventsPage() {
                 ))}
 
                 {dayEvents.length > 2 && (
-                  <div style={{ fontSize: 10, color: "#888", marginTop: 2 }}>
+                  <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>
                     +{dayEvents.length - 2} more
                   </div>
                 )}
@@ -1010,10 +1021,10 @@ export default function EventsPage() {
         <div
           style={{
             marginTop: 20,
-            border: "1px solid #e5e7eb",
+            border: `1px solid ${t.border}`,
             borderRadius: 16,
             padding: 24,
-            background: "white",
+            background: t.surface,
           }}
         >
           <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 16 }}>
@@ -1032,7 +1043,7 @@ export default function EventsPage() {
                 borderRadius: 14,
                 padding: 20,
                 marginBottom: 16,
-                background: "#faf5ff",
+                background: isDark ? "#1a0d2e" : "#faf5ff",
               }}
             >
               <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -1072,7 +1083,7 @@ export default function EventsPage() {
                     {m.name}
                   </div>
 
-                  <div style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
+                  <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
                     {new Date(`${m.death_date}T12:00:00`).toLocaleDateString("en-US", {
                       month: "long",
                       day: "numeric",
@@ -1083,7 +1094,7 @@ export default function EventsPage() {
                   </div>
 
                   {m.bio && (
-                    <div style={{ marginTop: 10, lineHeight: 1.6, color: "#444" }}>
+                    <div style={{ marginTop: 10, lineHeight: 1.6, color: t.textMuted }}>
                       {m.bio}
                     </div>
                   )}
@@ -1096,7 +1107,7 @@ export default function EventsPage() {
             <div
               key={ev.id}
               style={{
-                border: "1px solid #e5e7eb",
+                border: `1px solid ${t.border}`,
                 borderRadius: 14,
                 padding: 20,
                 marginBottom: 12,
@@ -1115,13 +1126,13 @@ export default function EventsPage() {
                   <div style={{ fontSize: 18, fontWeight: 900 }}>{ev.title}</div>
 
                   {ev.organization && (
-                    <div style={{ marginTop: 4, fontSize: 14, color: "#555" }}>
+                    <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>
                       {ev.organization}
                     </div>
                   )}
 
                   {ev.description && (
-                    <div style={{ marginTop: 8, lineHeight: 1.6, color: "#444" }}>
+                    <div style={{ marginTop: 8, lineHeight: 1.6, color: t.textMuted }}>
                       {ev.description}
                     </div>
                   )}
@@ -1148,9 +1159,9 @@ export default function EventsPage() {
                     type="button"
                     onClick={() => setSelectedEvent(ev)}
                     style={{
-                      background: "white",
-                      color: "#111",
-                      border: "1px solid #d1d5db",
+                      background: t.surface,
+                      color: t.text,
+                      border: `1px solid ${t.border}`,
                       borderRadius: 10,
                       padding: "8px 14px",
                       fontWeight: 700,
@@ -1167,9 +1178,9 @@ export default function EventsPage() {
                       onClick={() => toggleSaveEvent(ev.id)}
                       disabled={togglingEventSaveFor === ev.id}
                       style={{
-                        background: savedEventIds.has(ev.id) ? "black" : "white",
-                        color: savedEventIds.has(ev.id) ? "white" : "#555",
-                        border: "1px solid #d1d5db",
+                        background: savedEventIds.has(ev.id) ? t.text : t.surface,
+                        color: savedEventIds.has(ev.id) ? t.surface : t.textMuted,
+                        border: `1px solid ${t.border}`,
                         borderRadius: 10,
                         padding: "8px 14px",
                         fontWeight: 700,
@@ -1193,18 +1204,18 @@ export default function EventsPage() {
       )}
 
       {/* ── Upcoming Events List View ── */}
-      <div style={{ marginTop: 24, border: "1px solid #e5e7eb", borderRadius: 16, background: "white", overflow: "hidden" }}>
-        <div style={{ padding: "16px 20px", borderBottom: "1px solid #e5e7eb", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <div style={{ marginTop: 24, border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, overflow: "hidden" }}>
+        <div style={{ padding: "16px 20px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 18, fontWeight: 900 }}>
             Upcoming Events
             {allUpcomingEvents.length > 0 && (
-              <span style={{ marginLeft: 10, fontSize: 13, fontWeight: 700, color: "#888" }}>{allUpcomingEvents.length} event{allUpcomingEvents.length !== 1 ? "s" : ""}</span>
+              <span style={{ marginLeft: 10, fontSize: 13, fontWeight: 700, color: t.textMuted }}>{allUpcomingEvents.length} event{allUpcomingEvents.length !== 1 ? "s" : ""}</span>
             )}
           </div>
         </div>
 
         {allUpcomingEvents.length === 0 ? (
-          <div style={{ padding: "32px 20px", textAlign: "center", color: "#aaa", fontSize: 14 }}>
+          <div style={{ padding: "32px 20px", textAlign: "center", color: t.textFaint, fontSize: 14 }}>
             No upcoming events. Be the first to add one!
           </div>
         ) : (
@@ -1225,8 +1236,8 @@ export default function EventsPage() {
                     display: "flex",
                     gap: 16,
                     padding: "16px 20px",
-                    borderBottom: idx < allUpcomingEvents.length - 1 ? "1px solid #f3f4f6" : "none",
-                    background: isToday ? "#fffbeb" : "white",
+                    borderBottom: idx < allUpcomingEvents.length - 1 ? `1px solid ${t.borderLight}` : "none",
+                    background: isToday ? (isDark ? "#2a1800" : "#fffbeb") : t.surface,
                   }}
                 >
                   {/* Date badge */}
@@ -1248,10 +1259,10 @@ export default function EventsPage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.2 }}>{ev.title}</div>
                     {ev.organization && (
-                      <div style={{ fontSize: 13, color: "#555", marginTop: 3 }}>{ev.organization}</div>
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>{ev.organization}</div>
                     )}
                     {ev.description && (
-                      <div style={{ fontSize: 13, color: "#666", marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
                         {ev.description}
                       </div>
                     )}
@@ -1260,19 +1271,19 @@ export default function EventsPage() {
                       <button
                         type="button"
                         onClick={() => toggleAttendance(ev.id, "interested")}
-                        style={{ background: myAttendance[ev.id] === "interested" ? "black" : "white", color: myAttendance[ev.id] === "interested" ? "white" : "#555", border: "1px solid #d1d5db", borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                        style={{ background: myAttendance[ev.id] === "interested" ? t.text : t.surface, color: myAttendance[ev.id] === "interested" ? t.surface : t.textMuted, border: `1px solid ${t.border}`, borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
                       >
                         Interested {(attendance[ev.id]?.interested ?? 0) > 0 ? `· ${attendance[ev.id].interested}` : ""}
                       </button>
                       <button
                         type="button"
                         onClick={() => toggleAttendance(ev.id, "going")}
-                        style={{ background: myAttendance[ev.id] === "going" ? "black" : "white", color: myAttendance[ev.id] === "going" ? "white" : "#555", border: "1px solid #d1d5db", borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                        style={{ background: myAttendance[ev.id] === "going" ? t.text : t.surface, color: myAttendance[ev.id] === "going" ? t.surface : t.textMuted, border: `1px solid ${t.border}`, borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
                       >
                         Going {(attendance[ev.id]?.going ?? 0) > 0 ? `· ${attendance[ev.id].going}` : ""}
                       </button>
                       {ev.signup_url && (
-                        <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: "#1d4ed8", textDecoration: "none" }}>
+                        <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: isDark ? "#60a5fa" : "#1d4ed8", textDecoration: "none" }}>
                           Sign Up ↗
                         </a>
                       )}
@@ -1281,7 +1292,7 @@ export default function EventsPage() {
                           type="button"
                           onClick={() => toggleSaveEvent(ev.id)}
                           disabled={togglingEventSaveFor === ev.id}
-                          style={{ marginLeft: "auto", background: savedEventIds.has(ev.id) ? "#ecfdf5" : "white", color: savedEventIds.has(ev.id) ? "#0f766e" : "#555", border: "1px solid #d1d5db", borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: togglingEventSaveFor === ev.id ? "not-allowed" : "pointer", opacity: togglingEventSaveFor === ev.id ? 0.6 : 1 }}
+                          style={{ marginLeft: "auto", background: savedEventIds.has(ev.id) ? t.text : t.surface, color: savedEventIds.has(ev.id) ? t.surface : t.textMuted, border: `1px solid ${t.border}`, borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: togglingEventSaveFor === ev.id ? "not-allowed" : "pointer", opacity: togglingEventSaveFor === ev.id ? 0.6 : 1 }}
                         >
                           {togglingEventSaveFor === ev.id ? "..." : savedEventIds.has(ev.id) ? "Saved ✓" : "Save"}
                         </button>
@@ -1299,10 +1310,10 @@ export default function EventsPage() {
         <div
           style={{
             marginTop: 24,
-            border: "1px solid #e5e7eb",
+            border: `1px solid ${t.border}`,
             borderRadius: 16,
             padding: 24,
-            background: "white",
+            background: t.surface,
           }}
         >
           <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>
@@ -1323,8 +1334,8 @@ export default function EventsPage() {
                     alignItems: "flex-start",
                     padding: 16,
                     borderRadius: 12,
-                    border: `1px solid ${isAnniversaryToday ? "#7c3aed" : "#e5e7eb"}`,
-                    background: isAnniversaryToday ? "#faf5ff" : "white",
+                    border: `1px solid ${isAnniversaryToday ? "#7c3aed" : t.border}`,
+                    background: isAnniversaryToday ? (isDark ? "#1a0d2e" : "#faf5ff") : t.surface,
                   }}
                 >
                   {m.photo_url && (
@@ -1363,7 +1374,7 @@ export default function EventsPage() {
 
                     <div style={{ fontWeight: 800 }}>{m.name}</div>
 
-                    <div style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
+                    <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
                       {new Date(`${m.death_date}T12:00:00`).toLocaleDateString("en-US", {
                         month: "long",
                         day: "numeric",
@@ -1372,7 +1383,7 @@ export default function EventsPage() {
                     </div>
 
                     {m.bio && (
-                      <div style={{ marginTop: 6, fontSize: 14, color: "#444", lineHeight: 1.5 }}>
+                      <div style={{ marginTop: 6, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>
                         {m.bio}
                       </div>
                     )}
@@ -1403,10 +1414,11 @@ export default function EventsPage() {
             style={{
               width: "100%",
               maxWidth: 560,
-              background: "white",
+              background: t.surface,
+              color: t.text,
               borderRadius: 18,
               padding: 24,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
             }}
           >
             <div
@@ -1423,12 +1435,12 @@ export default function EventsPage() {
                 </div>
 
                 {selectedEvent.organization && (
-                  <div style={{ marginTop: 6, color: "#444", fontSize: 15 }}>
+                  <div style={{ marginTop: 6, color: t.textMuted, fontSize: 15 }}>
                     {selectedEvent.organization}
                   </div>
                 )}
 
-                <div style={{ marginTop: 8, color: "#666", fontSize: 14 }}>
+                <div style={{ marginTop: 8, color: t.textMuted, fontSize: 14 }}>
                   {formatEventDate(selectedEvent.date)}
                 </div>
               </div>
@@ -1437,8 +1449,9 @@ export default function EventsPage() {
                 type="button"
                 onClick={() => setSelectedEvent(null)}
                 style={{
-                  border: "1px solid #d1d5db",
-                  background: "white",
+                  border: `1px solid ${t.border}`,
+                  background: t.surface,
+                  color: t.text,
                   borderRadius: 10,
                   padding: "6px 10px",
                   cursor: "pointer",
@@ -1453,7 +1466,7 @@ export default function EventsPage() {
               <div
                 style={{
                   marginTop: 18,
-                  color: "#444",
+                  color: t.textMuted,
                   lineHeight: 1.6,
                   fontSize: 14,
                 }}
@@ -1465,7 +1478,7 @@ export default function EventsPage() {
             <div
               style={{
                 marginTop: 20,
-                borderTop: "1px solid #e5e7eb",
+                borderTop: `1px solid ${t.border}`,
                 paddingTop: 16,
                 display: "grid",
                 gap: 10,
@@ -1473,22 +1486,22 @@ export default function EventsPage() {
             >
               <div style={{ fontWeight: 800, fontSize: 14 }}>Event Details</div>
 
-              <div style={{ color: "#555", fontSize: 14 }}>
+              <div style={{ color: t.textMuted, fontSize: 14 }}>
                 <strong>Title:</strong> {selectedEvent.title || "Untitled Event"}
               </div>
 
               {selectedEvent.organization && (
-                <div style={{ color: "#555", fontSize: 14 }}>
+                <div style={{ color: t.textMuted, fontSize: 14 }}>
                   <strong>Organization:</strong> {selectedEvent.organization}
                 </div>
               )}
 
-              <div style={{ color: "#555", fontSize: 14 }}>
+              <div style={{ color: t.textMuted, fontSize: 14 }}>
                 <strong>Date:</strong> {formatEventDate(selectedEvent.date)}
               </div>
 
               {selectedEvent.signup_url && (
-                <div style={{ color: "#555", fontSize: 14 }}>
+                <div style={{ color: t.textMuted, fontSize: 14 }}>
                   <strong>Outside URL:</strong>{" "}
                   <a
                     href={selectedEvent.signup_url}
@@ -1515,24 +1528,24 @@ export default function EventsPage() {
                 <button
                   type="button"
                   onClick={() => toggleAttendance(selectedEvent.id, "interested")}
-                  style={{ border: "1px solid #d1d5db", borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer", background: myAttendance[selectedEvent.id] === "interested" ? "black" : "white", color: myAttendance[selectedEvent.id] === "interested" ? "white" : "black" }}
+                  style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer", background: myAttendance[selectedEvent.id] === "interested" ? t.text : t.surface, color: myAttendance[selectedEvent.id] === "interested" ? t.surface : t.text }}
                 >
                   {myAttendance[selectedEvent.id] === "interested" ? "Interested ✓" : "Interested"}
                 </button>
                 <button
                   type="button"
                   onClick={() => toggleAttendance(selectedEvent.id, "going")}
-                  style={{ border: "1px solid #d1d5db", borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer", background: myAttendance[selectedEvent.id] === "going" ? "black" : "white", color: myAttendance[selectedEvent.id] === "going" ? "white" : "black" }}
+                  style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer", background: myAttendance[selectedEvent.id] === "going" ? t.text : t.surface, color: myAttendance[selectedEvent.id] === "going" ? t.surface : t.text }}
                 >
                   {myAttendance[selectedEvent.id] === "going" ? "Going ✓" : "Going"}
                 </button>
                 {(attendance[selectedEvent.id]?.interested ?? 0) > 0 && (
-                  <button type="button" onClick={() => openAttendeesPopup(selectedEvent.id, "interested")} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 13, color: "#555", fontWeight: 700, padding: "4px 8px", borderRadius: 8 }}>
+                  <button type="button" onClick={() => openAttendeesPopup(selectedEvent.id, "interested")} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 13, color: t.textMuted, fontWeight: 700, padding: "4px 8px", borderRadius: 8 }}>
                     {attendance[selectedEvent.id].interested} interested
                   </button>
                 )}
                 {(attendance[selectedEvent.id]?.going ?? 0) > 0 && (
-                  <button type="button" onClick={() => openAttendeesPopup(selectedEvent.id, "going")} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 13, color: "#555", fontWeight: 700, padding: "4px 8px", borderRadius: 8 }}>
+                  <button type="button" onClick={() => openAttendeesPopup(selectedEvent.id, "going")} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 13, color: t.textMuted, fontWeight: 700, padding: "4px 8px", borderRadius: 8 }}>
                     {attendance[selectedEvent.id].going} going
                   </button>
                 )}
@@ -1563,9 +1576,9 @@ export default function EventsPage() {
                   onClick={() => toggleSaveEvent(selectedEvent.id)}
                   disabled={togglingEventSaveFor === selectedEvent.id}
                   style={{
-                    border: "1px solid #d1d5db",
-                    background: savedEventIds.has(selectedEvent.id) ? "#ecfdf5" : "white",
-                    color: savedEventIds.has(selectedEvent.id) ? "#0f766e" : "#111",
+                    border: `1px solid ${t.border}`,
+                    background: savedEventIds.has(selectedEvent.id) ? t.text : t.surface,
+                    color: savedEventIds.has(selectedEvent.id) ? t.surface : t.text,
                     padding: "10px 16px",
                     borderRadius: 10,
                     fontWeight: 800,
@@ -1593,23 +1606,23 @@ export default function EventsPage() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ background: "white", borderRadius: 16, padding: 24, maxWidth: 340, width: "100%", maxHeight: "70vh", display: "flex", flexDirection: "column", gap: 16 }}
+            style={{ background: t.surface, color: t.text, borderRadius: 16, padding: 24, maxWidth: 340, width: "100%", maxHeight: "70vh", display: "flex", flexDirection: "column", gap: 16 }}
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontWeight: 900, fontSize: 18 }}>
                 {attendeesPopup.status === "going" ? "Going" : "Interested"}
               </div>
-              <button onClick={() => setAttendeesPopup(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#666", lineHeight: 1 }}>×</button>
+              <button onClick={() => setAttendeesPopup(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>×</button>
             </div>
 
             <div style={{ overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
-              {loadingAttendees && <div style={{ color: "#777", fontSize: 14 }}>Loading...</div>}
-              {!loadingAttendees && attendees.length === 0 && <div style={{ color: "#777", fontSize: 14 }}>No one yet.</div>}
+              {loadingAttendees && <div style={{ color: t.textMuted, fontSize: 14 }}>Loading...</div>}
+              {!loadingAttendees && attendees.length === 0 && <div style={{ color: t.textMuted, fontSize: 14 }}>No one yet.</div>}
               {attendees.map((a) => {
                 const name = `${a.first_name || ""} ${a.last_name || ""}`.trim() || "User";
                 return (
-                  <a key={a.user_id} href={`/profile/${a.user_id}`} style={{ display: "flex", gap: 12, alignItems: "center", textDecoration: "none", color: "black" }}>
-                    <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", background: "#f3f4f6", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, color: "#666" }}>
+                  <a key={a.user_id} href={`/profile/${a.user_id}`} style={{ display: "flex", gap: 12, alignItems: "center", textDecoration: "none", color: t.text }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, color: t.textMuted }}>
                       {a.photo_url
                         ? <img src={a.photo_url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         : name[0]?.toUpperCase()}
