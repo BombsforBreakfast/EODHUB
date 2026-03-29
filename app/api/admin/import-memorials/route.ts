@@ -1,46 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-function parseDeathDate(raw: string): string | null {
-  // Handles "M/D/YYYY" or "MM/DD/YYYY"
-  const m = raw.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (!m) return null;
-  const [, month, day, year] = m;
-  return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+const BASE = "https://eod-wf.org";
+const API = `${BASE}/wp-json/wp/v2`;
+
+function decodeHtmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#8217;/g, "'")
+    .replace(/&#8216;/g, "'")
+    .replace(/&#8220;/g, '"')
+    .replace(/&#8221;/g, '"')
+    .replace(/&#038;/g, "&")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
 }
 
-async function fetchHtml(url: string): Promise<string> {
+async function wpFetch(url: string) {
   const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; EODHub/1.0; +https://eodhub.com)" },
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; EODHub/1.0)",
+      "Accept": "application/json",
+    },
     signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-  return res.text();
-}
-
-function extractOgTag(html: string, property: string): string | null {
-  const a = html.match(new RegExp(`<meta[^>]+property=["']${property}["'][^>]+content=["']([^"']+)["']`, "i"));
-  if (a) return a[1];
-  const b = html.match(new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+property=["']${property}["']`, "i"));
-  return b ? b[1] : null;
-}
-
-function extractMemorialUrls(html: string, base: string): string[] {
-  const seen = new Set<string>();
-  const urls: string[] = [];
-
-  const absRe = /href="(https:\/\/eod-wf\.org\/virtual-memorial\/[^/"]+\/[^/"]+\/)"/gi;
-  const relRe = /href="(\/virtual-memorial\/[^/"]+\/[^/"]+\/)"/gi;
-  let m;
-
-  while ((m = absRe.exec(html)) !== null) {
-    if (!seen.has(m[1])) { seen.add(m[1]); urls.push(m[1]); }
-  }
-  while ((m = relRe.exec(html)) !== null) {
-    const url = `${base}${m[1]}`;
-    if (!seen.has(url)) { seen.add(url); urls.push(url); }
-  }
-  return urls;
+  return res.json();
 }
 
 export async function POST(req: NextRequest) {
@@ -69,59 +56,73 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const BASE = "https://eod-wf.org";
-  const CATEGORY = `${BASE}/category/virtual-memorial`;
-  const allPostUrls = new Set<string>();
-
-  // Paginate the main category listing — all branches roll up here
-  let page = 1;
-  let hasNext = true;
-  while (hasNext && page <= 30) {
-    const url = page === 1 ? `${CATEGORY}/` : `${CATEGORY}/page/${page}/`;
-    try {
-      const html = await fetchHtml(url);
-      const found = extractMemorialUrls(html, BASE);
-      found.forEach((u) => allPostUrls.add(u));
-      hasNext = html.includes(`/page/${page + 1}/`);
-    } catch {
-      hasNext = false;
+  // Step 1: Get the category ID for "virtual-memorial"
+  let categoryId: number;
+  try {
+    const cats = await wpFetch(`${API}/categories?slug=virtual-memorial&_fields=id`);
+    if (!Array.isArray(cats) || cats.length === 0) {
+      return NextResponse.json({ error: "Could not find virtual-memorial category via WordPress REST API" }, { status: 502 });
     }
-    page++;
+    categoryId = cats[0].id;
+  } catch (err) {
+    return NextResponse.json({
+      error: `WordPress REST API unavailable: ${err instanceof Error ? err.message : String(err)}`,
+    }, { status: 502 });
   }
 
-  if (allPostUrls.size === 0) {
-    return NextResponse.json(
-      { error: "No memorial URLs found — the site may be blocking server-side requests. Try running from a browser context." },
-      { status: 502 }
-    );
+  // Step 2: Paginate all posts in that category
+  type WpPost = { id: number; title: { rendered: string }; date: string; link: string };
+  const allPosts: WpPost[] = [];
+  let page = 1;
+  let hasMore = true;
+
+  while (hasMore && page <= 30) {
+    try {
+      const posts: WpPost[] = await wpFetch(
+        `${API}/posts?categories=${categoryId}&per_page=100&page=${page}&_fields=id,title,date,link&orderby=date&order=asc`
+      );
+      if (!Array.isArray(posts) || posts.length === 0) {
+        hasMore = false;
+      } else {
+        allPosts.push(...posts);
+        hasMore = posts.length === 100;
+        page++;
+      }
+    } catch {
+      hasMore = false;
+    }
   }
 
+  if (allPosts.length === 0) {
+    return NextResponse.json({
+      error: "WordPress REST API returned no posts — the API may be disabled or category ID changed",
+    }, { status: 502 });
+  }
+
+  // Step 3: Insert into memorials table
   let imported = 0;
   let skipped = 0;
   const errors: string[] = [];
 
-  for (const postUrl of allPostUrls) {
+  for (const post of allPosts) {
     try {
-      // Skip if already imported by source_url
+      const source_url = post.link.endsWith("/") ? post.link : `${post.link}/`;
+
+      // Skip if already imported
       const { data: existing } = await adminClient
         .from("memorials")
         .select("id")
-        .eq("source_url", postUrl)
+        .eq("source_url", source_url)
         .maybeSingle();
 
       if (existing) { skipped++; continue; }
 
-      const html = await fetchHtml(postUrl);
-      const ogTitle = extractOgTag(html, "og:title");
-      const ogDesc = extractOgTag(html, "og:description");
+      const name = decodeHtmlEntities(post.title.rendered).trim();
+      // WordPress date is ISO: "2024-05-11T00:00:00" — take first 10 chars
+      const death_date = post.date.slice(0, 10);
 
-      if (!ogTitle) { errors.push(`No og:title at ${postUrl}`); continue; }
-
-      const name = ogTitle.replace(/\s*\|\s*EOD Warrior Foundation\s*$/i, "").trim();
-      const death_date = ogDesc ? parseDeathDate(ogDesc) : null;
-
-      if (!death_date) {
-        errors.push(`Unparseable date "${ogDesc}" at ${postUrl}`);
+      if (!name || !death_date) {
+        errors.push(`Missing name or date for post ${post.id}`);
         continue;
       }
 
@@ -129,23 +130,26 @@ export async function POST(req: NextRequest) {
         user_id: user.id,
         name,
         death_date,
-        source_url: postUrl,
+        source_url,
         bio: null,
         photo_url: null,
       }]);
 
       if (error) {
-        errors.push(`DB error for ${name}: ${error.message}`);
+        errors.push(`DB error for "${name}": ${error.message}`);
       } else {
         imported++;
       }
-
-      // Be polite to eod-wf.org
-      await new Promise((r) => setTimeout(r, 300));
     } catch (err) {
-      errors.push(`Fetch error at ${postUrl}: ${err instanceof Error ? err.message : String(err)}`);
+      errors.push(`Error on post ${post.id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  return NextResponse.json({ success: true, imported, skipped, total: allPostUrls.size, errors: errors.slice(0, 20) });
+  return NextResponse.json({
+    success: true,
+    imported,
+    skipped,
+    total: allPosts.length,
+    errors: errors.slice(0, 20),
+  });
 }
