@@ -88,6 +88,8 @@ type DiscoverProfile = {
   photo_url: string | null;
   service: string | null;
   status: string | null;
+  userKnows: boolean;
+  userWorkedWith: boolean;
 };
 
 function getServiceRingColor(service: string | null | undefined): string | null {
@@ -519,12 +521,82 @@ export default function HomePage() {
     if (!data || data.length === 0) return;
 
     // Fisher-Yates shuffle, pick 5
-    const arr = [...data] as DiscoverProfile[];
+    const arr = [...data];
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
     }
-    setDiscoverProfiles(arr.slice(0, 5));
+    const picked = arr.slice(0, 5);
+
+    // Fetch existing connections for these profiles
+    const pickedIds = picked.map((p) => p.user_id);
+    const { data: conns } = await supabase
+      .from("profile_connections")
+      .select("target_user_id, connection_type")
+      .eq("user_id", currentUserId)
+      .in("target_user_id", pickedIds);
+
+    const knowSet = new Set((conns ?? []).filter((c) => c.connection_type === "know").map((c) => c.target_user_id));
+    const workedSet = new Set((conns ?? []).filter((c) => c.connection_type === "worked_with").map((c) => c.target_user_id));
+
+    setDiscoverProfiles(
+      picked.map((p) => ({
+        ...p,
+        userKnows: knowSet.has(p.user_id),
+        userWorkedWith: workedSet.has(p.user_id),
+      })) as DiscoverProfile[]
+    );
+  }
+
+  async function toggleDiscoverConnection(targetUserId: string, type: "know" | "worked_with") {
+    if (!userId) return;
+    const profile = discoverProfiles.find((p) => p.user_id === targetUserId);
+    if (!profile) return;
+
+    const isActive = type === "worked_with" ? profile.userWorkedWith : profile.userKnows;
+
+    if (isActive) {
+      // Remove
+      await supabase
+        .from("profile_connections")
+        .delete()
+        .eq("user_id", userId)
+        .eq("target_user_id", targetUserId)
+        .eq("connection_type", type);
+      setDiscoverProfiles((prev) =>
+        prev.map((p) =>
+          p.user_id === targetUserId
+            ? { ...p, [type === "worked_with" ? "userWorkedWith" : "userKnows"]: false }
+            : p
+        )
+      );
+    } else {
+      // Add — if adding worked_with, also remove know
+      if (type === "worked_with" && profile.userKnows) {
+        await supabase
+          .from("profile_connections")
+          .delete()
+          .eq("user_id", userId)
+          .eq("target_user_id", targetUserId)
+          .eq("connection_type", "know");
+      }
+      await supabase.from("profile_connections").upsert([
+        { user_id: userId, target_user_id: targetUserId, connection_type: type },
+      ]);
+      const verb = type === "worked_with" ? "worked with" : "knows";
+      notify(targetUserId, `${currentUserName} says they ${verb} you`, targetUserId);
+      setDiscoverProfiles((prev) =>
+        prev.map((p) =>
+          p.user_id === targetUserId
+            ? {
+                ...p,
+                userWorkedWith: type === "worked_with" ? true : p.userWorkedWith,
+                userKnows: type === "worked_with" ? false : true,
+              }
+            : p
+        )
+      );
+    }
   }
 
   async function loadSavedJobs(currentUserId: string) {
@@ -1847,20 +1919,56 @@ export default function HomePage() {
                 {discoverProfiles.map((p) => {
                   const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
                   const ringColor = getServiceRingColor(p.service);
+                  const isWorkedWith = p.userWorkedWith;
+                  const isKnow = p.userKnows;
+                  // Know is implied-active when worked_with is set
+                  const knowImplied = isWorkedWith;
                   return (
-                    <a
+                    <div
                       key={p.user_id}
-                      href={`/profile/${p.user_id}`}
-                      style={{ textDecoration: "none", color: "inherit", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 64 }}
+                      style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 80 }}
                     >
-                      <div style={{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 16, boxSizing: "border-box", border: ringColor ? `3px solid ${ringColor}` : `2px solid ${t.border}` }}>
-                        {p.photo_url
-                          ? <img src={p.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                          : (fullName[0] || "U").toUpperCase()
-                        }
-                      </div>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: t.text, textAlign: "center", lineHeight: 1.3, wordBreak: "break-word" }}>{fullName}</div>
-                    </a>
+                      <a
+                        href={`/profile/${p.user_id}`}
+                        style={{ textDecoration: "none", color: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
+                      >
+                        <div style={{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 16, boxSizing: "border-box", border: ringColor ? `3px solid ${ringColor}` : `2px solid ${t.border}` }}>
+                          {p.photo_url
+                            ? <img src={p.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                            : (fullName[0] || "U").toUpperCase()
+                          }
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: t.text, textAlign: "center", lineHeight: 1.3, wordBreak: "break-word" }}>{fullName}</div>
+                      </a>
+                      {userId && (
+                        <div style={{ display: "flex", gap: 4 }}>
+                          <button
+                            title="Know"
+                            onClick={() => toggleDiscoverConnection(p.user_id, "know")}
+                            disabled={knowImplied}
+                            style={{
+                              fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 6, border: "none", cursor: knowImplied ? "default" : "pointer",
+                              background: (isKnow || knowImplied) ? t.text : t.badgeBg,
+                              color: (isKnow || knowImplied) ? t.surface : t.textMuted,
+                              opacity: knowImplied ? 0.6 : 1,
+                            }}
+                          >
+                            Know
+                          </button>
+                          <button
+                            title="Worked With"
+                            onClick={() => toggleDiscoverConnection(p.user_id, "worked_with")}
+                            style={{
+                              fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 6, border: "none", cursor: "pointer",
+                              background: isWorkedWith ? t.text : t.badgeBg,
+                              color: isWorkedWith ? t.surface : t.textMuted,
+                            }}
+                          >
+                            W/W
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>

@@ -65,6 +65,8 @@ type Post = {
   og_description: string | null;
   og_image: string | null;
   og_site_name: string | null;
+  wall_user_id: string | null;
+  author_name: string | null;
 };
 
 type ProfilePhoto = {
@@ -192,6 +194,7 @@ export default function PublicProfilePage() {
 
   const [currentUserWorkedWith, setCurrentUserWorkedWith] = useState(false);
   const [currentUserKnows, setCurrentUserKnows] = useState(false);
+  const [isMutualConnection, setIsMutualConnection] = useState(false);
   const [togglingConnection, setTogglingConnection] = useState<ConnectionType | null>(null);
 
   const [uploadingGallery, setUploadingGallery] = useState(false);
@@ -247,8 +250,8 @@ export default function PublicProfilePage() {
   async function loadPosts(targetUserId: string) {
     const { data: rawData, error } = await supabase
       .from("posts")
-      .select("id, user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name")
-      .eq("user_id", targetUserId)
+      .select("id, user_id, wall_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name")
+      .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -256,7 +259,7 @@ export default function PublicProfilePage() {
       return;
     }
 
-    const rawPosts = (rawData ?? []) as { id: string; user_id: string; content: string; created_at: string; og_url?: string | null; og_title?: string | null; og_description?: string | null; og_image?: string | null; og_site_name?: string | null }[];
+    const rawPosts = (rawData ?? []) as { id: string; user_id: string; wall_user_id?: string | null; content: string; created_at: string; og_url?: string | null; og_title?: string | null; og_description?: string | null; og_image?: string | null; og_site_name?: string | null }[];
     if (rawPosts.length === 0) { setPosts([]); return; }
 
     const postIds = rawPosts.map((p) => p.id);
@@ -338,6 +341,20 @@ export default function PublicProfilePage() {
       commentsByPost.set(c.post_id, arr);
     });
 
+    // For wall posts from other users, fetch their names
+    const wallPosterIds = [...new Set(rawPosts
+      .filter((p) => p.wall_user_id === targetUserId && p.user_id !== targetUserId)
+      .map((p) => p.user_id))];
+    const authorNameMap = new Map<string, string>();
+    if (wallPosterIds.length > 0) {
+      const { data: authorProfiles } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name, display_name")
+        .in("user_id", wallPosterIds);
+      ((authorProfiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null }[])
+        .forEach((ap) => authorNameMap.set(ap.user_id, ap.display_name || `${ap.first_name || ""} ${ap.last_name || ""}`.trim() || "Member"));
+    }
+
     const merged: Post[] = rawPosts.map((p) => {
       const postLikes = likesByPost.get(p.id) || [];
       const multiImages = multiImageMap.get(p.id) || [];
@@ -356,6 +373,8 @@ export default function PublicProfilePage() {
         og_description: p.og_description ?? null,
         og_image: p.og_image ?? null,
         og_site_name: p.og_site_name ?? null,
+        wall_user_id: p.wall_user_id ?? null,
+        author_name: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorNameMap.get(p.user_id) ?? null) : null,
       };
     });
 
@@ -560,16 +579,28 @@ export default function PublicProfilePage() {
     if (!effectiveCurrentUserId) {
       setCurrentUserWorkedWith(false);
       setCurrentUserKnows(false);
+      setIsMutualConnection(false);
       return;
     }
 
-    setCurrentUserWorkedWith(
-      workedWithRows.some((row) => row.requester_user_id === effectiveCurrentUserId)
-    );
+    const myWorkedWith = workedWithRows.some((row) => row.requester_user_id === effectiveCurrentUserId);
+    const myKnows = knowRows.some((row) => row.requester_user_id === effectiveCurrentUserId);
+    setCurrentUserWorkedWith(myWorkedWith);
+    setCurrentUserKnows(myKnows);
 
-    setCurrentUserKnows(
-      knowRows.some((row) => row.requester_user_id === effectiveCurrentUserId)
-    );
+    // Check if the profile owner has ALSO connected back to me (mutual — enables wall posting)
+    if (effectiveCurrentUserId !== targetUserId && (myWorkedWith || myKnows)) {
+      const { data: reverseConn } = await supabase
+        .from("profile_connections")
+        .select("id")
+        .eq("requester_user_id", targetUserId)
+        .eq("target_user_id", effectiveCurrentUserId)
+        .limit(1)
+        .maybeSingle();
+      setIsMutualConnection(!!reverseConn);
+    } else {
+      setIsMutualConnection(false);
+    }
   }
 
   function handlePostContentChange(value: string) {
@@ -616,6 +647,7 @@ export default function PublicProfilePage() {
         .from("posts")
         .insert([{
           user_id: currentUserId,
+          wall_user_id: !isOwnWall && userId ? userId : null,
           content: postContent.trim(),
           og_url: currentOg?.url ?? null,
           og_title: currentOg?.title ?? null,
@@ -682,24 +714,26 @@ export default function PublicProfilePage() {
           .eq("requester_user_id", currentUserId)
           .eq("target_user_id", userId)
           .eq("connection_type", type);
-
-        if (error) {
-          alert(error.message);
-          return;
-        }
+        if (error) { alert(error.message); return; }
       } else {
-        const { error } = await supabase.from("profile_connections").insert([
-          {
-            requester_user_id: currentUserId,
-            target_user_id: userId,
-            connection_type: type,
-          },
-        ]);
-
-        if (error) {
-          alert(error.message);
-          return;
+        // "Worked With" implies "Know" — remove any existing "Know" first
+        if (type === "worked_with" && currentUserKnows) {
+          await supabase.from("profile_connections").delete()
+            .eq("requester_user_id", currentUserId)
+            .eq("target_user_id", userId)
+            .eq("connection_type", "know");
         }
+
+        const { error } = await supabase.from("profile_connections").insert([{
+          requester_user_id: currentUserId,
+          target_user_id: userId,
+          connection_type: type,
+        }]);
+        if (error) { alert(error.message); return; }
+
+        // Notify the other person
+        const verb = type === "worked_with" ? "worked with" : "knows";
+        notify(userId, `${currentUserName} says they ${verb} you`, currentUserId);
       }
 
       await loadConnections(userId, currentUserId);
@@ -1232,8 +1266,8 @@ export default function PublicProfilePage() {
                     <button type="button" onClick={() => toggleConnection("worked_with")} disabled={togglingConnection === "worked_with"} style={{ flex: 1, background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer", opacity: togglingConnection === "worked_with" ? 0.7 : 1 }}>
                       {togglingConnection === "worked_with" ? "Saving..." : currentUserWorkedWith ? "Worked With ✓" : "Worked With"}
                     </button>
-                    <button type="button" onClick={() => toggleConnection("know")} disabled={togglingConnection === "know"} style={{ flex: 1, background: currentUserKnows ? "#111" : t.surface, color: currentUserKnows ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: togglingConnection === "know" ? "not-allowed" : "pointer", opacity: togglingConnection === "know" ? 0.7 : 1 }}>
-                      {togglingConnection === "know" ? "Saving..." : currentUserKnows ? "Know ✓" : "Know"}
+                    <button type="button" onClick={() => !currentUserWorkedWith && toggleConnection("know")} disabled={togglingConnection === "know" || currentUserWorkedWith} style={{ flex: 1, background: (currentUserKnows || currentUserWorkedWith) ? "#111" : t.surface, color: (currentUserKnows || currentUserWorkedWith) ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: (togglingConnection === "know" || currentUserWorkedWith) ? "not-allowed" : "pointer", opacity: currentUserWorkedWith ? 0.55 : togglingConnection === "know" ? 0.7 : 1 }}>
+                      {togglingConnection === "know" ? "Saving..." : (currentUserKnows || currentUserWorkedWith) ? "Know ✓" : "Know"}
                     </button>
                     <a href={`/messages?with=${userId}`} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       Message
@@ -1294,8 +1328,8 @@ export default function PublicProfilePage() {
                       <button type="button" onClick={() => toggleConnection("worked_with")} disabled={togglingConnection === "worked_with"} style={{ background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer", opacity: togglingConnection === "worked_with" ? 0.7 : 1, width: "100%" }}>
                         {togglingConnection === "worked_with" ? "Saving..." : currentUserWorkedWith ? "Worked With ✓" : "Worked With"}
                       </button>
-                      <button type="button" onClick={() => toggleConnection("know")} disabled={togglingConnection === "know"} style={{ background: currentUserKnows ? "#111" : t.surface, color: currentUserKnows ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: togglingConnection === "know" ? "not-allowed" : "pointer", opacity: togglingConnection === "know" ? 0.7 : 1, width: "100%" }}>
-                        {togglingConnection === "know" ? "Saving..." : currentUserKnows ? "Know ✓" : "Know"}
+                      <button type="button" onClick={() => !currentUserWorkedWith && toggleConnection("know")} disabled={togglingConnection === "know" || currentUserWorkedWith} style={{ background: (currentUserKnows || currentUserWorkedWith) ? "#111" : t.surface, color: (currentUserKnows || currentUserWorkedWith) ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: (togglingConnection === "know" || currentUserWorkedWith) ? "not-allowed" : "pointer", opacity: currentUserWorkedWith ? 0.55 : togglingConnection === "know" ? 0.7 : 1, width: "100%" }}>
+                        {togglingConnection === "know" ? "Saving..." : (currentUserKnows || currentUserWorkedWith) ? "Know ✓" : "Know"}
                       </button>
                       <a href={`/messages?with=${userId}`} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "block", width: "100%", boxSizing: "border-box" }}>
                         Message
@@ -1433,10 +1467,10 @@ export default function PublicProfilePage() {
           {/* Wall */}
           <div style={{ paddingTop: 4 }}>
 
-            {isOwnWall && (
+            {(isOwnWall || isMutualConnection) && (
               <div style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                 <textarea
-                  placeholder="Post to your wall..."
+                  placeholder={isOwnWall ? "Post to your wall..." : `Post on ${fullName}'s wall...`}
                   value={postContent}
                   onChange={(e) => handlePostContentChange(e.target.value)}
                   style={{ width: "100%", minHeight: 80, border: "none", outline: "none", resize: "vertical", fontSize: 16, boxSizing: "border-box", background: t.input, color: t.text }}
@@ -1566,6 +1600,13 @@ export default function PublicProfilePage() {
                         </button>
                       )}
                     </div>
+
+                    {/* Wall post attribution */}
+                    {post.author_name && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted, fontStyle: "italic" }}>
+                        Posted by {post.author_name}
+                      </div>
+                    )}
 
                     {/* Post content */}
                     {post.content && <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>}
