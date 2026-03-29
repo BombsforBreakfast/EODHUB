@@ -94,11 +94,13 @@ export default function AdminPage() {
   const [memWizUrl, setMemWizUrl] = useState("");
   const [memWizName, setMemWizName] = useState("");
   const [memWizDate, setMemWizDate] = useState("");
+  const [memWizImage, setMemWizImage] = useState("");
+  const [memWizBio, setMemWizBio] = useState("");
   const [memWizFetching, setMemWizFetching] = useState(false);
   const [memWizSaving, setMemWizSaving] = useState(false);
   const [memWizMsg, setMemWizMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
-  const { t } = useTheme();
+  const { t, isDark } = useTheme();
 
   function showToast(msg: string) {
     setToast(msg);
@@ -484,14 +486,14 @@ export default function AdminPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Fetch failed");
       // og:title is "Name | EOD Warrior Foundation", og:description is "M/D/YYYY"
-      if (json.title) {
-        setMemWizName(json.title.replace(/\s*\|\s*EOD Warrior Foundation\s*$/i, "").trim());
-      }
+      if (json.title) setMemWizName(json.title);
       if (json.description) {
         // Parse M/D/YYYY → YYYY-MM-DD for the date input
         const m = json.description.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
         if (m) setMemWizDate(`${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`);
       }
+      if (json.image) setMemWizImage(json.image);
+      if (json.bio) setMemWizBio(json.bio);
     } catch (err) {
       setMemWizMsg({ type: "err", text: `Could not fetch metadata — fill in manually. (${err instanceof Error ? err.message : String(err)})` });
     } finally {
@@ -517,14 +519,16 @@ export default function AdminPage() {
         name: memWizName.trim(),
         death_date: memWizDate,
         source_url,
-        bio: null,
-        photo_url: null,
+        bio: memWizBio.trim() || null,
+        photo_url: memWizImage.trim() || null,
       }]);
       if (error) throw new Error(error.message);
       setMemWizMsg({ type: "ok", text: `${memWizName.trim()} added.` });
       setMemWizUrl("");
       setMemWizName("");
       setMemWizDate("");
+      setMemWizImage("");
+      setMemWizBio("");
     } catch (err) {
       setMemWizMsg({ type: "err", text: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -1114,6 +1118,24 @@ export default function AdminPage() {
                     style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
                   />
                 </div>
+
+                {/* Preview card */}
+                {(memWizImage || memWizBio) && (
+                  <div style={{ display: "flex", gap: 14, padding: 14, borderRadius: 10, border: `2px solid #7c3aed`, background: isDark ? "#1a0d2e" : "#faf5ff" }}>
+                    {memWizImage && (
+                      <img src={memWizImage} alt="" style={{ width: 72, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "2px solid #7c3aed" }} />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {memWizName && <div style={{ fontWeight: 800, fontSize: 15 }}>{memWizName}</div>}
+                      {memWizBio && (
+                        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                          {memWizBio}
+                        </div>
+                      )}
+                      {!memWizBio && <div style={{ fontSize: 13, color: t.textFaint, marginTop: 4 }}>No bio extracted — add manually if needed.</div>}
+                    </div>
+                  </div>
+                )}
 
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <button
