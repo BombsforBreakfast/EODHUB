@@ -446,6 +446,18 @@ export default function EventsPage() {
 
       setUserId(uid);
 
+      // Fire-and-forget: purge past events (memorials are unaffected)
+      if (uid) {
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          if (session?.access_token) {
+            fetch("/api/cleanup-events", {
+              method: "POST",
+              headers: { Authorization: `Bearer ${session.access_token}` },
+            }).catch((err) => console.error("cleanup-events error:", err));
+          }
+        });
+      }
+
       const [eventsResult] = await Promise.all([
         loadEvents(),
         loadMemorials(),
