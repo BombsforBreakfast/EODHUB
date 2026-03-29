@@ -99,49 +99,44 @@ export async function POST(req: NextRequest) {
     }, { status: 502 });
   }
 
-  // Step 3: Insert into memorials table
-  let imported = 0;
-  let skipped = 0;
+  // Step 3: Build rows, skip already-imported in one bulk check
   const errors: string[] = [];
 
+  type MemorialRow = { user_id: string; name: string; death_date: string; source_url: string; bio: null; photo_url: null };
+  const rows: MemorialRow[] = [];
+
   for (const post of allPosts) {
-    try {
-      const source_url = post.link.endsWith("/") ? post.link : `${post.link}/`;
+    const source_url = post.link.endsWith("/") ? post.link : `${post.link}/`;
+    const name = decodeHtmlEntities(post.title.rendered).trim();
+    const death_date = post.date.slice(0, 10); // "2024-05-11T..." → "2024-05-11"
+    if (!name || !death_date) {
+      errors.push(`Missing name or date for post ${post.id}`);
+      continue;
+    }
+    rows.push({ user_id: user.id, name, death_date, source_url, bio: null, photo_url: null });
+  }
 
-      // Skip if already imported
-      const { data: existing } = await adminClient
-        .from("memorials")
-        .select("id")
-        .eq("source_url", source_url)
-        .maybeSingle();
+  // One query to find all already-imported source_urls
+  const allUrls = rows.map((r) => r.source_url);
+  const { data: existing } = await adminClient
+    .from("memorials")
+    .select("source_url")
+    .in("source_url", allUrls);
+  const existingUrls = new Set((existing ?? []).map((r: { source_url: string }) => r.source_url));
 
-      if (existing) { skipped++; continue; }
+  const newRows = rows.filter((r) => !existingUrls.has(r.source_url));
+  const skipped = rows.length - newRows.length;
 
-      const name = decodeHtmlEntities(post.title.rendered).trim();
-      // WordPress date is ISO: "2024-05-11T00:00:00" — take first 10 chars
-      const death_date = post.date.slice(0, 10);
-
-      if (!name || !death_date) {
-        errors.push(`Missing name or date for post ${post.id}`);
-        continue;
-      }
-
-      const { error } = await adminClient.from("memorials").insert([{
-        user_id: user.id,
-        name,
-        death_date,
-        source_url,
-        bio: null,
-        photo_url: null,
-      }]);
-
-      if (error) {
-        errors.push(`DB error for "${name}": ${error.message}`);
-      } else {
-        imported++;
-      }
-    } catch (err) {
-      errors.push(`Error on post ${post.id}: ${err instanceof Error ? err.message : String(err)}`);
+  // Batch insert in chunks of 100 to stay well within limits
+  let imported = 0;
+  const CHUNK = 100;
+  for (let i = 0; i < newRows.length; i += CHUNK) {
+    const chunk = newRows.slice(i, i + CHUNK);
+    const { error } = await adminClient.from("memorials").insert(chunk);
+    if (error) {
+      errors.push(`Batch insert error (rows ${i}–${i + chunk.length}): ${error.message}`);
+    } else {
+      imported += chunk.length;
     }
   }
 
