@@ -93,22 +93,29 @@ const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "
 
 type ConnectionType = "worked_with" | "know";
 
+const BARE_DOMAIN_RE = /\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/;
+const URL_PATTERN_SRC = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/.source;
+
 function extractFirstUrl(text: string): string | null {
-  const match = text.match(/https?:\/\/[^\s]+/);
-  return match ? match[0].replace(/[.,)>]+$/, "") : null;
+  const explicit = text.match(/https?:\/\/[^\s]+/);
+  if (explicit) return explicit[0].replace(/[.,)>]+$/, "");
+  const bare = text.match(BARE_DOMAIN_RE);
+  if (bare) return `https://${bare[0].replace(/[.,)>]+$/, "")}`;
+  return null;
 }
 
 function renderContent(text: string): React.ReactNode[] {
-  const urlPattern = /https?:\/\/[^\s]+/g;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;
-  while ((match = urlPattern.exec(text)) !== null) {
-    const url = match[0].replace(/[.,)>]+$/, "");
+  const re = new RegExp(URL_PATTERN_SRC, "g");
+  while ((match = re.exec(text)) !== null) {
+    const raw = match[0].replace(/[.,)>]+$/, "");
+    const href = raw.startsWith("http") ? raw : `https://${raw}`;
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
     parts.push(
-      <a key={match.index} href={url} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>
-        {url}
+      <a key={match.index} href={href} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>
+        {raw}
       </a>
     );
     lastIndex = match.index + match[0].length;

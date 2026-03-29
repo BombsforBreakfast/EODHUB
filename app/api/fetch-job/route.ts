@@ -4,11 +4,21 @@ import { extractMetadata } from "@/app/lib/metadata/extractMetadata";
 
 export async function POST(req: NextRequest) {
   try {
-    const { jobId, websiteUrl } = await req.json();
+    // Require a logged-in user
+    const authHeader = req.headers.get("authorization");
+    if (!authHeader?.startsWith("Bearer ")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const token = authHeader.slice(7);
+    const userClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { global: { headers: { Authorization: `Bearer ${token}` } } }
+    );
+    const { data: { user } } = await userClient.auth.getUser();
+    if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-    console.log("fetch-job route called");
-    console.log("jobId:", jobId);
-    console.log("websiteUrl:", websiteUrl);
+    const { jobId, websiteUrl } = await req.json();
 
     if (!jobId || !websiteUrl) {
       return NextResponse.json(
@@ -18,8 +28,6 @@ export async function POST(req: NextRequest) {
     }
 
     const metadata = await extractMetadata(websiteUrl);
-
-    console.log("metadata returned:", metadata);
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,

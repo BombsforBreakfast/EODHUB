@@ -65,18 +65,16 @@ export default function PostJobPage() {
       }
 
       if (data?.id && normalizedApplyUrl) {
-        fetch("/api/fetch-job", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    jobId: data.id,
-    websiteUrl: normalizedApplyUrl,
-  }),
-}).catch((err) => {
-  console.error("Job metadata fetch error:", err);
-});
+        supabase.auth.getSession().then(({ data: { session } }) => {
+          fetch("/api/fetch-job", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session?.access_token ?? ""}`,
+            },
+            body: JSON.stringify({ jobId: data.id, websiteUrl: normalizedApplyUrl }),
+          }).catch((err) => console.error("Job metadata fetch error:", err));
+        });
       }
 
       alert("Job submitted! Pending approval.");
@@ -175,6 +173,7 @@ export default function PostJobPage() {
           <input
             value={applyUrl}
             onChange={(e) => setApplyUrl(e.target.value)}
+            onBlur={(e) => { if (e.target.value.trim()) setApplyUrl(normalizeUrl(e.target.value)); }}
             style={{
               width: "100%",
               padding: 10,

@@ -157,22 +157,36 @@ function formatDate(dateString: string) {
   return new Date(dateString).toLocaleString();
 }
 
+function normalizeUrl(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
+  return `https://${trimmed}`;
+}
+
+const BARE_DOMAIN_RE = /\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/;
+const URL_PATTERN_G = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
+
 function extractFirstUrl(text: string): string | null {
-  const match = text.match(/https?:\/\/[^\s]+/);
-  return match ? match[0].replace(/[.,)>]+$/, "") : null;
+  const explicit = text.match(/https?:\/\/[^\s]+/);
+  if (explicit) return explicit[0].replace(/[.,)>]+$/, "");
+  const bare = text.match(BARE_DOMAIN_RE);
+  if (bare) return `https://${bare[0].replace(/[.,)>]+$/, "")}`;
+  return null;
 }
 
 function renderContent(text: string): React.ReactNode[] {
-  const urlPattern = /https?:\/\/[^\s]+/g;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;
-  while ((match = urlPattern.exec(text)) !== null) {
-    const url = match[0].replace(/[.,)>]+$/, "");
+  const re = new RegExp(URL_PATTERN_G.source, "g");
+  while ((match = re.exec(text)) !== null) {
+    const raw = match[0].replace(/[.,)>]+$/, "");
+    const href = raw.startsWith("http") ? raw : `https://${raw}`;
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
     parts.push(
-      <a key={match.index} href={url} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>
-        {url}
+      <a key={match.index} href={href} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>
+        {raw}
       </a>
     );
     lastIndex = match.index + match[0].length;
@@ -455,7 +469,7 @@ export default function HomePage() {
 
   async function loadJobs() {
     const [jobsRes, lastSeenRes] = await Promise.all([
-      supabase.from("jobs").select("*").eq("is_approved", true).order("created_at", { ascending: false }).limit(20),
+      supabase.from("jobs").select("*").eq("is_approved", true).order("created_at", { ascending: false }).limit(500),
       supabase.from("jobs").select("last_seen_at").eq("source_type", "usajobs").order("last_seen_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
 
@@ -1056,7 +1070,7 @@ export default function HomePage() {
   function handleBizUrlChange(value: string) {
     setBizUrl(value);
     setBizOgPreview(null);
-    const url = extractFirstUrl(value);
+    const url = value.trim() ? normalizeUrl(value.trim()) : null;
     if (!url) return;
     if (bizOgDebounceRef.current) clearTimeout(bizOgDebounceRef.current);
     bizOgDebounceRef.current = setTimeout(async () => {
@@ -1075,7 +1089,7 @@ export default function HomePage() {
 
   async function submitBizListing() {
     if (!userId) { window.location.href = "/login"; return; }
-    const url = bizUrl.trim();
+    const url = normalizeUrl(bizUrl.trim());
     if (!url || !bizName.trim()) return;
     try {
       setSubmittingBiz(true);
@@ -2742,10 +2756,11 @@ export default function HomePage() {
                   <div style={{ marginBottom: 10 }}>
                     <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 4 }}>Website URL *</label>
                     <input
-                      type="url"
+                      type="text"
                       value={bizUrl}
                       onChange={(e) => handleBizUrlChange(e.target.value)}
-                      placeholder="https://yourbusiness.com"
+                      onBlur={(e) => { if (e.target.value.trim()) { const n = normalizeUrl(e.target.value); setBizUrl(n); handleBizUrlChange(n); } }}
+                      placeholder="yourbusiness.com"
                       style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, boxSizing: "border-box", background: t.input, color: t.text }}
                     />
                     {fetchingBizOg && <div style={{ fontSize: 11, color: t.textFaint, marginTop: 4 }}>Fetching preview...</div>}

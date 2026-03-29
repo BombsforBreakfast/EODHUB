@@ -18,7 +18,6 @@ const EOD_KEYWORDS = [
   "C-UAS",
   "nuclear",
   "chemical",
-  "biological",
   "radiological",
   "Emergency Management Specialist",
   "Nuclear Materials Courier",
@@ -46,7 +45,6 @@ const TITLE_RELEVANT_TERMS = [
   "transportation security specialist",
   "nuclear",
   "chemical",
-  "biological",
   "radiological",
   "cbrn",
   "cbrne",
@@ -72,6 +70,8 @@ const MILITARY_RECRUITMENT_FILTERS = [
   "inspector",
   "title 32",
   "mechanic",
+  "medicine",
+  "medical",
 ];
 
 const STALE_DAYS = 30;
@@ -164,12 +164,13 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // 1. Purge stale USAJobs entries not seen in the last STALE_DAYS days
+  // 1. Purge stale USAJobs entries not seen in the last STALE_DAYS days (skip rejected — they're blocklist markers)
   const cutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000).toISOString();
   const { count: purged } = await supabase
     .from("jobs")
     .delete({ count: "exact" })
     .eq("source_type", "usajobs")
+    .neq("is_rejected", true)
     .lt("last_seen_at", cutoff);
 
   // 2. Scrape and upsert
@@ -215,11 +216,16 @@ export async function GET(req: NextRequest) {
       // Check if already in database (by stable PositionURI)
       const { data: existing } = await supabase
         .from("jobs")
-        .select("id")
+        .select("id, is_rejected")
         .eq("apply_url", positionURI)
         .maybeSingle();
 
       if (existing) {
+        // Never re-import a job an admin has rejected
+        if (existing.is_rejected) {
+          skipped++;
+          continue;
+        }
         // Job still active — refresh last_seen_at to reset the 30-day clock
         await supabase
           .from("jobs")

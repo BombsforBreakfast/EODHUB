@@ -42,6 +42,8 @@ export async function GET(req: NextRequest) {
   if (pendingOnly) {
     query = query.neq("is_approved", true);
   }
+  // Never show rejected jobs in the admin panel
+  query = query.neq("is_rejected", true);
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

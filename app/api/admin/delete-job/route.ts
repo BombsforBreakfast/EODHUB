@@ -38,7 +38,11 @@ export async function DELETE(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const { error } = await adminClient.from("jobs").delete().eq("id", jobId);
+  // Soft-delete: mark as rejected so the scraper won't re-import it
+  const { error } = await adminClient
+    .from("jobs")
+    .update({ is_rejected: true })
+    .eq("id", jobId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ success: true });

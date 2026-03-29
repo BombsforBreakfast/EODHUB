@@ -87,6 +87,8 @@ export default function AdminPage() {
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  const [batchActing, setBatchActing] = useState(false);
 
   const { t } = useTheme();
 
@@ -259,6 +261,54 @@ export default function AdminPage() {
         setJobs((prev) => prev.filter((j) => j.id !== id));
       }
       setActionLoading(null);
+    });
+  }
+
+  async function batchApproveJobs() {
+    if (selectedJobs.size === 0) return;
+    setBatchActing(true);
+    const { data: { session } } = await supabase.auth.getSession();
+    const ids = [...selectedJobs];
+    await Promise.all(ids.map((id) =>
+      fetch(`/api/admin/approve-job?id=${id}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      })
+    ));
+    if (pendingOnly) {
+      setJobs((prev) => prev.filter((j) => !selectedJobs.has(j.id)));
+    } else {
+      setJobs((prev) => prev.map((j) => selectedJobs.has(j.id) ? { ...j, is_approved: true } : j));
+    }
+    showToast(`${ids.length} job${ids.length > 1 ? "s" : ""} approved!`);
+    setSelectedJobs(new Set());
+    setBatchActing(false);
+  }
+
+  async function batchRejectJobs() {
+    if (selectedJobs.size === 0) return;
+    askConfirm(`Delete ${selectedJobs.size} selected job${selectedJobs.size > 1 ? "s" : ""}?`, async () => {
+      setBatchActing(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      const ids = [...selectedJobs];
+      await Promise.all(ids.map((id) =>
+        fetch(`/api/admin/delete-job?id=${id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+        })
+      ));
+      setJobs((prev) => prev.filter((j) => !selectedJobs.has(j.id)));
+      showToast(`${ids.length} job${ids.length > 1 ? "s" : ""} deleted.`);
+      setSelectedJobs(new Set());
+      setBatchActing(false);
+    });
+  }
+
+  function toggleJobSelection(id: string) {
+    setSelectedJobs((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
     });
   }
 
@@ -649,6 +699,39 @@ export default function AdminPage() {
         {/* ── JOBS TAB ── */}
         {activeTab === "jobs" && (
           <div style={{ marginTop: 20 }}>
+            {/* Batch toolbar */}
+            {jobs.length > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 700, cursor: "pointer", color: t.textMuted }}>
+                  <input
+                    type="checkbox"
+                    style={{ width: 16, height: 16, cursor: "pointer" }}
+                    checked={selectedJobs.size === jobs.length && jobs.length > 0}
+                    onChange={(e) => setSelectedJobs(e.target.checked ? new Set(jobs.map((j) => j.id)) : new Set())}
+                  />
+                  Select all
+                </label>
+                {selectedJobs.size > 0 && (
+                  <>
+                    <span style={{ fontSize: 13, color: t.textMuted }}>{selectedJobs.size} selected</span>
+                    <button
+                      style={{ ...actionBtn("#16a34a"), opacity: batchActing ? 0.6 : 1 }}
+                      disabled={batchActing}
+                      onClick={batchApproveJobs}
+                    >
+                      {batchActing ? "..." : `Approve ${selectedJobs.size}`}
+                    </button>
+                    <button
+                      style={{ ...actionBtn("#ef4444"), opacity: batchActing ? 0.6 : 1 }}
+                      disabled={batchActing}
+                      onClick={batchRejectJobs}
+                    >
+                      {batchActing ? "..." : `Delete ${selectedJobs.size}`}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             {jobs.length === 0 && (
               <div style={{ padding: 32, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
                 {pendingOnly ? "No pending job submissions." : "No jobs found."}
@@ -656,21 +739,32 @@ export default function AdminPage() {
             )}
             <div style={{ display: "grid", gap: 14 }}>
               {jobs.map((job) => (
-                <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                <div
+                  key={job.id}
+                  style={{ border: `1px solid ${selectedJobs.has(job.id) ? "#6366f1" : t.border}`, borderRadius: 14, padding: 16, background: selectedJobs.has(job.id) ? (t.bg === "#fff" || t.bg === "#f9fafb" ? "#f5f3ff" : "#1e1b4b22") : t.surface, transition: "border-color 0.1s" }}
+                >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 900, fontSize: 17, color: t.text }}>{job.title || "Untitled Job"}</div>
-                      <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>{job.company_name || "Unknown company"}</div>
-                      <div style={{ marginTop: 2, fontSize: 13, color: t.textMuted }}>{[job.location, job.category].filter(Boolean).join(" · ")}</div>
-                      {job.description && (
-                        <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
-                          {job.description}
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: 1, minWidth: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedJobs.has(job.id)}
+                        onChange={() => toggleJobSelection(job.id)}
+                        style={{ width: 16, height: 16, marginTop: 3, cursor: "pointer", flexShrink: 0 }}
+                      />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 900, fontSize: 17, color: t.text }}>{job.title || "Untitled Job"}</div>
+                        <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>{job.company_name || "Unknown company"}</div>
+                        <div style={{ marginTop: 2, fontSize: 13, color: t.textMuted }}>{[job.location, job.category].filter(Boolean).join(" · ")}</div>
+                        {job.description && (
+                          <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                            {job.description}
+                          </div>
+                        )}
+                        <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint, display: "flex", gap: 12, flexWrap: "wrap" }}>
+                          {job.apply_url && <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8" }}>View posting ↗</a>}
+                          <span>{job.created_at ? new Date(job.created_at).toLocaleDateString() : ""}</span>
+                          <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "1px 8px" }}>{job.source_type || "community"}</span>
                         </div>
-                      )}
-                      <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint, display: "flex", gap: 12, flexWrap: "wrap" }}>
-                        {job.apply_url && <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8" }}>View posting ↗</a>}
-                        <span>{job.created_at ? new Date(job.created_at).toLocaleDateString() : ""}</span>
-                        <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "1px 8px" }}>{job.source_type || "community"}</span>
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
