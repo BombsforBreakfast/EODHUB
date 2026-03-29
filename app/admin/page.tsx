@@ -91,6 +91,12 @@ export default function AdminPage() {
   const [batchActing, setBatchActing] = useState(false);
   const [importingMemorials, setImportingMemorials] = useState(false);
   const [importResult, setImportResult] = useState<{ imported: number; skipped: number; total: number; errors: string[] } | null>(null);
+  const [memWizUrl, setMemWizUrl] = useState("");
+  const [memWizName, setMemWizName] = useState("");
+  const [memWizDate, setMemWizDate] = useState("");
+  const [memWizFetching, setMemWizFetching] = useState(false);
+  const [memWizSaving, setMemWizSaving] = useState(false);
+  const [memWizMsg, setMemWizMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const { t } = useTheme();
 
@@ -461,6 +467,68 @@ export default function AdminPage() {
       setImportResult({ imported: 0, skipped: 0, total: 0, errors: [err instanceof Error ? err.message : String(err)] });
     } finally {
       setImportingMemorials(false);
+    }
+  }
+
+  async function fetchMemorialMeta() {
+    if (!memWizUrl.trim()) return;
+    setMemWizFetching(true);
+    setMemWizMsg(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/memorial-meta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: JSON.stringify({ url: memWizUrl.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Fetch failed");
+      // og:title is "Name | EOD Warrior Foundation", og:description is "M/D/YYYY"
+      if (json.title) {
+        setMemWizName(json.title.replace(/\s*\|\s*EOD Warrior Foundation\s*$/i, "").trim());
+      }
+      if (json.description) {
+        // Parse M/D/YYYY → YYYY-MM-DD for the date input
+        const m = json.description.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (m) setMemWizDate(`${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`);
+      }
+    } catch (err) {
+      setMemWizMsg({ type: "err", text: `Could not fetch metadata — fill in manually. (${err instanceof Error ? err.message : String(err)})` });
+    } finally {
+      setMemWizFetching(false);
+    }
+  }
+
+  async function saveMemorial() {
+    if (!memWizName.trim() || !memWizDate) return;
+    setMemWizSaving(true);
+    setMemWizMsg(null);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not logged in");
+      const source_url = memWizUrl.trim() || null;
+      // Check for duplicate
+      if (source_url) {
+        const { data: existing } = await supabase.from("memorials").select("id").eq("source_url", source_url).maybeSingle();
+        if (existing) { setMemWizMsg({ type: "err", text: "Already imported." }); return; }
+      }
+      const { error } = await supabase.from("memorials").insert([{
+        user_id: user.id,
+        name: memWizName.trim(),
+        death_date: memWizDate,
+        source_url,
+        bio: null,
+        photo_url: null,
+      }]);
+      if (error) throw new Error(error.message);
+      setMemWizMsg({ type: "ok", text: `${memWizName.trim()} added.` });
+      setMemWizUrl("");
+      setMemWizName("");
+      setMemWizDate("");
+    } catch (err) {
+      setMemWizMsg({ type: "err", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setMemWizSaving(false);
     }
   }
 
@@ -1005,6 +1073,63 @@ export default function AdminPage() {
                   )}
                 </div>
               )}
+            </div>
+
+            {/* Add Memorial by URL */}
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
+              <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Add Memorial by URL</div>
+              <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
+                Paste a memorial URL and hit Fetch — name and date auto-fill from the page. Edit if needed, then save. Repeat for each entry.
+              </div>
+
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    value={memWizUrl}
+                    onChange={(e) => setMemWizUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && fetchMemorialMeta()}
+                    placeholder="https://eod-wf.org/virtual-memorial/army/..."
+                    style={{ flex: 1, border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                  />
+                  <button
+                    onClick={fetchMemorialMeta}
+                    disabled={memWizFetching || !memWizUrl.trim()}
+                    style={{ background: t.text, color: t.surface, border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, fontSize: 14, cursor: memWizFetching || !memWizUrl.trim() ? "not-allowed" : "pointer", opacity: memWizFetching || !memWizUrl.trim() ? 0.5 : 1, whiteSpace: "nowrap" }}
+                  >
+                    {memWizFetching ? "Fetching..." : "Fetch"}
+                  </button>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 180px", gap: 8 }}>
+                  <input
+                    value={memWizName}
+                    onChange={(e) => setMemWizName(e.target.value)}
+                    placeholder="Full name"
+                    style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                  />
+                  <input
+                    type="date"
+                    value={memWizDate}
+                    onChange={(e) => setMemWizDate(e.target.value)}
+                    style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                  />
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button
+                    onClick={saveMemorial}
+                    disabled={memWizSaving || !memWizName.trim() || !memWizDate}
+                    style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
+                  >
+                    {memWizSaving ? "Saving..." : "Add Memorial"}
+                  </button>
+                  {memWizMsg && (
+                    <div style={{ fontSize: 14, fontWeight: 700, color: memWizMsg.type === "ok" ? "#16a34a" : "#ef4444" }}>
+                      {memWizMsg.type === "ok" ? "✓ " : "✗ "}{memWizMsg.text}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
           </div>
