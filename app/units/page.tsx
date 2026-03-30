@@ -15,6 +15,7 @@ type Unit = {
   type: string;
   member_count: number;
   created_at: string;
+  my_role?: string;
 };
 
 const UNIT_TYPES = [
@@ -68,12 +69,16 @@ export default function UnitsPage() {
   async function loadMyUnits(uid: string) {
     const { data } = await supabase
       .from("unit_members")
-      .select("units(id, name, slug, description, cover_photo_url, type, created_at)")
+      .select("role, units(id, name, slug, description, cover_photo_url, type, created_at)")
       .eq("user_id", uid)
       .eq("status", "approved");
     if (data) {
-      const rows = data as unknown as { units: Unit | null }[];
-      setMyUnits(rows.map((r) => r.units).filter((u): u is Unit => u !== null).map((u) => ({ ...u, member_count: 0 })));
+      const rows = data as unknown as { role: string; units: Unit | null }[];
+      setMyUnits(
+        rows
+          .filter((r) => r.units !== null)
+          .map((r) => ({ ...r.units!, member_count: 0, my_role: r.role }))
+      );
     }
     setMyUnitsLoaded(true);
   }
@@ -220,14 +225,22 @@ export default function UnitsPage() {
             <div style={{ fontSize: 13, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 14 }}>My Units</div>
             <div style={{ display: "grid", gap: 10 }}>
               {myUnits.map((u) => (
-                <a key={u.id} href={`/units/${u.slug}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", border: `1px solid ${t.border}`, borderRadius: 12, textDecoration: "none", color: t.text, background: t.bg }}>
+                <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: `1px solid ${t.border}`, borderRadius: 12, background: t.bg }}>
                   <div style={{ width: 40, height: 40, borderRadius: 8, background: u.cover_photo_url ? `url(${u.cover_photo_url}) center/cover` : "#1e3a5f", flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  <a href={`/units/${u.slug}`} style={{ flex: 1, minWidth: 0, textDecoration: "none", color: t.text }}>
                     <div style={{ fontWeight: 800, fontSize: 14 }}>{u.name}</div>
                     <div style={{ fontSize: 12, color: t.textMuted, textTransform: "capitalize" }}>{u.type.replace(/_/g, " ")}</div>
-                  </div>
-                  <span style={{ fontSize: 18, color: t.textFaint }}>›</span>
-                </a>
+                  </a>
+                  {(u.my_role === "owner" || u.my_role === "admin") && (
+                    <a
+                      href={`/units/${u.slug}/admin`}
+                      style={{ padding: "5px 12px", borderRadius: 8, background: "#1e3a5f", color: "#fff", fontSize: 12, fontWeight: 800, textDecoration: "none", flexShrink: 0 }}
+                    >
+                      Admin
+                    </a>
+                  )}
+                  <a href={`/units/${u.slug}`} style={{ fontSize: 18, color: t.textFaint, textDecoration: "none" }}>›</a>
+                </div>
               ))}
             </div>
           </div>

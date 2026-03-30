@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
@@ -101,15 +101,14 @@ export default function EventsPage() {
   const [submittingEvent, setSubmittingEvent] = useState(false);
 
   const [showMemorialForm, setShowMemorialForm] = useState(false);
-  const [memorialForm, setMemorialForm] = useState({
-    name: "",
-    bio: "",
-    death_date: "",
-  });
-  const [memorialPhotoFile, setMemorialPhotoFile] = useState<File | null>(null);
-  const [memorialPhotoPreview, setMemorialPhotoPreview] = useState<string | null>(null);
-  const [submittingMemorial, setSubmittingMemorial] = useState(false);
-  const memorialPhotoRef = useRef<HTMLInputElement>(null);
+  const [memWizUrl, setMemWizUrl] = useState("");
+  const [memWizName, setMemWizName] = useState("");
+  const [memWizDate, setMemWizDate] = useState("");
+  const [memWizBio, setMemWizBio] = useState("");
+  const [memWizImage, setMemWizImage] = useState("");
+  const [memWizFetching, setMemWizFetching] = useState(false);
+  const [memWizSaving, setMemWizSaving] = useState(false);
+  const [memWizMsg, setMemWizMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const { t, isDark } = useTheme();
 
@@ -357,68 +356,61 @@ export default function EventsPage() {
     }
   }
 
-  async function submitMemorial() {
-    if (!userId) {
-      window.location.href = "/login";
-      return;
-    }
-
-    if (!memorialForm.name.trim() || !memorialForm.death_date) return;
-
+  async function fetchMemorialMeta() {
+    if (!memWizUrl.trim()) return;
+    setMemWizFetching(true);
+    setMemWizMsg(null);
     try {
-      setSubmittingMemorial(true);
-
-      let photoUrl: string | null = null;
-
-      if (memorialPhotoFile) {
-        const filePath = `${userId}/${Date.now()}-${memorialPhotoFile.name}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("memorial-photos")
-          .upload(filePath, memorialPhotoFile);
-
-        if (uploadError) throw uploadError;
-
-        const { data } = supabase.storage
-          .from("memorial-photos")
-          .getPublicUrl(filePath);
-
-        photoUrl = data.publicUrl;
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/memorial-meta", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: JSON.stringify({ url: memWizUrl.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Fetch failed");
+      if (json.title) setMemWizName(json.title);
+      if (json.description) {
+        const m = json.description.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        if (m) setMemWizDate(`${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`);
       }
-
-      const { error } = await supabase.from("memorials").insert([
-        {
-          user_id: userId,
-          name: memorialForm.name.trim(),
-          bio: memorialForm.bio.trim() || null,
-          photo_url: photoUrl,
-          death_date: memorialForm.death_date,
-        },
-      ]);
-
-      if (error) {
-        alert(error.message);
-        return;
-      }
-
-      setMemorialForm({ name: "", bio: "", death_date: "" });
-      setMemorialPhotoFile(null);
-      setMemorialPhotoPreview(null);
-      setShowMemorialForm(false);
-      await loadMemorials();
+      if (json.image) setMemWizImage(json.image);
+      if (json.bio) setMemWizBio(json.bio);
     } catch (err) {
-      console.error("Memorial submit error:", err);
-      alert("Failed to add memorial.");
+      setMemWizMsg({ type: "err", text: `Could not fetch metadata — fill in manually. (${err instanceof Error ? err.message : String(err)})` });
     } finally {
-      setSubmittingMemorial(false);
+      setMemWizFetching(false);
     }
   }
 
-  function handleMemorialPhoto(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setMemorialPhotoFile(file);
-    setMemorialPhotoPreview(URL.createObjectURL(file));
+  async function saveMemorial() {
+    if (!userId) { window.location.href = "/login"; return; }
+    if (!memWizName.trim() || !memWizDate) return;
+    setMemWizSaving(true);
+    setMemWizMsg(null);
+    try {
+      const source_url = memWizUrl.trim() || null;
+      if (source_url) {
+        const { data: existing } = await supabase.from("memorials").select("id").eq("source_url", source_url).maybeSingle();
+        if (existing) { setMemWizMsg({ type: "err", text: "Already added." }); return; }
+      }
+      const { error } = await supabase.from("memorials").insert([{
+        user_id: userId,
+        name: memWizName.trim(),
+        death_date: memWizDate,
+        source_url,
+        bio: memWizBio.trim() || null,
+        photo_url: memWizImage.trim() || null,
+      }]);
+      if (error) throw new Error(error.message);
+      setMemWizMsg({ type: "ok", text: `${memWizName.trim()} added.` });
+      setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage("");
+      await loadMemorials();
+    } catch (err) {
+      setMemWizMsg({ type: "err", text: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setMemWizSaving(false);
+    }
   }
 
   function prevMonth() {
@@ -697,125 +689,103 @@ export default function EventsPage() {
       )}
 
       {showMemorialForm && (
-        <div
-          style={{
-            marginTop: 20,
-            border: `1px solid ${t.border}`,
-            borderRadius: 16,
-            padding: 24,
-            background: t.surface,
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 4,
-            }}
-          >
+        <div style={{ marginTop: 20, border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
             <div style={{ fontSize: 18, fontWeight: 900 }}>Add Memorial</div>
             <button
               type="button"
-              onClick={() => setShowMemorialForm(false)}
-              style={{
-                background: "transparent",
-                border: "none",
-                fontSize: 20,
-                cursor: "pointer",
-                color: t.textMuted,
-              }}
-            >
-              ×
-            </button>
+              onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizMsg(null); }}
+              style={{ background: "transparent", border: "none", fontSize: 20, cursor: "pointer", color: t.textMuted }}
+            >×</button>
+          </div>
+          <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
+            Paste an EOD Warrior Foundation memorial URL and hit Fetch — name and date auto-fill. Or skip the URL and fill in manually.
           </div>
 
-          <label style={labelStyle}>Name *</label>
-          <input
-            style={inputStyle}
-            value={memorialForm.name}
-            onChange={(e) => setMemorialForm((p) => ({ ...p, name: e.target.value }))}
-            placeholder="Full name"
-          />
+          <div style={{ display: "grid", gap: 12 }}>
+            {/* URL + Fetch */}
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={memWizUrl}
+                onChange={(e) => setMemWizUrl(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && fetchMemorialMeta()}
+                placeholder="https://eod-wf.org/virtual-memorial/... (optional)"
+                style={inputStyle}
+              />
+              <button
+                type="button"
+                onClick={fetchMemorialMeta}
+                disabled={memWizFetching || !memWizUrl.trim()}
+                style={{ background: t.text, color: t.surface, border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, fontSize: 14, cursor: memWizFetching || !memWizUrl.trim() ? "not-allowed" : "pointer", opacity: memWizFetching || !memWizUrl.trim() ? 0.5 : 1, whiteSpace: "nowrap" }}
+              >
+                {memWizFetching ? "Fetching..." : "Fetch"}
+              </button>
+            </div>
 
-          <label style={labelStyle}>Date of Death *</label>
-          <input
-            style={inputStyle}
-            type="date"
-            value={memorialForm.death_date}
-            onChange={(e) => setMemorialForm((p) => ({ ...p, death_date: e.target.value }))}
-          />
-
-          <label style={labelStyle}>Bio / About</label>
-          <textarea
-            style={{ ...inputStyle, minHeight: 100, resize: "vertical" }}
-            value={memorialForm.bio}
-            onChange={(e) => setMemorialForm((p) => ({ ...p, bio: e.target.value }))}
-            placeholder="Share their story, service, and legacy..."
-          />
-
-          <label style={labelStyle}>Photo</label>
-          <input
-            ref={memorialPhotoRef}
-            type="file"
-            accept="image/*"
-            onChange={handleMemorialPhoto}
-            style={{ fontSize: 14 }}
-          />
-
-          {memorialPhotoPreview && (
-            <div
-              style={{
-                marginTop: 10,
-                width: 100,
-                height: 100,
-                borderRadius: "50%",
-                overflow: "hidden",
-                border: `2px solid ${t.border}`,
-              }}
-            >
-              <img
-                src={memorialPhotoPreview}
-                alt="Preview"
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            {/* Name + Date */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 180px", gap: 8 }}>
+              <input
+                value={memWizName}
+                onChange={(e) => setMemWizName(e.target.value)}
+                placeholder="Full name *"
+                style={inputStyle}
+              />
+              <input
+                type="date"
+                value={memWizDate}
+                onChange={(e) => setMemWizDate(e.target.value)}
+                style={inputStyle}
               />
             </div>
-          )}
 
-          <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 10 }}>
-            <button
-              type="button"
-              onClick={() => setShowMemorialForm(false)}
-              style={{
-                border: `1px solid ${t.border}`,
-                borderRadius: 10,
-                padding: "9px 16px",
-                fontWeight: 700,
-                background: t.surface,
-                color: t.text,
-                cursor: "pointer",
-              }}
-            >
-              Cancel
-            </button>
+            {/* Bio */}
+            <textarea
+              value={memWizBio}
+              onChange={(e) => setMemWizBio(e.target.value)}
+              placeholder="Bio / about (auto-filled from URL if available, or enter manually)"
+              style={{ ...inputStyle, minHeight: 90, resize: "vertical" }}
+            />
 
-            <button
-              type="button"
-              onClick={submitMemorial}
-              disabled={submittingMemorial}
-              style={{
-                background: t.text,
-                color: t.surface,
-                border: "none",
-                borderRadius: 10,
-                padding: "9px 16px",
-                fontWeight: 700,
-                cursor: submittingMemorial ? "not-allowed" : "pointer",
-                opacity: submittingMemorial ? 0.7 : 1,
-              }}
-            >
-              {submittingMemorial ? "Adding..." : "Add Memorial"}
-            </button>
+            {/* Preview card */}
+            {(memWizImage || memWizBio) && (
+              <div style={{ display: "flex", gap: 14, padding: 14, borderRadius: 10, border: `2px solid #7c3aed`, background: isDark ? "#1a0d2e" : "#faf5ff" }}>
+                {memWizImage && (
+                  <img src={memWizImage} alt="" style={{ width: 72, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "2px solid #7c3aed" }} />
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {memWizName && <div style={{ fontWeight: 800, fontSize: 15 }}>{memWizName}</div>}
+                  {memWizBio && (
+                    <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                      {memWizBio}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Actions */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={saveMemorial}
+                disabled={memWizSaving || !memWizName.trim() || !memWizDate}
+                style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
+              >
+                {memWizSaving ? "Saving..." : "Add Memorial"}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizMsg(null); }}
+                style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, background: "transparent", color: t.text, cursor: "pointer" }}
+              >
+                Cancel
+              </button>
+              {memWizMsg && (
+                <div style={{ fontSize: 14, fontWeight: 700, color: memWizMsg.type === "ok" ? "#16a34a" : "#ef4444" }}>
+                  {memWizMsg.type === "ok" ? "✓ " : "✗ "}{memWizMsg.text}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

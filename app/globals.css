@@ -30,6 +30,15 @@ body {
   display: none;
 }
 
+/* Desktop: search row wrapper matches search bar sizing */
+.nav-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 1 340px;
+  min-width: 200px;
+}
+
 /* ── Mobile layout (phones portrait + landscape) ── */
 @media (max-width: 900px) {
   .nav-root {
@@ -40,8 +49,9 @@ body {
   .nav-left {
     gap: 5px !important;
     flex-wrap: nowrap !important;
-    flex: 1 !important;
+    flex: 1 1 0 !important;
     min-width: 0 !important;
+    overflow-x: auto !important;
   }
   .nav-right {
     flex-shrink: 0 !important;
@@ -58,16 +68,22 @@ body {
     font-size: 13px !important;
     flex-shrink: 0 !important;
   }
-  .nav-search {
+  /* Row 2: search row takes full width */
+  .nav-search-row {
     order: 3 !important;
-    flex: 0 1 70% !important;
+    flex: 0 0 100% !important;
+    min-width: 0 !important;
+    gap: 6px !important;
+  }
+  /* Search bar fills remaining space inside the row */
+  .nav-search {
+    flex: 1 1 0 !important;
     min-width: 0 !important;
   }
   .nav-units {
     display: none !important;
   }
   .nav-units-mobile {
-    order: 3 !important;
     flex-shrink: 0 !important;
     display: flex !important;
     align-items: center !important;

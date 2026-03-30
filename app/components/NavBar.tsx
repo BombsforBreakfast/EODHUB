@@ -364,84 +364,86 @@ export default function NavBar() {
         )}
       </div>
 
-      {/* Center: search bar */}
-      <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "0 1 340px", minWidth: 200 }}>
-        <div style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: "6px 12px", gap: 8 }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.2" strokeLinecap="round">
-            <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
-          </svg>
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
-            placeholder="Search people, jobs, businesses..."
-            style={{ border: "none", outline: "none", fontSize: 14, width: "100%", background: "transparent", color: t.text }}
-          />
-          {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
-        </div>
+      {/* Row 2 on mobile: search bar + Units button */}
+      <div className="nav-search-row">
+        <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "0 1 340px", minWidth: 200 }}>
+          <div style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: "6px 12px", gap: 8 }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.2" strokeLinecap="round">
+              <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
+            </svg>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
+              placeholder="Search people, jobs, businesses..."
+              style={{ border: "none", outline: "none", fontSize: 14, width: "100%", background: "transparent", color: t.text }}
+            />
+            {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
+          </div>
 
-        {showSearchDropdown && (
-          <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.22)", zIndex: 300, overflow: "hidden", maxHeight: 420, overflowY: "auto" }}>
-            {searchResults.length === 0 && !searching && (
-              <div style={{ padding: "12px 14px" }}>
-                <div style={{ fontSize: 14, color: t.textMuted, textAlign: "center", marginBottom: 10 }}>No results found.</div>
-                <div
-                  onClick={() => { setShowSearchDropdown(false); window.location.href = `/units?q=${encodeURIComponent(searchQuery)}`; }}
-                  style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${t.border}`, borderRadius: 10, color: t.text }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                >
-                  <span style={{ background: "#ede9fe", color: "#7c3aed", fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>Unit</span>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>No unit &ldquo;{searchQuery}&rdquo; found</div>
-                    <div style={{ fontSize: 12, color: t.textMuted }}>Click to create this unit →</div>
+          {showSearchDropdown && (
+            <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.22)", zIndex: 300, overflow: "hidden", maxHeight: 420, overflowY: "auto" }}>
+              {searchResults.length === 0 && !searching && (
+                <div style={{ padding: "12px 14px" }}>
+                  <div style={{ fontSize: 14, color: t.textMuted, textAlign: "center", marginBottom: 10 }}>No results found.</div>
+                  <div
+                    onClick={() => { setShowSearchDropdown(false); window.location.href = `/units?q=${encodeURIComponent(searchQuery)}`; }}
+                    style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${t.border}`, borderRadius: 10, color: t.text }}
+                    onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
+                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                  >
+                    <span style={{ background: "#ede9fe", color: "#7c3aed", fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>Unit</span>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>No unit &ldquo;{searchQuery}&rdquo; found</div>
+                      <div style={{ fontSize: 12, color: t.textMuted }}>Click to create this unit →</div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {(["user", "unit", "job", "business"] as const).map((type) => {
-              const group = searchResults.filter((r) => r.type === type);
-              if (group.length === 0) return null;
-              const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Units" : "Businesses";
-              const badge: Record<string, string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe" };
-              const badgeText: Record<string, string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed" };
-              const badgeLabel: Record<string, string> = { user: "Person", job: "Job", business: "Biz", unit: "Unit" };
-              return (
-                <div key={type}>
-                  <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
-                  {group.map((result) => (
-                    <div
-                      key={result.id}
-                      onClick={() => handleSearchResultClick(result)}
-                      style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${t.borderLight}`, background: t.surface, color: t.text }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
-                      onMouseLeave={(e) => (e.currentTarget.style.background = t.surface)}
-                    >
-                      <span style={{ background: badge[type], color: badgeText[type], fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>
-                        {badgeLabel[type]}
-                      </span>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.title}</div>
-                        <div style={{ fontSize: 12, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.subtitle}</div>
+              {(["user", "unit", "job", "business"] as const).map((type) => {
+                const group = searchResults.filter((r) => r.type === type);
+                if (group.length === 0) return null;
+                const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Units" : "Businesses";
+                const badge: Record<string, string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe" };
+                const badgeText: Record<string, string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed" };
+                const badgeLabel: Record<string, string> = { user: "Person", job: "Job", business: "Biz", unit: "Unit" };
+                return (
+                  <div key={type}>
+                    <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
+                    {group.map((result) => (
+                      <div
+                        key={result.id}
+                        onClick={() => handleSearchResultClick(result)}
+                        style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${t.borderLight}`, background: t.surface, color: t.text }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = t.surface)}
+                      >
+                        <span style={{ background: badge[type], color: badgeText[type], fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>
+                          {badgeLabel[type]}
+                        </span>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.title}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.subtitle}</div>
+                        </div>
+                        {result.external && (
+                          <svg style={{ flexShrink: 0, marginLeft: "auto" }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2.2" strokeLinecap="round">
+                            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                          </svg>
+                        )}
                       </div>
-                      {result.external && (
-                        <svg style={{ flexShrink: 0, marginLeft: "auto" }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2.2" strokeLinecap="round">
-                          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-                        </svg>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
-      {/* Units — mobile only, sits beside search bar */}
-      <Link href="/units" className="nav-units-mobile nav-btn" style={navButton}>Units</Link>
+        {/* Units — mobile only, sits beside search bar */}
+        <Link href="/units" className="nav-units-mobile nav-btn" style={navButton}>Units</Link>
+      </div>
 
       {/* Right: logout */}
       <div className="nav-right" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>

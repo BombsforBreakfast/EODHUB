@@ -148,18 +148,22 @@ export default function MyAccountPage() {
   const [unsavingJobId, setUnsavingJobId] = useState<string | null>(null);
   const [savedEvents, setSavedEvents] = useState<SavedEvent[]>([]);
   const [unsavingEventId, setUnsavingEventId] = useState<string | null>(null);
-  const [myUnits, setMyUnits] = useState<{ id: string; name: string; slug: string; type: string; cover_photo_url: string | null; member_count?: number }[]>([]);
+  const [myUnits, setMyUnits] = useState<{ id: string; name: string; slug: string; type: string; cover_photo_url: string | null; my_role?: string }[]>([]);
 
   async function loadMyUnits(userId: string) {
     const { data } = await supabase
       .from("unit_members")
-      .select("units(id, name, slug, type, cover_photo_url)")
+      .select("role, units(id, name, slug, type, cover_photo_url)")
       .eq("user_id", userId)
       .eq("status", "approved");
     if (data) {
       type UnitRow = { id: string; name: string; slug: string; type: string; cover_photo_url: string | null };
-      const rows = data as unknown as { units: UnitRow | null }[];
-      setMyUnits(rows.map((r) => r.units).filter((u): u is UnitRow => u !== null));
+      const rows = data as unknown as { role: string; units: UnitRow | null }[];
+      setMyUnits(
+        rows
+          .filter((r) => r.units !== null)
+          .map((r) => ({ ...r.units!, my_role: r.role }))
+      );
     }
   }
 
@@ -605,14 +609,22 @@ export default function MyAccountPage() {
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {myUnits.map((u) => (
-              <a key={u.id} href={`/units/${u.slug}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", border: `1px solid ${t.border}`, borderRadius: 12, textDecoration: "none", color: t.text, background: t.surface }}>
+              <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface }}>
                 <div style={{ width: 36, height: 36, borderRadius: 8, background: u.cover_photo_url ? `url(${u.cover_photo_url}) center/cover` : "#1e3a5f", flexShrink: 0 }} />
-                <div>
+                <a href={`/units/${u.slug}`} style={{ flex: 1, minWidth: 0, textDecoration: "none", color: t.text }}>
                   <div style={{ fontWeight: 800, fontSize: 14 }}>{u.name}</div>
                   <div style={{ fontSize: 12, color: t.textMuted, textTransform: "capitalize" }}>{u.type.replace(/_/g, " ")}</div>
-                </div>
-                <span style={{ marginLeft: "auto", fontSize: 18, color: t.textFaint }}>›</span>
-              </a>
+                </a>
+                {(u.my_role === "owner" || u.my_role === "admin") && (
+                  <a
+                    href={`/units/${u.slug}/admin`}
+                    style={{ padding: "5px 12px", borderRadius: 8, background: "#1e3a5f", color: "#fff", fontSize: 12, fontWeight: 800, textDecoration: "none", flexShrink: 0 }}
+                  >
+                    Admin
+                  </a>
+                )}
+                <a href={`/units/${u.slug}`} style={{ fontSize: 18, color: t.textFaint, textDecoration: "none" }}>›</a>
+              </div>
             ))}
           </div>
         )}
