@@ -25,6 +25,11 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 }
 
+/* Hide mobile-only units link on desktop */
+.nav-units-mobile {
+  display: none;
+}
+
 /* ── Mobile layout (phones portrait + landscape) ── */
 @media (max-width: 900px) {
   .nav-root {
@@ -55,8 +60,17 @@ body {
   }
   .nav-search {
     order: 3 !important;
-    flex: 0 0 100% !important;
+    flex: 0 1 70% !important;
     min-width: 0 !important;
+  }
+  .nav-units {
+    display: none !important;
+  }
+  .nav-units-mobile {
+    order: 3 !important;
+    flex-shrink: 0 !important;
+    display: flex !important;
+    align-items: center !important;
   }
   .nav-logout {
     padding: 6px 9px !important;

@@ -297,7 +297,7 @@ export default function NavBar() {
         </Link>
         {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn" style={navButton}>My Profile</Link>}
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
-        <Link href="/units" className="nav-btn" style={navButton}>Units</Link>
+        <Link href="/units" className="nav-btn nav-units" style={navButton}>Units</Link>
         <Link href="/" className="nav-btn" style={navButton}>EOD Hub</Link>
 
         {/* Messages button */}
@@ -439,6 +439,9 @@ export default function NavBar() {
           </div>
         )}
       </div>
+
+      {/* Units — mobile only, sits beside search bar */}
+      <Link href="/units" className="nav-units-mobile nav-btn" style={navButton}>Units</Link>
 
       {/* Right: logout */}
       <div className="nav-right" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
