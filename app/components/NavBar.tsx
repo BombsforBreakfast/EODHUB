@@ -321,7 +321,7 @@ export default function NavBar() {
           ref={hubBtnRef}
           onClick={() => setShowHub((v) => !v)}
           className="nav-btn nav-hub-mobile"
-          style={{ ...navButton, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+          style={{ ...navButton, cursor: "pointer", alignItems: "center", gap: 6 }}
         >
           EOD Hub
           {unreadMessages > 0 && !showHub && (
