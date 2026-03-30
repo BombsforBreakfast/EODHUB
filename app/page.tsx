@@ -5,6 +5,8 @@ import React, { ChangeEvent, useEffect, useRef, useState } from "react";
 import { supabase } from "./lib/lib/supabaseClient";
 import NavBar from "./components/NavBar";
 import { useTheme } from "./lib/ThemeContext";
+import EmojiPickerButton from "./components/EmojiPickerButton";
+import GifPickerButton from "./components/GifPickerButton";
 
 type Job = {
   id: string;
@@ -110,6 +112,7 @@ type Comment = {
   content: string;
   created_at: string;
   image_url: string | null;
+  gif_url: string | null;
 };
 
 type LikeRow = {
@@ -141,6 +144,7 @@ type OgPreview = {
 type FeedPost = RankedPostRow & {
   image_url: string | null;
   image_urls: string[];
+  gif_url: string | null;
   authorName: string;
   authorPhotoUrl: string | null;
   authorService: string | null;
@@ -292,7 +296,7 @@ function Avatar({
 }
 
 export default function HomePage() {
-  const { t } = useTheme();
+  const { t, isDark } = useTheme();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [businessListings, setBusinessListings] = useState<BusinessListing[]>(
@@ -378,7 +382,12 @@ export default function HomePage() {
   const [ogPreview, setOgPreview] = useState<OgPreview | null>(null);
   const [fetchingOg, setFetchingOg] = useState(false);
 
+  const [selectedPostGif, setSelectedPostGif] = useState<string | null>(null);
+  const [selectedCommentGifs, setSelectedCommentGifs] = useState<Record<string, string | null>>({});
+
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
+  const postTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const commentTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const commentImageInputRefs = useRef<Record<string, HTMLInputElement | null>>(
     {}
   );
@@ -704,7 +713,7 @@ export default function HomePage() {
   async function loadCommentsForPosts(postIds: string[]) {
     const commentsWithImageQuery = await supabase
       .from("post_comments")
-      .select("id, post_id, user_id, content, created_at, image_url")
+      .select("id, post_id, user_id, content, created_at, image_url, gif_url")
       .in("post_id", postIds)
       .order("created_at", { ascending: true });
 
@@ -783,7 +792,7 @@ export default function HomePage() {
     const uniqueUserIds = [...new Set(rawPosts.map((post) => post.user_id))];
 
     const { data: legacyPostImagesData, error: legacyPostImagesError } =
-      await supabase.from("posts").select("id, image_url, og_url, og_title, og_description, og_image, og_site_name").in("id", postIds);
+      await supabase.from("posts").select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name").in("id", postIds);
 
     if (legacyPostImagesError) {
       console.error("Legacy post image load error:", legacyPostImagesError);
@@ -800,11 +809,13 @@ export default function HomePage() {
       console.error("Post images load error:", postImagesError);
     }
 
-    type LegacyPostRow = LegacyPostImageRow & { og_url?: string | null; og_title?: string | null; og_description?: string | null; og_image?: string | null; og_site_name?: string | null };
+    type LegacyPostRow = LegacyPostImageRow & { gif_url?: string | null; og_url?: string | null; og_title?: string | null; og_description?: string | null; og_image?: string | null; og_site_name?: string | null };
     const legacyPostImageMap = new Map<string, string | null>();
+    const postGifMap = new Map<string, string | null>();
     const postOgMap = new Map<string, { og_url: string | null; og_title: string | null; og_description: string | null; og_image: string | null; og_site_name: string | null }>();
     ((legacyPostImagesData ?? []) as LegacyPostRow[]).forEach((row) => {
       legacyPostImageMap.set(row.id, row.image_url ?? null);
+      postGifMap.set(row.id, row.gif_url ?? null);
       postOgMap.set(row.id, { og_url: row.og_url ?? null, og_title: row.og_title ?? null, og_description: row.og_description ?? null, og_image: row.og_image ?? null, og_site_name: row.og_site_name ?? null });
     });
 
@@ -912,6 +923,7 @@ export default function HomePage() {
       const commentsForPost = commentsByPost.get(post.id) || [];
       const multiImages = multiPostImageMap.get(post.id) || [];
       const legacyImage = legacyPostImageMap.get(post.id) ?? null;
+      const gifUrl = postGifMap.get(post.id) ?? null;
       const ogData = postOgMap.get(post.id);
 
       return {
@@ -919,6 +931,7 @@ export default function HomePage() {
         image_url: legacyImage,
         image_urls:
           multiImages.length > 0 ? multiImages : legacyImage ? [legacyImage] : [],
+        gif_url: gifUrl,
         authorName: profileNameMap.get(post.user_id) || "User",
         authorPhotoUrl: profilePhotoMap.get(post.user_id) || null,
         authorService: profileServiceMap.get(post.user_id) ?? null,
@@ -1126,13 +1139,14 @@ export default function HomePage() {
       return;
     }
 
-    if (!content.trim() && selectedPostImages.length === 0) return;
+    if (!content.trim() && selectedPostImages.length === 0 && !selectedPostGif) return;
 
     try {
       setSubmittingPost(true);
 
       const contentToPost = content.trim();
       const imagesToUpload = [...selectedPostImages];
+      const gifToPost = selectedPostGif;
 
       const currentOg = ogPreview;
       const { data: insertedPost, error: insertError } = await supabase
@@ -1142,6 +1156,7 @@ export default function HomePage() {
             user_id: userId,
             content: contentToPost,
             image_url: null,
+            gif_url: gifToPost ?? null,
             og_url: currentOg?.url ?? null,
             og_title: currentOg?.title ?? null,
             og_description: currentOg?.description ?? null,
@@ -1200,6 +1215,7 @@ export default function HomePage() {
       setContent("");
       setOgPreview(null);
       clearSelectedPostImages();
+      setSelectedPostGif(null);
       setSubmittingPost(false);
 
       void loadPosts();
@@ -1369,8 +1385,9 @@ export default function HomePage() {
 
     const commentText = commentInputs[postId]?.trim() || "";
     const selectedCommentImage = selectedCommentImages[postId] || null;
+    const commentGif = selectedCommentGifs[postId] || null;
 
-    if (!commentText && !selectedCommentImage) return;
+    if (!commentText && !selectedCommentImage && !commentGif) return;
 
     try {
       setSubmittingCommentFor(postId);
@@ -1405,6 +1422,7 @@ export default function HomePage() {
           user_id: userId,
           content: commentText,
           image_url: imageUrl,
+          gif_url: commentGif,
         },
       ]);
 
@@ -1440,6 +1458,7 @@ export default function HomePage() {
       }));
 
       clearSelectedCommentImage(postId);
+      setSelectedCommentGifs((prev) => ({ ...prev, [postId]: null }));
 
       setExpandedComments((prev) => ({
         ...prev,
@@ -1993,7 +2012,7 @@ export default function HomePage() {
                   return (
                     <div
                       key={p.user_id}
-                      style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 80 }}
+                      style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 100 }}
                     >
                       <a
                         href={`/profile/${p.user_id}`}
@@ -2008,30 +2027,29 @@ export default function HomePage() {
                         <div style={{ fontSize: 11, fontWeight: 600, color: t.text, textAlign: "center", lineHeight: 1.3, wordBreak: "break-word" }}>{fullName}</div>
                       </a>
                       {userId && (
-                        <div style={{ display: "flex", gap: 4 }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
                           <button
-                            title="Know"
                             onClick={() => toggleDiscoverConnection(p.user_id, "know")}
                             disabled={knowImplied}
                             style={{
-                              fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 6, border: "none", cursor: knowImplied ? "default" : "pointer",
+                              fontSize: 9, fontWeight: 700, padding: "3px 5px", borderRadius: 6, border: "none", cursor: knowImplied ? "default" : "pointer",
                               background: (isKnow || knowImplied) ? t.text : t.badgeBg,
                               color: (isKnow || knowImplied) ? t.surface : t.textMuted,
-                              opacity: knowImplied ? 0.6 : 1,
+                              opacity: knowImplied ? 0.6 : 1, width: "100%",
                             }}
                           >
                             Know
                           </button>
                           <button
-                            title="Worked With"
                             onClick={() => toggleDiscoverConnection(p.user_id, "worked_with")}
                             style={{
-                              fontSize: 9, fontWeight: 700, padding: "2px 5px", borderRadius: 6, border: "none", cursor: "pointer",
+                              fontSize: 9, fontWeight: 700, padding: "3px 5px", borderRadius: 6, border: "none", cursor: "pointer",
                               background: isWorkedWith ? t.text : t.badgeBg,
                               color: isWorkedWith ? t.surface : t.textMuted,
+                              width: "100%",
                             }}
                           >
-                            W/W
+                            Worked With
                           </button>
                         </div>
                       )}
@@ -2052,6 +2070,7 @@ export default function HomePage() {
             }}
           >
             <textarea
+              ref={postTextareaRef}
               placeholder="What's happening in the EOD world?"
               value={content}
               onChange={(e) => handleContentChange(e.target.value)}
@@ -2067,6 +2086,13 @@ export default function HomePage() {
                 color: t.text,
               }}
             />
+
+            {selectedPostGif && (
+              <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
+                <img src={selectedPostGif} alt="Selected GIF" style={{ maxWidth: 200, borderRadius: 10, display: "block" }} />
+                <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              </div>
+            )}
 
             {fetchingOg && <div style={{ fontSize: 12, color: t.textFaint, marginTop: 4 }}>Fetching link preview...</div>}
             {ogPreview && (
@@ -2193,6 +2219,18 @@ export default function HomePage() {
                 >
                   {selectedPostImages.length > 0 ? "Add More Photos" : "Add Photo"}
                 </button>
+
+                <EmojiPickerButton
+                  value={content}
+                  onChange={handleContentChange}
+                  inputRef={postTextareaRef}
+                  theme={isDark ? "dark" : "light"}
+                />
+
+                <GifPickerButton
+                  onSelect={(url) => setSelectedPostGif(url)}
+                  theme={isDark ? "dark" : "light"}
+                />
 
                 <button
                   onClick={submitPost}
@@ -2477,6 +2515,12 @@ export default function HomePage() {
                     </>
                   )}
 
+                  {post.gif_url && (
+                    <div style={{ marginTop: 12 }}>
+                      <img src={post.gif_url} alt="GIF" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 12, display: "block" }} />
+                    </div>
+                  )}
+
                   <div
                     style={{
                       display: "flex",
@@ -2738,6 +2782,12 @@ export default function HomePage() {
                                       />
                                     </div>
                                   )}
+
+                                  {comment.gif_url && (
+                                    <div style={{ marginTop: 8 }}>
+                                      <img src={comment.gif_url} alt="GIF" style={{ maxWidth: 180, borderRadius: 10, display: "block" }} />
+                                    </div>
+                                  )}
                                 </>
                               )}
 
@@ -2791,6 +2841,7 @@ export default function HomePage() {
 
                       <div style={{ marginTop: 14 }}>
                         <textarea
+                          ref={(el) => { commentTextareaRefs.current[post.id] = el; }}
                           placeholder="Write a comment..."
                           value={commentInputs[post.id] || ""}
                           onChange={(e) =>
@@ -2822,6 +2873,13 @@ export default function HomePage() {
                           onChange={(e) => handleCommentImageChange(post.id, e)}
                           style={{ display: "none" }}
                         />
+
+                        {selectedCommentGifs[post.id] && (
+                          <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
+                            <img src={selectedCommentGifs[post.id]!} alt="GIF" style={{ maxWidth: 180, borderRadius: 10, display: "block" }} />
+                            <button type="button" onClick={() => setSelectedCommentGifs((prev) => ({ ...prev, [post.id]: null }))} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                          </div>
+                        )}
 
                         {selectedCommentImage && (
                           <div style={{ marginTop: 10 }}>
@@ -2894,6 +2952,18 @@ export default function HomePage() {
                           >
                             {selectedCommentImage ? "Change Photo" : "Add Photo"}
                           </button>
+
+                          <EmojiPickerButton
+                            value={commentInputs[post.id] || ""}
+                            onChange={(val) => setCommentInputs((prev) => ({ ...prev, [post.id]: val }))}
+                            inputRef={{ current: commentTextareaRefs.current[post.id] ?? null } as { current: HTMLTextAreaElement | null }}
+                            theme={isDark ? "dark" : "light"}
+                          />
+
+                          <GifPickerButton
+                            onSelect={(url) => setSelectedCommentGifs((prev) => ({ ...prev, [post.id]: url }))}
+                            theme={isDark ? "dark" : "light"}
+                          />
 
                           <button
                             type="button"

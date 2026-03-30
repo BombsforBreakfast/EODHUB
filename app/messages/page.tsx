@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
+import EmojiPickerButton from "../components/EmojiPickerButton";
+import GifPickerButton from "../components/GifPickerButton";
 
 type Conversation = {
   id: string;
@@ -27,6 +29,7 @@ type Message = {
   content: string;
   is_read: boolean;
   created_at: string;
+  gif_url: string | null;
 };
 
 function timeAgo(dateString: string) {
@@ -57,7 +60,8 @@ export default function MessagesPage() {
   const [requestDraft, setRequestDraft] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-  const { t } = useTheme();
+  const messageInputRef = useRef<HTMLInputElement | null>(null);
+  const { t, isDark } = useTheme();
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 900);
@@ -304,12 +308,13 @@ export default function MessagesPage() {
     return () => { if (realtimeRef.current) supabase.removeChannel(realtimeRef.current); };
   }, []);
 
-  async function sendMessage() {
-    if (!newMessage.trim() || !activeConvId || !userId || sending) return;
+  async function sendMessage(gifUrl?: string) {
+    if (!newMessage.trim() && !gifUrl) return;
+    if (!activeConvId || !userId || sending) return;
     setSending(true);
     const content = newMessage.trim();
     setNewMessage("");
-    await supabase.from("messages").insert({ conversation_id: activeConvId, sender_id: userId, content });
+    await supabase.from("messages").insert({ conversation_id: activeConvId, sender_id: userId, content, gif_url: gifUrl ?? null });
     await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", activeConvId);
     setSending(false);
   }
@@ -514,13 +519,18 @@ export default function MessagesPage() {
         return (
           <div key={msg.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
             <div style={{
-              maxWidth: "72%", padding: "10px 14px",
+              maxWidth: "72%", padding: msg.gif_url && !msg.content ? "4px" : "10px 14px",
               borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
               background: isMe ? "#111" : t.badgeBg,
               color: isMe ? "white" : t.text,
               fontSize: 14, lineHeight: 1.5,
             }}>
-              {msg.content}
+              {msg.content && <div>{msg.content}</div>}
+              {msg.gif_url && (
+                <div style={{ marginTop: msg.content ? 8 : 0 }}>
+                  <img src={msg.gif_url} alt="GIF" style={{ maxWidth: 220, borderRadius: 12, display: "block" }} />
+                </div>
+              )}
               <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: isMe ? "right" : "left" }}>
                 {timeAgo(msg.created_at)}
               </div>
@@ -625,16 +635,27 @@ export default function MessagesPage() {
             </div>
           )}
           {activeConvId && (
-            <div style={{ padding: "12px 16px", borderTop: `1px solid ${t.border}`, display: "flex", gap: 10 }}>
+            <div style={{ padding: "12px 16px", borderTop: `1px solid ${t.border}`, display: "flex", gap: 10, alignItems: "center" }}>
               <input
+                ref={messageInputRef}
                 value={newMessage}
                 onChange={(e) => setNewMessage(e.target.value)}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                 placeholder="Type a message..."
                 style={{ flex: 1, padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
               />
+              <EmojiPickerButton
+                value={newMessage}
+                onChange={setNewMessage}
+                inputRef={messageInputRef}
+                theme={isDark ? "dark" : "light"}
+              />
+              <GifPickerButton
+                onSelect={(url) => sendMessage(url)}
+                theme={isDark ? "dark" : "light"}
+              />
               <button
-                onClick={sendMessage}
+                onClick={() => sendMessage()}
                 disabled={!newMessage.trim() || sending}
                 style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: !newMessage.trim() || sending ? 0.5 : 1 }}
               >
