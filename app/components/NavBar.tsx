@@ -314,9 +314,10 @@ export default function NavBar() {
         {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn nav-profile-link" style={navButton}>My Profile</Link>}
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Units</Link>
-        {/* Desktop: EOD Hub navigates to feed */}
+        {/* Home — navigates to the main feed (visible on both desktop + mobile) */}
+        <Link href="/" className="nav-btn nav-home" style={navButton}>Home</Link>
+        {/* EOD Hub — desktop link kept for desktop nav; mobile opens the hub panel */}
         <Link href="/" className="nav-btn nav-hub-desktop" style={navButton}>EOD Hub</Link>
-        {/* Mobile: EOD Hub opens the hub panel */}
         <button
           ref={hubBtnRef}
           onClick={() => setShowHub((v) => !v)}
@@ -407,7 +408,7 @@ export default function NavBar() {
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
-              placeholder="Search people, jobs, businesses..."
+              placeholder="Search people, jobs, businesses, events, units..."
               style={{ border: "none", outline: "none", fontSize: 14, width: "100%", background: "transparent", color: t.text }}
             />
             {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
@@ -474,12 +475,13 @@ export default function NavBar() {
 
       </div>
 
-      {/* Hub panel — mobile only, full-width row below search */}
+      {/* Hub panel — full-width row below search */}
       {showHub && (
         <div ref={hubPanelRef} className="nav-hub-panel">
           {[
             { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤" },
-            { label: "Feed", href: "/", emoji: "🏠" },
+            { label: "Jobs", href: "/?tab=jobs", emoji: "💼" },
+            { label: "Businesses", href: "/?tab=businesses", emoji: "🏢" },
             { label: "Events", href: "/events", emoji: "📅" },
             { label: "Units", href: "/units", emoji: "🪖" },
             { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages },

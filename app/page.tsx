@@ -310,7 +310,13 @@ export default function HomePage() {
   const [bizLoaded, setBizLoaded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
-  const [mobileTab, setMobileTab] = useState<"feed" | "jobs" | "businesses">("feed");
+  const [mobileTab, setMobileTab] = useState<"feed" | "jobs" | "businesses">(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search).get("tab");
+      if (p === "jobs" || p === "businesses") return p;
+    }
+    return "feed";
+  });
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
 
   // Biz/Org submission form
