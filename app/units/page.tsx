@@ -182,7 +182,7 @@ export default function UnitsPage() {
             {currentUserId && myUnitsLoaded && myUnits.length > 0 && (
               <button
                 onClick={() => setShowMyUnits((v) => !v)}
-                style={{ background: showMyUnits ? "#111" : t.badgeBg, color: showMyUnits ? "#fff" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
+                style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: showMyUnits ? 0.75 : 1 }}
               >
                 My Units {showMyUnits ? "✕" : `(${myUnits.length})`}
               </button>
