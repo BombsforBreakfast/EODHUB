@@ -82,20 +82,12 @@ export async function GET(
 
   const { data: profiles } = await adminClient
     .from("profiles")
-    .select("user_id, first_name, last_name, display_name, photo_url, service, role as job_title")
+    .select("user_id, first_name, last_name, display_name, photo_url, service, role")
     .in("user_id", memberUserIds);
 
-  const profileMap: Record<string, {
-    user_id: string;
-    first_name: string | null;
-    last_name: string | null;
-    display_name: string | null;
-    photo_url: string | null;
-    service: string | null;
-    job_title: string | null;
-  }> = {};
-
-  for (const p of profiles ?? []) {
+  type ProfileRow = { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null; role: string | null };
+  const profileMap: Record<string, ProfileRow> = {};
+  for (const p of (profiles ?? []) as ProfileRow[]) {
     profileMap[p.user_id] = p;
   }
 
@@ -113,7 +105,7 @@ export async function GET(
         display_name: displayName,
         photo_url: profile?.photo_url ?? null,
         service: profile?.service ?? null,
-        job_title: profile?.job_title ?? null,
+        job_title: profile?.role ?? null,
       };
     })
     .sort(
