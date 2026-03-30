@@ -15,7 +15,7 @@ type Notification = {
 };
 
 type SearchResult = {
-  type: "user" | "business" | "job";
+  type: "user" | "business" | "job" | "unit";
   id: string;
   title: string;
   subtitle: string;
@@ -194,7 +194,7 @@ export default function NavBar() {
     setSearching(true);
     setShowSearchDropdown(true);
     try {
-      const [profilesRes, businessesRes, jobsRes] = await Promise.all([
+      const [profilesRes, businessesRes, jobsRes, unitsRes] = await Promise.all([
         supabase.from("profiles").select("user_id, first_name, last_name, display_name, role")
           .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%,role.ilike.%${q}%`).limit(5),
         supabase.from("business_listings").select("id, business_name, og_title, og_site_name, website_url, custom_blurb")
@@ -203,6 +203,7 @@ export default function NavBar() {
         supabase.from("jobs").select("id, title, company_name, location, apply_url")
           .eq("is_approved", true)
           .or(`title.ilike.%${q}%,company_name.ilike.%${q}%,location.ilike.%${q}%`).limit(5),
+        supabase.from("units").select("id, name, slug, type, description").ilike("name", `%${q}%`).limit(5),
       ]);
 
       const results: SearchResult[] = [];
@@ -219,6 +220,10 @@ export default function NavBar() {
 
       ((jobsRes.data ?? []) as { id: string; title: string | null; company_name: string | null; location: string | null; apply_url: string | null }[]).forEach((j) => {
         results.push({ type: "job", id: j.id, title: j.title || "Job Listing", subtitle: [j.company_name, j.location].filter(Boolean).join(" · "), href: j.apply_url || "/", external: !!j.apply_url });
+      });
+
+      ((unitsRes.data ?? []) as { id: string; name: string; slug: string; type: string; description: string | null }[]).forEach((u) => {
+        results.push({ type: "unit", id: u.id, title: u.name, subtitle: u.description || u.type.replace(/_/g, " "), href: `/units/${u.slug}`, external: false });
       });
 
       setSearchResults(results);
@@ -292,6 +297,7 @@ export default function NavBar() {
         </Link>
         {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn" style={navButton}>My Profile</Link>}
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
+        <Link href="/units" className="nav-btn" style={navButton}>Units</Link>
         <Link href="/" className="nav-btn" style={navButton}>EOD Hub</Link>
 
         {/* Messages button */}
@@ -378,15 +384,30 @@ export default function NavBar() {
         {showSearchDropdown && (
           <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.22)", zIndex: 300, overflow: "hidden", maxHeight: 420, overflowY: "auto" }}>
             {searchResults.length === 0 && !searching && (
-              <div style={{ padding: "16px 16px", fontSize: 14, color: t.textMuted, textAlign: "center" }}>No results found.</div>
+              <div style={{ padding: "12px 14px" }}>
+                <div style={{ fontSize: 14, color: t.textMuted, textAlign: "center", marginBottom: 10 }}>No results found.</div>
+                <div
+                  onClick={() => { setShowSearchDropdown(false); window.location.href = `/units?q=${encodeURIComponent(searchQuery)}`; }}
+                  style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${t.border}`, borderRadius: 10, color: t.text }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                >
+                  <span style={{ background: "#ede9fe", color: "#7c3aed", fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>Unit</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>No unit &ldquo;{searchQuery}&rdquo; found</div>
+                    <div style={{ fontSize: 12, color: t.textMuted }}>Click to create this unit →</div>
+                  </div>
+                </div>
+              </div>
             )}
 
-            {(["user", "job", "business"] as const).map((type) => {
+            {(["user", "unit", "job", "business"] as const).map((type) => {
               const group = searchResults.filter((r) => r.type === type);
               if (group.length === 0) return null;
-              const label = type === "user" ? "People" : type === "job" ? "Jobs" : "Businesses";
-              const badge: Record<string, string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3" };
-              const badgeText: Record<string, string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e" };
+              const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Units" : "Businesses";
+              const badge: Record<string, string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe" };
+              const badgeText: Record<string, string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed" };
+              const badgeLabel: Record<string, string> = { user: "Person", job: "Job", business: "Biz", unit: "Unit" };
               return (
                 <div key={type}>
                   <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
@@ -399,7 +420,7 @@ export default function NavBar() {
                       onMouseLeave={(e) => (e.currentTarget.style.background = t.surface)}
                     >
                       <span style={{ background: badge[type], color: badgeText[type], fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>
-                        {type === "user" ? "Person" : type === "job" ? "Job" : "Biz"}
+                        {badgeLabel[type]}
                       </span>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.title}</div>

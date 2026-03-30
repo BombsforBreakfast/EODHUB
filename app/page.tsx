@@ -354,6 +354,7 @@ export default function HomePage() {
 
   const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
+  const [pendingMembers, setPendingMembers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null; vouch_count: number; user_vouched: boolean }[]>([]);
 
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingPostContent, setEditingPostContent] = useState("");
@@ -546,6 +547,63 @@ export default function HomePage() {
         userWorkedWith: workedSet.has(p.user_id),
       })) as DiscoverProfile[]
     );
+  }
+
+  async function loadPendingMembers(currentUserId: string) {
+    // Load pending users (not yet approved)
+    const { data: pending } = await supabase
+      .from("profiles")
+      .select("user_id, first_name, last_name, display_name, photo_url, service")
+      .or("is_approved.is.null,is_approved.eq.false")
+      .neq("user_id", currentUserId)
+      .not("first_name", "is", null)
+      .limit(10);
+
+    if (!pending || pending.length === 0) return;
+
+    const pendingIds = pending.map((p: { user_id: string }) => p.user_id);
+
+    // Get vouch counts and whether current user already vouched
+    const [{ data: allVouches }, { data: myVouches }] = await Promise.all([
+      supabase.from("profile_vouches").select("vouchee_user_id").in("vouchee_user_id", pendingIds),
+      supabase.from("profile_vouches").select("vouchee_user_id").in("vouchee_user_id", pendingIds).eq("voucher_user_id", currentUserId),
+    ]);
+
+    const vouchCountMap: Record<string, number> = {};
+    (allVouches ?? []).forEach((v: { vouchee_user_id: string }) => {
+      vouchCountMap[v.vouchee_user_id] = (vouchCountMap[v.vouchee_user_id] ?? 0) + 1;
+    });
+    const myVouchedSet = new Set((myVouches ?? []).map((v: { vouchee_user_id: string }) => v.vouchee_user_id));
+
+    setPendingMembers(
+      (pending as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null }[]).map((p) => ({
+        ...p,
+        vouch_count: vouchCountMap[p.user_id] ?? 0,
+        user_vouched: myVouchedSet.has(p.user_id),
+      }))
+    );
+  }
+
+  async function vouchForMember(voucheeId: string) {
+    if (!userId) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/profile-vouch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+      body: JSON.stringify({ vouchee_user_id: voucheeId }),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.approved) {
+        // Remove from pending list
+        setPendingMembers((prev) => prev.filter((m) => m.user_id !== voucheeId));
+      } else {
+        // Update vouch count
+        setPendingMembers((prev) =>
+          prev.map((m) => m.user_id === voucheeId ? { ...m, vouch_count: json.vouches, user_vouched: true } : m)
+        );
+      }
+    }
   }
 
   async function toggleDiscoverConnection(targetUserId: string, type: "know" | "worked_with") {
@@ -1605,6 +1663,7 @@ export default function HomePage() {
           loadSavedJobs(currentUserId).catch((err) => console.error("loadSavedJobs failed:", err)),
           loadTodayMemorials().catch((err) => console.error("loadTodayMemorials failed:", err)),
           loadDiscoverProfiles(currentUserId).catch((err) => console.error("loadDiscoverProfiles failed:", err)),
+          loadPendingMembers(currentUserId).catch((err) => console.error("loadPendingMembers failed:", err)),
         ]);
       } catch (error) {
         console.error("Homepage init error:", error);
@@ -1908,6 +1967,53 @@ export default function HomePage() {
         </aside>
 
         <main style={{ display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined, minWidth: 0 }}>
+
+          {/* Pending Members — community vouching */}
+          {userId && pendingMembers.length > 0 && (
+            <div style={{ marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
+                New Members Requesting Access
+              </div>
+              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12 }}>
+                Vouch for people you know. 3 vouches grants them access.
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {pendingMembers.map((m) => {
+                  const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
+                  const initial = (name[0] || "?").toUpperCase();
+                  return (
+                    <div key={m.user_id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      {m.photo_url
+                        ? <img src={m.photo_url} alt={name} style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+                        : <div style={{ width: 36, height: 36, borderRadius: "50%", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: t.textMuted, flexShrink: 0 }}>{initial}</div>
+                      }
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>{name}</div>
+                        {m.service && <div style={{ fontSize: 12, color: t.textMuted }}>{m.service}</div>}
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
+                        <div style={{ display: "flex", gap: 3 }}>
+                          {[0, 1, 2].map((i) => (
+                            <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: i < m.vouch_count ? "#22c55e" : (isDark ? "#2e2e2e" : "#e5e7eb") }} />
+                          ))}
+                        </div>
+                        {!m.user_vouched ? (
+                          <button
+                            onClick={() => vouchForMember(m.user_id)}
+                            style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 8, padding: "4px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+                          >
+                            Vouch
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>✓ Vouched</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* People You May Know strip */}
           {discoverProfiles.length > 0 && (
