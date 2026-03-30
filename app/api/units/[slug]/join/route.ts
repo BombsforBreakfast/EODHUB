@@ -112,5 +112,25 @@ export async function POST(
     );
   }
 
+  // Notify all owners and admins of the unit
+  const { data: leaders } = await adminClient
+    .from("unit_members")
+    .select("user_id")
+    .eq("unit_id", unit.id)
+    .eq("status", "approved")
+    .in("role", ["owner", "admin"]);
+
+  if (leaders && leaders.length > 0) {
+    await adminClient.from("notifications").insert(
+      leaders.map((l: { user_id: string }) => ({
+        user_id: l.user_id,
+        message: `${name} is requesting to join ${unit.name}`,
+        actor_name: name,
+        post_owner_id: null,
+        is_read: false,
+      }))
+    );
+  }
+
   return NextResponse.json({ success: true });
 }
