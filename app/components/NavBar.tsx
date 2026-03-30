@@ -43,6 +43,10 @@ export default function NavBar() {
   const [unreadMessages, setUnreadMessages] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  const [showHub, setShowHub] = useState(false);
+  const hubBtnRef = useRef<HTMLButtonElement>(null);
+  const hubPanelRef = useRef<HTMLDivElement>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -256,6 +260,18 @@ export default function NavBar() {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
+  // Close hub panel on outside click
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      if (!hubPanelRef.current?.contains(target) && !hubBtnRef.current?.contains(target)) {
+        setShowHub(false);
+      }
+    }
+    if (showHub) document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [showHub]);
+
   async function handleLogout() {
     const { error } = await supabase.auth.signOut();
     if (error) { console.error("Logout error:", error); return; }
@@ -295,10 +311,25 @@ export default function NavBar() {
         >
           {userInitial}
         </Link>
-        {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn" style={navButton}>My Profile</Link>}
+        {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn nav-profile-link" style={navButton}>My Profile</Link>}
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Units</Link>
-        <Link href="/" className="nav-btn" style={navButton}>EOD Hub</Link>
+        {/* Desktop: EOD Hub navigates to feed */}
+        <Link href="/" className="nav-btn nav-hub-desktop" style={navButton}>EOD Hub</Link>
+        {/* Mobile: EOD Hub opens the hub panel */}
+        <button
+          ref={hubBtnRef}
+          onClick={() => setShowHub((v) => !v)}
+          className="nav-btn nav-hub-mobile"
+          style={{ ...navButton, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+        >
+          EOD Hub
+          {unreadMessages > 0 && !showHub && (
+            <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
+              {unreadMessages > 9 ? "9+" : unreadMessages}
+            </span>
+          )}
+        </button>
 
         {/* Messages button */}
         {currentUserId && (
@@ -441,9 +472,35 @@ export default function NavBar() {
           )}
         </div>
 
-        {/* Units — mobile only, sits beside search bar */}
-        <Link href="/units" className="nav-units-mobile nav-btn" style={navButton}>Units</Link>
       </div>
+
+      {/* Hub panel — mobile only, full-width row below search */}
+      {showHub && (
+        <div ref={hubPanelRef} className="nav-hub-panel">
+          {[
+            { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤" },
+            { label: "Feed", href: "/", emoji: "🏠" },
+            { label: "Events", href: "/events", emoji: "📅" },
+            { label: "Units", href: "/units", emoji: "🪖" },
+            { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages },
+          ].map((item) => (
+            <a
+              key={item.label}
+              href={item.href}
+              onClick={() => setShowHub(false)}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, textDecoration: "none", color: t.text, fontWeight: 700, fontSize: 14, background: t.bg }}
+            >
+              <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
+              <span style={{ flex: 1 }}>{item.label}</span>
+              {item.badge != null && item.badge > 0 && (
+                <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
+                  {item.badge > 9 ? "9+" : item.badge}
+                </span>
+              )}
+            </a>
+          ))}
+        </div>
+      )}
 
       {/* Right: logout */}
       <div className="nav-right" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
