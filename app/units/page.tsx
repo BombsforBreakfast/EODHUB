@@ -72,12 +72,8 @@ export default function UnitsPage() {
       .eq("user_id", uid)
       .eq("status", "approved");
     if (data) {
-      setMyUnits(
-        (data as { units: Unit | null }[])
-          .map((r) => r.units)
-          .filter((u): u is Unit => u !== null)
-          .map((u) => ({ ...u, member_count: 0 }))
-      );
+      const rows = data as unknown as { units: Unit | null }[];
+      setMyUnits(rows.map((r) => r.units).filter((u): u is Unit => u !== null).map((u) => ({ ...u, member_count: 0 })));
     }
     setMyUnitsLoaded(true);
   }
