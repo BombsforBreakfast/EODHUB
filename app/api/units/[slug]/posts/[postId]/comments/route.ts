@@ -24,19 +24,6 @@ interface Profile {
   photo_url: string | null;
 }
 
-async function getUnitMembership(
-  adminClient: ReturnType<typeof createClient>,
-  unitId: string,
-  userId: string
-) {
-  return adminClient
-    .from("unit_members")
-    .select("status")
-    .eq("unit_id", unitId)
-    .eq("user_id", userId)
-    .maybeSingle();
-}
-
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string; postId: string }> }
@@ -66,11 +53,12 @@ export async function GET(
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
   }
 
-  const { data: membership } = await getUnitMembership(
-    adminClient,
-    post.unit_id,
-    user.id
-  );
+  const { data: membership } = await adminClient
+    .from("unit_members")
+    .select("status")
+    .eq("unit_id", post.unit_id)
+    .eq("user_id", user.id)
+    .maybeSingle();
 
   if (!membership || membership.status !== "approved") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -149,11 +137,12 @@ export async function POST(
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
   }
 
-  const { data: membership } = await getUnitMembership(
-    adminClient,
-    post.unit_id,
-    user.id
-  );
+  const { data: membership } = await adminClient
+    .from("unit_members")
+    .select("status")
+    .eq("unit_id", post.unit_id)
+    .eq("user_id", user.id)
+    .maybeSingle();
 
   if (!membership || membership.status !== "approved") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
