@@ -80,7 +80,6 @@ body {
   .nav-events        { display: none !important; }
   .nav-messages-btn  { display: none !important; }
   .nav-units         { display: none !important; }
-  .nav-hub-desktop   { display: none !important; }
   /* Home is visible on mobile row 1 */
   .nav-home          { display: flex !important; align-items: center !important; }
 

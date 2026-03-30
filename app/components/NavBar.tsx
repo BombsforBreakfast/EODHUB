@@ -314,10 +314,9 @@ export default function NavBar() {
         {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn nav-profile-link" style={navButton}>My Profile</Link>}
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Units</Link>
-        {/* Home — navigates to the main feed (visible on both desktop + mobile) */}
+        {/* Home — navigates to the main feed */}
         <Link href="/" className="nav-btn nav-home" style={navButton}>Home</Link>
-        {/* EOD Hub — desktop link kept for desktop nav; mobile opens the hub panel */}
-        <Link href="/" className="nav-btn nav-hub-desktop" style={navButton}>EOD Hub</Link>
+        {/* EOD Hub — mobile only, opens the hub panel */}
         <button
           ref={hubBtnRef}
           onClick={() => setShowHub((v) => !v)}
