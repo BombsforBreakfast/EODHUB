@@ -1787,51 +1787,6 @@ export default function HomePage() {
     >
       <NavBar />
 
-      {/* Mobile tab bar */}
-      {isMobile && (
-        <div style={{ display: "flex", gap: 0, marginTop: 12, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: t.bg }}>
-          {(["feed", "jobs", "businesses"] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setMobileTab(tab)}
-              style={{
-                flex: 1,
-                padding: "10px 4px",
-                border: "none",
-                background: mobileTab === tab ? "#111" : "transparent",
-                color: mobileTab === tab ? "white" : t.textMuted,
-                fontWeight: 800,
-                fontSize: 13,
-                cursor: "pointer",
-                textTransform: "capitalize",
-                transition: "background 0.15s",
-              }}
-            >
-              {tab === "feed" ? "EOD Hub" : tab === "jobs" ? "Jobs" : "Businesses"}
-            </button>
-          ))}
-          <a
-            href="/events"
-            style={{
-              flex: 1,
-              padding: "10px 4px",
-              border: "none",
-              background: "transparent",
-              color: t.textMuted,
-              fontWeight: 800,
-              fontSize: 13,
-              cursor: "pointer",
-              textAlign: "center",
-              textDecoration: "none",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            Events
-          </a>
-        </div>
-      )}
 
       <div
         style={isMobile ? { marginTop: 12 } : {
