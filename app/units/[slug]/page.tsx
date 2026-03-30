@@ -69,7 +69,7 @@ type InviteUser = {
   service: string | null;
 };
 
-const BRANCHES = ["Army", "Navy", "Marines", "Air Force", "Coast Guard", "Space Force"];
+const BRANCHES = ["Army", "Navy", "Marines", "Air Force"];
 
 function timeAgo(dateString: string) {
   const diff = Date.now() - new Date(dateString).getTime();
