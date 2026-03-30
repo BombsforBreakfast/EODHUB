@@ -1994,7 +1994,7 @@ export default function HomePage() {
                       <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
                         <div style={{ display: "flex", gap: 3 }}>
                           {[0, 1, 2].map((i) => (
-                            <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: i < m.vouch_count ? "#22c55e" : (isDark ? "#2e2e2e" : "#e5e7eb") }} />
+                            <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: i < m.vouch_count ? "#22c55e" : t.border }} />
                           ))}
                         </div>
                         {!m.user_vouched ? (
