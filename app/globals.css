@@ -29,6 +29,7 @@ body {
 .nav-units-mobile { display: none; }
 .nav-hub-mobile   { display: none; }
 .nav-hub-panel    { display: none; }
+.nav-brand        { display: block; }
 
 /* Desktop: search row wrapper matches search bar sizing */
 .nav-search-row {
@@ -82,6 +83,8 @@ body {
   .nav-units         { display: none !important; }
   /* Home is visible on mobile row 1 */
   .nav-home          { display: flex !important; align-items: center !important; }
+  /* Brand title hidden on mobile — nav is already tight */
+  .nav-brand         { display: none !important; }
 
   /* Show mobile hub toggle */
   .nav-hub-mobile {

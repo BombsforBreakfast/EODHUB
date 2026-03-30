@@ -395,7 +395,12 @@ export default function NavBar() {
         )}
       </div>
 
-      {/* Row 2 on mobile: search bar + Units button */}
+      {/* Brand title — desktop only, sits between nav buttons and search bar */}
+      <a href="/" className="nav-brand" style={{ textDecoration: "none", color: t.text }}>
+        <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>EOD HUB</div>
+      </a>
+
+      {/* Search bar row */}
       <div className="nav-search-row">
         <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "0 1 340px", minWidth: 200 }}>
           <div style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: "6px 12px", gap: 8 }}>
