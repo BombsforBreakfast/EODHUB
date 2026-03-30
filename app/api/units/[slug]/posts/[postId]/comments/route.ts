@@ -39,7 +39,7 @@ async function getUnitMembership(
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { slug: string; postId: string } }
+  { params }: { params: Promise<{ slug: string; postId: string }> }
 ) {
   const authHeader = req.headers.get("Authorization");
   const token = authHeader?.replace("Bearer ", "");
@@ -54,7 +54,7 @@ export async function GET(
   }
 
   const adminClient = getAdminClient();
-  const { postId } = params;
+  const { postId } = await params;
 
   const { data: post, error: postError } = await adminClient
     .from("unit_posts")
@@ -122,7 +122,7 @@ export async function GET(
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { slug: string; postId: string } }
+  { params }: { params: Promise<{ slug: string; postId: string }> }
 ) {
   const authHeader = req.headers.get("Authorization");
   const token = authHeader?.replace("Bearer ", "");
@@ -137,7 +137,7 @@ export async function POST(
   }
 
   const adminClient = getAdminClient();
-  const { postId } = params;
+  const { postId } = await params;
 
   const { data: post, error: postError } = await adminClient
     .from("unit_posts")

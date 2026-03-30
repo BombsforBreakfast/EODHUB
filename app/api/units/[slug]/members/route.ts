@@ -24,7 +24,7 @@ const ROLE_ORDER: Record<string, number> = {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   const authHeader = req.headers.get("Authorization");
   const token = authHeader?.replace("Bearer ", "");
@@ -39,7 +39,7 @@ export async function GET(
   }
 
   const adminClient = getAdminClient();
-  const { slug } = params;
+  const { slug } = await params;
 
   const { data: unit, error: unitError } = await adminClient
     .from("units")

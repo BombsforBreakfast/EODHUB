@@ -18,7 +18,7 @@ function getUserClient(token: string) {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   const authHeader = req.headers.get("Authorization");
   const token = authHeader?.replace("Bearer ", "");
@@ -33,7 +33,7 @@ export async function POST(
   }
 
   const adminClient = getAdminClient();
-  const { slug } = params;
+  const { slug } = await params;
 
   const { data: unit, error: unitError } = await adminClient
     .from("units")

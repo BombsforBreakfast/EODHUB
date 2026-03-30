@@ -10,10 +10,10 @@ function getAdminClient() {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   const adminClient = getAdminClient();
-  const { slug } = params;
+  const { slug } = await params;
 
   const { data: unit, error } = await adminClient
     .from("units")
