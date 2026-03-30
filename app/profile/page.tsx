@@ -157,11 +157,9 @@ export default function MyAccountPage() {
       .eq("user_id", userId)
       .eq("status", "approved");
     if (data) {
-      setMyUnits(
-        (data as { units: { id: string; name: string; slug: string; type: string; cover_photo_url: string | null } | null }[])
-          .map((r) => r.units)
-          .filter((u): u is { id: string; name: string; slug: string; type: string; cover_photo_url: string | null } => u !== null)
-      );
+      type UnitRow = { id: string; name: string; slug: string; type: string; cover_photo_url: string | null };
+      const rows = data as unknown as { units: UnitRow | null }[];
+      setMyUnits(rows.map((r) => r.units).filter((u): u is UnitRow => u !== null));
     }
   }
 
