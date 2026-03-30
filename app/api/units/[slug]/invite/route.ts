@@ -103,29 +103,24 @@ export async function POST(
     invited_by: user.id,
   }));
 
-  const { data: inserted, error: upsertError } = await adminClient
+  const { error: upsertError } = await adminClient
     .from("unit_members")
-    .upsert(memberInserts, { onConflict: "unit_id,user_id" })
-    .select("user_id");
+    .upsert(memberInserts, { onConflict: "unit_id,user_id" });
 
   if (upsertError) {
     return NextResponse.json({ error: upsertError.message }, { status: 500 });
   }
 
-  const invitedUserIds = (inserted ?? []).map((r: { user_id: string }) => r.user_id);
-
-  // Insert notifications for successfully invited users
-  if (invitedUserIds.length > 0) {
-    const notifications = invitedUserIds.map((userId: string) => ({
+  // Notify every invited user directly from toInvite (don't rely on upsert return)
+  await adminClient.from("notifications").insert(
+    toInvite.map((userId) => ({
       user_id: userId,
       message: `${inviterName} invited you to join ${unit.name}`,
       actor_name: inviterName,
       post_owner_id: null,
       is_read: false,
-    }));
+    }))
+  );
 
-    await adminClient.from("notifications").insert(notifications);
-  }
-
-  return NextResponse.json({ invited: invitedUserIds.length });
+  return NextResponse.json({ invited: toInvite.length });
 }
