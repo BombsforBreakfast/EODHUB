@@ -46,7 +46,10 @@ export default function UnitsPage() {
   const [createType, setCreateType] = useState("general");
   const [createDesc, setCreateDesc] = useState("");
   const [createCover, setCreateCover] = useState("");
+  const [createCoverPreview, setCreateCoverPreview] = useState<string | null>(null);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -77,6 +80,24 @@ export default function UnitsPage() {
     searchDebounceRef.current = setTimeout(() => loadUnits(value), 350);
   }
 
+  async function handleCoverPhotoSelect(file: File) {
+    setUploadingCover(true);
+    setCreateError(null);
+    try {
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const path = `unit-covers/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
+      if (error) throw new Error(error.message);
+      const { data } = supabase.storage.from("feed-images").getPublicUrl(path);
+      setCreateCover(data.publicUrl);
+      setCreateCoverPreview(data.publicUrl);
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingCover(false);
+    }
+  }
+
   async function createUnit() {
     if (!createName.trim()) { setCreateError("Name is required"); return; }
     setCreating(true);
@@ -103,6 +124,7 @@ export default function UnitsPage() {
       setCreateType("general");
       setCreateDesc("");
       setCreateCover("");
+      setCreateCoverPreview(null);
       router.push(`/units/${json.unit.slug}`);
     } catch (err) {
       setCreateError(err instanceof Error ? err.message : "Failed to create unit");
@@ -274,13 +296,31 @@ export default function UnitsPage() {
               </div>
 
               <div>
-                <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 5 }}>Cover Photo URL <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 8 }}>Cover Photo <span style={{ fontWeight: 400 }}>(optional)</span></label>
                 <input
-                  value={createCover}
-                  onChange={(e) => setCreateCover(e.target.value)}
-                  placeholder="https://..."
-                  style={inputStyle}
+                  ref={coverInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: "none" }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCoverPhotoSelect(f); }}
                 />
+                {createCoverPreview ? (
+                  <div style={{ position: "relative", display: "inline-block" }}>
+                    <img src={createCoverPreview} alt="Cover" style={{ width: "100%", height: 80, objectFit: "cover", borderRadius: 10 }} />
+                    <button
+                      onClick={() => { setCreateCover(""); setCreateCoverPreview(null); if (coverInputRef.current) coverInputRef.current.value = ""; }}
+                      style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}
+                    >×</button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => coverInputRef.current?.click()}
+                    disabled={uploadingCover}
+                    style={{ background: t.badgeBg, color: t.text, border: `1px dashed ${t.border}`, borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", width: "100%" }}
+                  >
+                    {uploadingCover ? "Uploading..." : "📷  Add Cover Photo"}
+                  </button>
+                )}
               </div>
 
               {createError && (
