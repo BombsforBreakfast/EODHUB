@@ -148,6 +148,22 @@ export default function MyAccountPage() {
   const [unsavingJobId, setUnsavingJobId] = useState<string | null>(null);
   const [savedEvents, setSavedEvents] = useState<SavedEvent[]>([]);
   const [unsavingEventId, setUnsavingEventId] = useState<string | null>(null);
+  const [myUnits, setMyUnits] = useState<{ id: string; name: string; slug: string; type: string; cover_photo_url: string | null; member_count?: number }[]>([]);
+
+  async function loadMyUnits(userId: string) {
+    const { data } = await supabase
+      .from("unit_members")
+      .select("units(id, name, slug, type, cover_photo_url)")
+      .eq("user_id", userId)
+      .eq("status", "approved");
+    if (data) {
+      setMyUnits(
+        (data as { units: { id: string; name: string; slug: string; type: string; cover_photo_url: string | null } | null }[])
+          .map((r) => r.units)
+          .filter((u): u is { id: string; name: string; slug: string; type: string; cover_photo_url: string | null } => u !== null)
+      );
+    }
+  }
 
   async function loadSavedJobs(userId: string) {
     const { data, error } = await supabase
@@ -359,7 +375,7 @@ export default function MyAccountPage() {
       }
 
       setCurrentUserId(userId);
-      await Promise.all([loadProfile(userId), loadSavedJobs(userId), loadSavedEvents(userId)]);
+      await Promise.all([loadProfile(userId), loadSavedJobs(userId), loadSavedEvents(userId), loadMyUnits(userId)]);
       setLoading(false);
     }
 
@@ -572,6 +588,33 @@ export default function MyAccountPage() {
                   {unsavingJobId === job.id ? "Removing..." : "Remove"}
                 </button>
               </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* My Units */}
+      <div style={{ marginTop: 24, ...card }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div style={{ fontSize: 20, fontWeight: 900, color: t.text }}>My Units</div>
+          <a href="/units" style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, textDecoration: "none" }}>Browse all →</a>
+        </div>
+        {myUnits.length === 0 ? (
+          <div style={{ color: t.textMuted, fontSize: 14 }}>
+            You haven&apos;t joined any units yet.{" "}
+            <a href="/units" style={{ color: t.text, fontWeight: 700, textDecoration: "none" }}>Find or create one →</a>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gap: 10 }}>
+            {myUnits.map((u) => (
+              <a key={u.id} href={`/units/${u.slug}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", border: `1px solid ${t.border}`, borderRadius: 12, textDecoration: "none", color: t.text, background: t.surface }}>
+                <div style={{ width: 36, height: 36, borderRadius: 8, background: u.cover_photo_url ? `url(${u.cover_photo_url}) center/cover` : "#1e3a5f", flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 14 }}>{u.name}</div>
+                  <div style={{ fontSize: 12, color: t.textMuted, textTransform: "capitalize" }}>{u.type.replace(/_/g, " ")}</div>
+                </div>
+                <span style={{ marginLeft: "auto", fontSize: 18, color: t.textFaint }}>›</span>
+              </a>
             ))}
           </div>
         )}

@@ -38,6 +38,9 @@ export default function UnitsPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searched, setSearched] = useState("");
+  const [showMyUnits, setShowMyUnits] = useState(false);
+  const [myUnits, setMyUnits] = useState<Unit[]>([]);
+  const [myUnitsLoaded, setMyUnitsLoaded] = useState(false);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [showCreate, setShowCreate] = useState(false);
@@ -55,10 +58,29 @@ export default function UnitsPage() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setCurrentUserId(session?.user?.id ?? null);
+      const uid = session?.user?.id ?? null;
+      setCurrentUserId(uid);
+      if (uid) loadMyUnits(uid);
     });
     loadUnits("");
   }, []);
+
+  async function loadMyUnits(uid: string) {
+    const { data } = await supabase
+      .from("unit_members")
+      .select("units(id, name, slug, description, cover_photo_url, type, created_at)")
+      .eq("user_id", uid)
+      .eq("status", "approved");
+    if (data) {
+      setMyUnits(
+        (data as { units: Unit | null }[])
+          .map((r) => r.units)
+          .filter((u): u is Unit => u !== null)
+          .map((u) => ({ ...u, member_count: 0 }))
+      );
+    }
+    setMyUnitsLoaded(true);
+  }
 
   async function loadUnits(q: string) {
     setLoading(true);
@@ -157,17 +179,27 @@ export default function UnitsPage() {
           <div>
             <div style={{ fontSize: 28, fontWeight: 900 }}>Units</div>
             <div style={{ fontSize: 14, color: t.textMuted, marginTop: 2 }}>
-              Communities, crews, and groups built by EOD professionals
+              Private Communities and Groups
             </div>
           </div>
-          {currentUserId && (
-            <button
-              onClick={() => setShowCreate(true)}
-              style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
-            >
-              + Create Unit
-            </button>
-          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {currentUserId && myUnitsLoaded && myUnits.length > 0 && (
+              <button
+                onClick={() => setShowMyUnits((v) => !v)}
+                style={{ background: showMyUnits ? "#111" : t.badgeBg, color: showMyUnits ? "#fff" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
+              >
+                My Units {showMyUnits ? "✕" : `(${myUnits.length})`}
+              </button>
+            )}
+            {currentUserId && (
+              <button
+                onClick={() => setShowCreate(true)}
+                style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
+              >
+                + Create Unit
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Search */}
@@ -185,6 +217,25 @@ export default function UnitsPage() {
             />
           </div>
         </div>
+
+        {/* My Units panel */}
+        {showMyUnits && (
+          <div style={{ marginBottom: 24, border: `1px solid ${t.border}`, borderRadius: 14, padding: 20, background: t.surface }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 14 }}>My Units</div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {myUnits.map((u) => (
+                <a key={u.id} href={`/units/${u.slug}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", border: `1px solid ${t.border}`, borderRadius: 12, textDecoration: "none", color: t.text, background: t.bg }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 8, background: u.cover_photo_url ? `url(${u.cover_photo_url}) center/cover` : "#1e3a5f", flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>{u.name}</div>
+                    <div style={{ fontSize: 12, color: t.textMuted, textTransform: "capitalize" }}>{u.type.replace(/_/g, " ")}</div>
+                  </div>
+                  <span style={{ fontSize: 18, color: t.textFaint }}>›</span>
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Loading */}
         {loading && (
