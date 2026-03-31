@@ -987,6 +987,14 @@ export default function PublicProfilePage() {
   const isOwnWall = currentUserId === profile?.user_id;
   const wastaScore = workedWithCount + knowCount;
 
+  function getBadgeEmoji(count: number): string {
+    if (count >= 50) return "💎";
+    if (count >= 25) return "🥇";
+    if (count >= 10) return "🥈";
+    if (count >= 5)  return "🥉";
+    return "";
+  }
+
   function getReferralBadge(count: number): { label: string; color: string; bg: string } | null {
     if (count >= 50) return { label: "Platinum Recruiter", color: "#6b7280", bg: "#f3f4f6" };
     if (count >= 25) return { label: "Gold Recruiter", color: "#92400e", bg: "#fef3c7" };
@@ -1294,6 +1302,10 @@ export default function PublicProfilePage() {
                         <div style={{ fontWeight: 900, fontSize: 17 }}>{wastaScore}</div>
                         <div style={{ fontSize: 10, color: t.textMuted }}>Wasta</div>
                       </div>
+                      <div style={{ textAlign: "center" }}>
+                        <div style={{ fontWeight: 900, fontSize: 17 }}>{getBadgeEmoji(referralCount) && <span style={{ marginRight: 2 }}>{getBadgeEmoji(referralCount)}</span>}{referralCount}</div>
+                        <div style={{ fontSize: 10, color: t.textMuted }}>Recruited</div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1363,6 +1375,10 @@ export default function PublicProfilePage() {
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontWeight: 900, fontSize: 20 }}>{wastaScore}</div>
                       <div style={{ fontSize: 12, color: t.textMuted }}>Wasta</div>
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontWeight: 900, fontSize: 20 }}>{getBadgeEmoji(referralCount) && <span style={{ marginRight: 2 }}>{getBadgeEmoji(referralCount)}</span>}{referralCount}</div>
+                      <div style={{ fontSize: 12, color: t.textMuted }}>Recruited</div>
                     </div>
                   </div>
 
