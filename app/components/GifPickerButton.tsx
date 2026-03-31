@@ -126,7 +126,7 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
             bottom: "calc(100% + 6px)",
             right: 0,
             zIndex: 500,
-            width: 320,
+            width: 360,
             background: bg,
             border: `1px solid ${border}`,
             borderRadius: 14,
@@ -156,22 +156,22 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
 
           <div
             style={{
-              height: 300,
+              height: 320,
               overflowY: "auto",
               padding: "0 10px 10px",
               display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 6,
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 4,
               alignContent: "start",
             }}
           >
             {loading && (
-              <div style={{ gridColumn: "span 2", textAlign: "center", padding: 40, color: text, opacity: 0.5, fontSize: 13 }}>
+              <div style={{ gridColumn: "span 3", textAlign: "center", padding: 40, color: text, opacity: 0.5, fontSize: 13 }}>
                 Loading...
               </div>
             )}
             {!loading && gifs.length === 0 && (
-              <div style={{ gridColumn: "span 2", textAlign: "center", padding: 40, color: text, opacity: 0.5, fontSize: 13 }}>
+              <div style={{ gridColumn: "span 3", textAlign: "center", padding: 40, color: text, opacity: 0.5, fontSize: 13 }}>
                 No GIFs found
               </div>
             )}
@@ -183,13 +183,13 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
                 style={{
                   border: "none",
                   padding: 0,
-                  borderRadius: 8,
+                  borderRadius: 6,
                   overflow: "hidden",
                   cursor: "pointer",
                   background: inputBg,
                   display: "block",
                   width: "100%",
-                  aspectRatio: "1",
+                  height: 90,
                 }}
               >
                 <img
