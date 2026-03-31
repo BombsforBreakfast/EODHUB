@@ -3,6 +3,10 @@
     {
       "path": "/api/import-usajobs",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/import-adzuna",
+      "schedule": "0 7 * * *"
     }
   ]
 }
