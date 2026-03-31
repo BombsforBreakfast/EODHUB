@@ -918,6 +918,20 @@ export default function PublicProfilePage() {
     init();
   }, [userId]);
 
+  // Auto-generate referral code for existing users who don't have one yet
+  useEffect(() => {
+    if (!currentUserId || !profile || currentUserId !== profile.user_id || profile.referral_code) return;
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.access_token) return;
+      fetch("/api/generate-referral-code", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      }).then((res) => res.json()).then(({ code }) => {
+        if (code) setProfile((p) => p ? { ...p, referral_code: code } : p);
+      });
+    });
+  }, [currentUserId, profile?.user_id, profile?.referral_code]);
+
   useEffect(() => {
     if (!userId || userId === "undefined") return;
 
@@ -1303,7 +1317,9 @@ export default function PublicProfilePage() {
                         <div style={{ fontSize: 10, color: t.textMuted }}>Wasta</div>
                       </div>
                       <div style={{ textAlign: "center" }}>
-                        <div style={{ fontWeight: 900, fontSize: 17 }}>{getBadgeEmoji(referralCount) && <span style={{ marginRight: 2 }}>{getBadgeEmoji(referralCount)}</span>}{referralCount}</div>
+                        <div style={{ fontWeight: 900, fontSize: 17 }}>
+                          {getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
+                        </div>
                         <div style={{ fontSize: 10, color: t.textMuted }}>Recruited</div>
                       </div>
                     </div>
@@ -1377,7 +1393,9 @@ export default function PublicProfilePage() {
                       <div style={{ fontSize: 12, color: t.textMuted }}>Wasta</div>
                     </div>
                     <div style={{ textAlign: "center" }}>
-                      <div style={{ fontWeight: 900, fontSize: 20 }}>{getBadgeEmoji(referralCount) && <span style={{ marginRight: 2 }}>{getBadgeEmoji(referralCount)}</span>}{referralCount}</div>
+                      <div style={{ fontWeight: 900, fontSize: 20 }}>
+                        {getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
+                      </div>
                       <div style={{ fontSize: 12, color: t.textMuted }}>Recruited</div>
                     </div>
                   </div>
