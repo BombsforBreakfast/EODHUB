@@ -335,6 +335,10 @@ export default function HomePage() {
   const [photoNudgeDismissed, setPhotoNudgeDismissed] = useState<boolean>(() =>
     typeof window !== "undefined" && localStorage.getItem("eod_photo_nudge_dismissed") === "1"
   );
+  const [currentUserReferralCode, setCurrentUserReferralCode] = useState<string | null>(null);
+  const [referralNudgeDismissed, setReferralNudgeDismissed] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem("eod_referral_nudge_dismissed") === "1"
+  );
 
   // Biz/Org submission form
   const [showBizForm, setShowBizForm] = useState(false);
@@ -1654,7 +1658,7 @@ export default function HomePage() {
         // Check verification status — unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
-          .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status")
+          .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status, referral_code")
           .eq("user_id", currentUserId)
           .maybeSingle();
 
@@ -1690,10 +1694,11 @@ export default function HomePage() {
 
         setUserId(currentUserId);
 
-        const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null } | null;
+        const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null } | null;
         if (isMounted) {
           setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
           setCurrentUserHasPhoto(!!nd?.photo_url);
+          setCurrentUserReferralCode(nd?.referral_code ?? null);
         }
 
         await Promise.all([
@@ -2072,6 +2077,40 @@ export default function HomePage() {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          )}
+
+          {currentUserReferralCode && !referralNudgeDismissed && (
+            <div style={{
+              marginBottom: 12,
+              border: `1px solid #6366f1`,
+              borderRadius: 14,
+              padding: "14px 16px",
+              background: isDark ? "#1e1b4b" : "#eef2ff",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}>
+              <span style={{ fontSize: 22 }}>🎖️</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: isDark ? "#a5b4fc" : "#4338ca" }}>Invite 5 colleagues, earn a Recruiter Badge</div>
+                <div style={{ fontSize: 13, color: isDark ? "#818cf8" : "#6366f1", marginTop: 2 }}>
+                  Your referral link is on your profile — share it to grow the EOD HUB community.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${currentUserReferralCode}`)}
+                  style={{ padding: "7px 14px", borderRadius: 10, background: "#6366f1", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", border: "none" }}
+                >
+                  Copy Link
+                </button>
+                <button type="button" onClick={() => { setReferralNudgeDismissed(true); localStorage.setItem("eod_referral_nudge_dismissed", "1"); }} style={{ padding: "7px 10px", borderRadius: 10, background: "transparent", border: `1px solid #6366f1`, color: isDark ? "#a5b4fc" : "#4338ca", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                  Dismiss
+                </button>
               </div>
             </div>
           )}

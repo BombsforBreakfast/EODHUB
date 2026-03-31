@@ -89,8 +89,29 @@ export async function POST(req: NextRequest) {
     const email = authUser?.user?.email;
     const firstName = vouchee.first_name || "EOD Member";
 
+    // Fetch their referral code for the email
+    const { data: voucheeProfile } = await adminClient
+      .from("profiles")
+      .select("referral_code")
+      .eq("user_id", vouchee_user_id)
+      .maybeSingle();
+    const referralCode = (voucheeProfile as { referral_code: string | null } | null)?.referral_code;
+
     if (email && process.env.RESEND_API_KEY) {
       const resend = new Resend(process.env.RESEND_API_KEY);
+
+      const referralSection = referralCode ? `
+        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
+          <p style="font-size: 15px; font-weight: 700; color: #111; margin: 0 0 8px;">Invite 5 colleagues, earn a Recruiter Badge</p>
+          <p style="font-size: 14px; color: #555; line-height: 1.6; margin: 0 0 14px;">
+            Share your personal invite link with fellow EOD professionals. When 5 of them join and get verified, you earn your Bronze Recruiter badge on your profile.
+          </p>
+          <div style="background: #f3f4f6; border-radius: 8px; padding: 12px 16px; font-size: 14px; font-weight: 700; word-break: break-all; color: #111;">
+            https://eod-hub.com/login?ref=${referralCode}
+          </div>
+        </div>
+      ` : "";
+
       await resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL ?? "EOD HUB <noreply@resend.dev>",
         to: email,
@@ -106,6 +127,7 @@ export async function POST(req: NextRequest) {
                style="display: inline-block; background: black; color: white; padding: 14px 28px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 16px;">
               Sign In to EOD HUB
             </a>
+            ${referralSection}
             <p style="font-size: 13px; color: #999; margin-top: 32px;">
               Built for EOD Techs, by an EOD Tech.
             </p>

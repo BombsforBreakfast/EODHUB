@@ -65,11 +65,12 @@ export async function POST(req: NextRequest) {
   // Get their name for the email
   const { data: profile } = await adminClient
     .from("profiles")
-    .select("first_name")
+    .select("first_name, referral_code")
     .eq("user_id", userId)
     .maybeSingle();
 
-  const firstName = (profile as { first_name: string | null } | null)?.first_name || "EOD Member";
+  const firstName = (profile as { first_name: string | null; referral_code: string | null } | null)?.first_name || "EOD Member";
+  const referralCode = (profile as { first_name: string | null; referral_code: string | null } | null)?.referral_code;
 
   // Send verification email via Resend
   if (!process.env.RESEND_API_KEY) {
@@ -77,6 +78,18 @@ export async function POST(req: NextRequest) {
   }
 
   const resend = new Resend(process.env.RESEND_API_KEY);
+
+  const referralSection = referralCode ? `
+    <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
+      <p style="font-size: 15px; font-weight: 700; color: #111; margin: 0 0 8px;">Invite 5 colleagues, earn a Recruiter Badge</p>
+      <p style="font-size: 14px; color: #555; line-height: 1.6; margin: 0 0 14px;">
+        Share your personal invite link with fellow EOD professionals. When 5 of them join and get verified, you earn your Bronze Recruiter badge on your profile.
+      </p>
+      <div style="background: #f3f4f6; border-radius: 8px; padding: 12px 16px; font-size: 14px; font-weight: 700; word-break: break-all; color: #111;">
+        https://eod-hub.com/login?ref=${referralCode}
+      </div>
+    </div>
+  ` : "";
 
   const { error: emailError } = await resend.emails.send({
     from: process.env.RESEND_FROM_EMAIL ?? "EOD HUB <noreply@resend.dev>",
@@ -91,8 +104,9 @@ export async function POST(req: NextRequest) {
         </p>
         <a href="https://eod-hub.com/login"
            style="display: inline-block; background: black; color: white; padding: 14px 28px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 16px;">
-          https://eod-hub.com/login
+          Sign In to EOD HUB
         </a>
+        ${referralSection}
         <p style="font-size: 13px; color: #999; margin-top: 32px;">
           Built for EOD Techs, by an EOD Tech.
         </p>

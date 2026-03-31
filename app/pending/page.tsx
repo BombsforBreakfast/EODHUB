@@ -10,6 +10,8 @@ export default function PendingPage() {
   const [status, setStatus] = useState<string | null>(null);
   const [vouchCount, setVouchCount] = useState<number>(0);
   const [userId, setUserId] = useState<string | null>(null);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     async function check() {
@@ -21,11 +23,12 @@ export default function PendingPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("verification_status, first_name")
+        .select("verification_status, first_name, referral_code")
         .eq("user_id", user.id)
         .maybeSingle();
 
       setStatus(profile?.verification_status ?? null);
+      setReferralCode((profile as { verification_status: string | null; first_name: string | null; referral_code: string | null } | null)?.referral_code ?? null);
 
       // Sync Google OAuth name to profile if missing
       const googleName = user.user_metadata?.full_name || user.user_metadata?.name;
@@ -136,6 +139,33 @@ export default function PendingPage() {
               </div>
             </div>
           </>
+        )}
+
+        {referralCode && status !== "denied" && (
+          <div style={{ marginBottom: 24, background: "#eef2ff", border: "1px solid #c7d2fe", borderRadius: 12, padding: "16px 18px", textAlign: "left" }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: "#4338ca", marginBottom: 4 }}>
+              🎖️ Invite 5 colleagues, earn a Recruiter Badge
+            </div>
+            <div style={{ fontSize: 13, color: "#6366f1", marginBottom: 12, lineHeight: 1.5 }}>
+              While you wait, share your invite link. When 5 verified members join through your code, you earn your Bronze Recruiter badge.
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <div style={{ flex: 1, minWidth: 0, background: "white", border: "1px solid #c7d2fe", borderRadius: 8, padding: "8px 10px", fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#374151" }}>
+                eod-hub.com/login?ref={referralCode}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${referralCode}`);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
+                style={{ background: "#6366f1", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", flexShrink: 0 }}
+              >
+                {copied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+          </div>
         )}
 
         <button
