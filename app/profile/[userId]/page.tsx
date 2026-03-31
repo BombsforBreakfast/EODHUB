@@ -22,6 +22,7 @@ type Profile = {
   status: string | null;
   years_experience: string | null;
   skill_badge: string | null;
+  referral_code: string | null;
 };
 
 type RawComment = {
@@ -221,6 +222,7 @@ export default function PublicProfilePage() {
   const [submittingPhotoComment, setSubmittingPhotoComment] = useState(false);
 
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [referralCount, setReferralCount] = useState(0);
 
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
@@ -234,7 +236,7 @@ export default function PublicProfilePage() {
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "user_id, display_name, first_name, last_name, bio, photo_url, role, resume_text, tech_types, verification_status, service, status, years_experience, skill_badge"
+        "user_id, display_name, first_name, last_name, bio, photo_url, role, resume_text, tech_types, verification_status, service, status, years_experience, skill_badge, referral_code"
       )
       .eq("user_id", targetUserId)
       .maybeSingle();
@@ -244,7 +246,18 @@ export default function PublicProfilePage() {
       return;
     }
 
-    setProfile((data as Profile | null) ?? null);
+    const profileData = (data as Profile | null) ?? null;
+    setProfile(profileData);
+
+    // Fetch referral count if they have a code
+    if (profileData?.referral_code) {
+      const { count } = await supabase
+        .from("profiles")
+        .select("*", { count: "exact", head: true })
+        .eq("referred_by", profileData.referral_code)
+        .eq("verification_status", "verified");
+      setReferralCount(count ?? 0);
+    }
   }
 
   async function loadPosts(targetUserId: string) {
@@ -974,6 +987,15 @@ export default function PublicProfilePage() {
   const isOwnWall = currentUserId === profile?.user_id;
   const wastaScore = workedWithCount + knowCount;
 
+  function getReferralBadge(count: number): { label: string; color: string; bg: string } | null {
+    if (count >= 50) return { label: "Platinum Recruiter", color: "#6b7280", bg: "#f3f4f6" };
+    if (count >= 25) return { label: "Gold Recruiter", color: "#92400e", bg: "#fef3c7" };
+    if (count >= 10) return { label: "Silver Recruiter", color: "#374151", bg: "#e5e7eb" };
+    if (count >= 5)  return { label: "Bronze Recruiter", color: "#7c2d12", bg: "#fef3c7" };
+    return null;
+  }
+  const referralBadge = getReferralBadge(referralCount);
+
   const pinnedPhotos = photos.filter((photo) => photo.is_pinned).slice(0, 4);
   const galleryPhotos = photos.filter((photo) => !photo.is_pinned);
 
@@ -1254,6 +1276,11 @@ export default function PublicProfilePage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
                     <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2 }}>{isOwnWall ? "My Profile" : "Member Profile"}</div>
+                    {referralBadge && (
+                      <div style={{ display: "inline-block", marginTop: 4, background: referralBadge.bg, color: referralBadge.color, fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, border: `1px solid ${referralBadge.color}33` }}>
+                        {referralBadge.label}
+                      </div>
+                    )}
                     <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
                       <div style={{ textAlign: "center" }}>
                         <div style={{ fontWeight: 900, fontSize: 17 }}>{workedWithCount}</div>
@@ -1317,6 +1344,11 @@ export default function PublicProfilePage() {
                   <div style={{ textAlign: "center" }}>
                     <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
                     <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>{isOwnWall ? "My Profile" : "Member Profile"}</div>
+                    {referralBadge && (
+                      <div style={{ display: "inline-block", marginTop: 6, background: referralBadge.bg, color: referralBadge.color, fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 20, border: `1px solid ${referralBadge.color}33` }}>
+                        {referralBadge.label}
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%" }}>
@@ -1371,6 +1403,38 @@ export default function PublicProfilePage() {
               </div>
             )}
           </div>
+
+          {/* ── Referral card (own profile only) ── */}
+          {isOwnWall && profile.referral_code && (
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 20 }}>
+              <div style={{ fontWeight: 900, fontSize: 15, marginBottom: 4 }}>Your Referral Link</div>
+              <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 12 }}>
+                Share this link to invite EOD colleagues. You earn a recruiter badge once verified members join through your code.
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <div style={{ flex: 1, minWidth: 0, background: t.bg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  eod-hub.com/login?ref={profile.referral_code}
+                </div>
+                <button
+                  onClick={() => navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`)}
+                  style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", flexShrink: 0 }}
+                >
+                  Copy
+                </button>
+              </div>
+              <div style={{ marginTop: 12, display: "flex", gap: 16, fontSize: 13 }}>
+                <div><strong>{referralCount}</strong> <span style={{ color: t.textMuted }}>verified referral{referralCount !== 1 ? "s" : ""}</span></div>
+                {referralBadge && (
+                  <div style={{ background: referralBadge.bg, color: referralBadge.color, fontWeight: 800, padding: "2px 10px", borderRadius: 20, border: `1px solid ${referralBadge.color}33` }}>
+                    {referralBadge.label}
+                  </div>
+                )}
+                {!referralBadge && referralCount < 5 && (
+                  <div style={{ color: t.textMuted }}>{5 - referralCount} more to Bronze</div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ── Photo Strip ── */}
           <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, overflow: "hidden" }}>

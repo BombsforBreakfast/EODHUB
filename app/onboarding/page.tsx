@@ -27,6 +27,9 @@ export default function OnboardingPage() {
   const [empLastName, setEmpLastName] = useState("");
   const [companyName, setCompanyName] = useState("");
 
+  // Referral
+  const [referralInput, setReferralInput] = useState("");
+
   useEffect(() => {
     async function check() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -61,6 +64,11 @@ export default function OnboardingPage() {
         setFirstName(profile.first_name);
         setEmpFirstName(profile.first_name);
       }
+
+      // Pre-fill referral code from URL param or localStorage
+      const params = new URLSearchParams(window.location.search);
+      const ref = params.get("ref") || localStorage.getItem("eod_ref") || "";
+      if (ref) setReferralInput(ref.toUpperCase());
 
       setChecking(false);
     }
@@ -104,13 +112,27 @@ export default function OnboardingPage() {
               verification_status: "pending",
             };
 
+      const finalUpdates = referralInput.trim()
+        ? { ...updates, referred_by: referralInput.trim().toUpperCase() }
+        : updates;
+
       const { error } = await supabase
         .from("profiles")
-        .update(updates)
+        .update(finalUpdates)
         .eq("user_id", userId);
 
       if (error) { alert("Error saving profile: " + error.message); return; }
 
+      // Generate referral code for this user
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await fetch("/api/generate-referral-code", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+      }
+
+      localStorage.removeItem("eod_ref");
       window.location.href = "/pending";
     } finally {
       setSubmitting(false);
@@ -278,6 +300,23 @@ export default function OnboardingPage() {
                   </div>
                 </>
               )}
+
+              {/* Referral code — optional, shown for both account types */}
+              <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, marginTop: 4 }}>
+                <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>
+                  Referral Code <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional)</span>
+                </label>
+                <input
+                  value={referralInput}
+                  onChange={(e) => setReferralInput(e.target.value.toUpperCase())}
+                  style={inputStyle}
+                  placeholder="e.g. EOD7X2K9"
+                  maxLength={8}
+                />
+                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+                  If a community member invited you, enter their code here.
+                </div>
+              </div>
 
               <button
                 type="submit"

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 
 
@@ -15,6 +15,13 @@ export default function LoginPage() {
   const [forgotSent, setForgotSent] = useState(false);
   const [isGoogleAccount, setIsGoogleAccount] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
+  // Persist ?ref= referral code through signup flow via localStorage
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (ref) localStorage.setItem("eod_ref", ref.toUpperCase());
+  }, []);
 
   async function handleLogin() {
     try {
