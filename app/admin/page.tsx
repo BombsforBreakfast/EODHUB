@@ -1333,7 +1333,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                       </div>
                     ) : (
                       /* ── Row view ── */
-                      <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.bg }}>
+                      <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.bg, overflow: "hidden" }}>
                         {mem.photo_url
                           ? <img src={mem.photo_url} alt="" style={{ width: 44, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "2px solid #7c3aed" }} />
                           : <div style={{ width: 44, height: 56, borderRadius: 6, background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🪖</div>
