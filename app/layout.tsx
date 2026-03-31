@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "./lib/ThemeContext";
 import SessionGuard from "./components/SessionGuard";
 import ReportProblemButton from "./components/ReportProblemButton";
+import { Analytics } from "@vercel/analytics/next";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -35,6 +36,7 @@ export default function RootLayout({
           <SessionGuard />
           {children}
           <ReportProblemButton />
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>
