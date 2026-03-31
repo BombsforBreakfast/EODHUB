@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotSent, setForgotSent] = useState(false);
+  const [isGoogleAccount, setIsGoogleAccount] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleLogin() {
@@ -91,6 +92,20 @@ export default function LoginPage() {
     if (!forgotEmail.trim()) return;
     try {
       setSubmitting(true);
+      setIsGoogleAccount(false);
+
+      // Check if this email belongs to a Google OAuth account
+      const res = await fetch("/api/check-auth-provider", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim() }),
+      });
+      const { provider } = await res.json();
+      if (provider === "google") {
+        setIsGoogleAccount(true);
+        return;
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
         redirectTo: `${window.location.origin}/reset-password`,
       });
@@ -127,7 +142,19 @@ export default function LoginPage() {
       {/* ── Forgot password flow ── */}
       {mode === "forgot" && (
         <div style={{ marginTop: 20 }}>
-          {forgotSent ? (
+          {isGoogleAccount ? (
+            <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 12, padding: 20, textAlign: "center" }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>G</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Google Account Detected</div>
+              <div style={{ fontSize: 14, color: "#555", marginBottom: 16 }}>
+                This account was created with Google Sign-In — there&apos;s no password to reset. Use the <strong>Continue with Google</strong> button on the login page to sign in.
+              </div>
+              <button type="button" onClick={() => { setMode("login"); setIsGoogleAccount(false); }}
+                style={{ background: "#1d4ed8", color: "white", border: "none", borderRadius: 8, padding: "10px 20px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                Back to Login
+              </button>
+            </div>
+          ) : forgotSent ? (
             <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12, padding: 20, textAlign: "center" }}>
               <div style={{ fontSize: 28, marginBottom: 8 }}>📬</div>
               <div style={{ fontWeight: 700, marginBottom: 6 }}>Check your email</div>
