@@ -21,9 +21,17 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
   const [query, setQuery] = useState("");
   const [gifs, setGifs] = useState<GiphyGif[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const apiKey = process.env.NEXT_PUBLIC_GIPHY_API_KEY;
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   // Close on outside click
   useEffect(() => {
@@ -98,6 +106,13 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
   const inputBg = theme === "dark" ? "#2a2a2a" : "#f3f4f6";
 
   return (
+    <>
+      {open && isMobile && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 999 }}
+        />
+      )}
     <div ref={wrapperRef} style={{ position: "relative", flexShrink: 0 }}>
       <button
         type="button"
@@ -121,7 +136,20 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
 
       {open && (
         <div
-          style={{
+          style={isMobile ? {
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            zIndex: 1000,
+            width: "92vw",
+            maxWidth: 360,
+            background: bg,
+            border: `1px solid ${border}`,
+            borderRadius: 14,
+            boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
+            overflow: "hidden",
+          } : {
             position: "absolute",
             bottom: "calc(100% + 6px)",
             right: 0,
@@ -208,5 +236,6 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
         </div>
       )}
     </div>
+    </>
   );
 }

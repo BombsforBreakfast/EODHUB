@@ -5,11 +5,14 @@ import { supabase } from "../lib/lib/supabaseClient";
 
 
 export default function LoginPage() {
-  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotSent, setForgotSent] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleLogin() {
@@ -29,6 +32,14 @@ export default function LoginPage() {
         alert("Login succeeded, but no session was found yet. Please try again.");
         return;
       }
+
+      // Remember me logic — mark whether this session should persist past browser close
+      if (!rememberMe) {
+        localStorage.setItem("eod_no_persist", "1");
+      } else {
+        localStorage.removeItem("eod_no_persist");
+      }
+      sessionStorage.setItem("eod_active", "1");
 
       const { data: profile } = await supabase
         .from("profiles")
@@ -69,7 +80,25 @@ export default function LoginPage() {
         return;
       }
 
+      sessionStorage.setItem("eod_active", "1");
       window.location.href = "/onboarding";
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleForgotPassword() {
+    if (!forgotEmail.trim()) return;
+    try {
+      setSubmitting(true);
+      const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) {
+        alert("Error: " + error.message);
+        return;
+      }
+      setForgotSent(true);
     } finally {
       setSubmitting(false);
     }
@@ -92,91 +121,153 @@ export default function LoginPage() {
       </div>
 
       <h1 style={{ fontSize: 28, fontWeight: 700 }}>
-        {mode === "login" ? "Login" : "Sign Up"}
+        {mode === "login" ? "Login" : mode === "signup" ? "Sign Up" : "Reset Password"}
       </h1>
 
-      <form
-        onSubmit={(e) => { e.preventDefault(); mode === "login" ? handleLogin() : handleSignup(); }}
-        style={{ display: "grid", gap: 12, marginTop: 20 }}
-      >
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          style={inputStyle}
-        />
+      {/* ── Forgot password flow ── */}
+      {mode === "forgot" && (
+        <div style={{ marginTop: 20 }}>
+          {forgotSent ? (
+            <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12, padding: 20, textAlign: "center" }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>📬</div>
+              <div style={{ fontWeight: 700, marginBottom: 6 }}>Check your email</div>
+              <div style={{ fontSize: 14, color: "#555" }}>
+                We sent a password reset link to <strong>{forgotEmail}</strong>. Click the link in the email to set a new password.
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={(e) => { e.preventDefault(); handleForgotPassword(); }} style={{ display: "grid", gap: 12, marginTop: 16 }}>
+              <div style={{ fontSize: 14, color: "#555" }}>
+                Enter your email address and we&apos;ll send you a link to reset your password.
+              </div>
+              <input
+                type="email"
+                placeholder="Email address"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                style={inputStyle}
+                autoFocus
+              />
+              <button type="submit" disabled={submitting || !forgotEmail.trim()} style={{ ...buttonPrimary, opacity: submitting || !forgotEmail.trim() ? 0.7 : 1 }}>
+                {submitting ? "Sending..." : "Send Reset Link"}
+              </button>
+            </form>
+          )}
+          <button
+            type="button"
+            onClick={() => { setMode("login"); setForgotSent(false); setForgotEmail(""); }}
+            style={{ ...buttonSecondary, marginTop: 12, width: "100%" }}
+          >
+            Back to Login
+          </button>
+        </div>
+      )}
 
-        <input
-          placeholder="Password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          style={inputStyle}
-        />
-
-        {mode === "signup" && (
+      {/* ── Login / Signup flow ── */}
+      {mode !== "forgot" && (
+        <form
+          onSubmit={(e) => { e.preventDefault(); mode === "login" ? handleLogin() : handleSignup(); }}
+          style={{ display: "grid", gap: 12, marginTop: 20 }}
+        >
           <input
-            placeholder="Confirm Password"
-            type="password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            style={{
-              ...inputStyle,
-              borderColor: confirmPassword && confirmPassword !== password ? "#ef4444" : undefined,
-            }}
+            type="email"
+            placeholder="Email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={inputStyle}
           />
-        )}
 
+          <input
+            placeholder="Password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={inputStyle}
+          />
 
-        {mode === "login" ? (
-          <>
-            <button onClick={handleLogin} disabled={submitting} style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1 }}>
-              {submitting ? "Logging In..." : "Login"}
-            </button>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
-              <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-              <span style={{ fontSize: 13, color: "#999" }}>or</span>
-              <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+          {mode === "signup" && (
+            <input
+              placeholder="Confirm Password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              style={{
+                ...inputStyle,
+                borderColor: confirmPassword && confirmPassword !== password ? "#ef4444" : undefined,
+              }}
+            />
+          )}
+
+          {mode === "login" && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, cursor: "pointer", userSelect: "none" }}>
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  style={{ width: 16, height: 16, cursor: "pointer" }}
+                />
+                Remember me on this device
+              </label>
+              <button
+                type="button"
+                onClick={() => setMode("forgot")}
+                style={{ background: "none", border: "none", fontSize: 14, color: "#555", cursor: "pointer", padding: 0, textDecoration: "underline" }}
+              >
+                Forgot password?
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/onboarding` } })}
-              disabled={submitting}
-              style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
-            >
-              <GoogleIcon />
-              Sign in with Google
-            </button>
-            <button onClick={() => setMode("signup")} disabled={submitting} style={buttonSecondary}>
-              Need an account? Sign Up
-            </button>
-          </>
-        ) : (
-          <>
-            <button onClick={handleSignup} disabled={submitting} style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1 }}>
-              {submitting ? "Creating Account..." : "Complete Signup"}
-            </button>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
-              <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-              <span style={{ fontSize: 13, color: "#999" }}>or</span>
-              <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-            </div>
-            <button
-              type="button"
-              onClick={() => supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/onboarding` } })}
-              disabled={submitting}
-              style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
-            >
-              <GoogleIcon />
-              Sign up with Google
-            </button>
-            <button onClick={() => setMode("login")} disabled={submitting} style={buttonSecondary}>
-              Back to Login
-            </button>
-          </>
-        )}
-      </form>
+          )}
+
+          {mode === "login" ? (
+            <>
+              <button onClick={handleLogin} disabled={submitting} style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1 }}>
+                {submitting ? "Logging In..." : "Login"}
+              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
+                <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+                <span style={{ fontSize: 13, color: "#999" }}>or</span>
+                <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+              </div>
+              <button
+                type="button"
+                onClick={() => supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/onboarding` } })}
+                disabled={submitting}
+                style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+              >
+                <GoogleIcon />
+                Sign in with Google
+              </button>
+              <button onClick={() => setMode("signup")} disabled={submitting} style={buttonSecondary}>
+                Need an account? Sign Up
+              </button>
+            </>
+          ) : (
+            <>
+              <button onClick={handleSignup} disabled={submitting} style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1 }}>
+                {submitting ? "Creating Account..." : "Complete Signup"}
+              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
+                <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+                <span style={{ fontSize: 13, color: "#999" }}>or</span>
+                <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+              </div>
+              <button
+                type="button"
+                onClick={() => supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/onboarding` } })}
+                disabled={submitting}
+                style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+              >
+                <GoogleIcon />
+                Sign up with Google
+              </button>
+              <button onClick={() => setMode("login")} disabled={submitting} style={buttonSecondary}>
+                Back to Login
+              </button>
+            </>
+          )}
+        </form>
+      )}
     </div>
   );
 }

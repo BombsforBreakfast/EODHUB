@@ -167,6 +167,15 @@ function isVideoUrl(url: string): boolean {
   return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
 }
 
+function getYouTubeId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname === "youtu.be") return u.pathname.slice(1).split("?")[0];
+    if (u.hostname.includes("youtube.com")) return u.searchParams.get("v");
+  } catch { /* ignore */ }
+  return null;
+}
+
 function normalizeUrl(url: string): string {
   const trimmed = url.trim();
   if (!trimmed) return "";
@@ -322,6 +331,10 @@ export default function HomePage() {
     return "feed";
   });
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [currentUserHasPhoto, setCurrentUserHasPhoto] = useState<boolean>(true);
+  const [photoNudgeDismissed, setPhotoNudgeDismissed] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem("eod_photo_nudge_dismissed") === "1"
+  );
 
   // Biz/Org submission form
   const [showBizForm, setShowBizForm] = useState(false);
@@ -1641,7 +1654,7 @@ export default function HomePage() {
         // Check verification status — unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
-          .select("verification_status, first_name, last_name, service, company_name, account_type, subscription_status")
+          .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status")
           .eq("user_id", currentUserId)
           .maybeSingle();
 
@@ -1677,8 +1690,11 @@ export default function HomePage() {
 
         setUserId(currentUserId);
 
-        const nd = profileCheck as { first_name: string | null; last_name: string | null } | null;
-        if (isMounted) setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
+        const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null } | null;
+        if (isMounted) {
+          setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
+          setCurrentUserHasPhoto(!!nd?.photo_url);
+        }
 
         await Promise.all([
           loadJobs().catch((err) => console.error("loadJobs failed:", err)),
@@ -2060,6 +2076,36 @@ export default function HomePage() {
             </div>
           )}
 
+          {!currentUserHasPhoto && !photoNudgeDismissed && (
+            <div style={{
+              marginBottom: 12,
+              border: `1px solid #fbbf24`,
+              borderRadius: 14,
+              padding: "14px 16px",
+              background: isDark ? "#2a1f00" : "#fffbeb",
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "wrap",
+            }}>
+              <span style={{ fontSize: 22 }}>👤</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: isDark ? "#fbbf24" : "#92400e" }}>Add a profile photo</div>
+                <div style={{ fontSize: 13, color: isDark ? "#d97706" : "#b45309", marginTop: 2 }}>
+                  Help the EOD community put a face to your name.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                <a href={`/profile/${userId}`} style={{ padding: "7px 14px", borderRadius: 10, background: "#f59e0b", color: "white", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
+                  Add Photo
+                </a>
+                <button type="button" onClick={() => { setPhotoNudgeDismissed(true); localStorage.setItem("eod_photo_nudge_dismissed", "1"); }} style={{ padding: "7px 10px", borderRadius: 10, background: "transparent", border: `1px solid #fbbf24`, color: isDark ? "#fbbf24" : "#92400e", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          )}
+
           <div
             style={{
               marginTop: 0,
@@ -2421,9 +2467,23 @@ export default function HomePage() {
                         <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>
                       )}
 
-                      {post.og_url && (post.og_title || post.og_image) && (
-                        <OgCard og={{ url: post.og_url, title: post.og_title, description: post.og_description, image: post.og_image, siteName: post.og_site_name }} />
-                      )}
+                      {post.og_url && (() => {
+                        const ytId = getYouTubeId(post.og_url);
+                        if (ytId) return (
+                          <div style={{ marginTop: 12, borderRadius: 12, overflow: "hidden", aspectRatio: "16/9", maxWidth: 480 }}>
+                            <iframe
+                              src={`https://www.youtube.com/embed/${ytId}`}
+                              style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          </div>
+                        );
+                        if (post.og_title || post.og_image) return (
+                          <OgCard og={{ url: post.og_url, title: post.og_title, description: post.og_description, image: post.og_image, siteName: post.og_site_name }} />
+                        );
+                        return null;
+                      })()}
 
                       {post.image_urls.length > 0 &&
                         (() => {

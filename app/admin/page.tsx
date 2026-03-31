@@ -47,7 +47,18 @@ type UserProfile = {
   created_at: string | null;
 };
 
-type Tab = "businesses" | "jobs" | "users" | "flags" | "tools";
+type Tab = "businesses" | "jobs" | "users" | "flags" | "tools" | "reports";
+
+type BugReport = {
+  id: string;
+  user_id: string | null;
+  message: string;
+  screenshot_url: string | null;
+  page_url: string | null;
+  created_at: string;
+  reviewed: boolean;
+  reporter_name?: string | null;
+};
 
 type Flag = {
   id: string;
@@ -68,6 +79,24 @@ type BizEdit = {
   og_description: string;
   og_image: string;
   custom_blurb: string;
+};
+
+type Memorial = {
+  id: string;
+  name: string;
+  death_date: string;
+  photo_url: string | null;
+  bio: string | null;
+  source_url: string | null;
+};
+
+type MemorialEdit = {
+  id: string;
+  name: string;
+  death_date: string;
+  photo_url: string;
+  bio: string;
+  source_url: string;
 };
 
 export default function AdminPage() {
@@ -97,6 +126,13 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const [memWizFetching, setMemWizFetching] = useState(false);
   const [memWizSaving, setMemWizSaving] = useState(false);
   const [memWizMsg, setMemWizMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  const [memorials, setMemorials] = useState<Memorial[]>([]);
+  const [editingMemorial, setEditingMemorial] = useState<MemorialEdit | null>(null);
+  const [memEditSaving, setMemEditSaving] = useState(false);
+
+  const [bugReports, setBugReports] = useState<BugReport[]>([]);
+  const [reportsFilter, setReportsFilter] = useState<"unreviewed" | "all">("unreviewed");
 
   const { t, isDark } = useTheme();
 
@@ -219,6 +255,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
     if (activeTab === "jobs") loadJobs();
     if (activeTab === "users") loadUsers();
     if (activeTab === "flags") loadFlags();
+    if (activeTab === "tools") loadMemorials();
+    if (activeTab === "reports") loadBugReports();
   }, [pendingOnly, activeTab, authorized]);
 
   async function approveBusiness(id: string, featured = false) {
@@ -515,6 +553,86 @@ const [memWizUrl, setMemWizUrl] = useState("");
     }
   }
 
+  async function loadBugReports() {
+    const query = supabase
+      .from("bug_reports")
+      .select("id, user_id, message, screenshot_url, page_url, created_at, reviewed")
+      .order("created_at", { ascending: false });
+    const { data, error } = reportsFilter === "unreviewed"
+      ? await query.eq("reviewed", false)
+      : await query;
+    if (error) { console.error(error); return; }
+
+    const reports = (data ?? []) as BugReport[];
+    const userIds = [...new Set(reports.map((r) => r.user_id).filter(Boolean))] as string[];
+    if (userIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name")
+        .in("user_id", userIds);
+      const nameMap = new Map((profiles ?? []).map((p: { user_id: string; first_name: string | null; last_name: string | null }) => [
+        p.user_id,
+        `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown",
+      ]));
+      reports.forEach((r) => { r.reporter_name = r.user_id ? (nameMap.get(r.user_id) ?? null) : null; });
+    }
+    setBugReports(reports);
+  }
+
+  async function markReportReviewed(id: string) {
+    await supabase.from("bug_reports").update({ reviewed: true }).eq("id", id);
+    showToast("Marked as reviewed.");
+    await loadBugReports();
+  }
+
+  async function deleteBugReport(id: string) {
+    askConfirm("Delete this report?", async () => {
+      await supabase.from("bug_reports").delete().eq("id", id);
+      showToast("Report deleted.");
+      await loadBugReports();
+    });
+  }
+
+  async function loadMemorials() {
+    const { data, error } = await supabase
+      .from("memorials")
+      .select("id, name, death_date, photo_url, bio, source_url")
+      .order("death_date", { ascending: false });
+    if (error) { console.error(error); return; }
+    setMemorials((data ?? []) as Memorial[]);
+  }
+
+  async function updateMemorial() {
+    if (!editingMemorial || !editingMemorial.name.trim() || !editingMemorial.death_date) return;
+    setMemEditSaving(true);
+    try {
+      const { error } = await supabase.from("memorials").update({
+        name: editingMemorial.name.trim(),
+        death_date: editingMemorial.death_date,
+        photo_url: editingMemorial.photo_url.trim() || null,
+        bio: editingMemorial.bio.trim() || null,
+        source_url: editingMemorial.source_url.trim() || null,
+      }).eq("id", editingMemorial.id);
+      if (error) throw new Error(error.message);
+      showToast("Memorial updated.");
+      setEditingMemorial(null);
+      await loadMemorials();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Update failed.");
+    } finally {
+      setMemEditSaving(false);
+    }
+  }
+
+  async function deleteMemorial(id: string, name: string) {
+    askConfirm(`Delete memorial for ${name}? This cannot be undone.`, async () => {
+      const { error } = await supabase.from("memorials").delete().eq("id", id);
+      if (error) { alert(error.message); return; }
+      showToast("Memorial deleted.");
+      await loadMemorials();
+    });
+  }
+
   const tabStyle = (tab: Tab): React.CSSProperties => ({
     padding: "9px 20px",
     borderRadius: 10,
@@ -620,6 +738,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
           </button>
           <button style={tabStyle("tools")} onClick={() => setActiveTab("tools")}>
             Tools
+          </button>
+          <button style={tabStyle("reports")} onClick={() => setActiveTab("reports")}>
+            Reports {bugReports.filter(r => !r.reviewed).length > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{bugReports.filter(r => !r.reviewed).length}</span>}
           </button>
 
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: t.textMuted }}>
@@ -1020,6 +1141,48 @@ const [memWizUrl, setMemWizUrl] = useState("");
             </div>
           </div>
         )}
+        {/* ── REPORTS TAB ── */}
+        {activeTab === "reports" && (
+          <div style={{ marginTop: 20, display: "grid", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <button onClick={() => setReportsFilter("unreviewed")} style={{ ...tabStyle("reports"), background: reportsFilter === "unreviewed" ? "#111" : t.badgeBg, color: reportsFilter === "unreviewed" ? "white" : t.text, fontSize: 13, padding: "6px 14px" }}>Unreviewed</button>
+              <button onClick={() => setReportsFilter("all")} style={{ ...tabStyle("reports"), background: reportsFilter === "all" ? "#111" : t.badgeBg, color: reportsFilter === "all" ? "white" : t.text, fontSize: 13, padding: "6px 14px" }}>All</button>
+            </div>
+
+            {bugReports.length === 0 && (
+              <div style={{ color: t.textFaint, fontSize: 14, padding: 20 }}>No reports found.</div>
+            )}
+
+            {bugReports.map((r) => (
+              <div key={r.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 18, background: t.surface, opacity: r.reviewed ? 0.6 : 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>{r.reporter_name ?? "Anonymous"}</div>
+                    <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2 }}>{new Date(r.created_at).toLocaleString()}</div>
+                    {r.page_url && <div style={{ fontSize: 11, color: t.textFaint, marginTop: 2, wordBreak: "break-all" }}>{r.page_url}</div>}
+                  </div>
+                  {r.reviewed && <span style={{ background: "#d1fae5", color: "#065f46", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>Reviewed</span>}
+                </div>
+
+                <div style={{ fontSize: 14, color: t.text, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: r.screenshot_url ? 12 : 0 }}>{r.message}</div>
+
+                {r.screenshot_url && (
+                  <a href={r.screenshot_url} target="_blank" rel="noreferrer">
+                    <img src={r.screenshot_url} alt="Screenshot" style={{ maxWidth: "100%", maxHeight: 280, borderRadius: 10, border: `1px solid ${t.border}`, display: "block", marginBottom: 12 }} />
+                  </a>
+                )}
+
+                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                  {!r.reviewed && (
+                    <button onClick={() => markReportReviewed(r.id)} style={actionBtn("#16a34a")}>Mark Reviewed</button>
+                  )}
+                  <button onClick={() => deleteBugReport(r.id)} style={actionBtn("#ef4444")}>Delete</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* ── TOOLS TAB ── */}
         {activeTab === "tools" && (
           <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
@@ -1096,6 +1259,110 @@ const [memWizUrl, setMemWizUrl] = useState("");
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+
+            {/* Manage Memorials */}
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
+              <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Manage Memorials</div>
+              <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
+                Edit or delete existing memorial entries.
+              </div>
+
+              {memorials.length === 0 && (
+                <div style={{ color: t.textFaint, fontSize: 14 }}>No memorials yet.</div>
+              )}
+
+              <div style={{ display: "grid", gap: 12 }}>
+                {memorials.map((mem) => (
+                  <div key={mem.id}>
+                    {editingMemorial?.id === mem.id ? (
+                      /* ── Inline edit form ── */
+                      <div style={{ border: `2px solid #7c3aed`, borderRadius: 12, padding: 16, display: "grid", gap: 10 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 180px", gap: 8 }}>
+                          <input
+                            value={editingMemorial.name}
+                            onChange={(e) => setEditingMemorial((p) => p && ({ ...p, name: e.target.value }))}
+                            placeholder="Full name"
+                            style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                          />
+                          <input
+                            type="date"
+                            value={editingMemorial.death_date}
+                            onChange={(e) => setEditingMemorial((p) => p && ({ ...p, death_date: e.target.value }))}
+                            style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                          />
+                        </div>
+                        <input
+                          value={editingMemorial.photo_url}
+                          onChange={(e) => setEditingMemorial((p) => p && ({ ...p, photo_url: e.target.value }))}
+                          placeholder="Photo URL"
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
+                        <textarea
+                          value={editingMemorial.bio}
+                          onChange={(e) => setEditingMemorial((p) => p && ({ ...p, bio: e.target.value }))}
+                          placeholder="Bio"
+                          rows={4}
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text, resize: "vertical" }}
+                        />
+                        <input
+                          value={editingMemorial.source_url}
+                          onChange={(e) => setEditingMemorial((p) => p && ({ ...p, source_url: e.target.value }))}
+                          placeholder="Source URL (optional)"
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
+                        {editingMemorial.photo_url && (
+                          <img src={editingMemorial.photo_url} alt="" style={{ width: 72, height: 90, objectFit: "cover", borderRadius: 8, border: "2px solid #7c3aed" }} />
+                        )}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button
+                            onClick={updateMemorial}
+                            disabled={memEditSaving || !editingMemorial.name.trim() || !editingMemorial.death_date}
+                            style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: memEditSaving ? 0.6 : 1 }}
+                          >
+                            {memEditSaving ? "Saving..." : "Save Changes"}
+                          </button>
+                          <button
+                            onClick={() => setEditingMemorial(null)}
+                            style={{ background: t.badgeBg, color: t.text, border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ── Row view ── */
+                      <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.bg }}>
+                        {mem.photo_url
+                          ? <img src={mem.photo_url} alt="" style={{ width: 44, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "2px solid #7c3aed" }} />
+                          : <div style={{ width: 44, height: 56, borderRadius: 6, background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🪖</div>
+                        }
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 800, fontSize: 14 }}>{mem.name}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                            {mem.death_date ? new Date(mem.death_date + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "No date"}
+                          </div>
+                          {mem.bio && <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>{mem.bio}</div>}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <button
+                            onClick={() => setEditingMemorial({ id: mem.id, name: mem.name, death_date: mem.death_date, photo_url: mem.photo_url ?? "", bio: mem.bio ?? "", source_url: mem.source_url ?? "" })}
+                            style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => deleteMemorial(mem.id, mem.name)}
+                            style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
 
