@@ -6,7 +6,7 @@
     },
     {
       "path": "/api/import-adzuna",
-      "schedule": "0 7 * * *"
+      "schedule": "30 6 * * *"
     }
   ]
 }
