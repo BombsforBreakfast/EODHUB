@@ -3,9 +3,13 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 
+const VOUCHES_NEEDED = 3;
+
 export default function PendingPage() {
   const [email, setEmail] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const [vouchCount, setVouchCount] = useState<number>(0);
+  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     async function check() {
@@ -13,8 +17,8 @@ export default function PendingPage() {
       if (!user) { window.location.href = "/login"; return; }
 
       setEmail(user.email ?? null);
+      setUserId(user.id);
 
-      // If already verified, send them to the app
       const { data: profile } = await supabase
         .from("profiles")
         .select("verification_status, first_name")
@@ -35,15 +39,41 @@ export default function PendingPage() {
 
       if (profile?.verification_status === "verified") {
         window.location.href = "/";
+        return;
       }
+
+      // Fetch vouch count
+      const { count } = await supabase
+        .from("profile_vouches")
+        .select("*", { count: "exact", head: true })
+        .eq("vouchee_user_id", user.id);
+      setVouchCount(count ?? 0);
     }
     check();
   }, []);
+
+  // Poll every 30s so the page auto-advances if they get verified while waiting
+  useEffect(() => {
+    if (!userId) return;
+    const interval = setInterval(async () => {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("verification_status")
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (profile?.verification_status === "verified") {
+        window.location.href = "/";
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [userId]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
     window.location.href = "/login";
   }
+
+  const vouched = Math.min(vouchCount, VOUCHES_NEEDED);
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "#f9fafb", padding: 24 }}>
@@ -75,13 +105,36 @@ export default function PendingPage() {
               Awaiting Verification
             </h2>
             <p style={{ fontSize: 15, color: "#555", lineHeight: 1.7, margin: "0 0 8px" }}>
-              Your account is pending review. Once an admin verifies you, you'll receive a confirmation email and can log in to EOD HUB.
+              Your account is pending review. Once verified, you'll receive a confirmation email and can access EOD HUB.
             </p>
             {email && (
-              <p style={{ fontSize: 14, color: "#888", margin: "0 0 32px" }}>
+              <p style={{ fontSize: 14, color: "#888", margin: "0 0 28px" }}>
                 We'll notify you at <strong>{email}</strong>
               </p>
             )}
+
+            {/* Vouch progress */}
+            <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 12, padding: "18px 20px", marginBottom: 28, textAlign: "left" }}>
+              <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>
+                Community Verification
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                {Array.from({ length: VOUCHES_NEEDED }).map((_, i) => (
+                  <div key={i} style={{
+                    flex: 1, height: 8, borderRadius: 99,
+                    background: i < vouched ? "#22c55e" : "#e5e7eb",
+                    transition: "background 0.3s",
+                  }} />
+                ))}
+              </div>
+              <div style={{ fontSize: 13, color: "#555" }}>
+                {vouched < VOUCHES_NEEDED ? (
+                  <><strong>{vouched} of {VOUCHES_NEEDED}</strong> community members have vouched for you. Share your profile link with EOD colleagues to speed up verification.</>
+                ) : (
+                  <strong style={{ color: "#16a34a" }}>All vouches received — verification in progress.</strong>
+                )}
+              </div>
+            </div>
           </>
         )}
 
