@@ -93,24 +93,25 @@ interface AdzunaJob {
 async function fetchAdzunaPage(
   keyword: string,
   page: number
-): Promise<AdzunaJob[]> {
+): Promise<{ jobs: AdzunaJob[]; error?: string }> {
   const params = new URLSearchParams({
     app_id: process.env.ADZUNA_APP_ID ?? "",
     app_key: process.env.ADZUNA_APP_KEY ?? "",
     what: keyword,
-    where: "united states",
     results_per_page: String(RESULTS_PER_PAGE),
-    content_type: "application/json",
   });
 
   const res = await fetch(
     `https://api.adzuna.com/v1/api/jobs/us/search/${page}?${params.toString()}`
   );
 
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    return { jobs: [], error: `${res.status}: ${text}` };
+  }
 
   const data = await res.json();
-  return (data?.results as AdzunaJob[]) ?? [];
+  return { jobs: (data?.results as AdzunaJob[]) ?? [] };
 }
 
 export async function GET(req: NextRequest) {
@@ -154,10 +155,12 @@ export async function GET(req: NextRequest) {
   let refreshed = 0;
   let skipped = 0;
   const importedTitles: string[] = [];
+  const errors: string[] = [];
 
   for (const keyword of EOD_KEYWORDS) {
     for (let page = 1; page <= MAX_PAGES_PER_KEYWORD; page++) {
-      const items = await fetchAdzunaPage(keyword, page);
+      const { jobs: items, error } = await fetchAdzunaPage(keyword, page);
+      if (error) { errors.push(`[${keyword} p${page}] ${error}`); break; }
       if (items.length === 0) break;
 
       for (const job of items) {
@@ -232,5 +235,6 @@ export async function GET(req: NextRequest) {
     purged: purged ?? 0,
     skipped,
     sample: importedTitles.slice(0, 10),
+    errors: errors.length > 0 ? errors : undefined,
   });
 }
