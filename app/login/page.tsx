@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [isGoogleAccount, setIsGoogleAccount] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileError, setTurnstileError] = useState(false);
   const turnstileRef = useRef<TurnstileInstance>(null);
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 
@@ -30,6 +31,7 @@ export default function LoginPage() {
 
   async function verifyTurnstile(): Promise<boolean> {
     if (!siteKey) return true; // not configured — allow through
+    if (turnstileError) return true; // widget failed to load — allow through
     if (!turnstileToken) return false;
     const res = await fetch("/api/verify-turnstile", {
       method: "POST",
@@ -292,7 +294,7 @@ export default function LoginPage() {
               siteKey={siteKey}
               onSuccess={(token) => setTurnstileToken(token)}
               onExpire={() => setTurnstileToken(null)}
-              onError={() => setTurnstileToken(null)}
+              onError={() => { setTurnstileToken(null); setTurnstileError(true); }}
               options={{ theme: "light", size: "normal" }}
             />
           )}
@@ -301,8 +303,8 @@ export default function LoginPage() {
             <>
               <button
                 onClick={handleLogin}
-                disabled={submitting || (!!siteKey && !turnstileToken)}
-                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken) ? 0.7 : 1 }}
+                disabled={submitting || (!!siteKey && !turnstileToken && !turnstileError)}
+                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1 }}
               >
                 {submitting ? "Logging In..." : "Login"}
               </button>
@@ -328,8 +330,8 @@ export default function LoginPage() {
             <>
               <button
                 onClick={handleSignup}
-                disabled={submitting || (!!siteKey && !turnstileToken)}
-                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken) ? 0.7 : 1 }}
+                disabled={submitting || (!!siteKey && !turnstileToken && !turnstileError)}
+                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1 }}
               >
                 {submitting ? "Creating Account..." : "Complete Signup"}
               </button>
