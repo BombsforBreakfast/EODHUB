@@ -91,7 +91,7 @@ type PhotoComment = {
   authorPhotoUrl: string | null;
 };
 
-const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civilian Bomb Tech"];
+const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
 const STATUS_OPTIONS = ["Active", "Former", "Retired", "Civil Service"];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
@@ -157,6 +157,8 @@ function getServiceRingColor(service: string | null | undefined): string | null 
     case "Air Force": return "#00b0f0";
     case "Marines": return "#bf0a30";
     case "Civilian Bomb Tech": return "#000000";
+    case "Civil Service": return "#d97706";
+    case "Federal": return "#7c3aed";
     default: return null;
   }
 }

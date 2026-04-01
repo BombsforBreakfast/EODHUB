@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
+import { Turnstile } from "@marsidev/react-turnstile";
+import type { TurnstileInstance } from "@marsidev/react-turnstile";
 
 
 export default function LoginPage() {
@@ -15,6 +17,9 @@ export default function LoginPage() {
   const [forgotSent, setForgotSent] = useState(false);
   const [isGoogleAccount, setIsGoogleAccount] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance>(null);
+  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 
   // Persist ?ref= referral code through signup flow via localStorage
   useEffect(() => {
@@ -23,14 +28,35 @@ export default function LoginPage() {
     if (ref) localStorage.setItem("eod_ref", ref.toUpperCase());
   }, []);
 
+  async function verifyTurnstile(): Promise<boolean> {
+    if (!siteKey) return true; // not configured — allow through
+    if (!turnstileToken) return false;
+    const res = await fetch("/api/verify-turnstile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: turnstileToken }),
+    });
+    const data = await res.json() as { success: boolean };
+    return data.success;
+  }
+
   async function handleLogin() {
     try {
       setSubmitting(true);
+
+      if (!await verifyTurnstile()) {
+        alert("Please complete the security check.");
+        turnstileRef.current?.reset();
+        setTurnstileToken(null);
+        return;
+      }
 
       const { error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
         alert("Login error: " + error.message);
+        turnstileRef.current?.reset();
+        setTurnstileToken(null);
         return;
       }
 
@@ -73,6 +99,13 @@ export default function LoginPage() {
 
     try {
       setSubmitting(true);
+
+      if (!await verifyTurnstile()) {
+        alert("Please complete the security check.");
+        turnstileRef.current?.reset();
+        setTurnstileToken(null);
+        return;
+      }
 
       const { error: signUpError } = await supabase.auth.signUp({ email, password });
 
@@ -253,9 +286,24 @@ export default function LoginPage() {
             </div>
           )}
 
+          {siteKey && (
+            <Turnstile
+              ref={turnstileRef}
+              siteKey={siteKey}
+              onSuccess={(token) => setTurnstileToken(token)}
+              onExpire={() => setTurnstileToken(null)}
+              onError={() => setTurnstileToken(null)}
+              options={{ theme: "light", size: "normal" }}
+            />
+          )}
+
           {mode === "login" ? (
             <>
-              <button onClick={handleLogin} disabled={submitting} style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1 }}>
+              <button
+                onClick={handleLogin}
+                disabled={submitting || (!!siteKey && !turnstileToken)}
+                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken) ? 0.7 : 1 }}
+              >
                 {submitting ? "Logging In..." : "Login"}
               </button>
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
@@ -278,7 +326,11 @@ export default function LoginPage() {
             </>
           ) : (
             <>
-              <button onClick={handleSignup} disabled={submitting} style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1 }}>
+              <button
+                onClick={handleSignup}
+                disabled={submitting || (!!siteKey && !turnstileToken)}
+                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken) ? 0.7 : 1 }}
+              >
                 {submitting ? "Creating Account..." : "Complete Signup"}
               </button>
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>

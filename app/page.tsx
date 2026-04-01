@@ -101,6 +101,8 @@ function getServiceRingColor(service: string | null | undefined): string | null 
     case "Air Force": return "#00b0f0";
     case "Marines": return "#bf0a30";
     case "Civilian Bomb Tech": return "#000000";
+    case "Civil Service": return "#d97706";
+    case "Federal": return "#7c3aed";
     default: return null;
   }
 }
