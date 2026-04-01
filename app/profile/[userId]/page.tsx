@@ -68,6 +68,8 @@ type Post = {
   og_site_name: string | null;
   wall_user_id: string | null;
   author_name: string | null;
+  authorPhotoUrl: string | null;
+  authorService: string | null;
 };
 
 type ProfilePhoto = {
@@ -359,13 +361,19 @@ export default function PublicProfilePage() {
       .filter((p) => p.wall_user_id === targetUserId && p.user_id !== targetUserId)
       .map((p) => p.user_id))];
     const authorNameMap = new Map<string, string>();
+    const authorPhotoMap = new Map<string, string | null>();
+    const authorServiceMap = new Map<string, string | null>();
     if (wallPosterIds.length > 0) {
       const { data: authorProfiles } = await supabase
         .from("profiles")
-        .select("user_id, first_name, last_name, display_name")
+        .select("user_id, first_name, last_name, display_name, photo_url, service")
         .in("user_id", wallPosterIds);
-      ((authorProfiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null }[])
-        .forEach((ap) => authorNameMap.set(ap.user_id, ap.display_name || `${ap.first_name || ""} ${ap.last_name || ""}`.trim() || "Member"));
+      ((authorProfiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null }[])
+        .forEach((ap) => {
+          authorNameMap.set(ap.user_id, ap.display_name || `${ap.first_name || ""} ${ap.last_name || ""}`.trim() || "Member");
+          authorPhotoMap.set(ap.user_id, ap.photo_url ?? null);
+          authorServiceMap.set(ap.user_id, ap.service ?? null);
+        });
     }
 
     const merged: Post[] = rawPosts.map((p) => {
@@ -388,6 +396,8 @@ export default function PublicProfilePage() {
         og_site_name: p.og_site_name ?? null,
         wall_user_id: p.wall_user_id ?? null,
         author_name: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorNameMap.get(p.user_id) ?? null) : null,
+        authorPhotoUrl: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorPhotoMap.get(p.user_id) ?? null) : null,
+        authorService: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorServiceMap.get(p.user_id) ?? null) : null,
       };
     });
 
@@ -1699,15 +1709,28 @@ export default function PublicProfilePage() {
                     {/* Post header */}
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                        <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined }}>
-                          {profile.photo_url
-                            ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                            : fullName[0]?.toUpperCase()}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: 800 }}>{fullName}</div>
-                          <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{formatDate(post.created_at)}</div>
-                        </div>
+                        {(() => {
+                          const postAuthorPhoto = post.authorPhotoUrl ?? profile.photo_url;
+                          const postAuthorService = post.authorService ?? profile.service;
+                          const postAuthorName = post.author_name ?? fullName;
+                          const postAuthorId = post.user_id;
+                          const avatar = (
+                            <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(postAuthorService) ? `3px solid ${getServiceRingColor(postAuthorService)}` : undefined }}>
+                              {postAuthorPhoto
+                                ? <img src={postAuthorPhoto} alt={postAuthorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                                : postAuthorName[0]?.toUpperCase()}
+                            </div>
+                          );
+                          return (
+                            <>
+                              <a href={`/profile/${postAuthorId}`} style={{ textDecoration: "none", flexShrink: 0 }}>{avatar}</a>
+                              <div>
+                                <a href={`/profile/${postAuthorId}`} style={{ fontWeight: 800, textDecoration: "none", color: t.text }}>{postAuthorName}</a>
+                                <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{formatDate(post.created_at)}</div>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
                       {isOwnPost && (
                         <button

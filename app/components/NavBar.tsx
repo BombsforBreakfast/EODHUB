@@ -55,19 +55,26 @@ export default function NavBar() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function loadUnreadMessages(uid: string) {
-    const { count } = await supabase
-      .from("messages")
-      .select("*", { count: "exact", head: true })
-      .eq("is_read", false)
-      .neq("sender_id", uid)
-      .in("conversation_id",
-        (await supabase
-          .from("conversations")
-          .select("id")
-          .or(`participant_1.eq.${uid},participant_2.eq.${uid}`)
-        ).data?.map((c: { id: string }) => c.id) ?? []
-      );
-    setUnreadMessages(count ?? 0);
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select("id, status, initiated_by")
+      .or(`participant_1.eq.${uid},participant_2.eq.${uid}`)
+      .neq("status", "declined");
+    const allConvs = (convs ?? []) as { id: string; status: string; initiated_by: string | null }[];
+    const acceptedIds = allConvs.filter((c) => c.status === "accepted").map((c) => c.id);
+    const pendingRequestCount = allConvs.filter((c) => c.status === "pending" && c.initiated_by !== uid).length;
+
+    let unreadMsgCount = 0;
+    if (acceptedIds.length > 0) {
+      const { count } = await supabase
+        .from("messages")
+        .select("*", { count: "exact", head: true })
+        .eq("is_read", false)
+        .neq("sender_id", uid)
+        .in("conversation_id", acceptedIds);
+      unreadMsgCount = count ?? 0;
+    }
+    setUnreadMessages(unreadMsgCount + pendingRequestCount);
   }
 
   async function loadNotifications(uid: string) {
@@ -102,9 +109,7 @@ export default function NavBar() {
       );
     }
     setShowNotifications(false);
-    if (n.post_owner_id) {
-      window.location.href = `/profile/${n.post_owner_id}`;
-    }
+    window.location.href = n.post_owner_id ? `/profile/${n.post_owner_id}` : "/";
   }
 
   useEffect(() => {
@@ -162,7 +167,7 @@ export default function NavBar() {
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId]);
 
-  // Realtime: new message comes in → bump unread count
+  // Realtime: new message or read-status change → re-fetch accurate count
   useEffect(() => {
     if (!currentUserId) return;
     const channel = supabase
@@ -176,6 +181,20 @@ export default function NavBar() {
         if (msg.sender_id !== currentUserId && !msg.is_read) {
           setUnreadMessages((prev) => prev + 1);
         }
+      })
+      .on("postgres_changes", {
+        event: "UPDATE",
+        schema: "public",
+        table: "messages",
+      }, () => {
+        loadUnreadMessages(currentUserId);
+      })
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "conversations",
+      }, () => {
+        loadUnreadMessages(currentUserId);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };

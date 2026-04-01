@@ -410,11 +410,13 @@ export default function MessagesPage() {
                 onMouseEnter={(e) => { if (activeConvId !== conv.id) e.currentTarget.style.background = t.surfaceHover; }}
                 onMouseLeave={(e) => { if (activeConvId !== conv.id) e.currentTarget.style.background = t.surface; }}
               >
-                <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
-                  {conv.other_user_photo
-                    ? <img src={conv.other_user_photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : conv.other_user_name[0]?.toUpperCase()}
-                </div>
+                <a href={`/profile/${conv.other_user_id}`} onClick={(e) => e.stopPropagation()} style={{ textDecoration: "none", flexShrink: 0 }}>
+                  <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
+                    {conv.other_user_photo
+                      ? <img src={conv.other_user_photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : conv.other_user_name[0]?.toUpperCase()}
+                  </div>
+                </a>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontWeight: conv.unread_count > 0 ? 800 : 600, fontSize: 14, color: t.text }}>{conv.other_user_name}</span>
@@ -444,11 +446,13 @@ export default function MessagesPage() {
                   background: activeConvId === conv.id ? t.surfaceHover : t.surface, opacity: 0.7,
                 }}
               >
-                <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
-                  {conv.other_user_photo
-                    ? <img src={conv.other_user_photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    : conv.other_user_name[0]?.toUpperCase()}
-                </div>
+                <a href={`/profile/${conv.other_user_id}`} onClick={(e) => e.stopPropagation()} style={{ textDecoration: "none", flexShrink: 0 }}>
+                  <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
+                    {conv.other_user_photo
+                      ? <img src={conv.other_user_photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : conv.other_user_name[0]?.toUpperCase()}
+                  </div>
+                </a>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <span style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{conv.other_user_name}</span>
@@ -476,11 +480,13 @@ export default function MessagesPage() {
               return (
                 <div key={conv.id} style={{ padding: "16px 20px", borderBottom: `1px solid ${t.border}` }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                    <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
-                      {conv.other_user_photo
-                        ? <img src={conv.other_user_photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                        : conv.other_user_name[0]?.toUpperCase()}
-                    </div>
+                    <a href={`/profile/${conv.other_user_id}`} style={{ textDecoration: "none", flexShrink: 0 }}>
+                      <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
+                        {conv.other_user_photo
+                          ? <img src={conv.other_user_photo} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : conv.other_user_name[0]?.toUpperCase()}
+                      </div>
+                    </a>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                         <span style={{ fontWeight: 800, fontSize: 14, color: t.text }}>{conv.other_user_name}</span>
@@ -571,11 +577,21 @@ export default function MessagesPage() {
         )}
         {threadName ? (
           <>
-            <div style={avatarStyle(threadName, threadPhoto)}>
-              {threadPhoto
-                ? <img src={threadPhoto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                : threadName[0]?.toUpperCase()}
-            </div>
+            {threadUserId && !requestTarget ? (
+              <a href={`/profile/${threadUserId}`} style={{ textDecoration: "none", flexShrink: 0 }}>
+                <div style={avatarStyle(threadName, threadPhoto)}>
+                  {threadPhoto
+                    ? <img src={threadPhoto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    : threadName[0]?.toUpperCase()}
+                </div>
+              </a>
+            ) : (
+              <div style={avatarStyle(threadName, threadPhoto)}>
+                {threadPhoto
+                  ? <img src={threadPhoto} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : threadName[0]?.toUpperCase()}
+              </div>
+            )}
             {threadUserId && !requestTarget ? (
               <a href={`/profile/${threadUserId}`} style={{ fontWeight: 800, fontSize: 16, textDecoration: "none", color: "inherit" }}>
                 {threadName}

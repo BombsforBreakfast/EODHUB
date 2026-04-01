@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
@@ -143,6 +143,8 @@ export default function MyAccountPage() {
 
   const [seekingEmployment, setSeekingEmployment] = useState(false);
   const [togglingSeek, setTogglingSeek] = useState(false);
+
+  const photoInputRef = useRef<HTMLInputElement>(null);
 
   const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
   const [unsavingJobId, setUnsavingJobId] = useState<string | null>(null);
@@ -325,6 +327,12 @@ export default function MyAccountPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Photo must be under 8 MB. Try compressing the image first.");
+      e.target.value = "";
+      return;
+    }
+
     try {
       setUploadingAvatar(true);
 
@@ -352,7 +360,8 @@ export default function MyAccountPage() {
       await loadProfile(currentUserId);
     } catch (err) {
       console.error(err);
-      alert("Avatar upload failed");
+      const msg = err instanceof Error ? err.message : String(err);
+      alert(`Photo upload failed: ${msg}`);
     } finally {
       setUploadingAvatar(false);
       e.target.value = "";
@@ -426,10 +435,31 @@ export default function MyAccountPage() {
           </div>
         ) : (
         <div style={{ display: "flex", gap: 20, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontWeight: 700, flexShrink: 0 }}>
+          {/* Clickable avatar */}
+          <div
+            onClick={() => !uploadingAvatar && photoInputRef.current?.click()}
+            title="Click to update photo"
+            style={{ position: "relative", width: 120, height: 120, borderRadius: "50%", overflow: "hidden", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontWeight: 700, flexShrink: 0, cursor: uploadingAvatar ? "not-allowed" : "pointer" }}
+          >
             {profile?.photo_url ? (
               <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-            ) : "Photo"}
+            ) : <span style={{ fontSize: 13 }}>Add Photo</span>}
+            {/* Hover overlay */}
+            <div style={{
+              position: "absolute", inset: 0, borderRadius: "50%",
+              background: "rgba(0,0,0,0.45)", display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 4,
+              opacity: uploadingAvatar ? 1 : 0, transition: "opacity 0.2s",
+            }}
+              onMouseEnter={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "1"; }}
+              onMouseLeave={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "0"; }}
+            >
+              <span style={{ fontSize: 22 }}>📷</span>
+              <span style={{ fontSize: 11, color: "white", fontWeight: 700 }}>
+                {uploadingAvatar ? "Uploading..." : "Update"}
+              </span>
+            </div>
+            <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} />
           </div>
 
           <div style={{ flex: 1, minWidth: 260 }}>
@@ -439,10 +469,6 @@ export default function MyAccountPage() {
                 <div style={{ marginTop: 4, color: t.textMuted }}>{profile?.role || "No role added yet"}</div>
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <label style={{ display: "inline-block", background: t.surface, color: t.text, border: `1px solid ${t.inputBorder}`, padding: "8px 16px", borderRadius: 10, fontWeight: 700, cursor: uploadingAvatar ? "not-allowed" : "pointer", opacity: uploadingAvatar ? 0.6 : 1 }}>
-                  {uploadingAvatar ? "Uploading..." : "Update Photo"}
-                  <input type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} />
-                </label>
                 <button onClick={openEdit} style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}>
                   Edit Profile
                 </button>

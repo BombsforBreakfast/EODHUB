@@ -1984,10 +1984,12 @@ export default function HomePage() {
                   const initial = (name[0] || "?").toUpperCase();
                   return (
                     <div key={m.user_id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      {m.photo_url
-                        ? <img src={m.photo_url} alt={name} style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
-                        : <div style={{ width: 36, height: 36, borderRadius: "50%", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: t.textMuted, flexShrink: 0 }}>{initial}</div>
-                      }
+                      <a href={`/profile/${m.user_id}`} style={{ textDecoration: "none", flexShrink: 0 }}>
+                        {m.photo_url
+                          ? <img src={m.photo_url} alt={name} style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", display: "block" }} />
+                          : <div style={{ width: 36, height: 36, borderRadius: "50%", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: t.textMuted }}>{initial}</div>
+                        }
+                      </a>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 700, fontSize: 14 }}>{name}</div>
                         {m.service && <div style={{ fontSize: 12, color: t.textMuted }}>{m.service}</div>}
