@@ -287,7 +287,11 @@ export default function MessagesPage() {
         filter: `conversation_id=eq.${convId}`,
       }, (payload) => {
         const msg = payload.new as Message;
-        setMessages((prev) => [...prev, msg]);
+        setMessages((prev) => {
+          // Remove any optimistic message with same content/sender before adding real one
+          const filtered = prev.filter((m) => !(m.id.startsWith("optimistic-") && m.content === msg.content && m.sender_id === msg.sender_id));
+          return [...filtered, msg];
+        });
         if (msg.sender_id !== userId) {
           supabase.from("messages").update({ is_read: true }).eq("id", msg.id);
         }
@@ -314,6 +318,17 @@ export default function MessagesPage() {
     setSending(true);
     const content = newMessage.trim();
     setNewMessage("");
+    // Optimistic update — show immediately without waiting for DB
+    const optimisticMsg: Message = {
+      id: `optimistic-${Date.now()}`,
+      conversation_id: activeConvId,
+      sender_id: userId,
+      content,
+      is_read: false,
+      created_at: new Date().toISOString(),
+      gif_url: gifUrl ?? null,
+    };
+    setMessages((prev) => [...prev, optimisticMsg]);
     await supabase.from("messages").insert({ conversation_id: activeConvId, sender_id: userId, content, gif_url: gifUrl ?? null });
     await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", activeConvId);
     setSending(false);

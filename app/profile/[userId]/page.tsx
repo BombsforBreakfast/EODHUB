@@ -999,7 +999,6 @@ export default function PublicProfilePage() {
     : "";
 
   const isOwnWall = currentUserId === profile?.user_id;
-  const wastaScore = workedWithCount + knowCount;
 
   function getBadgeEmoji(count: number): string {
     if (count >= 50) return "💎";
@@ -1313,10 +1312,6 @@ export default function PublicProfilePage() {
                         <div style={{ fontSize: 10, color: t.textMuted }}>Know</div>
                       </div>
                       <div style={{ textAlign: "center" }}>
-                        <div style={{ fontWeight: 900, fontSize: 17 }}>{wastaScore}</div>
-                        <div style={{ fontSize: 10, color: t.textMuted }}>Wasta</div>
-                      </div>
-                      <div style={{ textAlign: "center" }}>
                         <div style={{ fontWeight: 900, fontSize: 17 }}>
                           {getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
                         </div>
@@ -1387,10 +1382,6 @@ export default function PublicProfilePage() {
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontWeight: 900, fontSize: 20 }}>{knowCount}</div>
                       <div style={{ fontSize: 12, color: t.textMuted }}>Know</div>
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontWeight: 900, fontSize: 20 }}>{wastaScore}</div>
-                      <div style={{ fontSize: 12, color: t.textMuted }}>Wasta</div>
                     </div>
                     <div style={{ textAlign: "center" }}>
                       <div style={{ fontWeight: 900, fontSize: 20 }}>
