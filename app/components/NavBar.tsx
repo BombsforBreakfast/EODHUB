@@ -302,7 +302,7 @@ export default function NavBar() {
         {currentUserId && (
           <a
             href={`/profile/${currentUserId}`}
-            onClick={markProfileNotifsRead}
+            onClick={async (e) => { e.preventDefault(); await markProfileNotifsRead(); window.location.href = `/profile/${currentUserId}`; }}
             className="nav-btn nav-profile-link"
             style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
           >
@@ -316,7 +316,7 @@ export default function NavBar() {
 
         <a
           href="/"
-          onClick={markFeedNotifsRead}
+          onClick={async (e) => { e.preventDefault(); await markFeedNotifsRead(); window.location.href = "/"; }}
           className="nav-btn nav-home"
           style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
         >
@@ -442,7 +442,7 @@ export default function NavBar() {
             <a
               key={item.label}
               href={item.href}
-              onClick={() => { setShowHub(false); item.onNav?.(); }}
+              onClick={async (e) => { e.preventDefault(); setShowHub(false); if (item.onNav) await item.onNav(); window.location.href = item.href; }}
               style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, textDecoration: "none", color: t.text, fontWeight: 700, fontSize: 14, background: t.bg }}
             >
               <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
