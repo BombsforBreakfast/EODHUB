@@ -968,10 +968,30 @@ export default function PublicProfilePage() {
       )
       .subscribe();
 
+    const commentsChannel = supabase
+      .channel(`profile-comments-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "post_comments" },
+        () => { loadPosts(userId); }
+      )
+      .subscribe();
+
+    const likesChannel = supabase
+      .channel(`profile-likes-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "post_likes" },
+        () => { loadPosts(userId); }
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(postsChannel);
       supabase.removeChannel(connectionsChannel);
       supabase.removeChannel(photosChannel);
+      supabase.removeChannel(commentsChannel);
+      supabase.removeChannel(likesChannel);
     };
   }, [userId, currentUserId]);
 
