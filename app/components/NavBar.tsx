@@ -23,25 +23,13 @@ type SearchResult = {
   external: boolean;
 };
 
-function timeAgo(dateString: string) {
-  const diff = Date.now() - new Date(dateString).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
 
 export default function NavBar() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [userInitial, setUserInitial] = useState<string>("?");
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
-  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const [showHub, setShowHub] = useState(false);
   const hubBtnRef = useRef<HTMLButtonElement>(null);
@@ -53,6 +41,12 @@ export default function NavBar() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Unread counts derived from notifications
+  // Profile badge: notifications that link to a profile (wall activity)
+  const unreadProfileNotifs = notifications.filter((n) => !n.is_read && n.post_owner_id !== null).length;
+  // Feed badge: notifications that link to the home feed
+  const unreadFeedNotifs = notifications.filter((n) => !n.is_read && n.post_owner_id === null).length;
 
   async function loadUnreadMessages(uid: string) {
     const { data: convs } = await supabase
@@ -84,32 +78,21 @@ export default function NavBar() {
       .eq("user_id", uid)
       .order("created_at", { ascending: false })
       .limit(20);
-    const notifs = (data ?? []) as Notification[];
-    setNotifications(notifs);
-    setUnreadCount(notifs.filter((n) => !n.is_read).length);
+    setNotifications((data ?? []) as Notification[]);
   }
 
-  async function markAllRead() {
-    if (!currentUserId) return;
-    await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("user_id", currentUserId)
-      .eq("is_read", false);
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    setUnreadCount(0);
+  async function markProfileNotifsRead() {
+    if (!currentUserId || unreadProfileNotifs === 0) return;
+    const ids = notifications.filter((n) => !n.is_read && n.post_owner_id !== null).map((n) => n.id);
+    await supabase.from("notifications").update({ is_read: true }).in("id", ids);
+    setNotifications((prev) => prev.map((n) => n.post_owner_id !== null ? { ...n, is_read: true } : n));
   }
 
-  async function handleNotificationClick(n: Notification) {
-    if (!n.is_read) {
-      await supabase.from("notifications").update({ is_read: true }).eq("id", n.id);
-      setUnreadCount((prev) => Math.max(0, prev - 1));
-      setNotifications((prev) =>
-        prev.map((item) => (item.id === n.id ? { ...item, is_read: true } : item))
-      );
-    }
-    setShowNotifications(false);
-    window.location.href = n.post_owner_id ? `/profile/${n.post_owner_id}` : "/";
+  async function markFeedNotifsRead() {
+    if (!currentUserId || unreadFeedNotifs === 0) return;
+    const ids = notifications.filter((n) => !n.is_read && n.post_owner_id === null).map((n) => n.id);
+    await supabase.from("notifications").update({ is_read: true }).in("id", ids);
+    setNotifications((prev) => prev.map((n) => n.post_owner_id === null ? { ...n, is_read: true } : n));
   }
 
   useEffect(() => {
@@ -199,17 +182,6 @@ export default function NavBar() {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId]);
-
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowNotifications(false);
-      }
-    }
-    if (showNotifications) document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, [showNotifications]);
 
   async function performSearch(query: string) {
     const q = query.trim();
@@ -309,19 +281,15 @@ export default function NavBar() {
     color: t.text,
   };
 
-  const primaryButton: React.CSSProperties = {
-    padding: "10px 16px",
-    borderRadius: 10,
-    border: "none",
-    textDecoration: "none",
-    fontWeight: 700,
-    background: t.text,
-    color: t.navBg,
-  };
+  const badge = (count: number) => (
+    <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
+      {count > 9 ? "9+" : count}
+    </span>
+  );
 
   return (
     <div className="nav-root" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30, flexWrap: "wrap", gap: 12 }}>
-      {/* Left: avatar + nav links + flame */}
+      {/* Left: avatar + nav links */}
       <div className="nav-left" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <Link
           href="/profile"
@@ -330,12 +298,33 @@ export default function NavBar() {
         >
           {userInitial}
         </Link>
-        {currentUserId && <Link href={`/profile/${currentUserId}`} className="nav-btn nav-profile-link" style={navButton}>My Profile</Link>}
+
+        {currentUserId && (
+          <a
+            href={`/profile/${currentUserId}`}
+            onClick={markProfileNotifsRead}
+            className="nav-btn nav-profile-link"
+            style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
+          >
+            My Profile
+            {unreadProfileNotifs > 0 && badge(unreadProfileNotifs)}
+          </a>
+        )}
+
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Units</Link>
-        {/* Home — navigates to the main feed */}
-        <Link href="/" className="nav-btn nav-home" style={navButton}>Home</Link>
-        {/* EOD Hub — mobile only, opens the hub panel */}
+
+        <a
+          href="/"
+          onClick={markFeedNotifsRead}
+          className="nav-btn nav-home"
+          style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
+        >
+          Home
+          {unreadFeedNotifs > 0 && badge(unreadFeedNotifs)}
+        </a>
+
+        {/* EOD Hub — mobile only */}
         <button
           ref={hubBtnRef}
           onClick={() => setShowHub((v) => !v)}
@@ -343,78 +332,19 @@ export default function NavBar() {
           style={{ ...navButton, cursor: "pointer", alignItems: "center", gap: 6 }}
         >
           EOD Hub
-          {unreadMessages > 0 && !showHub && (
-            <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
-              {unreadMessages > 9 ? "9+" : unreadMessages}
-            </span>
-          )}
+          {(unreadMessages + unreadProfileNotifs + unreadFeedNotifs) > 0 && !showHub && badge(unreadMessages + unreadProfileNotifs + unreadFeedNotifs)}
         </button>
 
         {/* Messages button */}
         {currentUserId && (
           <Link href="/messages" className="nav-btn nav-messages-btn" style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}>
             Messages
-            {unreadMessages > 0 && (
-              <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
-                {unreadMessages > 9 ? "9+" : unreadMessages}
-              </span>
-            )}
+            {unreadMessages > 0 && badge(unreadMessages)}
           </Link>
-        )}
-
-        {/* Notifications button — sits right after EOD Hub */}
-        {currentUserId && (
-          <div ref={dropdownRef} style={{ position: "relative" }}>
-            <button
-              onClick={() => setShowNotifications((prev) => !prev)}
-              className="nav-btn"
-              style={{ ...navButton, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
-            >
-              Alerts
-              {unreadCount > 0 && (
-                <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
-                  {unreadCount > 9 ? "9+" : unreadCount}
-                </span>
-              )}
-            </button>
-
-            {showNotifications && (
-              <div style={{ position: "absolute", top: 46, left: 0, width: 320, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, boxShadow: "0 8px 32px rgba(0,0,0,0.24)", zIndex: 200, overflow: "hidden" }}>
-                <div style={{ padding: "12px 16px", fontWeight: 800, fontSize: 15, borderBottom: `1px solid ${t.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", color: t.text }}>
-                  <span>Notifications</span>
-                  {unreadCount > 0 && (
-                    <button onClick={markAllRead} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: t.textMuted, fontWeight: 700 }}>
-                      Mark all read
-                    </button>
-                  )}
-                </div>
-                <div style={{ maxHeight: 380, overflowY: "auto" }}>
-                  {notifications.length === 0 && (
-                    <div style={{ padding: 20, color: t.textMuted, fontSize: 14, textAlign: "center" }}>No notifications yet.</div>
-                  )}
-                  {notifications.map((n) => (
-                    <div
-                      key={n.id}
-                      onClick={() => handleNotificationClick(n)}
-                      style={{ padding: "12px 16px", background: n.is_read ? t.surface : (t.surface === "#1c1c1c" ? "#232010" : "#fef9ec"), cursor: "pointer", borderBottom: `1px solid ${t.borderLight}`, display: "flex", gap: 10, alignItems: "flex-start", color: t.text }}
-                    >
-                      {!n.is_read && (
-                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#f97316", flexShrink: 0, marginTop: 5 }} />
-                      )}
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 14, fontWeight: n.is_read ? 400 : 600, lineHeight: 1.4 }}>{n.message}</div>
-                        <div style={{ fontSize: 12, color: t.textFaint, marginTop: 3 }}>{timeAgo(n.created_at)}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
         )}
       </div>
 
-      {/* Brand title — desktop only, sits between nav buttons and search bar */}
+      {/* Brand title — desktop only */}
       <a href="/" className="nav-brand" style={{ textDecoration: "none", color: t.text }}>
         <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>EOD HUB</div>
       </a>
@@ -461,7 +391,7 @@ export default function NavBar() {
                 const group = searchResults.filter((r) => r.type === type);
                 if (group.length === 0) return null;
                 const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Units" : "Businesses";
-                const badge: Record<string, string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe" };
+                const badgeColors: Record<string, string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe" };
                 const badgeText: Record<string, string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed" };
                 const badgeLabel: Record<string, string> = { user: "Person", job: "Job", business: "Biz", unit: "Unit" };
                 return (
@@ -475,7 +405,7 @@ export default function NavBar() {
                         onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
                         onMouseLeave={(e) => (e.currentTarget.style.background = t.surface)}
                       >
-                        <span style={{ background: badge[type], color: badgeText[type], fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>
+                        <span style={{ background: badgeColors[type], color: badgeText[type], fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>
                           {badgeLabel[type]}
                         </span>
                         <div style={{ minWidth: 0 }}>
@@ -495,33 +425,29 @@ export default function NavBar() {
             </div>
           )}
         </div>
-
       </div>
 
-      {/* Hub panel — full-width row below search */}
+      {/* Hub panel — full-width row below search (mobile) */}
       {showHub && (
         <div ref={hubPanelRef} className="nav-hub-panel">
           {[
-            { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤" },
-            { label: "Jobs", href: "/?tab=jobs", emoji: "💼" },
-            { label: "Businesses", href: "/?tab=businesses", emoji: "🏢" },
-            { label: "Events", href: "/events", emoji: "📅" },
-            { label: "Units", href: "/units", emoji: "🪖" },
-            { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages },
+            { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤", badge: unreadProfileNotifs, onNav: markProfileNotifsRead },
+            { label: "Home", href: "/", emoji: "🏠", badge: unreadFeedNotifs, onNav: markFeedNotifsRead },
+            { label: "Jobs", href: "/?tab=jobs", emoji: "💼", badge: 0, onNav: null },
+            { label: "Businesses", href: "/?tab=businesses", emoji: "🏢", badge: 0, onNav: null },
+            { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
+            { label: "Units", href: "/units", emoji: "🪖", badge: 0, onNav: null },
+            { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages, onNav: null },
           ].map((item) => (
             <a
               key={item.label}
               href={item.href}
-              onClick={() => setShowHub(false)}
+              onClick={() => { setShowHub(false); item.onNav?.(); }}
               style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, textDecoration: "none", color: t.text, fontWeight: 700, fontSize: 14, background: t.bg }}
             >
               <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
               <span style={{ flex: 1 }}>{item.label}</span>
-              {item.badge != null && item.badge > 0 && (
-                <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
-                  {item.badge > 9 ? "9+" : item.badge}
-                </span>
-              )}
+              {item.badge > 0 && badge(item.badge)}
             </a>
           ))}
         </div>
