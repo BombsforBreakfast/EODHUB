@@ -2086,7 +2086,7 @@ export default function HomePage() {
           )}
 
           {currentUserReferralCode && !referralNudgeDismissed && (
-            <div style={{
+            <div className="referral-nudge" style={{
               marginBottom: 12,
               border: `1px solid #6366f1`,
               borderRadius: 14,
@@ -2095,16 +2095,17 @@ export default function HomePage() {
               display: "flex",
               alignItems: "center",
               gap: 12,
-              flexWrap: "wrap",
             }}>
-              <span style={{ fontSize: 22 }}>🎖️</span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: isDark ? "#a5b4fc" : "#4338ca" }}>Invite 5 colleagues, earn a Recruiter Badge</div>
-                <div style={{ fontSize: 13, color: isDark ? "#818cf8" : "#6366f1", marginTop: 2 }}>
-                  Your referral link is on your profile — share it to grow the EOD HUB community.
+              <div style={{ flex: 1, minWidth: 0, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <span style={{ fontSize: 22, flexShrink: 0 }}>🎖️</span>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: isDark ? "#a5b4fc" : "#4338ca" }}>Invite 5 colleagues, earn a Recruiter Badge</div>
+                  <div style={{ fontSize: 13, color: isDark ? "#818cf8" : "#6366f1", marginTop: 2 }}>
+                    Your referral link is on your profile — share it to grow the EOD HUB community.
+                  </div>
                 </div>
               </div>
-              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+              <div className="referral-nudge-btns" style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                 <button
                   type="button"
                   onClick={() => navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${currentUserReferralCode}`)}
