@@ -252,7 +252,7 @@ export default function MessagesPage() {
   async function selectConversation(convId: string) {
     setActiveConvId(convId);
     await loadMessages(convId);
-    markConversationRead(convId);
+    await markConversationRead(convId);
     subscribeToMessages(convId);
     if (isMobile) setMobileView("thread");
   }

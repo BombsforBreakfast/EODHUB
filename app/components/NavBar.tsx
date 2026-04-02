@@ -95,6 +95,25 @@ export default function NavBar() {
     setNotifications((prev) => prev.map((n) => n.post_owner_id === null ? { ...n, is_read: true } : n));
   }
 
+  async function markMessagesRead() {
+    if (!currentUserId) return;
+    const { data: convs } = await supabase
+      .from("conversations")
+      .select("id")
+      .or(`participant_1.eq.${currentUserId},participant_2.eq.${currentUserId}`)
+      .eq("status", "accepted");
+    const ids = (convs ?? []).map((c: { id: string }) => c.id);
+    if (ids.length > 0) {
+      await supabase
+        .from("messages")
+        .update({ is_read: true })
+        .in("conversation_id", ids)
+        .neq("sender_id", currentUserId)
+        .eq("is_read", false);
+    }
+    setUnreadMessages(0);
+  }
+
   useEffect(() => {
     let mounted = true;
 
@@ -337,10 +356,15 @@ export default function NavBar() {
 
         {/* Messages button */}
         {currentUserId && (
-          <Link href="/messages" className="nav-btn nav-messages-btn" style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}>
+          <a
+            href="/messages"
+            onClick={async (e) => { e.preventDefault(); await markMessagesRead(); window.location.href = "/messages"; }}
+            className="nav-btn nav-messages-btn"
+            style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
+          >
             Messages
             {unreadMessages > 0 && badge(unreadMessages)}
-          </Link>
+          </a>
         )}
       </div>
 
@@ -437,7 +461,7 @@ export default function NavBar() {
             { label: "Businesses", href: "/?tab=businesses", emoji: "🏢", badge: 0, onNav: null },
             { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
             { label: "Units", href: "/units", emoji: "🪖", badge: 0, onNav: null },
-            { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages, onNav: null },
+            { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages, onNav: markMessagesRead },
           ].map((item) => (
             <a
               key={item.label}
