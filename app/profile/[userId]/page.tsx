@@ -622,43 +622,43 @@ export default function PublicProfilePage() {
   async function loadConnections(targetUserId: string, signedInUserId?: string | null) {
     const effectiveCurrentUserId = signedInUserId ?? currentUserId;
 
-    const { data, error } = await supabase
+    // Count outgoing connections FROM this profile owner (who they've tagged)
+    const { data: outgoing, error } = await supabase
       .from("profile_connections")
-      .select("requester_user_id, target_user_id, connection_type")
-      .eq("target_user_id", targetUserId);
+      .select("target_user_id, connection_type")
+      .eq("requester_user_id", targetUserId);
 
     if (error) {
       console.error("Profile connections load error:", error);
       return;
     }
 
-    const rows =
-      (data as {
-        requester_user_id: string;
-        target_user_id: string;
-        connection_type: ConnectionType;
-      }[]) ?? [];
+    const rows = (outgoing ?? []) as { target_user_id: string; connection_type: ConnectionType }[];
+    setWorkedWithCount(rows.filter((r) => r.connection_type === "worked_with").length);
+    setKnowCount(rows.filter((r) => r.connection_type === "know").length);
 
-    const workedWithRows = rows.filter((row) => row.connection_type === "worked_with");
-    const knowRows = rows.filter((row) => row.connection_type === "know");
-
-    setWorkedWithCount(workedWithRows.length);
-    setKnowCount(knowRows.length);
-
-    if (!effectiveCurrentUserId) {
+    if (!effectiveCurrentUserId || effectiveCurrentUserId === targetUserId) {
       setCurrentUserWorkedWith(false);
       setCurrentUserKnows(false);
       setIsMutualConnection(false);
       return;
     }
 
-    const myWorkedWith = workedWithRows.some((row) => row.requester_user_id === effectiveCurrentUserId);
-    const myKnows = knowRows.some((row) => row.requester_user_id === effectiveCurrentUserId);
+    // Check whether the current viewer has tagged this profile (for button state)
+    const { data: viewerConn } = await supabase
+      .from("profile_connections")
+      .select("connection_type")
+      .eq("requester_user_id", effectiveCurrentUserId)
+      .eq("target_user_id", targetUserId);
+
+    const viewerRows = (viewerConn ?? []) as { connection_type: ConnectionType }[];
+    const myWorkedWith = viewerRows.some((r) => r.connection_type === "worked_with");
+    const myKnows = viewerRows.some((r) => r.connection_type === "know");
     setCurrentUserWorkedWith(myWorkedWith);
     setCurrentUserKnows(myKnows);
 
-    // Check if the profile owner has ALSO connected back to me (mutual — enables wall posting)
-    if (effectiveCurrentUserId !== targetUserId && (myWorkedWith || myKnows)) {
+    // Mutual = profile owner has also tagged the viewer back (enables wall posting)
+    if (myWorkedWith || myKnows) {
       const { data: reverseConn } = await supabase
         .from("profile_connections")
         .select("id")
