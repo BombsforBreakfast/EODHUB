@@ -84,8 +84,7 @@ export default function MessagesPage() {
         .maybeSingle();
       const n = profile as { first_name: string | null; last_name: string | null; display_name: string | null } | null;
       setMyName(n?.display_name || `${n?.first_name ?? ""} ${n?.last_name ?? ""}`.trim() || "Someone");
-      await loadConversations(user.id);
-      // Mark all messages as read on page load and tell NavBar to clear badge
+      // Mark all messages as read BEFORE loading conversations so counts show 0
       const { data: convs } = await supabase
         .from("conversations")
         .select("id")
@@ -99,6 +98,7 @@ export default function MessagesPage() {
           .eq("is_read", false);
       }
       window.dispatchEvent(new CustomEvent("messages-all-read"));
+      await loadConversations(user.id);
       setLoading(false);
     }
     init();

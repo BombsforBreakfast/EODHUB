@@ -49,14 +49,17 @@ export default function NavBar() {
   const unreadFeedNotifs = notifications.filter((n) => !n.is_read && n.post_owner_id === null).length;
 
   async function loadUnreadMessages(uid: string) {
+    // Skip re-fetch while on messages page — badge is managed locally there
+    if (typeof window !== "undefined" && window.location.pathname === "/messages") {
+      setUnreadMessages(0);
+      return;
+    }
     const { data: convs } = await supabase
       .from("conversations")
-      .select("id, status, initiated_by")
+      .select("id, status")
       .or(`participant_1.eq.${uid},participant_2.eq.${uid}`)
-      .neq("status", "declined");
-    const allConvs = (convs ?? []) as { id: string; status: string; initiated_by: string | null }[];
-    const acceptedIds = allConvs.filter((c) => c.status === "accepted").map((c) => c.id);
-    const pendingRequestCount = allConvs.filter((c) => c.status === "pending" && c.initiated_by !== uid).length;
+      .eq("status", "accepted");
+    const acceptedIds = ((convs ?? []) as { id: string }[]).map((c) => c.id);
 
     let unreadMsgCount = 0;
     if (acceptedIds.length > 0) {
@@ -68,7 +71,7 @@ export default function NavBar() {
         .in("conversation_id", acceptedIds);
       unreadMsgCount = count ?? 0;
     }
-    setUnreadMessages(unreadMsgCount + pendingRequestCount);
+    setUnreadMessages(unreadMsgCount);
   }
 
   async function loadNotifications(uid: string) {
