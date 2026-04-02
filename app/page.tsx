@@ -386,6 +386,8 @@ export default function HomePage() {
 
   const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
+  const [discoverVisible, setDiscoverVisible] = useState<DiscoverProfile[]>([]);
+  const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [pendingMembers, setPendingMembers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null; vouch_count: number; user_vouched: boolean }[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
 
@@ -549,6 +551,21 @@ export default function HomePage() {
     setTodayMemorials(todayAnniversaries as { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]);
   }
 
+  function pickDiscoverSlice(pool: DiscoverProfile[]): DiscoverProfile[] {
+    if (pool.length === 0) return [];
+    const arr = [...pool];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr.slice(0, 5);
+  }
+
+  function shuffleDiscover(pool?: DiscoverProfile[]) {
+    const source = pool ?? discoverProfiles;
+    setDiscoverVisible(pickDiscoverSlice(source));
+  }
+
   async function loadDiscoverProfiles(currentUserId: string) {
     const { data } = await supabase
       .from("profiles")
@@ -559,32 +576,25 @@ export default function HomePage() {
 
     if (!data || data.length === 0) return;
 
-    // Fisher-Yates shuffle, pick 5
-    const arr = [...data];
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    const picked = arr.slice(0, 5);
-
-    // Fetch existing connections for these profiles
-    const pickedIds = picked.map((p) => p.user_id);
+    // Fetch connections for the full pool upfront so shuffles need no network calls
+    const allIds = data.map((p) => p.user_id);
     const { data: conns } = await supabase
       .from("profile_connections")
       .select("target_user_id, connection_type")
-      .eq("user_id", currentUserId)
-      .in("target_user_id", pickedIds);
+      .eq("requester_user_id", currentUserId)
+      .in("target_user_id", allIds);
 
     const knowSet = new Set((conns ?? []).filter((c) => c.connection_type === "know").map((c) => c.target_user_id));
     const workedSet = new Set((conns ?? []).filter((c) => c.connection_type === "worked_with").map((c) => c.target_user_id));
 
-    setDiscoverProfiles(
-      picked.map((p) => ({
-        ...p,
-        userKnows: knowSet.has(p.user_id),
-        userWorkedWith: workedSet.has(p.user_id),
-      })) as DiscoverProfile[]
-    );
+    // Only show people the current user hasn't already connected with
+    const pool = data
+      .filter((p) => !knowSet.has(p.user_id) && !workedSet.has(p.user_id))
+      .map((p) => ({ ...p, userKnows: false, userWorkedWith: false })) as DiscoverProfile[];
+
+    setDiscoverProfiles(pool);
+    const initial = pickDiscoverSlice(pool);
+    setDiscoverVisible(initial);
   }
 
   async function loadPendingMembers(currentUserId: string) {
@@ -688,46 +698,40 @@ export default function HomePage() {
     const isActive = type === "worked_with" ? profile.userWorkedWith : profile.userKnows;
 
     if (isActive) {
-      // Remove
+      // Remove connection — put user back in pool with flag cleared
       await supabase
         .from("profile_connections")
         .delete()
-        .eq("user_id", userId)
+        .eq("requester_user_id", userId)
         .eq("target_user_id", targetUserId)
         .eq("connection_type", type);
-      setDiscoverProfiles((prev) =>
+      const updater = (prev: DiscoverProfile[]) =>
         prev.map((p) =>
           p.user_id === targetUserId
             ? { ...p, [type === "worked_with" ? "userWorkedWith" : "userKnows"]: false }
             : p
-        )
-      );
+        );
+      setDiscoverProfiles(updater);
+      setDiscoverVisible(updater);
     } else {
-      // Add — if adding worked_with, also remove know
+      // Add connection — remove user from discover pool (they're now connected)
       if (type === "worked_with" && profile.userKnows) {
         await supabase
           .from("profile_connections")
           .delete()
-          .eq("user_id", userId)
+          .eq("requester_user_id", userId)
           .eq("target_user_id", targetUserId)
           .eq("connection_type", "know");
       }
-      await supabase.from("profile_connections").upsert([
-        { user_id: userId, target_user_id: targetUserId, connection_type: type },
+      await supabase.from("profile_connections").insert([
+        { requester_user_id: userId, target_user_id: targetUserId, connection_type: type },
       ]);
       const verb = type === "worked_with" ? "worked with" : "knows";
       notify(targetUserId, `${currentUserName} says they ${verb} you`, targetUserId);
-      setDiscoverProfiles((prev) =>
-        prev.map((p) =>
-          p.user_id === targetUserId
-            ? {
-                ...p,
-                userWorkedWith: type === "worked_with" ? true : p.userWorkedWith,
-                userKnows: type === "worked_with" ? false : true,
-              }
-            : p
-        )
-      );
+      // Remove from discover pool — they're now connected
+      const updater = (prev: DiscoverProfile[]) => prev.filter((p) => p.user_id !== targetUserId);
+      setDiscoverProfiles(updater);
+      setDiscoverVisible(updater);
     }
   }
 
@@ -1818,6 +1822,15 @@ export default function HomePage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (discoverProfiles.length === 0) return;
+    discoverIntervalRef.current = setInterval(() => shuffleDiscover(), 7000);
+    return () => {
+      if (discoverIntervalRef.current) clearInterval(discoverIntervalRef.current);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [discoverProfiles]);
+
   const skeletonStyle: React.CSSProperties = {
     background: "linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%)",
     backgroundSize: "200% 100%",
@@ -2077,13 +2090,20 @@ export default function HomePage() {
           )}
 
           {/* People You May Know strip */}
-          {discoverProfiles.length > 0 && (
+          {discoverVisible.length > 0 && (
             <div style={{ marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 12 }}>
                 People You May Know
               </div>
-              <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 4 }}>
-                {discoverProfiles.map((p) => {
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => shuffleDiscover()}
+                  title="Previous"
+                  style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                >‹</button>
+                <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 4, flex: 1 }}>
+                {discoverVisible.map((p) => {
                   const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
                   const ringColor = getServiceRingColor(p.service);
                   const isWorkedWith = p.userWorkedWith;
@@ -2137,6 +2157,13 @@ export default function HomePage() {
                     </div>
                   );
                 })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => shuffleDiscover()}
+                  title="Next"
+                  style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                >›</button>
               </div>
             </div>
           )}

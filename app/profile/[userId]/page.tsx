@@ -228,6 +228,11 @@ export default function PublicProfilePage() {
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [referralCount, setReferralCount] = useState(0);
 
+  type ConnListType = "worked_with" | "know" | "recruited";
+  const [connListOpen, setConnListOpen] = useState<ConnListType | null>(null);
+  const [connListUsers, setConnListUsers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null }[]>([]);
+  const [connListLoading, setConnListLoading] = useState(false);
+
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [togglingLikeFor, setTogglingLikeFor] = useState<string | null>(null);
@@ -261,6 +266,39 @@ export default function PublicProfilePage() {
         .eq("referred_by", profileData.referral_code)
         .eq("verification_status", "verified");
       setReferralCount(count ?? 0);
+    }
+  }
+
+  async function openConnList(type: ConnListType) {
+    setConnListOpen(type);
+    setConnListLoading(true);
+    setConnListUsers([]);
+    try {
+      if (type === "recruited") {
+        if (!profile?.referral_code) { setConnListLoading(false); return; }
+        const { data } = await supabase
+          .from("profiles")
+          .select("user_id, first_name, last_name, photo_url, service")
+          .eq("referred_by", profile.referral_code)
+          .eq("verification_status", "verified");
+        setConnListUsers(data ?? []);
+      } else {
+        const targetId = userId as string;
+        const { data: rows } = await supabase
+          .from("profile_connections")
+          .select("target_user_id")
+          .eq("requester_user_id", targetId)
+          .eq("connection_type", type);
+        const ids = (rows ?? []).map((r: { target_user_id: string }) => r.target_user_id);
+        if (ids.length === 0) { setConnListLoading(false); return; }
+        const { data } = await supabase
+          .from("profiles")
+          .select("user_id, first_name, last_name, photo_url, service")
+          .in("user_id", ids);
+        setConnListUsers(data ?? []);
+      }
+    } finally {
+      setConnListLoading(false);
     }
   }
 
@@ -1335,20 +1373,15 @@ export default function PublicProfilePage() {
                       </div>
                     )}
                     <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{ fontWeight: 900, fontSize: 17 }}>{workedWithCount}</div>
-                        <div style={{ fontSize: 10, color: t.textMuted }}>Worked With</div>
-                      </div>
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{ fontWeight: 900, fontSize: 17 }}>{knowCount}</div>
-                        <div style={{ fontSize: 10, color: t.textMuted }}>Know</div>
-                      </div>
-                      <div style={{ textAlign: "center" }}>
-                        <div style={{ fontWeight: 900, fontSize: 17 }}>
-                          {getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
-                        </div>
-                        <div style={{ fontSize: 10, color: t.textMuted }}>Recruited</div>
-                      </div>
+                      {(["worked_with", "know", "recruited"] as ConnListType[]).map((type) => (
+                        <button key={type} type="button" onClick={() => openConnList(type)}
+                          style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                          <div style={{ fontWeight: 900, fontSize: 17 }}>
+                            {type === "worked_with" ? workedWithCount : type === "know" ? knowCount : getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
+                          </div>
+                          <div style={{ fontSize: 10, color: t.textMuted }}>{type === "worked_with" ? "Worked With" : type === "know" ? "Know" : "Recruited"}</div>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>
@@ -1409,20 +1442,15 @@ export default function PublicProfilePage() {
                   </div>
 
                   <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%" }}>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontWeight: 900, fontSize: 20 }}>{workedWithCount}</div>
-                      <div style={{ fontSize: 12, color: t.textMuted }}>Worked With</div>
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontWeight: 900, fontSize: 20 }}>{knowCount}</div>
-                      <div style={{ fontSize: 12, color: t.textMuted }}>Know</div>
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <div style={{ fontWeight: 900, fontSize: 20 }}>
-                        {getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
-                      </div>
-                      <div style={{ fontSize: 12, color: t.textMuted }}>Recruited</div>
-                    </div>
+                    {(["worked_with", "know", "recruited"] as ConnListType[]).map((type) => (
+                      <button key={type} type="button" onClick={() => openConnList(type)}
+                        style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                        <div style={{ fontWeight: 900, fontSize: 20 }}>
+                          {type === "worked_with" ? workedWithCount : type === "know" ? knowCount : getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
+                        </div>
+                        <div style={{ fontSize: 12, color: t.textMuted }}>{type === "worked_with" ? "Worked With" : type === "know" ? "Know" : "Recruited"}</div>
+                      </button>
+                    ))}
                   </div>
 
                   {!isOwnWall && currentUserId && (
@@ -1985,6 +2013,49 @@ export default function PublicProfilePage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    )}
+    {/* Connection list modal */}
+    {connListOpen && (
+      <div
+        onClick={(e) => { if (e.target === e.currentTarget) setConnListOpen(null); }}
+        style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px" }}
+      >
+        <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 20, padding: 24, width: "100%", maxWidth: 420, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.25)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <div style={{ fontWeight: 900, fontSize: 17 }}>
+              {connListOpen === "worked_with" ? "Worked With" : connListOpen === "know" ? "Know" : "Recruited"}
+            </div>
+            <button type="button" onClick={() => setConnListOpen(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>×</button>
+          </div>
+          <div style={{ overflowY: "auto", flex: 1 }}>
+            {connListLoading ? (
+              <div style={{ textAlign: "center", padding: "24px 0", color: t.textMuted, fontSize: 14 }}>Loading...</div>
+            ) : connListUsers.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "24px 0", color: t.textMuted, fontSize: 14 }}>
+                {connListOpen === "worked_with" ? "No worked-with connections yet." : connListOpen === "know" ? "No know connections yet." : "No recruits yet."}
+              </div>
+            ) : (
+              connListUsers.map((u) => {
+                const name = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
+                return (
+                  <a key={u.user_id} href={`/profile/${u.user_id}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${t.borderLight}`, textDecoration: "none", color: "inherit" }}>
+                    <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 15 }}>
+                      {u.photo_url
+                        ? <img src={u.photo_url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        : (name[0] || "U").toUpperCase()
+                      }
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{name}</div>
+                      {u.service && <div style={{ fontSize: 12, color: t.textMuted }}>{u.service}</div>}
+                    </div>
+                  </a>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
