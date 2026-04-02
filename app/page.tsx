@@ -1031,6 +1031,16 @@ export default function HomePage() {
       };
     });
 
+    // Rank: fresh posts float to top by default; engagement fights time decay
+    const now = Date.now();
+    mergedPosts.sort((a, b) => {
+      const ageA = (now - new Date(a.created_at).getTime()) / 3_600_000;
+      const ageB = (now - new Date(b.created_at).getTime()) / 3_600_000;
+      const scoreA = (a.likeCount + a.commentCount * 2 + 1) / Math.pow(ageA + 2, 1.5);
+      const scoreB = (b.likeCount + b.commentCount * 2 + 1) / Math.pow(ageB + 2, 1.5);
+      return scoreB - scoreA;
+    });
+
     setPosts(mergedPosts);
     setPostsLoaded(true);
   }
