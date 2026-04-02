@@ -13,38 +13,63 @@ type MentionUser = {
 };
 
 type Props = {
-  value: string;
-  onChange: (value: string) => void;
+  value: string;                            // display text shown in textarea
+  onChange: (displayValue: string) => void; // called with clean display text
+  onChangeRaw?: (rawValue: string) => void; // called with @[Name](userId) format for storage
   placeholder?: string;
   style?: React.CSSProperties;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
 };
 
-// Exported so callers can extract mention userIds from stored content
-export function extractMentionIds(content: string): string[] {
-  const regex = /@\[([^\]]+)\]\(([^)]+)\)/g;
+// Parse stored @[Name](userId) syntax → extract userIds for notifications
+export function extractMentionIds(rawContent: string): string[] {
+  const re = /@\[([^\]]+)\]\(([^)]+)\)/g;
   const ids: string[] = [];
   let m;
-  while ((m = regex.exec(content)) !== null) ids.push(m[2]);
+  while ((m = re.exec(rawContent)) !== null) ids.push(m[2]);
   return [...new Set(ids)];
 }
 
+// Map a position in the display string (@Name) to the corresponding position in the raw string (@[Name](userId))
+function displayPosToRaw(raw: string, displayPos: number): number {
+  const re = /@\[([^\]]+)\]\([^)]+\)/g;
+  let rawOff = 0, dispOff = 0;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    const beforeLen = m.index - rawOff;
+    if (dispOff + beforeLen >= displayPos) return rawOff + (displayPos - dispOff);
+    dispOff += beforeLen;
+    rawOff = m.index;
+    const dispLen = 1 + m[1].length; // "@" + name
+    if (dispOff + dispLen >= displayPos) return rawOff + m[0].length; // mention is atomic
+    dispOff += dispLen;
+    rawOff += m[0].length;
+  }
+  return rawOff + (displayPos - dispOff);
+}
+
 const MentionTextarea = forwardRef<HTMLTextAreaElement, Props>(
-  ({ value, onChange, placeholder, style, onKeyDown }, ref) => {
+  ({ value, onChange, onChangeRaw, placeholder, style, onKeyDown }, ref) => {
     const { t } = useTheme();
     const [mentionQuery, setMentionQuery] = useState<string | null>(null);
     const [mentionResults, setMentionResults] = useState<MentionUser[]>([]);
-    const [mentionStartIndex, setMentionStartIndex] = useState(-1);
+    const [mentionStartIndex, setMentionStartIndex] = useState(-1); // position in display text
     const [selectedIdx, setSelectedIdx] = useState(0);
     const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const internalRef = useRef<HTMLTextAreaElement>(null);
-    const taRef = (ref as React.RefObject<HTMLTextAreaElement>) ?? internalRef;
+    const taRef = (ref as React.RefObject<HTMLTextAreaElement | null>) ?? internalRef;
 
+    // Raw content tracked internally — parent sees display text, storage needs raw
+    const rawRef = useRef("");
+
+    // Reset raw when parent clears the field (after submit)
     useEffect(() => {
-      if (mentionQuery === null || mentionQuery.length < 1) {
-        setMentionResults([]);
-        return;
-      }
+      if (value === "") rawRef.current = "";
+    }, [value]);
+
+    // Search profiles when mention query changes
+    useEffect(() => {
+      if (!mentionQuery || mentionQuery.length < 1) { setMentionResults([]); return; }
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(async () => {
         const q = mentionQuery;
@@ -60,9 +85,24 @@ const MentionTextarea = forwardRef<HTMLTextAreaElement, Props>(
     }, [mentionQuery]);
 
     function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-      const val = e.target.value;
-      const cursor = e.target.selectionStart ?? val.length;
-      const before = val.slice(0, cursor);
+      const newDisplay = e.target.value;
+      const oldDisplay = value;
+
+      // Find edit bounds in display string
+      let pre = 0;
+      while (pre < oldDisplay.length && pre < newDisplay.length && oldDisplay[pre] === newDisplay[pre]) pre++;
+      let oldEnd = oldDisplay.length, newEnd = newDisplay.length;
+      while (oldEnd > pre && newEnd > pre && oldDisplay[oldEnd - 1] === newDisplay[newEnd - 1]) { oldEnd--; newEnd--; }
+
+      // Apply same edit to raw string (treating mentions as atomic units)
+      const rawPre = displayPosToRaw(rawRef.current, pre);
+      const rawOldEnd = displayPosToRaw(rawRef.current, oldEnd);
+      const newRaw = rawRef.current.slice(0, rawPre) + newDisplay.slice(pre, newEnd) + rawRef.current.slice(rawOldEnd);
+      rawRef.current = newRaw;
+
+      // Detect @query at cursor for dropdown
+      const cursor = e.target.selectionStart ?? newDisplay.length;
+      const before = newDisplay.slice(0, cursor);
       const match = before.match(/@(\w*)$/);
       if (match) {
         setMentionQuery(match[1]);
@@ -71,21 +111,34 @@ const MentionTextarea = forwardRef<HTMLTextAreaElement, Props>(
         setMentionQuery(null);
         setMentionStartIndex(-1);
       }
-      onChange(val);
+
+      onChange(newDisplay);
+      onChangeRaw?.(newRaw);
     }
 
     function insertMention(user: MentionUser) {
       const name = user.display_name || `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim();
-      const mention = `@[${name}](${user.user_id})`;
+      const displayMention = `@${name} `;
+      const rawMention = `@[${name}](${user.user_id}) `;
+
       const cursorEnd = taRef.current?.selectionStart ?? value.length;
-      const newVal = value.slice(0, mentionStartIndex) + mention + " " + value.slice(cursorEnd);
-      onChange(newVal);
+      const rawStart = displayPosToRaw(rawRef.current, mentionStartIndex);
+      const rawEnd = displayPosToRaw(rawRef.current, cursorEnd);
+
+      const newDisplay = value.slice(0, mentionStartIndex) + displayMention + value.slice(cursorEnd);
+      const newRaw = rawRef.current.slice(0, rawStart) + rawMention + rawRef.current.slice(rawEnd);
+      rawRef.current = newRaw;
+
       setMentionQuery(null);
       setMentionResults([]);
       setMentionStartIndex(-1);
+
+      onChange(newDisplay);
+      onChangeRaw?.(newRaw);
+
       setTimeout(() => {
         if (taRef.current) {
-          const pos = mentionStartIndex + mention.length + 1;
+          const pos = mentionStartIndex + displayMention.length;
           taRef.current.focus();
           taRef.current.setSelectionRange(pos, pos);
         }

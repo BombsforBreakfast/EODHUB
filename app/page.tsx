@@ -209,8 +209,8 @@ function renderContent(text: string): React.ReactNode[] {
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
     if (match[0].startsWith("@[")) {
       // It's a mention: @[Name](userId)
-      const name = match[1];
-      const uid = match[2];
+      const name = match[2];
+      const uid = match[3];
       parts.push(
         <Link key={`mention-${match.index}`} href={`/profile/${uid}`} style={{ color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}>
           @{name}
@@ -430,6 +430,8 @@ export default function HomePage() {
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
   const postTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const commentTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
+  const contentRawRef = useRef("");
+  const commentRawsRef = useRef<Record<string, string>>({});
   const commentImageInputRefs = useRef<Record<string, HTMLInputElement | null>>(
     {}
   );
@@ -1224,7 +1226,7 @@ export default function HomePage() {
     try {
       setSubmittingPost(true);
 
-      const contentToPost = content.trim();
+      const contentToPost = (contentRawRef.current || content).trim();
       const imagesToUpload = [...selectedPostImages];
       const gifToPost = selectedPostGif;
 
@@ -1306,6 +1308,7 @@ export default function HomePage() {
       }
 
       setContent("");
+      contentRawRef.current = "";
       setOgPreview(null);
       clearSelectedPostImages();
       setSelectedPostGif(null);
@@ -1476,7 +1479,7 @@ export default function HomePage() {
       return;
     }
 
-    const commentText = commentInputs[postId]?.trim() || "";
+    const commentText = (commentRawsRef.current[postId] || commentInputs[postId] || "").trim();
     const selectedCommentImage = selectedCommentImages[postId] || null;
     const commentGif = selectedCommentGifs[postId] || null;
 
@@ -1562,6 +1565,7 @@ export default function HomePage() {
         ...prev,
         [postId]: "",
       }));
+      commentRawsRef.current[postId] = "";
 
       clearSelectedCommentImage(postId);
       setSelectedCommentGifs((prev) => ({ ...prev, [postId]: null }));
@@ -2294,6 +2298,7 @@ export default function HomePage() {
               placeholder="What's happening in the EOD world?"
               value={content}
               onChange={handleContentChange}
+              onChangeRaw={(raw) => { contentRawRef.current = raw; }}
               style={{
                 width: "100%",
                 minHeight: 90,
@@ -3098,6 +3103,7 @@ export default function HomePage() {
                           placeholder="Write a comment..."
                           value={commentInputs[post.id] || ""}
                           onChange={(val) => setCommentInputs((prev) => ({ ...prev, [post.id]: val }))}
+                          onChangeRaw={(raw) => { commentRawsRef.current[post.id] = raw; }}
                           style={{
                             width: "100%",
                             minHeight: 70,

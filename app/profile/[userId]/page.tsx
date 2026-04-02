@@ -124,8 +124,8 @@ function renderContent(text: string): React.ReactNode[] {
   while ((match = combined.exec(text)) !== null) {
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
     if (match[0].startsWith("@[")) {
-      const name = match[1];
-      const uid = match[2];
+      const name = match[2];
+      const uid = match[3];
       parts.push(
         <Link key={`mention-${match.index}`} href={`/profile/${uid}`} style={{ color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}>
           @{name}
@@ -206,6 +206,8 @@ export default function PublicProfilePage() {
   const ogDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedPostImages, setSelectedPostImages] = useState<{ file: File; previewUrl: string }[]>([]);
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
+  const postContentRawRef = useRef("");
+  const commentRawsRef = useRef<Record<string, string>>({});
 
   const [workedWithCount, setWorkedWithCount] = useState(0);
   const [knowCount, setKnowCount] = useState(0);
@@ -501,12 +503,13 @@ export default function PublicProfilePage() {
 
   async function submitComment(postId: string) {
     if (!currentUserId) { window.location.href = "/login"; return; }
-    const text = (commentInputs[postId] || "").trim();
+    const text = (commentRawsRef.current[postId] || commentInputs[postId] || "").trim();
     if (!text) return;
     try {
       setSubmittingCommentFor(postId);
       await supabase.from("post_comments").insert([{ post_id: postId, user_id: currentUserId, content: text }]);
       setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
+      commentRawsRef.current[postId] = "";
       setExpandedComments((prev) => ({ ...prev, [postId]: true }));
       if (profile && currentUserId !== profile.user_id) {
         notify(profile.user_id, `${currentUserName} commented on your post`, profile.user_id);
@@ -732,12 +735,13 @@ export default function PublicProfilePage() {
       const currentOg = ogPreview;
       const imagesToUpload = [...selectedPostImages];
 
+      const rawPostContent = (postContentRawRef.current || postContent).trim();
       const { data: inserted, error: insertError } = await supabase
         .from("posts")
         .insert([{
           user_id: currentUserId,
           wall_user_id: !isOwnWall && userId ? userId : null,
-          content: postContent.trim(),
+          content: rawPostContent,
           og_url: currentOg?.url ?? null,
           og_title: currentOg?.title ?? null,
           og_description: currentOg?.description ?? null,
@@ -755,7 +759,7 @@ export default function PublicProfilePage() {
       const postId = inserted.id;
 
       // Mention notifications
-      const mentionIds = extractMentionIds(postContent.trim()).filter(id => id !== currentUserId);
+      const mentionIds = extractMentionIds(rawPostContent).filter(id => id !== currentUserId);
       if (mentionIds.length > 0) {
         await supabase.from("notifications").insert(
           mentionIds.map(uid => ({ user_id: uid, message: `${currentUserName} mentioned you in a post`, actor_name: currentUserName, post_owner_id: null }))
@@ -785,6 +789,7 @@ export default function PublicProfilePage() {
       }
 
       setPostContent("");
+      postContentRawRef.current = "";
       setOgPreview(null);
       setSelectedPostImages((prev) => { prev.forEach((item) => URL.revokeObjectURL(item.previewUrl)); return []; });
       await loadPosts(userId);
@@ -1665,6 +1670,7 @@ export default function PublicProfilePage() {
                   placeholder={isOwnWall ? "Post to your wall..." : `Post on ${fullName}'s wall...`}
                   value={postContent}
                   onChange={handlePostContentChange}
+                  onChangeRaw={(raw) => { postContentRawRef.current = raw; }}
                   style={{ width: "100%", minHeight: 80, border: "none", outline: "none", resize: "vertical", fontSize: 16, boxSizing: "border-box", background: t.input, color: t.text }}
                 />
 
@@ -1958,6 +1964,7 @@ export default function PublicProfilePage() {
                             placeholder="Write a comment..."
                             value={commentInputs[post.id] || ""}
                             onChange={(val) => setCommentInputs((prev) => ({ ...prev, [post.id]: val }))}
+                            onChangeRaw={(raw) => { commentRawsRef.current[post.id] = raw; }}
                             style={{ width: "100%", minHeight: 60, border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: t.input, color: t.text }}
                           />
                           <div style={{ marginTop: 8, textAlign: "right" }}>
