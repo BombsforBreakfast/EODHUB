@@ -60,6 +60,7 @@ export default function MessagesPage() {
   const [requestDraft, setRequestDraft] = useState("");
   const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const messageInputRef = useRef<HTMLInputElement | null>(null);
   const { t, isDark } = useTheme();
@@ -306,7 +307,8 @@ export default function MessagesPage() {
   }
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = messagesContainerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   useEffect(() => {
@@ -537,7 +539,7 @@ export default function MessagesPage() {
   const threadUserId = requestTarget?.userId ?? activeConv?.other_user_id ?? null;
 
   const MessageBubbles = (
-    <div style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+    <div ref={messagesContainerRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
       {messages.map((msg) => {
         const isMe = msg.sender_id === userId;
         return (
@@ -717,14 +719,16 @@ export default function MessagesPage() {
   );
 
   return (
-    <div style={{ background: t.bg, minHeight: "100vh", color: t.text }}>
-      <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
+    <div style={{ background: t.bg, height: "100dvh", overflow: "hidden", color: t.text, display: "flex", flexDirection: "column" }}>
+      <div style={{ padding: "20px 20px 0", maxWidth: 1100, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
         <NavBar />
+      </div>
+      <div style={{ flex: 1, minHeight: 0, padding: "12px 20px 20px", maxWidth: 1100, width: "100%", margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
         <div style={{
           border: `1px solid ${t.border}`, borderRadius: 16, overflow: "hidden", background: t.surface,
           display: "grid",
           gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
-          height: isMobile ? "calc(100dvh - 120px)" : "calc(100dvh - 140px)",
+          flex: 1, minHeight: 0,
         }}>
           {isMobile ? (
             mobileView === "list" ? InboxPane : ThreadPane

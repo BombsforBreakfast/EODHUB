@@ -1372,7 +1372,7 @@ export default function PublicProfilePage() {
                         {referralBadge.label}
                       </div>
                     )}
-                    <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
+                    <div style={{ display: "flex", gap: 14, marginTop: 8, alignItems: "flex-start" }}>
                       {(["worked_with", "know", "recruited"] as ConnListType[]).map((type) => (
                         <button key={type} type="button" onClick={() => openConnList(type)}
                           style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
@@ -1441,7 +1441,7 @@ export default function PublicProfilePage() {
                     )}
                   </div>
 
-                  <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%" }}>
+                  <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%", alignItems: "flex-start" }}>
                     {(["worked_with", "know", "recruited"] as ConnListType[]).map((type) => (
                       <button key={type} type="button" onClick={() => openConnList(type)}
                         style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
