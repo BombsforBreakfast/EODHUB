@@ -719,16 +719,14 @@ export default function MessagesPage() {
   );
 
   return (
-    <div style={{ background: t.bg, height: "100dvh", overflow: "hidden", color: t.text, display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: "20px 20px 0", maxWidth: 1100, width: "100%", margin: "0 auto", boxSizing: "border-box" }}>
+    <div style={{ background: t.bg, height: "100dvh", overflow: "hidden", color: t.text }}>
+      <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
         <NavBar />
-      </div>
-      <div style={{ flex: 1, minHeight: 0, padding: "12px 20px 20px", maxWidth: 1100, width: "100%", margin: "0 auto", boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
         <div style={{
           border: `1px solid ${t.border}`, borderRadius: 16, overflow: "hidden", background: t.surface,
           display: "grid",
           gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
-          flex: 1, minHeight: 0,
+          height: isMobile ? "calc(100dvh - 120px)" : "calc(100dvh - 140px)",
         }}>
           {isMobile ? (
             mobileView === "list" ? InboxPane : ThreadPane
