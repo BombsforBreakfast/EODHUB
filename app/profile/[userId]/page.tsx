@@ -234,6 +234,7 @@ export default function PublicProfilePage() {
   const [connListLoading, setConnListLoading] = useState(false);
 
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
+  const [expandedCommentTexts, setExpandedCommentTexts] = useState<Record<string, boolean>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [togglingLikeFor, setTogglingLikeFor] = useState<string | null>(null);
   const [submittingCommentFor, setSubmittingCommentFor] = useState<string | null>(null);
@@ -1850,12 +1851,15 @@ export default function PublicProfilePage() {
                     {(post.comments.length > 0 || commentsOpen) && (
                       <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
                         {post.comments.length > 0 && (
-                        <div style={{ display: "grid", gap: 6 }}>
-                          {(commentsOpen ? post.comments : post.comments.slice(0, 2)).map((comment) => (
-                            <div key={comment.id} style={{ background: t.bg, borderRadius: 10, padding: 8 }}>
+                        <div style={{ display: "grid", gap: 4 }}>
+                          {(commentsOpen ? post.comments : post.comments.slice(0, 2)).map((comment) => {
+                            const textExpanded = expandedCommentTexts[comment.id] || false;
+                            const isLong = (comment.content?.length ?? 0) > 100;
+                            return (
+                            <div key={comment.id} style={{ background: t.bg, borderRadius: 10, padding: 6 }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                                 <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                                  <div style={{ width: 28, height: 28, borderRadius: "50%", overflow: "hidden", background: t.border, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: getServiceRingColor(comment.authorService) ? `3px solid ${getServiceRingColor(comment.authorService)}` : undefined }}>
+                                  <div style={{ width: 24, height: 24, borderRadius: "50%", overflow: "hidden", background: t.border, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: getServiceRingColor(comment.authorService) ? `3px solid ${getServiceRingColor(comment.authorService)}` : undefined }}>
                                     {comment.authorPhotoUrl
                                       ? <img src={comment.authorPhotoUrl} alt={comment.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                                       : comment.authorName[0]?.toUpperCase()}
@@ -1878,13 +1882,24 @@ export default function PublicProfilePage() {
                                   </button>
                                 )}
                               </div>
-                              {comment.content && <div style={{ marginTop: 4, lineHeight: 1.5, fontSize: 14 }}>{comment.content}</div>}
+                              {comment.content && (
+                                <div style={{ marginTop: 3 }}>
+                                  <div style={{ fontSize: 13, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
+                                    {comment.content}
+                                  </div>
+                                  {isLong && (
+                                    <button type="button" onClick={() => setExpandedCommentTexts((p) => ({ ...p, [comment.id]: !textExpanded }))} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: 12, fontWeight: 700, marginTop: 1 }}>
+                                      {textExpanded ? "Show less" : "Show more"}
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                               {comment.image_url && (
-                                <div style={{ marginTop: 6, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
+                                <div style={{ marginTop: 4, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
                                   <img src={comment.image_url} alt="Comment image" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
                                 </div>
                               )}
-                              <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 6 }}>
+                              <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 4 }}>
                                 <button
                                   type="button"
                                   onClick={() => toggleCommentLike(comment.id, comment.likedByCurrentUser)}
@@ -1896,7 +1911,7 @@ export default function PublicProfilePage() {
                                 <div style={{ fontSize: 13, color: t.textMuted }}>{comment.likeCount} {comment.likeCount === 1 ? "like" : "likes"}</div>
                               </div>
                             </div>
-                          ))}
+                          ); })}
                         </div>
                         )}
                         {!commentsOpen && post.comments.length > 2 && (

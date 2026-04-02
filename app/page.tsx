@@ -360,6 +360,7 @@ export default function HomePage() {
   const [expandedComments, setExpandedComments] = useState<
     Record<string, boolean>
   >({});
+  const [expandedCommentTexts, setExpandedCommentTexts] = useState<Record<string, boolean>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [selectedCommentImages, setSelectedCommentImages] = useState<
     Record<string, SelectedCommentImage | null>
@@ -2776,10 +2777,12 @@ export default function HomePage() {
                       }}
                     >
                       {post.comments.length > 0 && (
-                      <div style={{ display: "grid", gap: 6 }}>
+                      <div style={{ display: "grid", gap: 4 }}>
                         {(commentsOpen ? post.comments : post.comments.slice(0, 2)).map((comment) => {
                           const isOwnComment = userId === comment.user_id;
                           const isEditingComment = editingCommentId === comment.id;
+                          const textExpanded = expandedCommentTexts[comment.id] || false;
+                          const isLong = (comment.content?.length ?? 0) > 100;
 
                           return (
                             <div
@@ -2787,7 +2790,7 @@ export default function HomePage() {
                               style={{
                                 background: t.bg,
                                 borderRadius: 10,
-                                padding: 8,
+                                padding: 6,
                               }}
                             >
                               <div
@@ -2806,7 +2809,7 @@ export default function HomePage() {
                                     <Avatar
                                       photoUrl={comment.authorPhotoUrl}
                                       name={comment.authorName}
-                                      size={28}
+                                      size={24}
                                       service={comment.authorService}
                                     />
                                   </Link>
@@ -2951,8 +2954,15 @@ export default function HomePage() {
                               ) : (
                                 <>
                                   {comment.content && (
-                                    <div style={{ marginTop: 4, lineHeight: 1.5 }}>
-                                      {comment.content}
+                                    <div style={{ marginTop: 3 }}>
+                                      <div style={{ fontSize: 13, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
+                                        {comment.content}
+                                      </div>
+                                      {isLong && (
+                                        <button type="button" onClick={() => setExpandedCommentTexts((p) => ({ ...p, [comment.id]: !textExpanded }))} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: 12, fontWeight: 700, marginTop: 1 }}>
+                                          {textExpanded ? "Show less" : "Show more"}
+                                        </button>
+                                      )}
                                     </div>
                                   )}
 
@@ -2992,7 +3002,7 @@ export default function HomePage() {
                                   display: "flex",
                                   gap: 14,
                                   alignItems: "center",
-                                  marginTop: 6,
+                                  marginTop: 4,
                                   flexWrap: "wrap",
                                 }}
                               >
