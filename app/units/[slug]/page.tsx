@@ -103,6 +103,9 @@ export default function UnitPage() {
   const [posts, setPosts] = useState<UnitPost[]>([]);
   const [postInput, setPostInput] = useState("");
   const [postPhotoUrl, setPostPhotoUrl] = useState("");
+  const [postPhotoPreview, setPostPhotoPreview] = useState<string | null>(null);
+  const [postPhotoFile, setPostPhotoFile] = useState<File | null>(null);
+  const postPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [submittingPost, setSubmittingPost] = useState(false);
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
@@ -243,18 +246,33 @@ export default function UnitPage() {
 
   // ── Wall posts ───────────────────────────────────────────────────────────
 
+  async function uploadUnitPhoto(file: File): Promise<string> {
+    const safeFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
+    const filePath = `unit-posts/${safeFileName}`;
+    const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
+    if (error) throw new Error(error.message);
+    return supabase.storage.from("feed-images").getPublicUrl(filePath).data.publicUrl;
+  }
+
   async function submitPost() {
-    if (!postInput.trim() && !postPhotoUrl.trim()) return;
+    if (!postInput.trim() && !postPhotoFile && !postPhotoUrl.trim()) return;
     setSubmittingPost(true);
     try {
+      let finalPhotoUrl = postPhotoUrl.trim() || null;
+      if (postPhotoFile) {
+        finalPhotoUrl = await uploadUnitPhoto(postPhotoFile);
+      }
       const token = await getToken();
       const res = await fetch(`/api/units/${slug}/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ content: postInput.trim() || null, photo_url: postPhotoUrl.trim() || null }),
+        body: JSON.stringify({ content: postInput.trim() || null, photo_url: finalPhotoUrl }),
       });
       if (res.ok) {
         setPostInput("");
+        setPostPhotoFile(null);
+        setPostPhotoPreview(null);
+        if (postPhotoInputRef.current) postPhotoInputRef.current.value = "";
         setPostPhotoUrl("");
         await loadPosts();
       }
@@ -519,16 +537,39 @@ export default function UnitPage() {
                     rows={3}
                     style={{ ...inputStyle, resize: "none", marginBottom: 10 }}
                   />
+                  {postPhotoPreview && (
+                    <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
+                      <img src={postPhotoPreview} alt="preview" style={{ maxHeight: 120, maxWidth: "100%", borderRadius: 8, objectFit: "cover", display: "block" }} />
+                      <button
+                        type="button"
+                        onClick={() => { setPostPhotoPreview(null); setPostPhotoFile(null); if (postPhotoInputRef.current) postPhotoInputRef.current.value = ""; }}
+                        style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
+                      >×</button>
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <input
-                      value={postPhotoUrl}
-                      onChange={(e) => setPostPhotoUrl(e.target.value)}
-                      placeholder="Photo URL (optional)"
-                      style={{ ...inputStyle, flex: 1 }}
+                      ref={postPhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setPostPhotoFile(file);
+                        setPostPhotoPreview(URL.createObjectURL(file));
+                      }}
                     />
                     <button
+                      type="button"
+                      onClick={() => postPhotoInputRef.current?.click()}
+                      style={{ ...inputStyle, flex: 1, textAlign: "left", cursor: "pointer", color: postPhotoFile ? t.text : t.textMuted, background: t.input }}
+                    >
+                      {postPhotoFile ? postPhotoFile.name : "📷 Add Photo (optional)"}
+                    </button>
+                    <button
                       onClick={submitPost}
-                      disabled={submittingPost || (!postInput.trim() && !postPhotoUrl.trim())}
+                      disabled={submittingPost || (!postInput.trim() && !postPhotoFile)}
                       style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
                     >
                       {submittingPost ? "Posting..." : "Post"}
