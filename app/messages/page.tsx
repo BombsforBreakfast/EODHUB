@@ -59,8 +59,17 @@ export default function MessagesPage() {
   const [requestTarget, setRequestTarget] = useState<{ userId: string; name: string; photo: string | null } | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
   const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
+  const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [editGifUrl, setEditGifUrl] = useState<string | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [flaggingId, setFlaggingId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const editInputRef = useRef<HTMLTextAreaElement | null>(null);
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const messageInputRef = useRef<HTMLInputElement | null>(null);
   const { t, isDark } = useTheme();
@@ -552,29 +561,132 @@ export default function MessagesPage() {
   const threadPhoto = requestTarget?.photo ?? activeConv?.other_user_photo ?? null;
   const threadUserId = requestTarget?.userId ?? activeConv?.other_user_id ?? null;
 
+  async function deleteMessage(msgId: string) {
+    setDeletingId(msgId);
+    await supabase.from("messages").delete().eq("id", msgId).eq("sender_id", userId!);
+    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+    setConfirmDeleteId(null);
+    setDeletingId(null);
+  }
+
+  function startEditMessage(msg: Message) {
+    setEditingMsgId(msg.id);
+    setEditContent(msg.content);
+    setEditGifUrl(msg.gif_url);
+    setTimeout(() => editInputRef.current?.focus(), 40);
+  }
+
+  async function saveEditMessage() {
+    if (!editingMsgId || savingEdit) return;
+    setSavingEdit(true);
+    const trimmed = editContent.trim();
+    await supabase.from("messages").update({ content: trimmed, gif_url: editGifUrl ?? null }).eq("id", editingMsgId).eq("sender_id", userId!);
+    setMessages((prev) => prev.map((m) => m.id === editingMsgId ? { ...m, content: trimmed, gif_url: editGifUrl ?? null } : m));
+    setEditingMsgId(null); setEditContent(""); setEditGifUrl(null); setSavingEdit(false);
+  }
+
+  async function flagMessage(msg: Message) {
+    if (flaggingId || !userId) return;
+    if (!window.confirm("Flag this message for admin review?")) return;
+    setFlaggingId(msg.id);
+    try {
+      await supabase.from("flags").insert([{ reporter_id: userId, content_type: "message", content_id: msg.id, reason: null, reviewed: false }]);
+      const { data: admins } = await supabase.from("profiles").select("user_id").eq("is_admin", true);
+      if (admins && admins.length > 0) {
+        await supabase.from("notifications").insert(
+          admins.map((a: { user_id: string }) => ({
+            user_id: a.user_id, actor_id: userId, actor_name: myName, type: "activity",
+            message: `Message flagged: "${(msg.content || "[GIF]").slice(0, 60)}"`,
+            post_owner_id: null,
+          }))
+        );
+      }
+      alert("Message flagged. Admins have been notified.");
+    } finally { setFlaggingId(null); }
+  }
+
+  const msgActionBtn = (label: string, color: string, onClick: () => void, disabled?: boolean) => (
+    <button onClick={onClick} disabled={disabled} title={label} style={{ background: "none", border: "none", cursor: disabled ? "default" : "pointer", fontSize: 13, color, padding: "2px 6px", borderRadius: 6, lineHeight: 1, opacity: disabled ? 0.4 : 0.7 }}>{label === "Delete" ? "✕" : label === "Edit" ? "✎" : "⚑"}</button>
+  );
+
   const MessageBubbles = (
     <div ref={messagesContainerRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
       {messages.map((msg) => {
         const isMe = msg.sender_id === userId;
+        const isHovered = hoveredMsgId === msg.id;
+        const isEditing = editingMsgId === msg.id;
+        const isConfirm = confirmDeleteId === msg.id;
         return (
-          <div key={msg.id} style={{ display: "flex", justifyContent: isMe ? "flex-end" : "flex-start" }}>
-            <div style={{
-              maxWidth: "72%", padding: msg.gif_url && !msg.content ? "4px" : "10px 14px",
-              borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-              background: isMe ? "#111" : t.badgeBg,
-              color: isMe ? "white" : t.text,
-              fontSize: 14, lineHeight: 1.5,
-            }}>
-              {msg.content && <div>{msg.content}</div>}
-              {msg.gif_url && (
-                <div style={{ marginTop: msg.content ? 8 : 0 }}>
-                  <img src={msg.gif_url} alt="GIF" style={{ maxWidth: 220, borderRadius: 12, display: "block" }} />
-                </div>
-              )}
-              <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: isMe ? "right" : "left" }}>
-                {timeAgo(msg.created_at)}
+          <div
+            key={msg.id}
+            style={{ display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}
+            onMouseEnter={() => setHoveredMsgId(msg.id)}
+            onMouseLeave={() => setHoveredMsgId(null)}
+          >
+            {/* Action buttons — shown on hover */}
+            {isHovered && !isEditing && !isConfirm && (
+              <div style={{ display: "flex", gap: 2, marginBottom: 2 }}>
+                {isMe && msgActionBtn("Delete", "#ef4444", () => setConfirmDeleteId(msg.id))}
+                {isMe && msgActionBtn("Edit", t.textMuted, () => startEditMessage(msg))}
+                {msgActionBtn("Flag", t.textMuted, () => flagMessage(msg), !!flaggingId)}
               </div>
-            </div>
+            )}
+
+            {/* Confirm delete */}
+            {isConfirm && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: t.surface, border: `1px solid #fca5a5`, borderRadius: 10, marginBottom: 4, fontSize: 13 }}>
+                <span style={{ color: t.text }}>Delete this message?</span>
+                <button onClick={() => deleteMessage(msg.id)} disabled={!!deletingId} style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 6, padding: "3px 10px", fontWeight: 700, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                  {deletingId === msg.id && <span className="btn-spinner" />}
+                  Delete
+                </button>
+                <button onClick={() => setConfirmDeleteId(null)} style={{ background: t.badgeBg, color: t.text, border: "none", borderRadius: 6, padding: "3px 10px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+              </div>
+            )}
+
+            {/* Edit card */}
+            {isEditing ? (
+              <div style={{ width: "min(360px, 85vw)", background: t.surface, border: `1px solid ${t.inputBorder}`, borderRadius: 14, padding: 12 }}>
+                <textarea
+                  ref={editInputRef}
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  rows={3}
+                  style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 10px", fontSize: 14, resize: "vertical", background: t.input, color: t.text, outline: "none", fontFamily: "inherit" }}
+                />
+                {editGifUrl && (
+                  <div style={{ position: "relative", display: "inline-block", marginTop: 6 }}>
+                    <img src={editGifUrl} alt="GIF" style={{ maxHeight: 100, maxWidth: 200, borderRadius: 8, display: "block" }} />
+                    <button onClick={() => setEditGifUrl(null)} style={{ position: "absolute", top: 3, right: 3, background: "rgba(0,0,0,0.6)", color: "white", border: "none", borderRadius: "50%", width: 18, height: 18, fontSize: 11, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
+                  <EmojiPickerButton value={editContent} onChange={setEditContent} inputRef={messageInputRef} theme={isDark ? "dark" : "light"} />
+                  <GifPickerButton onSelect={(url) => setEditGifUrl(url)} theme={isDark ? "dark" : "light"} />
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => { setEditingMsgId(null); setEditContent(""); setEditGifUrl(null); }} style={{ padding: "4px 10px", borderRadius: 7, border: `1px solid ${t.border}`, background: "transparent", fontWeight: 700, fontSize: 12, cursor: "pointer", color: t.text }}>Cancel</button>
+                  <button onClick={saveEditMessage} disabled={savingEdit || (!editContent.trim() && !editGifUrl)} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#111", color: "white", fontWeight: 700, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, opacity: savingEdit || (!editContent.trim() && !editGifUrl) ? 0.6 : 1 }}>
+                    {savingEdit && <span className="btn-spinner" />}Save
+                  </button>
+                </div>
+              </div>
+            ) : !isConfirm && (
+              <div style={{
+                maxWidth: "72%", padding: msg.gif_url && !msg.content ? "4px" : "10px 14px",
+                borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
+                background: isMe ? "#111" : t.badgeBg,
+                color: isMe ? "white" : t.text,
+                fontSize: 14, lineHeight: 1.5,
+              }}>
+                {msg.content && <div>{msg.content}</div>}
+                {msg.gif_url && (
+                  <div style={{ marginTop: msg.content ? 8 : 0 }}>
+                    <img src={msg.gif_url} alt="GIF" style={{ maxWidth: 220, borderRadius: 12, display: "block" }} />
+                  </div>
+                )}
+                <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: isMe ? "right" : "left" }}>{timeAgo(msg.created_at)}</div>
+              </div>
+            )}
           </div>
         );
       })}

@@ -198,15 +198,18 @@ const [memWizUrl, setMemWizUrl] = useState("");
     const reporterIds = [...new Set(rawFlags.map((f) => f.reporter_id).filter(Boolean))] as string[];
     const postIds = rawFlags.filter((f) => f.content_type === "post").map((f) => f.content_id);
     const commentIds = rawFlags.filter((f) => f.content_type === "comment").map((f) => f.content_id);
+    const messageIds = rawFlags.filter((f) => f.content_type === "message").map((f) => f.content_id);
 
-    const [profilesRes, postsRes, commentsRes] = await Promise.all([
+    const [profilesRes, postsRes, commentsRes, msgsRes] = await Promise.all([
       reporterIds.length > 0 ? supabase.from("profiles").select("user_id, first_name, last_name, display_name").in("user_id", reporterIds) : { data: [] },
       postIds.length > 0 ? supabase.from("posts").select("id, content").in("id", postIds) : { data: [] },
       commentIds.length > 0 ? supabase.from("post_comments").select("id, content").in("id", commentIds) : { data: [] },
+      messageIds.length > 0 ? supabase.from("messages").select("id, content, gif_url").in("id", messageIds) : { data: [] },
     ]);
 
     type ProfileRow = { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null };
     type ContentRow = { id: string; content: string | null };
+    type MsgRow = { id: string; content: string | null; gif_url: string | null };
 
     const profileMap = new Map<string, string>();
     ((profilesRes.data ?? []) as ProfileRow[]).forEach((p) => {
@@ -216,6 +219,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
     const contentMap = new Map<string, string>();
     ([...(postsRes.data ?? []), ...(commentsRes.data ?? [])] as ContentRow[]).forEach((c) => {
       contentMap.set(c.id, c.content || "");
+    });
+    ((msgsRes.data ?? []) as MsgRow[]).forEach((m) => {
+      contentMap.set(m.id, m.content || (m.gif_url ? "[GIF message]" : ""));
     });
 
     setFlags(rawFlags.map((f) => ({
@@ -1007,7 +1013,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-                        <span style={{ background: flag.content_type === "post" ? "#dbeafe" : "#fef9c3", color: flag.content_type === "post" ? "#1d4ed8" : "#854d0e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>
+                        <span style={{ background: flag.content_type === "post" ? "#dbeafe" : flag.content_type === "message" ? "#ede9fe" : "#fef9c3", color: flag.content_type === "post" ? "#1d4ed8" : flag.content_type === "message" ? "#6d28d9" : "#854d0e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>
                           {flag.content_type}
                         </span>
                         {flag.reviewed && <span style={{ background: t.badgeBg, color: t.badgeText, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Reviewed</span>}
