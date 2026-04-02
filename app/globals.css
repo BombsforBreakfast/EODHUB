@@ -29,6 +29,34 @@ body {
 .nav-search input { color: #555; }
 .nav-search input::placeholder { color: #bbb; }
 
+/* ── Global button press feedback ── */
+button, a.nav-btn, a[style*="cursor: pointer"] {
+  transition: transform 0.08s ease, opacity 0.08s ease;
+}
+button:active, a.nav-btn:active {
+  transform: scale(0.95) !important;
+  opacity: 0.85;
+}
+
+/* ── Inline button spinner ── */
+@keyframes btn-spin {
+  to { transform: rotate(360deg); }
+}
+.btn-spinner {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.35);
+  border-top-color: white;
+  display: inline-block;
+  animation: btn-spin 0.65s linear infinite;
+  flex-shrink: 0;
+}
+.btn-spinner-dark {
+  border-color: rgba(0,0,0,0.15);
+  border-top-color: rgba(0,0,0,0.6);
+}
+
 /* Desktop defaults — mobile-only elements hidden */
 .nav-units-mobile { display: none; }
 .nav-hub-mobile   { display: none; }

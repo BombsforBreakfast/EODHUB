@@ -106,9 +106,11 @@ export default function ResetPasswordPage() {
               background: "black", color: "white", fontWeight: 700,
               cursor: submitting ? "not-allowed" : "pointer",
               opacity: submitting || !password || password !== confirmPassword ? 0.7 : 1,
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
             }}
           >
-            {submitting ? "Updating..." : "Update Password"}
+            {submitting && <span className="btn-spinner" />}
+            Update Password
           </button>
         </form>
       )}

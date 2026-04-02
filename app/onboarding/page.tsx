@@ -324,10 +324,11 @@ export default function OnboardingPage() {
                 style={{
                   padding: "13px", borderRadius: 12, border: "none", background: "black",
                   color: "white", fontWeight: 700, fontSize: 15, cursor: submitting ? "not-allowed" : "pointer",
-                  opacity: submitting ? 0.7 : 1, marginTop: 4,
+                  opacity: submitting ? 0.7 : 1, marginTop: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
                 }}
               >
-                {submitting ? "Saving..." : "Continue"}
+                {submitting && <span className="btn-spinner" />}
+                Continue
               </button>
             </form>
           )}

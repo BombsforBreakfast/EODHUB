@@ -80,9 +80,14 @@ export default function SubscribePage() {
               cursor: loading ? "not-allowed" : "pointer",
               opacity: loading ? 0.7 : 1,
               transition: "opacity 0.15s",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
             }}
           >
-            {loading ? "Redirecting to Stripe..." : "Subscribe for $2/month"}
+            {loading && <span className="btn-spinner" />}
+            Subscribe for $2/month
           </button>
 
           <div style={{ marginTop: 14, fontSize: 12, color: t.textFaint }}>

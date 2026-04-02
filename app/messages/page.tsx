@@ -636,9 +636,10 @@ export default function MessagesPage() {
             <button
               onClick={sendRequest}
               disabled={!requestDraft.trim() || sending}
-              style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: !requestDraft.trim() || sending ? 0.5 : 1 }}
+              style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: !requestDraft.trim() || sending ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
             >
-              {sending ? "..." : "Send"}
+              {sending && <span className="btn-spinner" />}
+              Send
             </button>
           </div>
         </>
@@ -702,8 +703,9 @@ export default function MessagesPage() {
                 <button
                   onClick={() => sendMessage()}
                   disabled={(!newMessage.trim() && !selectedGifUrl) || sending}
-                  style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: (!newMessage.trim() && !selectedGifUrl) || sending ? 0.5 : 1 }}
+                  style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: (!newMessage.trim() && !selectedGifUrl) || sending ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
                 >
+                  {sending && <span className="btn-spinner" />}
                   Send
                 </button>
               </div>

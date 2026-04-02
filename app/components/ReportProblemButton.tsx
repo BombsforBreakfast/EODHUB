@@ -199,8 +199,9 @@ export default function ReportProblemButton() {
                   </button>
                   <button type="button" onClick={handleSubmit}
                     disabled={submitting || !message.trim()}
-                    style={{ flex: 2, padding: "10px", borderRadius: 10, border: "none", background: "#111", color: "white", fontWeight: 700, fontSize: 14, cursor: submitting || !message.trim() ? "not-allowed" : "pointer", opacity: submitting || !message.trim() ? 0.6 : 1 }}>
-                    {submitting ? "Submitting..." : "Submit Report"}
+                    style={{ flex: 2, padding: "10px", borderRadius: 10, border: "none", background: "#111", color: "white", fontWeight: 700, fontSize: 14, cursor: submitting || !message.trim() ? "not-allowed" : "pointer", opacity: submitting || !message.trim() ? 0.6 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+                    {submitting && <span className="btn-spinner" />}
+                    Submit Report
                   </button>
                 </div>
               </>

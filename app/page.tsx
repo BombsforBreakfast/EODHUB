@@ -341,6 +341,7 @@ export default function HomePage() {
   const [referralNudgeDismissed, setReferralNudgeDismissed] = useState<boolean>(() =>
     typeof window !== "undefined" && localStorage.getItem("eod_referral_nudge_dismissed") === "1"
   );
+  const [referralCopied, setReferralCopied] = useState(false);
 
   // Biz/Org submission form
   const [showBizForm, setShowBizForm] = useState(false);
@@ -354,6 +355,8 @@ export default function HomePage() {
   const bizOgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [submittingPost, setSubmittingPost] = useState(false);
+  const [vouchingFor, setVouchingFor] = useState<string | null>(null);
+  const [actingOnUser, setActingOnUser] = useState<string | null>(null);
   const [expandedComments, setExpandedComments] = useState<
     Record<string, boolean>
   >({});
@@ -621,47 +624,60 @@ export default function HomePage() {
   }
 
   async function vouchForMember(voucheeId: string) {
-    if (!userId) return;
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch("/api/profile-vouch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
-      body: JSON.stringify({ vouchee_user_id: voucheeId }),
-    });
-    if (res.ok) {
-      const json = await res.json();
-      if (json.approved) {
-        // Remove from pending list
-        setPendingMembers((prev) => prev.filter((m) => m.user_id !== voucheeId));
-      } else {
-        // Update vouch count
-        setPendingMembers((prev) =>
-          prev.map((m) => m.user_id === voucheeId ? { ...m, vouch_count: json.vouches, user_vouched: true } : m)
-        );
+    if (!userId || vouchingFor) return;
+    setVouchingFor(voucheeId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/profile-vouch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: JSON.stringify({ vouchee_user_id: voucheeId }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.approved) {
+          setPendingMembers((prev) => prev.filter((m) => m.user_id !== voucheeId));
+        } else {
+          setPendingMembers((prev) =>
+            prev.map((m) => m.user_id === voucheeId ? { ...m, vouch_count: json.vouches, user_vouched: true } : m)
+          );
+        }
       }
+    } finally {
+      setVouchingFor(null);
     }
   }
 
   async function approveUser(targetUserId: string) {
-    if (!userId) return;
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch("/api/admin/verify-user", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
-      body: JSON.stringify({ userId: targetUserId }),
-    });
-    if (res.ok) setPendingMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
+    if (!userId || actingOnUser) return;
+    setActingOnUser(targetUserId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/verify-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: JSON.stringify({ userId: targetUserId }),
+      });
+      if (res.ok) setPendingMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
+    } finally {
+      setActingOnUser(null);
+    }
   }
 
   async function denyUser(targetUserId: string) {
-    if (!userId) return;
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch("/api/admin/deny-user", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
-      body: JSON.stringify({ userId: targetUserId }),
-    });
-    if (res.ok) setPendingMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
+    if (!userId || actingOnUser) return;
+    setActingOnUser(targetUserId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/deny-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: JSON.stringify({ userId: targetUserId }),
+      });
+      if (res.ok) setPendingMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
+    } finally {
+      setActingOnUser(null);
+    }
   }
 
   async function toggleDiscoverConnection(targetUserId: string, type: "know" | "worked_with") {
@@ -2021,7 +2037,12 @@ export default function HomePage() {
                           <span style={{ fontSize: 12, color: t.textMuted, marginLeft: 4, fontWeight: 600 }}>{m.vouch_count}/3 approved</span>
                         </div>
                         {!m.user_vouched ? (
-                          <button onClick={() => vouchForMember(m.user_id)} style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                          <button
+                            onClick={() => vouchForMember(m.user_id)}
+                            disabled={vouchingFor === m.user_id}
+                            style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: vouchingFor === m.user_id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                          >
+                            {vouchingFor === m.user_id && <span className="btn-spinner" />}
                             Vouch
                           </button>
                         ) : (
@@ -2029,10 +2050,20 @@ export default function HomePage() {
                         )}
                         {isAdmin && (
                           <>
-                            <button onClick={() => approveUser(m.user_id)} style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                            <button
+                              onClick={() => approveUser(m.user_id)}
+                              disabled={actingOnUser === m.user_id}
+                              style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: actingOnUser === m.user_id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                            >
+                              {actingOnUser === m.user_id && <span className="btn-spinner" />}
                               Approve
                             </button>
-                            <button onClick={() => denyUser(m.user_id)} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                            <button
+                              onClick={() => denyUser(m.user_id)}
+                              disabled={actingOnUser === m.user_id}
+                              style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: actingOnUser === m.user_id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                            >
+                              {actingOnUser === m.user_id && <span className="btn-spinner" />}
                               Deny
                             </button>
                           </>
@@ -2133,10 +2164,14 @@ export default function HomePage() {
               <div className="referral-nudge-btns" style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                 <button
                   type="button"
-                  onClick={() => navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${currentUserReferralCode}`)}
-                  style={{ padding: "7px 14px", borderRadius: 10, background: "#6366f1", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", border: "none" }}
+                  onClick={() => {
+                    navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${currentUserReferralCode}`);
+                    setReferralCopied(true);
+                    setTimeout(() => setReferralCopied(false), 1500);
+                  }}
+                  style={{ padding: "7px 14px", borderRadius: 10, background: referralCopied ? "#16a34a" : "#6366f1", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", border: "none", transition: "background 0.2s" }}
                 >
-                  Copy Link
+                  {referralCopied ? "Copied!" : "Copy Link"}
                 </button>
                 <button type="button" onClick={() => { setReferralNudgeDismissed(true); localStorage.setItem("eod_referral_nudge_dismissed", "1"); }} style={{ padding: "7px 10px", borderRadius: 10, background: "transparent", border: `1px solid #6366f1`, color: isDark ? "#a5b4fc" : "#4338ca", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                   Dismiss
@@ -2359,9 +2394,13 @@ export default function HomePage() {
                     fontWeight: 700,
                     cursor: submittingPost ? "not-allowed" : "pointer",
                     opacity: submittingPost ? 0.7 : 1,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
                   }}
                 >
-                  {submittingPost ? "Posting..." : "Post"}
+                  {submittingPost && <span className="btn-spinner" />}
+                  Post
                 </button>
               </div>
             </div>
@@ -3105,16 +3144,15 @@ export default function HomePage() {
                               borderRadius: 10,
                               padding: "8px 14px",
                               fontWeight: 700,
-                              cursor:
-                                submittingCommentFor === post.id
-                                  ? "not-allowed"
-                                  : "pointer",
+                              cursor: submittingCommentFor === post.id ? "not-allowed" : "pointer",
                               opacity: submittingCommentFor === post.id ? 0.7 : 1,
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 6,
                             }}
                           >
-                            {submittingCommentFor === post.id
-                              ? "Posting..."
-                              : "Add Comment"}
+                            {submittingCommentFor === post.id && <span className="btn-spinner" />}
+                            Add Comment
                           </button>
                         </div>
                       </div>
@@ -3196,9 +3234,10 @@ export default function HomePage() {
                     type="button"
                     onClick={submitBizListing}
                     disabled={submittingBiz || !bizUrl.trim() || !bizName.trim()}
-                    style={{ width: "100%", background: "#111", color: "white", border: "none", borderRadius: 10, padding: "10px 0", fontWeight: 700, fontSize: 14, cursor: submittingBiz || !bizUrl.trim() || !bizName.trim() ? "not-allowed" : "pointer", opacity: submittingBiz || !bizUrl.trim() || !bizName.trim() ? 0.5 : 1 }}
+                    style={{ width: "100%", background: "#111", color: "white", border: "none", borderRadius: 10, padding: "10px 0", fontWeight: 700, fontSize: 14, cursor: submittingBiz || !bizUrl.trim() || !bizName.trim() ? "not-allowed" : "pointer", opacity: submittingBiz || !bizUrl.trim() || !bizName.trim() ? 0.5 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
                   >
-                    {submittingBiz ? "Submitting..." : "Submit for Review"}
+                    {submittingBiz && <span className="btn-spinner" />}
+                    Submit for Review
                   </button>
                 </>
               )}

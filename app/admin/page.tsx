@@ -580,16 +580,20 @@ const [memWizUrl, setMemWizUrl] = useState("");
   }
 
   async function markReportReviewed(id: string) {
+    setActionLoading(id);
     await supabase.from("bug_reports").update({ reviewed: true }).eq("id", id);
     showToast("Marked as reviewed.");
     await loadBugReports();
+    setActionLoading(null);
   }
 
   async function deleteBugReport(id: string) {
     askConfirm("Delete this report?", async () => {
+      setActionLoading(id);
       await supabase.from("bug_reports").delete().eq("id", id);
       showToast("Report deleted.");
       await loadBugReports();
+      setActionLoading(null);
     });
   }
 
@@ -778,7 +782,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             <>
                               <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Approved</span>
                               {!biz.is_featured && (
-                                <button style={actionBtn("#f59e0b")} disabled={actionLoading === biz.id} onClick={() => approveBusiness(biz.id, true)}>
+                                <button style={{ ...actionBtn("#f59e0b"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === biz.id} onClick={() => approveBusiness(biz.id, true)}>
+                                  {actionLoading === biz.id && <span className="btn-spinner" />}
                                   Feature
                                 </button>
                               )}
@@ -786,16 +791,19 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             </>
                           ) : (
                             <>
-                              <button style={actionBtn("#16a34a")} disabled={actionLoading === biz.id} onClick={() => approveBusiness(biz.id, false)}>
-                                {actionLoading === biz.id ? "..." : "Approve"}
+                              <button style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === biz.id} onClick={() => approveBusiness(biz.id, false)}>
+                                {actionLoading === biz.id && <span className="btn-spinner" />}
+                                Approve
                               </button>
-                              <button style={actionBtn("#f59e0b")} disabled={actionLoading === biz.id} onClick={() => approveBusiness(biz.id, true)}>
+                              <button style={{ ...actionBtn("#f59e0b"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === biz.id} onClick={() => approveBusiness(biz.id, true)}>
+                                {actionLoading === biz.id && <span className="btn-spinner" />}
                                 Approve + Feature
                               </button>
                             </>
                           )}
-                          <button style={actionBtn("#ef4444")} disabled={actionLoading === biz.id} onClick={() => rejectBusiness(biz.id)}>
-                            {actionLoading === biz.id ? "..." : "Delete"}
+                          <button style={{ ...actionBtn("#ef4444"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === biz.id} onClick={() => rejectBusiness(biz.id)}>
+                            {actionLoading === biz.id && <span className="btn-spinner" />}
+                            Delete
                           </button>
                           <button
                             style={actionBtn(editingBiz?.id === biz.id ? "#6b7280" : "#374151")}
@@ -968,12 +976,14 @@ const [memWizUrl, setMemWizUrl] = useState("");
                         <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Live</span>
                       )}
                       {!job.is_approved && (
-                        <button style={actionBtn("#16a34a")} disabled={actionLoading === job.id} onClick={() => approveJob(job.id)}>
-                          {actionLoading === job.id ? "..." : "Approve"}
+                        <button style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === job.id} onClick={() => approveJob(job.id)}>
+                          {actionLoading === job.id && <span className="btn-spinner" />}
+                          Approve
                         </button>
                       )}
-                      <button style={actionBtn("#ef4444")} disabled={actionLoading === job.id} onClick={() => rejectJob(job.id)}>
-                        {actionLoading === job.id ? "..." : "Delete"}
+                      <button style={{ ...actionBtn("#ef4444"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === job.id} onClick={() => rejectJob(job.id)}>
+                        {actionLoading === job.id && <span className="btn-spinner" />}
+                        Delete
                       </button>
                     </div>
                   </div>
@@ -1017,13 +1027,15 @@ const [memWizUrl, setMemWizUrl] = useState("");
                     </div>
                     <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                       {!flag.reviewed && (
-                        <button style={actionBtn("#6b7280")} disabled={actionLoading === flag.id} onClick={() => dismissFlag(flag.id)}>
-                          {actionLoading === flag.id ? "..." : "Dismiss"}
+                        <button style={{ ...actionBtn("#6b7280"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === flag.id} onClick={() => dismissFlag(flag.id)}>
+                          {actionLoading === flag.id && <span className="btn-spinner" />}
+                          Dismiss
                         </button>
                       )}
                       {flag.content_preview && (
-                        <button style={actionBtn("#ef4444")} disabled={actionLoading === flag.id + "-remove"} onClick={() => removeFlaggedContent(flag)}>
-                          {actionLoading === flag.id + "-remove" ? "..." : "Remove Content"}
+                        <button style={{ ...actionBtn("#ef4444"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === flag.id + "-remove"} onClick={() => removeFlaggedContent(flag)}>
+                          {actionLoading === flag.id + "-remove" && <span className="btn-spinner" />}
+                          Remove Content
                         </button>
                       )}
                     </div>
@@ -1174,9 +1186,15 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
                 <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
                   {!r.reviewed && (
-                    <button onClick={() => markReportReviewed(r.id)} style={actionBtn("#16a34a")}>Mark Reviewed</button>
+                    <button onClick={() => markReportReviewed(r.id)} disabled={actionLoading === r.id} style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }}>
+                      {actionLoading === r.id && <span className="btn-spinner" />}
+                      Mark Reviewed
+                    </button>
                   )}
-                  <button onClick={() => deleteBugReport(r.id)} style={actionBtn("#ef4444")}>Delete</button>
+                  <button onClick={() => deleteBugReport(r.id)} disabled={actionLoading === r.id} style={{ ...actionBtn("#ef4444"), display: "flex", alignItems: "center", gap: 5 }}>
+                    {actionLoading === r.id && <span className="btn-spinner" />}
+                    Delete
+                  </button>
                 </div>
               </div>
             ))}

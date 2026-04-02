@@ -461,8 +461,9 @@ export default function UnitPage() {
                   </a>
                 )}
                 {currentUserId && !membership && (
-                  <button onClick={requestJoin} disabled={joining} style={{ background: joining ? t.badgeBg : "#111", color: joining ? t.textMuted : "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: joining ? "not-allowed" : "pointer" }}>
-                    {joining ? "Requesting..." : "Request to Join"}
+                  <button onClick={requestJoin} disabled={joining} style={{ background: joining ? t.badgeBg : "#111", color: joining ? t.textMuted : "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: joining ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                    {joining && <span className="btn-spinner btn-spinner-dark" />}
+                    Request to Join
                   </button>
                 )}
                 {membership?.status === "pending" && (
@@ -570,9 +571,10 @@ export default function UnitPage() {
                     <button
                       onClick={submitPost}
                       disabled={submittingPost || (!postInput.trim() && !postPhotoFile)}
-                      style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}
+                      style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}
                     >
-                      {submittingPost ? "Posting..." : "Post"}
+                      {submittingPost && <span className="btn-spinner" />}
+                      Post
                     </button>
                   </div>
                 </div>
@@ -807,6 +809,8 @@ function JoinRequestCard({ post, isGod, currentUserId, onVote, onApprove, onDeny
   onVote: () => void; onApprove: () => void; onDeny: () => void;
   t: ThemeTokens; isDark: boolean;
 }) {
+  const [voting, setVoting] = useState(false);
+  const [acting, setActing] = useState<"approve" | "deny" | null>(null);
   const approvalCount = post.approval_count ?? 0;
   const isRequester = post.user_id === currentUserId;
 
@@ -829,7 +833,12 @@ function JoinRequestCard({ post, isGod, currentUserId, onVote, onApprove, onDeny
           {!isRequester && (
             <>
               {!post.user_voted && (
-                <button onClick={onVote} style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                <button
+                  disabled={voting}
+                  onClick={async () => { setVoting(true); try { await Promise.resolve(onVote()); } finally { setVoting(false); } }}
+                  style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: voting ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                >
+                  {voting && <span className="btn-spinner" />}
                   Vouch
                 </button>
               )}
@@ -838,10 +847,20 @@ function JoinRequestCard({ post, isGod, currentUserId, onVote, onApprove, onDeny
               )}
               {isGod && (
                 <>
-                  <button onClick={onApprove} style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                  <button
+                    disabled={acting === "approve"}
+                    onClick={async () => { setActing("approve"); try { await Promise.resolve(onApprove()); } finally { setActing(null); } }}
+                    style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: acting === "approve" ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                  >
+                    {acting === "approve" && <span className="btn-spinner" />}
                     Approve
                   </button>
-                  <button onClick={onDeny} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                  <button
+                    disabled={acting === "deny"}
+                    onClick={async () => { setActing("deny"); try { await Promise.resolve(onDeny()); } finally { setActing(null); } }}
+                    style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: acting === "deny" ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                  >
+                    {acting === "deny" && <span className="btn-spinner" />}
                     Deny
                   </button>
                 </>
@@ -864,6 +883,7 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
   onToggleComments: () => void;
   onSubmitComment: () => void;
 }) {
+  const [submittingComment, setSubmittingComment] = useState(false);
   return (
     <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
@@ -922,7 +942,12 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
               placeholder="Write a comment..."
               style={{ flex: 1, padding: "8px 12px", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 13, outline: "none" }}
             />
-            <button onClick={onSubmitComment} style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+            <button
+              disabled={submittingComment}
+              onClick={async () => { setSubmittingComment(true); try { await Promise.resolve(onSubmitComment()); } finally { setSubmittingComment(false); } }}
+              style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: submittingComment ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}
+            >
+              {submittingComment && <span className="btn-spinner" />}
               Send
             </button>
           </div>

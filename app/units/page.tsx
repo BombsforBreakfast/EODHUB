@@ -376,9 +376,10 @@ export default function UnitsPage() {
                   <button
                     onClick={() => coverInputRef.current?.click()}
                     disabled={uploadingCover}
-                    style={{ background: t.badgeBg, color: t.text, border: `1px dashed ${t.border}`, borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", width: "100%" }}
+                    style={{ background: t.badgeBg, color: t.text, border: `1px dashed ${t.border}`, borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
                   >
-                    {uploadingCover ? "Uploading..." : "📷  Add Cover Photo"}
+                    {uploadingCover && <span className="btn-spinner btn-spinner-dark" />}
+                    📷  Add Cover Photo
                   </button>
                 )}
               </div>
@@ -391,8 +392,9 @@ export default function UnitsPage() {
                 <button onClick={() => setShowCreate(false)} style={{ background: t.badgeBg, color: t.text, border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
                   Cancel
                 </button>
-                <button onClick={createUnit} disabled={creating} style={{ background: creating ? t.badgeBg : "#111", color: creating ? t.textMuted : "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: creating ? "not-allowed" : "pointer" }}>
-                  {creating ? "Creating..." : "Create Unit"}
+                <button onClick={createUnit} disabled={creating} style={{ background: creating ? t.badgeBg : "#111", color: creating ? t.textMuted : "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: creating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                  {creating && <span className="btn-spinner btn-spinner-dark" />}
+                  Create Unit
                 </button>
               </div>
             </div>

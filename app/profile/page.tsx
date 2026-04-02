@@ -65,17 +65,19 @@ function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null
         <button
           onClick={handlePortal}
           disabled={loading}
-          style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", color: t.text, opacity: loading ? 0.6 : 1 }}
+          style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", color: t.text, opacity: loading ? 0.6 : 1, display: "flex", alignItems: "center", gap: 6 }}
         >
-          {loading ? "..." : "Manage Billing"}
+          {loading && <span className="btn-spinner btn-spinner-dark" />}
+          Manage Billing
         </button>
       ) : (
         <button
           onClick={handleSubscribe}
           disabled={loading}
-          style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1 }}
+          style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1, display: "flex", alignItems: "center", gap: 6 }}
         >
-          {loading ? "..." : "Subscribe — $2/mo"}
+          {loading && <span className="btn-spinner" />}
+          Subscribe — $2/mo
         </button>
       )}
     </div>
@@ -583,8 +585,9 @@ export default function MyAccountPage() {
             </div>
           </div>
           <div style={{ marginTop: 16, display: "flex", gap: 10 }}>
-            <button onClick={handleSaveProfile} disabled={savingProfile} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: savingProfile ? "not-allowed" : "pointer", opacity: savingProfile ? 0.7 : 1 }}>
-              {savingProfile ? "Saving..." : "Save Changes"}
+            <button onClick={handleSaveProfile} disabled={savingProfile} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: savingProfile ? "not-allowed" : "pointer", opacity: savingProfile ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+              {savingProfile && <span className="btn-spinner" />}
+              Save Changes
             </button>
             <button onClick={() => setEditing(false)} style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: "pointer" }}>
               Cancel
@@ -612,8 +615,9 @@ export default function MyAccountPage() {
                     </a>
                   )}
                 </div>
-                <button type="button" onClick={() => unsaveJob(job.id)} disabled={unsavingJobId === job.id} style={{ background: "transparent", border: `1px solid ${t.border}`, color: t.textMuted, borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: unsavingJobId === job.id ? "not-allowed" : "pointer", opacity: unsavingJobId === job.id ? 0.6 : 1, flexShrink: 0 }}>
-                  {unsavingJobId === job.id ? "Removing..." : "Remove"}
+                <button type="button" onClick={() => unsaveJob(job.id)} disabled={unsavingJobId === job.id} style={{ background: "transparent", border: `1px solid ${t.border}`, color: t.textMuted, borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: unsavingJobId === job.id ? "not-allowed" : "pointer", opacity: unsavingJobId === job.id ? 0.6 : 1, flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
+                  {unsavingJobId === job.id && <span className="btn-spinner btn-spinner-dark" />}
+                  Remove
                 </button>
               </div>
             ))}
@@ -676,8 +680,9 @@ export default function MyAccountPage() {
                     </a>
                   )}
                 </div>
-                <button type="button" onClick={() => unsaveEvent(ev.id)} disabled={unsavingEventId === ev.id} style={{ background: "transparent", border: `1px solid ${t.border}`, color: t.textMuted, borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: unsavingEventId === ev.id ? "not-allowed" : "pointer", opacity: unsavingEventId === ev.id ? 0.6 : 1, flexShrink: 0 }}>
-                  {unsavingEventId === ev.id ? "Removing..." : "Remove"}
+                <button type="button" onClick={() => unsaveEvent(ev.id)} disabled={unsavingEventId === ev.id} style={{ background: "transparent", border: `1px solid ${t.border}`, color: t.textMuted, borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: unsavingEventId === ev.id ? "not-allowed" : "pointer", opacity: unsavingEventId === ev.id ? 0.6 : 1, flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
+                  {unsavingEventId === ev.id && <span className="btn-spinner btn-spinner-dark" />}
+                  Remove
                 </button>
               </div>
             ))}

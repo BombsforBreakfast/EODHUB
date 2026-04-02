@@ -239,17 +239,19 @@ export default function UnitAdminPage() {
                   </div>
                   <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
                     <button
-                      style={actionBtn("approve")}
+                      style={{ ...actionBtn("approve"), display: "flex", alignItems: "center", gap: 5 }}
                       disabled={working === p.user_id}
                       onClick={() => action({ action: "approve_member", user_id: p.user_id })}
                     >
-                      {working === p.user_id ? "..." : "Approve"}
+                      {working === p.user_id && <span className="btn-spinner" />}
+                      Approve
                     </button>
                     <button
-                      style={actionBtn("deny")}
+                      style={{ ...actionBtn("deny"), display: "flex", alignItems: "center", gap: 5 }}
                       disabled={working === p.user_id}
                       onClick={() => action({ action: "deny_member", user_id: p.user_id })}
                     >
+                      {working === p.user_id && <span className="btn-spinner" style={{ borderTopColor: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }} />}
                       Deny
                     </button>
                   </div>
@@ -291,25 +293,27 @@ export default function UnitAdminPage() {
                     <div style={{ display: "flex", gap: 8, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
                       {canPromote && (
                         <button
-                          style={actionBtn("promote")}
+                          style={{ ...actionBtn("promote"), display: "flex", alignItems: "center", gap: 5 }}
                           disabled={working === m.user_id}
                           onClick={() => action({ action: "change_role", user_id: m.user_id, role: "admin" })}
                         >
+                          {working === m.user_id && <span className="btn-spinner" />}
                           Make Admin
                         </button>
                       )}
                       {canDemote && (
                         <button
-                          style={actionBtn("demote")}
+                          style={{ ...actionBtn("demote"), display: "flex", alignItems: "center", gap: 5 }}
                           disabled={working === m.user_id}
                           onClick={() => action({ action: "change_role", user_id: m.user_id, role: "member" })}
                         >
+                          {working === m.user_id && <span className="btn-spinner btn-spinner-dark" />}
                           Demote
                         </button>
                       )}
                       {canRemove && (
                         <button
-                          style={actionBtn("remove")}
+                          style={{ ...actionBtn("remove"), display: "flex", alignItems: "center", gap: 5 }}
                           disabled={working === m.user_id}
                           onClick={() => {
                             if (confirm(`Remove ${m.display_name} from this unit?`)) {
@@ -317,7 +321,8 @@ export default function UnitAdminPage() {
                             }
                           }}
                         >
-                          {working === m.user_id ? "..." : "Remove"}
+                          {working === m.user_id && <span className="btn-spinner" style={{ borderTopColor: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }} />}
+                          Remove
                         </button>
                       )}
                     </div>
@@ -357,7 +362,7 @@ export default function UnitAdminPage() {
                       {new Date(ph.created_at).toLocaleDateString()}
                     </div>
                     <button
-                      style={{ ...actionBtn("remove"), width: "100%", textAlign: "center" }}
+                      style={{ ...actionBtn("remove"), width: "100%", justifyContent: "center", display: "flex", alignItems: "center", gap: 5 }}
                       disabled={working === ph.id}
                       onClick={() => {
                         if (confirm("Delete this photo from the unit wall?")) {
@@ -365,7 +370,8 @@ export default function UnitAdminPage() {
                         }
                       }}
                     >
-                      {working === ph.id ? "Deleting..." : "Delete Photo"}
+                      {working === ph.id && <span className="btn-spinner" style={{ borderTopColor: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }} />}
+                      Delete Photo
                     </button>
                   </div>
                 </div>

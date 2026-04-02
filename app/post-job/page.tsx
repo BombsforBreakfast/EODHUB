@@ -214,9 +214,11 @@ export default function PostJobPage() {
             fontWeight: 800,
             cursor: submitting ? "not-allowed" : "pointer",
             opacity: submitting ? 0.7 : 1,
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
           }}
         >
-          {submitting ? "Submitting..." : "Submit Job"}
+          {submitting && <span className="btn-spinner" />}
+          Submit Job
         </button>
       </div>
     </div>

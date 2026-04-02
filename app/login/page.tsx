@@ -217,8 +217,9 @@ export default function LoginPage() {
                 style={inputStyle}
                 autoFocus
               />
-              <button type="submit" disabled={submitting || !forgotEmail.trim()} style={{ ...buttonPrimary, opacity: submitting || !forgotEmail.trim() ? 0.7 : 1 }}>
-                {submitting ? "Sending..." : "Send Reset Link"}
+              <button type="submit" disabled={submitting || !forgotEmail.trim()} style={{ ...buttonPrimary, opacity: submitting || !forgotEmail.trim() ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+                {submitting && <span className="btn-spinner" />}
+                Send Reset Link
               </button>
             </form>
           )}
@@ -304,9 +305,10 @@ export default function LoginPage() {
               <button
                 onClick={handleLogin}
                 disabled={submitting || (!!siteKey && !turnstileToken && !turnstileError)}
-                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1 }}
+                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
-                {submitting ? "Logging In..." : "Login"}
+                {submitting && <span className="btn-spinner" />}
+                Login
               </button>
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
                 <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
@@ -331,9 +333,10 @@ export default function LoginPage() {
               <button
                 onClick={handleSignup}
                 disabled={submitting || (!!siteKey && !turnstileToken && !turnstileError)}
-                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1 }}
+                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
-                {submitting ? "Creating Account..." : "Complete Signup"}
+                {submitting && <span className="btn-spinner" />}
+                Complete Signup
               </button>
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
                 <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
