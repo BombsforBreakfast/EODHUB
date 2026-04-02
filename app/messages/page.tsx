@@ -58,6 +58,7 @@ export default function MessagesPage() {
   const [inboxTab, setInboxTab] = useState<"messages" | "requests">("messages");
   const [requestTarget, setRequestTarget] = useState<{ userId: string; name: string; photo: string | null } | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
+  const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const messageInputRef = useRef<HTMLInputElement | null>(null);
@@ -312,12 +313,14 @@ export default function MessagesPage() {
     return () => { if (realtimeRef.current) supabase.removeChannel(realtimeRef.current); };
   }, []);
 
-  async function sendMessage(gifUrl?: string) {
-    if (!newMessage.trim() && !gifUrl) return;
+  async function sendMessage() {
+    const gif = selectedGifUrl;
+    if (!newMessage.trim() && !gif) return;
     if (!activeConvId || !userId || sending) return;
     setSending(true);
     const content = newMessage.trim();
     setNewMessage("");
+    setSelectedGifUrl(null);
     // Optimistic update — show immediately without waiting for DB
     const optimisticMsg: Message = {
       id: `optimistic-${Date.now()}`,
@@ -326,10 +329,10 @@ export default function MessagesPage() {
       content,
       is_read: false,
       created_at: new Date().toISOString(),
-      gif_url: gifUrl ?? null,
+      gif_url: gif ?? null,
     };
     setMessages((prev) => [...prev, optimisticMsg]);
-    await supabase.from("messages").insert({ conversation_id: activeConvId, sender_id: userId, content, gif_url: gifUrl ?? null });
+    await supabase.from("messages").insert({ conversation_id: activeConvId, sender_id: userId, content, gif_url: gif ?? null });
     await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", activeConvId);
     setSending(false);
   }
@@ -534,7 +537,7 @@ export default function MessagesPage() {
   const threadUserId = requestTarget?.userId ?? activeConv?.other_user_id ?? null;
 
   const MessageBubbles = (
-    <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+    <div style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
       {messages.map((msg) => {
         const isMe = msg.sender_id === userId;
         return (
@@ -666,32 +669,44 @@ export default function MessagesPage() {
             </div>
           )}
           {activeConvId && (
-            <div style={{ padding: "12px 16px", borderTop: `1px solid ${t.border}`, display: "flex", gap: 10, alignItems: "center" }}>
-              <input
-                ref={messageInputRef}
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                placeholder="Type a message..."
-                style={{ flex: 1, padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
-              />
-              <EmojiPickerButton
-                value={newMessage}
-                onChange={setNewMessage}
-                inputRef={messageInputRef}
-                theme={isDark ? "dark" : "light"}
-              />
-              <GifPickerButton
-                onSelect={(url) => sendMessage(url)}
-                theme={isDark ? "dark" : "light"}
-              />
-              <button
-                onClick={() => sendMessage()}
-                disabled={!newMessage.trim() || sending}
-                style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: !newMessage.trim() || sending ? 0.5 : 1 }}
-              >
-                Send
-              </button>
+            <div style={{ padding: "12px 16px", borderTop: `1px solid ${t.border}` }}>
+              {selectedGifUrl && (
+                <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
+                  <img src={selectedGifUrl} alt="GIF" style={{ maxHeight: 120, maxWidth: 220, borderRadius: 10, display: "block" }} />
+                  <button
+                    type="button"
+                    onClick={() => setSelectedGifUrl(null)}
+                    style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >×</button>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <input
+                  ref={messageInputRef}
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+                  placeholder="Type a message..."
+                  style={{ flex: 1, padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
+                />
+                <EmojiPickerButton
+                  value={newMessage}
+                  onChange={setNewMessage}
+                  inputRef={messageInputRef}
+                  theme={isDark ? "dark" : "light"}
+                />
+                <GifPickerButton
+                  onSelect={(url) => setSelectedGifUrl(url)}
+                  theme={isDark ? "dark" : "light"}
+                />
+                <button
+                  onClick={() => sendMessage()}
+                  disabled={(!newMessage.trim() && !selectedGifUrl) || sending}
+                  style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: (!newMessage.trim() && !selectedGifUrl) || sending ? 0.5 : 1 }}
+                >
+                  Send
+                </button>
+              </div>
             </div>
           )}
         </>
