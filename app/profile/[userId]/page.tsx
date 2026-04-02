@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "../../lib/lib/supabaseClient";
 import NavBar from "../../components/NavBar";
 import { useTheme } from "../../lib/ThemeContext";
+import MentionTextarea, { extractMentionIds } from "../../components/MentionTextarea";
 
 type Profile = {
   user_id: string;
@@ -113,20 +114,32 @@ function extractFirstUrl(text: string): string | null {
   return null;
 }
 
+const MENTION_RE_SRC = /@\[([^\]]+)\]\(([^)]+)\)/;
+
 function renderContent(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
+  const combined = new RegExp(`(${MENTION_RE_SRC.source})|${URL_PATTERN_SRC}`, "g");
   let lastIndex = 0;
   let match;
-  const re = new RegExp(URL_PATTERN_SRC, "g");
-  while ((match = re.exec(text)) !== null) {
-    const raw = match[0].replace(/[.,)>]+$/, "");
-    const href = raw.startsWith("http") ? raw : `https://${raw}`;
+  while ((match = combined.exec(text)) !== null) {
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
-    parts.push(
-      <a key={match.index} href={href} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>
-        {raw}
-      </a>
-    );
+    if (match[0].startsWith("@[")) {
+      const name = match[1];
+      const uid = match[2];
+      parts.push(
+        <Link key={`mention-${match.index}`} href={`/profile/${uid}`} style={{ color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}>
+          @{name}
+        </Link>
+      );
+    } else {
+      const raw = match[0].replace(/[.,)>]+$/, "");
+      const href = raw.startsWith("http") ? raw : `https://${raw}`;
+      parts.push(
+        <a key={`url-${match.index}`} href={href} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>
+          {raw}
+        </a>
+      );
+    }
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < text.length) parts.push(text.slice(lastIndex));
@@ -498,6 +511,12 @@ export default function PublicProfilePage() {
       if (profile && currentUserId !== profile.user_id) {
         notify(profile.user_id, `${currentUserName} commented on your post`, profile.user_id);
       }
+      const mentionIds = extractMentionIds(text).filter(id => id !== currentUserId);
+      if (mentionIds.length > 0) {
+        await supabase.from("notifications").insert(
+          mentionIds.map(uid => ({ user_id: uid, message: `${currentUserName} mentioned you in a comment`, actor_name: currentUserName, post_owner_id: null }))
+        );
+      }
       supabase.from("post_comments").select("user_id").eq("post_id", postId).neq("user_id", currentUserId).then(({ data: td }) => {
         const participants = [...new Set(((td ?? []) as { user_id: string }[]).map((c) => c.user_id))].filter((id) => id !== profile?.user_id);
         participants.forEach((pid) => notify(pid, `${currentUserName} also commented on a post you're following`, profile?.user_id ?? pid));
@@ -734,6 +753,14 @@ export default function PublicProfilePage() {
       }
 
       const postId = inserted.id;
+
+      // Mention notifications
+      const mentionIds = extractMentionIds(postContent.trim()).filter(id => id !== currentUserId);
+      if (mentionIds.length > 0) {
+        await supabase.from("notifications").insert(
+          mentionIds.map(uid => ({ user_id: uid, message: `${currentUserName} mentioned you in a post`, actor_name: currentUserName, post_owner_id: null }))
+        );
+      }
 
       if (imagesToUpload.length > 0) {
         const uploadedUrls: string[] = [];
@@ -1634,10 +1661,10 @@ export default function PublicProfilePage() {
 
             {(isOwnWall || isMutualConnection) && (
               <div style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
-                <textarea
+                <MentionTextarea
                   placeholder={isOwnWall ? "Post to your wall..." : `Post on ${fullName}'s wall...`}
                   value={postContent}
-                  onChange={(e) => handlePostContentChange(e.target.value)}
+                  onChange={handlePostContentChange}
                   style={{ width: "100%", minHeight: 80, border: "none", outline: "none", resize: "vertical", fontSize: 16, boxSizing: "border-box", background: t.input, color: t.text }}
                 />
 
@@ -1885,7 +1912,7 @@ export default function PublicProfilePage() {
                               {comment.content && (
                                 <div style={{ marginTop: 3 }}>
                                   <div style={{ fontSize: 13, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
-                                    {comment.content}
+                                    {renderContent(comment.content)}
                                   </div>
                                   {isLong && (
                                     <button type="button" onClick={() => setExpandedCommentTexts((p) => ({ ...p, [comment.id]: !textExpanded }))} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: 12, fontWeight: 700, marginTop: 1 }}>
@@ -1927,10 +1954,10 @@ export default function PublicProfilePage() {
                         {/* Add comment input */}
                         {commentsOpen && (
                         <div style={{ marginTop: 14 }}>
-                          <textarea
+                          <MentionTextarea
                             placeholder="Write a comment..."
                             value={commentInputs[post.id] || ""}
-                            onChange={(e) => setCommentInputs((prev) => ({ ...prev, [post.id]: e.target.value }))}
+                            onChange={(val) => setCommentInputs((prev) => ({ ...prev, [post.id]: val }))}
                             style={{ width: "100%", minHeight: 60, border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: t.input, color: t.text }}
                           />
                           <div style={{ marginTop: 8, textAlign: "right" }}>

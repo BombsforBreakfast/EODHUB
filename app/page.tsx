@@ -7,6 +7,7 @@ import NavBar from "./components/NavBar";
 import { useTheme } from "./lib/ThemeContext";
 import EmojiPickerButton from "./components/EmojiPickerButton";
 import GifPickerButton from "./components/GifPickerButton";
+import MentionTextarea, { extractMentionIds } from "./components/MentionTextarea";
 
 type Job = {
   id: string;
@@ -196,20 +197,35 @@ function extractFirstUrl(text: string): string | null {
   return null;
 }
 
+const MENTION_RE = /@\[([^\]]+)\]\(([^)]+)\)/g;
+
 function renderContent(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
+  // Combined pattern: mention first, then URL
+  const combined = new RegExp(`(${MENTION_RE.source})|${URL_PATTERN_G.source}`, "g");
   let lastIndex = 0;
   let match;
-  const re = new RegExp(URL_PATTERN_G.source, "g");
-  while ((match = re.exec(text)) !== null) {
-    const raw = match[0].replace(/[.,)>]+$/, "");
-    const href = raw.startsWith("http") ? raw : `https://${raw}`;
+  while ((match = combined.exec(text)) !== null) {
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
-    parts.push(
-      <a key={match.index} href={href} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>
-        {raw}
-      </a>
-    );
+    if (match[0].startsWith("@[")) {
+      // It's a mention: @[Name](userId)
+      const name = match[1];
+      const uid = match[2];
+      parts.push(
+        <Link key={`mention-${match.index}`} href={`/profile/${uid}`} style={{ color: "#3b82f6", fontWeight: 600, textDecoration: "none" }}>
+          @{name}
+        </Link>
+      );
+    } else {
+      // It's a URL
+      const raw = match[0].replace(/[.,)>]+$/, "");
+      const href = raw.startsWith("http") ? raw : `https://${raw}`;
+      parts.push(
+        <a key={`url-${match.index}`} href={href} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>
+          {raw}
+        </a>
+      );
+    }
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < text.length) parts.push(text.slice(lastIndex));
@@ -1238,6 +1254,19 @@ export default function HomePage() {
       }
 
       const postId = insertedPost.id;
+
+      // Mention notifications
+      const mentionIds = extractMentionIds(contentToPost).filter(id => id !== userId);
+      if (mentionIds.length > 0) {
+        await supabase.from("notifications").insert(
+          mentionIds.map(uid => ({
+            user_id: uid,
+            message: `${currentUserName ?? "Someone"} mentioned you in a post`,
+            actor_name: currentUserName ?? "Someone",
+            post_owner_id: null,
+          }))
+        );
+      }
       const uploadedUrls: string[] = [];
 
       for (let i = 0; i < imagesToUpload.length; i += 1) {
@@ -1514,6 +1543,19 @@ export default function HomePage() {
         console.error("Comment insert error:", insertError);
         alert(insertError.message || "Failed to post comment.");
         return;
+      }
+
+      // Mention notifications
+      const mentionIds = extractMentionIds(commentText).filter(id => id !== userId);
+      if (mentionIds.length > 0) {
+        await supabase.from("notifications").insert(
+          mentionIds.map(uid => ({
+            user_id: uid,
+            message: `${currentUserName ?? "Someone"} mentioned you in a comment`,
+            actor_name: currentUserName ?? "Someone",
+            post_owner_id: null,
+          }))
+        );
       }
 
       setCommentInputs((prev) => ({
@@ -2247,11 +2289,11 @@ export default function HomePage() {
               background: t.surface,
             }}
           >
-            <textarea
+            <MentionTextarea
               ref={postTextareaRef}
               placeholder="What's happening in the EOD world?"
               value={content}
-              onChange={(e) => handleContentChange(e.target.value)}
+              onChange={handleContentChange}
               style={{
                 width: "100%",
                 minHeight: 90,
@@ -2956,7 +2998,7 @@ export default function HomePage() {
                                   {comment.content && (
                                     <div style={{ marginTop: 3 }}>
                                       <div style={{ fontSize: 13, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
-                                        {comment.content}
+                                        {renderContent(comment.content)}
                                       </div>
                                       {isLong && (
                                         <button type="button" onClick={() => setExpandedCommentTexts((p) => ({ ...p, [comment.id]: !textExpanded }))} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: 12, fontWeight: 700, marginTop: 1 }}>
@@ -3051,16 +3093,11 @@ export default function HomePage() {
                       )}
                       {commentsOpen && (
                       <div style={{ marginTop: 14 }}>
-                        <textarea
+                        <MentionTextarea
                           ref={(el) => { commentTextareaRefs.current[post.id] = el; }}
                           placeholder="Write a comment..."
                           value={commentInputs[post.id] || ""}
-                          onChange={(e) =>
-                            setCommentInputs((prev) => ({
-                              ...prev,
-                              [post.id]: e.target.value,
-                            }))
-                          }
+                          onChange={(val) => setCommentInputs((prev) => ({ ...prev, [post.id]: val }))}
                           style={{
                             width: "100%",
                             minHeight: 70,
