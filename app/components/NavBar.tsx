@@ -157,26 +157,17 @@ export default function NavBar() {
     return () => window.removeEventListener("messages-all-read", onAllRead);
   }, []);
 
-  // Realtime: new notification comes in → reload
+  // Realtime: notifications + messages + conversations — single channel per user
   useEffect(() => {
     if (!currentUserId) return;
     const channel = supabase
-      .channel(`nav-notifs-${currentUserId}`)
+      .channel(`nav-live-${currentUserId}`)
       .on("postgres_changes", {
         event: "INSERT",
         schema: "public",
         table: "notifications",
         filter: `user_id=eq.${currentUserId}`,
       }, () => loadNotifications(currentUserId))
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, [currentUserId]);
-
-  // Realtime: new message or read-status change → re-fetch accurate count
-  useEffect(() => {
-    if (!currentUserId) return;
-    const channel = supabase
-      .channel(`nav-messages-${currentUserId}`)
       .on("postgres_changes", {
         event: "INSERT",
         schema: "public",
