@@ -384,6 +384,7 @@ export default function HomePage() {
   const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
   const [pendingMembers, setPendingMembers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null; vouch_count: number; user_vouched: boolean }[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingPostContent, setEditingPostContent] = useState("");
@@ -584,13 +585,14 @@ export default function HomePage() {
   }
 
   async function loadPendingMembers(currentUserId: string) {
-    // Load pending users (not yet approved)
+    // Load pending users (not yet approved, not denied)
     const { data: pending } = await supabase
       .from("profiles")
       .select("user_id, first_name, last_name, display_name, photo_url, service")
       .or("is_approved.is.null,is_approved.eq.false")
       .neq("user_id", currentUserId)
       .not("first_name", "is", null)
+      .neq("verification_status", "denied")
       .limit(10);
 
     if (!pending || pending.length === 0) return;
@@ -638,6 +640,28 @@ export default function HomePage() {
         );
       }
     }
+  }
+
+  async function approveUser(targetUserId: string) {
+    if (!userId) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/admin/verify-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+      body: JSON.stringify({ userId: targetUserId }),
+    });
+    if (res.ok) setPendingMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
+  }
+
+  async function denyUser(targetUserId: string) {
+    if (!userId) return;
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/admin/deny-user", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+      body: JSON.stringify({ userId: targetUserId }),
+    });
+    if (res.ok) setPendingMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
   }
 
   async function toggleDiscoverConnection(targetUserId: string, type: "know" | "worked_with") {
@@ -1660,7 +1684,7 @@ export default function HomePage() {
         // Check verification status — unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
-          .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status, referral_code")
+          .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status, referral_code, is_admin")
           .eq("user_id", currentUserId)
           .maybeSingle();
 
@@ -1696,11 +1720,12 @@ export default function HomePage() {
 
         setUserId(currentUserId);
 
-        const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null } | null;
+        const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null; is_admin: boolean | null } | null;
         if (isMounted) {
           setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
           setCurrentUserHasPhoto(!!nd?.photo_url);
           setCurrentUserReferralCode(nd?.referral_code ?? null);
+          setIsAdmin(!!nd?.is_admin);
         }
 
         await Promise.all([
@@ -1973,50 +1998,50 @@ export default function HomePage() {
 
           {/* Pending Members — community vouching */}
           {userId && pendingMembers.length > 0 && (
-            <div style={{ marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 4 }}>
-                New Members Requesting Access
-              </div>
-              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12 }}>
-                Vouch for people you know. 3 vouches grants them access.
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {pendingMembers.map((m) => {
-                  const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
-                  const initial = (name[0] || "?").toUpperCase();
-                  return (
-                    <div key={m.user_id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                      <a href={`/profile/${m.user_id}`} style={{ textDecoration: "none", flexShrink: 0 }}>
-                        {m.photo_url
-                          ? <img src={m.photo_url} alt={name} style={{ width: 36, height: 36, borderRadius: "50%", objectFit: "cover", display: "block" }} />
-                          : <div style={{ width: 36, height: 36, borderRadius: "50%", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: t.textMuted }}>{initial}</div>
-                        }
-                      </a>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14 }}>{name}</div>
-                        {m.service && <div style={{ fontSize: 12, color: t.textMuted }}>{m.service}</div>}
-                      </div>
-                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexShrink: 0 }}>
-                        <div style={{ display: "flex", gap: 3 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+              {pendingMembers.map((m) => {
+                const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
+                const initial = (name[0] || "?").toUpperCase();
+                return (
+                  <div key={m.user_id} style={{ border: `1px solid ${isDark ? "#2a2a00" : "#fef08a"}`, borderRadius: 14, padding: 16, background: isDark ? "#1a1a00" : "#fefce8", display: "flex", gap: 14, alignItems: "flex-start" }}>
+                    <a href={`/profile/${m.user_id}`} style={{ textDecoration: "none", flexShrink: 0 }}>
+                      {m.photo_url
+                        ? <img src={m.photo_url} alt={name} style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "cover", display: "block" }} />
+                        : <div style={{ width: 42, height: 42, borderRadius: "50%", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, color: t.textMuted }}>{initial}</div>
+                      }
+                    </a>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{name} is requesting to join</div>
+                      {m.service && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{m.service}</div>}
+                      <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                           {[0, 1, 2].map((i) => (
-                            <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: i < m.vouch_count ? "#22c55e" : t.border }} />
+                            <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: i < m.vouch_count ? "#22c55e" : (isDark ? "#2e2e2e" : "#e5e7eb") }} />
                           ))}
+                          <span style={{ fontSize: 12, color: t.textMuted, marginLeft: 4, fontWeight: 600 }}>{m.vouch_count}/3 approved</span>
                         </div>
                         {!m.user_vouched ? (
-                          <button
-                            onClick={() => vouchForMember(m.user_id)}
-                            style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 8, padding: "4px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
-                          >
+                          <button onClick={() => vouchForMember(m.user_id)} style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
                             Vouch
                           </button>
                         ) : (
                           <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>✓ Vouched</span>
                         )}
+                        {isAdmin && (
+                          <>
+                            <button onClick={() => approveUser(m.user_id)} style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                              Approve
+                            </button>
+                            <button onClick={() => denyUser(m.user_id)} style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                              Deny
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
           )}
 
