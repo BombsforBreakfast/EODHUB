@@ -93,18 +93,13 @@ export default function MessagesPage() {
         .maybeSingle();
       const n = profile as { first_name: string | null; last_name: string | null; display_name: string | null } | null;
       setMyName(n?.display_name || `${n?.first_name ?? ""} ${n?.last_name ?? ""}`.trim() || "Someone");
-      // Mark all messages as read BEFORE loading conversations so counts show 0
-      const { data: convs } = await supabase
-        .from("conversations")
-        .select("id")
-        .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
-        .eq("status", "accepted");
-      const convIds = (convs ?? []).map((c: { id: string }) => c.id);
-      if (convIds.length > 0) {
-        await supabase.from("messages").update({ is_read: true })
-          .in("conversation_id", convIds)
-          .neq("sender_id", user.id)
-          .eq("is_read", false);
+      // Mark all messages as read via server-side route (bypasses RLS) BEFORE loading conversations
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        await fetch("/api/mark-messages-read", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
       }
       window.dispatchEvent(new CustomEvent("messages-all-read"));
       await loadConversations(user.id);
@@ -292,12 +287,14 @@ export default function MessagesPage() {
 
   async function markConversationRead(convId: string) {
     if (!userId) return;
-    await supabase
-      .from("messages")
-      .update({ is_read: true })
-      .eq("conversation_id", convId)
-      .neq("sender_id", userId)
-      .eq("is_read", false);
+    // Use server-side route to bypass RLS for is_read updates
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      await fetch("/api/mark-messages-read", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+    }
     setConversations((prev) =>
       prev.map((c) => c.id === convId ? { ...c, unread_count: 0 } : c)
     );
@@ -318,7 +315,15 @@ export default function MessagesPage() {
           return [...filtered, msg];
         });
         if (msg.sender_id !== userId) {
-          supabase.from("messages").update({ is_read: true }).eq("id", msg.id);
+          // Mark via server-side route to bypass RLS
+          supabase.auth.getSession().then(({ data: { session } }) => {
+            if (session?.access_token) {
+              fetch("/api/mark-messages-read", {
+                method: "POST",
+                headers: { Authorization: `Bearer ${session.access_token}` },
+              });
+            }
+          });
         }
         setConversations((prev) =>
           prev.map((c) => c.id === convId

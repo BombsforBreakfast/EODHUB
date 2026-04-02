@@ -100,19 +100,12 @@ export default function NavBar() {
 
   async function markMessagesRead() {
     if (!currentUserId) return;
-    const { data: convs } = await supabase
-      .from("conversations")
-      .select("id")
-      .or(`participant_1.eq.${currentUserId},participant_2.eq.${currentUserId}`)
-      .eq("status", "accepted");
-    const ids = (convs ?? []).map((c: { id: string }) => c.id);
-    if (ids.length > 0) {
-      await supabase
-        .from("messages")
-        .update({ is_read: true })
-        .in("conversation_id", ids)
-        .neq("sender_id", currentUserId)
-        .eq("is_read", false);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      await fetch("/api/mark-messages-read", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
     }
     setUnreadMessages(0);
   }
