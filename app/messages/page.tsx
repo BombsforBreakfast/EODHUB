@@ -85,6 +85,20 @@ export default function MessagesPage() {
       const n = profile as { first_name: string | null; last_name: string | null; display_name: string | null } | null;
       setMyName(n?.display_name || `${n?.first_name ?? ""} ${n?.last_name ?? ""}`.trim() || "Someone");
       await loadConversations(user.id);
+      // Mark all messages as read on page load and tell NavBar to clear badge
+      const { data: convs } = await supabase
+        .from("conversations")
+        .select("id")
+        .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
+        .eq("status", "accepted");
+      const convIds = (convs ?? []).map((c: { id: string }) => c.id);
+      if (convIds.length > 0) {
+        await supabase.from("messages").update({ is_read: true })
+          .in("conversation_id", convIds)
+          .neq("sender_id", user.id)
+          .eq("is_read", false);
+      }
+      window.dispatchEvent(new CustomEvent("messages-all-read"));
       setLoading(false);
     }
     init();

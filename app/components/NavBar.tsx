@@ -154,6 +154,13 @@ export default function NavBar() {
     };
   }, []);
 
+  // Messages page signals that all messages were read
+  useEffect(() => {
+    function onAllRead() { setUnreadMessages(0); }
+    window.addEventListener("messages-all-read", onAllRead);
+    return () => window.removeEventListener("messages-all-read", onAllRead);
+  }, []);
+
   // Realtime: new notification comes in → reload
   useEffect(() => {
     if (!currentUserId) return;
