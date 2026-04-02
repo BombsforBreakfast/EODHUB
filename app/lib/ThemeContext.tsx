@@ -23,6 +23,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (stored === "dark") setIsDark(true);
   }, []);
 
+  useEffect(() => {
+    document.body.dataset.dark = isDark ? "true" : "";
+  }, [isDark]);
+
   function toggleDark() {
     setIsDark((prev) => {
       const next = !prev;

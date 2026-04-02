@@ -29,6 +29,10 @@ body {
 .nav-search input { color: #555; }
 .nav-search input::placeholder { color: #bbb; }
 
+/* Dark mode — light placeholder text on all inputs and textareas */
+body[data-dark="true"] input::placeholder,
+body[data-dark="true"] textarea::placeholder { color: #9ca3af; }
+
 /* ── Global button press feedback ── */
 button, a.nav-btn, a[style*="cursor: pointer"] {
   transition: transform 0.08s ease, opacity 0.08s ease;

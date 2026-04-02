@@ -2767,16 +2767,17 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {commentsOpen && (
+                  {(post.comments.length > 0 || commentsOpen) && (
                     <div
                       style={{
-                        marginTop: 16,
-                        paddingTop: 16,
+                        marginTop: 12,
+                        paddingTop: 12,
                         borderTop: `1px solid ${t.border}`,
                       }}
                     >
-                      <div style={{ display: "grid", gap: 12 }}>
-                        {post.comments.map((comment) => {
+                      {post.comments.length > 0 && (
+                      <div style={{ display: "grid", gap: 6 }}>
+                        {(commentsOpen ? post.comments : post.comments.slice(0, 2)).map((comment) => {
                           const isOwnComment = userId === comment.user_id;
                           const isEditingComment = editingCommentId === comment.id;
 
@@ -2786,7 +2787,7 @@ export default function HomePage() {
                               style={{
                                 background: t.bg,
                                 borderRadius: 10,
-                                padding: 12,
+                                padding: 8,
                               }}
                             >
                               <div
@@ -2805,7 +2806,7 @@ export default function HomePage() {
                                     <Avatar
                                       photoUrl={comment.authorPhotoUrl}
                                       name={comment.authorName}
-                                      size={34}
+                                      size={28}
                                       service={comment.authorService}
                                     />
                                   </Link>
@@ -2950,7 +2951,7 @@ export default function HomePage() {
                               ) : (
                                 <>
                                   {comment.content && (
-                                    <div style={{ marginTop: 8, lineHeight: 1.5 }}>
+                                    <div style={{ marginTop: 4, lineHeight: 1.5 }}>
                                       {comment.content}
                                     </div>
                                   )}
@@ -2991,7 +2992,7 @@ export default function HomePage() {
                                   display: "flex",
                                   gap: 14,
                                   alignItems: "center",
-                                  marginTop: 10,
+                                  marginTop: 6,
                                   flexWrap: "wrap",
                                 }}
                               >
@@ -3027,13 +3028,18 @@ export default function HomePage() {
                           );
                         })}
 
-                        {post.comments.length === 0 && (
-                          <div style={{ color: t.textMuted, fontSize: 14 }}>
-                            No comments yet.
-                          </div>
-                        )}
                       </div>
-
+                      )}
+                      {!commentsOpen && post.comments.length > 2 && (
+                        <button
+                          type="button"
+                          onClick={() => setExpandedComments((prev) => ({ ...prev, [post.id]: true }))}
+                          style={{ marginTop: 8, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: 13, fontWeight: 700 }}
+                        >
+                          View all {post.comments.length} comments
+                        </button>
+                      )}
+                      {commentsOpen && (
                       <div style={{ marginTop: 14 }}>
                         <textarea
                           ref={(el) => { commentTextareaRefs.current[post.id] = el; }}
@@ -3183,6 +3189,7 @@ export default function HomePage() {
                           </button>
                         </div>
                       </div>
+                      )}
                     </div>
                   )}
                 </div>

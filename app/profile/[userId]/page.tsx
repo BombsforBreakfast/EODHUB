@@ -1847,15 +1847,15 @@ export default function PublicProfilePage() {
                     </div>
 
                     {/* Comments section */}
-                    {commentsOpen && (
-                      <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${t.border}` }}>
-                        <div style={{ display: "grid", gap: 12 }}>
-                          {post.comments.length === 0 && <div style={{ color: t.textMuted, fontSize: 14 }}>No comments yet.</div>}
-                          {post.comments.map((comment) => (
-                            <div key={comment.id} style={{ background: t.bg, borderRadius: 10, padding: 12 }}>
+                    {(post.comments.length > 0 || commentsOpen) && (
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
+                        {post.comments.length > 0 && (
+                        <div style={{ display: "grid", gap: 6 }}>
+                          {(commentsOpen ? post.comments : post.comments.slice(0, 2)).map((comment) => (
+                            <div key={comment.id} style={{ background: t.bg, borderRadius: 10, padding: 8 }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                                 <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-                                  <div style={{ width: 32, height: 32, borderRadius: "50%", overflow: "hidden", background: t.border, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: getServiceRingColor(comment.authorService) ? `3px solid ${getServiceRingColor(comment.authorService)}` : undefined }}>
+                                  <div style={{ width: 28, height: 28, borderRadius: "50%", overflow: "hidden", background: t.border, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: getServiceRingColor(comment.authorService) ? `3px solid ${getServiceRingColor(comment.authorService)}` : undefined }}>
                                     {comment.authorPhotoUrl
                                       ? <img src={comment.authorPhotoUrl} alt={comment.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                                       : comment.authorName[0]?.toUpperCase()}
@@ -1878,13 +1878,13 @@ export default function PublicProfilePage() {
                                   </button>
                                 )}
                               </div>
-                              {comment.content && <div style={{ marginTop: 8, lineHeight: 1.5, fontSize: 14 }}>{comment.content}</div>}
+                              {comment.content && <div style={{ marginTop: 4, lineHeight: 1.5, fontSize: 14 }}>{comment.content}</div>}
                               {comment.image_url && (
-                                <div style={{ marginTop: 10, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
+                                <div style={{ marginTop: 6, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
                                   <img src={comment.image_url} alt="Comment image" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
                                 </div>
                               )}
-                              <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 8 }}>
+                              <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 6 }}>
                                 <button
                                   type="button"
                                   onClick={() => toggleCommentLike(comment.id, comment.likedByCurrentUser)}
@@ -1898,8 +1898,19 @@ export default function PublicProfilePage() {
                             </div>
                           ))}
                         </div>
+                        )}
+                        {!commentsOpen && post.comments.length > 2 && (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedComments((prev) => ({ ...prev, [post.id]: true }))}
+                            style={{ marginTop: 8, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: 13, fontWeight: 700 }}
+                          >
+                            View all {post.comments.length} comments
+                          </button>
+                        )}
 
                         {/* Add comment input */}
+                        {commentsOpen && (
                         <div style={{ marginTop: 14 }}>
                           <textarea
                             placeholder="Write a comment..."
@@ -1918,6 +1929,7 @@ export default function PublicProfilePage() {
                             </button>
                           </div>
                         </div>
+                        )}
                       </div>
                     )}
                   </div>
