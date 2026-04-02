@@ -356,7 +356,7 @@ export default function MessagesPage() {
   if (loading) return <div style={{ padding: 40, background: t.bg, minHeight: "100vh" }}><NavBar /></div>;
 
   const InboxPane = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", borderRight: isMobile ? "none" : `1px solid ${t.border}` }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, borderRight: isMobile ? "none" : `1px solid ${t.border}` }}>
       {/* Tabs */}
       <div style={{ display: "flex", borderBottom: `1px solid ${t.border}` }}>
         <button
@@ -569,7 +569,7 @@ export default function MessagesPage() {
   );
 
   const ThreadPane = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       {/* Thread header */}
       <div style={{ padding: "14px 20px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "center", gap: 12 }}>
         {isMobile && (
@@ -726,6 +726,7 @@ export default function MessagesPage() {
           border: `1px solid ${t.border}`, borderRadius: 16, overflow: "hidden", background: t.surface,
           display: "grid",
           gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
+          gridTemplateRows: "1fr",
           height: isMobile ? "calc(100dvh - 120px)" : "calc(100dvh - 140px)",
         }}>
           {isMobile ? (
