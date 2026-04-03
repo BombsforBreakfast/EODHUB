@@ -326,6 +326,7 @@ export default function NavBar() {
 
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Units</Link>
+        <Link href="/directory" className="nav-btn nav-directory" style={navButton}>Directory</Link>
 
         <a
           href="/"
