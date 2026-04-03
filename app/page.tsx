@@ -402,6 +402,8 @@ export default function HomePage() {
   const [togglingJobSaveFor, setTogglingJobSaveFor] = useState<string | null>(null);
 
   const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
+  const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
+  const [expandedMemorialBios, setExpandedMemorialBios] = useState<Set<string>>(new Set());
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
   const [discoverVisible, setDiscoverVisible] = useState<DiscoverProfile[]>([]);
   const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -568,6 +570,29 @@ export default function HomePage() {
     });
 
     setTodayMemorials(todayAnniversaries as { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]);
+
+    // Restore dismissals for today
+    const todayStr = new Date().toISOString().slice(0, 10);
+    try {
+      const stored = JSON.parse(localStorage.getItem("eod_dismissed_memorials") || "null");
+      if (stored?.date === todayStr && Array.isArray(stored.ids)) {
+        setDismissedMemorialIds(new Set(stored.ids));
+      }
+    } catch { /* ignore */ }
+  }
+
+  function dismissMemorial(id: string) {
+    setDismissedMemorialIds(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      try {
+        const stored = JSON.parse(localStorage.getItem("eod_dismissed_memorials") || "null");
+        const existingIds: string[] = stored?.date === todayStr ? stored.ids : [];
+        localStorage.setItem("eod_dismissed_memorials", JSON.stringify({ date: todayStr, ids: [...existingIds, id] }));
+      } catch { /* ignore */ }
+      return next;
+    });
   }
 
   function pickDiscoverSlice(pool: DiscoverProfile[]): DiscoverProfile[] {
@@ -2500,35 +2525,61 @@ export default function HomePage() {
           <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
             {!postsLoaded && [0,1,2,3].map((i) => <SkeletonPost key={i} />)}
             {/* Memorial anniversary cards — auto-injected on anniversary date */}
-            {todayMemorials.map((m) => (
-              <div key={`memorial-${m.id}`} style={{ border: "2px solid #7c3aed", borderRadius: 14, overflow: "hidden" }}>
-                {/* Header banner */}
-                <div style={{ background: "#7c3aed", padding: "11px 20px", display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{ color: "white", fontSize: 17 }}>✦</span>
-                  <span style={{ color: "white", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" }}>We Remember</span>
-                  <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.75)", fontSize: 12, fontWeight: 600 }}>
-                    {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}
-                  </span>
-                </div>
-                {/* Card body */}
-                <div style={{ padding: 20, background: isDark ? "#1a0d2e" : "#faf5ff", display: "flex", gap: 16, alignItems: "flex-start" }}>
-                  {m.photo_url && (
-                    <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "3px solid #7c3aed" }}>
-                      <img src={m.photo_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            {todayMemorials.filter(m => !dismissedMemorialIds.has(m.id)).map((m) => {
+              const bioExpanded = expandedMemorialBios.has(m.id);
+              return (
+                <div key={`memorial-${m.id}`} style={{ border: "2px solid #7c3aed", borderRadius: 14, overflow: "hidden" }}>
+                  {/* Header banner */}
+                  <div style={{ background: "#7c3aed", padding: "11px 20px", display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ color: "white", fontSize: 17 }}>✦</span>
+                    <span style={{ color: "white", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" }}>We Remember</span>
+                    <span style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, fontWeight: 600, marginLeft: "auto", marginRight: 12 }}>
+                      {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => dismissMemorial(m.id)}
+                      title="Dismiss"
+                      style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "white", fontWeight: 900, fontSize: 16, lineHeight: 1, cursor: "pointer", padding: "2px 7px", flexShrink: 0 }}
+                    >×</button>
+                  </div>
+                  {/* Card body */}
+                  <div style={{ padding: 20, background: isDark ? "#1a0d2e" : "#faf5ff", display: "flex", gap: 16, alignItems: "flex-start" }}>
+                    {m.photo_url && (
+                      <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "3px solid #7c3aed" }}>
+                        <img src={m.photo_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      </div>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: isDark ? "#f3e8ff" : "#1a1a1a" }}>{m.name}</div>
+                      <div style={{ fontSize: 13, color: "#7c3aed", marginTop: 2 }}>
+                        {new Date(m.death_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
+                        {" · "}
+                        {new Date().getFullYear() - parseInt(m.death_date.split("-")[0])} years ago
+                      </div>
+                      {m.bio && (
+                        <>
+                          <div style={{ marginTop: 10, lineHeight: 1.6, color: t.textMuted, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: bioExpanded ? undefined : 3 }}>
+                            {m.bio}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedMemorialBios(prev => {
+                              const next = new Set(prev);
+                              bioExpanded ? next.delete(m.id) : next.add(m.id);
+                              return next;
+                            })}
+                            style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#7c3aed", fontSize: 13, fontWeight: 700, marginTop: 4 }}
+                          >
+                            {bioExpanded ? "Show less" : "Show more"}
+                          </button>
+                        </>
+                      )}
                     </div>
-                  )}
-                  <div>
-                    <div style={{ fontSize: 20, fontWeight: 900, color: isDark ? "#f3e8ff" : "#1a1a1a" }}>{m.name}</div>
-                    <div style={{ fontSize: 13, color: "#7c3aed", marginTop: 2 }}>
-                      {new Date(m.death_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-                      {" · "}
-                      {new Date().getFullYear() - parseInt(m.death_date.split("-")[0])} years ago
-                    </div>
-                    {m.bio && <div style={{ marginTop: 10, lineHeight: 1.6, color: t.textMuted }}>{m.bio}</div>}
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {posts.map((post) => {
               const commentsOpen = expandedComments[post.id] || false;
