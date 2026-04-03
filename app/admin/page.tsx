@@ -453,26 +453,33 @@ const [memWizUrl, setMemWizUrl] = useState("");
     }
   }
 
+  async function setProfileFlag(userId: string, flag: string, value: boolean, loadingKey: string, successMsg: string) {
+    setActionLoading(loadingKey);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/set-profile-flag", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: JSON.stringify({ targetUserId: userId, flag, value }),
+      });
+      const json = await res.json();
+      if (!res.ok) { alert(json.error ?? "Update failed"); } else { showToast(successMsg); await loadUsers(); }
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   async function toggleAdmin(userId: string, current: boolean | null) {
     if (!confirm(`${current ? "Remove" : "Grant"} admin access for this user?`)) return;
-    setActionLoading(userId + "-admin");
-    const { error } = await supabase.from("profiles").update({ is_admin: !current }).eq("user_id", userId);
-    if (error) { alert(error.message); } else { showToast(current ? "Admin removed." : "Admin granted!"); await loadUsers(); }
-    setActionLoading(null);
+    await setProfileFlag(userId, "is_admin", !current, userId + "-admin", current ? "Admin removed." : "Admin granted!");
   }
 
   async function toggleEmployer(userId: string, current: boolean | null) {
-    setActionLoading(userId + "-employer");
-    const { error } = await supabase.from("profiles").update({ is_employer: !current }).eq("user_id", userId);
-    if (error) { alert(error.message); } else { showToast(!current ? "Employer status granted." : "Employer status removed."); await loadUsers(); }
-    setActionLoading(null);
+    await setProfileFlag(userId, "is_employer", !current, userId + "-employer", !current ? "Employer status granted." : "Employer status removed.");
   }
 
   async function toggleEmployerVerified(userId: string, current: boolean | null) {
-    setActionLoading(userId + "-empverify");
-    const { error } = await supabase.from("profiles").update({ employer_verified: !current }).eq("user_id", userId);
-    if (error) { alert(error.message); } else { showToast(!current ? "Employer verified!" : "Verification removed."); await loadUsers(); }
-    setActionLoading(null);
+    await setProfileFlag(userId, "employer_verified", !current, userId + "-empverify", !current ? "Employer verified!" : "Verification removed.");
   }
 
   async function dismissFlag(id: string) {
