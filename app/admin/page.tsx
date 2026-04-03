@@ -47,7 +47,25 @@ type UserProfile = {
   created_at: string | null;
 };
 
-type Tab = "businesses" | "jobs" | "users" | "flags" | "tools" | "reports";
+type Tab = "businesses" | "jobs" | "users" | "flags" | "tools" | "reports" | "directory";
+
+type DirectoryEntry = {
+  id: string;
+  org_type: string;
+  name: string;
+  phone: string | null;
+  state: string | null;
+  unit_slug: string | null;
+  is_approved: boolean;
+  created_at: string;
+};
+
+type LocationRequest = {
+  id: string;
+  location_name: string;
+  reviewed: boolean;
+  created_at: string;
+};
 
 type BugReport = {
   id: string;
@@ -133,6 +151,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
   const [bugReports, setBugReports] = useState<BugReport[]>([]);
   const [reportsFilter, setReportsFilter] = useState<"unreviewed" | "all">("unreviewed");
+
+  const [directoryEntries, setDirectoryEntries] = useState<DirectoryEntry[]>([]);
+  const [locationRequests, setLocationRequests] = useState<LocationRequest[]>([]);
 
   const { t, isDark } = useTheme();
 
@@ -263,6 +284,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
     if (activeTab === "flags") loadFlags();
     if (activeTab === "tools") loadMemorials();
     if (activeTab === "reports") loadBugReports();
+    if (activeTab === "directory") loadDirectory();
   }, [pendingOnly, activeTab, authorized]);
 
   async function approveBusiness(id: string, featured = false) {
@@ -643,6 +665,41 @@ const [memWizUrl, setMemWizUrl] = useState("");
     });
   }
 
+  async function loadDirectory() {
+    const [dirRes, locRes] = await Promise.all([
+      supabase.from("unit_directory").select("*").order("created_at", { ascending: false }),
+      supabase.from("location_requests").select("*").order("created_at", { ascending: false }),
+    ]);
+    if (!dirRes.error) setDirectoryEntries((dirRes.data ?? []) as DirectoryEntry[]);
+    if (!locRes.error) setLocationRequests((locRes.data ?? []) as LocationRequest[]);
+  }
+
+  async function markLocReviewed(id: string) {
+    await supabase.from("location_requests").update({ reviewed: true }).eq("id", id);
+    setLocationRequests((prev) => prev.map((r) => r.id === id ? { ...r, reviewed: true } : r));
+  }
+
+  async function deleteLocRequest(id: string) {
+    await supabase.from("location_requests").delete().eq("id", id);
+    setLocationRequests((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  async function approveDirectoryEntry(id: string) {
+    setActionLoading(id);
+    const { error } = await supabase.from("unit_directory").update({ is_approved: true }).eq("id", id);
+    if (error) { alert(error.message); } else { showToast("Entry approved!"); await loadDirectory(); }
+    setActionLoading(null);
+  }
+
+  async function denyDirectoryEntry(id: string) {
+    askConfirm("Delete this directory submission?", async () => {
+      setActionLoading(id);
+      const { error } = await supabase.from("unit_directory").delete().eq("id", id);
+      if (error) { alert(error.message); } else { showToast("Entry removed."); await loadDirectory(); }
+      setActionLoading(null);
+    });
+  }
+
   const tabStyle = (tab: Tab): React.CSSProperties => ({
     padding: "9px 20px",
     borderRadius: 10,
@@ -751,6 +808,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
           </button>
           <button style={tabStyle("reports")} onClick={() => setActiveTab("reports")}>
             Reports {bugReports.filter(r => !r.reviewed).length > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{bugReports.filter(r => !r.reviewed).length}</span>}
+          </button>
+          <button style={tabStyle("directory")} onClick={() => setActiveTab("directory")}>
+            Directory {directoryEntries.filter(e => !e.is_approved).length > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{directoryEntries.filter(e => !e.is_approved).length}</span>}
           </button>
 
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: t.textMuted }}>
@@ -1204,6 +1264,86 @@ const [memWizUrl, setMemWizUrl] = useState("");
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* ── DIRECTORY TAB ── */}
+        {activeTab === "directory" && (
+          <div style={{ marginTop: 20, display: "grid", gap: 20 }}>
+
+            {/* Location requests */}
+            {locationRequests.filter(r => !r.reviewed).length > 0 && (
+              <div style={{ border: `1px solid #fbbf24`, borderRadius: 14, background: t.surface, padding: 20 }}>
+                <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 12, color: t.text }}>
+                  📍 Location Requests <span style={{ background: "#fef3c7", color: "#92400e", borderRadius: 20, padding: "2px 10px", fontSize: 12, marginLeft: 6 }}>{locationRequests.filter(r => !r.reviewed).length} new</span>
+                </div>
+                <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 14 }}>
+                  These are user-requested locations. Add them to the <code>OVERSEAS_LOCATIONS</code> array in <code>app/directory/page.tsx</code>, then mark reviewed.
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {locationRequests.filter(r => !r.reviewed).map((req) => (
+                    <div key={req.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", border: `1px solid ${t.border}`, borderRadius: 8, background: t.bg }}>
+                      <span style={{ flex: 1, fontWeight: 700, color: t.text }}>{req.location_name}</span>
+                      <span style={{ fontSize: 12, color: t.textFaint }}>{new Date(req.created_at).toLocaleDateString()}</span>
+                      <button onClick={() => markLocReviewed(req.id)} style={{ background: "#16a34a", color: "white", border: "none", borderRadius: 6, padding: "4px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                        Mark Done
+                      </button>
+                      <button onClick={() => deleteLocRequest(req.id)} style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 6, padding: "4px 10px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}>
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Unit submissions */}
+            <div>
+            <div style={{ marginBottom: 14, fontSize: 14, color: t.textMuted }}>
+              Showing all submissions — approve to make them public, or delete to reject.
+            </div>
+            {directoryEntries.length === 0 && (
+              <div style={{ padding: 32, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
+                No directory submissions.
+              </div>
+            )}
+            <div style={{ display: "grid", gap: 10 }}>
+              {directoryEntries.map((entry) => (
+                <div key={entry.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+                  {!entry.is_approved && (
+                    <span style={{ background: "#fef3c7", color: "#92400e", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>PENDING</span>
+                  )}
+                  <span style={{ background: "#374151", color: "#fff", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0 }}>{entry.org_type}</span>
+                  <div style={{ flex: 1, minWidth: 120 }}>
+                    <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{entry.name}</div>
+                    <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
+                      {[entry.state, entry.phone, entry.unit_slug ? `slug: ${entry.unit_slug}` : null].filter(Boolean).join(" · ")}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    {!entry.is_approved && (
+                      <button
+                        onClick={() => approveDirectoryEntry(entry.id)}
+                        disabled={actionLoading === entry.id}
+                        style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }}
+                      >
+                        {actionLoading === entry.id && <span className="btn-spinner" />}
+                        Approve
+                      </button>
+                    )}
+                    <button
+                      onClick={() => denyDirectoryEntry(entry.id)}
+                      disabled={actionLoading === entry.id}
+                      style={{ ...actionBtn("#ef4444"), display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      {actionLoading === entry.id && <span className="btn-spinner" />}
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            </div>{/* end unit submissions */}
           </div>
         )}
 

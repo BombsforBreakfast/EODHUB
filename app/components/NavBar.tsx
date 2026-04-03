@@ -455,6 +455,7 @@ export default function NavBar() {
             { label: "Businesses", href: "/?tab=businesses", emoji: "🏢", badge: 0, onNav: null },
             { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
             { label: "Units", href: "/units", emoji: "🪖", badge: 0, onNav: null },
+            { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
             { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages, onNav: markMessagesRead },
           ].map((item) => (
             <a
