@@ -199,7 +199,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       // Fallback: direct query (works if RLS allows admin to read all profiles)
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, created_at")
+        .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
         .order("created_at", { ascending: false });
       if (!error) setUsers((data ?? []).map((u) => ({ ...u, email: null })) as UserProfile[]);
       return;
