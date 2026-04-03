@@ -136,6 +136,16 @@ type FeedComment = Comment & {
   likedByCurrentUser: boolean;
 };
 
+type MemorialComment = {
+  id: string;
+  memorial_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  authorName: string;
+  authorPhotoUrl: string | null;
+};
+
 type OgPreview = {
   url: string;
   title: string | null;
@@ -404,6 +414,11 @@ export default function HomePage() {
   const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
   const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
   const [expandedMemorialBios, setExpandedMemorialBios] = useState<Set<string>>(new Set());
+  const [memorialLikes, setMemorialLikes] = useState<Record<string, string[]>>({});
+  const [memorialComments, setMemorialComments] = useState<Record<string, MemorialComment[]>>({});
+  const [memorialCommentInputs, setMemorialCommentInputs] = useState<Record<string, string>>({});
+  const [submittingMemorialComment, setSubmittingMemorialComment] = useState<string | null>(null);
+  const [memorialCommentsOpen, setMemorialCommentsOpen] = useState<Record<string, boolean>>({});
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
   const [discoverVisible, setDiscoverVisible] = useState<DiscoverProfile[]>([]);
   const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -434,6 +449,7 @@ export default function HomePage() {
   const commentTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const contentRawRef = useRef("");
   const commentRawsRef = useRef<Record<string, string>>({});
+  const memorialCommentRawsRef = useRef<Record<string, string>>({});
   const commentImageInputRefs = useRef<Record<string, HTMLInputElement | null>>(
     {}
   );
@@ -569,7 +585,9 @@ export default function HomePage() {
       return parts[1] === mm && parts[2] === dd;
     });
 
-    setTodayMemorials(todayAnniversaries as { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]);
+    const anniversaryList = todayAnniversaries as { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[];
+    setTodayMemorials(anniversaryList);
+    void loadMemorialInteractions(anniversaryList.map(m => m.id));
 
     // Restore dismissals for today
     const todayStr = new Date().toISOString().slice(0, 10);
@@ -593,6 +611,76 @@ export default function HomePage() {
       } catch { /* ignore */ }
       return next;
     });
+  }
+
+  async function loadMemorialInteractions(ids: string[]) {
+    if (ids.length === 0) return;
+    const [likesRes, commentsRes] = await Promise.all([
+      supabase.from("memorial_likes").select("memorial_id, user_id").in("memorial_id", ids),
+      supabase.from("memorial_comments").select("id, memorial_id, user_id, content, created_at").in("memorial_id", ids).order("created_at", { ascending: true }),
+    ]);
+
+    const likesMap: Record<string, string[]> = {};
+    for (const like of (likesRes.data ?? [])) {
+      if (!likesMap[like.memorial_id]) likesMap[like.memorial_id] = [];
+      likesMap[like.memorial_id].push(like.user_id);
+    }
+    setMemorialLikes(likesMap);
+
+    const authorIds = [...new Set((commentsRes.data ?? []).map((c: { user_id: string }) => c.user_id))];
+    const profileMap: Record<string, { name: string; photo: string | null }> = {};
+    if (authorIds.length > 0) {
+      const { data: profiles } = await supabase.from("profiles").select("user_id, first_name, last_name, photo_url").in("user_id", authorIds);
+      for (const p of (profiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null }[]) {
+        profileMap[p.user_id] = { name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() || "User", photo: p.photo_url ?? null };
+      }
+    }
+
+    const commentsMap: Record<string, MemorialComment[]> = {};
+    for (const c of (commentsRes.data ?? []) as (MemorialComment)[]) {
+      if (!commentsMap[c.memorial_id]) commentsMap[c.memorial_id] = [];
+      commentsMap[c.memorial_id].push({ ...c, authorName: profileMap[c.user_id]?.name ?? "User", authorPhotoUrl: profileMap[c.user_id]?.photo ?? null });
+    }
+    setMemorialComments(commentsMap);
+  }
+
+  async function toggleMemorialLike(memorialId: string) {
+    if (!userId) { window.location.href = "/login"; return; }
+    const liked = (memorialLikes[memorialId] ?? []).includes(userId);
+    if (liked) {
+      await supabase.from("memorial_likes").delete().eq("memorial_id", memorialId).eq("user_id", userId);
+    } else {
+      await supabase.from("memorial_likes").insert({ memorial_id: memorialId, user_id: userId });
+    }
+    setMemorialLikes(prev => ({
+      ...prev,
+      [memorialId]: liked ? (prev[memorialId] ?? []).filter(id => id !== userId) : [...(prev[memorialId] ?? []), userId],
+    }));
+  }
+
+  async function submitMemorialComment(memorialId: string) {
+    if (!userId) { window.location.href = "/login"; return; }
+    const text = (memorialCommentRawsRef.current[memorialId] || memorialCommentInputs[memorialId] || "").trim();
+    if (!text) return;
+    setSubmittingMemorialComment(memorialId);
+    const { data, error } = await supabase.from("memorial_comments")
+      .insert({ memorial_id: memorialId, user_id: userId, content: text })
+      .select("id, memorial_id, user_id, content, created_at").single();
+    if (!error && data) {
+      setMemorialComments(prev => ({
+        ...prev,
+        [memorialId]: [...(prev[memorialId] ?? []), { ...data, authorName: currentUserName ?? "User", authorPhotoUrl: null }],
+      }));
+      setMemorialCommentInputs(prev => ({ ...prev, [memorialId]: "" }));
+      memorialCommentRawsRef.current[memorialId] = "";
+      const mentionIds = extractMentionIds(text).filter(id => id !== userId);
+      if (mentionIds.length > 0) {
+        await supabase.from("notifications").insert(
+          mentionIds.map(uid => ({ user_id: uid, message: `${currentUserName ?? "Someone"} mentioned you in a memorial comment`, actor_name: currentUserName ?? "Someone", post_owner_id: null }))
+        );
+      }
+    }
+    setSubmittingMemorialComment(null);
   }
 
   function pickDiscoverSlice(pool: DiscoverProfile[]): DiscoverProfile[] {
@@ -2575,6 +2663,53 @@ export default function HomePage() {
                           </button>
                         </>
                       )}
+
+                      {/* Interaction bar */}
+                      {(() => {
+                        const likes = memorialLikes[m.id] ?? [];
+                        const myLiked = userId ? likes.includes(userId) : false;
+                        const comments = memorialComments[m.id] ?? [];
+                        const commentsOpen = !!memorialCommentsOpen[m.id];
+                        return (
+                          <>
+                            <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${isDark ? "#3b1f6b" : "#e9d5ff"}` }}>
+                              <button type="button" onClick={() => toggleMemorialLike(m.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: myLiked ? "#7c3aed" : t.textMuted, fontWeight: myLiked ? 700 : 400, fontSize: 14, padding: 0 }}>
+                                {myLiked ? "♥" : "♡"}{likes.length > 0 && <span style={{ fontSize: 13 }}>{likes.length}</span>}
+                              </button>
+                              <button type="button" onClick={() => setMemorialCommentsOpen(p => ({ ...p, [m.id]: !commentsOpen }))} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: t.textMuted, fontSize: 14, padding: 0 }}>
+                                💬{comments.length > 0 && <span style={{ fontSize: 13 }}>{comments.length}</span>}
+                              </button>
+                            </div>
+                            {commentsOpen && (
+                              <div style={{ marginTop: 12 }}>
+                                {comments.map(c => (
+                                  <div key={c.id} style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.text }}>
+                                      {c.authorPhotoUrl ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : c.authorName[0]?.toUpperCase()}
+                                    </div>
+                                    <div style={{ background: isDark ? "#2a1050" : "#f3e8ff", borderRadius: 10, padding: "6px 10px", flex: 1 }}>
+                                      <div style={{ fontWeight: 700, fontSize: 12, color: "#7c3aed", marginBottom: 2 }}>{c.authorName}</div>
+                                      <div style={{ fontSize: 13, lineHeight: 1.45, color: t.text }}>{renderContent(c.content)}</div>
+                                    </div>
+                                  </div>
+                                ))}
+                                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginTop: 4 }}>
+                                  <MentionTextarea
+                                    value={memorialCommentInputs[m.id] || ""}
+                                    onChange={val => setMemorialCommentInputs(p => ({ ...p, [m.id]: val }))}
+                                    onChangeRaw={raw => { memorialCommentRawsRef.current[m.id] = raw; }}
+                                    placeholder="Leave a tribute..."
+                                    style={{ flex: 1, minHeight: 60, border: `1px solid ${isDark ? "#3b1f6b" : "#c4b5fd"}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: isDark ? "#1a0d2e" : "#faf5ff", color: t.text, outline: "none" }}
+                                  />
+                                  <button type="button" onClick={() => submitMemorialComment(m.id)} disabled={submittingMemorialComment === m.id} style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 700, cursor: submittingMemorialComment === m.id ? "not-allowed" : "pointer", opacity: submittingMemorialComment === m.id ? 0.7 : 1, fontSize: 13, flexShrink: 0 }}>
+                                    {submittingMemorialComment === m.id ? "…" : "Reply"}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
