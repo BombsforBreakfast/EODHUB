@@ -1429,7 +1429,7 @@ export default function PublicProfilePage() {
                   <div
                     onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
                     title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? `1px solid ${t.border}` : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: profile.is_employer ? 6 : 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: profile.is_employer ? 6 : 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url
                       ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: profile.is_employer ? "contain" : "cover", display: "block" }} />
@@ -1495,7 +1495,7 @@ export default function PublicProfilePage() {
                 {/* Profile details — full width below */}
                 <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
-                    <div><strong>Role:</strong> {profile.role || "—"}</div>
+                    <div><strong>Role:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "—")}</div>
                     <div><strong>Service:</strong> {profile.service || "—"}</div>
                     <div><strong>Status:</strong> {profile.status || "—"}</div>
                     <div><strong>Experience:</strong> {profile.years_experience || "—"}</div>
@@ -1522,7 +1522,7 @@ export default function PublicProfilePage() {
                   <div
                     onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
                     title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? `1px solid ${t.border}` : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: profile.is_employer ? 8 : 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: profile.is_employer ? 8 : 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url ? (
                       <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: profile.is_employer ? "contain" : "cover", display: "block" }} />
@@ -1591,7 +1591,7 @@ export default function PublicProfilePage() {
                 {/* Profile details */}
                 <div style={{ flex: 1, color: t.textMuted, lineHeight: 1.8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
-                    <div><strong>Role:</strong> {profile.role || "Not added yet"}</div>
+                    <div><strong>Role:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
                     <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
                     <div><strong>Status:</strong> {profile.status || "Not added yet"}</div>
                     <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
