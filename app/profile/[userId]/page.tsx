@@ -1399,9 +1399,9 @@ export default function PublicProfilePage() {
               <div>
                 {/* Top row: avatar + name + stats */}
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                  <div style={{ width: 76, height: 76, borderRadius: "50%", overflow: "hidden", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined }}>
+                  <div style={{ width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? `1px solid ${t.border}` : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: profile.is_employer ? 6 : 0 }}>
                     {profile.photo_url
-                      ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: profile.is_employer ? "contain" : "cover", display: "block" }} />
                       : fullName[0]?.toUpperCase()}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
@@ -1477,9 +1477,9 @@ export default function PublicProfilePage() {
               <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
                 {/* Identity: photo + name + stats + buttons */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flexShrink: 0, width: 180 }}>
-                  <div style={{ width: 120, height: 120, borderRadius: "50%", overflow: "hidden", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined }}>
+                  <div style={{ width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? `1px solid ${t.border}` : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: profile.is_employer ? 8 : 0 }}>
                     {profile.photo_url ? (
-                      <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: profile.is_employer ? "contain" : "cover", display: "block" }} />
                     ) : ("Photo")}
                   </div>
 

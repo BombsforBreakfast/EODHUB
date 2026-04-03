@@ -106,6 +106,7 @@ export default function OnboardingPage() {
             }
           : {
               account_type: "employer",
+              is_employer: true,
               first_name: empFirstName,
               last_name: empLastName,
               company_name: companyName,
