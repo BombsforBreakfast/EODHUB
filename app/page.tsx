@@ -337,6 +337,7 @@ export default function HomePage() {
   const { t, isDark } = useTheme();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
+  const [jobLeaderboard, setJobLeaderboard] = useState<{ user_id: string; name: string; photo_url: string | null; count: number }[]>([]);
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [businessListings, setBusinessListings] = useState<BusinessListing[]>(
     []
@@ -572,23 +573,39 @@ export default function HomePage() {
       setJobsLastUpdated(lastSeenRes.data.last_seen_at);
     }
 
-    // Load submitter names for non-anonymous community jobs
-    const communityUserIds = [...new Set(
-      loadedJobs
-        .filter((j) => j.source_type === "community" && j.user_id && !j.anonymous)
-        .map((j) => j.user_id as string)
-    )];
+    // Load submitter profiles for non-anonymous community jobs
+    const communityJobs = loadedJobs.filter((j) => j.source_type === "community" && j.user_id && !j.anonymous);
+    const communityUserIds = [...new Set(communityJobs.map((j) => j.user_id as string))];
     if (communityUserIds.length > 0) {
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("user_id, display_name, first_name, last_name")
+        .select("user_id, display_name, first_name, last_name, photo_url")
         .in("user_id", communityUserIds);
-      const map = new Map<string, string>();
-      ((profiles ?? []) as { user_id: string; display_name: string | null; first_name: string | null; last_name: string | null }[]).forEach((p) => {
+      type ProfileRow = { user_id: string; display_name: string | null; first_name: string | null; last_name: string | null; photo_url: string | null };
+      const profileRows = (profiles ?? []) as ProfileRow[];
+
+      // Name map for tile attribution
+      const nameMap = new Map<string, string>();
+      profileRows.forEach((p) => {
         const name = p.display_name || [p.first_name, p.last_name?.charAt(0) ? p.last_name.charAt(0) + "." : ""].filter(Boolean).join(" ") || "Member";
-        map.set(p.user_id, name);
+        nameMap.set(p.user_id, name);
       });
-      setJobSubmitters(map);
+      setJobSubmitters(nameMap);
+
+      // Leaderboard: count approved community jobs per user
+      const counts = new Map<string, number>();
+      communityJobs.forEach((j) => { counts.set(j.user_id!, (counts.get(j.user_id!) ?? 0) + 1); });
+      const board = profileRows
+        .map((p) => ({
+          user_id: p.user_id,
+          name: nameMap.get(p.user_id) ?? "Member",
+          photo_url: p.photo_url,
+          count: counts.get(p.user_id) ?? 0,
+        }))
+        .filter((e) => e.count > 0)
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 5);
+      setJobLeaderboard(board);
     }
   }
 
@@ -2114,6 +2131,36 @@ export default function HomePage() {
               Post Job
             </Link>
           </div>
+
+          {/* Community leaderboard */}
+          {jobLeaderboard.length > 0 && (
+            <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: "12px 16px" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>
+                Top Community Contributors
+              </div>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                {jobLeaderboard.map((entry, i) => {
+                  const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
+                  return (
+                    <a
+                      key={entry.user_id}
+                      href={`/profile/${entry.user_id}`}
+                      style={{ display: "flex", alignItems: "center", gap: 7, textDecoration: "none", padding: "5px 10px", borderRadius: 20, border: `1px solid ${t.border}`, background: t.bg }}
+                    >
+                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: t.text }}>
+                        {entry.photo_url
+                          ? <img src={entry.photo_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : entry.name[0]?.toUpperCase()}
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{entry.name}</span>
+                      {medal && <span style={{ fontSize: 13 }}>{medal}</span>}
+                      <span style={{ fontSize: 11, color: t.textFaint, fontWeight: 600 }}>{entry.count}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
             {!jobsLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
