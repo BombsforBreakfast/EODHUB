@@ -83,6 +83,7 @@ type ProfileName = {
   last_name: string | null;
   photo_url: string | null;
   service: string | null;
+  is_employer: boolean | null;
 };
 
 type DiscoverProfile = {
@@ -133,6 +134,7 @@ type FeedComment = Comment & {
   authorName: string;
   authorPhotoUrl: string | null;
   authorService: string | null;
+  authorIsEmployer: boolean | null;
   likeCount: number;
   likedByCurrentUser: boolean;
 };
@@ -162,6 +164,7 @@ type FeedPost = RankedPostRow & {
   authorName: string;
   authorPhotoUrl: string | null;
   authorService: string | null;
+  authorIsEmployer: boolean | null;
   likeCount: number;
   commentCount: number;
   likedByCurrentUser: boolean;
@@ -288,22 +291,27 @@ function Avatar({
   name,
   size = 44,
   service,
+  isEmployer,
 }: {
   photoUrl: string | null;
   name: string;
   size?: number;
   service?: string | null;
+  isEmployer?: boolean | null;
 }) {
   const { t } = useTheme();
-  const ringColor = getServiceRingColor(service);
+  const ringColor = isEmployer ? null : getServiceRingColor(service);
+  // Employers get a rounded-rect container so logos aren't squished into a circle
+  const borderRadius = isEmployer ? Math.max(4, size * 0.18) : "50%";
+  const bgColor = isEmployer ? "#f0f0f0" : t.badgeBg;
   return (
     <div
       style={{
         width: size,
         height: size,
-        borderRadius: "50%",
+        borderRadius,
         overflow: "hidden",
-        background: t.badgeBg,
+        background: bgColor,
         flexShrink: 0,
         display: "flex",
         alignItems: "center",
@@ -322,8 +330,9 @@ function Avatar({
           style={{
             width: "100%",
             height: "100%",
-            objectFit: "cover",
+            objectFit: isEmployer ? "contain" : "cover",
             display: "block",
+            padding: isEmployer ? 2 : 0,
           }}
         />
       ) : (
@@ -1110,7 +1119,7 @@ export default function HomePage() {
       allProfileUserIds.length > 0
         ? await supabase
             .from("profiles")
-            .select("user_id, first_name, last_name, photo_url, service")
+            .select("user_id, first_name, last_name, photo_url, service, is_employer")
             .in("user_id", allProfileUserIds)
         : { data: [], error: null };
 
@@ -1121,6 +1130,7 @@ export default function HomePage() {
     const profileNameMap = new Map<string, string>();
     const profilePhotoMap = new Map<string, string | null>();
     const profileServiceMap = new Map<string, string | null>();
+    const profileEmployerMap = new Map<string, boolean | null>();
 
     (profileData as ProfileName[] | null)?.forEach((profile) => {
       const fullName =
@@ -1130,6 +1140,7 @@ export default function HomePage() {
       profileNameMap.set(profile.user_id, fullName);
       profilePhotoMap.set(profile.user_id, profile.photo_url ?? null);
       profileServiceMap.set(profile.user_id, profile.service ?? null);
+      profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
     });
 
     const likesByPost = new Map<string, string[]>();
@@ -1156,6 +1167,7 @@ export default function HomePage() {
         authorName: profileNameMap.get(comment.user_id) || "User",
         authorPhotoUrl: profilePhotoMap.get(comment.user_id) || null,
         authorService: profileServiceMap.get(comment.user_id) ?? null,
+        authorIsEmployer: profileEmployerMap.get(comment.user_id) ?? null,
         likeCount: commentLikes.length,
         likedByCurrentUser: effectiveUserId
           ? commentLikes.includes(effectiveUserId)
@@ -1182,6 +1194,7 @@ export default function HomePage() {
         authorName: profileNameMap.get(post.user_id) || "User",
         authorPhotoUrl: profilePhotoMap.get(post.user_id) || null,
         authorService: profileServiceMap.get(post.user_id) ?? null,
+        authorIsEmployer: profileEmployerMap.get(post.user_id) ?? null,
         likeCount: likesForPost.length,
         commentCount: commentsForPost.length,
         likedByCurrentUser: effectiveUserId
@@ -2847,6 +2860,7 @@ export default function HomePage() {
                           name={post.authorName}
                           size={46}
                           service={post.authorService}
+                          isEmployer={post.authorIsEmployer}
                         />
                       </Link>
 
@@ -3163,6 +3177,7 @@ export default function HomePage() {
                                       name={comment.authorName}
                                       size={24}
                                       service={comment.authorService}
+                                      isEmployer={comment.authorIsEmployer}
                                     />
                                   </Link>
 

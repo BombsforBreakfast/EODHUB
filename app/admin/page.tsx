@@ -1166,6 +1166,13 @@ const [memWizUrl, setMemWizUrl] = useState("");
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{name}</span>
                         {u.is_admin && <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>ADMIN</span>}
+                        {u.is_employer ? (
+                          <span style={{ background: u.employer_verified ? "#dbeafe" : "#e5e7eb", color: u.employer_verified ? "#1e40af" : "#374151", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>
+                            {u.employer_verified ? "✓ Employer" : "Employer"}
+                          </span>
+                        ) : (
+                          <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Member</span>
+                        )}
                         {isVerified && <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Verified</span>}
                         {isPending && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
                         {isDenied && <span style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Denied</span>}

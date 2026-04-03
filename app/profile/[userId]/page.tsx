@@ -259,6 +259,33 @@ export default function PublicProfilePage() {
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const [togglingCommentLikeFor, setTogglingCommentLikeFor] = useState<string | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+
+  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!currentUserId || currentUserId !== userId) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) { alert("Please select an image file."); e.target.value = ""; return; }
+    if (file.size > 8 * 1024 * 1024) { alert("Photo must be under 8 MB."); e.target.value = ""; return; }
+    try {
+      setUploadingAvatar(true);
+      const safeName = `${Date.now()}-avatar-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const filePath = `${currentUserId}/${safeName}`;
+      const { error: uploadError } = await supabase.storage.from("profile-photos").upload(filePath, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from("profile-photos").getPublicUrl(filePath);
+      const { error: updateError } = await supabase.from("profiles").update({ photo_url: data.publicUrl }).eq("user_id", currentUserId);
+      if (updateError) throw updateError;
+      await loadProfile(currentUserId);
+    } catch (err) {
+      console.error(err);
+      alert(`Photo upload failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setUploadingAvatar(false);
+      e.target.value = "";
+    }
+  }
 
   async function loadProfile(targetUserId: string) {
     const { data, error } = await supabase
@@ -1399,10 +1426,25 @@ export default function PublicProfilePage() {
               <div>
                 {/* Top row: avatar + name + stats */}
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
-                  <div style={{ width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? `1px solid ${t.border}` : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: profile.is_employer ? 6 : 0 }}>
+                  <div
+                    onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
+                    title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
+                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? `1px solid ${t.border}` : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: profile.is_employer ? 6 : 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                  >
                     {profile.photo_url
                       ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: profile.is_employer ? "contain" : "cover", display: "block" }} />
                       : fullName[0]?.toUpperCase()}
+                    {isOwnWall && (
+                      <div
+                        style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, opacity: uploadingAvatar ? 1 : 0, transition: "opacity 0.2s" }}
+                        onMouseEnter={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "1"; }}
+                        onMouseLeave={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "0"; }}
+                      >
+                        <span style={{ fontSize: 14 }}>📷</span>
+                        <span style={{ fontSize: 9, color: "white", fontWeight: 700 }}>{uploadingAvatar ? "..." : "Update"}</span>
+                      </div>
+                    )}
+                    {isOwnWall && <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} />}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
@@ -1477,10 +1519,24 @@ export default function PublicProfilePage() {
               <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
                 {/* Identity: photo + name + stats + buttons */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flexShrink: 0, width: 180 }}>
-                  <div style={{ width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? `1px solid ${t.border}` : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: profile.is_employer ? 8 : 0 }}>
+                  <div
+                    onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
+                    title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
+                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? `1px solid ${t.border}` : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: profile.is_employer ? 8 : 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                  >
                     {profile.photo_url ? (
                       <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: profile.is_employer ? "contain" : "cover", display: "block" }} />
                     ) : ("Photo")}
+                    {isOwnWall && (
+                      <div
+                        style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, opacity: uploadingAvatar ? 1 : 0, transition: "opacity 0.2s" }}
+                        onMouseEnter={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "1"; }}
+                        onMouseLeave={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "0"; }}
+                      >
+                        <span style={{ fontSize: 22 }}>📷</span>
+                        <span style={{ fontSize: 11, color: "white", fontWeight: 700 }}>{uploadingAvatar ? "Uploading..." : "Update"}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div style={{ textAlign: "center" }}>
