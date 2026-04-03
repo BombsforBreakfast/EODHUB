@@ -1205,9 +1205,15 @@ export default function HomePage() {
     file: File,
     pathPrefix: string
   ): Promise<string> {
+    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+      throw new Error("Only image or video files are allowed.");
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      throw new Error("File must be under 50 MB.");
+    }
     const safeFileName = `${Date.now()}-${Math.random()
       .toString(36)
-      .slice(2)}-${file.name}`;
+      .slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `${pathPrefix}/${safeFileName}`;
 
     const { error: uploadError } = await supabase.storage

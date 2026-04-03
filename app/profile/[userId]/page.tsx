@@ -715,7 +715,11 @@ export default function PublicProfilePage() {
   }
 
   async function uploadWallImage(file: File, postId: string): Promise<string> {
-    const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
+    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
+      throw new Error("Only image or video files are allowed.");
+    }
+    if (file.size > 50 * 1024 * 1024) throw new Error("File must be under 50 MB.");
+    const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `${currentUserId}/posts/${postId}/${safeName}`;
     const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
     if (error) throw new Error(error.message);

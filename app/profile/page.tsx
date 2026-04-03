@@ -329,6 +329,12 @@ export default function MyAccountPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!file.type.startsWith("image/")) {
+      alert("Only image files are allowed for profile photos.");
+      e.target.value = "";
+      return;
+    }
+
     if (file.size > 8 * 1024 * 1024) {
       alert("Photo must be under 8 MB. Try compressing the image first.");
       e.target.value = "";
@@ -338,7 +344,8 @@ export default function MyAccountPage() {
     try {
       setUploadingAvatar(true);
 
-      const filePath = `${currentUserId}/${Date.now()}-avatar-${file.name}`;
+      const safeName = `${Date.now()}-avatar-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const filePath = `${currentUserId}/${safeName}`;
 
       const { error: uploadError } = await supabase.storage
         .from("profile-photos")
