@@ -419,6 +419,7 @@ export default function HomePage() {
   const [memorialCommentInputs, setMemorialCommentInputs] = useState<Record<string, string>>({});
   const [submittingMemorialComment, setSubmittingMemorialComment] = useState<string | null>(null);
   const [memorialCommentsOpen, setMemorialCommentsOpen] = useState<Record<string, boolean>>({});
+  const [donateModalOpen, setDonateModalOpen] = useState(false);
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
   const [discoverVisible, setDiscoverVisible] = useState<DiscoverProfile[]>([]);
   const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -2680,6 +2681,13 @@ export default function HomePage() {
                                 💬{comments.length > 0 && <span style={{ fontSize: 13 }}>{comments.length}</span>}
                               </button>
                             </div>
+
+                            {/* Donate strip */}
+                            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? "#3b1f6b" : "#e9d5ff"}` }}>
+                              <button type="button" onClick={() => setDonateModalOpen(true)} style={{ background: "#7c3aed", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
+                                💜 Donate to EOD Warrior Foundation
+                              </button>
+                            </div>
                             {commentsOpen && (
                               <div style={{ marginTop: 12 }}>
                                 {comments.map(c => (
@@ -3615,6 +3623,36 @@ export default function HomePage() {
           </div>
         </aside>
       </div>
+
+      {/* Donate modal — in-app iframe over EOD Warrior Foundation donation form */}
+      {donateModalOpen && (
+        <div
+          onClick={() => setDonateModalOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 640, height: "88vh", background: "#fff", borderRadius: "18px 18px 0 0", display: "flex", flexDirection: "column", overflow: "hidden" }}
+          >
+            {/* Modal header */}
+            <div style={{ background: "#7c3aed", padding: "12px 18px", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+              <span style={{ color: "white", fontSize: 15, fontWeight: 800, flex: 1 }}>Donate to EOD Warrior Foundation</span>
+              <button
+                type="button"
+                onClick={() => setDonateModalOpen(false)}
+                style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "white", fontWeight: 900, fontSize: 18, lineHeight: 1, cursor: "pointer", padding: "2px 8px" }}
+              >×</button>
+            </div>
+            {/* Iframe */}
+            <iframe
+              src="https://eod-wf.org/?form=supportEODWF"
+              title="Donate to EOD Warrior Foundation"
+              style={{ flex: 1, border: "none", width: "100%" }}
+              allow="payment"
+            />
+          </div>
+        </div>
+      )}
 
       {isGalleryOpen && galleryImages.length > 0 && (
         <div
