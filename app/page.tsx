@@ -2501,18 +2501,24 @@ export default function HomePage() {
             {!postsLoaded && [0,1,2,3].map((i) => <SkeletonPost key={i} />)}
             {/* Memorial anniversary cards — auto-injected on anniversary date */}
             {todayMemorials.map((m) => (
-              <div key={`memorial-${m.id}`} style={{ border: "2px solid #7c3aed", borderRadius: 14, padding: 20, background: "#faf5ff" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>
-                  ✦ We Remember · {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}
+              <div key={`memorial-${m.id}`} style={{ border: "2px solid #7c3aed", borderRadius: 14, overflow: "hidden" }}>
+                {/* Header banner */}
+                <div style={{ background: "#7c3aed", padding: "11px 20px", display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ color: "white", fontSize: 17 }}>✦</span>
+                  <span style={{ color: "white", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" }}>We Remember</span>
+                  <span style={{ marginLeft: "auto", color: "rgba(255,255,255,0.75)", fontSize: 12, fontWeight: 600 }}>
+                    {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}
+                  </span>
                 </div>
-                <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                {/* Card body */}
+                <div style={{ padding: 20, background: isDark ? "#1a0d2e" : "#faf5ff", display: "flex", gap: 16, alignItems: "flex-start" }}>
                   {m.photo_url && (
                     <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "3px solid #7c3aed" }}>
                       <img src={m.photo_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     </div>
                   )}
                   <div>
-                    <div style={{ fontSize: 20, fontWeight: 900 }}>{m.name}</div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: isDark ? "#f3e8ff" : "#1a1a1a" }}>{m.name}</div>
                     <div style={{ fontSize: 13, color: "#7c3aed", marginTop: 2 }}>
                       {new Date(m.death_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
                       {" · "}
