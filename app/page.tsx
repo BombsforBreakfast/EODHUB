@@ -330,9 +330,9 @@ function Avatar({
           style={{
             width: "100%",
             height: "100%",
-            objectFit: isEmployer ? "contain" : "cover",
+            objectFit: "cover",
             display: "block",
-            padding: isEmployer ? 2 : 0,
+            padding: 0,
           }}
         />
       ) : (

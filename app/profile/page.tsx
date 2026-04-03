@@ -477,7 +477,7 @@ export default function MyAccountPage() {
             style={{ position: "relative", width: profile?.is_employer ? 160 : 120, height: profile?.is_employer ? 72 : 120, borderRadius: profile?.is_employer ? 12 : "50%", overflow: "hidden", background: profile?.is_employer ? "#f8f8f8" : t.bg, border: profile?.is_employer ? "3px solid #d97706" : undefined, display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontWeight: 700, flexShrink: 0, cursor: uploadingAvatar ? "not-allowed" : "pointer", padding: 0, boxSizing: "border-box" }}
           >
             {profile?.photo_url ? (
-              <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: profile?.is_employer ? "contain" : "cover", display: "block" }} />
+              <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             ) : <span style={{ fontSize: 13 }}>{profile?.is_employer ? "Add Logo" : "Add Photo"}</span>}
             {/* Hover overlay */}
             <div style={{
