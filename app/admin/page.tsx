@@ -453,14 +453,14 @@ const [memWizUrl, setMemWizUrl] = useState("");
     }
   }
 
-  async function setProfileFlag(userId: string, flag: string, value: boolean, loadingKey: string, successMsg: string) {
+  async function setProfileFlag(userId: string, flag: string, value: boolean, loadingKey: string, successMsg: string, extraFields?: Record<string, string>) {
     setActionLoading(loadingKey);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/admin/set-profile-flag", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
-        body: JSON.stringify({ targetUserId: userId, flag, value }),
+        body: JSON.stringify({ targetUserId: userId, flag, value, extraFields }),
       });
       const json = await res.json();
       if (!res.ok) { alert(json.error ?? "Update failed"); } else { showToast(successMsg); await loadUsers(); }
@@ -475,7 +475,14 @@ const [memWizUrl, setMemWizUrl] = useState("");
   }
 
   async function toggleEmployer(userId: string, current: boolean | null) {
-    await setProfileFlag(userId, "is_employer", !current, userId + "-employer", !current ? "Employer status granted." : "Employer status removed.");
+    let extraFields: Record<string, string> | undefined;
+    if (!current) {
+      const url = window.prompt("Company website URL (optional):", "https://");
+      if (url !== null && url.trim() && url.trim() !== "https://") {
+        extraFields = { company_website: url.trim() };
+      }
+    }
+    await setProfileFlag(userId, "is_employer", !current, userId + "-employer", !current ? "Employer status granted." : "Employer status removed.", extraFields);
   }
 
   async function toggleEmployerVerified(userId: string, current: boolean | null) {

@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { targetUserId, flag, value } = await req.json();
+  const { targetUserId, flag, value, extraFields } = await req.json();
   if (!targetUserId || !flag || typeof value !== "boolean") {
     return NextResponse.json({ error: "Missing targetUserId, flag, or value" }, { status: 400 });
   }
@@ -43,9 +43,17 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
+  const updateData: Record<string, unknown> = { [flag]: value };
+  if (extraFields && typeof extraFields === "object") {
+    // Only allow safe extra fields
+    if (typeof extraFields.company_website === "string") {
+      updateData.company_website = extraFields.company_website || null;
+    }
+  }
+
   const { error } = await adminClient
     .from("profiles")
-    .update({ [flag]: value })
+    .update(updateData)
     .eq("user_id", targetUserId);
 
   if (error) {
