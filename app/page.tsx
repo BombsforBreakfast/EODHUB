@@ -28,6 +28,7 @@ type Job = {
   og_description: string | null;
   og_image: string | null;
   og_site_name: string | null;
+  anonymous: boolean | null;
 };
 
 type SelectedPostImage = {
@@ -335,6 +336,7 @@ function Avatar({
 export default function HomePage() {
   const { t, isDark } = useTheme();
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
   const [posts, setPosts] = useState<FeedPost[]>([]);
   const [businessListings, setBusinessListings] = useState<BusinessListing[]>(
     []
@@ -563,10 +565,30 @@ export default function HomePage() {
       return;
     }
 
-    setJobs((jobsRes.data ?? []) as Job[]);
+    const loadedJobs = (jobsRes.data ?? []) as Job[];
+    setJobs(loadedJobs);
     setJobsLoaded(true);
     if (lastSeenRes.data?.last_seen_at) {
       setJobsLastUpdated(lastSeenRes.data.last_seen_at);
+    }
+
+    // Load submitter names for non-anonymous community jobs
+    const communityUserIds = [...new Set(
+      loadedJobs
+        .filter((j) => j.source_type === "community" && j.user_id && !j.anonymous)
+        .map((j) => j.user_id as string)
+    )];
+    if (communityUserIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("user_id, display_name, first_name, last_name")
+        .in("user_id", communityUserIds);
+      const map = new Map<string, string>();
+      ((profiles ?? []) as { user_id: string; display_name: string | null; first_name: string | null; last_name: string | null }[]).forEach((p) => {
+        const name = p.display_name || [p.first_name, p.last_name?.charAt(0) ? p.last_name.charAt(0) + "." : ""].filter(Boolean).join(" ") || "Member";
+        map.set(p.user_id, name);
+      });
+      setJobSubmitters(map);
     }
   }
 
@@ -2137,12 +2159,20 @@ export default function HomePage() {
                     {job.location || "Location not listed"}
                   </div>
 
-                  <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>
-                    {job.category || "General"}
-                    {job.created_at
-                      ? ` • ${new Date(job.created_at).toLocaleDateString()}`
-                      : ""}
+                  <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <span>{job.category || "General"}</span>
+                    {job.created_at && <span>• {new Date(job.created_at).toLocaleDateString()}</span>}
+                    {job.source_type === "community" && (
+                      <span style={{ background: "#dcfce7", color: "#15803d", borderRadius: 20, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>
+                        Community
+                      </span>
+                    )}
                   </div>
+                  {job.source_type === "community" && !job.anonymous && jobSubmitters.get(job.user_id ?? "") && (
+                    <div style={{ marginTop: 3, fontSize: 11, color: t.textFaint }}>
+                      posted by {jobSubmitters.get(job.user_id ?? "")}
+                    </div>
+                  )}
 
                   {job.og_description && (
                     <div
