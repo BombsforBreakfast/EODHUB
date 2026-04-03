@@ -44,6 +44,8 @@ type UserProfile = {
   service: string | null;
   verification_status: string | null;
   is_admin: boolean | null;
+  is_employer: boolean | null;
+  employer_verified: boolean | null;
   created_at: string | null;
 };
 
@@ -456,6 +458,20 @@ const [memWizUrl, setMemWizUrl] = useState("");
     setActionLoading(userId + "-admin");
     const { error } = await supabase.from("profiles").update({ is_admin: !current }).eq("user_id", userId);
     if (error) { alert(error.message); } else { showToast(current ? "Admin removed." : "Admin granted!"); await loadUsers(); }
+    setActionLoading(null);
+  }
+
+  async function toggleEmployer(userId: string, current: boolean | null) {
+    setActionLoading(userId + "-employer");
+    const { error } = await supabase.from("profiles").update({ is_employer: !current }).eq("user_id", userId);
+    if (error) { alert(error.message); } else { showToast(!current ? "Employer status granted." : "Employer status removed."); await loadUsers(); }
+    setActionLoading(null);
+  }
+
+  async function toggleEmployerVerified(userId: string, current: boolean | null) {
+    setActionLoading(userId + "-empverify");
+    const { error } = await supabase.from("profiles").update({ employer_verified: !current }).eq("user_id", userId);
+    if (error) { alert(error.message); } else { showToast(!current ? "Employer verified!" : "Verification removed."); await loadUsers(); }
     setActionLoading(null);
   }
 
@@ -1187,6 +1203,24 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           onClick={() => setVerification(u.user_id, "pending")}
                         >
                           Unverify
+                        </button>
+                      )}
+
+                      {/* Employer toggles */}
+                      <button
+                        style={actionBtn(u.is_employer ? "#1e40af" : "#6b7280")}
+                        disabled={actionLoading === u.user_id + "-employer"}
+                        onClick={() => toggleEmployer(u.user_id, u.is_employer)}
+                      >
+                        {actionLoading === u.user_id + "-employer" ? "..." : u.is_employer ? "Remove Employer" : "Make Employer"}
+                      </button>
+                      {u.is_employer && (
+                        <button
+                          style={actionBtn(u.employer_verified ? "#6b7280" : "#16a34a")}
+                          disabled={actionLoading === u.user_id + "-empverify"}
+                          onClick={() => toggleEmployerVerified(u.user_id, u.employer_verified)}
+                        >
+                          {actionLoading === u.user_id + "-empverify" ? "..." : u.employer_verified ? "Unverify Employer" : "Verify Employer"}
                         </button>
                       )}
 

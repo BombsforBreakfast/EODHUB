@@ -937,6 +937,18 @@ export default function HomePage() {
       } else {
         await supabase.from("saved_jobs").insert([{ user_id: userId, job_id: jobId }]);
         setSavedJobIds((prev) => new Set(prev).add(jobId));
+        // Notify job poster (fire and forget — no actor name for privacy)
+        const job = jobs.find((j) => j.id === jobId);
+        if (job?.source_type === "community" && job.user_id && job.user_id !== userId) {
+          void supabase.from("notifications").insert([{
+            user_id: job.user_id,
+            actor_id: userId,
+            actor_name: "A member",
+            type: "job_save",
+            message: `Someone saved your job listing: ${job.title || "your posting"}`,
+            post_owner_id: null,
+          }]);
+        }
       }
     } catch (err) {
       console.error("Toggle save job error:", err);

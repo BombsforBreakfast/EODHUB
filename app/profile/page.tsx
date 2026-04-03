@@ -105,6 +105,9 @@ type Profile = {
   seeking_employment: boolean | null;
   account_type: string | null;
   subscription_status: string | null;
+  is_employer: boolean | null;
+  employer_verified: boolean | null;
+  company_website: string | null;
 };
 
 type SavedJob = {
@@ -142,6 +145,8 @@ export default function MyAccountPage() {
   const [editYearsExp, setEditYearsExp] = useState("");
   const [editSkillBadge, setEditSkillBadge] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [editCompanyWebsite, setEditCompanyWebsite] = useState("");
+  const [employerJobs, setEmployerJobs] = useState<{ id: string; title: string | null; company_name: string | null; is_approved: boolean | null; created_at: string | null; saveCount: number }[]>([]);
 
   const [seekingEmployment, setSeekingEmployment] = useState(false);
   const [togglingSeek, setTogglingSeek] = useState(false);
@@ -275,6 +280,25 @@ export default function MyAccountPage() {
     const p = (data as Profile | null) ?? null;
     setProfile(p);
     setSeekingEmployment(p?.seeking_employment ?? false);
+    if (p?.is_employer) loadEmployerJobs(userId);
+  }
+
+  async function loadEmployerJobs(userId: string) {
+    const { data: jobData } = await supabase
+      .from("jobs")
+      .select("id, title, company_name, is_approved, created_at")
+      .eq("user_id", userId)
+      .eq("source_type", "community")
+      .order("created_at", { ascending: false });
+    const jobs = (jobData ?? []) as { id: string; title: string | null; company_name: string | null; is_approved: boolean | null; created_at: string | null }[];
+    if (jobs.length === 0) { setEmployerJobs([]); return; }
+    const { data: saves } = await supabase
+      .from("saved_jobs")
+      .select("job_id")
+      .in("job_id", jobs.map((j) => j.id));
+    const saveCounts = new Map<string, number>();
+    ((saves ?? []) as { job_id: string }[]).forEach((s) => saveCounts.set(s.job_id, (saveCounts.get(s.job_id) ?? 0) + 1));
+    setEmployerJobs(jobs.map((j) => ({ ...j, saveCount: saveCounts.get(j.id) ?? 0 })));
   }
 
   function openEdit() {
@@ -284,6 +308,7 @@ export default function MyAccountPage() {
     setEditStatus(profile?.status ?? "");
     setEditYearsExp(profile?.years_experience ?? "");
     setEditSkillBadge(profile?.skill_badge ?? "");
+    setEditCompanyWebsite(profile?.company_website ?? "");
     setEditing(true);
   }
 
@@ -300,6 +325,7 @@ export default function MyAccountPage() {
           status: editStatus || null,
           years_experience: editYearsExp || null,
           skill_badge: editSkillBadge || null,
+          company_website: editCompanyWebsite || null,
         })
         .eq("user_id", currentUserId);
       if (error) { alert(error.message); return; }
@@ -452,7 +478,7 @@ export default function MyAccountPage() {
           >
             {profile?.photo_url ? (
               <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-            ) : <span style={{ fontSize: 13 }}>Add Photo</span>}
+            ) : <span style={{ fontSize: 13 }}>{profile?.is_employer ? "Add Logo" : "Add Photo"}</span>}
             {/* Hover overlay */}
             <div style={{
               position: "absolute", inset: 0, borderRadius: "50%",
@@ -474,8 +500,20 @@ export default function MyAccountPage() {
           <div style={{ flex: 1, minWidth: 260 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
               <div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: t.text }}>{fullName}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 28, fontWeight: 900, color: t.text }}>{fullName}</div>
+                  {profile?.is_employer && (
+                    <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "3px 10px", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                      {profile.employer_verified ? "✓ Verified Employer" : "Employer"}
+                    </span>
+                  )}
+                </div>
                 <div style={{ marginTop: 4, color: t.textMuted }}>{profile?.role || "No role added yet"}</div>
+                {profile?.company_website && (
+                  <div style={{ marginTop: 4, fontSize: 14 }}>
+                    <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8" }}>{profile.company_website}</a>
+                  </div>
+                )}
               </div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button onClick={openEdit} style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}>
@@ -586,6 +624,12 @@ export default function MyAccountPage() {
                 {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
               </select>
             </div>
+            {profile?.is_employer && (
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Company Website</label>
+                <input value={editCompanyWebsite} onChange={(e) => setEditCompanyWebsite(e.target.value)} placeholder="https://yourcompany.com" style={inputStyle} />
+              </div>
+            )}
             <div style={{ gridColumn: "1 / -1" }}>
               <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Bio</label>
               <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell people about yourself..." rows={4} style={{ ...inputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }} />
@@ -600,6 +644,41 @@ export default function MyAccountPage() {
               Cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Employer Dashboard */}
+      {profile?.is_employer && (
+        <div style={{ marginTop: 24, ...card }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: t.text }}>Your Job Postings</div>
+            <a href="/post-job" style={{ background: "#7c3aed", color: "white", borderRadius: 10, padding: "7px 16px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>+ Post Job</a>
+          </div>
+          {employerJobs.length === 0 ? (
+            <div style={{ color: t.textMuted }}>No jobs posted yet. <a href="/post-job" style={{ color: "#1d4ed8" }}>Post your first listing →</a></div>
+          ) : (
+            <div style={{ display: "grid", gap: 10 }}>
+              {employerJobs.map((job) => (
+                <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", background: t.bg }}>
+                  <div style={{ flex: 1, minWidth: 120 }}>
+                    <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{job.title || "Untitled"}</div>
+                    {job.company_name && <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{job.company_name}</div>}
+                    <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2 }}>{job.created_at ? new Date(job.created_at).toLocaleDateString() : ""}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", flexShrink: 0 }}>
+                    <span style={{ background: job.is_approved ? "#dcfce7" : "#fef3c7", color: job.is_approved ? "#15803d" : "#92400e", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>
+                      {job.is_approved ? "Live" : "Pending"}
+                    </span>
+                    {job.saveCount > 0 && (
+                      <span style={{ background: "#ede9fe", color: "#6d28d9", borderRadius: 20, padding: "2px 10px", fontSize: 12, fontWeight: 700 }}>
+                        {job.saveCount} saved
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

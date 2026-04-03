@@ -24,6 +24,9 @@ type Profile = {
   years_experience: string | null;
   skill_badge: string | null;
   referral_code: string | null;
+  is_employer: boolean | null;
+  employer_verified: boolean | null;
+  company_website: string | null;
 };
 
 type RawComment = {
@@ -261,7 +264,7 @@ export default function PublicProfilePage() {
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "user_id, display_name, first_name, last_name, bio, photo_url, role, resume_text, tech_types, verification_status, service, status, years_experience, skill_badge, referral_code"
+        "user_id, display_name, first_name, last_name, bio, photo_url, role, resume_text, tech_types, verification_status, service, status, years_experience, skill_badge, referral_code, is_employer, employer_verified, company_website"
       )
       .eq("user_id", targetUserId)
       .maybeSingle();
@@ -1403,7 +1406,14 @@ export default function PublicProfilePage() {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
-                    <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2 }}>{isOwnWall ? "My Profile" : "Member Profile"}</div>
+                    <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                      {isOwnWall ? "My Profile" : "Member Profile"}
+                      {profile.is_employer && (
+                        <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
+                          {profile.employer_verified ? "✓ Employer" : "Employer"}
+                        </span>
+                      )}
+                    </div>
                     {referralBadge && (
                       <div style={{ display: "inline-block", marginTop: 4, background: referralBadge.bg, color: referralBadge.color, fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, border: `1px solid ${referralBadge.color}33` }}>
                         {referralBadge.label}
@@ -1449,6 +1459,11 @@ export default function PublicProfilePage() {
                     <div><strong>Experience:</strong> {profile.years_experience || "—"}</div>
                     <div><strong>Badge:</strong> {profile.skill_badge || "—"}</div>
                     <div><strong>Verified:</strong> {profile.verification_status || "—"}</div>
+                    {profile.company_website && (
+                      <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
+                        <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
+                      </div>
+                    )}
                   </div>
                   {profile.bio && (
                     <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, lineHeight: 1.6 }}>
@@ -1470,7 +1485,14 @@ export default function PublicProfilePage() {
 
                   <div style={{ textAlign: "center" }}>
                     <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
-                    <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>{isOwnWall ? "My Profile" : "Member Profile"}</div>
+                    <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted, display: "flex", gap: 6, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
+                      {isOwnWall ? "My Profile" : "Member Profile"}
+                      {profile.is_employer && (
+                        <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
+                          {profile.employer_verified ? "✓ Employer" : "Employer"}
+                        </span>
+                      )}
+                    </div>
                     {referralBadge && (
                       <div style={{ display: "inline-block", marginTop: 6, background: referralBadge.bg, color: referralBadge.color, fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 20, border: `1px solid ${referralBadge.color}33` }}>
                         {referralBadge.label}
@@ -1519,6 +1541,11 @@ export default function PublicProfilePage() {
                     <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
                     <div><strong>Skill Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
                     <div><strong>Verification:</strong> {profile.verification_status || "Not verified"}</div>
+                    {profile.company_website && (
+                      <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
+                        <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
+                      </div>
+                    )}
                   </div>
                   {profile.bio && (
                     <div style={{ marginTop: 14, color: t.textMuted, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14 }}>
