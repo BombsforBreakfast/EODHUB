@@ -560,23 +560,25 @@ export default function MyAccountPage() {
             </button>
           </div>
 
-          {/* Seeking Employment Toggle */}
-          <div style={{ ...card, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Open to Opportunities</div>
-              <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3, lineHeight: 1.5 }}>
-                Only visible to verified employer accounts — never shown to other members or publicly.
+          {/* Seeking Employment Toggle — members only */}
+          {!profile?.is_employer && (
+            <div style={{ ...card, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Open to Opportunities</div>
+                <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3, lineHeight: 1.5 }}>
+                  Only visible to verified employer accounts — never shown to other members or publicly.
+                </div>
               </div>
+              <button
+                onClick={toggleSeekingEmployment}
+                disabled={togglingSeek}
+                style={{ width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer", flexShrink: 0, background: seekingEmployment ? "#16a34a" : "#d1d5db", position: "relative", transition: "background 0.2s", padding: 0 }}
+                aria-label="Toggle seeking employment"
+              >
+                <span style={{ position: "absolute", top: 3, left: seekingEmployment ? 27 : 3, width: 22, height: 22, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s", display: "block" }} />
+              </button>
             </div>
-            <button
-              onClick={toggleSeekingEmployment}
-              disabled={togglingSeek}
-              style={{ width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer", flexShrink: 0, background: seekingEmployment ? "#16a34a" : "#d1d5db", position: "relative", transition: "background 0.2s", padding: 0 }}
-              aria-label="Toggle seeking employment"
-            >
-              <span style={{ position: "absolute", top: 3, left: seekingEmployment ? 27 : 3, width: 22, height: 22, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s", display: "block" }} />
-            </button>
-          </div>
+          )}
         </div>
       )}
 
@@ -682,34 +684,36 @@ export default function MyAccountPage() {
         </div>
       )}
 
-      {/* Saved Jobs */}
-      <div style={{ marginTop: 24, ...card }}>
-        <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 16, color: t.text }}>Saved Jobs</div>
-        {savedJobs.length === 0 ? (
-          <div style={{ color: t.textMuted }}>No saved jobs yet. Save jobs from the feed to see them here.</div>
-        ) : (
-          <div style={{ display: "grid", gap: 12 }}>
-            {savedJobs.map((job) => (
-              <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 16, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                <div>
-                  <div style={{ fontWeight: 800, fontSize: 16, color: t.text }}>{job.title || "Untitled Job"}</div>
-                  <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>{job.company_name || "Unknown Company"}</div>
-                  <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>{[job.location, job.category].filter(Boolean).join(" • ")}</div>
-                  {job.apply_url && (
-                    <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 10, fontWeight: 700, fontSize: 14, color: t.text }}>
-                      View Job
-                    </a>
-                  )}
+      {/* Saved Jobs — members only */}
+      {!profile?.is_employer && (
+        <div style={{ marginTop: 24, ...card }}>
+          <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 16, color: t.text }}>Saved Jobs</div>
+          {savedJobs.length === 0 ? (
+            <div style={{ color: t.textMuted }}>No saved jobs yet. Save jobs from the feed to see them here.</div>
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {savedJobs.map((job) => (
+                <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 16, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 16, color: t.text }}>{job.title || "Untitled Job"}</div>
+                    <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>{job.company_name || "Unknown Company"}</div>
+                    <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>{[job.location, job.category].filter(Boolean).join(" • ")}</div>
+                    {job.apply_url && (
+                      <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 10, fontWeight: 700, fontSize: 14, color: t.text }}>
+                        View Job
+                      </a>
+                    )}
+                  </div>
+                  <button type="button" onClick={() => unsaveJob(job.id)} disabled={unsavingJobId === job.id} style={{ background: "transparent", border: `1px solid ${t.border}`, color: t.textMuted, borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: unsavingJobId === job.id ? "not-allowed" : "pointer", opacity: unsavingJobId === job.id ? 0.6 : 1, flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
+                    {unsavingJobId === job.id && <span className="btn-spinner btn-spinner-dark" />}
+                    Remove
+                  </button>
                 </div>
-                <button type="button" onClick={() => unsaveJob(job.id)} disabled={unsavingJobId === job.id} style={{ background: "transparent", border: `1px solid ${t.border}`, color: t.textMuted, borderRadius: 8, padding: "6px 12px", fontSize: 13, fontWeight: 700, cursor: unsavingJobId === job.id ? "not-allowed" : "pointer", opacity: unsavingJobId === job.id ? 0.6 : 1, flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
-                  {unsavingJobId === job.id && <span className="btn-spinner btn-spinner-dark" />}
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* My Units */}
       <div style={{ marginTop: 24, ...card }}>
