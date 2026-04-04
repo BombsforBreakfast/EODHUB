@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
+import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
 
 type Notification = {
   id: string;
@@ -62,6 +63,9 @@ export default function NavBar() {
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminPendingTotal, setAdminPendingTotal] = useState(0);
 
   // Unread counts derived from notifications
   // Profile badge: notifications that link to a profile (wall activity)
@@ -201,6 +205,39 @@ export default function NavBar() {
   useEffect(() => {
     let mounted = true;
 
+    async function refreshAdminPendingBadge() {
+      try {
+        const b = await fetchAdminPendingBreakdown(supabase);
+        if (mounted) setAdminPendingTotal(sumAdminPending(b));
+      } catch {
+        if (mounted) setAdminPendingTotal(0);
+      }
+    }
+
+    async function loadNavProfile(uid: string) {
+      const { data } = await supabase
+        .from("profiles")
+        .select("first_name, display_name, photo_url, is_admin")
+        .eq("user_id", uid)
+        .maybeSingle();
+      if (!mounted) return;
+      const row = data as {
+        first_name: string | null;
+        display_name: string | null;
+        photo_url: string | null;
+        is_admin: boolean | null;
+      } | null;
+      setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
+      setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
+      if (row?.is_admin) {
+        setIsAdmin(true);
+        await refreshAdminPendingBadge();
+      } else {
+        setIsAdmin(false);
+        setAdminPendingTotal(0);
+      }
+    }
+
     async function loadUser() {
       const { data: { session }, error } = await supabase.auth.getSession();
       if (!mounted) return;
@@ -211,21 +248,15 @@ export default function NavBar() {
       setAuthLoaded(true);
 
       if (uid) {
-        const { data } = await supabase
-          .from("profiles")
-          .select("first_name, display_name, photo_url")
-          .eq("user_id", uid)
-          .maybeSingle();
-        if (!mounted) return;
-        const name = data as { first_name: string | null; display_name: string | null; photo_url: string | null } | null;
-        setUserInitial((name?.first_name?.[0] || name?.display_name?.[0] || "?").toUpperCase());
-        setAvatarPhotoUrl(name?.photo_url?.trim() ? name.photo_url : null);
+        await loadNavProfile(uid);
         await loadNotifications(uid);
         await loadUnreadMessages(uid);
         void loadLinkedAuthAccounts();
       } else {
         setAvatarPhotoUrl(null);
         setLinkedAccounts(null);
+        setIsAdmin(false);
+        setAdminPendingTotal(0);
       }
     }
 
@@ -233,10 +264,21 @@ export default function NavBar() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!mounted) return;
-      setCurrentUserId(session?.user?.id ?? null);
+      const uid = session?.user?.id ?? null;
+      setCurrentUserId(uid);
       setAuthLoaded(true);
-      if (session?.user?.id) void loadLinkedAuthAccounts();
-      else setLinkedAccounts(null);
+      if (uid) {
+        void loadNavProfile(uid);
+        void loadNotifications(uid);
+        void loadUnreadMessages(uid);
+        void loadLinkedAuthAccounts();
+      } else {
+        setLinkedAccounts(null);
+        setAvatarPhotoUrl(null);
+        setIsAdmin(false);
+        setAdminPendingTotal(0);
+        setUserInitial("?");
+      }
     });
 
     return () => {
@@ -244,6 +286,27 @@ export default function NavBar() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!currentUserId || !isAdmin) return;
+    async function tick() {
+      try {
+        const b = await fetchAdminPendingBreakdown(supabase);
+        setAdminPendingTotal(sumAdminPending(b));
+      } catch {
+        setAdminPendingTotal(0);
+      }
+    }
+    const id = window.setInterval(() => void tick(), 120_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [currentUserId, isAdmin]);
 
   // Messages page signals that all messages were read
   useEffect(() => {
@@ -387,6 +450,8 @@ export default function NavBar() {
     const { error } = await supabase.auth.signOut();
     if (error) { console.error("Logout error:", error); return; }
     setLinkedAccounts(null);
+    setIsAdmin(false);
+    setAdminPendingTotal(0);
     window.location.href = "/login";
   }
 
@@ -541,6 +606,17 @@ export default function NavBar() {
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Units</Link>
         <Link href="/directory" className="nav-btn nav-directory" style={navButton}>Directory</Link>
 
+        {currentUserId && isAdmin && (
+          <Link
+            href="/admin"
+            className="nav-btn nav-admin"
+            style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
+          >
+            Admin
+            {adminPendingTotal > 0 && badge(adminPendingTotal)}
+          </Link>
+        )}
+
         <Link
           href="/"
           onClick={async (e) => { e.preventDefault(); await markFeedNotifsRead(); window.location.href = "/"; }}
@@ -670,6 +746,9 @@ export default function NavBar() {
             { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
             { label: "Units", href: "/units", emoji: "🪖", badge: 0, onNav: null },
             { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
+            ...(isAdmin
+              ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
+              : []),
             { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages, onNav: markMessagesRead },
           ].map((item) => (
             <a

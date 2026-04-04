@@ -1,13 +1,43 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 
 export default function SubscribePage() {
   const { t } = useTheme();
   const [loading, setLoading] = useState(false);
+  const [gateChecking, setGateChecking] = useState(true);
   const cancelled = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("cancelled") === "1";
+
+  useEffect(() => {
+    async function gate() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        window.location.href = "/login";
+        return;
+      }
+      const { data: p } = await supabase
+        .from("profiles")
+        .select("verification_status, account_type, service, company_name")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!p || (!p.service && !p.company_name)) {
+        window.location.href = "/onboarding";
+        return;
+      }
+      if (p.account_type === "employer") {
+        window.location.href = "/";
+        return;
+      }
+      if (p.verification_status !== "verified") {
+        window.location.href = "/pending";
+        return;
+      }
+      setGateChecking(false);
+    }
+    gate();
+  }, []);
 
   async function handleSubscribe() {
     setLoading(true);
@@ -29,6 +59,14 @@ export default function SubscribePage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (gateChecking) {
+    return (
+      <div style={{ minHeight: "100vh", background: t.bg, color: t.textMuted, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        Loading…
+      </div>
+    );
   }
 
   return (

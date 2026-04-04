@@ -6,6 +6,11 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
+import {
+  fetchAdminPendingBreakdown,
+  formatNavBadgeCount,
+  sumAdminPending,
+} from "../lib/adminPendingCounts";
 
 type BusinessListing = {
   id: string;
@@ -156,7 +161,15 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
   const [directoryEntries, setDirectoryEntries] = useState<DirectoryEntry[]>([]);
   const [locationRequests, setLocationRequests] = useState<LocationRequest[]>([]);
-  const [pendingCounts, setPendingCounts] = useState({ biz: 0, jobs: 0, users: 0, flags: 0, reports: 0, dir: 0 });
+  const [pendingCounts, setPendingCounts] = useState({
+    biz: 0,
+    jobs: 0,
+    users: 0,
+    flags: 0,
+    reports: 0,
+    dir: 0,
+    locReq: 0,
+  });
 
   const { t, isDark } = useTheme();
 
@@ -170,22 +183,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
   }
 
   async function loadPendingCounts() {
-    const [bizRes, jobRes, userRes, flagRes, reportRes, dirRes] = await Promise.all([
-      supabase.from("business_listings").select("*", { count: "exact", head: true }).neq("is_approved", true),
-      supabase.from("jobs").select("*", { count: "exact", head: true }).neq("is_approved", true),
-      supabase.from("profiles").select("*", { count: "exact", head: true }).eq("verification_status", "pending"),
-      supabase.from("flags").select("*", { count: "exact", head: true }).eq("reviewed", false),
-      supabase.from("bug_reports").select("*", { count: "exact", head: true }).eq("reviewed", false),
-      supabase.from("unit_directory").select("*", { count: "exact", head: true }).eq("is_approved", false),
-    ]);
-    setPendingCounts({
-      biz: bizRes.count ?? 0,
-      jobs: jobRes.count ?? 0,
-      users: userRes.count ?? 0,
-      flags: flagRes.count ?? 0,
-      reports: reportRes.count ?? 0,
-      dir: dirRes.count ?? 0,
-    });
+    const next = await fetchAdminPendingBreakdown(supabase);
+    setPendingCounts(next);
   }
 
   async function loadBusinesses() {
@@ -309,6 +308,20 @@ const [memWizUrl, setMemWizUrl] = useState("");
     if (activeTab === "directory") loadDirectory();
   }, [pendingOnly, activeTab, authorized]);
 
+  useEffect(() => {
+    if (!authorized) return;
+    const tick = () => void loadPendingCounts();
+    const id = window.setInterval(tick, 120_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [authorized]);
+
   async function approveBusiness(id: string, featured = false) {
     setActionLoading(id);
     const { error } = await supabase
@@ -339,6 +352,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       method: "POST",
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
+    await loadPendingCounts();
   }
 
   async function rejectJob(id: string) {
@@ -356,7 +370,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       } else {
         showToast("Job removed.");
         setJobs((prev) => prev.filter((j) => j.id !== id));
-        setPendingCounts((prev) => ({ ...prev, jobs: Math.max(0, prev.jobs - 1) }));
+        await loadPendingCounts();
       }
       setActionLoading(null);
     });
@@ -381,6 +395,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
     showToast(`${ids.length} job${ids.length > 1 ? "s" : ""} approved!`);
     setSelectedJobs(new Set());
     setBatchActing(false);
+    await loadPendingCounts();
   }
 
   async function batchRejectJobs() {
@@ -399,6 +414,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       showToast(`${ids.length} job${ids.length > 1 ? "s" : ""} deleted.`);
       setSelectedJobs(new Set());
       setBatchActing(false);
+      await loadPendingCounts();
     });
   }
 
@@ -426,6 +442,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
         } else {
           showToast("User deleted.");
           await loadUsers();
+          await loadPendingCounts();
         }
       } finally {
         setActionLoading(null);
@@ -729,11 +746,13 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function markLocReviewed(id: string) {
     await supabase.from("location_requests").update({ reviewed: true }).eq("id", id);
     setLocationRequests((prev) => prev.map((r) => r.id === id ? { ...r, reviewed: true } : r));
+    await loadPendingCounts();
   }
 
   async function deleteLocRequest(id: string) {
     await supabase.from("location_requests").delete().eq("id", id);
     setLocationRequests((prev) => prev.filter((r) => r.id !== id));
+    await loadPendingCounts();
   }
 
   async function approveDirectoryEntry(id: string) {
@@ -761,7 +780,33 @@ const [memWizUrl, setMemWizUrl] = useState("");
     cursor: "pointer",
     background: activeTab === tab ? "#111" : t.badgeBg,
     color: activeTab === tab ? "white" : t.text,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
   });
+
+  const tabNotifyBadge = (count: number) =>
+    count > 0 ? (
+      <span
+        style={{
+          background: "#fbbf24",
+          color: "black",
+          borderRadius: 20,
+          minWidth: 18,
+          height: 18,
+          fontSize: 10,
+          fontWeight: 800,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: "0 5px",
+          lineHeight: 1,
+          flexShrink: 0,
+        }}
+      >
+        {formatNavBadgeCount(count)}
+      </span>
+    ) : null;
 
   const actionBtn = (color: string): React.CSSProperties => ({
     padding: "6px 14px",
@@ -799,6 +844,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const pendingBizCount = businesses.filter((b) => !b.is_approved).length;
   const pendingJobCount = jobs.filter((j) => !j.is_approved).length;
   const unreviewedFlagCount = flags.filter((f) => !f.reviewed).length;
+  const adminTotalPending = sumAdminPending(pendingCounts);
+  const directoryPendingTotal = pendingCounts.dir + pendingCounts.locReq;
 
   return (
     <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box", background: t.bg, minHeight: "100vh", color: t.text }}>
@@ -837,32 +884,41 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
       <div style={{ maxWidth: 1000, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 20, flexWrap: "wrap" }}>
-          <h1 style={{ fontSize: 32, fontWeight: 900, margin: 0, color: t.text }}>Admin Panel</h1>
+          <h1 style={{ fontSize: 32, fontWeight: 900, margin: 0, color: t.text, display: "flex", alignItems: "center", gap: 10 }}>
+            Admin Panel
+            {tabNotifyBadge(adminTotalPending)}
+          </h1>
           <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5 }}>Admin Only</span>
         </div>
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 8, marginTop: 24, flexWrap: "wrap" }}>
-          <button style={tabStyle("businesses")} onClick={() => setActiveTab("businesses")}>
-            Businesses {pendingCounts.biz > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.biz}</span>}
+          <button type="button" style={tabStyle("businesses")} onClick={() => setActiveTab("businesses")}>
+            Businesses
+            {tabNotifyBadge(pendingCounts.biz)}
           </button>
-          <button style={tabStyle("jobs")} onClick={() => setActiveTab("jobs")}>
-            Jobs {pendingCounts.jobs > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.jobs}</span>}
+          <button type="button" style={tabStyle("jobs")} onClick={() => setActiveTab("jobs")}>
+            Jobs
+            {tabNotifyBadge(pendingCounts.jobs)}
           </button>
-          <button style={tabStyle("users")} onClick={() => setActiveTab("users")}>
-            Users {pendingCounts.users > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.users}</span>}
+          <button type="button" style={tabStyle("users")} onClick={() => setActiveTab("users")}>
+            Users
+            {tabNotifyBadge(pendingCounts.users)}
           </button>
-          <button style={tabStyle("flags")} onClick={() => setActiveTab("flags")}>
-            Flags {pendingCounts.flags > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.flags}</span>}
+          <button type="button" style={tabStyle("flags")} onClick={() => setActiveTab("flags")}>
+            Flags
+            {tabNotifyBadge(pendingCounts.flags)}
           </button>
-          <button style={tabStyle("tools")} onClick={() => setActiveTab("tools")}>
+          <button type="button" style={tabStyle("tools")} onClick={() => setActiveTab("tools")}>
             Tools
           </button>
-          <button style={tabStyle("reports")} onClick={() => setActiveTab("reports")}>
-            Reports {pendingCounts.reports > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.reports}</span>}
+          <button type="button" style={tabStyle("reports")} onClick={() => setActiveTab("reports")}>
+            Reports
+            {tabNotifyBadge(pendingCounts.reports)}
           </button>
-          <button style={tabStyle("directory")} onClick={() => setActiveTab("directory")}>
-            Directory {pendingCounts.dir > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.dir}</span>}
+          <button type="button" style={tabStyle("directory")} onClick={() => setActiveTab("directory")}>
+            Directory
+            {tabNotifyBadge(directoryPendingTotal)}
           </button>
 
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: t.textMuted }}>

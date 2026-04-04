@@ -12,11 +12,22 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* OS default when user has not chosen app theme yet (no data-theme on <html>) */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --background: #0a0a0a;
     --foreground: #ededed;
   }
+}
+
+/* App theme from ThemeProvider — overrides OS so text and background always match */
+html[data-theme="light"] {
+  --background: #f3f4f6;
+  --foreground: #0a0a0a;
+}
+html[data-theme="dark"] {
+  --background: #0f0f0f;
+  --foreground: #f0f0f0;
 }
 
 body {
@@ -114,6 +125,7 @@ button:active, a.nav-btn:active {
 
   /* Hide from row 1 on mobile — live in hub panel instead */
   .nav-profile-link  { display: none !important; }
+  .nav-admin         { display: none !important; }
   .nav-events        { display: none !important; }
   .nav-messages-btn  { display: none !important; }
   .nav-units         { display: none !important; }

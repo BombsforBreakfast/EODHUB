@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-
-const IS_BETA = true;
+import { PAYWALL_IN_MEMBER_FLOW } from "../../lib/paywallWorkflow";
 
 function getAdminClient() {
   return createClient(
@@ -92,7 +91,7 @@ export async function POST(req: NextRequest) {
 
   const adminClient = getAdminClient();
 
-  if (!IS_BETA) {
+  if (PAYWALL_IN_MEMBER_FLOW) {
     const { data: profile, error: profileError } = await adminClient
       .from("profiles")
       .select("subscription_status")

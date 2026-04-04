@@ -5,6 +5,7 @@ import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 import ReportProblemButton from "../components/ReportProblemButton";
+import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../lib/adminPendingCounts";
 
 function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null }) {
   const { t } = useTheme();
@@ -271,15 +272,8 @@ export default function MyAccountPage() {
   }
 
   async function loadAdminPendingCount() {
-    const [bizRes, userRes, flagRes, reportRes, dirRes] = await Promise.all([
-      supabase.from("business_listings").select("*", { count: "exact", head: true }).neq("is_approved", true),
-      supabase.from("profiles").select("*", { count: "exact", head: true }).eq("verification_status", "pending"),
-      supabase.from("flags").select("*", { count: "exact", head: true }).eq("reviewed", false),
-      supabase.from("bug_reports").select("*", { count: "exact", head: true }).eq("reviewed", false),
-      supabase.from("unit_directory").select("*", { count: "exact", head: true }).eq("is_approved", false),
-    ]);
-    const total = (bizRes.count ?? 0) + (userRes.count ?? 0) + (flagRes.count ?? 0) + (reportRes.count ?? 0) + (dirRes.count ?? 0);
-    setAdminPendingCount(total);
+    const b = await fetchAdminPendingBreakdown(supabase);
+    setAdminPendingCount(sumAdminPending(b));
   }
 
   async function loadProfile(userId: string): Promise<Profile | null> {
@@ -451,6 +445,26 @@ export default function MyAccountPage() {
     init();
   }, []);
 
+  useEffect(() => {
+    if (!profile?.is_admin) return;
+    let cancelled = false;
+    async function tick() {
+      const b = await fetchAdminPendingBreakdown(supabase);
+      if (!cancelled) setAdminPendingCount(sumAdminPending(b));
+    }
+    void tick();
+    const onVis = () => {
+      if (document.visibilityState === "visible") void tick();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    const id = window.setInterval(() => void tick(), 120_000);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVis);
+      window.clearInterval(id);
+    };
+  }, [profile?.is_admin]);
+
   const { t, isDark, toggleDark } = useTheme();
 
   const skeletonBase: React.CSSProperties = {
@@ -546,8 +560,8 @@ export default function MyAccountPage() {
                   <a href="/admin" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer", textDecoration: "none", fontSize: 14 }}>
                     Admin Panel
                     {adminPendingCount > 0 && (
-                      <span style={{ background: "#ef4444", color: "white", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
-                        {adminPendingCount > 99 ? "99+" : adminPendingCount}
+                      <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
+                        {formatNavBadgeCount(adminPendingCount)}
                       </span>
                     )}
                   </a>

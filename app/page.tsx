@@ -8,6 +8,8 @@ import { useTheme } from "./lib/ThemeContext";
 import EmojiPickerButton from "./components/EmojiPickerButton";
 import GifPickerButton from "./components/GifPickerButton";
 import MentionTextarea, { extractMentionIds } from "./components/MentionTextarea";
+import { PostLikersStack, type PostLikerBrief } from "./components/PostLikersStack";
+import { PAYWALL_IN_MEMBER_FLOW } from "./lib/paywallWorkflow";
 
 type Job = {
   id: string;
@@ -168,6 +170,7 @@ type FeedPost = RankedPostRow & {
   likeCount: number;
   commentCount: number;
   likedByCurrentUser: boolean;
+  likers: PostLikerBrief[];
   comments: FeedComment[];
   og_url: string | null;
   og_title: string | null;
@@ -1107,11 +1110,19 @@ export default function HomePage() {
       console.error("Comment likes load error:", commentLikesError);
     }
 
+    const postLikerUserIds = ((likesData ?? []) as LikeRow[]).map((l) => l.user_id);
+    const commentLikerUserIds = ((commentLikesData ?? []) as CommentLikeRow[]).map(
+      (l) => l.user_id
+    );
+
     const allProfileUserIds = [
       ...new Set(
-        [...uniqueUserIds, ...rawComments.map((comment) => comment.user_id)].filter(
-          (id): id is string => Boolean(id)
-        )
+        [
+          ...uniqueUserIds,
+          ...rawComments.map((comment) => comment.user_id),
+          ...postLikerUserIds,
+          ...commentLikerUserIds,
+        ].filter((id): id is string => Boolean(id))
       ),
     ];
 
@@ -1179,6 +1190,19 @@ export default function HomePage() {
 
     const mergedPosts: FeedPost[] = rawPosts.map((post) => {
       const likesForPost = likesByPost.get(post.id) || [];
+      const seenLiker = new Set<string>();
+      const orderedLikerIds = likesForPost.filter((uid) => {
+        if (seenLiker.has(uid)) return false;
+        seenLiker.add(uid);
+        return true;
+      });
+      const likers: PostLikerBrief[] = orderedLikerIds.map((uid) => ({
+        userId: uid,
+        name: profileNameMap.get(uid) || "User",
+        photoUrl: profilePhotoMap.get(uid) ?? null,
+        service: profileServiceMap.get(uid) ?? null,
+        isEmployer: profileEmployerMap.get(uid) ?? null,
+      }));
       const commentsForPost = commentsByPost.get(post.id) || [];
       const multiImages = multiPostImageMap.get(post.id) || [];
       const legacyImage = legacyPostImageMap.get(post.id) ?? null;
@@ -1200,6 +1224,7 @@ export default function HomePage() {
         likedByCurrentUser: effectiveUserId
           ? likesForPost.includes(effectiveUserId)
           : false,
+        likers,
         comments: commentsForPost,
         og_url: ogData?.og_url ?? null,
         og_title: ogData?.og_title ?? null,
@@ -1970,7 +1995,9 @@ export default function HomePage() {
         }
 
         // Paywall check — employers always pass; members/businesses need active subscription
-        const paywallEnabled = process.env.NEXT_PUBLIC_PAYWALL_ENABLED === "true";
+        const paywallEnabled =
+          PAYWALL_IN_MEMBER_FLOW &&
+          process.env.NEXT_PUBLIC_PAYWALL_ENABLED === "true";
         if (paywallEnabled && profileCheck.account_type !== "employer") {
           const subStatus = profileCheck.subscription_status;
           if (subStatus !== "active" && subStatus !== "trialing") {
@@ -3123,6 +3150,8 @@ export default function HomePage() {
                     >
                       {commentsOpen ? "Hide Comments" : "Comment"}
                     </button>
+
+                    {post.likeCount > 0 && <PostLikersStack likers={post.likers} />}
 
                     <div style={{ fontSize: 14, color: t.textMuted }}>
                       {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}

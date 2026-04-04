@@ -28,12 +28,10 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  async function updateByCustomer(customerId: string, status: string, autoVerify = false) {
-    const update: Record<string, string> = { subscription_status: status };
-    if (autoVerify) update.verification_status = "verified";
+  async function updateByCustomer(customerId: string, status: string) {
     await adminClient
       .from("profiles")
-      .update(update)
+      .update({ subscription_status: status })
       .eq("stripe_customer_id", customerId);
   }
 
@@ -41,8 +39,8 @@ export async function POST(req: NextRequest) {
     case "customer.subscription.created": {
       const sub = event.data.object as Stripe.Subscription;
       const status = sub.status === "active" || sub.status === "trialing" ? sub.status : sub.status;
-      // Auto-verify so user can access the feed immediately when trial starts
-      await updateByCustomer(sub.customer as string, status, true);
+      // Do not set verification_status here — access approval stays with admin (or community vouch), not payment.
+      await updateByCustomer(sub.customer as string, status);
       break;
     }
     case "customer.subscription.updated": {

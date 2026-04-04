@@ -23,12 +23,66 @@ export default function LoginPage() {
   const [turnstileError, setTurnstileError] = useState(false);
   const turnstileRef = useRef<TurnstileInstance>(null);
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+  const [signupCount, setSignupCount] = useState<number | null>(null);
+  const [countFlash, setCountFlash] = useState(false);
 
   // Persist ?ref= referral code through signup flow via localStorage
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get("ref");
     if (ref) localStorage.setItem("eod_ref", ref.toUpperCase());
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadCount() {
+      if (typeof document !== "undefined" && document.hidden) return;
+      try {
+        const res = await fetch("/api/public-signup-count", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = (await res.json()) as { count?: number };
+        const n = typeof data.count === "number" ? data.count : 0;
+        if (cancelled) return;
+        setSignupCount((prev) => {
+          const prevN = prev ?? null;
+          if (prevN !== null && n > prevN) {
+            setCountFlash(true);
+            window.setTimeout(() => setCountFlash(false), 900);
+          }
+          return n;
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+
+    void loadCount();
+    const pollMs = 5000;
+    const interval = window.setInterval(loadCount, pollMs);
+
+    const channel = supabase
+      .channel("login-page-signup-count")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "profiles" },
+        () => {
+          void loadCount();
+        }
+      )
+      .subscribe();
+
+    const onVis = () => {
+      if (!document.hidden) void loadCount();
+    };
+    document.addEventListener("visibilitychange", onVis);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVis);
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   function signInWithGoogleOAuth() {
@@ -210,10 +264,46 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ padding: 40, maxWidth: 500, margin: "0 auto", color: t.text }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        boxSizing: "border-box",
+        padding: 40,
+        maxWidth: 500,
+        margin: "0 auto",
+        color: t.text,
+        background: t.bg,
+      }}
+    >
       <div style={{ textAlign: "center", marginBottom: 32 }}>
-        <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>EOD HUB</div>
+        <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: -1, lineHeight: 1, color: t.text }}>EOD HUB</div>
         <div style={{ fontSize: 14, color: t.textMuted, marginTop: 6, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Built for EOD Techs, by an EOD Tech.</div>
+        <div
+          aria-live="polite"
+          aria-atomic="true"
+          style={{
+            marginTop: 18,
+            fontSize: 15,
+            lineHeight: 1.45,
+            color: t.textMuted,
+            fontWeight: 600,
+            padding: "12px 16px",
+            borderRadius: 12,
+            border: `1px solid ${t.border}`,
+            background: countFlash ? (isDark ? "rgba(124, 58, 237, 0.18)" : "rgba(124, 58, 237, 0.08)") : t.surface,
+            transition: "background 0.35s ease",
+            fontVariantNumeric: "tabular-nums",
+          }}
+        >
+          {signupCount === null ? (
+            <span style={{ opacity: 0.7 }}>Loading community size…</span>
+          ) : (
+            <>
+              <span style={{ color: t.text, fontWeight: 800, fontSize: 17 }}>{signupCount.toLocaleString()}</span>{" "}
+              EOD HUB users have already signed up!
+            </>
+          )}
+        </div>
       </div>
 
       <h1 style={{ fontSize: 28, fontWeight: 700 }}>

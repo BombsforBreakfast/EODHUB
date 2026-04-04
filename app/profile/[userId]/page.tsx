@@ -7,6 +7,7 @@ import { supabase } from "../../lib/lib/supabaseClient";
 import NavBar from "../../components/NavBar";
 import { useTheme } from "../../lib/ThemeContext";
 import MentionTextarea, { extractMentionIds } from "../../components/MentionTextarea";
+import { PostLikersStack, type PostLikerBrief } from "../../components/PostLikersStack";
 
 type Profile = {
   user_id: string;
@@ -64,6 +65,7 @@ type Post = {
   likeCount: number;
   commentCount: number;
   likedByCurrentUser: boolean;
+  likers: PostLikerBrief[];
   comments: WallComment[];
   og_url: string | null;
   og_title: string | null;
@@ -413,18 +415,36 @@ export default function PublicProfilePage() {
       likesByComment.set(r.comment_id, arr);
     });
 
-    // Comment author profiles
+    const postLikerUserIds = ((likesData ?? []) as { post_id: string; user_id: string }[]).map((r) => r.user_id);
+    const commentLikerUserIds = ((commentLikesData ?? []) as { comment_id: string; user_id: string }[]).map((r) => r.user_id);
+
+    // Comment authors + everyone who liked a post or comment (for avatars / names)
     const commentAuthorIds = [...new Set(rawComments.map((c) => c.user_id))];
-    const { data: commentProfileData } = commentAuthorIds.length > 0
-      ? await supabase.from("profiles").select("user_id, first_name, last_name, photo_url, service").in("user_id", commentAuthorIds)
+    const commentAndLikerIds = [
+      ...new Set([...commentAuthorIds, ...postLikerUserIds, ...commentLikerUserIds].filter(Boolean)),
+    ];
+    const { data: commentProfileData } = commentAndLikerIds.length > 0
+      ? await supabase
+          .from("profiles")
+          .select("user_id, first_name, last_name, photo_url, service, is_employer")
+          .in("user_id", commentAndLikerIds)
       : { data: [] };
     const commentNameMap = new Map<string, string>();
     const commentPhotoMap = new Map<string, string | null>();
     const commentServiceMap = new Map<string, string | null>();
-    ((commentProfileData ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null }[]).forEach((p) => {
+    const commentEmployerMap = new Map<string, boolean | null>();
+    ((commentProfileData ?? []) as {
+      user_id: string;
+      first_name: string | null;
+      last_name: string | null;
+      photo_url: string | null;
+      service: string | null;
+      is_employer: boolean | null;
+    }[]).forEach((p) => {
       commentNameMap.set(p.user_id, `${p.first_name || ""} ${p.last_name || ""}`.trim() || "User");
       commentPhotoMap.set(p.user_id, p.photo_url ?? null);
       commentServiceMap.set(p.user_id, p.service ?? null);
+      commentEmployerMap.set(p.user_id, p.is_employer ?? null);
     });
 
     // Build comment map
@@ -465,6 +485,19 @@ export default function PublicProfilePage() {
 
     const merged: Post[] = rawPosts.map((p) => {
       const postLikes = likesByPost.get(p.id) || [];
+      const seenLiker = new Set<string>();
+      const orderedLikerIds = postLikes.filter((uid) => {
+        if (seenLiker.has(uid)) return false;
+        seenLiker.add(uid);
+        return true;
+      });
+      const likers: PostLikerBrief[] = orderedLikerIds.map((uid) => ({
+        userId: uid,
+        name: commentNameMap.get(uid) || "User",
+        photoUrl: commentPhotoMap.get(uid) ?? null,
+        service: commentServiceMap.get(uid) ?? null,
+        isEmployer: commentEmployerMap.get(uid) ?? null,
+      }));
       const multiImages = multiImageMap.get(p.id) || [];
       const legacyImage = legacyImageMap.get(p.id) ?? null;
       const postComments = commentsByPost.get(p.id) || [];
@@ -475,6 +508,7 @@ export default function PublicProfilePage() {
         likeCount: postLikes.length,
         commentCount: postComments.length,
         likedByCurrentUser: currentUserId ? postLikes.includes(currentUserId) : false,
+        likers,
         comments: postComments,
         og_url: p.og_url ?? null,
         og_title: p.og_title ?? null,
@@ -1968,6 +2002,7 @@ export default function PublicProfilePage() {
                       >
                         {commentsOpen ? "Hide Comments" : "Comment"}
                       </button>
+                      {post.likeCount > 0 && <PostLikersStack likers={post.likers} />}
                       <div style={{ fontSize: 14, color: t.textMuted }}>{post.likeCount} {post.likeCount === 1 ? "like" : "likes"}</div>
                       <div style={{ fontSize: 14, color: t.textMuted }}>{post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}</div>
                     </div>
