@@ -102,7 +102,13 @@ export default function MessagesPage() {
         });
       }
       window.dispatchEvent(new CustomEvent("messages-all-read"));
-      await loadConversations(user.id);
+      const convs = await loadConversations(user.id);
+      // Auto-show Requests tab if there are pending requests and no ?with= pre-selects a thread
+      const params = new URLSearchParams(window.location.search);
+      if (!params.get("with")) {
+        const hasRequests = convs.some(c => c.status === "pending" && c.initiated_by !== user.id);
+        if (hasRequests) setInboxTab("requests");
+      }
       setLoading(false);
     }
     init();
@@ -116,7 +122,7 @@ export default function MessagesPage() {
     if (withUserId) openOrCreateConversation(withUserId);
   }, [userId]);
 
-  async function loadConversations(uid: string) {
+  async function loadConversations(uid: string): Promise<Conversation[]> {
     const { data, error } = await supabase
       .from("conversations")
       .select("id, participant_1, participant_2, last_message_at, status, initiated_by")
@@ -124,7 +130,7 @@ export default function MessagesPage() {
       .neq("status", "declined")
       .order("last_message_at", { ascending: false });
 
-    if (error || !data) return;
+    if (error || !data) return [];
 
     const otherIds = data.map((c) => c.participant_1 === uid ? c.participant_2 : c.participant_1);
 
@@ -177,6 +183,7 @@ export default function MessagesPage() {
     });
 
     setConversations(convs);
+    return convs;
   }
 
   async function openOrCreateConversation(otherId: string) {
@@ -223,13 +230,20 @@ export default function MessagesPage() {
     const p2 = userId < otherId ? otherId : userId;
     setSending(true);
     try {
-      const { data: created } = await supabase
+      const { data: created, error: convErr } = await supabase
         .from("conversations")
         .insert({ participant_1: p1, participant_2: p2, status: "pending", initiated_by: userId, last_message_at: new Date().toISOString() })
         .select("id")
         .single();
-      if (!created?.id) return;
-      await supabase.from("messages").insert({ conversation_id: created.id, sender_id: userId, content: requestDraft.trim() });
+      if (convErr || !created?.id) {
+        alert("Failed to send message request. Please try again.");
+        return;
+      }
+      const { error: msgErr } = await supabase.from("messages").insert({ conversation_id: created.id, sender_id: userId, content: requestDraft.trim() });
+      if (msgErr) {
+        alert("Message failed to send. Please try again.");
+        return;
+      }
       // Notify recipient
       await supabase.from("notifications").insert([{
         user_id: otherId,
@@ -249,7 +263,8 @@ export default function MessagesPage() {
   }
 
   async function acceptRequest(convId: string) {
-    await supabase.from("conversations").update({ status: "accepted" }).eq("id", convId);
+    const { error } = await supabase.from("conversations").update({ status: "accepted" }).eq("id", convId);
+    if (error) { alert("Failed to accept request. Please try again."); return; }
     if (userId) await loadConversations(userId);
     selectConversation(convId);
     setInboxTab("messages");
@@ -257,7 +272,8 @@ export default function MessagesPage() {
   }
 
   async function declineRequest(convId: string) {
-    await supabase.from("conversations").update({ status: "declined" }).eq("id", convId);
+    const { error } = await supabase.from("conversations").update({ status: "declined" }).eq("id", convId);
+    if (error) { alert("Failed to decline request. Please try again."); return; }
     if (userId) await loadConversations(userId);
   }
 
@@ -425,9 +441,29 @@ export default function MessagesPage() {
         {/* MESSAGES TAB */}
         {inboxTab === "messages" && (
           <>
-            {acceptedConvs.length === 0 && sentPending.length === 0 && (
+            {/* Nudge banner when requests are waiting */}
+            {receivedRequests.length > 0 && (
+              <button
+                onClick={() => setInboxTab("requests")}
+                style={{
+                  width: "100%", textAlign: "left", padding: "10px 20px",
+                  background: isDark ? "#1c2a1c" : "#f0fdf4",
+                  border: "none", borderBottom: `1px solid ${t.border}`,
+                  cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
+                  fontSize: 13, fontWeight: 700, color: isDark ? "#86efac" : "#166534",
+                }}
+              >
+                📬 {receivedRequests.length} message request{receivedRequests.length !== 1 ? "s" : ""} waiting → View
+              </button>
+            )}
+            {acceptedConvs.length === 0 && sentPending.length === 0 && receivedRequests.length === 0 && (
               <div style={{ padding: 32, textAlign: "center", color: t.textFaint, fontSize: 14 }}>
                 No conversations yet. Visit someone&apos;s profile to start a DM.
+              </div>
+            )}
+            {acceptedConvs.length === 0 && sentPending.length === 0 && receivedRequests.length > 0 && (
+              <div style={{ padding: 32, textAlign: "center", color: t.textFaint, fontSize: 14 }}>
+                Your accepted conversations will appear here.
               </div>
             )}
             {/* Accepted conversations */}

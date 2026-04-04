@@ -261,6 +261,7 @@ export default function PublicProfilePage() {
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const [copiedReferral, setCopiedReferral] = useState(false);
 
   async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
     if (!currentUserId || currentUserId !== userId) return;
@@ -1629,10 +1630,10 @@ export default function PublicProfilePage() {
                   eod-hub.com/login?ref={profile.referral_code}
                 </div>
                 <button
-                  onClick={() => navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`)}
-                  style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", flexShrink: 0 }}
+                  onClick={() => { navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`); setCopiedReferral(true); setTimeout(() => setCopiedReferral(false), 2000); }}
+                  style={{ background: copiedReferral ? "#16a34a" : "#111", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", flexShrink: 0, transition: "background 0.2s" }}
                 >
-                  Copy
+                  {copiedReferral ? "Copied!" : "Copy"}
                 </button>
               </div>
               <div style={{ marginTop: 12, display: "flex", gap: 16, fontSize: 13 }}>

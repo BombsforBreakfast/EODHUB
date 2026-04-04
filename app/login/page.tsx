@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { Turnstile } from "@marsidev/react-turnstile";
 import type { TurnstileInstance } from "@marsidev/react-turnstile";
+import { useTheme } from "../lib/ThemeContext";
 
 
 export default function LoginPage() {
+  const { t, isDark } = useTheme();
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
 
   const [email, setEmail] = useState("");
@@ -28,6 +30,16 @@ export default function LoginPage() {
     const ref = params.get("ref");
     if (ref) localStorage.setItem("eod_ref", ref.toUpperCase());
   }, []);
+
+  function signInWithGoogleOAuth() {
+    const redirectTo = `${window.location.origin}/onboarding`;
+    const hint = email.trim();
+    const options =
+      hint.includes("@")
+        ? { redirectTo, queryParams: { login_hint: hint } }
+        : { redirectTo };
+    return supabase.auth.signInWithOAuth({ provider: "google", options });
+  }
 
   async function verifyTurnstile(): Promise<boolean> {
     if (!siteKey) return true; // not configured — allow through
@@ -136,16 +148,21 @@ export default function LoginPage() {
       setSubmitting(true);
       setIsGoogleAccount(false);
 
-      // Check if this email belongs to a Google OAuth account
+      // If this email only has OAuth (no email/password identity), password reset does not apply
       const res = await fetch("/api/check-auth-provider", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: forgotEmail.trim() }),
       });
-      const { provider } = await res.json();
-      if (provider === "google") {
-        setIsGoogleAccount(true);
-        return;
+      const authJson = await res.json() as { providers?: string[] };
+      const providers = authJson.providers ?? [];
+      if (providers.length > 0) {
+        const hasEmailIdentity = providers.includes("email");
+        const hasOnlyOAuth = !hasEmailIdentity;
+        if (hasOnlyOAuth) {
+          setIsGoogleAccount(true);
+          return;
+        }
       }
 
       const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
@@ -164,17 +181,39 @@ export default function LoginPage() {
   const inputStyle: React.CSSProperties = {
     padding: 10,
     borderRadius: 10,
-    border: "1px solid #ccc",
+    border: `1px solid ${t.inputBorder}`,
     fontSize: 16,
     width: "100%",
     boxSizing: "border-box",
+    background: t.input,
+    color: t.text,
+  };
+
+  const buttonPrimary: React.CSSProperties = {
+    padding: 12,
+    borderRadius: 12,
+    border: "none",
+    background: t.text,
+    color: t.surface,
+    fontWeight: 700,
+    cursor: "pointer",
+  };
+
+  const buttonSecondary: React.CSSProperties = {
+    padding: 12,
+    borderRadius: 12,
+    border: `1px solid ${t.border}`,
+    background: t.surface,
+    color: t.text,
+    fontWeight: 700,
+    cursor: "pointer",
   };
 
   return (
-    <div style={{ padding: 40, maxWidth: 500, margin: "0 auto" }}>
+    <div style={{ padding: 40, maxWidth: 500, margin: "0 auto", color: t.text }}>
       <div style={{ textAlign: "center", marginBottom: 32 }}>
         <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>EOD HUB</div>
-        <div style={{ fontSize: 14, color: "#888", marginTop: 6, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Built for EOD Techs, by an EOD Tech.</div>
+        <div style={{ fontSize: 14, color: t.textMuted, marginTop: 6, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Built for EOD Techs, by an EOD Tech.</div>
       </div>
 
       <h1 style={{ fontSize: 28, fontWeight: 700 }}>
@@ -188,7 +227,7 @@ export default function LoginPage() {
             <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 12, padding: 20, textAlign: "center" }}>
               <div style={{ fontSize: 28, marginBottom: 8 }}>G</div>
               <div style={{ fontWeight: 700, marginBottom: 6 }}>Google Account Detected</div>
-              <div style={{ fontSize: 14, color: "#555", marginBottom: 16 }}>
+              <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
                 This account was created with Google Sign-In — there&apos;s no password to reset. Use the <strong>Continue with Google</strong> button on the login page to sign in.
               </div>
               <button type="button" onClick={() => { setMode("login"); setIsGoogleAccount(false); }}
@@ -200,13 +239,13 @@ export default function LoginPage() {
             <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12, padding: 20, textAlign: "center" }}>
               <div style={{ fontSize: 28, marginBottom: 8 }}>📬</div>
               <div style={{ fontWeight: 700, marginBottom: 6 }}>Check your email</div>
-              <div style={{ fontSize: 14, color: "#555" }}>
+              <div style={{ fontSize: 14, color: t.textMuted }}>
                 We sent a password reset link to <strong>{forgotEmail}</strong>. Click the link in the email to set a new password.
               </div>
             </div>
           ) : (
             <form onSubmit={(e) => { e.preventDefault(); handleForgotPassword(); }} style={{ display: "grid", gap: 12, marginTop: 16 }}>
-              <div style={{ fontSize: 14, color: "#555" }}>
+              <div style={{ fontSize: 14, color: t.textMuted }}>
                 Enter your email address and we&apos;ll send you a link to reset your password.
               </div>
               <input
@@ -218,7 +257,7 @@ export default function LoginPage() {
                 autoFocus
               />
               <button type="submit" disabled={submitting || !forgotEmail.trim()} style={{ ...buttonPrimary, opacity: submitting || !forgotEmail.trim() ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-                {submitting && <span className="btn-spinner" />}
+                {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
                 Send Reset Link
               </button>
             </form>
@@ -282,7 +321,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setMode("forgot")}
-                style={{ background: "none", border: "none", fontSize: 14, color: "#555", cursor: "pointer", padding: 0, textDecoration: "underline" }}
+                style={{ background: "none", border: "none", fontSize: 14, color: t.textMuted, cursor: "pointer", padding: 0, textDecoration: "underline" }}
               >
                 Forgot password?
               </button>
@@ -307,17 +346,17 @@ export default function LoginPage() {
                 disabled={submitting || (!!siteKey && !turnstileToken && !turnstileError)}
                 style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
-                {submitting && <span className="btn-spinner" />}
+                {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
                 Login
               </button>
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
-                <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-                <span style={{ fontSize: 13, color: "#999" }}>or</span>
-                <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+                <div style={{ flex: 1, height: 1, background: t.border }} />
+                <span style={{ fontSize: 13, color: t.textMuted }}>or</span>
+                <div style={{ flex: 1, height: 1, background: t.border }} />
               </div>
               <button
                 type="button"
-                onClick={() => supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/onboarding` } })}
+                onClick={() => signInWithGoogleOAuth()}
                 disabled={submitting}
                 style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
               >
@@ -335,17 +374,17 @@ export default function LoginPage() {
                 disabled={submitting || (!!siteKey && !turnstileToken && !turnstileError)}
                 style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
-                {submitting && <span className="btn-spinner" />}
+                {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
                 Complete Signup
               </button>
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
-                <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
-                <span style={{ fontSize: 13, color: "#999" }}>or</span>
-                <div style={{ flex: 1, height: 1, background: "#e5e7eb" }} />
+                <div style={{ flex: 1, height: 1, background: t.border }} />
+                <span style={{ fontSize: 13, color: t.textMuted }}>or</span>
+                <div style={{ flex: 1, height: 1, background: t.border }} />
               </div>
               <button
                 type="button"
-                onClick={() => supabase.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${window.location.origin}/onboarding` } })}
+                onClick={() => signInWithGoogleOAuth()}
                 disabled={submitting}
                 style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
               >
@@ -363,16 +402,6 @@ export default function LoginPage() {
   );
 }
 
-const buttonPrimary: React.CSSProperties = {
-  padding: 12,
-  borderRadius: 12,
-  border: "none",
-  background: "black",
-  color: "white",
-  fontWeight: 700,
-  cursor: "pointer",
-};
-
 function GoogleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 48 48">
@@ -384,11 +413,3 @@ function GoogleIcon() {
   );
 }
 
-const buttonSecondary: React.CSSProperties = {
-  padding: 12,
-  borderRadius: 12,
-  border: "1px solid black",
-  background: "white",
-  fontWeight: 700,
-  cursor: "pointer",
-};

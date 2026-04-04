@@ -117,6 +117,7 @@ button:active, a.nav-btn:active {
   .nav-events        { display: none !important; }
   .nav-messages-btn  { display: none !important; }
   .nav-units         { display: none !important; }
+  .nav-directory     { display: none !important; }
   /* Home is visible on mobile row 1 */
   .nav-home          { display: flex !important; align-items: center !important; }
   /* Brand title hidden on mobile — nav is already tight */

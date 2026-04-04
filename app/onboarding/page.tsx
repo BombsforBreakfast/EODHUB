@@ -13,6 +13,7 @@ export default function OnboardingPage() {
   const [accountType, setAccountType] = useState<"member" | "employer" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [duplicateProviders, setDuplicateProviders] = useState<string[] | null>(null);
 
   // Member fields
   const [firstName, setFirstName] = useState("");
@@ -45,6 +46,23 @@ export default function OnboardingPage() {
         setLastName(parts.slice(1).join(" ") || "");
         setEmpFirstName(parts[0] || "");
         setEmpLastName(parts.slice(1).join(" ") || "");
+      }
+
+      // Check for duplicate accounts sharing this email (e.g. Google + email/password)
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        const dupRes = await fetch("/api/check-duplicate-email", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (dupRes.ok) {
+          const dupJson = await dupRes.json() as { hasDuplicate: boolean; duplicateProviders?: string[] };
+          if (dupJson.hasDuplicate) {
+            setDuplicateProviders(dupJson.duplicateProviders ?? ["email"]);
+            setChecking(false);
+            return;
+          }
+        }
       }
 
       // If already onboarded, redirect appropriately
@@ -149,6 +167,37 @@ export default function OnboardingPage() {
   const selectStyle: React.CSSProperties = {
     ...inputStyle, background: "white", cursor: "pointer",
   };
+
+  if (duplicateProviders) {
+    const hasEmail = duplicateProviders.includes("email");
+    const hasGoogle = duplicateProviders.includes("google");
+    const existingMethod =
+      hasEmail && hasGoogle
+        ? "email & password and Google (on a separate login record)"
+        : hasEmail
+          ? "email & password"
+          : hasGoogle
+            ? "Google"
+            : duplicateProviders.join(", ");
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+        <div style={{ maxWidth: 420, width: "100%", textAlign: "center" }}>
+          <div style={{ fontSize: 40, marginBottom: 16 }}>👤</div>
+          <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 10 }}>Account already exists</div>
+          <div style={{ fontSize: 15, color: "#555", lineHeight: 1.6, marginBottom: 24 }}>
+            This email is already used for EOD Hub with <strong>{existingMethod}</strong>. That can happen if the same address was registered twice before sign-in methods were linked.<br /><br />
+            If you&apos;re already signed in on the main site, open the <strong>avatar menu</strong> (top-left) to switch to your other login. Otherwise sign out below and sign in the way you used originally. After you&apos;re in, use <strong>My Account → Sign-In Methods</strong> to add Google (or email &amp; password) so one account works everywhere.
+          </div>
+          <button
+            onClick={async () => { await supabase.auth.signOut(); window.location.href = "/login"; }}
+            style={{ padding: "12px 28px", borderRadius: 12, border: "none", background: "#111", color: "white", fontWeight: 700, fontSize: 15, cursor: "pointer", width: "100%" }}
+          >
+            Sign out &amp; go to login
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (checking) {
     return (

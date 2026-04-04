@@ -156,6 +156,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
   const [directoryEntries, setDirectoryEntries] = useState<DirectoryEntry[]>([]);
   const [locationRequests, setLocationRequests] = useState<LocationRequest[]>([]);
+  const [pendingCounts, setPendingCounts] = useState({ biz: 0, jobs: 0, users: 0, flags: 0, reports: 0, dir: 0 });
 
   const { t, isDark } = useTheme();
 
@@ -166,6 +167,25 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
   function askConfirm(message: string, onConfirm: () => void) {
     setConfirmDialog({ message, onConfirm });
+  }
+
+  async function loadPendingCounts() {
+    const [bizRes, jobRes, userRes, flagRes, reportRes, dirRes] = await Promise.all([
+      supabase.from("business_listings").select("*", { count: "exact", head: true }).neq("is_approved", true),
+      supabase.from("jobs").select("*", { count: "exact", head: true }).neq("is_approved", true),
+      supabase.from("profiles").select("*", { count: "exact", head: true }).eq("verification_status", "pending"),
+      supabase.from("flags").select("*", { count: "exact", head: true }).eq("reviewed", false),
+      supabase.from("bug_reports").select("*", { count: "exact", head: true }).eq("reviewed", false),
+      supabase.from("unit_directory").select("*", { count: "exact", head: true }).eq("is_approved", false),
+    ]);
+    setPendingCounts({
+      biz: bizRes.count ?? 0,
+      jobs: jobRes.count ?? 0,
+      users: userRes.count ?? 0,
+      flags: flagRes.count ?? 0,
+      reports: reportRes.count ?? 0,
+      dir: dirRes.count ?? 0,
+    });
   }
 
   async function loadBusinesses() {
@@ -272,7 +292,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       }
 
       setAuthorized(true);
-      await Promise.all([loadBusinesses(), loadJobs(), loadUsers(), loadFlags()]);
+      await Promise.all([loadBusinesses(), loadJobs(), loadUsers(), loadFlags(), loadPendingCounts()]);
       setLoading(false);
     }
     init();
@@ -295,7 +315,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       .from("business_listings")
       .update({ is_approved: true, is_featured: featured })
       .eq("id", id);
-    if (error) { alert(error.message); } else { showToast(featured ? "Approved & featured!" : "Approved!"); await loadBusinesses(); }
+    if (error) { alert(error.message); } else { showToast(featured ? "Approved & featured!" : "Approved!"); await Promise.all([loadBusinesses(), loadPendingCounts()]); }
     setActionLoading(null);
   }
 
@@ -303,7 +323,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
     askConfirm("Delete this business listing?", async () => {
       setActionLoading(id);
       const { error } = await supabase.from("business_listings").delete().eq("id", id);
-      if (error) { alert(error.message); } else { showToast("Listing removed."); await loadBusinesses(); }
+      if (error) { alert(error.message); } else { showToast("Listing removed."); await Promise.all([loadBusinesses(), loadPendingCounts()]); }
       setActionLoading(null);
     });
   }
@@ -311,6 +331,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function approveJob(id: string) {
     // Optimistically remove from pending list immediately
     if (pendingOnly) setJobs((prev) => prev.filter((j) => j.id !== id));
+    setPendingCounts((prev) => ({ ...prev, jobs: Math.max(0, prev.jobs - 1) }));
     showToast("Job approved!");
 
     const { data: { session } } = await supabase.auth.getSession();
@@ -335,6 +356,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       } else {
         showToast("Job removed.");
         setJobs((prev) => prev.filter((j) => j.id !== id));
+        setPendingCounts((prev) => ({ ...prev, jobs: Math.max(0, prev.jobs - 1) }));
       }
       setActionLoading(null);
     });
@@ -431,11 +453,11 @@ const [memWizUrl, setMemWizUrl] = useState("");
           alert(json.error ?? "Verification failed");
         } else {
           showToast("User verified — email sent!");
-          await loadUsers();
+          await Promise.all([loadUsers(), loadPendingCounts()]);
         }
       } else {
         const { error } = await supabase.from("profiles").update({ verification_status: status }).eq("user_id", userId);
-        if (error) { alert(error.message); } else { showToast(`Verification set to "${status}"`); await loadUsers(); }
+        if (error) { alert(error.message); } else { showToast(`Verification set to "${status}"`); await Promise.all([loadUsers(), loadPendingCounts()]); }
       }
     } finally {
       setActionLoading(null);
@@ -447,7 +469,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
     setActionLoading(userId + "-deny");
     try {
       const { error } = await supabase.from("profiles").update({ verification_status: "denied" }).eq("user_id", userId);
-      if (error) { alert(error.message); } else { showToast("User denied."); await loadUsers(); }
+      if (error) { alert(error.message); } else { showToast("User denied."); await Promise.all([loadUsers(), loadPendingCounts()]); }
     } finally {
       setActionLoading(null);
     }
@@ -492,7 +514,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function dismissFlag(id: string) {
     setActionLoading(id);
     const { error } = await supabase.from("flags").update({ reviewed: true }).eq("id", id);
-    if (error) { alert(error.message); } else { showToast("Flag dismissed."); await loadFlags(); }
+    if (error) { alert(error.message); } else { showToast("Flag dismissed."); await Promise.all([loadFlags(), loadPendingCounts()]); }
     setActionLoading(null);
   }
 
@@ -641,7 +663,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
     setActionLoading(id);
     await supabase.from("bug_reports").update({ reviewed: true }).eq("id", id);
     showToast("Marked as reviewed.");
-    await loadBugReports();
+    await Promise.all([loadBugReports(), loadPendingCounts()]);
     setActionLoading(null);
   }
 
@@ -650,7 +672,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       setActionLoading(id);
       await supabase.from("bug_reports").delete().eq("id", id);
       showToast("Report deleted.");
-      await loadBugReports();
+      await Promise.all([loadBugReports(), loadPendingCounts()]);
       setActionLoading(null);
     });
   }
@@ -717,7 +739,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function approveDirectoryEntry(id: string) {
     setActionLoading(id);
     const { error } = await supabase.from("unit_directory").update({ is_approved: true }).eq("id", id);
-    if (error) { alert(error.message); } else { showToast("Entry approved!"); await loadDirectory(); }
+    if (error) { alert(error.message); } else { showToast("Entry approved!"); await Promise.all([loadDirectory(), loadPendingCounts()]); }
     setActionLoading(null);
   }
 
@@ -725,7 +747,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
     askConfirm("Delete this directory submission?", async () => {
       setActionLoading(id);
       const { error } = await supabase.from("unit_directory").delete().eq("id", id);
-      if (error) { alert(error.message); } else { showToast("Entry removed."); await loadDirectory(); }
+      if (error) { alert(error.message); } else { showToast("Entry removed."); await Promise.all([loadDirectory(), loadPendingCounts()]); }
       setActionLoading(null);
     });
   }
@@ -822,25 +844,25 @@ const [memWizUrl, setMemWizUrl] = useState("");
         {/* Tabs */}
         <div style={{ display: "flex", gap: 8, marginTop: 24, flexWrap: "wrap" }}>
           <button style={tabStyle("businesses")} onClick={() => setActiveTab("businesses")}>
-            Businesses {pendingOnly && pendingBizCount > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingBizCount}</span>}
+            Businesses {pendingCounts.biz > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.biz}</span>}
           </button>
           <button style={tabStyle("jobs")} onClick={() => setActiveTab("jobs")}>
-            Jobs {pendingOnly && pendingJobCount > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingJobCount}</span>}
+            Jobs {pendingCounts.jobs > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.jobs}</span>}
           </button>
           <button style={tabStyle("users")} onClick={() => setActiveTab("users")}>
-            Users
+            Users {pendingCounts.users > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.users}</span>}
           </button>
           <button style={tabStyle("flags")} onClick={() => setActiveTab("flags")}>
-            Flags {unreviewedFlagCount > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{unreviewedFlagCount}</span>}
+            Flags {pendingCounts.flags > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.flags}</span>}
           </button>
           <button style={tabStyle("tools")} onClick={() => setActiveTab("tools")}>
             Tools
           </button>
           <button style={tabStyle("reports")} onClick={() => setActiveTab("reports")}>
-            Reports {bugReports.filter(r => !r.reviewed).length > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{bugReports.filter(r => !r.reviewed).length}</span>}
+            Reports {pendingCounts.reports > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.reports}</span>}
           </button>
           <button style={tabStyle("directory")} onClick={() => setActiveTab("directory")}>
-            Directory {directoryEntries.filter(e => !e.is_approved).length > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{directoryEntries.filter(e => !e.is_approved).length}</span>}
+            Directory {pendingCounts.dir > 0 && <span style={{ background: "#ef4444", color: "white", borderRadius: "50%", padding: "1px 6px", fontSize: 11, marginLeft: 6 }}>{pendingCounts.dir}</span>}
           </button>
 
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: t.textMuted }}>

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 
-export default function ReportProblemButton() {
+export default function ReportProblemButton({ inline = false }: { inline?: boolean }) {
   const [open, setOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
@@ -92,33 +92,30 @@ export default function ReportProblemButton() {
 
   return (
     <>
-      {/* Floating trigger button */}
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title="Report a problem"
-        style={{
-          position: "fixed",
-          bottom: 20,
-          right: 20,
-          zIndex: 400,
-          background: isDark ? "#1e1e1e" : "#fff",
-          border: `1px solid ${t.border}`,
-          borderRadius: 999,
-          padding: "8px 14px",
-          fontWeight: 700,
-          fontSize: 12,
-          cursor: "pointer",
-          color: t.textMuted,
-          boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-        }}
-      >
-        <span style={{ fontSize: 14 }}>⚑</span>
-        Report
-      </button>
+      {/* Trigger button — inline in My Account, or floating globally */}
+      {inline ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          style={{
+            background: "transparent",
+            border: `1px solid ${t.border}`,
+            borderRadius: 10,
+            padding: "10px 16px",
+            fontWeight: 700,
+            fontSize: 14,
+            cursor: "pointer",
+            color: t.text,
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            width: "100%",
+          }}
+        >
+          <span style={{ fontSize: 16 }}>⚑</span>
+          Report an Issue
+        </button>
+      ) : null}
 
       {/* Modal overlay */}
       {open && (

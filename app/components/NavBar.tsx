@@ -23,17 +23,38 @@ type SearchResult = {
   external: boolean;
 };
 
+type LinkedAccount = {
+  userId: string;
+  isCurrent: boolean;
+  label: string;
+  subtitle: string;
+  photoUrl: string | null;
+};
+
+type LinkedAccountsPayload = {
+  accounts: LinkedAccount[];
+  canSwitch: boolean;
+};
+
 
 export default function NavBar() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [userInitial, setUserInitial] = useState<string>("?");
+  const [avatarPhotoUrl, setAvatarPhotoUrl] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadMessages, setUnreadMessages] = useState(0);
 
   const [showHub, setShowHub] = useState(false);
   const hubBtnRef = useRef<HTMLButtonElement>(null);
   const hubPanelRef = useRef<HTMLDivElement>(null);
+
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccountsPayload | null>(null);
+  const [linkedLoading, setLinkedLoading] = useState(false);
+  const [switchingToId, setSwitchingToId] = useState<string | null>(null);
+  const accountAvatarRef = useRef<HTMLButtonElement>(null);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -110,6 +131,73 @@ export default function NavBar() {
     setUnreadMessages(0);
   }
 
+  async function loadLinkedAuthAccounts() {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      setLinkedAccounts(null);
+      return;
+    }
+    setLinkedLoading(true);
+    try {
+      const res = await fetch("/api/linked-auth-accounts", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok) {
+        setLinkedAccounts(null);
+        return;
+      }
+      const json = await res.json() as {
+        accounts?: LinkedAccount[];
+        canSwitch?: boolean;
+      };
+      setLinkedAccounts({
+        accounts: json.accounts ?? [],
+        canSwitch: !!json.canSwitch,
+      });
+    } finally {
+      setLinkedLoading(false);
+    }
+  }
+
+  async function switchToLinkedAccount(targetUserId: string) {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
+    setSwitchingToId(targetUserId);
+    setShowAccountMenu(false);
+    setShowHub(false);
+    try {
+      const res = await fetch("/api/auth/switch-linked-account", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ targetUserId }),
+      });
+      const json = await res.json().catch(() => ({})) as { token_hash?: string; error?: string; code?: string };
+      if (!res.ok) {
+        alert(json.error ?? "Could not switch accounts.");
+        return;
+      }
+      if (!json.token_hash) {
+        alert("Could not switch accounts.");
+        return;
+      }
+      const { error } = await supabase.auth.verifyOtp({
+        token_hash: json.token_hash,
+        type: "magiclink",
+      });
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      sessionStorage.setItem("eod_active", "1");
+      window.location.href = "/";
+    } finally {
+      setSwitchingToId(null);
+    }
+  }
+
   useEffect(() => {
     let mounted = true;
 
@@ -125,14 +213,19 @@ export default function NavBar() {
       if (uid) {
         const { data } = await supabase
           .from("profiles")
-          .select("first_name, display_name")
+          .select("first_name, display_name, photo_url")
           .eq("user_id", uid)
           .maybeSingle();
         if (!mounted) return;
-        const name = data as { first_name: string | null; display_name: string | null } | null;
+        const name = data as { first_name: string | null; display_name: string | null; photo_url: string | null } | null;
         setUserInitial((name?.first_name?.[0] || name?.display_name?.[0] || "?").toUpperCase());
+        setAvatarPhotoUrl(name?.photo_url?.trim() ? name.photo_url : null);
         await loadNotifications(uid);
         await loadUnreadMessages(uid);
+        void loadLinkedAuthAccounts();
+      } else {
+        setAvatarPhotoUrl(null);
+        setLinkedAccounts(null);
       }
     }
 
@@ -142,6 +235,8 @@ export default function NavBar() {
       if (!mounted) return;
       setCurrentUserId(session?.user?.id ?? null);
       setAuthLoaded(true);
+      if (session?.user?.id) void loadLinkedAuthAccounts();
+      else setLinkedAccounts(null);
     });
 
     return () => {
@@ -276,9 +371,22 @@ export default function NavBar() {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, [showHub]);
 
+  // Account avatar menu — outside click
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      const target = e.target as Node;
+      if (!accountMenuRef.current?.contains(target) && !accountAvatarRef.current?.contains(target)) {
+        setShowAccountMenu(false);
+      }
+    }
+    if (showAccountMenu) document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, [showAccountMenu]);
+
   async function handleLogout() {
     const { error } = await supabase.auth.signOut();
     if (error) { console.error("Logout error:", error); return; }
+    setLinkedAccounts(null);
     window.location.href = "/login";
   }
 
@@ -304,13 +412,118 @@ export default function NavBar() {
     <div className="nav-root" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30, flexWrap: "wrap", gap: 12 }}>
       {/* Left: avatar + nav links */}
       <div className="nav-left" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <Link
-          href="/profile"
-          className="nav-avatar"
-          style={{ width: 38, height: 38, borderRadius: "50%", background: t.text, color: t.navBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 16, textDecoration: "none", flexShrink: 0 }}
-        >
-          {userInitial}
-        </Link>
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <button
+            ref={accountAvatarRef}
+            type="button"
+            className="nav-avatar"
+            aria-expanded={showAccountMenu}
+            aria-haspopup="menu"
+            title="Account menu"
+            onClick={() => { setShowAccountMenu((v) => !v); setShowHub(false); }}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: "50%",
+              background: t.text,
+              color: t.navBg,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 700,
+              fontSize: 16,
+              border: "none",
+              cursor: "pointer",
+              padding: 0,
+              overflow: "hidden",
+            }}
+          >
+            {avatarPhotoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- user-uploaded profile photo URL
+              <img src={avatarPhotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              userInitial
+            )}
+          </button>
+          {showAccountMenu && currentUserId && (
+            <div
+              ref={accountMenuRef}
+              role="menu"
+              style={{
+                position: "absolute",
+                top: "calc(100% + 8px)",
+                left: 0,
+                minWidth: 272,
+                maxWidth: 320,
+                background: t.surface,
+                border: `1px solid ${t.border}`,
+                borderRadius: 12,
+                boxShadow: "0 12px 40px rgba(0,0,0,0.18)",
+                zIndex: 400,
+                padding: "10px 0",
+              }}
+            >
+              <Link
+                href="/profile"
+                role="menuitem"
+                onClick={() => setShowAccountMenu(false)}
+                style={{
+                  display: "block",
+                  padding: "10px 16px",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  color: t.text,
+                  textDecoration: "none",
+                }}
+              >
+                My Account
+              </Link>
+              <div style={{ height: 1, background: t.borderLight, margin: "6px 0" }} />
+              {linkedLoading && (
+                <div style={{ padding: "8px 16px", fontSize: 12, color: t.textMuted }}>Checking linked logins…</div>
+              )}
+              {!linkedLoading && linkedAccounts?.canSwitch && (
+                <>
+                  <div style={{ padding: "4px 16px 6px", fontSize: 10, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                    Same email — switch login
+                  </div>
+                  {(linkedAccounts.accounts ?? []).filter((a) => !a.isCurrent).map((a) => (
+                    <button
+                      key={a.userId}
+                      type="button"
+                      role="menuitem"
+                      disabled={!!switchingToId}
+                      onClick={() => switchToLinkedAccount(a.userId)}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "10px 16px",
+                        border: "none",
+                        background: switchingToId === a.userId ? t.surfaceHover : "transparent",
+                        cursor: switchingToId ? "wait" : "pointer",
+                        fontSize: 13,
+                        color: t.text,
+                        fontWeight: 600,
+                      }}
+                    >
+                      {switchingToId === a.userId ? "Switching…" : a.label}
+                      <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 500, marginTop: 2 }}>{a.subtitle}</div>
+                    </button>
+                  ))}
+                  <div style={{ padding: "8px 16px 4px", fontSize: 11, color: t.textMuted, lineHeight: 1.45 }}>
+                    Prefer one login? Open <strong>My Account</strong> → Sign-In Methods to link Google and email on a single account.
+                  </div>
+                </>
+              )}
+              {!linkedLoading && linkedAccounts && !linkedAccounts.canSwitch && (
+                <div style={{ padding: "6px 16px 10px", fontSize: 11, color: t.textMuted, lineHeight: 1.45 }}>
+                  One login for this email. You can add Google or email sign-in under <strong>My Account</strong> → Sign-In Methods.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {currentUserId && (
           <a
@@ -328,7 +541,7 @@ export default function NavBar() {
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Units</Link>
         <Link href="/directory" className="nav-btn nav-directory" style={navButton}>Directory</Link>
 
-        <a
+        <Link
           href="/"
           onClick={async (e) => { e.preventDefault(); await markFeedNotifsRead(); window.location.href = "/"; }}
           className="nav-btn nav-home"
@@ -336,7 +549,7 @@ export default function NavBar() {
         >
           Home
           {unreadFeedNotifs > 0 && badge(unreadFeedNotifs)}
-        </a>
+        </Link>
 
         {/* EOD Hub — mobile only */}
         <button
@@ -364,9 +577,9 @@ export default function NavBar() {
       </div>
 
       {/* Brand title — desktop only */}
-      <a href="/" className="nav-brand" style={{ textDecoration: "none", color: t.text }}>
+      <Link href="/" className="nav-brand" style={{ textDecoration: "none", color: t.text }}>
         <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>EOD HUB</div>
-      </a>
+      </Link>
 
       {/* Search bar row */}
       <div className="nav-search-row">
@@ -470,6 +683,39 @@ export default function NavBar() {
               {item.badge > 0 && badge(item.badge)}
             </a>
           ))}
+          {linkedAccounts?.canSwitch && (
+            <>
+              <div style={{ padding: "10px 14px 4px", fontSize: 10, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                Same email — switch login
+              </div>
+              {(linkedAccounts.accounts ?? []).filter((a) => !a.isCurrent).map((a) => (
+                <button
+                  key={a.userId}
+                  type="button"
+                  disabled={!!switchingToId}
+                  onClick={() => switchToLinkedAccount(a.userId)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    padding: "11px 14px",
+                    borderRadius: 10,
+                    border: `1px solid ${t.border}`,
+                    color: t.text,
+                    fontWeight: 700,
+                    fontSize: 14,
+                    background: t.bg,
+                    width: "100%",
+                    cursor: switchingToId ? "wait" : "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <span style={{ fontSize: 20, lineHeight: 1 }}>{switchingToId === a.userId ? "⏳" : "🔁"}</span>
+                  <span style={{ flex: 1 }}>{switchingToId === a.userId ? "Switching…" : a.label}</span>
+                </button>
+              ))}
+            </>
+          )}
         </div>
       )}
 

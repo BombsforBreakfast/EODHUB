@@ -3,7 +3,6 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "./lib/ThemeContext";
 import SessionGuard from "./components/SessionGuard";
-import ReportProblemButton from "./components/ReportProblemButton";
 import { Analytics } from "@vercel/analytics/next";
 
 const geistSans = Geist({
@@ -35,7 +34,6 @@ export default function RootLayout({
         <ThemeProvider>
           <SessionGuard />
           {children}
-          <ReportProblemButton />
           <Analytics />
         </ThemeProvider>
       </body>

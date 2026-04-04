@@ -20,7 +20,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const stored = localStorage.getItem("eod-theme");
-    if (stored === "dark") setIsDark(true);
+    if (stored === "dark") {
+      setIsDark(true);
+    } else if (!stored) {
+      // No explicit preference — follow system dark mode
+      setIsDark(window.matchMedia("(prefers-color-scheme: dark)").matches);
+    }
+    // stored === "light" → default false is already correct
   }, []);
 
   useEffect(() => {

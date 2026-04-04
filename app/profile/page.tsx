@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
+import ReportProblemButton from "../components/ReportProblemButton";
 
 function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null }) {
   const { t } = useTheme();
@@ -136,6 +137,10 @@ export default function MyAccountPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [adminPendingCount, setAdminPendingCount] = useState(0);
+  const [authProviders, setAuthProviders] = useState<string[]>([]);
+  const [linkingGoogle, setLinkingGoogle] = useState(false);
+  const [linkedSuccess, setLinkedSuccess] = useState(false);
 
   const [editing, setEditing] = useState(false);
   const [editRole, setEditRole] = useState("");
@@ -265,7 +270,19 @@ export default function MyAccountPage() {
     }
   }
 
-  async function loadProfile(userId: string) {
+  async function loadAdminPendingCount() {
+    const [bizRes, userRes, flagRes, reportRes, dirRes] = await Promise.all([
+      supabase.from("business_listings").select("*", { count: "exact", head: true }).neq("is_approved", true),
+      supabase.from("profiles").select("*", { count: "exact", head: true }).eq("verification_status", "pending"),
+      supabase.from("flags").select("*", { count: "exact", head: true }).eq("reviewed", false),
+      supabase.from("bug_reports").select("*", { count: "exact", head: true }).eq("reviewed", false),
+      supabase.from("unit_directory").select("*", { count: "exact", head: true }).eq("is_approved", false),
+    ]);
+    const total = (bizRes.count ?? 0) + (userRes.count ?? 0) + (flagRes.count ?? 0) + (reportRes.count ?? 0) + (dirRes.count ?? 0);
+    setAdminPendingCount(total);
+  }
+
+  async function loadProfile(userId: string): Promise<Profile | null> {
     const { data, error } = await supabase
       .from("profiles")
       .select("*")
@@ -274,13 +291,14 @@ export default function MyAccountPage() {
 
     if (error) {
       console.error("Error loading profile:", error);
-      return;
+      return null;
     }
 
     const p = (data as Profile | null) ?? null;
     setProfile(p);
     setSeekingEmployment(p?.seeking_employment ?? false);
     if (p?.is_employer) loadEmployerJobs(userId);
+    return p;
   }
 
   async function loadEmployerJobs(userId: string) {
@@ -421,7 +439,12 @@ export default function MyAccountPage() {
       }
 
       setCurrentUserId(userId);
-      await Promise.all([loadProfile(userId), loadSavedJobs(userId), loadSavedEvents(userId), loadMyUnits(userId)]);
+      setAuthProviders((data.user?.identities ?? []).map((i: { provider: string }) => i.provider));
+      const [p] = await Promise.all([loadProfile(userId), loadSavedJobs(userId), loadSavedEvents(userId), loadMyUnits(userId)]);
+      if (p?.is_admin) loadAdminPendingCount();
+      // Show success toast if returning from a Google link
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("linked") === "google") setLinkedSuccess(true);
       setLoading(false);
     }
 
@@ -520,8 +543,13 @@ export default function MyAccountPage() {
                   Edit Profile
                 </button>
                 {profile?.is_admin && (
-                  <a href="/admin" style={{ display: "inline-block", background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer", textDecoration: "none", fontSize: 14 }}>
+                  <a href="/admin" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer", textDecoration: "none", fontSize: 14 }}>
                     Admin Panel
+                    {adminPendingCount > 0 && (
+                      <span style={{ background: "#ef4444", color: "white", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
+                        {adminPendingCount > 99 ? "99+" : adminPendingCount}
+                      </span>
+                    )}
                   </a>
                 )}
               </div>
@@ -545,6 +573,67 @@ export default function MyAccountPage() {
       {/* Toggles row */}
       {!loading && (
         <div style={{ marginTop: 16, display: "grid", gap: 12 }}>
+          {/* Sign-In Methods */}
+          <div style={{ ...card, padding: "18px 24px" }}>
+            <div style={{ fontWeight: 800, fontSize: 15, color: t.text, marginBottom: 8 }}>Sign-In Methods</div>
+            <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5, marginBottom: 12 }}>
+              Link Google and email on one account when you can. If the same address was used for separate logins (for example member vs employer), use the <strong>avatar menu</strong> at the top of the site to switch between them.
+            </div>
+            {linkedSuccess && (
+              <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#166534", fontWeight: 700, marginBottom: 12 }}>
+                ✓ Google account linked successfully!
+              </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${t.border}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>✉️</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>Email & Password</div>
+                    <div style={{ fontSize: 12, color: t.textMuted }}>Sign in with your email address</div>
+                  </div>
+                </div>
+                {authProviders.includes("email") ? (
+                  <span style={{ background: "#dcfce7", color: "#166534", fontSize: 11, fontWeight: 800, padding: "2px 10px", borderRadius: 20 }}>Linked</span>
+                ) : (
+                  <span style={{ fontSize: 12, color: t.textFaint }}>Not linked</span>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 16 }}>G</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>Google</div>
+                    <div style={{ fontSize: 12, color: t.textMuted }}>Sign in with your Google account</div>
+                  </div>
+                </div>
+                {authProviders.includes("google") ? (
+                  <span style={{ background: "#dcfce7", color: "#166534", fontSize: 11, fontWeight: 800, padding: "2px 10px", borderRadius: 20 }}>Linked</span>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      setLinkingGoogle(true);
+                      await supabase.auth.linkIdentity({
+                        provider: "google",
+                        options: { redirectTo: `${window.location.origin}/profile?linked=google` },
+                      });
+                      setLinkingGoogle(false);
+                    }}
+                    disabled={linkingGoogle}
+                    style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 12, cursor: "pointer", opacity: linkingGoogle ? 0.6 : 1 }}
+                  >
+                    {linkingGoogle ? "Redirecting..." : "Link Google"}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Report Issue */}
+          <div style={{ ...card, padding: "18px 24px" }}>
+            <ReportProblemButton inline />
+          </div>
+
           {/* Dark Mode Toggle */}
           <div style={{ ...card, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 200 }}>
