@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import React, { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
@@ -124,6 +125,26 @@ type MemorialEdit = {
   source_url: string;
 };
 
+type AdminCalendarEvent = {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  date: string;
+  organization: string | null;
+  signup_url: string | null;
+  created_at: string;
+};
+
+type EventEdit = {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  organization: string;
+  signup_url: string;
+};
+
 export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
@@ -156,6 +177,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const [editingMemorial, setEditingMemorial] = useState<MemorialEdit | null>(null);
   const [memEditSaving, setMemEditSaving] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+
+  const [adminEvents, setAdminEvents] = useState<AdminCalendarEvent[]>([]);
+  const [editingEvent, setEditingEvent] = useState<EventEdit | null>(null);
+  const [eventEditSaving, setEventEditSaving] = useState(false);
 
   const [bugReports, setBugReports] = useState<BugReport[]>([]);
   const [reportsFilter, setReportsFilter] = useState<"unreviewed" | "all">("unreviewed");
@@ -304,7 +329,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
     if (activeTab === "jobs") loadJobs();
     if (activeTab === "users") loadUsers();
     if (activeTab === "flags") loadFlags();
-    if (activeTab === "tools") loadMemorials();
+    if (activeTab === "tools") {
+      void loadMemorials();
+      void loadAdminEvents();
+    }
     if (activeTab === "reports") loadBugReports();
     if (activeTab === "directory") loadDirectory();
   }, [pendingOnly, activeTab, authorized]);
@@ -711,6 +739,56 @@ const [memWizUrl, setMemWizUrl] = useState("");
       .order("death_date", { ascending: false });
     if (error) { console.error(error); return; }
     setMemorials((data ?? []) as Memorial[]);
+  }
+
+  async function loadAdminEvents() {
+    const { data, error } = await supabase
+      .from("events")
+      .select("id, user_id, title, description, date, organization, signup_url, created_at")
+      .order("date", { ascending: false })
+      .limit(500);
+    if (error) {
+      console.error("Admin events load error:", error);
+      return;
+    }
+    setAdminEvents((data ?? []) as AdminCalendarEvent[]);
+  }
+
+  async function updateAdminEvent() {
+    if (!editingEvent || !editingEvent.title.trim() || !editingEvent.date) return;
+    setEventEditSaving(true);
+    try {
+      const { error } = await supabase
+        .from("events")
+        .update({
+          title: editingEvent.title.trim(),
+          description: editingEvent.description.trim() || null,
+          date: editingEvent.date,
+          organization: editingEvent.organization.trim() || null,
+          signup_url: editingEvent.signup_url.trim() || null,
+        })
+        .eq("id", editingEvent.id);
+      if (error) throw new Error(error.message);
+      showToast("Event updated.");
+      setEditingEvent(null);
+      await loadAdminEvents();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Update failed.");
+    } finally {
+      setEventEditSaving(false);
+    }
+  }
+
+  async function deleteAdminEvent(id: string, title: string) {
+    askConfirm(`Delete event “${title}”? This cannot be undone.`, async () => {
+      const { error } = await supabase.from("events").delete().eq("id", id);
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      showToast("Event deleted.");
+      await loadAdminEvents();
+    });
   }
 
   async function updateMemorial() {
@@ -1494,7 +1572,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
         {activeTab === "tools" && (
           <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
 
-            {/* Add Memorial by URL */}
+            {/* Add Memorial by URL — desktop only; mobile uses Events page to avoid duplicate flows */}
+            {!isMobile && (
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
               <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Add Memorial by URL</div>
               <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
@@ -1502,13 +1581,13 @@ const [memWizUrl, setMemWizUrl] = useState("");
               </div>
 
               <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ display: "flex", gap: 8 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <input
                     value={memWizUrl}
                     onChange={(e) => setMemWizUrl(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && fetchMemorialMeta()}
                     placeholder="https://eod-wf.org/virtual-memorial/army/..."
-                    style={{ flex: 1, border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                    style={{ flex: 1, minWidth: 0, border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
                   />
                   <button
                     onClick={fetchMemorialMeta}
@@ -1566,6 +1645,189 @@ const [memWizUrl, setMemWizUrl] = useState("");
                     </div>
                   )}
                 </div>
+              </div>
+            </div>
+            )}
+
+            {isMobile && (
+              <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                <div style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.55 }}>
+                  To add memorials or calendar events, use the{" "}
+                  <Link href="/events" style={{ color: "#7c3aed", fontWeight: 800 }}>
+                    Events
+                  </Link>{" "}
+                  page.
+                </div>
+              </div>
+            )}
+
+            {/* Manage Events */}
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
+              <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Manage Events</div>
+              <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
+                Review, edit, or delete calendar events (same data as the Events page).
+              </div>
+
+              {adminEvents.length === 0 && (
+                <div style={{ color: t.textFaint, fontSize: 14 }}>No events yet.</div>
+              )}
+
+              <div style={{ display: "grid", gap: 12, minWidth: 0, width: "100%" }}>
+                {adminEvents.map((ev) => (
+                  <div key={ev.id}>
+                    {editingEvent?.id === ev.id ? (
+                      <div style={{ border: "2px solid #1e3a5f", borderRadius: 12, padding: 16, display: "grid", gap: 10 }}>
+                        <input
+                          value={editingEvent.title}
+                          onChange={(e) => setEditingEvent((p) => p && ({ ...p, title: e.target.value }))}
+                          placeholder="Event title"
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
+                        <input
+                          type="date"
+                          value={editingEvent.date}
+                          onChange={(e) => setEditingEvent((p) => p && ({ ...p, date: e.target.value }))}
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
+                        <input
+                          value={editingEvent.organization}
+                          onChange={(e) => setEditingEvent((p) => p && ({ ...p, organization: e.target.value }))}
+                          placeholder="Organization (optional)"
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
+                        <input
+                          value={editingEvent.signup_url}
+                          onChange={(e) => setEditingEvent((p) => p && ({ ...p, signup_url: e.target.value }))}
+                          placeholder="Sign-up URL (optional)"
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
+                        <textarea
+                          value={editingEvent.description}
+                          onChange={(e) => setEditingEvent((p) => p && ({ ...p, description: e.target.value }))}
+                          placeholder="Description (optional)"
+                          rows={4}
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text, resize: "vertical" }}
+                        />
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={updateAdminEvent}
+                            disabled={eventEditSaving || !editingEvent.title.trim() || !editingEvent.date}
+                            style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: eventEditSaving ? 0.6 : 1 }}
+                          >
+                            {eventEditSaving ? "Saving..." : "Save Changes"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingEvent(null)}
+                            style={{ background: t.badgeBg, color: t.text, border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    ) : isMobile ? (
+                      <div
+                        style={{
+                          border: `1px solid ${t.border}`,
+                          borderRadius: 14,
+                          padding: 16,
+                          background: t.bg,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 10,
+                          boxSizing: "border-box",
+                          width: "100%",
+                          maxWidth: "100%",
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.25 }}>{ev.title}</div>
+                        <div style={{ fontSize: 13, color: t.textMuted }}>
+                          {new Date(`${ev.date}T12:00:00`).toLocaleDateString("en-US", {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
+                          {ev.organization ? ` · ${ev.organization}` : ""}
+                        </div>
+                        {ev.description && (
+                          <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.45, wordBreak: "break-word" }}>{ev.description}</div>
+                        )}
+                        {ev.signup_url && (
+                          <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", wordBreak: "break-all" }}>
+                            Sign-up link ↗
+                          </a>
+                        )}
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingEvent({
+                                id: ev.id,
+                                title: ev.title,
+                                description: ev.description ?? "",
+                                date: ev.date,
+                                organization: ev.organization ?? "",
+                                signup_url: ev.signup_url ?? "",
+                              })
+                            }
+                            style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteAdminEvent(ev.id, ev.title)}
+                            style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.bg, overflow: "hidden" }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontWeight: 800, fontSize: 14 }}>{ev.title}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                            {new Date(`${ev.date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                            {ev.organization ? ` · ${ev.organization}` : ""}
+                          </div>
+                          {ev.description && (
+                            <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2, overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                              {ev.description}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingEvent({
+                                id: ev.id,
+                                title: ev.title,
+                                description: ev.description ?? "",
+                                date: ev.date,
+                                organization: ev.organization ?? "",
+                                signup_url: ev.signup_url ?? "",
+                              })
+                            }
+                            style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteAdminEvent(ev.id, ev.title)}
+                            style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
 
