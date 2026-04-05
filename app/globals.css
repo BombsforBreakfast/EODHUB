@@ -78,18 +78,6 @@ button:active, a.nav-btn:active {
 .nav-hub-panel    { display: none; }
 .nav-brand        { display: block; }
 
-/* Desktop: nav-mobile-head wraps left+logout; flatten so order matches original bar */
-@media (min-width: 901px) {
-  .nav-mobile-head {
-    display: contents;
-  }
-  .nav-left { order: 1; }
-  .nav-brand { order: 2; }
-  .nav-search-row { order: 3; }
-  .nav-hub-panel { order: 4; }
-  .nav-right { order: 5; }
-}
-
 /* Desktop: search row wrapper matches search bar sizing */
 .nav-search-row {
   display: flex;
@@ -101,37 +89,10 @@ button:active, a.nav-btn:active {
 
 /* ── Mobile layout (phones portrait + landscape) ── */
 @media (max-width: 900px) {
-  /*
-   * Sticky must be on .nav-root, not an inner row: a sticky child is clamped to its short parent
-   * and scrolls away with the whole bar. Sticking the full nav pins it while the page scrolls.
-   */
   .nav-root {
-    position: sticky !important;
-    top: 0 !important;
-    z-index: 520 !important;
-    background: var(--background) !important;
     flex-wrap: wrap !important;
     gap: 6px !important;
     margin-bottom: 10px !important;
-    padding-top: env(safe-area-inset-top, 0) !important;
-    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06) !important;
-  }
-  html[data-theme="dark"] .nav-root {
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) !important;
-  }
-
-  .nav-mobile-head {
-    display: flex !important;
-    justify-content: space-between !important;
-    align-items: center !important;
-    flex-wrap: nowrap !important;
-    gap: 6px !important;
-    width: 100% !important;
-    flex: 0 0 100% !important;
-    order: -1 !important;
-    padding: 4px 0 10px !important;
-    margin-bottom: 4px !important;
-    box-sizing: border-box !important;
   }
 
   /* Row 1: avatar + EOD Hub button + alerts + logout — compact */
