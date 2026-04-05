@@ -155,6 +155,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [editingMemorial, setEditingMemorial] = useState<MemorialEdit | null>(null);
   const [memEditSaving, setMemEditSaving] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   const [bugReports, setBugReports] = useState<BugReport[]>([]);
   const [reportsFilter, setReportsFilter] = useState<"unreviewed" | "all">("unreviewed");
@@ -307,6 +308,15 @@ const [memWizUrl, setMemWizUrl] = useState("");
     if (activeTab === "reports") loadBugReports();
     if (activeTab === "directory") loadDirectory();
   }, [pendingOnly, activeTab, authorized]);
+
+  useEffect(() => {
+    function check() {
+      setIsMobile(typeof window !== "undefined" && window.innerWidth <= 900);
+    }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     if (!authorized) return;
@@ -1570,13 +1580,13 @@ const [memWizUrl, setMemWizUrl] = useState("");
                 <div style={{ color: t.textFaint, fontSize: 14 }}>No memorials yet.</div>
               )}
 
-              <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ display: "grid", gap: 12, minWidth: 0, width: "100%" }}>
                 {memorials.map((mem) => (
                   <div key={mem.id}>
                     {editingMemorial?.id === mem.id ? (
                       /* ── Inline edit form ── */
                       <div style={{ border: `2px solid #7c3aed`, borderRadius: 12, padding: 16, display: "grid", gap: 10 }}>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 180px", gap: 8 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 180px", gap: 8 }}>
                           <input
                             value={editingMemorial.name}
                             onChange={(e) => setEditingMemorial((p) => p && ({ ...p, name: e.target.value }))}
@@ -1628,8 +1638,100 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           </button>
                         </div>
                       </div>
+                    ) : isMobile ? (
+                      /* ── Mobile: same card pattern as events page day-detail memorials ── */
+                      <div
+                        style={{
+                          border: "2px solid #7c3aed",
+                          borderRadius: 14,
+                          padding: 20,
+                          background: isDark ? "#1a0d2e" : "#faf5ff",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 14,
+                          boxSizing: "border-box",
+                          width: "100%",
+                          maxWidth: "100%",
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 16, alignItems: "flex-start", minWidth: 0 }}>
+                          {mem.photo_url ? (
+                            <div
+                              style={{
+                                width: 72,
+                                height: 72,
+                                borderRadius: "50%",
+                                overflow: "hidden",
+                                flexShrink: 0,
+                                border: "3px solid #7c3aed",
+                              }}
+                            >
+                              <img src={mem.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                            </div>
+                          ) : (
+                            <div
+                              style={{
+                                width: 72,
+                                height: 72,
+                                borderRadius: "50%",
+                                background: t.badgeBg,
+                                flexShrink: 0,
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontSize: 28,
+                                border: "3px solid #7c3aed",
+                              }}
+                            >
+                              🪖
+                            </div>
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.25 }}>{mem.name}</div>
+                            <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
+                              {mem.death_date
+                                ? new Date(mem.death_date + "T00:00:00").toLocaleDateString("en-US", {
+                                    year: "numeric",
+                                    month: "long",
+                                    day: "numeric",
+                                  })
+                                : "No date"}
+                            </div>
+                            {mem.bio && (
+                              <div style={{ fontSize: 13, color: t.textMuted, marginTop: 8, lineHeight: 1.5, wordBreak: "break-word" }}>
+                                {mem.bio}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingMemorial({
+                                id: mem.id,
+                                name: mem.name,
+                                death_date: mem.death_date,
+                                photo_url: mem.photo_url ?? "",
+                                bio: mem.bio ?? "",
+                                source_url: mem.source_url ?? "",
+                              })
+                            }
+                            style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteMemorial(mem.id, mem.name)}
+                            style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
                     ) : (
-                      /* ── Row view ── */
+                      /* ── Desktop: row view (unchanged) ── */
                       <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.bg, overflow: "hidden" }}>
                         {mem.photo_url
                           ? <img src={mem.photo_url} alt="" style={{ width: 44, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "2px solid #7c3aed" }} />
@@ -1644,12 +1746,14 @@ const [memWizUrl, setMemWizUrl] = useState("");
                         </div>
                         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                           <button
+                            type="button"
                             onClick={() => setEditingMemorial({ id: mem.id, name: mem.name, death_date: mem.death_date, photo_url: mem.photo_url ?? "", bio: mem.bio ?? "", source_url: mem.source_url ?? "" })}
                             style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                           >
                             Edit
                           </button>
                           <button
+                            type="button"
                             onClick={() => deleteMemorial(mem.id, mem.name)}
                             style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                           >

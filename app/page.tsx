@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { ChangeEvent, useEffect, useRef, useState } from "react";
+import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./lib/lib/supabaseClient";
 import NavBar from "./components/NavBar";
 import { useTheme } from "./lib/ThemeContext";
@@ -363,6 +363,9 @@ export default function HomePage() {
   const [postsLoaded, setPostsLoaded] = useState(false);
   const [jobsLoaded, setJobsLoaded] = useState(false);
   const [jobsLastUpdated, setJobsLastUpdated] = useState<string | null>(null);
+  const [jobsTotalApprovedCount, setJobsTotalApprovedCount] = useState<number | null>(null);
+  const [jobsNewTodayCount, setJobsNewTodayCount] = useState<number | null>(null);
+  const [jobSort, setJobSort] = useState<"recent" | "az" | "za">("recent");
   const [bizLoaded, setBizLoaded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -568,14 +571,38 @@ export default function HomePage() {
   }
 
   async function loadJobs() {
-    const [jobsRes, lastSeenRes] = await Promise.all([
+    const now = new Date();
+    const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfNextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+
+    const [jobsRes, lastSeenRes, totalRes, todayRes] = await Promise.all([
       supabase.from("jobs").select("*").eq("is_approved", true).order("created_at", { ascending: false }).limit(500),
       supabase.from("jobs").select("last_seen_at").eq("source_type", "usajobs").order("last_seen_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("jobs").select("*", { count: "exact", head: true }).eq("is_approved", true),
+      supabase
+        .from("jobs")
+        .select("*", { count: "exact", head: true })
+        .eq("is_approved", true)
+        .gte("created_at", startOfDay.toISOString())
+        .lt("created_at", startOfNextDay.toISOString()),
     ]);
 
     if (jobsRes.error) {
       console.error("Jobs load error:", jobsRes.error);
       return;
+    }
+
+    if (totalRes.error) {
+      console.error("Jobs total count error:", totalRes.error);
+      setJobsTotalApprovedCount(null);
+    } else {
+      setJobsTotalApprovedCount(totalRes.count ?? 0);
+    }
+    if (todayRes.error) {
+      console.error("Jobs new-today count error:", todayRes.error);
+      setJobsNewTodayCount(null);
+    } else {
+      setJobsNewTodayCount(todayRes.count ?? 0);
     }
 
     const loadedJobs = (jobsRes.data ?? []) as Job[];
@@ -2099,6 +2126,30 @@ export default function HomePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [discoverProfiles]);
 
+  const sortedJobs = useMemo(() => {
+    if (jobs.length === 0) return jobs;
+    const copy = [...jobs];
+    const displayTitle = (j: Job) => (j.title || j.og_title || "Untitled Job").trim();
+    if (jobSort === "recent") {
+      copy.sort((a, b) => {
+        const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return tb - ta;
+      });
+      return copy;
+    }
+    if (jobSort === "az") {
+      copy.sort((a, b) =>
+        displayTitle(a).localeCompare(displayTitle(b), undefined, { sensitivity: "base" })
+      );
+      return copy;
+    }
+    copy.sort((a, b) =>
+      displayTitle(b).localeCompare(displayTitle(a), undefined, { sensitivity: "base" })
+    );
+    return copy;
+  }, [jobs, jobSort]);
+
   const skeletonStyle: React.CSSProperties = {
     background: "linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%)",
     backgroundSize: "200% 100%",
@@ -2172,6 +2223,41 @@ export default function HomePage() {
             overflowY: isMobile ? undefined : "auto",
           }}
         >
+          {jobsLoaded && jobsTotalApprovedCount !== null && jobsNewTodayCount !== null && (
+            <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
+              <div>
+                ({jobsTotalApprovedCount.toLocaleString()}) jobs as of{" "}
+                {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
+              </div>
+              <div style={{ marginTop: 4 }}>
+                ({jobsNewTodayCount.toLocaleString()}) new jobs today!
+              </div>
+            </div>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, color: t.textFaint, fontWeight: 600, flexShrink: 0 }}>Sort</span>
+            <select
+              id="job-sort"
+              value={jobSort}
+              onChange={(e) => setJobSort(e.target.value as "recent" | "az" | "za")}
+              aria-label="Sort jobs"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                maxWidth: isMobile ? "100%" : 260,
+                fontSize: 13,
+                padding: "5px 8px",
+                borderRadius: 8,
+                border: `1px solid ${t.inputBorder}`,
+                background: t.input,
+                color: t.text,
+              }}
+            >
+              <option value="recent">Most recently listed</option>
+              <option value="az">Alphabetical A–Z</option>
+              <option value="za">Alphabetical Z–A</option>
+            </select>
+          </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             {jobsLastUpdated ? (
               <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 600 }}>
@@ -2222,7 +2308,7 @@ export default function HomePage() {
               </div>
             )}
 
-            {jobsLoaded && jobs.map((job) => (
+            {jobsLoaded && sortedJobs.map((job) => (
               <div
                 key={job.id}
                 style={{
