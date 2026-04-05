@@ -2223,41 +2223,43 @@ export default function HomePage() {
             overflowY: isMobile ? undefined : "auto",
           }}
         >
-          {jobsLoaded && jobsTotalApprovedCount !== null && jobsNewTodayCount !== null && (
-            <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
-              <div>
-                ({jobsTotalApprovedCount.toLocaleString()}) jobs as of{" "}
-                {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
+          {jobsLoaded && (
+            <>
+              <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
+                <div>
+                  ({jobsTotalApprovedCount !== null ? jobsTotalApprovedCount.toLocaleString() : "—"}) jobs as of{" "}
+                  {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
+                </div>
+                <div style={{ marginTop: 4 }}>
+                  ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "—"}) new jobs today!
+                </div>
               </div>
-              <div style={{ marginTop: 4 }}>
-                ({jobsNewTodayCount.toLocaleString()}) new jobs today!
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                <span style={{ fontSize: 12, color: t.textFaint, fontWeight: 600, flexShrink: 0 }}>Sort</span>
+                <select
+                  id="job-sort"
+                  value={jobSort}
+                  onChange={(e) => setJobSort(e.target.value as "recent" | "az" | "za")}
+                  aria-label="Sort jobs"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    maxWidth: isMobile ? "100%" : 260,
+                    fontSize: 13,
+                    padding: "5px 8px",
+                    borderRadius: 8,
+                    border: `1px solid ${t.inputBorder}`,
+                    background: t.input,
+                    color: t.text,
+                  }}
+                >
+                  <option value="recent">Most recently listed</option>
+                  <option value="az">Alphabetical A–Z</option>
+                  <option value="za">Alphabetical Z–A</option>
+                </select>
               </div>
-            </div>
+            </>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 12, color: t.textFaint, fontWeight: 600, flexShrink: 0 }}>Sort</span>
-            <select
-              id="job-sort"
-              value={jobSort}
-              onChange={(e) => setJobSort(e.target.value as "recent" | "az" | "za")}
-              aria-label="Sort jobs"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                maxWidth: isMobile ? "100%" : 260,
-                fontSize: 13,
-                padding: "5px 8px",
-                borderRadius: 8,
-                border: `1px solid ${t.inputBorder}`,
-                background: t.input,
-                color: t.text,
-              }}
-            >
-              <option value="recent">Most recently listed</option>
-              <option value="az">Alphabetical A–Z</option>
-              <option value="za">Alphabetical Z–A</option>
-            </select>
-          </div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
             {jobsLastUpdated ? (
               <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 600 }}>
