@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
@@ -66,6 +66,10 @@ export default function NavBar() {
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPendingTotal, setAdminPendingTotal] = useState(0);
+
+  /** Mobile: reserve vertical space so fixed nav does not cover page content (height tracks hub/search). */
+  const navRootRef = useRef<HTMLDivElement>(null);
+  const [mobileNavSpacerPx, setMobileNavSpacerPx] = useState(0);
 
   // Unread counts derived from notifications
   // Profile badge: notifications that link to a profile (wall activity)
@@ -457,6 +461,34 @@ export default function NavBar() {
 
   const { t } = useTheme();
 
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 900px)");
+
+    function measure() {
+      const el = navRootRef.current;
+      if (!mq.matches || !el) {
+        setMobileNavSpacerPx(0);
+        return;
+      }
+      const rect = el.getBoundingClientRect();
+      const mb = parseFloat(getComputedStyle(el).marginBottom) || 0;
+      setMobileNavSpacerPx(Math.ceil(rect.height + mb));
+    }
+
+    const ro = new ResizeObserver(() => measure());
+    const el = navRootRef.current;
+    if (el) ro.observe(el);
+    measure();
+    mq.addEventListener("change", measure);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      mq.removeEventListener("change", measure);
+      window.removeEventListener("resize", measure);
+    };
+  }, [showHub, showSearchDropdown, showAccountMenu, authLoaded, currentUserId]);
+
   const navButton: React.CSSProperties = {
     padding: "10px 16px",
     borderRadius: 10,
@@ -474,7 +506,23 @@ export default function NavBar() {
   );
 
   return (
-    <div className="nav-root" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30, flexWrap: "wrap", gap: 12 }}>
+    <>
+      {/* Mobile: in-flow height matches fixed nav so page content is not covered */}
+      <div
+        className="nav-mobile-spacer"
+        aria-hidden
+        style={{
+          height: mobileNavSpacerPx,
+          flexShrink: 0,
+          pointerEvents: "none",
+          overflow: "hidden",
+        }}
+      />
+      <div
+        ref={navRootRef}
+        className="nav-root"
+        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30, flexWrap: "wrap", gap: 12 }}
+      >
       {/* Left: avatar + nav links */}
       <div className="nav-left" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ position: "relative", flexShrink: 0 }}>
@@ -807,5 +855,6 @@ export default function NavBar() {
         )}
       </div>
     </div>
+    </>
   );
 }

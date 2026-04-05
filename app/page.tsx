@@ -249,13 +249,22 @@ function renderContent(text: string): React.ReactNode[] {
   return parts;
 }
 
+/** Stored previews often use http://; force https in the DOM to avoid mixed-content warnings on our HTTPS app. */
+function httpsAssetUrl(url: string | null | undefined): string {
+  if (!url?.trim()) return "";
+  const u = url.trim();
+  if (u.startsWith("http://")) return `https://${u.slice(7)}`;
+  return u;
+}
+
 function OgCard({ og }: { og: OgPreview }) {
   const { t } = useTheme();
+  const imgUrl = og.image ? httpsAssetUrl(og.image) : "";
   return (
-    <a href={og.url} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 12, border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.bg, textDecoration: "none", color: "inherit" }}>
-      {og.image && (
-        <img src={og.image} alt={og.title || ""} style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
-      )}
+    <a href={og.url ? httpsAssetUrl(og.url) : "#"} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 12, border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.bg, textDecoration: "none", color: "inherit" }}>
+      {imgUrl ? (
+        <img src={imgUrl} alt={og.title || ""} style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+      ) : null}
       <div style={{ padding: "10px 14px" }}>
         {og.siteName && <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{og.siteName}</div>}
         {og.title && <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.3, color: t.text }}>{og.title}</div>}
@@ -2322,7 +2331,7 @@ export default function HomePage() {
               >
                 {job.og_image && (
                   <img
-                    src={job.og_image}
+                    src={httpsAssetUrl(job.og_image)}
                     alt={job.title || job.og_title || "Job preview"}
                     style={{
                       width: "100%",
@@ -3805,7 +3814,7 @@ export default function HomePage() {
                   >
                     {listing.og_image ? (
                       <img
-                        src={listing.og_image}
+                        src={httpsAssetUrl(listing.og_image)}
                         alt={displayTitle}
                         style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
                       />

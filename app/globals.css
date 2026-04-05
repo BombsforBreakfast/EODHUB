@@ -89,10 +89,29 @@ button:active, a.nav-btn:active {
 
 /* ── Mobile layout (phones portrait + landscape) ── */
 @media (max-width: 900px) {
+  /*
+   * Fixed bar: entire nav (buttons + search + hub panel) stays visible while scrolling.
+   * NavBar renders .nav-mobile-spacer above so page content is not covered (height synced via JS).
+   */
   .nav-root {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    z-index: 1000 !important;
+    background: var(--background) !important;
     flex-wrap: wrap !important;
     gap: 6px !important;
     margin-bottom: 10px !important;
+    /* Align with typical page wrapper horizontal padding (e.g. 20px) so width matches pre-fixed layout */
+    padding-top: env(safe-area-inset-top, 0px) !important;
+    padding-left: max(20px, env(safe-area-inset-left, 0px)) !important;
+    padding-right: max(20px, env(safe-area-inset-right, 0px)) !important;
+    box-sizing: border-box !important;
+    box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06) !important;
+  }
+  html[data-theme="dark"] .nav-root {
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) !important;
   }
 
   /* Row 1: avatar + EOD Hub button + alerts + logout — compact */
@@ -169,5 +188,12 @@ button:active, a.nav-btn:active {
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 8px !important;
     padding-top: 4px !important;
+  }
+}
+
+/* Desktop: spacer not needed (NavBar sets height 0); hide empty node */
+@media (min-width: 901px) {
+  .nav-mobile-spacer {
+    display: none !important;
   }
 }
