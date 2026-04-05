@@ -475,6 +475,8 @@ export default function NavBar() {
 
   return (
     <div className="nav-root" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30, flexWrap: "wrap", gap: 12 }}>
+      {/* Row 1 on mobile: sticky bar (avatar + primary links + logout). Desktop: display:contents restores flat flex order via CSS. */}
+      <div className="nav-mobile-head">
       {/* Left: avatar + nav links */}
       <div className="nav-left" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         <div style={{ position: "relative", flexShrink: 0 }}>
@@ -652,6 +654,16 @@ export default function NavBar() {
         )}
       </div>
 
+      {/* Right: logout */}
+      <div className="nav-right" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        {!authLoaded ? null : currentUserId ? (
+          <button onClick={handleLogout} className="nav-logout" style={{ ...navButton, cursor: "pointer" }}>Log Out</button>
+        ) : (
+          <Link href="/login" className="nav-logout" style={navButton}>Log In</Link>
+        )}
+      </div>
+      </div>
+
       {/* Brand title — desktop only */}
       <Link href="/" className="nav-brand" style={{ textDecoration: "none", color: t.text }}>
         <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>EOD HUB</div>
@@ -797,15 +809,6 @@ export default function NavBar() {
           )}
         </div>
       )}
-
-      {/* Right: logout */}
-      <div className="nav-right" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        {!authLoaded ? null : currentUserId ? (
-          <button onClick={handleLogout} className="nav-logout" style={{ ...navButton, cursor: "pointer" }}>Log Out</button>
-        ) : (
-          <Link href="/login" className="nav-logout" style={navButton}>Log In</Link>
-        )}
-      </div>
     </div>
   );
 }

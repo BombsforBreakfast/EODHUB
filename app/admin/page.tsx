@@ -55,7 +55,7 @@ type UserProfile = {
   created_at: string | null;
 };
 
-type Tab = "businesses" | "jobs" | "users" | "flags" | "tools" | "reports" | "directory";
+type Tab = "businesses" | "jobs" | "users" | "flags" | "events" | "tools" | "reports" | "directory";
 
 type DirectoryEntry = {
   id: string;
@@ -329,10 +329,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
     if (activeTab === "jobs") loadJobs();
     if (activeTab === "users") loadUsers();
     if (activeTab === "flags") loadFlags();
-    if (activeTab === "tools") {
-      void loadMemorials();
-      void loadAdminEvents();
-    }
+    if (activeTab === "events") void loadAdminEvents();
+    if (activeTab === "tools") void loadMemorials();
     if (activeTab === "reports") loadBugReports();
     if (activeTab === "directory") loadDirectory();
   }, [pendingOnly, activeTab, authorized]);
@@ -997,6 +995,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
             Flags
             {tabNotifyBadge(pendingCounts.flags)}
           </button>
+          <button type="button" style={tabStyle("events")} onClick={() => setActiveTab("events")}>
+            Events
+          </button>
           <button type="button" style={tabStyle("tools")} onClick={() => setActiveTab("tools")}>
             Tools
           </button>
@@ -1568,100 +1569,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
           </div>
         )}
 
-        {/* ── TOOLS TAB ── */}
-        {activeTab === "tools" && (
+        {/* ── EVENTS TAB ── */}
+        {activeTab === "events" && (
           <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
-
-            {/* Add Memorial by URL — desktop only; mobile uses Events page to avoid duplicate flows */}
-            {!isMobile && (
-            <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
-              <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Add Memorial by URL</div>
-              <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
-                Paste a memorial URL and hit Fetch — name and date auto-fill from the page. Edit if needed, then save. Repeat for each entry.
-              </div>
-
-              <div style={{ display: "grid", gap: 12 }}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <input
-                    value={memWizUrl}
-                    onChange={(e) => setMemWizUrl(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && fetchMemorialMeta()}
-                    placeholder="https://eod-wf.org/virtual-memorial/army/..."
-                    style={{ flex: 1, minWidth: 0, border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
-                  />
-                  <button
-                    onClick={fetchMemorialMeta}
-                    disabled={memWizFetching || !memWizUrl.trim()}
-                    style={{ background: t.text, color: t.surface, border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, fontSize: 14, cursor: memWizFetching || !memWizUrl.trim() ? "not-allowed" : "pointer", opacity: memWizFetching || !memWizUrl.trim() ? 0.5 : 1, whiteSpace: "nowrap" }}
-                  >
-                    {memWizFetching ? "Fetching..." : "Fetch"}
-                  </button>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 180px", gap: 8 }}>
-                  <input
-                    value={memWizName}
-                    onChange={(e) => setMemWizName(e.target.value)}
-                    placeholder="Full name"
-                    style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
-                  />
-                  <input
-                    type="date"
-                    value={memWizDate}
-                    onChange={(e) => setMemWizDate(e.target.value)}
-                    style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
-                  />
-                </div>
-
-                {/* Preview card */}
-                {(memWizImage || memWizBio) && (
-                  <div style={{ display: "flex", gap: 14, padding: 14, borderRadius: 10, border: `2px solid #7c3aed`, background: isDark ? "#1a0d2e" : "#faf5ff" }}>
-                    {memWizImage && (
-                      <img src={memWizImage} alt="" style={{ width: 72, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "2px solid #7c3aed" }} />
-                    )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {memWizName && <div style={{ fontWeight: 800, fontSize: 15 }}>{memWizName}</div>}
-                      {memWizBio && (
-                        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
-                          {memWizBio}
-                        </div>
-                      )}
-                      {!memWizBio && <div style={{ fontSize: 13, color: t.textFaint, marginTop: 4 }}>No bio extracted — add manually if needed.</div>}
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                  <button
-                    onClick={saveMemorial}
-                    disabled={memWizSaving || !memWizName.trim() || !memWizDate}
-                    style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
-                  >
-                    {memWizSaving ? "Saving..." : "Add Memorial"}
-                  </button>
-                  {memWizMsg && (
-                    <div style={{ fontSize: 14, fontWeight: 700, color: memWizMsg.type === "ok" ? "#16a34a" : "#ef4444" }}>
-                      {memWizMsg.type === "ok" ? "✓ " : "✗ "}{memWizMsg.text}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            )}
-
-            {isMobile && (
-              <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
-                <div style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.55 }}>
-                  To add memorials or calendar events, use the{" "}
-                  <Link href="/events" style={{ color: "#7c3aed", fontWeight: 800 }}>
-                    Events
-                  </Link>{" "}
-                  page.
-                </div>
-              </div>
-            )}
-
-            {/* Manage Events */}
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
               <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Manage Events</div>
               <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
@@ -1830,6 +1740,102 @@ const [memWizUrl, setMemWizUrl] = useState("");
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── TOOLS TAB ── */}
+        {activeTab === "tools" && (
+          <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+
+            {/* Add Memorial by URL — desktop only; mobile uses Events page to avoid duplicate flows */}
+            {!isMobile && (
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
+              <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Add Memorial by URL</div>
+              <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
+                Paste a memorial URL and hit Fetch — name and date auto-fill from the page. Edit if needed, then save. Repeat for each entry.
+              </div>
+
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    value={memWizUrl}
+                    onChange={(e) => setMemWizUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && fetchMemorialMeta()}
+                    placeholder="https://eod-wf.org/virtual-memorial/army/..."
+                    style={{ flex: 1, minWidth: 0, border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                  />
+                  <button
+                    onClick={fetchMemorialMeta}
+                    disabled={memWizFetching || !memWizUrl.trim()}
+                    style={{ background: t.text, color: t.surface, border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, fontSize: 14, cursor: memWizFetching || !memWizUrl.trim() ? "not-allowed" : "pointer", opacity: memWizFetching || !memWizUrl.trim() ? 0.5 : 1, whiteSpace: "nowrap" }}
+                  >
+                    {memWizFetching ? "Fetching..." : "Fetch"}
+                  </button>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 180px", gap: 8 }}>
+                  <input
+                    value={memWizName}
+                    onChange={(e) => setMemWizName(e.target.value)}
+                    placeholder="Full name"
+                    style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                  />
+                  <input
+                    type="date"
+                    value={memWizDate}
+                    onChange={(e) => setMemWizDate(e.target.value)}
+                    style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                  />
+                </div>
+
+                {/* Preview card */}
+                {(memWizImage || memWizBio) && (
+                  <div style={{ display: "flex", gap: 14, padding: 14, borderRadius: 10, border: `2px solid #7c3aed`, background: isDark ? "#1a0d2e" : "#faf5ff" }}>
+                    {memWizImage && (
+                      <img src={memWizImage} alt="" style={{ width: 72, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "2px solid #7c3aed" }} />
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {memWizName && <div style={{ fontWeight: 800, fontSize: 15 }}>{memWizName}</div>}
+                      {memWizBio && (
+                        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                          {memWizBio}
+                        </div>
+                      )}
+                      {!memWizBio && <div style={{ fontSize: 13, color: t.textFaint, marginTop: 4 }}>No bio extracted — add manually if needed.</div>}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <button
+                    onClick={saveMemorial}
+                    disabled={memWizSaving || !memWizName.trim() || !memWizDate}
+                    style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
+                  >
+                    {memWizSaving ? "Saving..." : "Add Memorial"}
+                  </button>
+                  {memWizMsg && (
+                    <div style={{ fontSize: 14, fontWeight: 700, color: memWizMsg.type === "ok" ? "#16a34a" : "#ef4444" }}>
+                      {memWizMsg.type === "ok" ? "✓ " : "✗ "}{memWizMsg.text}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+            )}
+
+            {isMobile && (
+              <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                <div style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.55 }}>
+                  To add memorials from your phone, use the{" "}
+                  <Link href="/events" style={{ color: "#7c3aed", fontWeight: 800 }}>
+                    Events
+                  </Link>{" "}
+                  page. Manage submitted calendar events under the Admin{" "}
+                  <strong>Events</strong> tab.
+                </div>
+              </div>
+            )}
 
             {/* Manage Memorials */}
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
