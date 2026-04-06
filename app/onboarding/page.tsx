@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 
@@ -33,6 +33,9 @@ export default function OnboardingPage() {
   const [referralInput, setReferralInput] = useState("");
   const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
   const [resumeSubscriptionAckOnly, setResumeSubscriptionAckOnly] = useState(false);
+  const [memberPhotoUrl, setMemberPhotoUrl] = useState<string | null>(null);
+  const [memberPhotoUploading, setMemberPhotoUploading] = useState(false);
+  const memberPhotoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function check() {
@@ -72,7 +75,7 @@ export default function OnboardingPage() {
       const { data: profile } = await supabase
         .from("profiles")
         .select(
-          "service, company_name, account_type, verification_status, first_name, subscription_terms_acknowledged_at",
+          "service, company_name, account_type, verification_status, first_name, subscription_terms_acknowledged_at, photo_url",
         )
         .eq("user_id", user.id)
         .maybeSingle();
@@ -101,10 +104,13 @@ export default function OnboardingPage() {
         return;
       }
 
-      // Pre-fill name from existing profile if available
+      // Pre-fill name & photo from existing profile if available
       if (profile?.first_name) {
         setFirstName(profile.first_name);
         setEmpFirstName(profile.first_name);
+      }
+      if (profile?.photo_url) {
+        setMemberPhotoUrl(profile.photo_url);
       }
 
       // Pre-fill referral code from URL param or localStorage
@@ -185,6 +191,39 @@ export default function OnboardingPage() {
       }
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleMemberPhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!userId) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file.");
+      e.target.value = "";
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Photo must be under 8 MB.");
+      e.target.value = "";
+      return;
+    }
+    setMemberPhotoUploading(true);
+    try {
+      const safeName = `${Date.now()}-avatar-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const filePath = `${userId}/${safeName}`;
+      const { error: uploadError } = await supabase.storage.from("profile-photos").upload(filePath, file, { upsert: true });
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from("profile-photos").getPublicUrl(filePath);
+      const { error: updateError } = await supabase.from("profiles").update({ photo_url: data.publicUrl }).eq("user_id", userId);
+      if (updateError) throw updateError;
+      setMemberPhotoUrl(data.publicUrl);
+    } catch (err) {
+      console.error(err);
+      alert(`Photo upload failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setMemberPhotoUploading(false);
+      e.target.value = "";
     }
   }
 
@@ -395,6 +434,50 @@ export default function OnboardingPage() {
                         {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 6 }}>
+                      Profile photo{" "}
+                      <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional)</span>
+                    </label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => memberPhotoInputRef.current?.click()}
+                        disabled={memberPhotoUploading || !userId}
+                        style={{
+                          padding: "8px 14px",
+                          borderRadius: 10,
+                          border: "1px solid #d1d5db",
+                          background: "white",
+                          fontWeight: 700,
+                          fontSize: 13,
+                          cursor: memberPhotoUploading || !userId ? "not-allowed" : "pointer",
+                          opacity: memberPhotoUploading || !userId ? 0.7 : 1,
+                        }}
+                      >
+                        {memberPhotoUploading ? "Uploading…" : memberPhotoUrl ? "Change photo" : "Add photo"}
+                      </button>
+                      {memberPhotoUrl ? (
+                        <img
+                          src={memberPhotoUrl}
+                          alt="Your profile"
+                          style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "1px solid #e5e7eb" }}
+                        />
+                      ) : (
+                        <span style={{ fontSize: 13, color: "#6b7280" }}>
+                          Skip for now — you can add one later on your profile.
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      ref={memberPhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      onChange={handleMemberPhotoUpload}
+                    />
                   </div>
 
                 </>

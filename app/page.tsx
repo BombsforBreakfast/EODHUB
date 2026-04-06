@@ -8,7 +8,7 @@ import { useTheme } from "./lib/ThemeContext";
 import EmojiPickerButton from "./components/EmojiPickerButton";
 import GifPickerButton from "./components/GifPickerButton";
 import MentionTextarea, { extractMentionIds } from "./components/MentionTextarea";
-import { PostLikersStack, type PostLikerBrief } from "./components/PostLikersStack";
+import { PostLikersStack, LikerAvatar, type PostLikerBrief } from "./components/PostLikersStack";
 import OnlineNowStrip from "./components/OnlineNowStrip";
 import MemberPaywallModal from "./components/MemberPaywallModal";
 import { memberHasInteractionAccess } from "./lib/subscriptionAccess";
@@ -452,7 +452,19 @@ export default function HomePage() {
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
   const [discoverVisible, setDiscoverVisible] = useState<DiscoverProfile[]>([]);
   const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [pendingMembers, setPendingMembers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null; vouch_count: number; user_vouched: boolean }[]>([]);
+  type PendingMemberRow = {
+    user_id: string;
+    first_name: string | null;
+    last_name: string | null;
+    display_name: string | null;
+    photo_url: string | null;
+    service: string | null;
+    vouch_count: number;
+    user_vouched: boolean;
+    voucherBriefs: PostLikerBrief[];
+  };
+  const [pendingMembers, setPendingMembers] = useState<PendingMemberRow[]>([]);
+  const currentUserVoucherBriefRef = useRef<PostLikerBrief | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const memberInteractionAllowedRef = useRef(true);
   const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
@@ -832,7 +844,7 @@ export default function HomePage() {
   }
 
   async function loadPendingMembers(currentUserId: string) {
-    // Community members awaiting vouches — same cohort as /pending (not in People You May Know)
+    // Community members awaiting vouches — compact strip (same cohort as /pending, not in PYMK)
     const { data: pending } = await supabase
       .from("profiles")
       .select("user_id, first_name, last_name, display_name, photo_url, service, created_at")
@@ -841,16 +853,19 @@ export default function HomePage() {
       .neq("user_id", currentUserId)
       .not("first_name", "is", null)
       .order("created_at", { ascending: true })
-      .limit(20);
+      .limit(10);
 
-    if (!pending || pending.length === 0) return;
+    if (!pending || pending.length === 0) {
+      setPendingMembers([]);
+      return;
+    }
 
     const pendingIds = pending.map((p: { user_id: string }) => p.user_id);
 
-    // Get vouch counts and whether current user already vouched
-    const [{ data: allVouches }, { data: myVouches }] = await Promise.all([
+    const [{ data: allVouches }, { data: myVouches }, { data: voucherRows }] = await Promise.all([
       supabase.from("profile_vouches").select("vouchee_user_id").in("vouchee_user_id", pendingIds),
       supabase.from("profile_vouches").select("vouchee_user_id").in("vouchee_user_id", pendingIds).eq("voucher_user_id", currentUserId),
+      supabase.from("profile_vouches").select("vouchee_user_id, voucher_user_id").in("vouchee_user_id", pendingIds),
     ]);
 
     const vouchCountMap: Record<string, number> = {};
@@ -859,12 +874,63 @@ export default function HomePage() {
     });
     const myVouchedSet = new Set((myVouches ?? []).map((v: { vouchee_user_id: string }) => v.vouchee_user_id));
 
+    const sortedVouchRows = [...(voucherRows ?? [])].sort((a, b) => {
+      const va = a as { vouchee_user_id: string; voucher_user_id: string };
+      const vb = b as { vouchee_user_id: string; voucher_user_id: string };
+      if (va.vouchee_user_id !== vb.vouchee_user_id) return va.vouchee_user_id.localeCompare(vb.vouchee_user_id);
+      return va.voucher_user_id.localeCompare(vb.voucher_user_id);
+    });
+
+    const voucheeToVoucherIds: Record<string, string[]> = {};
+    for (const row of sortedVouchRows) {
+      const r = row as { vouchee_user_id: string; voucher_user_id: string };
+      const arr = voucheeToVoucherIds[r.vouchee_user_id] ?? [];
+      if (arr.length >= 3 || arr.includes(r.voucher_user_id)) continue;
+      arr.push(r.voucher_user_id);
+      voucheeToVoucherIds[r.vouchee_user_id] = arr;
+    }
+
+    const allVoucherIds = [...new Set(Object.values(voucheeToVoucherIds).flat())];
+    const briefByUserId: Record<string, PostLikerBrief> = {};
+    if (allVoucherIds.length > 0) {
+      const { data: voucherProfiles } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name, display_name, photo_url, service, is_employer")
+        .in("user_id", allVoucherIds);
+      for (const pr of (voucherProfiles ?? []) as {
+        user_id: string;
+        first_name: string | null;
+        last_name: string | null;
+        display_name: string | null;
+        photo_url: string | null;
+        service: string | null;
+        is_employer: boolean | null;
+      }[]) {
+        const nm =
+          pr.display_name?.trim() ||
+          `${pr.first_name || ""} ${pr.last_name || ""}`.trim() ||
+          "Member";
+        briefByUserId[pr.user_id] = {
+          userId: pr.user_id,
+          name: nm,
+          photoUrl: pr.photo_url,
+          service: pr.service,
+          isEmployer: pr.is_employer,
+        };
+      }
+    }
+
     setPendingMembers(
-      (pending as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null }[]).map((p) => ({
-        ...p,
-        vouch_count: vouchCountMap[p.user_id] ?? 0,
-        user_vouched: myVouchedSet.has(p.user_id),
-      }))
+      (pending as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null }[]).map((p) => {
+        const ids = voucheeToVoucherIds[p.user_id] ?? [];
+        const voucherBriefs = ids.map((id) => briefByUserId[id]).filter(Boolean);
+        return {
+          ...p,
+          vouch_count: vouchCountMap[p.user_id] ?? 0,
+          user_vouched: myVouchedSet.has(p.user_id),
+          voucherBriefs,
+        };
+      }),
     );
   }
 
@@ -885,7 +951,20 @@ export default function HomePage() {
           setPendingMembers((prev) => prev.filter((m) => m.user_id !== voucheeId));
         } else {
           setPendingMembers((prev) =>
-            prev.map((m) => m.user_id === voucheeId ? { ...m, vouch_count: json.vouches, user_vouched: true } : m)
+            prev.map((m) => {
+              if (m.user_id !== voucheeId) return m;
+              const brief = currentUserVoucherBriefRef.current;
+              const nextBriefs = [...m.voucherBriefs];
+              if (brief && !nextBriefs.some((b) => b.userId === brief.userId) && nextBriefs.length < 3) {
+                nextBriefs.push(brief);
+              }
+              return {
+                ...m,
+                vouch_count: json.vouches,
+                user_vouched: true,
+                voucherBriefs: nextBriefs,
+              };
+            }),
           );
         }
       }
@@ -2034,7 +2113,7 @@ export default function HomePage() {
         // Check verification status — unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
-          .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status, referral_code, is_admin")
+          .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status, referral_code, is_admin, is_employer")
           .eq("user_id", currentUserId)
           .maybeSingle();
 
@@ -2074,6 +2153,16 @@ export default function HomePage() {
           setCurrentUserHasPhoto(!!nd?.photo_url);
           setCurrentUserReferralCode(nd?.referral_code ?? null);
           setIsAdmin(!!nd?.is_admin);
+          const vName =
+            `${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone";
+          const vBrief: PostLikerBrief = {
+            userId: currentUserId,
+            name: vName,
+            photoUrl: nd?.photo_url ?? null,
+            service: profileCheck.service ?? null,
+            isEmployer: profileCheck.account_type === "employer" || !!profileCheck.is_employer,
+          };
+          currentUserVoucherBriefRef.current = vBrief;
         }
 
         await Promise.all([
@@ -2458,70 +2547,170 @@ export default function HomePage() {
 
         <main style={{ display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined, minWidth: 0 }}>
 
-          {/* Pending Members — community vouching */}
+          {/* Pending members — PYMK-style compact strip + voucher avatars */}
           {userId && pendingMembers.length > 0 && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
-              {pendingMembers.map((m) => {
-                const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
-                const initial = (name[0] || "?").toUpperCase();
-                return (
-                  <div key={m.user_id} style={{ border: `1px solid ${isDark ? "#2a2a00" : "#fef08a"}`, borderRadius: 14, padding: 16, background: isDark ? "#1a1a00" : "#fefce8", display: "flex", gap: 14, alignItems: "flex-start" }}>
-                    <a href={`/profile/${m.user_id}`} style={{ textDecoration: "none", flexShrink: 0 }}>
-                      {m.photo_url
-                        ? <img src={m.photo_url} alt={name} style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "cover", display: "block" }} />
-                        : <div style={{ width: 42, height: 42, borderRadius: "50%", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, color: t.textMuted }}>{initial}</div>
-                      }
-                    </a>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{name} is requesting to join</div>
-                      {m.service && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{m.service}</div>}
-                      <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 1.5 }}>
-                        Once 3 members vouch, they&apos;re verified automatically. An admin can approve them directly.
+            <div
+              style={{
+                marginBottom: 16,
+                border: `1px solid ${t.border}`,
+                borderRadius: 14,
+                padding: "12px 14px",
+                background: t.surface,
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: t.textFaint,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.6,
+                  marginBottom: 12,
+                }}
+              >
+                Vouch new users for access
+              </div>
+              <div style={{ display: "flex", alignItems: "stretch", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
+                {pendingMembers.map((m) => {
+                  const name =
+                    m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New member";
+                  return (
+                    <div
+                      key={m.user_id}
+                      style={{
+                        flexShrink: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 8,
+                        width: 108,
+                        padding: "10px 8px",
+                        borderRadius: 12,
+                        border: `1px solid ${t.borderLight}`,
+                        background: t.bg,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <Link href={`/profile/${m.user_id}`} style={{ textDecoration: "none", color: "inherit", lineHeight: 0 }}>
+                        <LikerAvatar photoUrl={m.photo_url} name={name} size={48} service={m.service} isEmployer={false} />
+                      </Link>
+                      <Link
+                        href={`/profile/${m.user_id}`}
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: t.text,
+                          textAlign: "center",
+                          lineHeight: 1.3,
+                          wordBreak: "break-word",
+                          textDecoration: "none",
+                          width: "100%",
+                        }}
+                      >
+                        {name}
+                      </Link>
+                      <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "center", width: "100%" }}>
+                        {[0, 1, 2].map((i) => {
+                          const v = m.voucherBriefs[i];
+                          if (v) {
+                            return (
+                              <Link key={`${m.user_id}-v-${v.userId}`} href={`/profile/${v.userId}`} title={v.name} style={{ lineHeight: 0, textDecoration: "none" }}>
+                                <LikerAvatar photoUrl={v.photoUrl} name={v.name} size={26} service={v.service} isEmployer={v.isEmployer} />
+                              </Link>
+                            );
+                          }
+                          return (
+                            <div
+                              key={`${m.user_id}-slot-${i}`}
+                              style={{
+                                width: 26,
+                                height: 26,
+                                borderRadius: "50%",
+                                border: `2px dashed ${m.vouch_count > i ? "#22c55e" : t.border}`,
+                                background: t.surface,
+                                flexShrink: 0,
+                                boxSizing: "border-box",
+                              }}
+                              title="Vouch slot"
+                            />
+                          );
+                        })}
                       </div>
-                      <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                          {[0, 1, 2].map((i) => (
-                            <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: i < m.vouch_count ? "#22c55e" : (isDark ? "#2e2e2e" : "#e5e7eb") }} />
-                          ))}
-                          <span style={{ fontSize: 12, color: t.textMuted, marginLeft: 4, fontWeight: 600 }}>{m.vouch_count}/3 approved</span>
-                        </div>
-                        {!m.user_vouched ? (
+                      {!m.user_vouched ? (
+                        <button
+                          type="button"
+                          onClick={() => vouchForMember(m.user_id)}
+                          disabled={vouchingFor === m.user_id}
+                          style={{
+                            fontSize: 9,
+                            fontWeight: 700,
+                            padding: "5px 6px",
+                            borderRadius: 6,
+                            border: "none",
+                            cursor: vouchingFor === m.user_id ? "not-allowed" : "pointer",
+                            background: "#22c55e",
+                            color: "#fff",
+                            width: "100%",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 4,
+                          }}
+                        >
+                          {vouchingFor === m.user_id && <span className="btn-spinner" />}
+                          Vouch
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: 9, fontWeight: 800, color: "#16a34a", textAlign: "center" }}>You vouched ✓</span>
+                      )}
+                      {isAdmin && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, width: "100%" }}>
                           <button
-                            onClick={() => vouchForMember(m.user_id)}
-                            disabled={vouchingFor === m.user_id}
-                            style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: vouchingFor === m.user_id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                            type="button"
+                            onClick={() => approveUser(m.user_id)}
+                            disabled={actingOnUser === m.user_id}
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 700,
+                              padding: "4px 6px",
+                              borderRadius: 6,
+                              border: "none",
+                              background: "#3b82f6",
+                              color: "#fff",
+                              cursor: actingOnUser === m.user_id ? "not-allowed" : "pointer",
+                              width: "100%",
+                            }}
                           >
-                            {vouchingFor === m.user_id && <span className="btn-spinner" />}
-                            Vouch
+                            {actingOnUser === m.user_id && <span className="btn-spinner" />}
+                            Approve
                           </button>
-                        ) : (
-                          <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>✓ Vouched</span>
-                        )}
-                        {isAdmin && (
-                          <>
-                            <button
-                              onClick={() => approveUser(m.user_id)}
-                              disabled={actingOnUser === m.user_id}
-                              style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: actingOnUser === m.user_id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
-                            >
-                              {actingOnUser === m.user_id && <span className="btn-spinner" />}
-                              Approve
-                            </button>
-                            <button
-                              onClick={() => denyUser(m.user_id)}
-                              disabled={actingOnUser === m.user_id}
-                              style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: actingOnUser === m.user_id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
-                            >
-                              {actingOnUser === m.user_id && <span className="btn-spinner" />}
-                              Deny
-                            </button>
-                          </>
-                        )}
-                      </div>
+                          <button
+                            type="button"
+                            onClick={() => denyUser(m.user_id)}
+                            disabled={actingOnUser === m.user_id}
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 700,
+                              padding: "4px 6px",
+                              borderRadius: 6,
+                              border: "none",
+                              background: "#ef4444",
+                              color: "#fff",
+                              cursor: actingOnUser === m.user_id ? "not-allowed" : "pointer",
+                              width: "100%",
+                            }}
+                          >
+                            Deny
+                          </button>
+                        </div>
+                      )}
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 11, color: t.textMuted, marginTop: 8, lineHeight: 1.45 }}>
+                Three vouches verifies them automatically. Showing the {pendingMembers.length} oldest pending signups — refresh to see more.
+              </div>
             </div>
           )}
 
