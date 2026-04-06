@@ -31,7 +31,8 @@ function displayName(p: ProfileRow): string {
 
 function presenceUserIds(state: Record<string, unknown[]>): Set<string> {
   const ids = new Set<string>();
-  for (const arr of Object.values(state)) {
+  for (const [presenceKey, arr] of Object.entries(state)) {
+    if (presenceKey) ids.add(presenceKey);
     for (const raw of arr) {
       const p = raw as { user_id?: string };
       if (p.user_id) ids.add(p.user_id);
@@ -189,8 +190,9 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     };
   }, [listOpen]);
 
-  if (!currentUserId || previewRows.length === 0) return null;
+  if (!currentUserId) return null;
 
+  const hasOthers = previewRows.length > 0;
   const hasOverflow = previewRows.length > visibleCount;
   const visibleRows = hasOverflow ? previewRows.slice(0, visibleCount) : previewRows;
 
@@ -217,6 +219,11 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
         >
           Online now
         </span>
+        {!hasOthers ? (
+          <span style={{ fontSize: 13, fontWeight: 600, color: t.textMuted, lineHeight: 1.3 }}>
+            Nobody else on the feed right now.
+          </span>
+        ) : (
         <div ref={measureRef} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
           <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
             {visibleRows.map((p, i) => (
@@ -264,6 +271,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {listOpen && typeof document !== "undefined"

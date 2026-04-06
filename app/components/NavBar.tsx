@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
+import EodCrabLogo from "./EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
 
@@ -539,8 +540,17 @@ export default function NavBar() {
         className="nav-root"
         style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30, flexWrap: "wrap", gap: 12 }}
       >
-      {/* Left: avatar + nav links */}
+      {/* Left: mobile logo (home) + avatar + nav links */}
       <div className="nav-left" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <Link
+          href="/"
+          className="nav-logo-mobile"
+          aria-label="EOD HUB home"
+          title="Home"
+          style={{ flexShrink: 0, display: "flex", alignItems: "center", textDecoration: "none" }}
+        >
+          <EodCrabLogo variant="navMobile" />
+        </Link>
         <div style={{ position: "relative", flexShrink: 0 }}>
           <button
             ref={accountAvatarRef}
@@ -716,9 +726,23 @@ export default function NavBar() {
         )}
       </div>
 
-      {/* Brand title — desktop only */}
-      <Link href="/" className="nav-brand" style={{ textDecoration: "none", color: t.text }}>
-        <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: -0.5, lineHeight: 1 }}>EOD HUB</div>
+      {/* Brand — desktop only; stacked logo + wordmark */}
+      <Link
+        href="/"
+        className="nav-brand"
+        aria-label="EOD HUB home"
+        style={{
+          textDecoration: "none",
+          color: t.text,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 6,
+          lineHeight: 1,
+        }}
+      >
+        <EodCrabLogo variant="navDesktop" />
+        <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: -0.5 }}>EOD HUB</div>
       </Link>
 
       {/* Search bar row */}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
+import MemberPaywallModal from "../components/MemberPaywallModal";
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
 const STATUS_OPTIONS = ["Active", "Former", "Retired", "Civil Service"];
@@ -30,7 +31,8 @@ export default function OnboardingPage() {
 
   // Referral
   const [referralInput, setReferralInput] = useState("");
-  const [subscriptionTermsAck, setSubscriptionTermsAck] = useState(false);
+  const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
+  const [resumeSubscriptionAckOnly, setResumeSubscriptionAckOnly] = useState(false);
 
   useEffect(() => {
     async function check() {
@@ -69,12 +71,33 @@ export default function OnboardingPage() {
       // If already onboarded, redirect appropriately
       const { data: profile } = await supabase
         .from("profiles")
-        .select("service, company_name, account_type, verification_status, first_name")
+        .select(
+          "service, company_name, account_type, verification_status, first_name, subscription_terms_acknowledged_at",
+        )
         .eq("user_id", user.id)
         .maybeSingle();
 
+      if (profile?.verification_status === "verified" && (profile?.service || profile?.company_name)) {
+        window.location.href = "/";
+        return;
+      }
+
+      const memberNeedsSubscriptionAck =
+        profile?.account_type === "member" &&
+        !!profile?.service &&
+        !profile?.subscription_terms_acknowledged_at;
+
+      if (memberNeedsSubscriptionAck) {
+        setUserId(user.id);
+        setAccountType("member");
+        setResumeSubscriptionAckOnly(true);
+        setMemberPaywallOpen(true);
+        setChecking(false);
+        return;
+      }
+
       if (profile?.service || profile?.company_name) {
-        window.location.href = profile.verification_status === "verified" ? "/" : "/pending";
+        window.location.href = "/pending";
         return;
       }
 
@@ -102,10 +125,6 @@ export default function OnboardingPage() {
         alert("Please fill in all required fields.");
         return;
       }
-      if (!subscriptionTermsAck) {
-        alert("Please confirm you have read the subscription information.");
-        return;
-      }
     } else {
       if (!empFirstName || !empLastName || !companyName) {
         alert("Please fill in all required fields.");
@@ -127,7 +146,6 @@ export default function OnboardingPage() {
               years_experience: yearsExperience || null,
               verification_status: "pending",
               is_approved: false,
-              subscription_terms_acknowledged_at: new Date().toISOString(),
             }
           : {
               account_type: "employer",
@@ -159,10 +177,29 @@ export default function OnboardingPage() {
       }
 
       localStorage.removeItem("eod_ref");
-      window.location.href = "/pending";
+
+      if (accountType === "member") {
+        setMemberPaywallOpen(true);
+      } else {
+        window.location.href = "/pending";
+      }
     } finally {
       setSubmitting(false);
     }
+  }
+
+  async function completeMemberSubscriptionAck() {
+    if (!userId) return;
+    const { error } = await supabase
+      .from("profiles")
+      .update({ subscription_terms_acknowledged_at: new Date().toISOString() })
+      .eq("user_id", userId);
+    if (error) {
+      alert("Could not save subscription acknowledgement: " + error.message);
+      return;
+    }
+    setMemberPaywallOpen(false);
+    window.location.href = "/pending";
   }
 
   const inputStyle: React.CSSProperties = {
@@ -211,6 +248,35 @@ export default function OnboardingPage() {
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ color: "#888" }}>Loading...</div>
       </div>
+    );
+  }
+
+  if (resumeSubscriptionAckOnly) {
+    return (
+      <>
+        <div
+          style={{
+            minHeight: "100vh",
+            background: "#f9fafb",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div style={{ textAlign: "center", maxWidth: 420 }}>
+            <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>EOD HUB</div>
+            <p style={{ margin: "18px 0 0", fontSize: 16, color: "#555", lineHeight: 1.55 }}>
+              Finish member signup: review subscription details, then continue to verification.
+            </p>
+          </div>
+        </div>
+        <MemberPaywallModal
+          open={memberPaywallOpen}
+          onClose={() => {}}
+          onboardingAck={{ onContinue: () => completeMemberSubscriptionAck() }}
+        />
+      </>
     );
   }
 
@@ -331,22 +397,6 @@ export default function OnboardingPage() {
                     </div>
                   </div>
 
-                  <div style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fafafa" }}>
-                    <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: "#111" }}>Subscription</div>
-                    <p style={{ margin: 0, fontSize: 13, color: "#444", lineHeight: 1.55 }}>
-                      EOD-HUB is a subscription app. Free launch window until 1 June 2026. After that, new members receive a free 7-day trial, then <strong>$1.99/month</strong>.
-                      If you signed up before 1 June, your trial period is aligned to that launch window and billing begins 8 June 2026 unless you subscribe sooner.
-                    </p>
-                    <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 14, cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#374151" }}>
-                      <input
-                        type="checkbox"
-                        checked={subscriptionTermsAck}
-                        onChange={(e) => setSubscriptionTermsAck(e.target.checked)}
-                        style={{ marginTop: 2, width: 18, height: 18, flexShrink: 0 }}
-                      />
-                      <span>I have read and agree to the subscription terms above.</span>
-                    </label>
-                  </div>
                 </>
               )}
 
@@ -408,6 +458,12 @@ export default function OnboardingPage() {
           )}
         </div>
       </div>
+
+      <MemberPaywallModal
+        open={memberPaywallOpen}
+        onClose={() => {}}
+        onboardingAck={{ onContinue: () => completeMemberSubscriptionAck() }}
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
+import EodCrabLogo from "../components/EodCrabLogo";
 import { Turnstile } from "@marsidev/react-turnstile";
 import type { TurnstileInstance } from "@marsidev/react-turnstile";
 import { useTheme } from "../lib/ThemeContext";
@@ -277,7 +278,10 @@ export default function LoginPage() {
     >
       <div style={{ textAlign: "center", marginBottom: 32 }}>
         <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: -1, lineHeight: 1, color: t.text }}>EOD HUB</div>
-        <div style={{ fontSize: 14, color: t.textMuted, marginTop: 6, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Built for EOD Techs, by an EOD Tech.</div>
+        <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
+          <EodCrabLogo variant="login" priority />
+        </div>
+        <div style={{ fontSize: 14, color: t.textMuted, marginTop: 14, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Built for EOD Techs, by an EOD Tech.</div>
         <div
           aria-live="polite"
           aria-atomic="true"

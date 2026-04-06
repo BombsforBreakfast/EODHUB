@@ -77,6 +77,8 @@ button:active, a.nav-btn:active {
 .nav-hub-mobile   { display: none; }
 .nav-hub-panel    { display: none; }
 .nav-brand        { display: block; }
+/* Mobile-only home logo; hidden on desktop */
+.nav-logo-mobile  { display: none !important; }
 
 /* Desktop: search row wrapper matches search bar sizing */
 .nav-search-row {
@@ -151,8 +153,13 @@ button:active, a.nav-btn:active {
   .nav-directory     { display: none !important; }
   /* Home is visible on mobile row 1 */
   .nav-home          { display: flex !important; align-items: center !important; }
-  /* Brand title hidden on mobile — nav is already tight */
+  /* Brand column hidden on mobile — replaced by compact logo in .nav-left */
   .nav-brand         { display: none !important; }
+
+  .nav-logo-mobile {
+    display: flex !important;
+    align-items: center !important;
+  }
 
   /* Show mobile hub toggle */
   .nav-hub-mobile {

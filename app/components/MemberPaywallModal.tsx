@@ -1,24 +1,39 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTheme } from "../lib/ThemeContext";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   message?: string;
+  /** Post–onboarding: information + acknowledgement, then continue to verification. No checkout. */
+  onboardingAck?: {
+    onContinue: () => void | Promise<void>;
+  };
 };
 
 const DEFAULT_MSG =
   "Your free trial has expired. Please subscribe for full access!";
 
-export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MSG }: Props) {
+const ONBOARDING_BODY =
+  "EOD-HUB is a subscription app. Free launch window until 1 June 2026. After that, new members receive a free 7-day trial, then $1.99/month. If you signed up before 1 June, your trial period is aligned to that launch window and billing begins 8 June 2026 unless you subscribe sooner.";
+
+export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MSG, onboardingAck }: Props) {
   const { t } = useTheme();
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [continuing, setContinuing] = useState(false);
+
+  const isOnboarding = !!onboardingAck;
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setOnboardingChecked(false);
+      setContinuing(false);
+      return;
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape" && !isOnboarding) onClose();
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -27,9 +42,11 @@ export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MS
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [open, onClose]);
+  }, [open, onClose, isOnboarding]);
 
   if (!open) return null;
+
+  const bodyText = isOnboarding ? ONBOARDING_BODY : message;
 
   return (
     <div
@@ -44,7 +61,7 @@ export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MS
         justifyContent: "center",
         padding: 16,
       }}
-      onClick={onClose}
+      onClick={isOnboarding ? undefined : onClose}
     >
       <div
         role="dialog"
@@ -62,44 +79,98 @@ export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MS
         }}
       >
         <div id="paywall-title" style={{ fontWeight: 900, fontSize: 18, color: t.text, marginBottom: 12 }}>
-          Subscription
+          {isOnboarding ? "Member subscription" : "Subscription"}
         </div>
-        <p style={{ margin: 0, fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>{message}</p>
-        <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={onClose}
+        <p style={{ margin: 0, fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>{bodyText}</p>
+        {isOnboarding && onboardingAck && (
+          <label
             style={{
-              padding: "10px 16px",
-              borderRadius: 10,
-              border: `1px solid ${t.border}`,
-              background: t.bg,
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+              marginTop: 16,
+              cursor: "pointer",
+              fontSize: 14,
+              fontWeight: 600,
               color: t.text,
-              fontWeight: 700,
-              fontSize: 14,
-              cursor: "pointer",
             }}
           >
-            Not now
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              window.location.href = "/subscribe";
-            }}
-            style={{
-              padding: "10px 16px",
-              borderRadius: 10,
-              border: "none",
-              background: "#111",
-              color: "#fff",
-              fontWeight: 700,
-              fontSize: 14,
-              cursor: "pointer",
-            }}
-          >
-            Subscribe
-          </button>
+            <input
+              type="checkbox"
+              checked={onboardingChecked}
+              onChange={(e) => setOnboardingChecked(e.target.checked)}
+              style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }}
+            />
+            <span>I have read and understand the subscription information above.</span>
+          </label>
+        )}
+        <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end", flexWrap: "wrap" }}>
+          {isOnboarding && onboardingAck ? (
+            <button
+              type="button"
+              disabled={!onboardingChecked || continuing}
+              onClick={async () => {
+                if (!onboardingChecked || continuing) return;
+                setContinuing(true);
+                try {
+                  await onboardingAck.onContinue();
+                } finally {
+                  setContinuing(false);
+                }
+              }}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 10,
+                border: "none",
+                background: "#111",
+                color: "#fff",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: !onboardingChecked || continuing ? "not-allowed" : "pointer",
+                width: "100%",
+                opacity: !onboardingChecked || continuing ? 0.45 : 1,
+              }}
+            >
+              {continuing ? "Saving…" : "Continue to verification"}
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 10,
+                  border: `1px solid ${t.border}`,
+                  background: t.bg,
+                  color: t.text,
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Not now
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  window.location.href = "/subscribe";
+                }}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#111",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Subscribe
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
