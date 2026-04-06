@@ -94,6 +94,7 @@ export default function UnitPage() {
 
   const [unit, setUnit] = useState<Unit | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
+  const [isAppAdmin, setIsAppAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -153,6 +154,10 @@ export default function UnitPage() {
       setUnit(json.unit);
 
       if (uid && token) {
+        const { data: prof } = await supabase.from("profiles").select("is_admin").eq("user_id", uid).maybeSingle();
+        const appAdm = prof?.is_admin === true;
+        setIsAppAdmin(appAdm);
+
         const { data: mem } = await supabase
           .from("unit_members")
           .select("role, status")
@@ -161,9 +166,11 @@ export default function UnitPage() {
           .maybeSingle();
         setMembership(mem as Membership | null);
 
-        if (mem?.status === "approved") {
+        if (mem?.status === "approved" || appAdm) {
           await loadPosts(token);
         }
+      } else {
+        setIsAppAdmin(false);
       }
     } finally {
       setLoading(false);
@@ -193,10 +200,11 @@ export default function UnitPage() {
   }
 
   useEffect(() => {
-    if (activeTab === "members" && membership?.status === "approved" && members.length === 0) {
+    const wallOk = membership?.status === "approved" || isAppAdmin;
+    if (activeTab === "members" && wallOk && members.length === 0) {
       loadMembers();
     }
-  }, [activeTab, membership]);
+  }, [activeTab, membership, isAppAdmin]);
 
   // ── Join ─────────────────────────────────────────────────────────────────
 
@@ -381,7 +389,10 @@ export default function UnitPage() {
 
   // ── Styles ───────────────────────────────────────────────────────────────
 
-  const isGod = membership?.status === "approved" && (membership.role === "owner" || membership.role === "admin");
+  const wallAccess = membership?.status === "approved" || isAppAdmin;
+  const isGod =
+    isAppAdmin ||
+    (membership?.status === "approved" && (membership.role === "owner" || membership.role === "admin"));
   const photos = posts.filter((p) => p.photo_url && p.post_type === "post");
 
   const inputStyle: React.CSSProperties = {
@@ -460,23 +471,28 @@ export default function UnitPage() {
                     Log in to join
                   </a>
                 )}
-                {currentUserId && !membership && (
+                {currentUserId && !membership && !isAppAdmin && (
                   <button onClick={requestJoin} disabled={joining} style={{ background: joining ? t.badgeBg : "#111", color: joining ? t.textMuted : "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: joining ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                     {joining && <span className="btn-spinner btn-spinner-dark" />}
                     Request to Join
                   </button>
                 )}
-                {membership?.status === "pending" && (
+                {isAppAdmin && (
+                  <span style={{ background: isDark ? "#3d2a00" : "#fef3c7", color: "#92400e", borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 800 }}>
+                    App admin — full unit access
+                  </span>
+                )}
+                {membership?.status === "pending" && !isAppAdmin && (
                   <div style={{ background: isDark ? "#2a2a00" : "#fef9c3", color: "#854d0e", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 700 }}>
                     Request pending
                   </div>
                 )}
-                {membership?.status === "approved" && isGod && (
+                {wallAccess && isGod && (
                   <button onClick={openInviteModal} style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
                     Invite Members
                   </button>
                 )}
-                {membership?.status === "approved" && !isGod && (
+                {wallAccess && !isGod && (
                   <button onClick={openInviteModal} style={{ background: t.badgeBg, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                     Invite
                   </button>
@@ -487,7 +503,7 @@ export default function UnitPage() {
         </div>
 
         {/* Non-member gate */}
-        {(!membership || membership.status === "pending") && (
+        {!wallAccess && (
           <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 28, background: t.surface, textAlign: "center" }}>
             <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
               {membership?.status === "pending" ? "Your request is pending" : "Members Only"}
@@ -501,7 +517,7 @@ export default function UnitPage() {
         )}
 
         {/* Member view: tabs */}
-        {membership?.status === "approved" && (
+        {wallAccess && (
           <>
             {/* Tab bar */}
             <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${t.border}`, paddingBottom: 0 }}>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { fetchProfileIsAppAdmin } from "../../../../lib/appAdminServer";
 
 function getAdminClient() {
   return createClient(
@@ -41,15 +42,18 @@ async function resolveUnitAndCheckAdmin(req: NextRequest, slug: string) {
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (
-    !membership ||
-    membership.status !== "approved" ||
-    !["owner", "admin"].includes(membership.role)
-  ) {
+  const appAdmin = await fetchProfileIsAppAdmin(db, user.id);
+  const unitGod =
+    appAdmin ||
+    (membership?.status === "approved" &&
+      membership.role &&
+      ["owner", "admin"].includes(membership.role));
+
+  if (!unitGod) {
     return { error: "Forbidden", status: 403 } as const;
   }
 
-  return { unit, user, db, membership };
+  return { unit, user, db, membership, appAdmin };
 }
 
 // GET — return pending members, approved members, and photo posts
@@ -158,8 +162,9 @@ export async function PATCH(
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
-  const { unit, db, membership } = result;
-  const isOwner = membership.role === "owner";
+  const { unit, db, membership, appAdmin } = result;
+  const isOwner = membership?.role === "owner";
+  const godOrOwner = isOwner || appAdmin;
 
   const body = await req.json() as {
     action: "approve_member" | "deny_member" | "remove_member" | "change_role" | "delete_post";
@@ -204,8 +209,8 @@ export async function PATCH(
     if (targetMember?.role === "owner") {
       return NextResponse.json({ error: "Cannot remove the owner" }, { status: 403 });
     }
-    // Admins can only remove regular members; owners can remove anyone
-    if (!isOwner && targetMember?.role === "admin") {
+    // Admins can only remove regular members; owners (or app admin) can remove anyone
+    if (!isOwner && !appAdmin && targetMember?.role === "admin") {
       return NextResponse.json({ error: "Only the owner can remove admins" }, { status: 403 });
     }
     await db.from("unit_members").delete().eq("unit_id", unit.id).eq("user_id", user_id);
@@ -216,7 +221,7 @@ export async function PATCH(
     const { user_id, role } = body;
     if (!user_id || !role) return NextResponse.json({ error: "user_id and role required" }, { status: 400 });
     if (!["admin", "member"].includes(role)) return NextResponse.json({ error: "Role must be admin or member" }, { status: 400 });
-    if (!isOwner) return NextResponse.json({ error: "Only the owner can change roles" }, { status: 403 });
+    if (!godOrOwner) return NextResponse.json({ error: "Only the owner can change roles" }, { status: 403 });
     const { data: targetMember } = await db.from("unit_members").select("role").eq("unit_id", unit.id).eq("user_id", user_id).maybeSingle();
     if (targetMember?.role === "owner") return NextResponse.json({ error: "Cannot change owner role" }, { status: 403 });
     await db.from("unit_members").update({ role }).eq("unit_id", unit.id).eq("user_id", user_id);

@@ -1,6 +1,8 @@
 /**
  * Member subscription / trial access (EOD HUB).
  *
+ * Profiles with `is_admin: true` always receive interaction access here (QA / operations).
+ *
  * Launch: full access until PAYWALL_LAUNCH_END (1 June 2026 00:00 America/New_York).
  * After launch:
  *   - Users who signed up before launch: in-app trial from launch through LEGACY_TRIAL_BILLING_START (8 June 2026 00:00 NY).

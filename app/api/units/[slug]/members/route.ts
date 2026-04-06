@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { fetchProfileIsAppAdmin } from "../../../../lib/appAdminServer";
 
 function getAdminClient() {
   return createClient(
@@ -58,7 +59,8 @@ export async function GET(
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!currentMembership || currentMembership.status !== "approved") {
+  const appAdmin = await fetchProfileIsAppAdmin(adminClient, user.id);
+  if ((!currentMembership || currentMembership.status !== "approved") && !appAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

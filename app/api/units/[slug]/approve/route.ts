@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { fetchProfileIsAppAdmin } from "../../../../lib/appAdminServer";
 import { assertMemberInteractionAllowed } from "../../../../lib/memberSubscriptionServer";
 
 function getAdminClient() {
@@ -52,6 +53,8 @@ export async function POST(
     return NextResponse.json({ error: "Unit not found" }, { status: 404 });
   }
 
+  const appAdmin = await fetchProfileIsAppAdmin(adminClient, user.id);
+
   const { data: approverMember } = await adminClient
     .from("unit_members")
     .select("status, role")
@@ -59,12 +62,14 @@ export async function POST(
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!approverMember || approverMember.status !== "approved") {
+  if (!appAdmin && (!approverMember || approverMember.status !== "approved")) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
   const isGod =
-    approverMember.role === "owner" || approverMember.role === "admin";
+    appAdmin ||
+    approverMember?.role === "owner" ||
+    approverMember?.role === "admin";
 
   const body = await req.json();
   const { requester_user_id, action } = body as {

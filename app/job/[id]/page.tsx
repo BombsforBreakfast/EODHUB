@@ -17,6 +17,7 @@ type Job = {
   pay_max: number | null;
   clearance: string | null;
   source_type: string | null;
+  is_approved: boolean | null;
 };
 
 function formatExternalUrl(url: string) {
@@ -36,19 +37,39 @@ export default function JobDetailPage() {
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
+  const [isAppAdmin, setIsAppAdmin] = useState(false);
 
   useEffect(() => {
     async function loadJobPage() {
       setLoading(true);
 
-      const { data: jobData, error: jobError } = await supabase
-  .from("jobs")
-  .select(
-    "id,title,company_name,location,category,description,apply_url,pay_min,pay_max,clearance,source_type,is_approved"
-  )
-  .eq("id", jobId)
-  .eq("is_approved", true)
-  .single();
+      const { data: userData } = await supabase.auth.getUser();
+      let adminViewer = false;
+      if (userData.user) {
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("verification_status, is_admin")
+          .eq("user_id", userData.user.id)
+          .maybeSingle();
+        adminViewer = profileData?.is_admin === true;
+        setVerificationStatus(profileData?.verification_status ?? null);
+        setIsAppAdmin(adminViewer);
+      } else {
+        setVerificationStatus(null);
+        setIsAppAdmin(false);
+      }
+
+      let jobQuery = supabase
+        .from("jobs")
+        .select(
+          "id,title,company_name,location,category,description,apply_url,pay_min,pay_max,clearance,source_type,is_approved",
+        )
+        .eq("id", jobId);
+      if (!adminViewer) {
+        jobQuery = jobQuery.eq("is_approved", true);
+      }
+
+      const { data: jobData, error: jobError } = await jobQuery.single();
 
       if (jobError) {
         console.error("Job load error:", jobError);
@@ -58,24 +79,6 @@ export default function JobDetailPage() {
       }
 
       setJob(jobData);
-
-      const { data: userData } = await supabase.auth.getUser();
-
-      if (userData.user) {
-        const { data: profileData, error: profileError } = await supabase
-          .from("profiles")
-          .select("verification_status")
-          .eq("user_id", userData.user.id)
-          .single();
-
-        if (profileError) {
-          console.error("Profile status error:", profileError);
-        }
-
-        setVerificationStatus(profileData?.verification_status ?? null);
-      } else {
-        setVerificationStatus(null);
-      }
 
       setLoading(false);
     }
@@ -106,7 +109,9 @@ export default function JobDetailPage() {
     );
   }
 
-  const isApproved = verificationStatus === "approved";
+  const canApply =
+    isAppAdmin ||
+    verificationStatus === "verified";
 
   return (
     <div style={{ padding: 40, maxWidth: 900, margin: "0 auto" }}>
@@ -164,8 +169,14 @@ export default function JobDetailPage() {
           </p>
         </div>
 
+        {job && !job.is_approved && isAppAdmin && (
+          <div style={{ marginTop: 16, padding: 12, borderRadius: 10, background: "#fef3c7", border: "1px solid #fcd34d", fontSize: 13, color: "#92400e", fontWeight: 700 }}>
+            Admin preview — this listing is not approved for the public job board.
+          </div>
+        )}
+
         <div style={{ marginTop: 28 }}>
-          {isApproved ? (
+          {canApply ? (
             <a
               href={formatExternalUrl(job.apply_url)}
               target="_blank"

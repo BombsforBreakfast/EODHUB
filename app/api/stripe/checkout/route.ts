@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
 
   const { data: profile } = await adminClient
     .from("profiles")
-    .select("stripe_customer_id, first_name, last_name, verification_status, account_type")
+    .select("stripe_customer_id, first_name, last_name, verification_status, account_type, is_admin")
     .eq("user_id", user.id)
     .maybeSingle();
 
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Employer accounts do not require a subscription." }, { status: 400 });
   }
 
-  if (profile?.verification_status !== "verified") {
+  if (profile?.verification_status !== "verified" && !profile?.is_admin) {
     return NextResponse.json(
       { error: "Your account must be approved before you can subscribe. You’ll get an email when access is granted." },
       { status: 403 }

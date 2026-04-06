@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { fetchProfileIsAppAdmin } from "../../../../lib/appAdminServer";
 import { assertMemberInteractionAllowed } from "../../../../lib/memberSubscriptionServer";
 
 function getAdminClient() {
@@ -72,7 +73,8 @@ export async function GET(
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!membership || membership.status !== "approved") {
+  const appAdmin = await fetchProfileIsAppAdmin(adminClient, user.id);
+  if ((!membership || membership.status !== "approved") && !appAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -226,7 +228,8 @@ export async function POST(
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!membership || membership.status !== "approved") {
+  const appAdmin = await fetchProfileIsAppAdmin(adminClient, user.id);
+  if ((!membership || membership.status !== "approved") && !appAdmin) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

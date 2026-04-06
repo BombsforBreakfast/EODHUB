@@ -146,11 +146,11 @@ export default function LoginPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("verification_status")
+        .select("verification_status, is_admin")
         .eq("user_id", session.user.id)
         .maybeSingle();
 
-      if (profile?.verification_status === "verified") {
+      if (profile?.verification_status === "verified" || profile?.is_admin) {
         window.location.href = "/";
       } else {
         window.location.href = "/pending";

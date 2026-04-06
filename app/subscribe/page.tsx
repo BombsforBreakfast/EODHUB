@@ -19,10 +19,10 @@ export default function SubscribePage() {
       }
       const { data: p } = await supabase
         .from("profiles")
-        .select("verification_status, account_type, service, company_name")
+        .select("verification_status, account_type, service, company_name, is_admin")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (!p || (!p.service && !p.company_name)) {
+      if (!p || ((!p.service && !p.company_name) && !p.is_admin)) {
         window.location.href = "/onboarding";
         return;
       }
@@ -30,7 +30,7 @@ export default function SubscribePage() {
         window.location.href = "/";
         return;
       }
-      if (p.verification_status !== "verified") {
+      if (p.verification_status !== "verified" && !p.is_admin) {
         window.location.href = "/pending";
         return;
       }

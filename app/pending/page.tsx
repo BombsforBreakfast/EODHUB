@@ -23,12 +23,17 @@ export default function PendingPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("verification_status, first_name, referral_code")
+        .select("verification_status, first_name, referral_code, is_admin")
         .eq("user_id", user.id)
         .maybeSingle();
 
       setStatus(profile?.verification_status ?? null);
       setReferralCode((profile as { verification_status: string | null; first_name: string | null; referral_code: string | null } | null)?.referral_code ?? null);
+
+      if (profile?.is_admin) {
+        window.location.href = "/";
+        return;
+      }
 
       // Sync Google OAuth name to profile if missing
       const googleName = user.user_metadata?.full_name || user.user_metadata?.name;

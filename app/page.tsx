@@ -2126,13 +2126,21 @@ export default function HomePage() {
           await supabase.from("profiles").update({ first_name: fn, last_name: ln }).eq("user_id", currentUserId);
         }
 
-        // If profile not yet set up, send to onboarding
-        if (profileCheck && !profileCheck.service && !profileCheck.company_name) {
+        // If profile not yet set up, send to onboarding (app admins skip for QA)
+        if (
+          profileCheck &&
+          !profileCheck.service &&
+          !profileCheck.company_name &&
+          !profileCheck.is_admin
+        ) {
           window.location.href = "/onboarding";
           return;
         }
 
-        if (!profileCheck || (profileCheck.verification_status !== "verified")) {
+        if (
+          !profileCheck ||
+          (profileCheck.verification_status !== "verified" && !profileCheck.is_admin)
+        ) {
           window.location.href = "/pending";
           return;
         }
