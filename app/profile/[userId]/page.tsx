@@ -236,6 +236,7 @@ export default function PublicProfilePage() {
   const [editStatus, setEditStatus] = useState("");
   const [editYearsExp, setEditYearsExp] = useState("");
   const [editSkillBadge, setEditSkillBadge] = useState("");
+  const [editCompanyWebsite, setEditCompanyWebsite] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [lightboxPhoto, setLightboxPhoto] = useState<ProfilePhoto | null>(null);
@@ -287,6 +288,45 @@ export default function PublicProfilePage() {
     } finally {
       setUploadingAvatar(false);
       e.target.value = "";
+    }
+  }
+
+  function openWallEditProfile() {
+    if (!profile || currentUserId !== profile.user_id) return;
+    setEditRole(profile.role ?? "");
+    setEditBio(profile.bio ?? "");
+    setEditService(profile.service ?? "");
+    setEditStatus(profile.status ?? "");
+    setEditYearsExp(profile.years_experience ?? "");
+    setEditSkillBadge(profile.skill_badge ?? "");
+    setEditCompanyWebsite(profile.company_website ?? "");
+    setEditingProfile(true);
+  }
+
+  async function handleSaveWallProfile() {
+    if (!currentUserId || !profile || currentUserId !== profile.user_id || !userId) return;
+    try {
+      setSavingProfile(true);
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          role: editRole || null,
+          bio: editBio || null,
+          service: editService || null,
+          status: editStatus || null,
+          years_experience: editYearsExp || null,
+          skill_badge: editSkillBadge || null,
+          company_website: editCompanyWebsite || null,
+        })
+        .eq("user_id", currentUserId);
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      await loadProfile(userId);
+      setEditingProfile(false);
+    } finally {
+      setSavingProfile(false);
     }
   }
 
@@ -1189,6 +1229,17 @@ export default function PublicProfilePage() {
   }
   const referralBadge = getReferralBadge(referralCount);
 
+  const wallEditInputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: 10,
+    borderRadius: 10,
+    border: `1px solid ${t.inputBorder}`,
+    boxSizing: "border-box",
+    background: t.input,
+    color: t.text,
+  };
+  const wallEditSelectStyle: React.CSSProperties = { ...wallEditInputStyle, cursor: "pointer" };
+
   const pinnedPhotos = photos.filter((photo) => photo.is_pinned).slice(0, 4);
   const galleryPhotos = photos.filter((photo) => !photo.is_pinned);
 
@@ -1450,6 +1501,7 @@ export default function PublicProfilePage() {
           {/* Profile / Contact Card */}
           <div
             style={{
+              position: "relative",
               border: `1px solid ${t.border}`,
               borderRadius: 16,
               padding: 24,
@@ -1458,6 +1510,29 @@ export default function PublicProfilePage() {
           >
             {isOwnWall && (
               <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} aria-hidden />
+            )}
+            {isOwnWall && !editingProfile && (
+              isMobile ? (
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+                  <button
+                    type="button"
+                    onClick={openWallEditProfile}
+                    style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Edit Profile
+                  </button>
+                </div>
+              ) : (
+                <div style={{ position: "absolute", top: 16, right: 24, zIndex: 2 }}>
+                  <button
+                    type="button"
+                    onClick={openWallEditProfile}
+                    style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}
+                  >
+                    Edit Profile
+                  </button>
+                </div>
+              )
             )}
             {isMobile ? (
               /* ── Mobile profile card layout ── */
@@ -1653,6 +1728,66 @@ export default function PublicProfilePage() {
               </div>
             )}
           </div>
+
+          {/* Edit profile (own wall) — same fields as My Account */}
+          {isOwnWall && editingProfile && (
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
+              <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 16, color: t.text }}>Edit Profile</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Role / Job Title</label>
+                  <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="e.g. EOD Tech" style={wallEditInputStyle} />
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Service Branch</label>
+                  <select value={editService} onChange={(e) => setEditService(e.target.value)} style={wallEditSelectStyle}>
+                    <option value="">Select service...</option>
+                    {SERVICE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Status</label>
+                  <select value={editStatus} onChange={(e) => setEditStatus(e.target.value)} style={wallEditSelectStyle}>
+                    <option value="">Select status...</option>
+                    {STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Skill Badge</label>
+                  <select value={editSkillBadge} onChange={(e) => setEditSkillBadge(e.target.value)} style={wallEditSelectStyle}>
+                    <option value="">Select badge...</option>
+                    {SKILL_BADGE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Years of Experience</label>
+                  <select value={editYearsExp} onChange={(e) => setEditYearsExp(e.target.value)} style={wallEditSelectStyle}>
+                    <option value="">Select years...</option>
+                    {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                {profile.is_employer && (
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Company Website</label>
+                    <input value={editCompanyWebsite} onChange={(e) => setEditCompanyWebsite(e.target.value)} placeholder="https://yourcompany.com" style={wallEditInputStyle} />
+                  </div>
+                )}
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Bio</label>
+                  <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell people about yourself..." rows={4} style={{ ...wallEditInputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }} />
+                </div>
+              </div>
+              <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button type="button" onClick={handleSaveWallProfile} disabled={savingProfile} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: savingProfile ? "not-allowed" : "pointer", opacity: savingProfile ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+                  {savingProfile && <span className="btn-spinner" />}
+                  Save Changes
+                </button>
+                <button type="button" onClick={() => setEditingProfile(false)} style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: "pointer" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* ── Referral card (own profile only) ── */}
           {isOwnWall && profile.referral_code && (
