@@ -175,7 +175,7 @@ export default function UnitAdminPage() {
         <NavBar />
         <div style={{ color: "#dc2626", textAlign: "center", padding: 60 }}>{error}</div>
         <div style={{ textAlign: "center" }}>
-          <Link href="/units" style={{ color: t.text, fontWeight: 700 }}>← Back to Units</Link>
+          <Link href="/units" style={{ color: t.text, fontWeight: 700 }}>← Back to Groups</Link>
         </div>
       </div>
     );

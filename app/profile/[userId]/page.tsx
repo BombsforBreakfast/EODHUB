@@ -98,7 +98,7 @@ type PhotoComment = {
 };
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
-const STATUS_OPTIONS = ["Active", "Former", "Retired", "Civil Service"];
+const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
 
@@ -296,7 +296,7 @@ export default function PublicProfilePage() {
     setEditRole(profile.role ?? "");
     setEditBio(profile.bio ?? "");
     setEditService(profile.service ?? "");
-    setEditStatus(profile.status ?? "");
+    setEditStatus(profile.status === "Active" ? "Active Duty" : (profile.status ?? ""));
     setEditYearsExp(profile.years_experience ?? "");
     setEditSkillBadge(profile.skill_badge ?? "");
     setEditCompanyWebsite(profile.company_website ?? "");
@@ -1229,6 +1229,11 @@ export default function PublicProfilePage() {
   }
   const referralBadge = getReferralBadge(referralCount);
 
+  function displayMilitaryStatus(status: string | null | undefined): string {
+    if (status === "Active") return "Active Duty";
+    return status ?? "";
+  }
+
   const wallEditInputStyle: React.CSSProperties = {
     width: "100%",
     padding: 10,
@@ -1607,12 +1612,11 @@ export default function PublicProfilePage() {
                 {/* Profile details — full width below */}
                 <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
-                    <div><strong>Role:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "—")}</div>
+                    <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "—")}</div>
                     <div><strong>Service:</strong> {profile.service || "—"}</div>
-                    <div><strong>Status:</strong> {profile.status || "—"}</div>
+                    <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "—"}</div>
                     <div><strong>Experience:</strong> {profile.years_experience || "—"}</div>
                     <div><strong>Badge:</strong> {profile.skill_badge || "—"}</div>
-                    <div><strong>Verified:</strong> {profile.verification_status || "—"}</div>
                     {profile.is_employer && (
                       <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
                         {profile.company_website
@@ -1621,11 +1625,24 @@ export default function PublicProfilePage() {
                       </div>
                     )}
                   </div>
-                  {profile.bio && (
+                  {profile.bio?.trim() ? (
                     <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, lineHeight: 1.6 }}>
                       {profile.bio}
                     </div>
-                  )}
+                  ) : isOwnWall ? (
+                    <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, lineHeight: 1.6 }}>
+                      <a
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          openWallEditProfile();
+                        }}
+                        style={{ color: "#1d4ed8", fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}
+                      >
+                        input bio information
+                      </a>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : (
@@ -1705,12 +1722,11 @@ export default function PublicProfilePage() {
                 {/* Profile details */}
                 <div style={{ flex: 1, color: t.textMuted, lineHeight: 1.8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
-                    <div><strong>Role:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
+                    <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
                     <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
-                    <div><strong>Status:</strong> {profile.status || "Not added yet"}</div>
+                    <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
                     <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
                     <div><strong>Skill Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
-                    <div><strong>Verification:</strong> {profile.verification_status || "Not verified"}</div>
                     {profile.is_employer && (
                       <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
                         {profile.company_website
@@ -1719,11 +1735,24 @@ export default function PublicProfilePage() {
                       </div>
                     )}
                   </div>
-                  {profile.bio && (
+                  {profile.bio?.trim() ? (
                     <div style={{ marginTop: 14, color: t.textMuted, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14 }}>
                       {profile.bio}
                     </div>
-                  )}
+                  ) : isOwnWall ? (
+                    <div style={{ marginTop: 14, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14 }}>
+                      <a
+                        href="#"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          openWallEditProfile();
+                        }}
+                        style={{ color: "#1d4ed8", fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}
+                      >
+                        input bio information
+                      </a>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -1735,7 +1764,7 @@ export default function PublicProfilePage() {
               <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 16, color: t.text }}>Edit Profile</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 <div>
-                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Role / Job Title</label>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Current Position</label>
                   <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="e.g. EOD Tech" style={wallEditInputStyle} />
                 </div>
                 <div>

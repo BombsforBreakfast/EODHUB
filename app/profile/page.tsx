@@ -87,7 +87,7 @@ function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null
 }
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
-const STATUS_OPTIONS = ["Active", "Former", "Retired", "Civil Service"];
+const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
 
@@ -317,7 +317,7 @@ export default function MyAccountPage() {
     setEditRole(profile?.role ?? "");
     setEditBio(profile?.bio ?? "");
     setEditService(profile?.service ?? "");
-    setEditStatus(profile?.status ?? "");
+    setEditStatus(profile?.status === "Active" ? "Active Duty" : (profile?.status ?? ""));
     setEditYearsExp(profile?.years_experience ?? "");
     setEditSkillBadge(profile?.skill_badge ?? "");
     setEditCompanyWebsite(profile?.company_website ?? "");
@@ -545,7 +545,7 @@ export default function MyAccountPage() {
                     </span>
                   )}
                 </div>
-                <div style={{ marginTop: 4, color: t.textMuted }}>{profile?.role || "No role added yet"}</div>
+                <div style={{ marginTop: 4, color: t.textMuted }}>{profile?.role || "No current position added yet"}</div>
                 {profile?.company_website && (
                   <div style={{ marginTop: 4, fontSize: 14 }}>
                     <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8" }}>{profile.company_website}</a>
@@ -818,15 +818,15 @@ export default function MyAccountPage() {
         </div>
       )}
 
-      {/* My Units */}
+      {/* My Groups */}
       <div style={{ marginTop: 24, ...card }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div style={{ fontSize: 20, fontWeight: 900, color: t.text }}>My Units</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: t.text }}>My Groups</div>
           <a href="/units" style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, textDecoration: "none" }}>Browse all →</a>
         </div>
         {myUnits.length === 0 ? (
           <div style={{ color: t.textMuted, fontSize: 14 }}>
-            You haven&apos;t joined any units yet.{" "}
+            You haven&apos;t joined any groups yet.{" "}
             <a href="/units" style={{ color: t.text, fontWeight: 700, textDecoration: "none" }}>Find or create one →</a>
           </div>
         ) : (

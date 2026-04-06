@@ -414,7 +414,7 @@ export default function UnitPage() {
           <NavBar />
           <div style={{ textAlign: "center", padding: 60 }}>
             <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 8 }}>Unit not found</div>
-            <a href="/units" style={{ color: "#3b82f6", fontWeight: 700, fontSize: 14 }}>← Back to Units</a>
+            <a href="/units" style={{ color: "#3b82f6", fontWeight: 700, fontSize: 14 }}>← Back to Groups</a>
           </div>
         </div>
       </div>
@@ -430,7 +430,7 @@ export default function UnitPage() {
 
         {/* Back */}
         <a href="/units" style={{ color: t.textMuted, fontSize: 13, fontWeight: 700, textDecoration: "none", display: "inline-block", marginBottom: 16 }}>
-          ← Units
+          ← Groups
         </a>
 
         {/* Cover + Header */}

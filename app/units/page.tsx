@@ -178,7 +178,7 @@ export default function UnitsPage() {
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <div>
-            <div style={{ fontSize: 28, fontWeight: 900 }}>Units</div>
+            <div style={{ fontSize: 28, fontWeight: 900 }}>Groups</div>
             <div style={{ fontSize: 14, color: t.textMuted, marginTop: 2 }}>
               Private Communities and Groups
             </div>
@@ -189,7 +189,7 @@ export default function UnitsPage() {
                 onClick={() => setShowMyUnits((v) => !v)}
                 style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: showMyUnits ? 0.75 : 1 }}
               >
-                My Units {showMyUnits ? "✕" : `(${myUnits.length})`}
+                My Groups {showMyUnits ? "✕" : `(${myUnits.length})`}
               </button>
             )}
             {currentUserId && (
@@ -222,7 +222,7 @@ export default function UnitsPage() {
         {/* My Units panel */}
         {showMyUnits && (
           <div style={{ marginBottom: 24, border: `1px solid ${t.border}`, borderRadius: 14, padding: 20, background: t.surface }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 14 }}>My Units</div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 14 }}>My Groups</div>
             <div style={{ display: "grid", gap: 10 }}>
               {myUnits.map((u) => (
                 <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: `1px solid ${t.border}`, borderRadius: 12, background: t.bg }}>

@@ -496,7 +496,7 @@ export default function NavBar() {
         </div>
 
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
-        <Link href="/units" className="nav-btn nav-units" style={navButton}>Units</Link>
+        <Link href="/units" className="nav-btn nav-units" style={navButton}>Groups</Link>
         <Link href="/directory" className="nav-btn nav-directory" style={navButton}>Directory</Link>
 
         {currentUserId && isAdmin && (
@@ -576,7 +576,7 @@ export default function NavBar() {
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
-              placeholder="Search people, jobs, businesses, events, units..."
+              placeholder="Search people, jobs, businesses, events, groups..."
               style={{ border: "none", outline: "none", fontSize: 14, width: "100%", background: "transparent", color: t.text }}
             />
             {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
@@ -593,10 +593,10 @@ export default function NavBar() {
                     onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
                     onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                   >
-                    <span style={{ background: "#ede9fe", color: "#7c3aed", fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>Unit</span>
+                    <span style={{ background: "#ede9fe", color: "#7c3aed", fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>Group</span>
                     <div>
-                      <div style={{ fontWeight: 700, fontSize: 13 }}>No unit &ldquo;{searchQuery}&rdquo; found</div>
-                      <div style={{ fontSize: 12, color: t.textMuted }}>Click to create this unit →</div>
+                      <div style={{ fontWeight: 700, fontSize: 13 }}>No group &ldquo;{searchQuery}&rdquo; found</div>
+                      <div style={{ fontSize: 12, color: t.textMuted }}>Click to create this group →</div>
                     </div>
                   </div>
                 </div>
@@ -605,10 +605,10 @@ export default function NavBar() {
               {(["user", "unit", "job", "business"] as const).map((type) => {
                 const group = searchResults.filter((r) => r.type === type);
                 if (group.length === 0) return null;
-                const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Units" : "Businesses";
+                const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Groups" : "Businesses";
                 const badgeColors: Record<string, string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe" };
                 const badgeText: Record<string, string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed" };
-                const badgeLabel: Record<string, string> = { user: "Person", job: "Job", business: "Biz", unit: "Unit" };
+                const badgeLabel: Record<string, string> = { user: "Person", job: "Job", business: "Biz", unit: "Group" };
                 return (
                   <div key={type}>
                     <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
@@ -741,7 +741,7 @@ export default function NavBar() {
                     { label: "Jobs", href: "/?tab=jobs", emoji: "💼", badge: 0, onNav: null },
                     { label: "Businesses", href: "/?tab=businesses", emoji: "🏢", badge: 0, onNav: null },
                     { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
-                    { label: "Units", href: "/units", emoji: "🪖", badge: 0, onNav: null },
+                    { label: "Groups", href: "/units", emoji: "🪖", badge: 0, onNav: null },
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
                     ...(isAdmin
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
