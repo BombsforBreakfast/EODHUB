@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
   // Update verification status
   const { error: updateError } = await adminClient
     .from("profiles")
-    .update({ verification_status: "verified" })
+    .update({ verification_status: "verified", is_approved: true })
     .eq("user_id", userId);
 
   if (updateError) {

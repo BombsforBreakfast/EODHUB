@@ -9,7 +9,9 @@ import EmojiPickerButton from "./components/EmojiPickerButton";
 import GifPickerButton from "./components/GifPickerButton";
 import MentionTextarea, { extractMentionIds } from "./components/MentionTextarea";
 import { PostLikersStack, type PostLikerBrief } from "./components/PostLikersStack";
-import { PAYWALL_IN_MEMBER_FLOW } from "./lib/paywallWorkflow";
+import OnlineNowStrip from "./components/OnlineNowStrip";
+import MemberPaywallModal from "./components/MemberPaywallModal";
+import { memberHasInteractionAccess } from "./lib/subscriptionAccess";
 
 type Job = {
   id: string;
@@ -452,6 +454,8 @@ export default function HomePage() {
   const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [pendingMembers, setPendingMembers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null; vouch_count: number; user_vouched: boolean }[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const memberInteractionAllowedRef = useRef(true);
+  const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
 
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingPostContent, setEditingPostContent] = useState("");
@@ -530,6 +534,12 @@ export default function HomePage() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isGalleryOpen, galleryImages.length]);
 
+  function blockMemberInteraction(): boolean {
+    if (memberInteractionAllowedRef.current) return false;
+    setMemberPaywallOpen(true);
+    return true;
+  }
+
   async function loadBusinessListings() {
     const { data, error } = await supabase
       .from("business_listings")
@@ -560,6 +570,7 @@ export default function HomePage() {
     e.preventDefault();
     e.stopPropagation();
     if (!userId || togglingBizLikeFor === bizId) return;
+    if (blockMemberInteraction()) return;
     setTogglingBizLikeFor(bizId);
 
     const already = likedBizIds.has(bizId);
@@ -734,6 +745,7 @@ export default function HomePage() {
 
   async function toggleMemorialLike(memorialId: string) {
     if (!userId) { window.location.href = "/login"; return; }
+    if (blockMemberInteraction()) return;
     const liked = (memorialLikes[memorialId] ?? []).includes(userId);
     if (liked) {
       await supabase.from("memorial_likes").delete().eq("memorial_id", memorialId).eq("user_id", userId);
@@ -748,6 +760,7 @@ export default function HomePage() {
 
   async function submitMemorialComment(memorialId: string) {
     if (!userId) { window.location.href = "/login"; return; }
+    if (blockMemberInteraction()) return;
     const text = (memorialCommentRawsRef.current[memorialId] || memorialCommentInputs[memorialId] || "").trim();
     if (!text) return;
     setSubmittingMemorialComment(memorialId);
@@ -790,6 +803,7 @@ export default function HomePage() {
     const { data } = await supabase
       .from("profiles")
       .select("user_id, first_name, last_name, photo_url, service, status")
+      .eq("verification_status", "verified")
       .neq("user_id", currentUserId)
       .not("first_name", "is", null)
       .limit(40);
@@ -818,15 +832,16 @@ export default function HomePage() {
   }
 
   async function loadPendingMembers(currentUserId: string) {
-    // Load pending users (not yet approved, not denied)
+    // Community members awaiting vouches — same cohort as /pending (not in People You May Know)
     const { data: pending } = await supabase
       .from("profiles")
-      .select("user_id, first_name, last_name, display_name, photo_url, service")
-      .or("is_approved.is.null,is_approved.eq.false")
+      .select("user_id, first_name, last_name, display_name, photo_url, service, created_at")
+      .eq("verification_status", "pending")
+      .eq("account_type", "member")
       .neq("user_id", currentUserId)
       .not("first_name", "is", null)
-      .neq("verification_status", "denied")
-      .limit(10);
+      .order("created_at", { ascending: true })
+      .limit(20);
 
     if (!pending || pending.length === 0) return;
 
@@ -855,6 +870,7 @@ export default function HomePage() {
 
   async function vouchForMember(voucheeId: string) {
     if (!userId || vouchingFor) return;
+    if (blockMemberInteraction()) return;
     setVouchingFor(voucheeId);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -912,6 +928,7 @@ export default function HomePage() {
 
   async function toggleDiscoverConnection(targetUserId: string, type: "know" | "worked_with") {
     if (!userId) return;
+    if (blockMemberInteraction()) return;
     const profile = discoverProfiles.find((p) => p.user_id === targetUserId);
     if (!profile) return;
 
@@ -974,6 +991,7 @@ export default function HomePage() {
       window.location.href = "/login";
       return;
     }
+    if (blockMemberInteraction()) return;
 
     try {
       setTogglingJobSaveFor(jobId);
@@ -1475,6 +1493,7 @@ export default function HomePage() {
       window.location.href = "/login";
       return;
     }
+    if (blockMemberInteraction()) return;
 
     if (!content.trim() && selectedPostImages.length === 0 && !selectedPostGif) return;
 
@@ -1603,6 +1622,7 @@ export default function HomePage() {
 
   async function submitBizListing() {
     if (!userId) { window.location.href = "/login"; return; }
+    if (blockMemberInteraction()) return;
     const url = normalizeUrl(bizUrl.trim());
     if (!url || !bizName.trim()) return;
     try {
@@ -1642,6 +1662,7 @@ export default function HomePage() {
       window.location.href = "/login";
       return;
     }
+    if (blockMemberInteraction()) return;
 
     try {
       setTogglingLikeFor(postId);
@@ -1687,6 +1708,7 @@ export default function HomePage() {
       window.location.href = "/login";
       return;
     }
+    if (blockMemberInteraction()) return;
 
     try {
       setTogglingCommentLikeFor(commentId);
@@ -1733,6 +1755,7 @@ export default function HomePage() {
       window.location.href = "/login";
       return;
     }
+    if (blockMemberInteraction()) return;
 
     const commentText = (commentRawsRef.current[postId] || commentInputs[postId] || "").trim();
     const selectedCommentImage = selectedCommentImages[postId] || null;
@@ -1858,6 +1881,7 @@ export default function HomePage() {
 
   async function deletePost(postId: string) {
     if (!userId) return;
+    if (blockMemberInteraction()) return;
     if (!window.confirm("Delete this post?")) return;
 
     try {
@@ -1878,6 +1902,7 @@ export default function HomePage() {
 
   async function deleteComment(commentId: string) {
     if (!userId) return;
+    if (blockMemberInteraction()) return;
     if (!window.confirm("Delete this comment?")) return;
 
     try {
@@ -1911,6 +1936,7 @@ export default function HomePage() {
 
   async function savePostEdit(postId: string) {
     if (!editingPostContent.trim()) return;
+    if (blockMemberInteraction()) return;
 
     try {
       setSavingPostId(postId);
@@ -1945,6 +1971,7 @@ export default function HomePage() {
 
   async function saveCommentEdit(commentId: string) {
     if (!editingCommentContent.trim()) return;
+    if (blockMemberInteraction()) return;
 
     try {
       setSavingCommentId(commentId);
@@ -1969,6 +1996,7 @@ export default function HomePage() {
 
   async function flagContent(contentType: "post" | "comment", contentId: string) {
     if (!userId) return;
+    if (blockMemberInteraction()) return;
     if (!window.confirm(`Flag this ${contentType} for admin review?`)) return;
     setFlaggingId(contentId);
     const { error } = await supabase.from("flags").insert([{ reporter_id: userId, content_type: contentType, content_id: contentId }]);
@@ -2030,17 +2058,13 @@ export default function HomePage() {
           return;
         }
 
-        // Paywall check — employers always pass; members/businesses need active subscription
-        const paywallEnabled =
-          PAYWALL_IN_MEMBER_FLOW &&
-          process.env.NEXT_PUBLIC_PAYWALL_ENABLED === "true";
-        if (paywallEnabled && profileCheck.account_type !== "employer") {
-          const subStatus = profileCheck.subscription_status;
-          if (subStatus !== "active" && subStatus !== "trialing") {
-            window.location.href = "/subscribe";
-            return;
-          }
-        }
+        const interactionOk = memberHasInteractionAccess({
+          accountType: profileCheck.account_type,
+          subscriptionStatus: profileCheck.subscription_status ?? null,
+          authUserCreatedAtIso: data.user?.created_at ?? null,
+          isAdmin: profileCheck.is_admin,
+        });
+        memberInteractionAllowedRef.current = interactionOk;
 
         setUserId(currentUserId);
 
@@ -2276,7 +2300,13 @@ export default function HomePage() {
                 {new Date(jobsLastUpdated).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
               </div>
             ) : <div />}
-            <Link href="/post-job" style={{ background: "#111", color: "white", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
+            <Link
+              href="/post-job"
+              onClick={(e) => {
+                if (blockMemberInteraction()) e.preventDefault();
+              }}
+              style={{ background: "#111", color: "white", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}
+            >
               Post Job
             </Link>
           </div>
@@ -2445,6 +2475,9 @@ export default function HomePage() {
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{name} is requesting to join</div>
                       {m.service && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{m.service}</div>}
+                      <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 1.5 }}>
+                        Once 3 members vouch, they&apos;re verified automatically. An admin can approve them directly.
+                      </div>
                       <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
                           {[0, 1, 2].map((i) => (
@@ -2489,85 +2522,6 @@ export default function HomePage() {
                   </div>
                 );
               })}
-            </div>
-          )}
-
-          {/* People You May Know strip */}
-          {discoverVisible.length > 0 && (
-            <div style={{ marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 12 }}>
-                People You May Know
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => shuffleDiscover()}
-                  title="Previous"
-                  style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                >‹</button>
-                <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 4, flex: 1 }}>
-                {discoverVisible.map((p) => {
-                  const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
-                  const ringColor = getServiceRingColor(p.service);
-                  const isWorkedWith = p.userWorkedWith;
-                  const isKnow = p.userKnows;
-                  // Know is implied-active when worked_with is set
-                  const knowImplied = isWorkedWith;
-                  return (
-                    <div
-                      key={p.user_id}
-                      style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 100 }}
-                    >
-                      <a
-                        href={`/profile/${p.user_id}`}
-                        style={{ textDecoration: "none", color: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
-                      >
-                        <div style={{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 16, boxSizing: "border-box", border: ringColor ? `3px solid ${ringColor}` : `2px solid ${t.border}` }}>
-                          {p.photo_url
-                            ? <img src={p.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                            : (fullName[0] || "U").toUpperCase()
-                          }
-                        </div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: t.text, textAlign: "center", lineHeight: 1.3, wordBreak: "break-word" }}>{fullName}</div>
-                      </a>
-                      {userId && (
-                        <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
-                          <button
-                            onClick={() => toggleDiscoverConnection(p.user_id, "know")}
-                            disabled={knowImplied}
-                            style={{
-                              fontSize: 9, fontWeight: 700, padding: "3px 5px", borderRadius: 6, border: "none", cursor: knowImplied ? "default" : "pointer",
-                              background: (isKnow || knowImplied) ? t.text : t.badgeBg,
-                              color: (isKnow || knowImplied) ? t.surface : t.textMuted,
-                              opacity: knowImplied ? 0.6 : 1, width: "100%",
-                            }}
-                          >
-                            Know
-                          </button>
-                          <button
-                            onClick={() => toggleDiscoverConnection(p.user_id, "worked_with")}
-                            style={{
-                              fontSize: 9, fontWeight: 700, padding: "3px 5px", borderRadius: 6, border: "none", cursor: "pointer",
-                              background: isWorkedWith ? t.text : t.badgeBg,
-                              color: isWorkedWith ? t.surface : t.textMuted,
-                              width: "100%",
-                            }}
-                          >
-                            Worked With
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => shuffleDiscover()}
-                  title="Next"
-                  style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                >›</button>
-              </div>
             </div>
           )}
 
@@ -2639,6 +2593,8 @@ export default function HomePage() {
               </div>
             </div>
           )}
+
+          <OnlineNowStrip currentUserId={userId} />
 
           <div
             style={{
@@ -2836,6 +2792,84 @@ export default function HomePage() {
               </div>
             </div>
           </div>
+
+          {/* People You May Know — verified members only; below composer so vouch cards stay above */}
+          {discoverVisible.length > 0 && (
+            <div style={{ marginTop: 16, marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 12 }}>
+                People You May Know
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => shuffleDiscover()}
+                  title="Previous"
+                  style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                >‹</button>
+                <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 4, flex: 1 }}>
+                {discoverVisible.map((p) => {
+                  const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
+                  const ringColor = getServiceRingColor(p.service);
+                  const isWorkedWith = p.userWorkedWith;
+                  const isKnow = p.userKnows;
+                  const knowImplied = isWorkedWith;
+                  return (
+                    <div
+                      key={p.user_id}
+                      style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 100 }}
+                    >
+                      <a
+                        href={`/profile/${p.user_id}`}
+                        style={{ textDecoration: "none", color: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
+                      >
+                        <div style={{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 16, boxSizing: "border-box", border: ringColor ? `3px solid ${ringColor}` : `2px solid ${t.border}` }}>
+                          {p.photo_url
+                            ? <img src={p.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                            : (fullName[0] || "U").toUpperCase()
+                          }
+                        </div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: t.text, textAlign: "center", lineHeight: 1.3, wordBreak: "break-word" }}>{fullName}</div>
+                      </a>
+                      {userId && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
+                          <button
+                            onClick={() => toggleDiscoverConnection(p.user_id, "know")}
+                            disabled={knowImplied}
+                            style={{
+                              fontSize: 9, fontWeight: 700, padding: "3px 5px", borderRadius: 6, border: "none", cursor: knowImplied ? "default" : "pointer",
+                              background: (isKnow || knowImplied) ? t.text : t.badgeBg,
+                              color: (isKnow || knowImplied) ? t.surface : t.textMuted,
+                              opacity: knowImplied ? 0.6 : 1, width: "100%",
+                            }}
+                          >
+                            Know
+                          </button>
+                          <button
+                            onClick={() => toggleDiscoverConnection(p.user_id, "worked_with")}
+                            style={{
+                              fontSize: 9, fontWeight: 700, padding: "3px 5px", borderRadius: 6, border: "none", cursor: "pointer",
+                              background: isWorkedWith ? t.text : t.badgeBg,
+                              color: isWorkedWith ? t.surface : t.textMuted,
+                              width: "100%",
+                            }}
+                          >
+                            Worked With
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => shuffleDiscover()}
+                  title="Next"
+                  style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                >›</button>
+              </div>
+            </div>
+          )}
 
           <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
             {!postsLoaded && [0,1,2,3].map((i) => <SkeletonPost key={i} />)}
@@ -4016,6 +4050,8 @@ export default function HomePage() {
           </div>
         </div>
       )}
+
+      <MemberPaywallModal open={memberPaywallOpen} onClose={() => setMemberPaywallOpen(false)} />
     </div>
   );
 }

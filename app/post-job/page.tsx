@@ -4,6 +4,8 @@ import { useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
+import MemberPaywallModal from "../components/MemberPaywallModal";
+import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
 
 function normalizeUrl(url: string) {
   const trimmed = url.trim();
@@ -14,6 +16,7 @@ function normalizeUrl(url: string) {
 
 export default function PostJobPage() {
   const { t } = useTheme();
+  const { blockIfNeeded, paywallOpen, setPaywallOpen } = useMemberSubscriptionGate();
   const [title, setTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [category, setCategory] = useState("EOD");
@@ -35,6 +38,7 @@ export default function PostJobPage() {
   };
 
   async function handleSubmit() {
+    if (blockIfNeeded()) return;
     try {
       setSubmitting(true);
 
@@ -166,6 +170,7 @@ export default function PostJobPage() {
           </button>
         </div>
       </div>
+      <MemberPaywallModal open={paywallOpen} onClose={() => setPaywallOpen(false)} />
     </div>
   );
 }

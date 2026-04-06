@@ -33,7 +33,7 @@ function getServiceRingColor(service: string | null | undefined): string | null 
   }
 }
 
-function LikerAvatar({
+export function LikerAvatar({
   photoUrl,
   name,
   size = 44,

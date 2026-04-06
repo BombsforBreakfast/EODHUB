@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
+import { computeStripeTrialEndUnix } from "../../../lib/subscriptionAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -58,11 +59,15 @@ export async function POST(req: NextRequest) {
 
   const origin = req.headers.get("origin") ?? "https://eod-hub.com";
 
+  const trialEndUnix = user.created_at
+    ? computeStripeTrialEndUnix(user.created_at, new Date())
+    : undefined;
+
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode: "subscription",
     line_items: [{ price: process.env.STRIPE_PRICE_ID!, quantity: 1 }],
-    subscription_data: { trial_period_days: 10 },
+    subscription_data: trialEndUnix ? { trial_end: trialEndUnix } : {},
     success_url: `${origin}/?subscribed=1`,
     cancel_url: `${origin}/subscribe?cancelled=1`,
     allow_promotion_codes: true,

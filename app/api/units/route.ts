@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { PAYWALL_IN_MEMBER_FLOW } from "../../lib/paywallWorkflow";
+import { assertMemberInteractionAllowed } from "../../lib/memberSubscriptionServer";
 
 function getAdminClient() {
   return createClient(
@@ -91,24 +91,9 @@ export async function POST(req: NextRequest) {
 
   const adminClient = getAdminClient();
 
-  if (PAYWALL_IN_MEMBER_FLOW) {
-    const { data: profile, error: profileError } = await adminClient
-      .from("profiles")
-      .select("subscription_status")
-      .eq("user_id", user.id)
-      .single();
-
-    if (profileError || !profile) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
-    }
-
-    const status = profile.subscription_status;
-    if (status !== "active" && status !== "trialing") {
-      return NextResponse.json(
-        { error: "Active subscription required" },
-        { status: 403 }
-      );
-    }
+  const gate = await assertMemberInteractionAllowed(adminClient, user.id);
+  if (!gate.ok) {
+    return NextResponse.json({ error: gate.message }, { status: 403 });
   }
 
   const body = await req.json();

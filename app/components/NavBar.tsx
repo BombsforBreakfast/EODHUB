@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
@@ -70,6 +71,9 @@ export default function NavBar() {
   /** Mobile: reserve vertical space so fixed nav does not cover page content (height tracks hub/search). */
   const navRootRef = useRef<HTMLDivElement>(null);
   const [mobileNavSpacerPx, setMobileNavSpacerPx] = useState(0);
+
+  /** Mobile breakpoint — EOD Hub menu is a modal only when narrow. */
+  const [isNarrowViewport, setIsNarrowViewport] = useState(false);
 
   // Unread counts derived from notifications
   // Profile badge: notifications that link to a profile (wall activity)
@@ -426,17 +430,29 @@ export default function NavBar() {
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
-  // Close hub panel on outside click
   useEffect(() => {
-    function onClickOutside(e: MouseEvent) {
-      const target = e.target as Node;
-      if (!hubPanelRef.current?.contains(target) && !hubBtnRef.current?.contains(target)) {
-        setShowHub(false);
-      }
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 900px)");
+    function sync() {
+      setIsNarrowViewport(mq.matches);
     }
-    if (showHub) document.addEventListener("mousedown", onClickOutside);
-    return () => document.removeEventListener("mousedown", onClickOutside);
-  }, [showHub]);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    if (!isNarrowViewport) setShowHub(false);
+  }, [isNarrowViewport]);
+
+  useEffect(() => {
+    if (!showHub || !isNarrowViewport || typeof document === "undefined") return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [showHub, isNarrowViewport]);
 
   // Account avatar menu — outside click
   useEffect(() => {
@@ -487,7 +503,7 @@ export default function NavBar() {
       mq.removeEventListener("change", measure);
       window.removeEventListener("resize", measure);
     };
-  }, [showHub, showSearchDropdown, showAccountMenu, authLoaded, currentUserId]);
+  }, [showSearchDropdown, showAccountMenu, authLoaded, currentUserId]);
 
   const navButton: React.CSSProperties = {
     padding: "10px 16px",
@@ -783,69 +799,6 @@ export default function NavBar() {
         </div>
       </div>
 
-      {/* Hub panel — full-width row below search (mobile) */}
-      {showHub && (
-        <div ref={hubPanelRef} className="nav-hub-panel">
-          {[
-            { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤", badge: unreadProfileNotifs, onNav: markProfileNotifsRead },
-            { label: "Home", href: "/", emoji: "🏠", badge: unreadFeedNotifs, onNav: markFeedNotifsRead },
-            { label: "Jobs", href: "/?tab=jobs", emoji: "💼", badge: 0, onNav: null },
-            { label: "Businesses", href: "/?tab=businesses", emoji: "🏢", badge: 0, onNav: null },
-            { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
-            { label: "Units", href: "/units", emoji: "🪖", badge: 0, onNav: null },
-            { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
-            ...(isAdmin
-              ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
-              : []),
-            { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages, onNav: markMessagesRead },
-          ].map((item) => (
-            <a
-              key={item.label}
-              href={item.href}
-              onClick={async (e) => { e.preventDefault(); setShowHub(false); if (item.onNav) await item.onNav(); window.location.href = item.href; }}
-              style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, textDecoration: "none", color: t.text, fontWeight: 700, fontSize: 14, background: t.bg }}
-            >
-              <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
-              <span style={{ flex: 1 }}>{item.label}</span>
-              {item.badge > 0 && badge(item.badge)}
-            </a>
-          ))}
-          {linkedAccounts?.canSwitch && (
-            <>
-              <div style={{ padding: "10px 14px 4px", fontSize: 10, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
-                Same email — switch login
-              </div>
-              {(linkedAccounts.accounts ?? []).filter((a) => !a.isCurrent).map((a) => (
-                <button
-                  key={a.userId}
-                  type="button"
-                  disabled={!!switchingToId}
-                  onClick={() => switchToLinkedAccount(a.userId)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 10,
-                    padding: "11px 14px",
-                    borderRadius: 10,
-                    border: `1px solid ${t.border}`,
-                    color: t.text,
-                    fontWeight: 700,
-                    fontSize: 14,
-                    background: t.bg,
-                    width: "100%",
-                    cursor: switchingToId ? "wait" : "pointer",
-                    textAlign: "left",
-                  }}
-                >
-                  <span style={{ fontSize: 20, lineHeight: 1 }}>{switchingToId === a.userId ? "⏳" : "🔁"}</span>
-                  <span style={{ flex: 1 }}>{switchingToId === a.userId ? "Switching…" : a.label}</span>
-                </button>
-              ))}
-            </>
-          )}
-        </div>
-      )}
-
       {/* Right: logout */}
       <div className="nav-right" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         {!authLoaded ? null : currentUserId ? (
@@ -855,6 +808,141 @@ export default function NavBar() {
         )}
       </div>
     </div>
+
+      {typeof document !== "undefined" && isNarrowViewport && showHub
+        ? createPortal(
+            <div
+              className="nav-hub-modal-backdrop"
+              role="presentation"
+              style={{
+                position: "fixed",
+                inset: 0,
+                zIndex: 1100,
+                background: "rgba(0,0,0,0.45)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 16,
+                paddingBottom: "max(16px, env(safe-area-inset-bottom, 0px))",
+              }}
+              onClick={() => setShowHub(false)}
+            >
+              <div
+                ref={hubPanelRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="EOD Hub"
+                className="nav-hub-modal-sheet"
+                style={{
+                  width: "100%",
+                  maxWidth: 420,
+                  maxHeight: "min(88vh, 640px)",
+                  overflow: "auto",
+                  background: t.surface,
+                  borderRadius: 16,
+                  border: `1px solid ${t.border}`,
+                  boxShadow: "0 16px 48px rgba(0,0,0,0.25)",
+                  padding: 16,
+                  boxSizing: "border-box",
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 12 }}>
+                  <span style={{ fontWeight: 800, fontSize: 16, color: t.text }}>EOD Hub</span>
+                  <button
+                    type="button"
+                    aria-label="Close"
+                    onClick={() => setShowHub(false)}
+                    style={{
+                      flexShrink: 0,
+                      width: 36,
+                      height: 36,
+                      borderRadius: 10,
+                      border: `1px solid ${t.border}`,
+                      background: t.bg,
+                      color: t.text,
+                      fontSize: 22,
+                      lineHeight: 1,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="nav-hub-modal-grid">
+                  {[
+                    { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤", badge: unreadProfileNotifs, onNav: markProfileNotifsRead },
+                    { label: "Home", href: "/", emoji: "🏠", badge: unreadFeedNotifs, onNav: markFeedNotifsRead },
+                    { label: "Jobs", href: "/?tab=jobs", emoji: "💼", badge: 0, onNav: null },
+                    { label: "Businesses", href: "/?tab=businesses", emoji: "🏢", badge: 0, onNav: null },
+                    { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
+                    { label: "Units", href: "/units", emoji: "🪖", badge: 0, onNav: null },
+                    { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
+                    ...(isAdmin
+                      ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
+                      : []),
+                    { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages, onNav: markMessagesRead },
+                  ].map((item) => (
+                    <a
+                      key={item.label}
+                      href={item.href}
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        setShowHub(false);
+                        if (item.onNav) await item.onNav();
+                        window.location.href = item.href;
+                      }}
+                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, textDecoration: "none", color: t.text, fontWeight: 700, fontSize: 14, background: t.bg }}
+                    >
+                      <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
+                      <span style={{ flex: 1 }}>{item.label}</span>
+                      {item.badge > 0 && badge(item.badge)}
+                    </a>
+                  ))}
+                  {linkedAccounts?.canSwitch && (
+                    <>
+                      <div style={{ gridColumn: "1 / -1", padding: "10px 14px 4px", fontSize: 10, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                        Same email — switch login
+                      </div>
+                      {(linkedAccounts.accounts ?? []).filter((a) => !a.isCurrent).map((a) => (
+                        <button
+                          key={a.userId}
+                          type="button"
+                          disabled={!!switchingToId}
+                          onClick={() => switchToLinkedAccount(a.userId)}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "11px 14px",
+                            borderRadius: 10,
+                            border: `1px solid ${t.border}`,
+                            color: t.text,
+                            fontWeight: 700,
+                            fontSize: 14,
+                            background: t.bg,
+                            width: "100%",
+                            cursor: switchingToId ? "wait" : "pointer",
+                            textAlign: "left",
+                            gridColumn: "1 / -1",
+                          }}
+                        >
+                          <span style={{ fontSize: 20, lineHeight: 1 }}>{switchingToId === a.userId ? "⏳" : "🔁"}</span>
+                          <span style={{ flex: 1 }}>{switchingToId === a.userId ? "Switching…" : a.label}</span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </>
   );
 }

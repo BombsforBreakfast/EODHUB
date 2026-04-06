@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { assertMemberInteractionAllowed } from "../../../../../../lib/memberSubscriptionServer";
 
 function getAdminClient() {
   return createClient(
@@ -146,6 +147,11 @@ export async function POST(
 
   if (!membership || membership.status !== "approved") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const gate = await assertMemberInteractionAllowed(adminClient, user.id);
+  if (!gate.ok) {
+    return NextResponse.json({ error: gate.message }, { status: 403 });
   }
 
   const body = await req.json();

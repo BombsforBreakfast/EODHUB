@@ -6,6 +6,8 @@ import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 import EmojiPickerButton from "../components/EmojiPickerButton";
 import GifPickerButton from "../components/GifPickerButton";
+import MemberPaywallModal from "../components/MemberPaywallModal";
+import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
 
 type Conversation = {
   id: string;
@@ -73,6 +75,7 @@ export default function MessagesPage() {
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const messageInputRef = useRef<HTMLInputElement | null>(null);
   const { t, isDark } = useTheme();
+  const { blockIfNeeded, paywallOpen, setPaywallOpen } = useMemberSubscriptionGate();
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 900);
@@ -225,6 +228,7 @@ export default function MessagesPage() {
 
   async function sendRequest() {
     if (!userId || !requestTarget || !requestDraft.trim() || sending) return;
+    if (blockIfNeeded()) return;
     const otherId = requestTarget.userId;
     const p1 = userId < otherId ? userId : otherId;
     const p2 = userId < otherId ? otherId : userId;
@@ -263,6 +267,7 @@ export default function MessagesPage() {
   }
 
   async function acceptRequest(convId: string) {
+    if (blockIfNeeded()) return;
     const { error } = await supabase.from("conversations").update({ status: "accepted" }).eq("id", convId);
     if (error) { alert("Failed to accept request. Please try again."); return; }
     if (userId) await loadConversations(userId);
@@ -272,12 +277,14 @@ export default function MessagesPage() {
   }
 
   async function declineRequest(convId: string) {
+    if (blockIfNeeded()) return;
     const { error } = await supabase.from("conversations").update({ status: "declined" }).eq("id", convId);
     if (error) { alert("Failed to decline request. Please try again."); return; }
     if (userId) await loadConversations(userId);
   }
 
   async function cancelRequest(convId: string) {
+    if (blockIfNeeded()) return;
     await supabase.from("conversations").delete().eq("id", convId);
     setActiveConvId(null);
     if (userId) await loadConversations(userId);
@@ -363,6 +370,7 @@ export default function MessagesPage() {
     const gif = selectedGifUrl;
     if (!newMessage.trim() && !gif) return;
     if (!activeConvId || !userId || sending) return;
+    if (blockIfNeeded()) return;
     setSending(true);
     const content = newMessage.trim();
     setNewMessage("");
@@ -603,6 +611,7 @@ export default function MessagesPage() {
   const threadUserId = requestTarget?.userId ?? activeConv?.other_user_id ?? null;
 
   async function deleteMessage(msgId: string) {
+    if (blockIfNeeded()) return;
     setDeletingId(msgId);
     await supabase.from("messages").delete().eq("id", msgId).eq("sender_id", userId!);
     setMessages((prev) => prev.filter((m) => m.id !== msgId));
@@ -619,6 +628,7 @@ export default function MessagesPage() {
 
   async function saveEditMessage() {
     if (!editingMsgId || savingEdit) return;
+    if (blockIfNeeded()) return;
     setSavingEdit(true);
     const trimmed = editContent.trim();
     await supabase.from("messages").update({ content: trimmed, gif_url: editGifUrl ?? null }).eq("id", editingMsgId).eq("sender_id", userId!);
@@ -628,6 +638,7 @@ export default function MessagesPage() {
 
   async function flagMessage(msg: Message) {
     if (flaggingId || !userId) return;
+    if (blockIfNeeded()) return;
     if (!window.confirm("Flag this message for admin review?")) return;
     setFlaggingId(msg.id);
     try {
@@ -906,6 +917,7 @@ export default function MessagesPage() {
           )}
         </div>
       </div>
+      <MemberPaywallModal open={paywallOpen} onClose={() => setPaywallOpen(false)} />
     </div>
   );
 }

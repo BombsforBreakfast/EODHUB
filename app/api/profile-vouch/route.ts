@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
+import { assertMemberInteractionAllowed } from "../../lib/memberSubscriptionServer";
 
 const VOUCHES_NEEDED = 3;
 
@@ -23,15 +24,22 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Voucher must be an approved member
+  const gate = await assertMemberInteractionAllowed(adminClient, user.id);
+  if (!gate.ok) {
+    return NextResponse.json({ error: gate.message }, { status: 403 });
+  }
+
+  // Voucher must be verified (is_approved and/or admin-verified members)
   const { data: voucher } = await adminClient
     .from("profiles")
-    .select("is_approved, first_name, last_name, display_name")
+    .select("is_approved, verification_status, first_name, last_name, display_name")
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!voucher?.is_approved) {
-    return NextResponse.json({ error: "Only approved members can vouch" }, { status: 403 });
+  const voucherOk =
+    voucher?.is_approved === true || voucher?.verification_status === "verified";
+  if (!voucherOk) {
+    return NextResponse.json({ error: "Only verified members can vouch" }, { status: 403 });
   }
 
   const { vouchee_user_id } = await req.json();
@@ -41,12 +49,17 @@ export async function POST(req: NextRequest) {
   // Check vouchee is actually pending
   const { data: vouchee } = await adminClient
     .from("profiles")
-    .select("is_approved, first_name, last_name, display_name, verification_status")
+    .select("first_name, last_name, display_name, verification_status, account_type")
     .eq("user_id", vouchee_user_id)
     .maybeSingle();
 
   if (!vouchee) return NextResponse.json({ error: "User not found" }, { status: 404 });
-  if (vouchee.is_approved) return NextResponse.json({ error: "User is already approved" }, { status: 409 });
+  if (vouchee.verification_status !== "pending") {
+    return NextResponse.json({ error: "User is not awaiting community verification" }, { status: 409 });
+  }
+  if (vouchee.account_type === "employer") {
+    return NextResponse.json({ error: "Employer accounts use a different approval flow" }, { status: 400 });
+  }
 
   // Upsert vouch (idempotent)
   const { error: vouchError } = await adminClient

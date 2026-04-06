@@ -30,6 +30,7 @@ export default function OnboardingPage() {
 
   // Referral
   const [referralInput, setReferralInput] = useState("");
+  const [subscriptionTermsAck, setSubscriptionTermsAck] = useState(false);
 
   useEffect(() => {
     async function check() {
@@ -101,6 +102,10 @@ export default function OnboardingPage() {
         alert("Please fill in all required fields.");
         return;
       }
+      if (!subscriptionTermsAck) {
+        alert("Please confirm you have read the subscription information.");
+        return;
+      }
     } else {
       if (!empFirstName || !empLastName || !companyName) {
         alert("Please fill in all required fields.");
@@ -121,6 +126,8 @@ export default function OnboardingPage() {
               skill_badge: skillBadge || null,
               years_experience: yearsExperience || null,
               verification_status: "pending",
+              is_approved: false,
+              subscription_terms_acknowledged_at: new Date().toISOString(),
             }
           : {
               account_type: "employer",
@@ -322,6 +329,23 @@ export default function OnboardingPage() {
                         {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
+                  </div>
+
+                  <div style={{ padding: "14px 16px", borderRadius: 12, border: "1px solid #e5e7eb", background: "#fafafa" }}>
+                    <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: "#111" }}>Subscription</div>
+                    <p style={{ margin: 0, fontSize: 13, color: "#444", lineHeight: 1.55 }}>
+                      EOD-HUB is a subscription app. Free launch window until 1 June 2026. After that, new members receive a free 7-day trial, then <strong>$1.99/month</strong>.
+                      If you signed up before 1 June, your trial period is aligned to that launch window and billing begins 8 June 2026 unless you subscribe sooner.
+                    </p>
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 14, cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#374151" }}>
+                      <input
+                        type="checkbox"
+                        checked={subscriptionTermsAck}
+                        onChange={(e) => setSubscriptionTermsAck(e.target.checked)}
+                        style={{ marginTop: 2, width: 18, height: 18, flexShrink: 0 }}
+                      />
+                      <span>I have read and agree to the subscription terms above.</span>
+                    </label>
                   </div>
                 </>
               )}

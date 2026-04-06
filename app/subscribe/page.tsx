@@ -84,8 +84,11 @@ export default function SubscribePage() {
         )}
 
         <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 20, padding: 36, marginBottom: 24 }}>
-          <div style={{ fontSize: 48, fontWeight: 900, letterSpacing: -2, lineHeight: 1 }}>$2</div>
+          <div style={{ fontSize: 48, fontWeight: 900, letterSpacing: -2, lineHeight: 1 }}>$1.99</div>
           <div style={{ fontSize: 16, color: t.textMuted, marginTop: 4, fontWeight: 600 }}>/month</div>
+          <div style={{ fontSize: 13, color: t.textFaint, marginTop: 12, lineHeight: 1.5 }}>
+            Free access through 1 June 2026. After that, new members get a 7-day trial, then billing unless you subscribed earlier.
+          </div>
 
           <div style={{ marginTop: 28, display: "grid", gap: 14, textAlign: "left" }}>
             {[
@@ -125,7 +128,7 @@ export default function SubscribePage() {
             }}
           >
             {loading && <span className="btn-spinner" />}
-            Subscribe for $2/month
+            Subscribe for $1.99/month
           </button>
 
           <div style={{ marginTop: 14, fontSize: 12, color: t.textFaint }}>
