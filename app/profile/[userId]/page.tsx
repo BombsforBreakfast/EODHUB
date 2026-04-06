@@ -1456,6 +1456,9 @@ export default function PublicProfilePage() {
               background: t.surface,
             }}
           >
+            {isOwnWall && (
+              <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} aria-hidden />
+            )}
             {isMobile ? (
               /* ── Mobile profile card layout ── */
               <div>
@@ -1479,7 +1482,6 @@ export default function PublicProfilePage() {
                         <span style={{ fontSize: 9, color: "white", fontWeight: 700 }}>{uploadingAvatar ? "..." : "Update"}</span>
                       </div>
                     )}
-                    {isOwnWall && <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} />}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>

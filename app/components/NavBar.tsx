@@ -56,7 +56,7 @@ export default function NavBar() {
   const [linkedAccounts, setLinkedAccounts] = useState<LinkedAccountsPayload | null>(null);
   const [linkedLoading, setLinkedLoading] = useState(false);
   const [switchingToId, setSwitchingToId] = useState<string | null>(null);
-  const accountAvatarRef = useRef<HTMLButtonElement>(null);
+  const accountGearRef = useRef<HTMLButtonElement>(null);
   const accountMenuRef = useRef<HTMLDivElement>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -148,6 +148,7 @@ export default function NavBar() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) {
       setLinkedAccounts(null);
+      setLinkedLoading(false);
       return;
     }
     setLinkedLoading(true);
@@ -167,6 +168,8 @@ export default function NavBar() {
         accounts: json.accounts ?? [],
         canSwitch: !!json.canSwitch,
       });
+    } catch {
+      setLinkedAccounts(null);
     } finally {
       setLinkedLoading(false);
     }
@@ -455,11 +458,11 @@ export default function NavBar() {
     };
   }, [showHub, isNarrowViewport]);
 
-  // Account avatar menu — outside click
+  // Account menu (gear) — outside click
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
       const target = e.target as Node;
-      if (!accountMenuRef.current?.contains(target) && !accountAvatarRef.current?.contains(target)) {
+      if (!accountMenuRef.current?.contains(target) && !accountGearRef.current?.contains(target)) {
         setShowAccountMenu(false);
       }
     }
@@ -552,14 +555,22 @@ export default function NavBar() {
           <EodCrabLogo variant="navMobile" />
         </Link>
         <div style={{ position: "relative", flexShrink: 0 }}>
-          <button
-            ref={accountAvatarRef}
-            type="button"
+          <Link
+            href={currentUserId ? `/profile/${currentUserId}` : "/login"}
             className="nav-avatar"
-            aria-expanded={showAccountMenu}
-            aria-haspopup="menu"
-            title="Account menu"
-            onClick={() => { setShowAccountMenu((v) => !v); setShowHub(false); }}
+            aria-label="My profile"
+            title="My profile"
+            onClick={async (e) => {
+              setShowHub(false);
+              if (!authLoaded) {
+                e.preventDefault();
+                return;
+              }
+              if (!currentUserId) return;
+              e.preventDefault();
+              await markProfileNotifsRead();
+              window.location.href = `/profile/${currentUserId}`;
+            }}
             style={{
               width: 38,
               height: 38,
@@ -575,6 +586,7 @@ export default function NavBar() {
               cursor: "pointer",
               padding: 0,
               overflow: "hidden",
+              textDecoration: "none",
             }}
           >
             {avatarPhotoUrl ? (
@@ -583,98 +595,13 @@ export default function NavBar() {
             ) : (
               userInitial
             )}
-          </button>
-          {showAccountMenu && currentUserId && (
-            <div
-              ref={accountMenuRef}
-              role="menu"
-              style={{
-                position: "absolute",
-                top: "calc(100% + 8px)",
-                left: 0,
-                minWidth: 272,
-                maxWidth: 320,
-                background: t.surface,
-                border: `1px solid ${t.border}`,
-                borderRadius: 12,
-                boxShadow: "0 12px 40px rgba(0,0,0,0.18)",
-                zIndex: 400,
-                padding: "10px 0",
-              }}
-            >
-              <Link
-                href="/profile"
-                role="menuitem"
-                onClick={() => setShowAccountMenu(false)}
-                style={{
-                  display: "block",
-                  padding: "10px 16px",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  color: t.text,
-                  textDecoration: "none",
-                }}
-              >
-                My Account
-              </Link>
-              <div style={{ height: 1, background: t.borderLight, margin: "6px 0" }} />
-              {linkedLoading && (
-                <div style={{ padding: "8px 16px", fontSize: 12, color: t.textMuted }}>Checking linked logins…</div>
-              )}
-              {!linkedLoading && linkedAccounts?.canSwitch && (
-                <>
-                  <div style={{ padding: "4px 16px 6px", fontSize: 10, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
-                    Same email — switch login
-                  </div>
-                  {(linkedAccounts.accounts ?? []).filter((a) => !a.isCurrent).map((a) => (
-                    <button
-                      key={a.userId}
-                      type="button"
-                      role="menuitem"
-                      disabled={!!switchingToId}
-                      onClick={() => switchToLinkedAccount(a.userId)}
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "10px 16px",
-                        border: "none",
-                        background: switchingToId === a.userId ? t.surfaceHover : "transparent",
-                        cursor: switchingToId ? "wait" : "pointer",
-                        fontSize: 13,
-                        color: t.text,
-                        fontWeight: 600,
-                      }}
-                    >
-                      {switchingToId === a.userId ? "Switching…" : a.label}
-                      <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 500, marginTop: 2 }}>{a.subtitle}</div>
-                    </button>
-                  ))}
-                  <div style={{ padding: "8px 16px 4px", fontSize: 11, color: t.textMuted, lineHeight: 1.45 }}>
-                    Prefer one login? Open <strong>My Account</strong> → Sign-In Methods to link Google and email on a single account.
-                  </div>
-                </>
-              )}
-              {!linkedLoading && linkedAccounts && !linkedAccounts.canSwitch && (
-                <div style={{ padding: "6px 16px 10px", fontSize: 11, color: t.textMuted, lineHeight: 1.45 }}>
-                  One login for this email. You can add Google or email sign-in under <strong>My Account</strong> → Sign-In Methods.
-                </div>
-              )}
-            </div>
+          </Link>
+          {currentUserId && unreadProfileNotifs > 0 && (
+            <span style={{ position: "absolute", top: -4, right: -4, zIndex: 2, pointerEvents: "none" }}>
+              {badge(unreadProfileNotifs)}
+            </span>
           )}
         </div>
-
-        {currentUserId && (
-          <a
-            href={`/profile/${currentUserId}`}
-            onClick={async (e) => { e.preventDefault(); await markProfileNotifsRead(); window.location.href = `/profile/${currentUserId}`; }}
-            className="nav-btn nav-profile-link"
-            style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
-          >
-            My Profile
-            {unreadProfileNotifs > 0 && badge(unreadProfileNotifs)}
-          </a>
-        )}
 
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Units</Link>
@@ -826,7 +753,110 @@ export default function NavBar() {
       {/* Right: logout */}
       <div className="nav-right" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
         {!authLoaded ? null : currentUserId ? (
-          <button onClick={handleLogout} className="nav-logout" style={{ ...navButton, cursor: "pointer" }}>Log Out</button>
+          <>
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                ref={accountGearRef}
+                type="button"
+                className="nav-btn nav-account-settings"
+                aria-expanded={showAccountMenu}
+                aria-haspopup="menu"
+                aria-label="My account menu"
+                title="My account"
+                onClick={() => {
+                  setShowAccountMenu((v) => !v);
+                  setShowHub(false);
+                  setShowSearchDropdown(false);
+                }}
+                style={{ ...navButton, display: "flex", alignItems: "center", justifyContent: "center", padding: "10px 12px", cursor: "pointer" }}
+              >
+                <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .55.22 1.05.59 1.41.37.37.86.59 1.41.59H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </button>
+              {showAccountMenu && currentUserId && (
+                <div
+                  ref={accountMenuRef}
+                  role="menu"
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 8px)",
+                    right: 0,
+                    left: "auto",
+                    minWidth: 272,
+                    maxWidth: 320,
+                    background: t.surface,
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 12,
+                    boxShadow: "0 12px 40px rgba(0,0,0,0.18)",
+                    zIndex: 400,
+                    padding: "10px 0",
+                  }}
+                >
+                  <Link
+                    href="/profile"
+                    role="menuitem"
+                    onClick={() => setShowAccountMenu(false)}
+                    style={{
+                      display: "block",
+                      padding: "10px 16px",
+                      fontWeight: 700,
+                      fontSize: 14,
+                      color: t.text,
+                      textDecoration: "none",
+                    }}
+                  >
+                    My Account
+                  </Link>
+                  <div style={{ height: 1, background: t.borderLight, margin: "6px 0" }} />
+                  {linkedLoading && (
+                    <div style={{ padding: "8px 16px", fontSize: 12, color: t.textMuted }}>Checking linked logins…</div>
+                  )}
+                  {!linkedLoading && linkedAccounts?.canSwitch && (
+                    <>
+                      <div style={{ padding: "4px 16px 6px", fontSize: 10, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                        Same email — switch login
+                      </div>
+                      {(linkedAccounts.accounts ?? []).filter((a) => !a.isCurrent).map((a) => (
+                        <button
+                          key={a.userId}
+                          type="button"
+                          role="menuitem"
+                          disabled={!!switchingToId}
+                          onClick={() => switchToLinkedAccount(a.userId)}
+                          style={{
+                            display: "block",
+                            width: "100%",
+                            textAlign: "left",
+                            padding: "10px 16px",
+                            border: "none",
+                            background: switchingToId === a.userId ? t.surfaceHover : "transparent",
+                            cursor: switchingToId ? "wait" : "pointer",
+                            fontSize: 13,
+                            color: t.text,
+                            fontWeight: 600,
+                          }}
+                        >
+                          {switchingToId === a.userId ? "Switching…" : a.label}
+                          <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 500, marginTop: 2 }}>{a.subtitle}</div>
+                        </button>
+                      ))}
+                      <div style={{ padding: "8px 16px 4px", fontSize: 11, color: t.textMuted, lineHeight: 1.45 }}>
+                        Prefer one login? Open <strong>My Account</strong> → Sign-In Methods to link Google and email on a single account.
+                      </div>
+                    </>
+                  )}
+                  {!linkedLoading && linkedAccounts && !linkedAccounts.canSwitch && (
+                    <div style={{ padding: "6px 16px 10px", fontSize: 11, color: t.textMuted, lineHeight: 1.45 }}>
+                      One login for this email. You can add Google or email sign-in under <strong>My Account</strong> → Sign-In Methods.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <button onClick={handleLogout} className="nav-logout" style={{ ...navButton, cursor: "pointer" }}>Log Out</button>
+          </>
         ) : (
           <Link href="/login" className="nav-logout" style={navButton}>Log In</Link>
         )}

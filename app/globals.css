@@ -143,9 +143,14 @@ button:active, a.nav-btn:active {
     font-size: 12px !important;
     border-radius: 8px !important;
   }
+  .nav-account-settings {
+    padding: 6px 9px !important;
+    font-size: 12px !important;
+    border-radius: 8px !important;
+    min-width: unset !important;
+  }
 
   /* Hide from row 1 on mobile — live in hub panel instead */
-  .nav-profile-link  { display: none !important; }
   .nav-admin         { display: none !important; }
   .nav-events        { display: none !important; }
   .nav-messages-btn  { display: none !important; }
