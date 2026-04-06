@@ -228,8 +228,7 @@ export async function POST(
     .eq("user_id", user.id)
     .maybeSingle();
 
-  const appAdmin = await fetchProfileIsAppAdmin(adminClient, user.id);
-  if ((!membership || membership.status !== "approved") && !appAdmin) {
+  if (!membership || membership.status !== "approved") {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

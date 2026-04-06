@@ -65,10 +65,17 @@ export async function POST(req: NextRequest) {
     patch.company_website = companyWebsiteRaw.trim();
   }
 
-  const { error } = await adminClient.from("profiles").update(patch).eq("user_id", targetUserId);
+  const { data: updated, error } = await adminClient
+    .from("profiles")
+    .update(patch)
+    .eq("user_id", targetUserId)
+    .select("user_id");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+  if (!updated || updated.length === 0) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
   return NextResponse.json({ success: true });

@@ -32,12 +32,11 @@ export async function POST(req: NextRequest) {
   // Voucher must be verified (is_approved and/or admin-verified members)
   const { data: voucher } = await adminClient
     .from("profiles")
-    .select("is_approved, verification_status, first_name, last_name, display_name, is_admin")
+    .select("is_approved, verification_status, first_name, last_name, display_name")
     .eq("user_id", user.id)
     .maybeSingle();
 
   const voucherOk =
-    voucher?.is_admin === true ||
     voucher?.is_approved === true ||
     voucher?.verification_status === "verified";
   if (!voucherOk) {

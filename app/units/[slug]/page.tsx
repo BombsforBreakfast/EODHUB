@@ -389,10 +389,11 @@ export default function UnitPage() {
 
   // ── Styles ───────────────────────────────────────────────────────────────
 
-  const wallAccess = membership?.status === "approved" || isAppAdmin;
+  const isMember = membership?.status === "approved";
+  const wallAccess = isMember || isAppAdmin;
   const isGod =
     isAppAdmin ||
-    (membership?.status === "approved" && (membership.role === "owner" || membership.role === "admin"));
+    (isMember && (membership.role === "owner" || membership.role === "admin"));
   const photos = posts.filter((p) => p.photo_url && p.post_type === "post");
 
   const inputStyle: React.CSSProperties = {
@@ -477,9 +478,9 @@ export default function UnitPage() {
                     Request to Join
                   </button>
                 )}
-                {isAppAdmin && (
+                {isAppAdmin && !isMember && (
                   <span style={{ background: isDark ? "#3d2a00" : "#fef3c7", color: "#92400e", borderRadius: 10, padding: "9px 14px", fontSize: 12, fontWeight: 800 }}>
-                    App admin — full unit access
+                    Audit mode — read &amp; delete only
                   </span>
                 )}
                 {membership?.status === "pending" && !isAppAdmin && (
@@ -487,12 +488,12 @@ export default function UnitPage() {
                     Request pending
                   </div>
                 )}
-                {wallAccess && isGod && (
+                {isMember && isGod && (
                   <button onClick={openInviteModal} style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
                     Invite Members
                   </button>
                 )}
-                {wallAccess && !isGod && (
+                {isMember && !isGod && (
                   <button onClick={openInviteModal} style={{ background: t.badgeBg, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                     Invite
                   </button>
@@ -545,8 +546,8 @@ export default function UnitPage() {
             {/* WALL TAB */}
             {activeTab === "wall" && (
               <div style={{ display: "grid", gap: 16 }}>
-                {/* Post composer */}
-                <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                {/* Post composer — members only */}
+                {isMember && <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                   <textarea
                     value={postInput}
                     onChange={(e) => setPostInput(e.target.value)}
@@ -593,7 +594,7 @@ export default function UnitPage() {
                       Post
                     </button>
                   </div>
-                </div>
+                </div>}
 
                 {/* Posts */}
                 {posts.length === 0 && (
@@ -628,6 +629,7 @@ export default function UnitPage() {
                       onToggleLike={() => toggleLike(post.id)}
                       onToggleComments={() => toggleComments(post.id)}
                       onSubmitComment={() => submitComment(post.id)}
+                      canInteract={isMember}
                     />
                   );
                 })}
@@ -889,7 +891,7 @@ function JoinRequestCard({ post, isGod, currentUserId, onVote, onApprove, onDeny
   );
 }
 
-function PostCard({ post, t, comments, commentInput, onCommentInputChange, expanded, onToggleLike, onToggleComments, onSubmitComment }: {
+function PostCard({ post, t, comments, commentInput, onCommentInputChange, expanded, onToggleLike, onToggleComments, onSubmitComment, canInteract = true }: {
   post: UnitPost; t: ThemeTokens;
   comments: Comment[] | undefined;
   commentInput: string;
@@ -898,6 +900,7 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
   onToggleLike: () => void;
   onToggleComments: () => void;
   onSubmitComment: () => void;
+  canInteract?: boolean;
 }) {
   const [submittingComment, setSubmittingComment] = useState(false);
   return (
@@ -920,19 +923,28 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
 
       {/* Like / Comment bar */}
       <div style={{ display: "flex", gap: 16, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${t.borderLight}` }}>
-        <button
-          onClick={onToggleLike}
-          style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: post.user_liked ? "#ef4444" : t.textMuted, padding: 0 }}
-        >
-          <span style={{ fontSize: 15 }}>{post.user_liked ? "❤️" : "🤍"}</span>
-          {post.like_count > 0 && post.like_count}
-        </button>
-        <button
-          onClick={onToggleComments}
-          style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: t.textMuted, padding: 0 }}
-        >
-          💬 {post.comment_count > 0 ? post.comment_count : "Comment"}
-        </button>
+        {canInteract ? (
+          <>
+            <button
+              onClick={onToggleLike}
+              style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: post.user_liked ? "#ef4444" : t.textMuted, padding: 0 }}
+            >
+              <span style={{ fontSize: 15 }}>{post.user_liked ? "❤️" : "🤍"}</span>
+              {post.like_count > 0 && post.like_count}
+            </button>
+            <button
+              onClick={onToggleComments}
+              style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: t.textMuted, padding: 0 }}
+            >
+              💬 {post.comment_count > 0 ? post.comment_count : "Comment"}
+            </button>
+          </>
+        ) : (
+          <span style={{ fontSize: 13, color: t.textMuted }}>
+            {post.like_count > 0 && `❤️ ${post.like_count}  `}
+            {post.comment_count > 0 && `💬 ${post.comment_count}`}
+          </span>
+        )}
       </div>
 
       {/* Comments */}
@@ -950,7 +962,7 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
               </div>
             </div>
           ))}
-          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+          {canInteract && <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
             <input
               value={commentInput}
               onChange={(e) => onCommentInputChange(e.target.value)}
@@ -966,7 +978,7 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
               {submittingComment && <span className="btn-spinner" />}
               Send
             </button>
-          </div>
+          </div>}
         </div>
       )}
     </div>

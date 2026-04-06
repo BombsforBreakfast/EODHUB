@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  const inactiveDays = parseEnvInt("REENGAGEMENT_INACTIVE_DAYS", 2);
+  const inactiveDays = parseEnvInt("REENGAGEMENT_INACTIVE_DAYS", 14);
   const statsWindowDays = parseEnvInt("REENGAGEMENT_STATS_WINDOW_DAYS", 7);
   const cooldownDays = parseEnvInt("REENGAGEMENT_EMAIL_COOLDOWN_DAYS", 10);
 

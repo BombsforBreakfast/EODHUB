@@ -1,15 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 import { useTheme } from "../lib/ThemeContext";
+import { supabase } from "../lib/lib/supabaseClient";
 
 type Mode = "none" | "trial" | "onboarding";
 
 export default function PaywallPreviewClient() {
   const { t, isDark } = useTheme();
   const [mode, setMode] = useState<Mode>("none");
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (!data.user) { window.location.href = "/login"; return; }
+      supabase.from("profiles").select("is_admin").eq("user_id", data.user.id).maybeSingle().then(({ data: p }) => {
+        if (!p?.is_admin) { window.location.href = "/"; return; }
+        setReady(true);
+      });
+    });
+  }, []);
+
+  if (!ready) return null;
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text, padding: 24 }}>
