@@ -36,7 +36,9 @@ export async function POST(req: NextRequest) {
     .eq("user_id", user.id)
     .maybeSingle();
 
+  const isFounder = process.env.FOUNDER_USER_ID === user.id;
   const voucherOk =
+    isFounder ||
     voucher?.is_approved === true ||
     voucher?.verification_status === "verified";
   if (!voucherOk) {
@@ -88,7 +90,7 @@ export async function POST(req: NextRequest) {
       .eq("user_id", vouchee_user_id);
     approved = true;
 
-    const voucherName = voucher.display_name || `${voucher.first_name ?? ""} ${voucher.last_name ?? ""}`.trim() || "A member";
+    const voucherName = voucher?.display_name || `${voucher?.first_name ?? ""} ${voucher?.last_name ?? ""}`.trim() || "A member";
 
     // In-app notification
     await adminClient.from("notifications").insert({
