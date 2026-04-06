@@ -172,7 +172,7 @@ export default function UnitsPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "24px 16px" }}>
+      <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" }}>
         <NavBar />
 
         {/* Header */}
@@ -213,7 +213,7 @@ export default function UnitsPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Search units..."
+              placeholder="Search groups..."
               style={{ border: "none", outline: "none", fontSize: 15, width: "100%", background: "transparent", color: t.text }}
             />
           </div>

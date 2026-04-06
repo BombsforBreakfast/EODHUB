@@ -76,9 +76,38 @@ button:active, a.nav-btn:active {
 .nav-units-mobile { display: none; }
 .nav-hub-mobile   { display: none; }
 .nav-hub-panel    { display: none; }
-.nav-brand        { display: block; }
 /* Mobile-only home logo; hidden on desktop */
 .nav-logo-mobile  { display: none !important; }
+
+/* Desktop: three columns — links | centered brand | search + account */
+.nav-root {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 30px;
+  width: 100%;
+  box-sizing: border-box;
+}
+.nav-left {
+  justify-self: start;
+  min-width: 0;
+}
+.nav-trailing {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+  justify-self: end;
+}
+.nav-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-self: center;
+}
 
 /* Desktop: search row wrapper matches search bar sizing */
 .nav-search-row {
@@ -102,7 +131,9 @@ button:active, a.nav-btn:active {
     right: 0 !important;
     z-index: 1000 !important;
     background: var(--background) !important;
+    display: flex !important;
     flex-wrap: wrap !important;
+    justify-content: space-between !important;
     gap: 6px !important;
     margin-bottom: 10px !important;
     /* Align with typical page wrapper horizontal padding (e.g. 20px) so width matches pre-fixed layout */
@@ -156,10 +187,13 @@ button:active, a.nav-btn:active {
   .nav-messages-btn  { display: none !important; }
   .nav-units         { display: none !important; }
   .nav-directory     { display: none !important; }
-  /* Home is visible on mobile row 1 */
-  .nav-home          { display: flex !important; align-items: center !important; }
   /* Brand column hidden on mobile — replaced by compact logo in .nav-left */
   .nav-brand         { display: none !important; }
+
+  /* Unwrap trailing so search row + account stay in correct flex order */
+  .nav-trailing {
+    display: contents !important;
+  }
 
   .nav-logo-mobile {
     display: flex !important;

@@ -648,16 +648,20 @@ export default function MyAccountPage() {
             <ReportProblemButton inline />
           </div>
 
-          {/* Dark Mode Toggle */}
+          {/* Theme: default dark; toggle label shows the mode you switch to */}
           <div style={{ ...card, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Dark Mode</div>
-              <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>Black &amp; greyscale theme across all pages.</div>
+              <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{isDark ? "Light mode" : "Dark mode"}</div>
+              <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
+                {isDark
+                  ? "Switch to a light theme across all pages."
+                  : "Switch to the default dark theme across all pages."}
+              </div>
             </div>
             <button
               onClick={toggleDark}
               style={{ width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer", flexShrink: 0, background: isDark ? "#6366f1" : "#d1d5db", position: "relative", transition: "background 0.2s", padding: 0 }}
-              aria-label="Toggle dark mode"
+              aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
             >
               <span style={{ position: "absolute", top: 3, left: isDark ? 27 : 3, width: 22, height: 22, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s", display: "block" }} />
             </button>

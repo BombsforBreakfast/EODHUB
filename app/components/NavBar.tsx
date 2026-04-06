@@ -433,19 +433,31 @@ export default function NavBar() {
       <div
         ref={navRootRef}
         className="nav-root"
-        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 30, flexWrap: "wrap", gap: 12 }}
       >
-      {/* Left: mobile logo (home) + avatar + nav links */}
+      {/* Left: mobile logo (home feed) + avatar + nav links */}
       <div className="nav-left" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <Link
-          href="/"
-          className="nav-logo-mobile"
-          aria-label="EOD HUB home"
-          title="Home"
-          style={{ flexShrink: 0, display: "flex", alignItems: "center", textDecoration: "none" }}
-        >
-          <EodCrabLogo variant="navMobile" />
-        </Link>
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <Link
+            href="/"
+            className="nav-logo-mobile"
+            aria-label="EOD HUB home — feed"
+            title="Home feed"
+            onClick={async (e) => {
+              if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+              e.preventDefault();
+              await markFeedNotifsRead();
+              window.location.href = "/";
+            }}
+            style={{ display: "flex", alignItems: "center", textDecoration: "none" }}
+          >
+            <EodCrabLogo variant="navMobile" />
+          </Link>
+          {unreadFeedNotifs > 0 && (
+            <span style={{ position: "absolute", top: -4, right: -6, zIndex: 2, pointerEvents: "none" }}>
+              {badge(unreadFeedNotifs)}
+            </span>
+          )}
+        </div>
         <div style={{ position: "relative", flexShrink: 0 }}>
           <Link
             href={currentUserId ? `/profile/${currentUserId}` : "/login"}
@@ -510,16 +522,6 @@ export default function NavBar() {
           </Link>
         )}
 
-        <Link
-          href="/"
-          onClick={async (e) => { e.preventDefault(); await markFeedNotifsRead(); window.location.href = "/"; }}
-          className="nav-btn nav-home"
-          style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
-        >
-          Home
-          {unreadFeedNotifs > 0 && badge(unreadFeedNotifs)}
-        </Link>
-
         {/* EOD Hub — mobile only */}
         <button
           ref={hubBtnRef}
@@ -545,25 +547,38 @@ export default function NavBar() {
         )}
       </div>
 
-      {/* Brand — desktop only; stacked logo + wordmark */}
+      {/* Brand — desktop only; centered; links to feed */}
       <Link
         href="/"
         className="nav-brand"
-        aria-label="EOD HUB home"
+        aria-label="EOD HUB home — feed"
+        title="Home feed"
+        onClick={async (e) => {
+          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+          e.preventDefault();
+          await markFeedNotifsRead();
+          window.location.href = "/";
+        }}
         style={{
           textDecoration: "none",
           color: t.text,
-          display: "flex",
           flexDirection: "column",
           alignItems: "center",
           gap: 6,
           lineHeight: 1,
+          position: "relative",
         }}
       >
         <EodCrabLogo variant="navDesktop" />
         <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: -0.5 }}>EOD HUB</div>
+        {unreadFeedNotifs > 0 && (
+          <span style={{ position: "absolute", top: -2, right: -12, zIndex: 2, pointerEvents: "none" }}>
+            {badge(unreadFeedNotifs)}
+          </span>
+        )}
       </Link>
 
+      <div className="nav-trailing">
       {/* Search bar row */}
       <div className="nav-search-row">
         <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "0 1 340px", minWidth: 200 }}>
@@ -668,6 +683,7 @@ export default function NavBar() {
           <Link href="/login" className="nav-logout" style={navButton}>Log In</Link>
         )}
       </div>
+      </div>
     </div>
 
       {typeof document !== "undefined" && isNarrowViewport && showHub
@@ -737,7 +753,6 @@ export default function NavBar() {
                 <div className="nav-hub-modal-grid">
                   {[
                     { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤", badge: unreadProfileNotifs, onNav: markProfileNotifsRead },
-                    { label: "Home", href: "/", emoji: "🏠", badge: unreadFeedNotifs, onNav: markFeedNotifsRead },
                     { label: "Jobs", href: "/?tab=jobs", emoji: "💼", badge: 0, onNav: null },
                     { label: "Businesses", href: "/?tab=businesses", emoji: "🏢", badge: 0, onNav: null },
                     { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },

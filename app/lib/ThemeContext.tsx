@@ -10,13 +10,13 @@ type ThemeContextType = {
 };
 
 const ThemeContext = createContext<ThemeContextType>({
-  isDark: false,
+  isDark: true,
   toggleDark: () => {},
-  t: lightTheme,
+  t: darkTheme,
 });
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(true);
   const themeDomReady = useRef(false);
 
   // Sync CSS variables on <html> with app theme so body background/text never disagree with useTheme().
@@ -25,10 +25,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (!themeDomReady.current) {
       themeDomReady.current = true;
       const stored = localStorage.getItem("eod-theme");
-      let next = false;
+      let next = true;
       if (stored === "dark") next = true;
       else if (stored === "light") next = false;
-      else next = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      else next = true;
       setIsDark(next);
       document.documentElement.dataset.theme = next ? "dark" : "light";
       document.body.dataset.dark = next ? "true" : "";
