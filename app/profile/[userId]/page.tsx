@@ -28,6 +28,7 @@ type Profile = {
   is_employer: boolean | null;
   employer_verified: boolean | null;
   company_website: string | null;
+  account_type: string | null;
 };
 
 type RawComment = {
@@ -294,7 +295,7 @@ export default function PublicProfilePage() {
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "user_id, display_name, first_name, last_name, bio, photo_url, role, resume_text, tech_types, verification_status, service, status, years_experience, skill_badge, referral_code, is_employer, employer_verified, company_website"
+        "user_id, display_name, first_name, last_name, bio, photo_url, role, resume_text, tech_types, verification_status, service, status, years_experience, skill_badge, referral_code, is_employer, employer_verified, company_website, account_type"
       )
       .eq("user_id", targetUserId)
       .maybeSingle();
@@ -1191,6 +1192,7 @@ export default function PublicProfilePage() {
 
   const pinnedPhotos = photos.filter((photo) => photo.is_pinned).slice(0, 4);
   const galleryPhotos = photos.filter((photo) => !photo.is_pinned);
+  const isStaffAdmin = profile?.account_type === "admin";
 
   return (
     <>
@@ -1464,11 +1466,14 @@ export default function PublicProfilePage() {
                   <div
                     onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
                     title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : isStaffAdmin ? undefined : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url
                       ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       : fullName[0]?.toUpperCase()}
+                    {isStaffAdmin && (
+                      <span style={{ position: "absolute", left: 0, right: 0, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.72)", color: "#fff", fontSize: 9, fontWeight: 900, letterSpacing: 0.5, textAlign: "center", lineHeight: 1.2, padding: "3px 0", pointerEvents: "none" }}>ADMIN</span>
+                    )}
                     {isOwnWall && (
                       <div
                         style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, opacity: uploadingAvatar ? 1 : 0, transition: "opacity 0.2s" }}
@@ -1488,6 +1493,11 @@ export default function PublicProfilePage() {
                       {profile.is_employer && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
                           {profile.employer_verified ? "✓ Employer" : "Employer"}
+                        </span>
+                      )}
+                      {isStaffAdmin && (
+                        <span style={{ background: "#111", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
+                          Staff admin
                         </span>
                       )}
                     </div>
@@ -1530,7 +1540,7 @@ export default function PublicProfilePage() {
                 {/* Profile details — full width below */}
                 <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
-                    <div><strong>Role:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "—")}</div>
+                    <div><strong>Role:</strong> {profile.is_employer ? "Employer Account" : isStaffAdmin ? "Staff admin" : (profile.role || "—")}</div>
                     <div><strong>Service:</strong> {profile.service || "—"}</div>
                     <div><strong>Status:</strong> {profile.status || "—"}</div>
                     <div><strong>Experience:</strong> {profile.years_experience || "—"}</div>
@@ -1559,11 +1569,14 @@ export default function PublicProfilePage() {
                   <div
                     onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
                     title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : isStaffAdmin ? undefined : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url ? (
                       <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     ) : ("Photo")}
+                    {isStaffAdmin && (
+                      <span style={{ position: "absolute", left: 0, right: 0, top: "50%", transform: "translateY(-50%)", background: "rgba(0,0,0,0.72)", color: "#fff", fontSize: 11, fontWeight: 900, letterSpacing: 0.5, textAlign: "center", lineHeight: 1.2, padding: "4px 0", pointerEvents: "none" }}>ADMIN</span>
+                    )}
                     {isOwnWall && (
                       <div
                         style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, opacity: uploadingAvatar ? 1 : 0, transition: "opacity 0.2s" }}
@@ -1583,6 +1596,11 @@ export default function PublicProfilePage() {
                       {profile.is_employer && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
                           {profile.employer_verified ? "✓ Employer" : "Employer"}
+                        </span>
+                      )}
+                      {isStaffAdmin && (
+                        <span style={{ background: "#111", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
+                          Staff admin
                         </span>
                       )}
                     </div>
@@ -1628,7 +1646,7 @@ export default function PublicProfilePage() {
                 {/* Profile details */}
                 <div style={{ flex: 1, color: t.textMuted, lineHeight: 1.8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
-                    <div><strong>Role:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
+                    <div><strong>Role:</strong> {profile.is_employer ? "Employer Account" : isStaffAdmin ? "Staff admin" : (profile.role || "Not added yet")}</div>
                     <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
                     <div><strong>Status:</strong> {profile.status || "Not added yet"}</div>
                     <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>

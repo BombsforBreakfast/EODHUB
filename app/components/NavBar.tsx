@@ -67,6 +67,8 @@ export default function NavBar() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [isAdmin, setIsAdmin] = useState(false);
+  /** Staff / business partner accounts (`account_type === "admin"`) — distinct badge on avatar. */
+  const [isStaffAdminAccount, setIsStaffAdminAccount] = useState(false);
   const [adminPendingTotal, setAdminPendingTotal] = useState(0);
 
   /** Mobile: reserve vertical space so fixed nav does not cover page content (height tracks hub/search). */
@@ -226,7 +228,7 @@ export default function NavBar() {
     async function loadNavProfile(uid: string) {
       const { data } = await supabase
         .from("profiles")
-        .select("first_name, display_name, photo_url, is_admin")
+        .select("first_name, display_name, photo_url, is_admin, account_type")
         .eq("user_id", uid)
         .maybeSingle();
       if (!mounted) return;
@@ -235,15 +237,18 @@ export default function NavBar() {
         display_name: string | null;
         photo_url: string | null;
         is_admin: boolean | null;
+        account_type: string | null;
       } | null;
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
       setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
+      setIsStaffAdminAccount(row?.account_type === "admin");
       if (row?.is_admin) {
         setIsAdmin(true);
         await refreshAdminPendingBadge();
       } else {
         setIsAdmin(false);
         setAdminPendingTotal(0);
+        setIsStaffAdminAccount(false);
       }
     }
 
@@ -265,6 +270,7 @@ export default function NavBar() {
         setAvatarPhotoUrl(null);
         setLinkedAccounts(null);
         setIsAdmin(false);
+        setIsStaffAdminAccount(false);
         setAdminPendingTotal(0);
       }
     }
@@ -285,6 +291,7 @@ export default function NavBar() {
         setLinkedAccounts(null);
         setAvatarPhotoUrl(null);
         setIsAdmin(false);
+        setIsStaffAdminAccount(false);
         setAdminPendingTotal(0);
         setUserInitial("?");
       }
@@ -575,13 +582,36 @@ export default function NavBar() {
               cursor: "pointer",
               padding: 0,
               overflow: "hidden",
+              position: "relative",
             }}
           >
             {avatarPhotoUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- user-uploaded profile photo URL
-              <img src={avatarPhotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <img src={avatarPhotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
             ) : (
               userInitial
+            )}
+            {isStaffAdminAccount && (
+              <span
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  background: "rgba(0,0,0,0.72)",
+                  color: "#fff",
+                  fontSize: 8,
+                  fontWeight: 900,
+                  letterSpacing: 0.4,
+                  textAlign: "center",
+                  lineHeight: 1.2,
+                  padding: "2px 0",
+                  pointerEvents: "none",
+                }}
+              >
+                ADMIN
+              </span>
             )}
           </button>
           {showAccountMenu && currentUserId && (

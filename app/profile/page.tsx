@@ -663,8 +663,8 @@ export default function MyAccountPage() {
             </button>
           </div>
 
-          {/* Seeking Employment Toggle — members only */}
-          {!profile?.is_employer && (
+          {/* Seeking Employment Toggle — members only (not staff admin) */}
+          {!profile?.is_employer && profile?.account_type !== "admin" && (
             <div style={{ ...card, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Open to Opportunities</div>
@@ -686,7 +686,7 @@ export default function MyAccountPage() {
       )}
 
       {/* Billing Card — employers are always free, members/businesses show subscription status */}
-      {!loading && profile?.account_type !== "employer" && (
+      {!loading && profile?.account_type !== "employer" && profile?.account_type !== "admin" && (
         <div style={{ marginTop: 16 }}>
           <BillingCard subscriptionStatus={profile?.subscription_status ?? null} />
         </div>

@@ -22,11 +22,11 @@ export default function SubscribePage() {
         .select("verification_status, account_type, service, company_name, is_admin")
         .eq("user_id", user.id)
         .maybeSingle();
-      if (!p || ((!p.service && !p.company_name) && !p.is_admin)) {
+      if (!p || ((!p.service && !p.company_name) && !p.is_admin && p.account_type !== "admin")) {
         window.location.href = "/onboarding";
         return;
       }
-      if (p.account_type === "employer") {
+      if (p.account_type === "employer" || p.account_type === "admin") {
         window.location.href = "/";
         return;
       }

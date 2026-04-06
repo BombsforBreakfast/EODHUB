@@ -94,7 +94,7 @@ export async function GET(req: NextRequest) {
     const { data: profiles } = await admin
       .from("profiles")
       .select(
-        "user_id, first_name, verification_status, reengagement_email_sent_at"
+        "user_id, first_name, verification_status, reengagement_email_sent_at, account_type"
       )
       .in("user_id", candidateIds);
 
@@ -103,6 +103,7 @@ export async function GET(req: NextRequest) {
       first_name: string | null;
       verification_status: string | null;
       reengagement_email_sent_at: string | null;
+      account_type: string | null;
     };
 
     const profileByUser = new Map<string, ProfileRow>(
@@ -127,6 +128,10 @@ export async function GET(req: NextRequest) {
         continue;
       }
       if (row.verification_status !== "verified") {
+        skipped++;
+        continue;
+      }
+      if (row.account_type === "admin") {
         skipped++;
         continue;
       }

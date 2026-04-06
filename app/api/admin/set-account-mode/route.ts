@@ -43,6 +43,19 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
+  const { data: targetRow } = await adminClient
+    .from("profiles")
+    .select("account_type")
+    .eq("user_id", targetUserId)
+    .maybeSingle();
+
+  if (targetRow?.account_type === "admin") {
+    return NextResponse.json(
+      { error: "Staff admin accounts cannot be switched with this control." },
+      { status: 400 }
+    );
+  }
+
   const patch: Record<string, unknown> =
     mode === "member"
       ? {

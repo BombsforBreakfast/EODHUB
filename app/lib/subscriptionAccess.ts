@@ -37,6 +37,7 @@ export function memberHasInteractionAccess(input: MemberAccessInput): boolean {
   const now = input.now ?? new Date();
   if (input.isAdmin) return true;
   if (input.accountType === "employer") return true;
+  if (input.accountType === "admin") return true;
 
   const status = input.subscriptionStatus ?? null;
   if (status === "active" || status === "trialing") return true;

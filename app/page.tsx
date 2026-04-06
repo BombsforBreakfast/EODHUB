@@ -2131,7 +2131,8 @@ export default function HomePage() {
           profileCheck &&
           !profileCheck.service &&
           !profileCheck.company_name &&
-          !profileCheck.is_admin
+          !profileCheck.is_admin &&
+          profileCheck.account_type !== "admin"
         ) {
           window.location.href = "/onboarding";
           return;

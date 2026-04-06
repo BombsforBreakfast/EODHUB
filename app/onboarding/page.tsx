@@ -80,6 +80,11 @@ export default function OnboardingPage() {
         .eq("user_id", user.id)
         .maybeSingle();
 
+      if (profile?.account_type === "admin") {
+        window.location.href = "/";
+        return;
+      }
+
       if (profile?.verification_status === "verified" && (profile?.service || profile?.company_name)) {
         window.location.href = "/";
         return;

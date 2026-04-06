@@ -37,6 +37,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Employer accounts do not require a subscription." }, { status: 400 });
   }
 
+  if (profile?.account_type === "admin") {
+    return NextResponse.json({ error: "Staff admin accounts do not require a subscription." }, { status: 400 });
+  }
+
   if (profile?.verification_status !== "verified" && !profile?.is_admin) {
     return NextResponse.json(
       { error: "Your account must be approved before you can subscribe. You’ll get an email when access is granted." },

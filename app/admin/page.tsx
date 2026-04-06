@@ -49,6 +49,7 @@ type UserProfile = {
   role: string | null;
   service: string | null;
   verification_status: string | null;
+  /** `admin` = staff / partner account (invite-only signup), not shown on public onboarding. */
   account_type: string | null;
   is_admin: boolean | null;
   is_employer: boolean | null;
@@ -169,6 +170,9 @@ export default function AdminPage() {
     targetEmployer: boolean;
     companyWebsite: string;
   } | null>(null);
+  const [staffSignupUrl, setStaffSignupUrl] = useState<string | null>(null);
+  const [staffSignupErr, setStaffSignupErr] = useState<string | null>(null);
+  const [staffCopied, setStaffCopied] = useState(false);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [batchActing, setBatchActing] = useState(false);
 const [memWizUrl, setMemWizUrl] = useState("");
@@ -396,6 +400,31 @@ const [memWizUrl, setMemWizUrl] = useState("");
     if (activeTab === "reports") loadBugReports();
     if (activeTab === "directory") loadDirectory();
   }, [pendingOnly, activeTab, authorized]);
+
+  useEffect(() => {
+    if (!authorized) return;
+    let cancelled = false;
+    (async () => {
+      setStaffSignupErr(null);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token || cancelled) return;
+      const res = await fetch("/api/admin/staff-signup-link", {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const j = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (cancelled) return;
+      if (!res.ok) {
+        setStaffSignupUrl(null);
+        setStaffSignupErr(j.error ?? "Could not load staff signup link.");
+      } else {
+        setStaffSignupUrl(j.url ?? null);
+        setStaffSignupErr(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [authorized]);
 
   useEffect(() => {
     function check() {
@@ -1181,6 +1210,45 @@ const [memWizUrl, setMemWizUrl] = useState("");
           </label>
         </div>
 
+        {/* Staff signup link (founder only — same idea as referral link on My Account) */}
+        {staffSignupUrl && (
+          <div style={{ marginTop: 20, border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 20 }}>
+            <div style={{ fontWeight: 900, fontSize: 15, marginBottom: 4, color: t.text }}>Staff admin signup link</div>
+            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
+              Share only with trusted partners. Not shown on the public login page. Anyone with this URL can create a verified staff admin account — treat it like a password.
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: 0, background: t.bg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: t.text }} title={staffSignupUrl}>
+                {(() => {
+                  try {
+                    const u = new URL(staffSignupUrl);
+                    return `${u.hostname}${u.pathname}${u.search}`;
+                  } catch {
+                    return staffSignupUrl;
+                  }
+                })()}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(staffSignupUrl).then(() => {
+                    setStaffCopied(true);
+                    window.setTimeout(() => setStaffCopied(false), 2000);
+                  });
+                }}
+                style={{ background: staffCopied ? "#16a34a" : "#111", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", flexShrink: 0, transition: "background 0.2s" }}
+              >
+                {staffCopied ? "Copied!" : "Copy"}
+              </button>
+            </div>
+          </div>
+        )}
+        {staffSignupErr && !staffSignupUrl && !/founder/i.test(staffSignupErr) && (
+          <div style={{ marginTop: 16, fontSize: 13, color: "#b45309", fontWeight: 600, lineHeight: 1.5 }}>
+            {staffSignupErr}
+          </div>
+        )}
+
         {/* ── BUSINESSES TAB ── */}
         {activeTab === "businesses" && (
           <div style={{ marginTop: 20 }}>
@@ -1513,7 +1581,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{name}</span>
                         {u.is_admin && <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>ADMIN</span>}
-                        {employerOn ? (
+                        {u.account_type === "admin" ? (
+                          <span style={{ background: "#111", color: "white", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>Staff admin</span>
+                        ) : employerOn ? (
                           <span style={{ background: u.employer_verified ? "#dbeafe" : "#e5e7eb", color: u.employer_verified ? "#1e40af" : "#374151", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>
                             {u.employer_verified ? "✓ Employer" : "Employer"}
                           </span>
@@ -1560,72 +1630,78 @@ const [memWizUrl, setMemWizUrl] = useState("");
                         </button>
                       )}
 
-                      {/* Account type: User ↔ Employer */}
-                      <div
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          gap: 8,
-                          padding: "4px 10px",
-                          borderRadius: 12,
-                          border: `1px solid ${t.border}`,
-                          background: t.bg,
-                        }}
-                        title="Member vs employer account mode"
-                      >
-                        <span
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 800,
-                            color: !employerOn ? t.text : t.textMuted,
-                            userSelect: "none",
-                          }}
-                        >
-                          User
+                      {/* Account type: User ↔ Employer (not for invite-only staff accounts) */}
+                      {u.account_type === "admin" ? (
+                        <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600, padding: "6px 10px" }} title="Staff accounts use the separate invite link; do not switch to Member/Employer here.">
+                          Staff account
                         </span>
-                        <button
-                          type="button"
-                          role="switch"
-                          aria-checked={employerOn}
-                          aria-label={employerOn ? "Account is employer; click to switch to member" : "Account is user; click to switch to employer"}
-                          disabled={actionLoading === u.user_id + "-acctmode"}
-                          onClick={() => openAccountModeToggle(u)}
+                      ) : (
+                        <div
                           style={{
-                            width: 44,
-                            height: 24,
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            padding: "4px 10px",
                             borderRadius: 12,
-                            border: `1px solid ${employerOn ? "#1e3a8a" : t.border}`,
-                            background: employerOn ? "#1e40af" : "#e5e7eb",
-                            position: "relative",
-                            cursor: actionLoading === u.user_id + "-acctmode" ? "wait" : "pointer",
-                            padding: 0,
-                            flexShrink: 0,
+                            border: `1px solid ${t.border}`,
+                            background: t.bg,
                           }}
+                          title="Member vs employer account mode"
                         >
                           <span
                             style={{
-                              position: "absolute",
-                              top: 2,
-                              left: employerOn ? 22 : 2,
-                              width: 18,
-                              height: 18,
-                              borderRadius: "50%",
-                              background: "white",
-                              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: !employerOn ? t.text : t.textMuted,
+                              userSelect: "none",
                             }}
-                          />
-                        </button>
-                        <span
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 800,
-                            color: employerOn ? t.text : t.textMuted,
-                            userSelect: "none",
-                          }}
-                        >
-                          Employer
-                        </span>
-                      </div>
+                          >
+                            User
+                          </span>
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={employerOn}
+                            aria-label={employerOn ? "Account is employer; click to switch to member" : "Account is user; click to switch to employer"}
+                            disabled={actionLoading === u.user_id + "-acctmode"}
+                            onClick={() => openAccountModeToggle(u)}
+                            style={{
+                              width: 44,
+                              height: 24,
+                              borderRadius: 12,
+                              border: `1px solid ${employerOn ? "#1e3a8a" : t.border}`,
+                              background: employerOn ? "#1e40af" : "#e5e7eb",
+                              position: "relative",
+                              cursor: actionLoading === u.user_id + "-acctmode" ? "wait" : "pointer",
+                              padding: 0,
+                              flexShrink: 0,
+                            }}
+                          >
+                            <span
+                              style={{
+                                position: "absolute",
+                                top: 2,
+                                left: employerOn ? 22 : 2,
+                                width: 18,
+                                height: 18,
+                                borderRadius: "50%",
+                                background: "white",
+                                boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                              }}
+                            />
+                          </button>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: employerOn ? t.text : t.textMuted,
+                              userSelect: "none",
+                            }}
+                          >
+                            Employer
+                          </span>
+                        </div>
+                      )}
 
                       {/* Admin toggle */}
                       <button
