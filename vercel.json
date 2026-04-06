@@ -11,6 +11,10 @@
     {
       "path": "/api/admin-pending-alert",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/reengagement-email",
+      "schedule": "0 9 * * *"
     }
   ]
 }
