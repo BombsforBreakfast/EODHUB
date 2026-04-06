@@ -49,6 +49,7 @@ type UserProfile = {
   role: string | null;
   service: string | null;
   verification_status: string | null;
+  account_type: string | null;
   is_admin: boolean | null;
   is_employer: boolean | null;
   employer_verified: boolean | null;
@@ -162,6 +163,12 @@ export default function AdminPage() {
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  /** User ↔ Employer switch: confirm in modal (optional company website when enabling employer). */
+  const [accountModeDialog, setAccountModeDialog] = useState<{
+    user: UserProfile;
+    targetEmployer: boolean;
+    companyWebsite: string;
+  } | null>(null);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [batchActing, setBatchActing] = useState(false);
 const [memWizUrl, setMemWizUrl] = useState("");
@@ -210,6 +217,57 @@ const [memWizUrl, setMemWizUrl] = useState("");
     setConfirmDialog({ message, onConfirm });
   }
 
+  function isEmployerAccount(u: UserProfile): boolean {
+    return u.is_employer === true || u.account_type === "employer";
+  }
+
+  function openAccountModeToggle(u: UserProfile) {
+    const nextEmployer = !isEmployerAccount(u);
+    setAccountModeDialog({
+      user: u,
+      targetEmployer: nextEmployer,
+      companyWebsite: nextEmployer ? "https://" : "",
+    });
+  }
+
+  async function submitAccountMode() {
+    if (!accountModeDialog) return;
+    const { user, targetEmployer, companyWebsite } = accountModeDialog;
+    setActionLoading(user.user_id + "-acctmode");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const payload: Record<string, unknown> = {
+        targetUserId: user.user_id,
+        mode: targetEmployer ? "employer" : "member",
+      };
+      if (
+        targetEmployer &&
+        companyWebsite.trim() &&
+        companyWebsite.trim() !== "https://"
+      ) {
+        payload.company_website = companyWebsite.trim();
+      }
+      const res = await fetch("/api/admin/set-account-mode", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert((json as { error?: string }).error ?? "Update failed");
+      } else {
+        showToast(targetEmployer ? "Switched to employer account." : "Switched to member account.");
+        setAccountModeDialog(null);
+        await loadUsers();
+      }
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   async function loadPendingCounts() {
     const next = await fetchAdminPendingBreakdown(supabase);
     setPendingCounts(next);
@@ -246,7 +304,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       // Fallback: direct query (works if RLS allows admin to read all profiles)
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
+        .select("user_id, first_name, last_name, display_name, role, service, verification_status, account_type, is_admin, is_employer, employer_verified, created_at")
         .order("created_at", { ascending: false });
       if (!error) setUsers((data ?? []).map((u) => ({ ...u, email: null })) as UserProfile[]);
       return;
@@ -551,21 +609,6 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function toggleAdmin(userId: string, current: boolean | null) {
     if (!confirm(`${current ? "Remove" : "Grant"} admin access for this user?`)) return;
     await setProfileFlag(userId, "is_admin", !current, userId + "-admin", current ? "Admin removed." : "Admin granted!");
-  }
-
-  async function toggleEmployer(userId: string, current: boolean | null) {
-    let extraFields: Record<string, string> | undefined;
-    if (!current) {
-      const url = window.prompt("Company website URL (optional):", "https://");
-      if (url !== null && url.trim() && url.trim() !== "https://") {
-        extraFields = { company_website: url.trim() };
-      }
-    }
-    await setProfileFlag(userId, "is_employer", !current, userId + "-employer", !current ? "Employer status granted." : "Employer status removed.", extraFields);
-  }
-
-  async function toggleEmployerVerified(userId: string, current: boolean | null) {
-    await setProfileFlag(userId, "employer_verified", !current, userId + "-empverify", !current ? "Employer verified!" : "Verification removed.");
   }
 
   async function dismissFlag(id: string) {
@@ -1028,6 +1071,71 @@ const [memWizUrl, setMemWizUrl] = useState("");
         </div>
       )}
 
+      {accountModeDialog && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: t.surface, borderRadius: 16, padding: "28px 32px", maxWidth: 440, width: "100%", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 10, color: t.text }}>
+              {accountModeDialog.targetEmployer ? "Switch to employer account?" : "Switch to member account?"}
+            </div>
+            <div style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.5, marginBottom: 18 }}>
+              {accountModeDialog.targetEmployer
+                ? "Profile and history stay the same. This user will get employer features. You can switch them back anytime."
+                : "Employer flags will be cleared for this user. Their data is unchanged; you can switch them back to employer later."}
+            </div>
+            {accountModeDialog.targetEmployer && (
+              <label style={{ display: "block", marginBottom: 18 }}>
+                <span style={{ display: "block", fontSize: 12, fontWeight: 700, color: t.textMuted, marginBottom: 6 }}>Company website (optional)</span>
+                <input
+                  type="url"
+                  value={accountModeDialog.companyWebsite}
+                  onChange={(e) =>
+                    setAccountModeDialog((d) => (d ? { ...d, companyWebsite: e.target.value } : null))
+                  }
+                  placeholder="https://"
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: `1px solid ${t.border}`,
+                    background: t.bg,
+                    color: t.text,
+                    fontSize: 14,
+                  }}
+                />
+              </label>
+            )}
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => setAccountModeDialog(null)}
+                style={{ padding: "10px 20px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={actionLoading === accountModeDialog.user.user_id + "-acctmode"}
+                onClick={() => void submitAccountMode()}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: accountModeDialog.targetEmployer ? "#1e40af" : "#374151",
+                  color: "white",
+                  fontWeight: 700,
+                  cursor: actionLoading === accountModeDialog.user.user_id + "-acctmode" ? "wait" : "pointer",
+                  fontSize: 14,
+                  opacity: actionLoading === accountModeDialog.user.user_id + "-acctmode" ? 0.7 : 1,
+                }}
+              >
+                {actionLoading === accountModeDialog.user.user_id + "-acctmode" ? "…" : "Confirm"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ maxWidth: 1000, margin: "0 auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 20, flexWrap: "wrap" }}>
           <h1 style={{ fontSize: 32, fontWeight: 900, margin: 0, color: t.text, display: "flex", alignItems: "center", gap: 10 }}>
@@ -1398,13 +1506,14 @@ const [memWizUrl, setMemWizUrl] = useState("");
                 const isVerified = u.verification_status === "verified";
                 const isPending = u.verification_status === "pending";
                 const isDenied = u.verification_status === "denied";
+                const employerOn = isEmployerAccount(u);
                 return (
                   <div key={u.user_id} style={{ border: `1px solid ${isDenied ? "#fca5a5" : t.border}`, borderRadius: 12, padding: "12px 16px", background: isDenied ? "#fff5f5" : t.surface, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 200 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                         <span style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{name}</span>
                         {u.is_admin && <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>ADMIN</span>}
-                        {u.is_employer ? (
+                        {employerOn ? (
                           <span style={{ background: u.employer_verified ? "#dbeafe" : "#e5e7eb", color: u.employer_verified ? "#1e40af" : "#374151", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>
                             {u.employer_verified ? "✓ Employer" : "Employer"}
                           </span>
@@ -1451,23 +1560,72 @@ const [memWizUrl, setMemWizUrl] = useState("");
                         </button>
                       )}
 
-                      {/* Employer toggles */}
-                      <button
-                        style={actionBtn(u.is_employer ? "#1e40af" : "#6b7280")}
-                        disabled={actionLoading === u.user_id + "-employer"}
-                        onClick={() => toggleEmployer(u.user_id, u.is_employer)}
+                      {/* Account type: User ↔ Employer */}
+                      <div
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 8,
+                          padding: "4px 10px",
+                          borderRadius: 12,
+                          border: `1px solid ${t.border}`,
+                          background: t.bg,
+                        }}
+                        title="Member vs employer account mode"
                       >
-                        {actionLoading === u.user_id + "-employer" ? "..." : u.is_employer ? "Remove Employer" : "Make Employer"}
-                      </button>
-                      {u.is_employer && (
-                        <button
-                          style={actionBtn(u.employer_verified ? "#6b7280" : "#16a34a")}
-                          disabled={actionLoading === u.user_id + "-empverify"}
-                          onClick={() => toggleEmployerVerified(u.user_id, u.employer_verified)}
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: !employerOn ? t.text : t.textMuted,
+                            userSelect: "none",
+                          }}
                         >
-                          {actionLoading === u.user_id + "-empverify" ? "..." : u.employer_verified ? "Unverify Employer" : "Verify Employer"}
+                          User
+                        </span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={employerOn}
+                          aria-label={employerOn ? "Account is employer; click to switch to member" : "Account is user; click to switch to employer"}
+                          disabled={actionLoading === u.user_id + "-acctmode"}
+                          onClick={() => openAccountModeToggle(u)}
+                          style={{
+                            width: 44,
+                            height: 24,
+                            borderRadius: 12,
+                            border: `1px solid ${employerOn ? "#1e3a8a" : t.border}`,
+                            background: employerOn ? "#1e40af" : "#e5e7eb",
+                            position: "relative",
+                            cursor: actionLoading === u.user_id + "-acctmode" ? "wait" : "pointer",
+                            padding: 0,
+                            flexShrink: 0,
+                          }}
+                        >
+                          <span
+                            style={{
+                              position: "absolute",
+                              top: 2,
+                              left: employerOn ? 22 : 2,
+                              width: 18,
+                              height: 18,
+                              borderRadius: "50%",
+                              background: "white",
+                              boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                            }}
+                          />
                         </button>
-                      )}
+                        <span
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: employerOn ? t.text : t.textMuted,
+                            userSelect: "none",
+                          }}
+                        >
+                          Employer
+                        </span>
+                      </div>
 
                       {/* Admin toggle */}
                       <button
