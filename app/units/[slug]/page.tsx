@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
@@ -384,7 +384,7 @@ export default function UnitPage() {
   const isGod = membership?.status === "approved" && (membership.role === "owner" || membership.role === "admin");
   const photos = posts.filter((p) => p.photo_url && p.post_type === "post");
 
-  const inputStyle: React.CSSProperties = {
+  const inputStyle: CSSProperties = {
     width: "100%",
     padding: "10px 12px",
     borderRadius: 10,
@@ -396,11 +396,17 @@ export default function UnitPage() {
     boxSizing: "border-box",
   };
 
+  const padX = { paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))" } as const;
+  const navShell: CSSProperties = { width: "100%", boxSizing: "border-box", paddingTop: 24, background: t.bg, ...padX };
+  const bodyShell: CSSProperties = { maxWidth: 860, margin: "0 auto", boxSizing: "border-box", paddingTop: 16, paddingBottom: 48, ...padX };
+
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-        <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px" }}>
+        <div style={navShell}>
           <NavBar />
+        </div>
+        <div style={bodyShell}>
           <div style={{ color: t.textMuted, textAlign: "center", padding: 60 }}>Loading...</div>
         </div>
       </div>
@@ -410,8 +416,10 @@ export default function UnitPage() {
   if (notFound || !unit) {
     return (
       <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-        <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px" }}>
+        <div style={navShell}>
           <NavBar />
+        </div>
+        <div style={bodyShell}>
           <div style={{ textAlign: "center", padding: 60 }}>
             <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 8 }}>Unit not found</div>
             <a href="/units" style={{ color: "#3b82f6", fontWeight: 700, fontSize: 14 }}>← Back to Groups</a>
@@ -425,9 +433,10 @@ export default function UnitPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-      <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px" }}>
+      <div style={navShell}>
         <NavBar />
-
+      </div>
+      <div style={bodyShell}>
         {/* Back */}
         <a href="/units" style={{ color: t.textMuted, fontSize: 13, fontWeight: 700, textDecoration: "none", display: "inline-block", marginBottom: 16 }}>
           ← Groups

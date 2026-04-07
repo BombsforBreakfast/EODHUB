@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/lib/supabaseClient";
@@ -160,22 +160,34 @@ export default function UnitAdminPage() {
     return { padding: "6px 14px", borderRadius: 8, fontWeight: 700, fontSize: 13, cursor: "pointer", ...styles[variant] };
   };
 
+  const padX = { paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))" } as const;
+  const navShell: CSSProperties = { width: "100%", boxSizing: "border-box", paddingTop: 24, background: t.bg, ...padX };
+  const bodyShell: CSSProperties = { maxWidth: 900, margin: "0 auto", boxSizing: "border-box", paddingTop: 16, paddingBottom: 32, ...padX };
+
   if (loading) {
     return (
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 16px" }}>
-        <NavBar />
-        <div style={{ color: t.textMuted, textAlign: "center", padding: 60 }}>Loading...</div>
+      <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
+        <div style={navShell}>
+          <NavBar />
+        </div>
+        <div style={bodyShell}>
+          <div style={{ color: t.textMuted, textAlign: "center", padding: 60 }}>Loading...</div>
+        </div>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 16px" }}>
-        <NavBar />
-        <div style={{ color: "#dc2626", textAlign: "center", padding: 60 }}>{error}</div>
-        <div style={{ textAlign: "center" }}>
-          <Link href="/units" style={{ color: t.text, fontWeight: 700 }}>← Back to Groups</Link>
+      <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
+        <div style={navShell}>
+          <NavBar />
+        </div>
+        <div style={bodyShell}>
+          <div style={{ color: "#dc2626", textAlign: "center", padding: 60 }}>{error}</div>
+          <div style={{ textAlign: "center" }}>
+            <Link href="/units" style={{ color: t.text, fontWeight: 700 }}>← Back to Groups</Link>
+          </div>
         </div>
       </div>
     );
@@ -187,8 +199,11 @@ export default function UnitAdminPage() {
   const isOwner = myRole === "owner";
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px 16px" }}>
-      <NavBar />
+    <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
+      <div style={navShell}>
+        <NavBar />
+      </div>
+      <div style={bodyShell}>
 
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 24, flexWrap: "wrap" }}>
@@ -380,6 +395,7 @@ export default function UnitAdminPage() {
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }

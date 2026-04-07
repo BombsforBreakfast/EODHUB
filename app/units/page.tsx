@@ -180,6 +180,8 @@ export default function UnitsPage() {
 
   const noResults = !loading && units.length === 0;
 
+  const padX = { paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))" } as const;
+
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
       <ImageCropDialog
@@ -194,8 +196,29 @@ export default function UnitsPage() {
           closeCoverCrop();
         }}
       />
-      <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" }}>
+      {/* Full-width nav (not constrained by content max-width) */}
+      <div
+        style={{
+          width: "100%",
+          boxSizing: "border-box",
+          paddingTop: 24,
+          background: t.bg,
+          ...padX,
+        }}
+      >
         <NavBar />
+      </div>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 1800,
+          margin: "0 auto",
+          boxSizing: "border-box",
+          paddingTop: 16,
+          paddingBottom: 32,
+          ...padX,
+        }}
+      >
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
@@ -305,26 +328,44 @@ export default function UnitsPage() {
 
         {/* Units grid */}
         {!loading && units.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
             {units.map((unit) => (
               <div
                 key={unit.id}
                 onClick={() => router.push(`/units/${unit.slug}`)}
+                className="unit-card-split"
                 style={{ border: `1px solid ${t.border}`, borderRadius: 16, overflow: "hidden", background: t.surface, cursor: "pointer", transition: "box-shadow 0.15s" }}
                 onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.12)")}
                 onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
               >
-                {/* Cover */}
-                <div style={{ height: 80, background: unit.cover_photo_url ? `url(${unit.cover_photo_url}) center/cover` : (isDark ? "#1a1a2e" : "#1e3a5f"), display: "flex", alignItems: "flex-end", padding: "0 16px 10px" }}>
-                  <span style={{ background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 10, fontWeight: 800, padding: "3px 8px", borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                <div
+                  className="unit-card-cover-col"
+                  style={{ background: unit.cover_photo_url ? undefined : (isDark ? "#1a1a2e" : "#1e3a5f") }}
+                >
+                  {unit.cover_photo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- listing card thumbnail
+                    <img src={unit.cover_photo_url} alt="" />
+                  ) : null}
+                </div>
+                <div className="unit-card-body">
+                  <span
+                    style={{
+                      alignSelf: "flex-start",
+                      background: isDark ? "#1a1a2e" : "#dbeafe",
+                      color: isDark ? "#93c5fd" : "#1d4ed8",
+                      fontSize: 10,
+                      fontWeight: 800,
+                      padding: "3px 8px",
+                      borderRadius: 20,
+                      textTransform: "uppercase",
+                      letterSpacing: 0.6,
+                    }}
+                  >
                     {typeLabel(unit.type)}
                   </span>
-                </div>
-
-                <div style={{ padding: 16 }}>
-                  <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4 }}>{unit.name}</div>
+                  <div style={{ fontWeight: 900, fontSize: 16, color: t.text, lineHeight: 1.25 }}>{unit.name}</div>
                   {unit.description && (
-                    <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.5, marginBottom: 10, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                    <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
                       {unit.description}
                     </div>
                   )}
