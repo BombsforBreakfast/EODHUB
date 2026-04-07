@@ -12,6 +12,7 @@ import { PostLikersStack, type PostLikerBrief } from "./components/PostLikersSta
 import OnlineNowStrip from "./components/OnlineNowStrip";
 import MemberPaywallModal from "./components/MemberPaywallModal";
 import { memberHasInteractionAccess } from "./lib/subscriptionAccess";
+import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "./lib/flagCategories";
 
 type Job = {
   id: string;
@@ -465,6 +466,8 @@ export default function HomePage() {
   const [editingCommentContent, setEditingCommentContent] = useState("");
   const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
   const [flaggingId, setFlaggingId] = useState<string | null>(null);
+  const [flagModal, setFlagModal] = useState<{ contentType: "post" | "comment"; contentId: string } | null>(null);
+  const [flagCategoryChoice, setFlagCategoryChoice] = useState<FlagCategory>("general");
 
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
   const [galleryIndex, setGalleryIndex] = useState(0);
@@ -1028,6 +1031,7 @@ export default function HomePage() {
       .from("post_comments")
       .select("id, post_id, user_id, content, created_at, image_url, gif_url")
       .in("post_id", postIds)
+      .eq("hidden_for_review", false)
       .order("created_at", { ascending: true });
 
     if (!commentsWithImageQuery.error) {
@@ -1053,6 +1057,7 @@ export default function HomePage() {
       .from("post_comments")
       .select("id, post_id, user_id, content, created_at")
       .in("post_id", postIds)
+      .eq("hidden_for_review", false)
       .order("created_at", { ascending: true });
 
     if (commentsWithoutImageQuery.error) {
@@ -1093,7 +1098,21 @@ export default function HomePage() {
       return;
     }
 
-    const rawPosts = (rankedPostsData ?? []) as RankedPostRow[];
+    let rawPosts = (rankedPostsData ?? []) as RankedPostRow[];
+
+    if (rawPosts.length > 0) {
+      const rankedIds = rawPosts.map((p) => p.id);
+      const { data: visRows } = await supabase
+        .from("posts")
+        .select("id, hidden_for_review")
+        .in("id", rankedIds);
+      const visibleIds = new Set(
+        (visRows ?? [])
+          .filter((r: { hidden_for_review?: boolean | null }) => !r.hidden_for_review)
+          .map((r: { id: string }) => r.id)
+      );
+      rawPosts = rawPosts.filter((p) => visibleIds.has(p.id));
+    }
 
     if (rawPosts.length === 0) {
       setPosts([]);
@@ -1994,14 +2013,47 @@ export default function HomePage() {
     }
   }
 
-  async function flagContent(contentType: "post" | "comment", contentId: string) {
+  function openFlagModal(contentType: "post" | "comment", contentId: string) {
     if (!userId) return;
     if (blockMemberInteraction()) return;
-    if (!window.confirm(`Flag this ${contentType} for admin review?`)) return;
-    setFlaggingId(contentId);
-    const { error } = await supabase.from("flags").insert([{ reporter_id: userId, content_type: contentType, content_id: contentId }]);
-    if (error) { alert(error.message); } else { alert("Flagged for review. Thank you."); }
-    setFlaggingId(null);
+    setFlagCategoryChoice("general");
+    setFlagModal({ contentType, contentId });
+  }
+
+  async function submitFlagFromModal() {
+    if (!flagModal || !userId) return;
+    if (blockMemberInteraction()) return;
+    setFlaggingId(flagModal.contentId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/flag-content", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({
+          contentType: flagModal.contentType,
+          contentId: flagModal.contentId,
+          category: flagCategoryChoice,
+        }),
+      });
+      let json: { error?: string } = {};
+      try {
+        json = await res.json();
+      } catch {
+        /* ignore */
+      }
+      if (!res.ok) {
+        alert(json.error ?? "Could not submit flag");
+        return;
+      }
+      alert("Flagged for review. Thank you.");
+      setFlagModal(null);
+      await loadPosts();
+    } finally {
+      setFlaggingId(null);
+    }
   }
 
   function toggleComments(postId: string) {
@@ -3052,7 +3104,7 @@ export default function HomePage() {
                         </button>
                       )}
                       {!isOwnPost && (
-                        <button type="button" onClick={() => flagContent("post", post.id)} disabled={flaggingId === post.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === post.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 15, lineHeight: 1 }}>
+                        <button type="button" onClick={() => openFlagModal("post", post.id)} disabled={flaggingId === post.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === post.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 15, lineHeight: 1 }}>
                           ⚑
                         </button>
                       )}
@@ -3362,7 +3414,7 @@ export default function HomePage() {
 
                                 <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                                   {!isOwnComment && (
-                                    <button type="button" onClick={() => flagContent("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 13, lineHeight: 1 }}>
+                                    <button type="button" onClick={() => openFlagModal("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 13, lineHeight: 1 }}>
                                       ⚑
                                     </button>
                                   )}
@@ -4046,6 +4098,108 @@ export default function HomePage() {
               }}
             >
               {galleryIndex + 1} / {galleryImages.length}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {flagModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="flag-modal-title"
+          onClick={() => !flaggingId && setFlagModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            zIndex: 1001,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 400,
+              background: t.surface,
+              borderRadius: 16,
+              border: `1px solid ${t.border}`,
+              padding: "20px 22px",
+              boxShadow: isDark ? "0 12px 40px rgba(0,0,0,0.5)" : "0 12px 40px rgba(0,0,0,0.12)",
+            }}
+          >
+            <h2 id="flag-modal-title" style={{ margin: "0 0 14px", fontSize: 18, fontWeight: 800, color: t.text }}>
+              Flag this {flagModal.contentType}
+            </h2>
+            <label htmlFor="flag-reason" style={{ display: "block", fontSize: 13, fontWeight: 700, color: t.textMuted, marginBottom: 6 }}>
+              Reason
+            </label>
+            <select
+              id="flag-reason"
+              value={flagCategoryChoice}
+              onChange={(e) => setFlagCategoryChoice(e.target.value as FlagCategory)}
+              disabled={!!flaggingId}
+              style={{
+                width: "100%",
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: `1px solid ${t.inputBorder}`,
+                background: t.input,
+                color: t.text,
+                fontSize: 14,
+                marginBottom: 18,
+                boxSizing: "border-box",
+              }}
+            >
+              {FLAG_CATEGORIES.map((c) => (
+                <option key={c} value={c}>
+                  {FLAG_CATEGORY_LABELS[c]}
+                </option>
+              ))}
+            </select>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => !flaggingId && setFlagModal(null)}
+                disabled={!!flaggingId}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 10,
+                  border: `1px solid ${t.border}`,
+                  background: t.surfaceHover,
+                  color: t.text,
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: flaggingId ? "default" : "pointer",
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitFlagFromModal()}
+                disabled={!!flaggingId}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#b91c1c",
+                  color: "white",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: flaggingId ? "default" : "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                {flaggingId && <span className="btn-spinner" />}
+                Submit flag
+              </button>
             </div>
           </div>
         </div>

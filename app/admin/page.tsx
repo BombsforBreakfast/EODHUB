@@ -12,6 +12,7 @@ import {
   formatNavBadgeCount,
   sumAdminPending,
 } from "../lib/adminPendingCounts";
+import { FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 
 type BusinessListing = {
   id: string;
@@ -53,6 +54,7 @@ type UserProfile = {
   is_employer: boolean | null;
   employer_verified: boolean | null;
   created_at: string | null;
+  community_flag_count?: number | null;
 };
 
 type Tab = "businesses" | "jobs" | "users" | "flags" | "events" | "reports" | "directory";
@@ -93,9 +95,13 @@ type Flag = {
   content_type: string;
   content_id: string;
   reason: string | null;
+  category: string | null;
   reviewed: boolean;
   reporter_name?: string | null;
   content_preview?: string | null;
+  content_author_id?: string | null;
+  content_author_name?: string | null;
+  author_community_flag_count?: number | null;
 };
 
 type BizEdit = {
@@ -272,14 +278,15 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
     const [profilesRes, postsRes, commentsRes, msgsRes] = await Promise.all([
       reporterIds.length > 0 ? supabase.from("profiles").select("user_id, first_name, last_name, display_name").in("user_id", reporterIds) : { data: [] },
-      postIds.length > 0 ? supabase.from("posts").select("id, content").in("id", postIds) : { data: [] },
-      commentIds.length > 0 ? supabase.from("post_comments").select("id, content").in("id", commentIds) : { data: [] },
-      messageIds.length > 0 ? supabase.from("messages").select("id, content, gif_url").in("id", messageIds) : { data: [] },
+      postIds.length > 0 ? supabase.from("posts").select("id, user_id, content").in("id", postIds) : { data: [] },
+      commentIds.length > 0 ? supabase.from("post_comments").select("id, user_id, content").in("id", commentIds) : { data: [] },
+      messageIds.length > 0 ? supabase.from("messages").select("id, sender_id, content, gif_url").in("id", messageIds) : { data: [] },
     ]);
 
     type ProfileRow = { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null };
-    type ContentRow = { id: string; content: string | null };
-    type MsgRow = { id: string; content: string | null; gif_url: string | null };
+    type PostRow = { id: string; user_id: string; content: string | null };
+    type CommentRow = { id: string; user_id: string; content: string | null };
+    type MsgRow = { id: string; sender_id: string; content: string | null; gif_url: string | null };
 
     const profileMap = new Map<string, string>();
     ((profilesRes.data ?? []) as ProfileRow[]).forEach((p) => {
@@ -287,18 +294,51 @@ const [memWizUrl, setMemWizUrl] = useState("");
     });
 
     const contentMap = new Map<string, string>();
-    ([...(postsRes.data ?? []), ...(commentsRes.data ?? [])] as ContentRow[]).forEach((c) => {
+    const authorByContentId = new Map<string, string>();
+    ((postsRes.data ?? []) as PostRow[]).forEach((c) => {
       contentMap.set(c.id, c.content || "");
+      authorByContentId.set(c.id, c.user_id);
+    });
+    ((commentsRes.data ?? []) as CommentRow[]).forEach((c) => {
+      contentMap.set(c.id, c.content || "");
+      authorByContentId.set(c.id, c.user_id);
     });
     ((msgsRes.data ?? []) as MsgRow[]).forEach((m) => {
       contentMap.set(m.id, m.content || (m.gif_url ? "[GIF message]" : ""));
+      authorByContentId.set(m.id, m.sender_id);
     });
 
-    setFlags(rawFlags.map((f) => ({
-      ...f,
-      reporter_name: f.reporter_id ? profileMap.get(f.reporter_id) ?? null : null,
-      content_preview: contentMap.get(f.content_id) ?? null,
-    })));
+    const authorIds = [...new Set(rawFlags.map((f) => authorByContentId.get(f.content_id)).filter(Boolean))] as string[];
+    const { data: authorProfiles } = authorIds.length > 0
+      ? await supabase
+          .from("profiles")
+          .select("user_id, first_name, last_name, display_name, community_flag_count")
+          .in("user_id", authorIds)
+      : { data: [] };
+    type AuthorRow = { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; community_flag_count: number | null };
+    const authorMeta = new Map<string, { name: string; flagCount: number }>();
+    ((authorProfiles ?? []) as AuthorRow[]).forEach((p) => {
+      authorMeta.set(p.user_id, {
+        name: p.display_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown",
+        flagCount: p.community_flag_count ?? 0,
+      });
+    });
+
+    setFlags(rawFlags.map((f) => {
+      const aid = authorByContentId.get(f.content_id) ?? null;
+      const am = aid ? authorMeta.get(aid) : undefined;
+      const cat = f.category as FlagCategory | null;
+      const categoryLabel = cat && cat in FLAG_CATEGORY_LABELS ? FLAG_CATEGORY_LABELS[cat] : f.category;
+      return {
+        ...f,
+        category: categoryLabel ?? f.category,
+        reporter_name: f.reporter_id ? profileMap.get(f.reporter_id) ?? null : null,
+        content_preview: contentMap.get(f.content_id) ?? null,
+        content_author_id: aid,
+        content_author_name: am?.name ?? null,
+        author_community_flag_count: am?.flagCount ?? null,
+      };
+    }));
   }
 
   useEffect(() => {

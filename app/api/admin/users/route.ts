@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   const [profilesRes, authUsersRes] = await Promise.all([
     adminClient
       .from("profiles")
-      .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
+      .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count")
       .order("created_at", { ascending: false }),
     adminClient.auth.admin.listUsers({ perPage: 1000 }),
   ]);

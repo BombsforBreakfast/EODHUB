@@ -435,7 +435,7 @@ export default function NavBar() {
         className="nav-root"
       >
       {/* Left: mobile logo (home feed) + avatar + nav links */}
-      <div className="nav-left" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <div className="nav-left" style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <div style={{ position: "relative", flexShrink: 0 }}>
           <Link
             href="/"
@@ -581,8 +581,8 @@ export default function NavBar() {
       <div className="nav-trailing">
       {/* Search bar row */}
       <div className="nav-search-row">
-        <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "0 1 340px", minWidth: 200 }}>
-          <div style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: "6px 12px", gap: 8 }}>
+        <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "1 1 0", minWidth: 0, width: "100%" }}>
+          <div style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: "6px 10px", gap: 6, minWidth: 0 }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.2" strokeLinecap="round">
               <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
             </svg>
@@ -591,8 +591,8 @@ export default function NavBar() {
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
-              placeholder="Search people, jobs, businesses, events, groups..."
-              style={{ border: "none", outline: "none", fontSize: 14, width: "100%", background: "transparent", color: t.text }}
+              placeholder="Search people, jobs, groups..."
+              style={{ border: "none", outline: "none", fontSize: 13, flex: "1 1 0", minWidth: 0, width: "100%", background: "transparent", color: t.text }}
             />
             {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
           </div>
@@ -658,7 +658,7 @@ export default function NavBar() {
       </div>
 
       {/* Right: logout */}
-      <div className="nav-right" style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+      <div className="nav-right" style={{ display: "flex", gap: 12, flexWrap: "nowrap", flexShrink: 0, alignItems: "center" }}>
         {!authLoaded ? null : currentUserId ? (
           <>
             <Link

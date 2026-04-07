@@ -92,13 +92,23 @@ button:active, a.nav-btn:active {
 .nav-left {
   justify-self: start;
   min-width: 0;
+  max-width: 100%;
+  /* One row of nav links; scroll locally if the viewport is tight */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.nav-left::-webkit-scrollbar {
+  display: none;
 }
 .nav-trailing {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
   justify-self: end;
 }
@@ -109,13 +119,14 @@ button:active, a.nav-btn:active {
   justify-self: center;
 }
 
-/* Desktop: search row wrapper matches search bar sizing */
+/* Desktop: narrow cap so search + account stays one row beside center brand */
 .nav-search-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  flex: 0 1 340px;
-  min-width: 200px;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: min(280px, 42vw);
 }
 
 /* ── Mobile layout (phones portrait + landscape) ── */
@@ -211,6 +222,7 @@ button:active, a.nav-btn:active {
     order: 3 !important;
     flex: 0 0 100% !important;
     min-width: 0 !important;
+    max-width: none !important;
   }
   .nav-search {
     flex: 1 1 0 !important;
