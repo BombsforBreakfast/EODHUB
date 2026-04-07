@@ -101,6 +101,9 @@ button:active, a.nav-btn:active {
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
+.nav-logo-mobile-wrap {
+  display: none !important;
+}
 .nav-left::-webkit-scrollbar {
   display: none;
 }
@@ -170,6 +173,7 @@ button:active, a.nav-btn:active {
     flex-wrap: nowrap !important;
     flex: 1 1 0 !important;
     min-width: 0 !important;
+    overflow: visible !important;
   }
   .nav-right {
     flex-shrink: 0 !important;
@@ -216,11 +220,20 @@ button:active, a.nav-btn:active {
   .nav-logo-mobile {
     display: flex !important;
     align-items: center !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    transform: none !important;
+    z-index: 4 !important;
+    pointer-events: auto !important;
+  }
+  .nav-logo-mobile-wrap {
+    display: block !important;
     position: absolute !important;
     left: 50% !important;
     top: calc(env(safe-area-inset-top, 0px) + 6px) !important;
     transform: translateX(-50%) !important;
-    z-index: 2 !important;
+    z-index: 4 !important;
   }
 
   /* Show mobile hub toggle */

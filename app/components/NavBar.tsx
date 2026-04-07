@@ -440,30 +440,32 @@ export default function NavBar() {
         ref={navRootRef}
         className="nav-root"
       >
-      {/* Left: mobile logo (home feed) + avatar + nav links */}
+      {/* Mobile centered logo (home feed) */}
+      <div className="nav-logo-mobile-wrap" style={{ position: "relative" }}>
+        <Link
+          href="/"
+          className="nav-logo-mobile"
+          aria-label="EOD HUB home — feed"
+          title="Home feed"
+          onClick={async (e) => {
+            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+            e.preventDefault();
+            await markFeedNotifsRead();
+            window.location.href = "/";
+          }}
+          style={{ display: "flex", alignItems: "center", textDecoration: "none" }}
+        >
+          <EodCrabLogo variant="navMobile" />
+        </Link>
+        {unreadFeedNotifs > 0 && (
+          <span style={{ position: "absolute", top: -4, right: -6, zIndex: 2, pointerEvents: "none" }}>
+            {badge(unreadFeedNotifs)}
+          </span>
+        )}
+      </div>
+
+      {/* Left: avatar + nav links */}
       <div className="nav-left" style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        <div style={{ position: "relative", flexShrink: 0 }}>
-          <Link
-            href="/"
-            className="nav-logo-mobile"
-            aria-label="EOD HUB home — feed"
-            title="Home feed"
-            onClick={async (e) => {
-              if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-              e.preventDefault();
-              await markFeedNotifsRead();
-              window.location.href = "/";
-            }}
-            style={{ display: "flex", alignItems: "center", textDecoration: "none" }}
-          >
-            <EodCrabLogo variant="navMobile" />
-          </Link>
-          {unreadFeedNotifs > 0 && (
-            <span style={{ position: "absolute", top: -4, right: -6, zIndex: 2, pointerEvents: "none" }}>
-              {badge(unreadFeedNotifs)}
-            </span>
-          )}
-        </div>
         <div style={{ position: "relative", flexShrink: 0 }}>
           <Link
             href={currentUserId ? `/profile/${currentUserId}` : "/login"}

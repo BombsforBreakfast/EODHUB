@@ -2259,6 +2259,7 @@ export default function HomePage() {
   }, [sortedJobs, canViewFullJobs, canUseJobFilters, jobFilters]);
 
   const jobsForPane = isMobile ? mobileVisibleJobs : sortedJobs.slice(0, 5);
+  const showJobLeaderboard = false;
 
   function openAllJobs() {
     if (canViewFullJobs) {
@@ -2341,6 +2342,16 @@ export default function HomePage() {
             overflowY: isMobile ? undefined : "auto",
           }}
         >
+          {!isMobile && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
+              <a
+                href="/jobs"
+                style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}
+              >
+                See all jobs →
+              </a>
+            </div>
+          )}
           {jobsLoaded && (
             <>
               <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
@@ -2428,7 +2439,7 @@ export default function HomePage() {
           </div>
 
           {/* Community leaderboard */}
-          {isMobile && canViewFullJobs && jobLeaderboard.length > 0 && (
+          {showJobLeaderboard && isMobile && canViewFullJobs && jobLeaderboard.length > 0 && (
             <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: "12px 16px" }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>
                 Top Community Contributors
