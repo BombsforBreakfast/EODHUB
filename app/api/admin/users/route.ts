@@ -34,13 +34,20 @@ export async function GET(req: NextRequest) {
   );
 
   // Fetch all profiles and all auth users in parallel
-  const [profilesRes, authUsersRes] = await Promise.all([
+  const [profilesWithTierRes, authUsersRes] = await Promise.all([
     adminClient
       .from("profiles")
       .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count, access_tier")
       .order("created_at", { ascending: false }),
     adminClient.auth.admin.listUsers({ perPage: 1000 }),
   ]);
+
+  const profilesRes = profilesWithTierRes.error
+    ? await adminClient
+        .from("profiles")
+        .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count")
+        .order("created_at", { ascending: false })
+    : profilesWithTierRes;
 
   if (profilesRes.error) {
     return NextResponse.json({ error: profilesRes.error.message }, { status: 500 });

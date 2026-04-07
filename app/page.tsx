@@ -1109,16 +1109,21 @@ export default function HomePage() {
 
     if (rawPosts.length > 0) {
       const rankedIds = rawPosts.map((p) => p.id);
-      const { data: visRows } = await supabase
+      const { data: visRows, error: visErr } = await supabase
         .from("posts")
         .select("id, hidden_for_review")
         .in("id", rankedIds);
-      const visibleIds = new Set(
-        (visRows ?? [])
-          .filter((r: { hidden_for_review?: boolean | null }) => !r.hidden_for_review)
-          .map((r: { id: string }) => r.id)
-      );
-      rawPosts = rawPosts.filter((p) => visibleIds.has(p.id));
+      if (!visErr) {
+        const visibleIds = new Set(
+          (visRows ?? [])
+            .filter((r: { hidden_for_review?: boolean | null }) => !r.hidden_for_review)
+            .map((r: { id: string }) => r.id)
+        );
+        rawPosts = rawPosts.filter((p) => visibleIds.has(p.id));
+      } else {
+        // Backward compatibility if hidden_for_review is not migrated yet.
+        console.warn("Post visibility filter unavailable; loading feed without moderation hide filter.", visErr.message);
+      }
     }
 
     if (rawPosts.length === 0) {
