@@ -8,6 +8,7 @@ import EodCrabLogo from "./EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
 import { getFeatureAccess } from "../lib/featureAccess";
+import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 
 type Notification = {
   id: string;
@@ -19,7 +20,7 @@ type Notification = {
 };
 
 type SearchResult = {
-  type: "user" | "business" | "job" | "unit";
+  type: "user" | "business" | "job" | "unit" | "rabbithole";
   id: string;
   title: string;
   subtitle: string;
@@ -294,6 +295,7 @@ export default function NavBar() {
           .or(`title.ilike.%${q}%,company_name.ilike.%${q}%,location.ilike.%${q}%`).limit(5),
         supabase.from("units").select("id, name, slug, type, description").ilike("name", `%${q}%`).limit(5),
       ]);
+      const rabbitholeMatches = await searchRabbitholeThreads(supabase, q, 5);
 
       const results: SearchResult[] = [];
 
@@ -313,6 +315,18 @@ export default function NavBar() {
 
       ((unitsRes.data ?? []) as { id: string; name: string; slug: string; type: string; description: string | null }[]).forEach((u) => {
         results.push({ type: "unit", id: u.id, title: u.name, subtitle: u.description || u.type.replace(/_/g, " "), href: `/units/${u.slug}`, external: false });
+      });
+
+      rabbitholeMatches.forEach((thread) => {
+        const path = [thread.topicName, thread.subtopic ?? "", thread.tags[0] ?? ""].filter(Boolean).join(" / ");
+        results.push({
+          type: "rabbithole",
+          id: thread.id,
+          title: thread.title,
+          subtitle: path || "Rabbithole Thread",
+          href: `/rabbithole/thread/${thread.id}`,
+          external: false,
+        });
       });
 
       setSearchResults(results);
@@ -519,6 +533,7 @@ export default function NavBar() {
         {canViewFullJobs && <Link href="/jobs" className="nav-btn nav-jobs" style={navButton}>Jobs</Link>}
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Groups</Link>
         <Link href="/directory" className="nav-btn nav-directory" style={navButton}>Directory</Link>
+        <Link href="/rabbithole" className="nav-btn nav-rabbithole" style={navButton}>Rabbithole</Link>
 
         {currentUserId && isAdmin && (
           <Link
@@ -600,7 +615,7 @@ export default function NavBar() {
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
-              placeholder="Search people, jobs, groups..."
+              placeholder="Search people, jobs, groups, Rabbithole..."
               style={{ border: "none", outline: "none", fontSize: 13, flex: "1 1 0", minWidth: 0, width: "100%", background: "transparent", color: t.text }}
             />
             {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
@@ -626,13 +641,13 @@ export default function NavBar() {
                 </div>
               )}
 
-              {(["user", "unit", "job", "business"] as const).map((type) => {
+              {(["user", "unit", "job", "business", "rabbithole"] as const).map((type) => {
                 const group = searchResults.filter((r) => r.type === type);
                 if (group.length === 0) return null;
-                const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Groups" : "Businesses";
-                const badgeColors: Record<string, string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe" };
-                const badgeText: Record<string, string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed" };
-                const badgeLabel: Record<string, string> = { user: "Person", job: "Job", business: "Biz", unit: "Group" };
+                const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Groups" : type === "business" ? "Businesses" : "Rabbithole";
+                const badgeColors: Record<SearchResult["type"], string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe", rabbithole: "#fee2e2" };
+                const badgeText: Record<SearchResult["type"], string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed", rabbithole: "#991b1b" };
+                const badgeLabel: Record<SearchResult["type"], string> = { user: "Person", job: "Job", business: "Biz", unit: "Group", rabbithole: "Library" };
                 return (
                   <div key={type}>
                     <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
@@ -767,6 +782,7 @@ export default function NavBar() {
                     { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
                     { label: "Groups", href: "/units", emoji: "🪖", badge: 0, onNav: null },
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
+                    { label: "Rabbithole", href: "/rabbithole", emoji: "🕳️", badge: 0, onNav: null },
                     ...(isAdmin
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),

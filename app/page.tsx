@@ -2342,16 +2342,6 @@ export default function HomePage() {
             overflowY: isMobile ? undefined : "auto",
           }}
         >
-          {!isMobile && (
-            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 8 }}>
-              <a
-                href="/jobs"
-                style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}
-              >
-                See all jobs →
-              </a>
-            </div>
-          )}
           {jobsLoaded && (
             <>
               <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
@@ -2362,6 +2352,16 @@ export default function HomePage() {
                 <div style={{ marginTop: 4 }}>
                   ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "—"}) new jobs today!
                 </div>
+                {!isMobile && (
+                  <div style={{ marginTop: 6 }}>
+                    <a
+                      href="/jobs"
+                      style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}
+                    >
+                      See all jobs →
+                    </a>
+                  </div>
+                )}
               </div>
               {isMobile && canUseJobFilters && (
                 <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>

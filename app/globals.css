@@ -85,7 +85,7 @@ button:active, a.nav-btn:active {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 12px;
-  margin-bottom: 30px;
+  margin-bottom: 38px;
   width: 100%;
   box-sizing: border-box;
   position: relative;
@@ -131,7 +131,7 @@ button:active, a.nav-btn:active {
   min-width: 0;
   position: absolute;
   left: 304px; /* aligns with start of center feed column (280 + 24 gap) */
-  top: calc(100% + 6px); /* sit below nav row, above Online now */
+  top: calc(100% + 10px); /* sit below nav row, above Online now */
   transform: none;
   width: min(360px, 34vw);
   max-width: calc(100% - 304px - 220px);
