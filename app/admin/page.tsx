@@ -55,6 +55,7 @@ type UserProfile = {
   employer_verified: boolean | null;
   created_at: string | null;
   community_flag_count?: number | null;
+  access_tier?: "basic" | "senior" | "master" | null;
 };
 
 type Tab = "businesses" | "jobs" | "users" | "flags" | "events" | "reports" | "directory";
@@ -252,7 +253,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       // Fallback: direct query (works if RLS allows admin to read all profiles)
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
+        .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, access_tier")
         .order("created_at", { ascending: false });
       if (!error) setUsers((data ?? []).map((u) => ({ ...u, email: null })) as UserProfile[]);
       return;
@@ -606,6 +607,30 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
   async function toggleEmployerVerified(userId: string, current: boolean | null) {
     await setProfileFlag(userId, "employer_verified", !current, userId + "-empverify", !current ? "Employer verified!" : "Verification removed.");
+  }
+
+  async function setAccessTier(userId: string, accessTier: "basic" | "senior" | "master") {
+    setActionLoading(userId + "-tier");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/set-access-tier", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ targetUserId: userId, accessTier }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        alert(json.error ?? "Tier update failed");
+      } else {
+        showToast(`Access tier set to ${accessTier}.`);
+        await loadUsers();
+      }
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   async function dismissFlag(id: string) {
@@ -1454,6 +1479,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
                         {isVerified && <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Verified</span>}
                         {isPending && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
                         {isDenied && <span style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Denied</span>}
+                        <span style={{ background: "#e0e7ff", color: "#3730a3", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>
+                          Tier: {u.access_tier ?? "senior (beta default)"}
+                        </span>
                       </div>
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
                         {[u.role, u.service].filter(Boolean).join(" · ")}
@@ -1517,6 +1545,27 @@ const [memWizUrl, setMemWizUrl] = useState("");
                       >
                         {actionLoading === u.user_id + "-admin" ? "..." : u.is_admin ? "Remove Admin" : "Make Admin"}
                       </button>
+
+                      <select
+                        value={u.access_tier ?? "senior"}
+                        disabled={actionLoading === u.user_id + "-tier"}
+                        onChange={(e) => setAccessTier(u.user_id, e.target.value as "basic" | "senior" | "master")}
+                        style={{
+                          borderRadius: 8,
+                          border: `1px solid ${t.border}`,
+                          background: t.surface,
+                          color: t.text,
+                          padding: "7px 10px",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: actionLoading === u.user_id + "-tier" ? "not-allowed" : "pointer",
+                        }}
+                        title="Set access tier"
+                      >
+                        <option value="basic">Tier: Basic</option>
+                        <option value="senior">Tier: Senior</option>
+                        <option value="master">Tier: Master</option>
+                      </select>
 
                       {/* View wall */}
                       <a href={`/profile/${u.user_id}`} target="_blank" rel="noreferrer" style={{ ...actionBtn("#374151"), textDecoration: "none", display: "inline-block" }}>
