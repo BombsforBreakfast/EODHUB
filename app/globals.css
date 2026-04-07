@@ -135,18 +135,22 @@ button:active, a.nav-btn:active {
   justify-self: center;
 }
 
-/* Desktop: narrow cap so search + account stays one row beside center brand */
+/*
+ * Desktop: pin to home feed column (grid on /: 280px | minmax(0,1fr) | 360px; gap 24px).
+ * left + right avoids % width quirks; matches post stream column exactly.
+ */
 .nav-search-row {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
   position: absolute;
-  left: 304px; /* aligns with start of center feed column (280 + 24 gap) */
-  top: calc(100% + 10px); /* sit below nav row, above Online now */
+  left: 304px; /* 280px jobs rail + 24px gap */
+  right: calc(360px + 24px); /* 360px businesses rail + gap before it */
+  width: auto;
+  top: calc(100% + 10px);
   transform: none;
-  width: min(360px, 34vw);
-  max-width: calc(100% - 304px - 220px);
+  box-sizing: border-box;
   z-index: 2;
 }
 
@@ -214,12 +218,14 @@ button:active, a.nav-btn:active {
     min-width: unset !important;
   }
 
-  /* Hide from row 1 on mobile — live in hub panel instead (Admin stays visible via .nav-admin-bar). */
+  /* Hide from row 1 on mobile — live in EOD Hub panel instead. */
   .nav-events        { display: none !important; }
   .nav-jobs          { display: none !important; }
   .nav-messages-btn  { display: none !important; }
   .nav-units         { display: none !important; }
   .nav-directory     { display: none !important; }
+  .nav-rabbithole    { display: none !important; }
+  .nav-admin-bar     { display: none !important; }
   /* Brand column hidden on mobile — replaced by compact logo in .nav-left */
   .nav-brand         { display: none !important; }
 

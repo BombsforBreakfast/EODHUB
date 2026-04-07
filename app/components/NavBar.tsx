@@ -546,7 +546,6 @@ export default function NavBar() {
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         {canViewFullJobs && <Link href="/jobs" className="nav-btn nav-jobs" style={navButton}>Jobs</Link>}
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Groups</Link>
-        <Link href="/directory" className="nav-btn nav-directory" style={navButton}>Directory</Link>
         <Link href="/rabbithole" className="nav-btn nav-rabbithole" style={navButton}>Rabbithole</Link>
 
         {/* EOD Hub — mobile only */}
@@ -716,10 +715,18 @@ export default function NavBar() {
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .55.22 1.05.59 1.41.37.37.86.59 1.41.59H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
             </Link>
+            <Link href="/directory" className="nav-btn nav-directory" style={navButton} onClick={() => { setShowHub(false); setShowSearchDropdown(false); }}>
+              Directory
+            </Link>
             <button onClick={handleLogout} className="nav-logout" style={{ ...navButton, cursor: "pointer" }}>Log Out</button>
           </>
         ) : (
-          <Link href="/login" className="nav-logout" style={navButton}>Log In</Link>
+          <>
+            <Link href="/directory" className="nav-btn nav-directory" style={navButton}>
+              Directory
+            </Link>
+            <Link href="/login" className="nav-logout" style={navButton}>Log In</Link>
+          </>
         )}
       </div>
       </div>
