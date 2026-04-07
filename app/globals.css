@@ -201,6 +201,7 @@ button:active, a.nav-btn:active {
   /* Hide from row 1 on mobile — live in hub panel instead */
   .nav-admin         { display: none !important; }
   .nav-events        { display: none !important; }
+  .nav-jobs          { display: none !important; }
   .nav-messages-btn  { display: none !important; }
   .nav-units         { display: none !important; }
   .nav-directory     { display: none !important; }

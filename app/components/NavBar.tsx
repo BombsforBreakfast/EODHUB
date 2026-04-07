@@ -7,6 +7,7 @@ import { supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "./EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
+import { getFeatureAccess } from "../lib/featureAccess";
 
 type Notification = {
   id: string;
@@ -47,6 +48,7 @@ export default function NavBar() {
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPendingTotal, setAdminPendingTotal] = useState(0);
+  const [canViewFullJobs, setCanViewFullJobs] = useState(true);
 
   /** Mobile: reserve vertical space so fixed nav does not cover page content (height tracks hub/search). */
   const navRootRef = useRef<HTMLDivElement>(null);
@@ -138,7 +140,7 @@ export default function NavBar() {
     async function loadNavProfile(uid: string) {
       const { data } = await supabase
         .from("profiles")
-        .select("first_name, display_name, photo_url, is_admin")
+        .select("first_name, display_name, photo_url, is_admin, access_tier")
         .eq("user_id", uid)
         .maybeSingle();
       if (!mounted) return;
@@ -147,9 +149,11 @@ export default function NavBar() {
         display_name: string | null;
         photo_url: string | null;
         is_admin: boolean | null;
+        access_tier: string | null;
       } | null;
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
       setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
+      setCanViewFullJobs(getFeatureAccess(row?.access_tier).canViewFullJobs);
       if (row?.is_admin) {
         setIsAdmin(true);
         await refreshAdminPendingBadge();
@@ -176,6 +180,7 @@ export default function NavBar() {
         setAvatarPhotoUrl(null);
         setIsAdmin(false);
         setAdminPendingTotal(0);
+        setCanViewFullJobs(true);
       }
     }
 
@@ -195,6 +200,7 @@ export default function NavBar() {
         setIsAdmin(false);
         setAdminPendingTotal(0);
         setUserInitial("?");
+        setCanViewFullJobs(true);
       }
     });
 
@@ -508,6 +514,7 @@ export default function NavBar() {
         </div>
 
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
+        {canViewFullJobs && <Link href="/jobs" className="nav-btn nav-jobs" style={navButton}>Jobs</Link>}
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Groups</Link>
         <Link href="/directory" className="nav-btn nav-directory" style={navButton}>Directory</Link>
 

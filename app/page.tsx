@@ -13,6 +13,9 @@ import OnlineNowStrip from "./components/OnlineNowStrip";
 import MemberPaywallModal from "./components/MemberPaywallModal";
 import { memberHasInteractionAccess } from "./lib/subscriptionAccess";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "./lib/flagCategories";
+import UpgradePromptModal from "./components/UpgradePromptModal";
+import { getFeatureAccess } from "./lib/featureAccess";
+import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "./lib/jobFilters";
 
 type Job = {
   id: string;
@@ -378,6 +381,10 @@ export default function HomePage() {
   const [jobsTotalApprovedCount, setJobsTotalApprovedCount] = useState<number | null>(null);
   const [jobsNewTodayCount, setJobsNewTodayCount] = useState<number | null>(null);
   const [jobSort, setJobSort] = useState<"recent" | "az" | "za">("recent");
+  const [jobFilters, setJobFilters] = useState<JobFilterState>({ location: "", keyword: "", minSalary: "" });
+  const [canViewFullJobs, setCanViewFullJobs] = useState(true);
+  const [canUseJobFilters, setCanUseJobFilters] = useState(true);
+  const [showJobsUpgradePrompt, setShowJobsUpgradePrompt] = useState(false);
   const [bizLoaded, setBizLoaded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -593,13 +600,13 @@ export default function HomePage() {
     setTogglingBizLikeFor(null);
   }
 
-  async function loadJobs() {
+  async function loadJobs(limit = 500) {
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfNextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 
     const [jobsRes, lastSeenRes, totalRes, todayRes] = await Promise.all([
-      supabase.from("jobs").select("*").eq("is_approved", true).order("created_at", { ascending: false }).limit(500),
+      supabase.from("jobs").select("*").eq("is_approved", true).order("created_at", { ascending: false }).limit(limit),
       supabase.from("jobs").select("last_seen_at").eq("source_type", "usajobs").order("last_seen_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("jobs").select("*", { count: "exact", head: true }).eq("is_approved", true),
       supabase
@@ -2086,7 +2093,7 @@ export default function HomePage() {
         // Check verification status — unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
-          .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status, referral_code, is_admin")
+          .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status, referral_code, is_admin, access_tier")
           .eq("user_id", currentUserId)
           .maybeSingle();
 
@@ -2116,7 +2123,10 @@ export default function HomePage() {
           authUserCreatedAtIso: data.user?.created_at ?? null,
           isAdmin: profileCheck.is_admin,
         });
+        const jobsAccess = getFeatureAccess((profileCheck as { access_tier?: string | null } | null)?.access_tier ?? null);
         memberInteractionAllowedRef.current = interactionOk;
+        setCanViewFullJobs(jobsAccess.canViewFullJobs);
+        setCanUseJobFilters(jobsAccess.canUseJobFilters);
 
         setUserId(currentUserId);
 
@@ -2129,7 +2139,7 @@ export default function HomePage() {
         }
 
         await Promise.all([
-          loadJobs().catch((err) => console.error("loadJobs failed:", err)),
+          loadJobs(jobsAccess.canViewFullJobs ? 500 : 5).catch((err) => console.error("loadJobs failed:", err)),
           loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err)),
           loadBusinessListings().catch((err) => console.error("loadBusinessListings failed:", err)),
           loadBizLikes(currentUserId).catch((err) => console.error("loadBizLikes failed:", err)),
@@ -2235,6 +2245,24 @@ export default function HomePage() {
     return copy;
   }, [jobs, jobSort]);
 
+  const jobLocationOptions = useMemo(() => uniqueJobLocations(sortedJobs), [sortedJobs]);
+
+  const mobileVisibleJobs = useMemo(() => {
+    if (!canViewFullJobs) return sortedJobs.slice(0, 5);
+    if (!canUseJobFilters) return sortedJobs;
+    return applyJobFilters(sortedJobs, jobFilters) as Job[];
+  }, [sortedJobs, canViewFullJobs, canUseJobFilters, jobFilters]);
+
+  const jobsForPane = isMobile ? mobileVisibleJobs : sortedJobs.slice(0, 5);
+
+  function openAllJobs() {
+    if (canViewFullJobs) {
+      window.location.href = "/jobs";
+      return;
+    }
+    setShowJobsUpgradePrompt(true);
+  }
+
   const skeletonStyle: React.CSSProperties = {
     background: "linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%)",
     backgroundSize: "200% 100%",
@@ -2319,30 +2347,61 @@ export default function HomePage() {
                   ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "—"}) new jobs today!
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 12, color: t.textFaint, fontWeight: 600, flexShrink: 0 }}>Sort</span>
-                <select
-                  id="job-sort"
-                  value={jobSort}
-                  onChange={(e) => setJobSort(e.target.value as "recent" | "az" | "za")}
-                  aria-label="Sort jobs"
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    maxWidth: isMobile ? "100%" : 260,
-                    fontSize: 13,
-                    padding: "5px 8px",
-                    borderRadius: 8,
-                    border: `1px solid ${t.inputBorder}`,
-                    background: t.input,
-                    color: t.text,
-                  }}
-                >
-                  <option value="recent">Most recently listed</option>
-                  <option value="az">Alphabetical A–Z</option>
-                  <option value="za">Alphabetical Z–A</option>
-                </select>
-              </div>
+              {isMobile && canUseJobFilters && (
+                <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, color: t.textFaint, fontWeight: 600, flexShrink: 0 }}>Sort</span>
+                    <select
+                      id="job-sort"
+                      value={jobSort}
+                      onChange={(e) => setJobSort(e.target.value as "recent" | "az" | "za")}
+                      aria-label="Sort jobs"
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 13,
+                        padding: "5px 8px",
+                        borderRadius: 8,
+                        border: `1px solid ${t.inputBorder}`,
+                        background: t.input,
+                        color: t.text,
+                      }}
+                    >
+                      <option value="recent">Most recently listed</option>
+                      <option value="az">Alphabetical A–Z</option>
+                      <option value="za">Alphabetical Z–A</option>
+                    </select>
+                  </div>
+                  <select
+                    value={jobFilters.location}
+                    onChange={(e) => setJobFilters((prev) => ({ ...prev, location: e.target.value }))}
+                    aria-label="Filter jobs by location"
+                    style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text }}
+                  >
+                    <option value="">All locations</option>
+                    {jobLocationOptions.map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={jobFilters.keyword}
+                    onChange={(e) => setJobFilters((prev) => ({ ...prev, keyword: e.target.value }))}
+                    placeholder="Keyword/tag (UXO, TSS-E, Safety)"
+                    style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    value={jobFilters.minSalary}
+                    onChange={(e) => setJobFilters((prev) => ({ ...prev, minSalary: e.target.value }))}
+                    placeholder="Minimum salary"
+                    style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
+                  />
+                </div>
+              )}
             </>
           )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -2364,7 +2423,7 @@ export default function HomePage() {
           </div>
 
           {/* Community leaderboard */}
-          {jobLeaderboard.length > 0 && (
+          {isMobile && canViewFullJobs && jobLeaderboard.length > 0 && (
             <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: "12px 16px" }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>
                 Top Community Contributors
@@ -2395,13 +2454,13 @@ export default function HomePage() {
 
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
             {!jobsLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
-            {jobsLoaded && jobs.length === 0 && (
+            {jobsLoaded && jobsForPane.length === 0 && (
               <div style={{ fontSize: 14, color: t.textMuted }}>
                 No approved jobs yet.
               </div>
             )}
 
-            {jobsLoaded && sortedJobs.map((job) => (
+            {jobsLoaded && jobsForPane.map((job) => (
               <div
                 key={job.id}
                 style={{
@@ -2505,6 +2564,25 @@ export default function HomePage() {
                 </div>
               </div>
             ))}
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={openAllJobs}
+              style={{
+                width: "100%",
+                background: "#111",
+                color: "white",
+                border: "none",
+                borderRadius: 10,
+                padding: "9px 12px",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: "pointer",
+              }}
+            >
+              See All Jobs
+            </button>
           </div>
         </aside>
 
@@ -4205,6 +4283,7 @@ export default function HomePage() {
         </div>
       )}
 
+      <UpgradePromptModal open={showJobsUpgradePrompt} onClose={() => setShowJobsUpgradePrompt(false)} />
       <MemberPaywallModal open={memberPaywallOpen} onClose={() => setMemberPaywallOpen(false)} />
     </div>
   );
