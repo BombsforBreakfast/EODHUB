@@ -20,16 +20,16 @@ async function assertAdmin(token: string) {
   const userClient = getUserClient(token);
   const admin = getAdminClient();
   const { data: { user } } = await userClient.auth.getUser();
-  if (!user) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) as const };
+  if (!user) return { error: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
   const { data: adminProfile } = await userClient
     .from("profiles")
     .select("is_admin")
     .eq("user_id", user.id)
     .maybeSingle();
   if (!adminProfile?.is_admin) {
-    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) as const };
+    return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
-  return { admin } as const;
+  return { admin };
 }
 
 async function maybeUnhide(admin: ReturnType<typeof getAdminClient>, contentType: string, contentId: string) {
