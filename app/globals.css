@@ -116,6 +116,18 @@ button:active, a.nav-btn:active {
   min-width: 0;
   justify-self: end;
 }
+
+/* Admin in trailing cluster — right column, clear of centered crab logo (desktop + mobile via display:contents). */
+.nav-admin-bar {
+  flex-shrink: 0;
+}
+@media (max-width: 900px) {
+  .nav-admin-bar .nav-btn {
+    padding: 6px 9px !important;
+    font-size: 12px !important;
+    border-radius: 8px !important;
+  }
+}
 .nav-brand {
   display: flex;
   flex-direction: column;
@@ -202,8 +214,7 @@ button:active, a.nav-btn:active {
     min-width: unset !important;
   }
 
-  /* Hide from row 1 on mobile — live in hub panel instead */
-  .nav-admin         { display: none !important; }
+  /* Hide from row 1 on mobile — live in hub panel instead (Admin stays visible via .nav-admin-bar). */
   .nav-events        { display: none !important; }
   .nav-jobs          { display: none !important; }
   .nav-messages-btn  { display: none !important; }

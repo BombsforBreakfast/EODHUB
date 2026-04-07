@@ -20,7 +20,7 @@ type Notification = {
 };
 
 type SearchResult = {
-  type: "user" | "business" | "job" | "unit" | "rabbithole";
+  type: "user" | "business" | "job" | "unit" | "rabbithole" | "directory";
   id: string;
   title: string;
   subtitle: string;
@@ -284,7 +284,7 @@ export default function NavBar() {
     setSearching(true);
     setShowSearchDropdown(true);
     try {
-      const [profilesRes, businessesRes, jobsRes, unitsRes] = await Promise.all([
+      const [profilesRes, businessesRes, jobsRes, unitsRes, directoryRes] = await Promise.all([
         supabase.from("profiles").select("user_id, first_name, last_name, display_name, role")
           .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%,role.ilike.%${q}%`).limit(5),
         supabase.from("business_listings").select("id, business_name, og_title, og_site_name, website_url, custom_blurb")
@@ -294,6 +294,8 @@ export default function NavBar() {
           .eq("is_approved", true)
           .or(`title.ilike.%${q}%,company_name.ilike.%${q}%,location.ilike.%${q}%`).limit(5),
         supabase.from("units").select("id, name, slug, type, description").ilike("name", `%${q}%`).limit(5),
+        supabase.from("unit_directory").select("id, name, org_type, state, unit_slug")
+          .or(`name.ilike.%${q}%,org_type.ilike.%${q}%,state.ilike.%${q}%`).limit(5),
       ]);
       const rabbitholeMatches = await searchRabbitholeThreads(supabase, q, 5);
 
@@ -325,6 +327,18 @@ export default function NavBar() {
           title: thread.title,
           subtitle: path || "Rabbithole Thread",
           href: `/rabbithole/thread/${thread.id}`,
+          external: false,
+        });
+      });
+
+      ((directoryRes.data ?? []) as { id: string; name: string; org_type: string; state: string | null; unit_slug: string | null }[]).forEach((row) => {
+        const subtitle = [row.org_type, row.state].filter(Boolean).join(" · ") || "Directory";
+        results.push({
+          type: "directory",
+          id: row.id,
+          title: row.name,
+          subtitle,
+          href: row.unit_slug ? `/units/${row.unit_slug}` : "/directory",
           external: false,
         });
       });
@@ -535,17 +549,6 @@ export default function NavBar() {
         <Link href="/directory" className="nav-btn nav-directory" style={navButton}>Directory</Link>
         <Link href="/rabbithole" className="nav-btn nav-rabbithole" style={navButton}>Rabbithole</Link>
 
-        {currentUserId && isAdmin && (
-          <Link
-            href="/admin"
-            className="nav-btn nav-admin"
-            style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
-          >
-            Admin
-            {adminPendingTotal > 0 && badge(adminPendingTotal)}
-          </Link>
-        )}
-
         {/* EOD Hub — mobile only */}
         <button
           ref={hubBtnRef}
@@ -603,6 +606,18 @@ export default function NavBar() {
       </Link>
 
       <div className="nav-trailing">
+      {currentUserId && isAdmin && (
+        <div className="nav-admin-bar">
+          <Link
+            href="/admin"
+            className="nav-btn nav-admin"
+            style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
+          >
+            Admin
+            {adminPendingTotal > 0 && badge(adminPendingTotal)}
+          </Link>
+        </div>
+      )}
       {/* Search bar row */}
       <div className="nav-search-row">
         <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "1 1 0", minWidth: 0, width: "100%" }}>
@@ -615,7 +630,7 @@ export default function NavBar() {
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
-              placeholder="Search people, jobs, groups, Rabbithole..."
+              placeholder="Search people, jobs, groups, businesses, directory, Rabbithole…"
               style={{ border: "none", outline: "none", fontSize: 13, flex: "1 1 0", minWidth: 0, width: "100%", background: "transparent", color: t.text }}
             />
             {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
@@ -641,13 +656,13 @@ export default function NavBar() {
                 </div>
               )}
 
-              {(["user", "unit", "job", "business", "rabbithole"] as const).map((type) => {
+              {(["user", "unit", "job", "business", "directory", "rabbithole"] as const).map((type) => {
                 const group = searchResults.filter((r) => r.type === type);
                 if (group.length === 0) return null;
-                const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Groups" : type === "business" ? "Businesses" : "Rabbithole";
-                const badgeColors: Record<SearchResult["type"], string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe", rabbithole: "#fee2e2" };
-                const badgeText: Record<SearchResult["type"], string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed", rabbithole: "#991b1b" };
-                const badgeLabel: Record<SearchResult["type"], string> = { user: "Person", job: "Job", business: "Biz", unit: "Group", rabbithole: "Library" };
+                const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Groups" : type === "business" ? "Businesses" : type === "directory" ? "Directory" : "Rabbithole";
+                const badgeColors: Record<SearchResult["type"], string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe", rabbithole: "#fee2e2", directory: "#cffafe" };
+                const badgeText: Record<SearchResult["type"], string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed", rabbithole: "#991b1b", directory: "#0e7490" };
+                const badgeLabel: Record<SearchResult["type"], string> = { user: "Person", job: "Job", business: "Biz", unit: "Group", rabbithole: "Library", directory: "Org" };
                 return (
                   <div key={type}>
                     <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>

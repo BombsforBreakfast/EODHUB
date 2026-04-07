@@ -1034,12 +1034,24 @@ export default function HomePage() {
   }
 
   async function loadCommentsForPosts(postIds: string[]) {
-    const commentsWithImageQuery = await supabase
+    /** Only non-hidden comments; if column missing (older DB), load without this filter. */
+    let commentsWithImageQuery = await supabase
       .from("post_comments")
       .select("id, post_id, user_id, content, created_at, image_url, gif_url")
       .in("post_id", postIds)
-      .eq("hidden_for_review", false)
+      .or("hidden_for_review.is.null,hidden_for_review.eq.false")
       .order("created_at", { ascending: true });
+
+    if (
+      commentsWithImageQuery.error &&
+      isMissingColumnError(commentsWithImageQuery.error, "hidden_for_review")
+    ) {
+      commentsWithImageQuery = await supabase
+        .from("post_comments")
+        .select("id, post_id, user_id, content, created_at, image_url, gif_url")
+        .in("post_id", postIds)
+        .order("created_at", { ascending: true });
+    }
 
     if (!commentsWithImageQuery.error) {
       return {
@@ -1060,12 +1072,23 @@ export default function HomePage() {
       };
     }
 
-    const commentsWithoutImageQuery = await supabase
+    let commentsWithoutImageQuery = await supabase
       .from("post_comments")
       .select("id, post_id, user_id, content, created_at")
       .in("post_id", postIds)
-      .eq("hidden_for_review", false)
+      .or("hidden_for_review.is.null,hidden_for_review.eq.false")
       .order("created_at", { ascending: true });
+
+    if (
+      commentsWithoutImageQuery.error &&
+      isMissingColumnError(commentsWithoutImageQuery.error, "hidden_for_review")
+    ) {
+      commentsWithoutImageQuery = await supabase
+        .from("post_comments")
+        .select("id, post_id, user_id, content, created_at")
+        .in("post_id", postIds)
+        .order("created_at", { ascending: true });
+    }
 
     if (commentsWithoutImageQuery.error) {
       console.error("Comments fallback load error:", {

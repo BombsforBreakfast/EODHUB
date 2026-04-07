@@ -4,20 +4,18 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { track } from "@vercel/analytics";
 import { supabase } from "../lib/lib/supabaseClient";
 import BreadcrumbTrail from "./components/BreadcrumbTrail";
 import RabbitholeShell from "./components/RabbitholeShell";
 import ThreadList from "./components/ThreadList";
 import { parseTrail } from "./lib/helpers";
-import { fetchRabbitholeThreads, fetchRabbitholeTopics, searchRabbitholeThreads } from "./lib/dataClient";
+import { fetchRabbitholeThreads, fetchRabbitholeTopics } from "./lib/dataClient";
 import type { RabbitholeThread, RabbitholeTopic } from "./lib/types";
 
 export default function RabbitholeHomePageClient() {
   const searchParams = useSearchParams();
   const [topics, setTopics] = useState<RabbitholeTopic[]>([]);
   const [threads, setThreads] = useState<RabbitholeThread[]>([]);
-  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,26 +40,6 @@ export default function RabbitholeHomePageClient() {
     };
   }, []);
 
-  useEffect(() => {
-    let mounted = true;
-    async function runSearch() {
-      const q = searchQuery.trim();
-      setError(null);
-      if (!q) {
-        const recent = await fetchRabbitholeThreads(supabase, { limit: 40 });
-        if (mounted) setThreads(recent);
-        return;
-      }
-      track("rabbithole_search", { query: q });
-      const results = await searchRabbitholeThreads(supabase, q, 40);
-      if (mounted) setThreads(results);
-    }
-    void runSearch();
-    return () => {
-      mounted = false;
-    };
-  }, [searchQuery]);
-
   const trail = useMemo(() => {
     return parseTrail(searchParams.get("trail") ?? "");
   }, [searchParams]);
@@ -69,24 +47,8 @@ export default function RabbitholeHomePageClient() {
   return (
     <RabbitholeShell
       title="Rabbithole"
-      description="Long-term knowledge layer for structured, revisitable technical discussion."
+      description="Long-term knowledge layer for structured, revisitable technical discussion. Use the search bar at the top to find library threads along with people, jobs, groups, and businesses."
     >
-      <div style={{ marginBottom: 14 }}>
-        <input
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          placeholder="Search wide net: UAS, C-UAS, Counter Unmanned Aerial Systems..."
-          style={{
-            width: "100%",
-            border: "1px solid #334155",
-            borderRadius: 12,
-            padding: "10px 12px",
-            background: "#0f172a",
-            color: "#f8fafc",
-          }}
-        />
-      </div>
-
       {trail.length > 0 && (
         <BreadcrumbTrail
           label="Your Tunnel"
@@ -116,9 +78,7 @@ export default function RabbitholeHomePageClient() {
       </section>
 
       <section>
-        <h2 style={{ fontSize: 18, marginBottom: 10 }}>
-          {searchQuery ? `Results for "${searchQuery}"` : "Recent Threads"}
-        </h2>
+        <h2 style={{ fontSize: 18, marginBottom: 10 }}>Recent Threads</h2>
         {loading ? (
           <div style={{ color: "#94a3b8" }}>Loading Rabbithole...</div>
         ) : error ? (
