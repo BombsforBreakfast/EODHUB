@@ -88,6 +88,7 @@ button:active, a.nav-btn:active {
   margin-bottom: 30px;
   width: 100%;
   box-sizing: border-box;
+  position: relative;
 }
 .nav-left {
   justify-self: start;
@@ -124,9 +125,14 @@ button:active, a.nav-btn:active {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: 0 1 auto;
   min-width: 0;
-  max-width: min(280px, 42vw);
+  position: absolute;
+  left: 304px; /* aligns with start of center feed column (280 + 24 gap) */
+  top: 50%;
+  transform: translateY(-50%);
+  width: min(360px, 34vw);
+  max-width: calc(100% - 304px - 220px);
+  z-index: 2;
 }
 
 /* ── Mobile layout (phones portrait + landscape) ── */
@@ -209,6 +215,11 @@ button:active, a.nav-btn:active {
   .nav-logo-mobile {
     display: flex !important;
     align-items: center !important;
+    position: absolute !important;
+    left: 50% !important;
+    top: calc(env(safe-area-inset-top, 0px) + 6px) !important;
+    transform: translateX(-50%) !important;
+    z-index: 2 !important;
   }
 
   /* Show mobile hub toggle */
@@ -223,6 +234,11 @@ button:active, a.nav-btn:active {
     flex: 0 0 100% !important;
     min-width: 0 !important;
     max-width: none !important;
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    transform: none !important;
+    width: auto !important;
   }
   .nav-search {
     flex: 1 1 0 !important;
