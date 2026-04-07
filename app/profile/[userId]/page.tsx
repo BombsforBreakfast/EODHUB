@@ -5,7 +5,9 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../lib/lib/supabaseClient";
 import NavBar from "../../components/NavBar";
+import ImageCropDialog from "../../components/ImageCropDialog";
 import { useTheme } from "../../lib/ThemeContext";
+import { ASPECT_AVATAR, ASPECT_EMPLOYER_LOGO } from "../../lib/imageCropTargets";
 import MentionTextarea, { extractMentionIds } from "../../components/MentionTextarea";
 import { PostLikersStack, type PostLikerBrief } from "../../components/PostLikersStack";
 
@@ -263,32 +265,54 @@ export default function PublicProfilePage() {
   const [togglingCommentLikeFor, setTogglingCommentLikeFor] = useState<string | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [wallAvatarCropOpen, setWallAvatarCropOpen] = useState(false);
+  const [wallAvatarCropSrc, setWallAvatarCropSrc] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
 
-  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  function closeWallAvatarCrop() {
+    if (wallAvatarCropSrc) URL.revokeObjectURL(wallAvatarCropSrc);
+    setWallAvatarCropSrc(null);
+    setWallAvatarCropOpen(false);
+  }
+
+  async function finalizeWallAvatarUpload(blob: Blob) {
     if (!currentUserId || currentUserId !== userId) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (!file.type.startsWith("image/")) { alert("Please select an image file."); e.target.value = ""; return; }
-    if (file.size > 8 * 1024 * 1024) { alert("Photo must be under 8 MB."); e.target.value = ""; return; }
+    const file = new File([blob], "avatar.jpg", { type: "image/jpeg" });
     try {
       setUploadingAvatar(true);
-      const safeName = `${Date.now()}-avatar-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const safeName = `${Date.now()}-avatar.jpg`;
       const filePath = `${currentUserId}/${safeName}`;
       const { error: uploadError } = await supabase.storage.from("profile-photos").upload(filePath, file, { upsert: true });
       if (uploadError) throw uploadError;
       const { data } = supabase.storage.from("profile-photos").getPublicUrl(filePath);
       const { error: updateError } = await supabase.from("profiles").update({ photo_url: data.publicUrl }).eq("user_id", currentUserId);
       if (updateError) throw updateError;
-      await loadProfile(currentUserId);
+      await loadProfile(userId);
     } catch (err) {
       console.error(err);
       alert(`Photo upload failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setUploadingAvatar(false);
-      e.target.value = "";
     }
+  }
+
+  function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!currentUserId || currentUserId !== userId) return;
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Photo must be under 8 MB.");
+      return;
+    }
+    if (wallAvatarCropSrc) URL.revokeObjectURL(wallAvatarCropSrc);
+    setWallAvatarCropSrc(URL.createObjectURL(file));
+    setWallAvatarCropOpen(true);
   }
 
   function openWallEditProfile() {
@@ -1252,6 +1276,19 @@ export default function PublicProfilePage() {
     <>
     <div style={{ padding: "24px 16px", background: t.bg, minHeight: "100vh", color: t.text }}>
       <NavBar />
+
+      <ImageCropDialog
+        open={wallAvatarCropOpen}
+        imageSrc={wallAvatarCropSrc}
+        aspect={profile?.is_employer ? ASPECT_EMPLOYER_LOGO : ASPECT_AVATAR}
+        cropShape={profile?.is_employer ? "rect" : "round"}
+        title={profile?.is_employer ? "Crop employer logo" : "Crop profile photo"}
+        onCancel={closeWallAvatarCrop}
+        onComplete={async (blob) => {
+          await finalizeWallAvatarUpload(blob);
+          closeWallAvatarCrop();
+        }}
+      />
 
       {/* Mobile unread messages banner — own wall only */}
       {isMobile && isOwnWall && (

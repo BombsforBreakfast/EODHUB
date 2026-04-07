@@ -5,7 +5,9 @@ import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 import ReportProblemButton from "../components/ReportProblemButton";
+import ImageCropDialog from "../components/ImageCropDialog";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../lib/adminPendingCounts";
+import { ASPECT_AVATAR, ASPECT_EMPLOYER_LOGO } from "../lib/imageCropTargets";
 
 function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null }) {
   const { t } = useTheme();
@@ -158,6 +160,8 @@ export default function MyAccountPage() {
   const [togglingSeek, setTogglingSeek] = useState(false);
 
   const photoInputRef = useRef<HTMLInputElement>(null);
+  const [avatarCropOpen, setAvatarCropOpen] = useState(false);
+  const [avatarCropSrc, setAvatarCropSrc] = useState<string | null>(null);
 
   const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
   const [unsavingJobId, setUnsavingJobId] = useState<string | null>(null);
@@ -361,28 +365,18 @@ export default function MyAccountPage() {
     setTogglingSeek(false);
   }
 
-  async function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  function closeAvatarCrop() {
+    if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
+    setAvatarCropSrc(null);
+    setAvatarCropOpen(false);
+  }
+
+  async function finalizeAvatarUpload(blob: Blob) {
     if (!currentUserId) return;
-
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("Only image files are allowed for profile photos.");
-      e.target.value = "";
-      return;
-    }
-
-    if (file.size > 8 * 1024 * 1024) {
-      alert("Photo must be under 8 MB. Try compressing the image first.");
-      e.target.value = "";
-      return;
-    }
-
+    const file = new File([blob], "avatar.jpg", { type: "image/jpeg" });
     try {
       setUploadingAvatar(true);
-
-      const safeName = `${Date.now()}-avatar-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const safeName = `${Date.now()}-avatar.jpg`;
       const filePath = `${currentUserId}/${safeName}`;
 
       const { error: uploadError } = await supabase.storage
@@ -391,10 +385,7 @@ export default function MyAccountPage() {
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage
-        .from("profile-photos")
-        .getPublicUrl(filePath);
-
+      const { data } = supabase.storage.from("profile-photos").getPublicUrl(filePath);
       const publicUrl = data.publicUrl;
 
       const { error: updateError } = await supabase
@@ -411,8 +402,28 @@ export default function MyAccountPage() {
       alert(`Photo upload failed: ${msg}`);
     } finally {
       setUploadingAvatar(false);
-      e.target.value = "";
     }
+  }
+
+  function handleAvatarUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!currentUserId) return;
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Only image files are allowed for profile photos.");
+      return;
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Photo must be under 8 MB. Try compressing the image first.");
+      return;
+    }
+
+    if (avatarCropSrc) URL.revokeObjectURL(avatarCropSrc);
+    setAvatarCropSrc(URL.createObjectURL(file));
+    setAvatarCropOpen(true);
   }
 
   useEffect(() => {
@@ -488,6 +499,19 @@ export default function MyAccountPage() {
   return (
     <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" as const, background: t.bg, minHeight: "100vh", color: t.text }}>
       <NavBar />
+
+      <ImageCropDialog
+        open={avatarCropOpen}
+        imageSrc={avatarCropSrc}
+        aspect={profile?.is_employer ? ASPECT_EMPLOYER_LOGO : ASPECT_AVATAR}
+        cropShape={profile?.is_employer ? "rect" : "round"}
+        title={profile?.is_employer ? "Crop employer logo" : "Crop profile photo"}
+        onCancel={closeAvatarCrop}
+        onComplete={async (blob) => {
+          await finalizeAvatarUpload(blob);
+          closeAvatarCrop();
+        }}
+      />
 
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
       <h1 style={{ fontSize: 32, fontWeight: 900, marginTop: 20, color: t.text }}>My Account</h1>

@@ -433,10 +433,19 @@ export default function UnitPage() {
           ← Groups
         </a>
 
-        {/* Cover + Header */}
+        {/* Cover + Header — vertical split: portrait cover | details */}
         <div style={{ borderRadius: 16, overflow: "hidden", border: `1px solid ${t.border}`, background: t.surface, marginBottom: 20 }}>
-          <div style={{ height: 140, background: unit.cover_photo_url ? `url(${unit.cover_photo_url}) center/cover` : (isDark ? "#1a1a2e" : "#1e3a5f") }} />
-          <div style={{ padding: "16px 20px 20px" }}>
+          <div className="unit-header-split">
+            <div
+              className="unit-header-cover-col"
+              style={{ background: unit.cover_photo_url ? undefined : (isDark ? "#1a1a2e" : "#1e3a5f") }}
+            >
+              {unit.cover_photo_url ? (
+                // eslint-disable-next-line @next/next/no-img-element -- remote unit cover URL
+                <img src={unit.cover_photo_url} alt="" />
+              ) : null}
+            </div>
+            <div className="unit-header-body" style={{ padding: "16px 20px 20px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12 }}>
               <div>
                 <div style={{ fontSize: 24, fontWeight: 900, marginBottom: 4 }}>{unit.name}</div>
@@ -482,6 +491,7 @@ export default function UnitPage() {
                   </button>
                 )}
               </div>
+            </div>
             </div>
           </div>
         </div>

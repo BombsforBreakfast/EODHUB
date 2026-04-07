@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import NavBar from "../components/NavBar";
+import ImageCropDialog from "../components/ImageCropDialog";
+import { ASPECT_UNIT_COVER } from "../lib/imageCropTargets";
 
 type Unit = {
   id: string;
@@ -54,6 +56,8 @@ export default function UnitsPage() {
   const [uploadingCover, setUploadingCover] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const coverInputRef = useRef<HTMLInputElement>(null);
+  const [coverCropOpen, setCoverCropOpen] = useState(false);
+  const [coverCropSrc, setCoverCropSrc] = useState<string | null>(null);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -103,12 +107,18 @@ export default function UnitsPage() {
     searchDebounceRef.current = setTimeout(() => loadUnits(value), 350);
   }
 
-  async function handleCoverPhotoSelect(file: File) {
+  function closeCoverCrop() {
+    if (coverCropSrc) URL.revokeObjectURL(coverCropSrc);
+    setCoverCropSrc(null);
+    setCoverCropOpen(false);
+  }
+
+  async function uploadCoverBlob(blob: Blob) {
     setUploadingCover(true);
     setCreateError(null);
     try {
-      const ext = file.name.split(".").pop() ?? "jpg";
-      const path = `unit-covers/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.${ext}`;
+      const file = new File([blob], "cover.jpg", { type: "image/jpeg" });
+      const path = `unit-covers/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.jpg`;
       const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
       if (error) throw new Error(error.message);
       const { data } = supabase.storage.from("feed-images").getPublicUrl(path);
@@ -172,6 +182,18 @@ export default function UnitsPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
+      <ImageCropDialog
+        open={coverCropOpen}
+        imageSrc={coverCropSrc}
+        aspect={ASPECT_UNIT_COVER}
+        cropShape="rect"
+        title="Crop group cover"
+        onCancel={closeCoverCrop}
+        onComplete={async (blob) => {
+          await uploadCoverBlob(blob);
+          closeCoverCrop();
+        }}
+      />
       <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box" }}>
         <NavBar />
 
@@ -362,11 +384,26 @@ export default function UnitsPage() {
                   type="file"
                   accept="image/*"
                   style={{ display: "none" }}
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleCoverPhotoSelect(f); }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    e.target.value = "";
+                    if (!f) return;
+                    if (!f.type.startsWith("image/")) {
+                      setCreateError("Please choose an image file.");
+                      return;
+                    }
+                    if (f.size > 8 * 1024 * 1024) {
+                      setCreateError("Cover image must be under 8 MB.");
+                      return;
+                    }
+                    if (coverCropSrc) URL.revokeObjectURL(coverCropSrc);
+                    setCoverCropSrc(URL.createObjectURL(f));
+                    setCoverCropOpen(true);
+                  }}
                 />
                 {createCoverPreview ? (
-                  <div style={{ position: "relative", display: "inline-block" }}>
-                    <img src={createCoverPreview} alt="Cover" style={{ width: "100%", height: 80, objectFit: "cover", borderRadius: 10 }} />
+                  <div style={{ position: "relative", display: "inline-block", width: "100%", maxWidth: 200 }}>
+                    <img src={createCoverPreview} alt="Cover" style={{ width: "100%", aspectRatio: "3 / 4", objectFit: "cover", borderRadius: 10, display: "block" }} />
                     <button
                       onClick={() => { setCreateCover(""); setCreateCoverPreview(null); if (coverInputRef.current) coverInputRef.current.value = ""; }}
                       style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}
