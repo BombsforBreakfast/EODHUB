@@ -8,6 +8,7 @@ import EodCrabLogo from "./EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
 import { getFeatureAccess } from "../lib/featureAccess";
+import { isFounderUser } from "../lib/rabbitholeAccess";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 
 type Notification = {
@@ -63,6 +64,7 @@ export default function NavBar() {
   const unreadProfileNotifs = notifications.filter((n) => !n.is_read && n.post_owner_id !== null).length;
   // Feed badge: notifications that link to the home feed
   const unreadFeedNotifs = notifications.filter((n) => !n.is_read && n.post_owner_id === null).length;
+  const canAccessRabbithole = isFounderUser(currentUserId);
 
   async function loadUnreadMessages(uid: string) {
     // Skip re-fetch while on messages page — badge is managed locally there
@@ -297,7 +299,9 @@ export default function NavBar() {
         supabase.from("unit_directory").select("id, name, org_type, state, unit_slug")
           .or(`name.ilike.%${q}%,org_type.ilike.%${q}%,state.ilike.%${q}%`).limit(5),
       ]);
-      const rabbitholeMatches = await searchRabbitholeThreads(supabase, q, 5);
+      const rabbitholeMatches = canAccessRabbithole
+        ? await searchRabbitholeThreads(supabase, q, 5)
+        : [];
 
       const results: SearchResult[] = [];
 
@@ -546,7 +550,7 @@ export default function NavBar() {
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         {canViewFullJobs && <Link href="/jobs" className="nav-btn nav-jobs" style={navButton}>Jobs</Link>}
         <Link href="/units" className="nav-btn nav-units" style={navButton}>Groups</Link>
-        <Link href="/rabbithole" className="nav-btn nav-rabbithole" style={navButton}>Rabbithole</Link>
+        {canAccessRabbithole && <Link href="/rabbithole" className="nav-btn nav-rabbithole" style={navButton}>Rabbithole</Link>}
 
         {/* EOD Hub — mobile only */}
         <button
@@ -629,7 +633,9 @@ export default function NavBar() {
               value={searchQuery}
               onChange={(e) => handleSearchChange(e.target.value)}
               onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
-              placeholder="Search people, jobs, groups, businesses, directory, Rabbithole…"
+              placeholder={canAccessRabbithole
+                ? "Search people, jobs, groups, businesses, directory, Rabbithole…"
+                : "Search people, jobs, groups, businesses, directory…"}
               style={{ border: "none", outline: "none", fontSize: 13, flex: "1 1 0", minWidth: 0, width: "100%", background: "transparent", color: t.text }}
             />
             {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
@@ -655,7 +661,10 @@ export default function NavBar() {
                 </div>
               )}
 
-              {(["user", "unit", "job", "business", "directory", "rabbithole"] as const).map((type) => {
+              {(canAccessRabbithole
+                ? (["user", "unit", "job", "business", "directory", "rabbithole"] as const)
+                : (["user", "unit", "job", "business", "directory"] as const)
+              ).map((type) => {
                 const group = searchResults.filter((r) => r.type === type);
                 if (group.length === 0) return null;
                 const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Groups" : type === "business" ? "Businesses" : type === "directory" ? "Directory" : "Rabbithole";
@@ -804,7 +813,9 @@ export default function NavBar() {
                     { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
                     { label: "Groups", href: "/units", emoji: "🪖", badge: 0, onNav: null },
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
-                    { label: "Rabbithole", href: "/rabbithole", emoji: "🕳️", badge: 0, onNav: null },
+                    ...(canAccessRabbithole
+                      ? [{ label: "Rabbithole", href: "/rabbithole", emoji: "🕳️", badge: 0, onNav: null as (() => Promise<void>) | null }]
+                      : []),
                     ...(isAdmin
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),
