@@ -419,6 +419,21 @@ const [memWizUrl, setMemWizUrl] = useState("");
     setActionLoading(null);
   }
 
+  async function toggleBusinessFeatured(id: string, nextFeatured: boolean) {
+    setActionLoading(id);
+    const { error } = await supabase
+      .from("business_listings")
+      .update({ is_featured: nextFeatured })
+      .eq("id", id);
+    if (error) {
+      alert(error.message);
+    } else {
+      showToast(nextFeatured ? "Listing featured." : "Listing unfeatured.");
+      await Promise.all([loadBusinesses(), loadPendingCounts()]);
+    }
+    setActionLoading(null);
+  }
+
   async function rejectBusiness(id: string) {
     askConfirm("Delete this business listing?", async () => {
       setActionLoading(id);
@@ -1173,12 +1188,20 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             <>
                               <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Approved</span>
                               {!biz.is_featured && (
-                                <button style={{ ...actionBtn("#f59e0b"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === biz.id} onClick={() => approveBusiness(biz.id, true)}>
+                                <button style={{ ...actionBtn("#f59e0b"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === biz.id} onClick={() => toggleBusinessFeatured(biz.id, true)}>
                                   {actionLoading === biz.id && <span className="btn-spinner" />}
                                   Feature
                                 </button>
                               )}
-                              {biz.is_featured && <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Featured</span>}
+                              {biz.is_featured && (
+                                <>
+                                  <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Featured</span>
+                                  <button style={{ ...actionBtn("#92400e"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === biz.id} onClick={() => toggleBusinessFeatured(biz.id, false)}>
+                                    {actionLoading === biz.id && <span className="btn-spinner" />}
+                                    Unfeature
+                                  </button>
+                                </>
+                              )}
                             </>
                           ) : (
                             <>

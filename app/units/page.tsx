@@ -224,8 +224,14 @@ export default function UnitsPage() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
           <div>
             <div style={{ fontSize: 28, fontWeight: 900 }}>Groups</div>
-            <div style={{ fontSize: 14, color: t.textMuted, marginTop: 2 }}>
-              Private Communities and Groups
+            <div style={{ fontSize: 14, color: t.textMuted, marginTop: 2, lineHeight: 1.55, maxWidth: 520 }}>
+              <div style={{ fontWeight: 700, color: t.text, marginBottom: 4 }}>Your network, organized.</div>
+              <div>
+                Create private units for current teams, alumni groups, organizations, or shared interests. Share updates, coordinate, and stay connected in a more focused space.
+              </div>
+              <div style={{ marginTop: 4 }}>
+                Relevant activity from your units will also surface in your feed.
+              </div>
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

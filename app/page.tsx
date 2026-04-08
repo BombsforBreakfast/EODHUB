@@ -83,6 +83,7 @@ type BusinessListing = {
   is_approved: boolean;
   is_featured: boolean;
   like_count: number;
+  listing_type?: "business" | "organization" | "resource" | null;
 };
 
 type ProfileName = {
@@ -101,9 +102,13 @@ type DiscoverProfile = {
   photo_url: string | null;
   service: string | null;
   status: string | null;
-  userKnows: boolean;
-  userWorkedWith: boolean;
+  knowStatus: "none" | "pending_outgoing" | "accepted";
 };
+
+function isConnV2MissingColumnError(error: unknown): boolean {
+  const msg = (error as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
+  return msg.includes("column") && (msg.includes("status") || msg.includes("worked_with"));
+}
 
 function getServiceRingColor(service: string | null | undefined): string | null {
   switch (service) {
@@ -185,6 +190,22 @@ type FeedPost = RankedPostRow & {
   og_site_name: string | null;
 };
 
+type UnitFeedHighlight = {
+  id: string;
+  unit_id: string;
+  unit_name: string;
+  unit_slug: string;
+  unit_cover_image_url: string | null;
+  user_id: string;
+  author_name: string;
+  author_photo: string | null;
+  content: string | null;
+  photo_url: string | null;
+  created_at: string;
+  like_count: number;
+  comment_count: number;
+};
+
 function formatDate(dateString: string) {
   return new Date(dateString).toLocaleString();
 }
@@ -207,6 +228,47 @@ function normalizeUrl(url: string): string {
   if (!trimmed) return "";
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return trimmed;
   return `https://${trimmed}`;
+}
+
+type BizListingType = "business" | "organization" | "resource";
+
+function normalizeBizListingType(value: string | null | undefined): BizListingType {
+  if (value === "organization" || value === "resource") return value;
+  return "business";
+}
+
+function isPermanentlyFeaturedListing(listing: Pick<BusinessListing, "website_url" | "business_name" | "og_title" | "og_site_name">): boolean {
+  const url = (listing.website_url || "").toLowerCase();
+  const text = `${listing.business_name || ""} ${listing.og_title || ""} ${listing.og_site_name || ""}`.toLowerCase();
+  return (
+    url.includes("thelongwalkhome.org") ||
+    url.includes("eod-wf.org") ||
+    url.includes("eodwarriorfoundation.org") ||
+    text.includes("the long walk") ||
+    text.includes("eod warrior foundation")
+  );
+}
+
+function normalizeBizListingTypeForListing(
+  listing: Pick<BusinessListing, "listing_type" | "website_url" | "business_name" | "og_title" | "og_site_name">
+): BizListingType {
+  // Until the listing_type migration is applied everywhere, force known nonprofit listings to Resource.
+  if (isPermanentlyFeaturedListing(listing)) return "resource";
+  return normalizeBizListingType(listing.listing_type);
+}
+
+function getBizTypePriority(
+  listing: Pick<BusinessListing, "listing_type" | "website_url" | "business_name" | "og_title" | "og_site_name">
+): number {
+  const type = normalizeBizListingTypeForListing(listing);
+  if (type === "business") return 0;
+  if (type === "organization") return 1;
+  return 2;
+}
+
+function isBizListingTypeMissingColumnError(error: unknown): boolean {
+  const msg = (error as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
+  return msg.includes("column") && msg.includes("listing_type");
 }
 
 const BARE_DOMAIN_RE = /\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/;
@@ -366,6 +428,7 @@ export default function HomePage() {
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
   const [jobLeaderboard, setJobLeaderboard] = useState<{ user_id: string; name: string; photo_url: string | null; count: number }[]>([]);
   const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [unitFeedHighlights, setUnitFeedHighlights] = useState<UnitFeedHighlight[]>([]);
   const [businessListings, setBusinessListings] = useState<BusinessListing[]>(
     []
   );
@@ -411,7 +474,9 @@ export default function HomePage() {
   const [bizUrl, setBizUrl] = useState("");
   const [bizName, setBizName] = useState("");
   const [bizBlurb, setBizBlurb] = useState("");
+  const [bizType, setBizType] = useState<BizListingType>("business");
   const [bizOgPreview, setBizOgPreview] = useState<OgPreview | null>(null);
+  const [featuredBizBillboardIndex, setFeaturedBizBillboardIndex] = useState(0);
   const [fetchingBizOg, setFetchingBizOg] = useState(false);
   const [submittingBiz, setSubmittingBiz] = useState(false);
   const [bizSubmitSuccess, setBizSubmitSuccess] = useState(false);
@@ -820,21 +885,43 @@ export default function HomePage() {
 
     if (!data || data.length === 0) return;
 
-    // Fetch connections for the full pool upfront so shuffles need no network calls
+    // Fetch relationships for the full pool upfront so shuffles need no network calls.
+    // Any existing connection (pending/accepted, either direction) is excluded from discovery.
     const allIds = data.map((p) => p.user_id);
-    const { data: conns } = await supabase
+    let connectedUserIds = new Set<string>();
+
+    const { data: connsV2, error: connsV2Error } = await supabase
       .from("profile_connections")
-      .select("target_user_id, connection_type")
-      .eq("requester_user_id", currentUserId)
-      .in("target_user_id", allIds);
+      .select("requester_user_id, target_user_id, status")
+      .or(`requester_user_id.eq.${currentUserId},target_user_id.eq.${currentUserId}`);
 
-    const knowSet = new Set((conns ?? []).filter((c) => c.connection_type === "know").map((c) => c.target_user_id));
-    const workedSet = new Set((conns ?? []).filter((c) => c.connection_type === "worked_with").map((c) => c.target_user_id));
+    if (connsV2Error && isConnV2MissingColumnError(connsV2Error)) {
+      // Legacy schema fallback (pre-status column).
+      const { data: connsLegacy } = await supabase
+        .from("profile_connections")
+        .select("requester_user_id, target_user_id, connection_type")
+        .eq("requester_user_id", currentUserId)
+        .in("target_user_id", allIds);
 
-    // Only show people the current user hasn't already connected with
+      connectedUserIds = new Set(
+        ((connsLegacy ?? []) as { target_user_id: string }[])
+          .map((c) => c.target_user_id)
+      );
+    } else {
+      connectedUserIds = new Set(
+        ((connsV2 ?? []) as { requester_user_id: string; target_user_id: string; status: string }[])
+          .filter((c) => c.status === "accepted" || c.status === "pending")
+          .map((c) => (c.requester_user_id === currentUserId ? c.target_user_id : c.requester_user_id))
+          .filter((id) => allIds.includes(id))
+      );
+    }
+
     const pool = data
-      .filter((p) => !knowSet.has(p.user_id) && !workedSet.has(p.user_id))
-      .map((p) => ({ ...p, userKnows: false, userWorkedWith: false })) as DiscoverProfile[];
+      .filter((p) => !connectedUserIds.has(p.user_id))
+      .map((p) => ({
+        ...p,
+        knowStatus: "none" as const,
+      })) as DiscoverProfile[];
 
     setDiscoverProfiles(pool);
     const initial = pickDiscoverSlice(pool);
@@ -936,50 +1023,20 @@ export default function HomePage() {
     }
   }
 
-  async function toggleDiscoverConnection(targetUserId: string, type: "know" | "worked_with") {
+  async function toggleDiscoverConnection(targetUserId: string) {
     if (!userId) return;
     if (blockMemberInteraction()) return;
     const profile = discoverProfiles.find((p) => p.user_id === targetUserId);
     if (!profile) return;
-
-    const isActive = type === "worked_with" ? profile.userWorkedWith : profile.userKnows;
-
-    if (isActive) {
-      // Remove connection — put user back in pool with flag cleared
-      await supabase
-        .from("profile_connections")
-        .delete()
-        .eq("requester_user_id", userId)
-        .eq("target_user_id", targetUserId)
-        .eq("connection_type", type);
-      const updater = (prev: DiscoverProfile[]) =>
-        prev.map((p) =>
-          p.user_id === targetUserId
-            ? { ...p, [type === "worked_with" ? "userWorkedWith" : "userKnows"]: false }
-            : p
-        );
-      setDiscoverProfiles(updater);
-      setDiscoverVisible(updater);
-    } else {
-      // Add connection — remove user from discover pool (they're now connected)
-      if (type === "worked_with" && profile.userKnows) {
-        await supabase
-          .from("profile_connections")
-          .delete()
-          .eq("requester_user_id", userId)
-          .eq("target_user_id", targetUserId)
-          .eq("connection_type", "know");
-      }
-      await supabase.from("profile_connections").insert([
-        { requester_user_id: userId, target_user_id: targetUserId, connection_type: type },
-      ]);
-      const verb = type === "worked_with" ? "worked with" : "knows";
-      notify(targetUserId, `${currentUserName} says they ${verb} you`, targetUserId);
-      // Remove from discover pool — they're now connected
-      const updater = (prev: DiscoverProfile[]) => prev.filter((p) => p.user_id !== targetUserId);
-      setDiscoverProfiles(updater);
-      setDiscoverVisible(updater);
-    }
+    if (profile.knowStatus === "pending_outgoing") return;
+    await supabase.from("profile_connections").insert([
+      { requester_user_id: userId, target_user_id: targetUserId, status: "pending", worked_with: false },
+    ]);
+    notify(targetUserId, `${currentUserName} says they know you`, targetUserId);
+    const updater = (prev: DiscoverProfile[]): DiscoverProfile[] =>
+      prev.filter((p) => p.user_id !== targetUserId);
+    setDiscoverProfiles(updater);
+    setDiscoverVisible(updater);
   }
 
   async function loadSavedJobs(currentUserId: string) {
@@ -1117,6 +1174,116 @@ export default function HomePage() {
 
   async function loadPosts(currentUserId?: string | null) {
     const effectiveUserId = currentUserId ?? userId;
+
+    if (effectiveUserId) {
+      const { data: memberships } = await supabase
+        .from("unit_members")
+        .select("unit_id")
+        .eq("user_id", effectiveUserId)
+        .eq("status", "approved");
+
+      const unitIds = ((memberships ?? []) as { unit_id: string }[]).map((m) => m.unit_id);
+      if (unitIds.length > 0) {
+        const sinceIso = new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString();
+        const { data: unitPosts } = await supabase
+          .from("unit_posts")
+          .select("id, unit_id, user_id, content, photo_url, created_at, post_type")
+          .in("unit_id", unitIds)
+          .eq("post_type", "post")
+          .gte("created_at", sinceIso)
+          .order("created_at", { ascending: false })
+          .limit(120);
+
+        const candidatePosts = (unitPosts ?? []) as {
+          id: string;
+          unit_id: string;
+          user_id: string;
+          content: string | null;
+          photo_url: string | null;
+          created_at: string;
+        }[];
+
+        if (candidatePosts.length > 0) {
+          const candidatePostIds = candidatePosts.map((p) => p.id);
+          const candidateAuthorIds = [...new Set(candidatePosts.map((p) => p.user_id))];
+
+          const [{ data: unitLikes }, { data: unitComments }, { data: unitsData }, { data: unitAuthors }] =
+            await Promise.all([
+              supabase.from("unit_post_likes").select("unit_post_id").in("unit_post_id", candidatePostIds),
+              supabase.from("unit_post_comments").select("unit_post_id").in("unit_post_id", candidatePostIds),
+              supabase.from("units").select("id, name, slug, cover_image_url").in("id", unitIds),
+              supabase.from("profiles").select("user_id, first_name, last_name, display_name, photo_url").in("user_id", candidateAuthorIds),
+            ]);
+
+          const likeMap = new Map<string, number>();
+          ((unitLikes ?? []) as { unit_post_id: string }[]).forEach((row) => {
+            likeMap.set(row.unit_post_id, (likeMap.get(row.unit_post_id) ?? 0) + 1);
+          });
+          const commentMap = new Map<string, number>();
+          ((unitComments ?? []) as { unit_post_id: string }[]).forEach((row) => {
+            commentMap.set(row.unit_post_id, (commentMap.get(row.unit_post_id) ?? 0) + 1);
+          });
+
+          const unitMap = new Map<string, { name: string; slug: string; cover_image_url: string | null }>();
+          ((unitsData ?? []) as { id: string; name: string; slug: string; cover_image_url: string | null }[]).forEach((u) => {
+            unitMap.set(u.id, { name: u.name, slug: u.slug, cover_image_url: u.cover_image_url ?? null });
+          });
+          const authorMap = new Map<string, { name: string; photo_url: string | null }>();
+          ((unitAuthors ?? []) as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null }[])
+            .forEach((a) => {
+              const name =
+                a.display_name?.trim() ||
+                `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim() ||
+                "Member";
+              authorMap.set(a.user_id, { name, photo_url: a.photo_url ?? null });
+            });
+
+          const scored = candidatePosts
+            .map((p) => {
+              const likes = likeMap.get(p.id) ?? 0;
+              const comments = commentMap.get(p.id) ?? 0;
+              const engagement = likes + comments * 2;
+              return { ...p, likes, comments, engagement };
+            })
+            // Keep this high-signal so one-off low engagement posts do not spill into global feed.
+            .filter((p) => p.engagement >= 4 && (p.likes + p.comments) >= 2)
+            .sort((a, b) => {
+              if (b.engagement !== a.engagement) return b.engagement - a.engagement;
+              return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            })
+            .slice(0, 3)
+            .map((p) => {
+              const unit = unitMap.get(p.unit_id);
+              if (!unit?.slug) return null;
+              const author = authorMap.get(p.user_id);
+              return {
+                id: p.id,
+                unit_id: p.unit_id,
+                unit_name: unit.name,
+                unit_slug: unit.slug,
+                unit_cover_image_url: unit.cover_image_url ?? null,
+                user_id: p.user_id,
+                author_name: author?.name ?? "Member",
+                author_photo: author?.photo_url ?? null,
+                content: p.content ?? null,
+                photo_url: p.photo_url ?? null,
+                created_at: p.created_at,
+                like_count: p.likes,
+                comment_count: p.comments,
+              } as UnitFeedHighlight;
+            })
+            .filter((p): p is UnitFeedHighlight => Boolean(p));
+
+          setUnitFeedHighlights(scored);
+        } else {
+          setUnitFeedHighlights([]);
+        }
+      } else {
+        setUnitFeedHighlights([]);
+      }
+    } else {
+      setUnitFeedHighlights([]);
+    }
 
     const { data: rankedPostsData, error: postsError } = await supabase
       .from("ranked_posts")
@@ -1342,13 +1509,38 @@ export default function HomePage() {
       };
     });
 
-    // Rank: fresh posts float to top by default; engagement fights time decay
+    const authorAffinityBoost = new Map<string, number>();
+    if (effectiveUserId) {
+      // Confirmed Know relationships increase mutual feed visibility.
+      // Worked-with is a stronger trust signal and gets extra weighting.
+      const { data: acceptedConnections } = await supabase
+        .from("profile_connections")
+        .select("requester_user_id, target_user_id, worked_with")
+        .eq("status", "accepted")
+        .or(`requester_user_id.eq.${effectiveUserId},target_user_id.eq.${effectiveUserId}`);
+      ((acceptedConnections ?? []) as {
+        requester_user_id: string;
+        target_user_id: string;
+        worked_with: boolean;
+      }[]).forEach((row) => {
+        const otherId =
+          row.requester_user_id === effectiveUserId
+            ? row.target_user_id
+            : row.requester_user_id;
+        authorAffinityBoost.set(otherId, row.worked_with ? 1.45 : 1.25);
+      });
+    }
+
+    // Rank: fresh posts float to top by default; engagement fights time decay.
+    // Connection affinity adds a mild social boost once Know is mutually accepted.
     const now = Date.now();
     mergedPosts.sort((a, b) => {
       const ageA = (now - new Date(a.created_at).getTime()) / 3_600_000;
       const ageB = (now - new Date(b.created_at).getTime()) / 3_600_000;
-      const scoreA = (a.likeCount + a.commentCount * 2 + 1) / Math.pow(ageA + 2, 1.5);
-      const scoreB = (b.likeCount + b.commentCount * 2 + 1) / Math.pow(ageB + 2, 1.5);
+      const baseA = (a.likeCount + a.commentCount * 2 + 1) / Math.pow(ageA + 2, 1.5);
+      const baseB = (b.likeCount + b.commentCount * 2 + 1) / Math.pow(ageB + 2, 1.5);
+      const scoreA = baseA * (authorAffinityBoost.get(a.user_id) ?? 1);
+      const scoreB = baseB * (authorAffinityBoost.get(b.user_id) ?? 1);
       return scoreB - scoreA;
     });
 
@@ -1681,7 +1873,7 @@ export default function HomePage() {
     if (!url || !bizName.trim()) return;
     try {
       setSubmittingBiz(true);
-      const { error } = await supabase.from("business_listings").insert([{
+      const basePayload = {
         website_url: url,
         business_name: bizName.trim(),
         custom_blurb: bizBlurb.trim() || null,
@@ -1691,10 +1883,15 @@ export default function HomePage() {
         og_site_name: bizOgPreview?.siteName ?? null,
         is_approved: false,
         is_featured: false,
-      }]);
-      if (error) { alert(error.message); return; }
+      };
+      const { error } = await supabase.from("business_listings").insert([{ ...basePayload, listing_type: bizType }]);
+      if (error && isBizListingTypeMissingColumnError(error)) {
+        // Backward compatibility for instances not yet migrated.
+        const legacy = await supabase.from("business_listings").insert([basePayload]);
+        if (legacy.error) { alert(legacy.error.message); return; }
+      } else if (error) { alert(error.message); return; }
       setBizSubmitSuccess(true);
-      setBizUrl(""); setBizName(""); setBizBlurb(""); setBizOgPreview(null);
+      setBizUrl(""); setBizName(""); setBizBlurb(""); setBizType("business"); setBizOgPreview(null);
       setTimeout(() => { setBizSubmitSuccess(false); setShowBizForm(false); }, 3000);
     } finally { setSubmittingBiz(false); }
   }
@@ -2284,6 +2481,50 @@ export default function HomePage() {
   const jobsForPane = isMobile ? mobileVisibleJobs : sortedJobs.slice(0, 5);
   const showJobLeaderboard = false;
 
+  const featuredBizPool = useMemo(
+    () =>
+      [...businessListings]
+        .filter((b) => b.is_featured || isPermanentlyFeaturedListing(b))
+        .sort((a, b) => {
+          const aPinned = isPermanentlyFeaturedListing(a) ? 1 : 0;
+          const bPinned = isPermanentlyFeaturedListing(b) ? 1 : 0;
+          if (aPinned !== bPinned) return bPinned - aPinned;
+          const aFeatured = a.is_featured ? 1 : 0;
+          const bFeatured = b.is_featured ? 1 : 0;
+          if (aFeatured !== bFeatured) return bFeatured - aFeatured;
+          const typeDiff = getBizTypePriority(a) - getBizTypePriority(b);
+          if (typeDiff !== 0) return typeDiff;
+          const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return bTime - aTime;
+        }),
+    [businessListings]
+  );
+
+  const rotatingFeaturedBusinesses = useMemo(
+    () => featuredBizPool.filter((b) => normalizeBizListingTypeForListing(b) === "business"),
+    [featuredBizPool]
+  );
+
+  const desktopBillboardListing = rotatingFeaturedBusinesses.length > 0
+    ? rotatingFeaturedBusinesses[featuredBizBillboardIndex % rotatingFeaturedBusinesses.length]
+    : null;
+
+  const businessListingsForPane = isMobile
+    ? businessListings
+    : featuredBizPool
+        .filter((b) => !desktopBillboardListing || b.id !== desktopBillboardListing.id)
+        .slice(0, 5);
+
+  useEffect(() => {
+    if (isMobile) return;
+    if (rotatingFeaturedBusinesses.length <= 1) return;
+    const id = window.setInterval(() => {
+      setFeaturedBizBillboardIndex((prev) => (prev + 1) % rotatingFeaturedBusinesses.length);
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [rotatingFeaturedBusinesses.length, isMobile]);
+
   function openAllJobs() {
     if (canViewFullJobs) {
       window.location.href = "/jobs";
@@ -2361,8 +2602,11 @@ export default function HomePage() {
             display: isMobile ? (mobileTab === "jobs" ? "block" : "none") : "block",
             position: isMobile ? "static" : "sticky",
             top: 20,
+            height: isMobile ? undefined : "calc(100vh - 80px)",
             maxHeight: isMobile ? undefined : "calc(100vh - 80px)",
             overflowY: isMobile ? undefined : "auto",
+            overflowX: "hidden",
+            scrollbarGutter: isMobile ? undefined : "stable",
           }}
         >
           {jobsLoaded && (
@@ -2979,9 +3223,7 @@ export default function HomePage() {
                 {discoverVisible.map((p) => {
                   const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
                   const ringColor = getServiceRingColor(p.service);
-                  const isWorkedWith = p.userWorkedWith;
-                  const isKnow = p.userKnows;
-                  const knowImplied = isWorkedWith;
+                  const isPendingKnow = p.knowStatus === "pending_outgoing";
                   return (
                     <div
                       key={p.user_id}
@@ -3002,27 +3244,22 @@ export default function HomePage() {
                       {userId && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
                           <button
-                            onClick={() => toggleDiscoverConnection(p.user_id, "know")}
-                            disabled={knowImplied}
+                            onClick={() => toggleDiscoverConnection(p.user_id)}
+                            disabled={isPendingKnow}
                             style={{
-                              fontSize: 9, fontWeight: 700, padding: "3px 5px", borderRadius: 6, border: "none", cursor: knowImplied ? "default" : "pointer",
-                              background: (isKnow || knowImplied) ? t.text : t.badgeBg,
-                              color: (isKnow || knowImplied) ? t.surface : t.textMuted,
-                              opacity: knowImplied ? 0.6 : 1, width: "100%",
-                            }}
-                          >
-                            Know
-                          </button>
-                          <button
-                            onClick={() => toggleDiscoverConnection(p.user_id, "worked_with")}
-                            style={{
-                              fontSize: 9, fontWeight: 700, padding: "3px 5px", borderRadius: 6, border: "none", cursor: "pointer",
-                              background: isWorkedWith ? t.text : t.badgeBg,
-                              color: isWorkedWith ? t.surface : t.textMuted,
+                              fontSize: 9,
+                              fontWeight: 700,
+                              padding: "3px 5px",
+                              borderRadius: 6,
+                              border: "none",
+                              cursor: isPendingKnow ? "default" : "pointer",
+                              background: isPendingKnow ? t.text : t.badgeBg,
+                              color: isPendingKnow ? t.surface : t.textMuted,
+                              opacity: isPendingKnow ? 0.75 : 1,
                               width: "100%",
                             }}
                           >
-                            Worked With
+                            {isPendingKnow ? "Request Sent" : "Know"}
                           </button>
                         </div>
                       )}
@@ -3037,6 +3274,51 @@ export default function HomePage() {
                   style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
                 >›</button>
               </div>
+            </div>
+          )}
+
+          {unitFeedHighlights.length > 0 && (
+            <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
+              {unitFeedHighlights.map((p) => (
+                <div key={`unit-highlight-${p.id}`} style={{ border: `1px solid ${t.border}`, borderRadius: 14, overflow: "hidden", background: t.surface }}>
+                  <div style={{ padding: "9px 12px", background: t.badgeBg, borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "center", gap: 8 }}>
+                    <Link href={`/units/${p.unit_slug}`} style={{ display: "inline-flex", alignItems: "center", gap: 8, textDecoration: "none", color: "inherit" }}>
+                      <Avatar photoUrl={p.unit_cover_image_url} name={p.unit_name} size={26} />
+                      <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.3 }}>
+                        From {p.unit_name}
+                      </div>
+                    </Link>
+                    <div style={{ marginLeft: "auto", fontSize: 11, color: t.textMuted }}>
+                      {formatDate(p.created_at)}
+                    </div>
+                  </div>
+                  <div style={{ padding: 14 }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                      <Link href={`/profile/${p.user_id}`} style={{ textDecoration: "none" }}>
+                        <Avatar photoUrl={p.author_photo} name={p.author_name} size={38} ringColor={getServiceRingColor(null)} />
+                      </Link>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700 }}>{p.author_name}</div>
+                        {p.content && (
+                          <div style={{ marginTop: 6, lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {renderContent(p.content)}
+                          </div>
+                        )}
+                        {p.photo_url && (
+                          <img
+                            src={httpsAssetUrl(p.photo_url)}
+                            alt="Group post"
+                            style={{ marginTop: 10, width: "100%", borderRadius: 10, border: `1px solid ${t.border}`, maxHeight: 420, objectFit: "cover" }}
+                          />
+                        )}
+                        <div style={{ marginTop: 9, fontSize: 12, color: t.textMuted }}>
+                          {p.like_count} likes · {p.comment_count} comments
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
@@ -3907,14 +4189,23 @@ export default function HomePage() {
             top: 20,
           }}
         >
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, marginBottom: 12 }}>
             <button
               type="button"
               onClick={() => { setShowBizForm((p) => !p); setBizSubmitSuccess(false); }}
-              style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+              style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
             >
-              {showBizForm ? "Cancel" : "Submit Biz/Org"}
+              {showBizForm ? "Cancel" : "Submit Biz/Org/Resource"}
             </button>
+            <a
+              href="/businesses"
+              style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}
+            >
+              See all Biz/Org/Resources →
+            </a>
+            <div style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>
+              {isMobile ? "Approved listings" : "Featured listings"}
+            </div>
           </div>
 
           {/* Submission form */}
@@ -3938,6 +4229,19 @@ export default function HomePage() {
                     />
                     {fetchingBizOg && <div style={{ fontSize: 11, color: t.textFaint, marginTop: 4 }}>Fetching preview...</div>}
                     {bizOgPreview && <OgCard og={bizOgPreview} />}
+                  </div>
+
+                  <div style={{ marginBottom: 10 }}>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 4 }}>Type *</label>
+                    <select
+                      value={bizType}
+                      onChange={(e) => setBizType(e.target.value as BizListingType)}
+                      style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, boxSizing: "border-box", background: t.input, color: t.text }}
+                    >
+                      <option value="business">Business</option>
+                      <option value="organization">Organization</option>
+                      <option value="resource">Resource</option>
+                    </select>
                   </div>
 
                   <div style={{ marginBottom: 10 }}>
@@ -3981,14 +4285,84 @@ export default function HomePage() {
           )}
 
           <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+            {!isMobile && desktopBillboardListing && (
+              (() => {
+                const listing = desktopBillboardListing;
+                const displayTitle =
+                  listing.og_title ||
+                  listing.business_name ||
+                  listing.og_site_name ||
+                  "Business Listing";
+                const displayDescription =
+                  listing.custom_blurb || listing.og_description || "Visit website";
+                const isLiked = likedBizIds.has(listing.id);
+                return (
+                  <div
+                    key={`billboard-${listing.id}`}
+                    style={{
+                      border: `2px solid ${t.border}`,
+                      borderRadius: 12,
+                      overflow: "hidden",
+                      background: t.surface,
+                    }}
+                  >
+                    <a
+                      href={listing.website_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ display: "block", textDecoration: "none", color: "inherit" }}
+                    >
+                      {listing.og_image ? (
+                        <img
+                          src={httpsAssetUrl(listing.og_image)}
+                          alt={displayTitle}
+                          style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
+                        />
+                      ) : null}
+                      <div style={{ padding: 14, paddingBottom: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: "#111", background: "#fef9c3", padding: "2px 8px", borderRadius: 20 }}>
+                            Featured Spotlight
+                          </span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
+                            Rotates every 5s
+                          </span>
+                        </div>
+                        <div style={{ fontWeight: 800, lineHeight: 1.3, fontSize: 18 }}>
+                          {displayTitle}
+                        </div>
+                        <div style={{ marginTop: 8, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>
+                          {displayDescription}
+                        </div>
+                      </div>
+                    </a>
+                    <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
+                        Business
+                      </span>
+                      <button
+                        onClick={(e) => handleBizLike(e, listing.id)}
+                        disabled={togglingBizLikeFor === listing.id || !userId}
+                        style={{ background: "none", border: "none", cursor: userId ? "pointer" : "default", display: "flex", alignItems: "center", gap: 5, padding: "4px 0", opacity: togglingBizLikeFor === listing.id ? 0.5 : 1 }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill={isLiked ? t.text : "none"} stroke={t.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                        </svg>
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>{listing.like_count ?? 0}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()
+            )}
             {!bizLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
-            {bizLoaded && businessListings.length === 0 && (
+            {bizLoaded && businessListingsForPane.length === 0 && (
               <div style={{ fontSize: 14, color: t.textMuted }}>
-                No approved businesses yet.
+                {isMobile ? "No approved listings yet." : "No featured listings yet."}
               </div>
             )}
 
-            {bizLoaded && businessListings.map((listing) => {
+            {bizLoaded && businessListingsForPane.map((listing) => {
               const displayTitle =
                 listing.og_title ||
                 listing.business_name ||
@@ -4034,11 +4408,16 @@ export default function HomePage() {
                   </a>
 
                   <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    {listing.is_featured ? (
-                      <span style={{ fontSize: 11, fontWeight: 800, color: "#111", background: "#fef9c3", padding: "2px 8px", borderRadius: 20 }}>
-                        Featured
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      {(listing.is_featured || isPermanentlyFeaturedListing(listing)) ? (
+                        <span style={{ fontSize: 11, fontWeight: 800, color: "#111", background: "#fef9c3", padding: "2px 8px", borderRadius: 20 }}>
+                          Featured
+                        </span>
+                      ) : null}
+                      <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "capitalize" }}>
+                        {normalizeBizListingTypeForListing(listing)}
                       </span>
-                    ) : <span />}
+                    </div>
                     <button
                       onClick={(e) => handleBizLike(e, listing.id)}
                       disabled={togglingBizLikeFor === listing.id || !userId}

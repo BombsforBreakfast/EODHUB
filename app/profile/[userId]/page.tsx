@@ -104,7 +104,7 @@ const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
 
-type ConnectionType = "worked_with" | "know";
+type KnowStatus = "none" | "pending_outgoing" | "pending_incoming" | "accepted";
 
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
@@ -216,13 +216,15 @@ export default function PublicProfilePage() {
   const postContentRawRef = useRef("");
   const commentRawsRef = useRef<Record<string, string>>({});
 
-  const [workedWithCount, setWorkedWithCount] = useState(0);
   const [knowCount, setKnowCount] = useState(0);
-
+  const [knownPreviewUsers, setKnownPreviewUsers] = useState<
+    { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; worked_with: boolean }[]
+  >([]);
   const [currentUserWorkedWith, setCurrentUserWorkedWith] = useState(false);
-  const [currentUserKnows, setCurrentUserKnows] = useState(false);
+  const [currentUserKnowStatus, setCurrentUserKnowStatus] = useState<KnowStatus>("none");
+  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
   const [isMutualConnection, setIsMutualConnection] = useState(false);
-  const [togglingConnection, setTogglingConnection] = useState<ConnectionType | null>(null);
+  const [togglingConnection, setTogglingConnection] = useState<"know" | "worked_with" | "confirm" | "deny" | null>(null);
 
   const [uploadingGallery, setUploadingGallery] = useState(false);
   const [togglingPinnedId, setTogglingPinnedId] = useState<string | null>(null);
@@ -251,9 +253,9 @@ export default function PublicProfilePage() {
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [referralCount, setReferralCount] = useState(0);
 
-  type ConnListType = "worked_with" | "know" | "recruited";
+  type ConnListType = "know" | "recruited";
   const [connListOpen, setConnListOpen] = useState<ConnListType | null>(null);
-  const [connListUsers, setConnListUsers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null }[]>([]);
+  const [connListUsers, setConnListUsers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null; worked_with?: boolean }[]>([]);
   const [connListLoading, setConnListLoading] = useState(false);
 
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
@@ -397,18 +399,56 @@ export default function PublicProfilePage() {
         setConnListUsers(data ?? []);
       } else {
         const targetId = userId as string;
-        const { data: rows } = await supabase
+        const { data: rows, error: rowsErr } = await supabase
           .from("profile_connections")
-          .select("target_user_id")
-          .eq("requester_user_id", targetId)
-          .eq("connection_type", type);
-        const ids = (rows ?? []).map((r: { target_user_id: string }) => r.target_user_id);
+          .select("requester_user_id, target_user_id, worked_with")
+          .eq("status", "accepted")
+          .or(`requester_user_id.eq.${targetId},target_user_id.eq.${targetId}`);
+
+        if (rowsErr && isConnV2MissingColumnError(rowsErr)) {
+          const { data: legacyRows } = await supabase
+            .from("profile_connections")
+            .select("target_user_id, connection_type")
+            .eq("requester_user_id", targetId)
+            .in("connection_type", ["know", "worked_with"]);
+          const mappedLegacy = (legacyRows ?? []) as { target_user_id: string; connection_type: "know" | "worked_with" }[];
+          const idsLegacy = mappedLegacy.map((r) => r.target_user_id);
+          if (idsLegacy.length === 0) { setConnListLoading(false); return; }
+          const { data: legacyProfiles } = await supabase
+            .from("profiles")
+            .select("user_id, first_name, last_name, photo_url, service")
+            .in("user_id", idsLegacy);
+          const legacyWorked = new Map<string, boolean>();
+          mappedLegacy.forEach((m) => legacyWorked.set(m.target_user_id, m.connection_type === "worked_with"));
+          setConnListUsers(
+            ((legacyProfiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null }[])
+              .map((u) => ({ ...u, worked_with: legacyWorked.get(u.user_id) ?? false }))
+          );
+          return;
+        }
+
+        const mapped = ((rows ?? []) as {
+          requester_user_id: string;
+          target_user_id: string;
+          worked_with: boolean;
+        }[]).map((r) => ({
+          user_id: r.requester_user_id === targetId ? r.target_user_id : r.requester_user_id,
+          worked_with: !!r.worked_with,
+        }));
+
+        const ids = mapped.map((r) => r.user_id);
         if (ids.length === 0) { setConnListLoading(false); return; }
         const { data } = await supabase
           .from("profiles")
           .select("user_id, first_name, last_name, photo_url, service")
           .in("user_id", ids);
-        setConnListUsers(data ?? []);
+
+        const workedMap = new Map<string, boolean>();
+        mapped.forEach((m) => workedMap.set(m.user_id, m.worked_with));
+        setConnListUsers(
+          ((data ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null }[])
+            .map((u) => ({ ...u, worked_with: workedMap.get(u.user_id) ?? false }))
+        );
       }
     } finally {
       setConnListLoading(false);
@@ -601,6 +641,71 @@ export default function PublicProfilePage() {
     }]);
   }
 
+  function isConnV2MissingColumnError(error: unknown): boolean {
+    if (!error || typeof error !== "object") return false;
+    const msg = String((error as { message?: unknown }).message ?? "").toLowerCase();
+    return msg.includes("status") || msg.includes("worked_with");
+  }
+
+  async function loadConnectionsLegacy(targetUserId: string, effectiveCurrentUserId?: string | null) {
+    const { data: outgoing, error } = await supabase
+      .from("profile_connections")
+      .select("requester_user_id, target_user_id, connection_type")
+      .eq("requester_user_id", targetUserId);
+
+    if (error) {
+      console.error("Legacy profile connections load error:", error);
+      return;
+    }
+
+    const rows = (outgoing ?? []) as {
+      requester_user_id: string;
+      target_user_id: string;
+      connection_type: "know" | "worked_with";
+    }[];
+
+    const knowRows = rows.filter((r) => r.connection_type === "know" || r.connection_type === "worked_with");
+    setKnowCount(knowRows.length);
+
+    if (knowRows.length > 0) {
+      const previewIds = knowRows.slice(0, 6).map((r) => r.target_user_id);
+      const workedMap = new Map<string, boolean>();
+      knowRows.forEach((r) => workedMap.set(r.target_user_id, r.connection_type === "worked_with"));
+      const { data: previewProfiles } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name, photo_url")
+        .in("user_id", previewIds);
+      setKnownPreviewUsers(
+        ((previewProfiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null }[])
+          .map((u) => ({ ...u, worked_with: workedMap.get(u.user_id) ?? false }))
+      );
+    } else {
+      setKnownPreviewUsers([]);
+    }
+
+    if (!effectiveCurrentUserId || effectiveCurrentUserId === targetUserId) {
+      setCurrentUserWorkedWith(false);
+      setCurrentUserKnowStatus("none");
+      setActiveConnectionId(null);
+      setIsMutualConnection(false);
+      return;
+    }
+
+    const { data: viewerConn } = await supabase
+      .from("profile_connections")
+      .select("connection_type")
+      .eq("requester_user_id", effectiveCurrentUserId)
+      .eq("target_user_id", targetUserId);
+
+    const viewerRows = (viewerConn ?? []) as { connection_type: "know" | "worked_with" }[];
+    const myWorkedWith = viewerRows.some((r) => r.connection_type === "worked_with");
+    const myKnows = viewerRows.some((r) => r.connection_type === "know");
+    setCurrentUserWorkedWith(myWorkedWith);
+    setCurrentUserKnowStatus(myWorkedWith || myKnows ? "accepted" : "none");
+    setActiveConnectionId(null);
+    setIsMutualConnection(myWorkedWith || myKnows);
+  }
+
   async function toggleLike(postId: string, isLiked: boolean) {
     if (!currentUserId) { window.location.href = "/login"; return; }
     try {
@@ -773,53 +878,94 @@ export default function PublicProfilePage() {
 
   async function loadConnections(targetUserId: string, signedInUserId?: string | null) {
     const effectiveCurrentUserId = signedInUserId ?? currentUserId;
-
-    // Count outgoing connections FROM this profile owner (who they've tagged)
-    const { data: outgoing, error } = await supabase
+    const { data: acceptedRows, error } = await supabase
       .from("profile_connections")
-      .select("target_user_id, connection_type")
-      .eq("requester_user_id", targetUserId);
+      .select("requester_user_id, target_user_id, worked_with, updated_at")
+      .eq("status", "accepted")
+      .or(`requester_user_id.eq.${targetUserId},target_user_id.eq.${targetUserId}`)
+      .order("updated_at", { ascending: false });
 
     if (error) {
+      if (isConnV2MissingColumnError(error)) {
+        await loadConnectionsLegacy(targetUserId, effectiveCurrentUserId);
+        return;
+      }
       console.error("Profile connections load error:", error);
       return;
     }
 
-    const rows = (outgoing ?? []) as { target_user_id: string; connection_type: ConnectionType }[];
-    setWorkedWithCount(rows.filter((r) => r.connection_type === "worked_with").length);
-    setKnowCount(rows.filter((r) => r.connection_type === "know").length);
+    const pairRows = (acceptedRows ?? []) as {
+      requester_user_id: string;
+      target_user_id: string;
+      worked_with: boolean;
+      updated_at?: string | null;
+    }[];
+
+    const knownIds = pairRows.map((r) => (r.requester_user_id === targetUserId ? r.target_user_id : r.requester_user_id));
+    setKnowCount(knownIds.length);
+
+    if (knownIds.length > 0) {
+      const previewIds = knownIds.slice(0, 6);
+      const { data: previewProfiles } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name, photo_url")
+        .in("user_id", previewIds);
+      const workedMap = new Map<string, boolean>();
+      pairRows.forEach((r) => {
+        const otherId = r.requester_user_id === targetUserId ? r.target_user_id : r.requester_user_id;
+        workedMap.set(otherId, !!r.worked_with);
+      });
+      setKnownPreviewUsers(
+        ((previewProfiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null }[])
+          .map((u) => ({ ...u, worked_with: workedMap.get(u.user_id) ?? false }))
+      );
+    } else {
+      setKnownPreviewUsers([]);
+    }
 
     if (!effectiveCurrentUserId || effectiveCurrentUserId === targetUserId) {
       setCurrentUserWorkedWith(false);
-      setCurrentUserKnows(false);
+      setCurrentUserKnowStatus("none");
+      setActiveConnectionId(null);
       setIsMutualConnection(false);
       return;
     }
 
-    // Check whether the current viewer has tagged this profile (for button state)
-    const { data: viewerConn } = await supabase
+    const { data: relation } = await supabase
       .from("profile_connections")
-      .select("connection_type")
-      .eq("requester_user_id", effectiveCurrentUserId)
-      .eq("target_user_id", targetUserId);
+      .select("id, status, worked_with, requester_user_id, target_user_id")
+      .or(
+        `and(requester_user_id.eq.${effectiveCurrentUserId},target_user_id.eq.${targetUserId}),` +
+        `and(requester_user_id.eq.${targetUserId},target_user_id.eq.${effectiveCurrentUserId})`
+      )
+      .maybeSingle();
 
-    const viewerRows = (viewerConn ?? []) as { connection_type: ConnectionType }[];
-    const myWorkedWith = viewerRows.some((r) => r.connection_type === "worked_with");
-    const myKnows = viewerRows.some((r) => r.connection_type === "know");
-    setCurrentUserWorkedWith(myWorkedWith);
-    setCurrentUserKnows(myKnows);
+    const rel = relation as {
+      id: string;
+      status: "pending" | "accepted" | "denied";
+      worked_with: boolean;
+      requester_user_id: string;
+      target_user_id: string;
+    } | null;
 
-    // Mutual = profile owner has also tagged the viewer back (enables wall posting)
-    if (myWorkedWith || myKnows) {
-      const { data: reverseConn } = await supabase
-        .from("profile_connections")
-        .select("id")
-        .eq("requester_user_id", targetUserId)
-        .eq("target_user_id", effectiveCurrentUserId)
-        .limit(1)
-        .maybeSingle();
-      setIsMutualConnection(!!reverseConn);
+    if (!rel || rel.status === "denied") {
+      setCurrentUserKnowStatus("none");
+      setCurrentUserWorkedWith(false);
+      setActiveConnectionId(null);
+      setIsMutualConnection(false);
+      return;
+    }
+
+    setActiveConnectionId(rel.id);
+    setCurrentUserWorkedWith(!!rel.worked_with && rel.status === "accepted");
+    if (rel.status === "accepted") {
+      setCurrentUserKnowStatus("accepted");
+      setIsMutualConnection(true);
+    } else if (rel.status === "pending" && rel.target_user_id === effectiveCurrentUserId) {
+      setCurrentUserKnowStatus("pending_incoming");
+      setIsMutualConnection(false);
     } else {
+      setCurrentUserKnowStatus("pending_outgoing");
       setIsMutualConnection(false);
     }
   }
@@ -934,51 +1080,142 @@ export default function PublicProfilePage() {
     }
   }
 
-  async function toggleConnection(type: ConnectionType) {
+  async function requestKnow() {
     if (!currentUserId) {
       window.location.href = "/login";
       return;
     }
-
     if (!userId || currentUserId === userId) return;
-
-    const isActive = type === "worked_with" ? currentUserWorkedWith : currentUserKnows;
-
     try {
-      setTogglingConnection(type);
+      setTogglingConnection("know");
+      const { error } = await supabase.from("profile_connections").insert([{
+        requester_user_id: currentUserId,
+        target_user_id: userId,
+        status: "pending",
+        worked_with: false,
+      }]);
+      if (error) {
+        if (isConnV2MissingColumnError(error)) {
+          const { error: legacyErr } = await supabase.from("profile_connections").insert([{
+            requester_user_id: currentUserId,
+            target_user_id: userId,
+            connection_type: "know",
+          }]);
+          if (legacyErr) { alert(legacyErr.message); return; }
+        } else {
+          alert(error.message);
+          return;
+        }
+      }
+      notify(userId, `${currentUserName} says they know you`, currentUserId);
+      await loadConnections(userId, currentUserId);
+    } catch (err) {
+      console.error("Request know error:", err);
+      alert("Failed to update connection");
+    } finally {
+      setTogglingConnection(null);
+    }
+  }
 
-      if (isActive) {
-        const { error } = await supabase
-          .from("profile_connections")
-          .delete()
-          .eq("requester_user_id", currentUserId)
-          .eq("target_user_id", userId)
-          .eq("connection_type", type);
-        if (error) { alert(error.message); return; }
-      } else {
-        // "Worked With" implies "Know" — remove any existing "Know" first
-        if (type === "worked_with" && currentUserKnows) {
-          await supabase.from("profile_connections").delete()
+  async function cancelKnowRequest() {
+    if (!currentUserId || !userId || currentUserId === userId) return;
+    try {
+      setTogglingConnection("know");
+      const { error } = await supabase
+        .from("profile_connections")
+        .delete()
+        .eq("requester_user_id", currentUserId)
+        .eq("target_user_id", userId)
+        .eq("status", "pending");
+      if (error) { alert(error.message); return; }
+      await loadConnections(userId, currentUserId);
+    } catch (err) {
+      console.error("Cancel know request error:", err);
+      alert("Failed to update connection");
+    } finally {
+      setTogglingConnection(null);
+    }
+  }
+
+  async function respondToKnowRequest(accept: boolean) {
+    if (!currentUserId || !userId || !activeConnectionId) return;
+    try {
+      setTogglingConnection(accept ? "confirm" : "deny");
+      const { error } = await supabase
+        .from("profile_connections")
+        .update({
+          status: accept ? "accepted" : "denied",
+          worked_with: accept ? currentUserWorkedWith : false,
+          responded_at: new Date().toISOString(),
+          responded_by_user_id: currentUserId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", activeConnectionId);
+      if (error) { alert(error.message); return; }
+      await loadConnections(userId, currentUserId);
+    } catch (err) {
+      console.error("Respond know request error:", err);
+      alert("Failed to update connection");
+    } finally {
+      setTogglingConnection(null);
+    }
+  }
+
+  async function toggleWorkedWith() {
+    if (!currentUserId || !userId) return;
+    if (currentUserKnowStatus !== "accepted") return;
+    if (!activeConnectionId) {
+      // Legacy fallback before status/worked_with migration is applied.
+      try {
+        setTogglingConnection("worked_with");
+        if (currentUserWorkedWith) {
+          await supabase
+            .from("profile_connections")
+            .delete()
+            .eq("requester_user_id", currentUserId)
+            .eq("target_user_id", userId)
+            .eq("connection_type", "worked_with");
+          await supabase.from("profile_connections").insert([{
+            requester_user_id: currentUserId,
+            target_user_id: userId,
+            connection_type: "know",
+          }]);
+        } else {
+          await supabase
+            .from("profile_connections")
+            .delete()
             .eq("requester_user_id", currentUserId)
             .eq("target_user_id", userId)
             .eq("connection_type", "know");
+          await supabase.from("profile_connections").insert([{
+            requester_user_id: currentUserId,
+            target_user_id: userId,
+            connection_type: "worked_with",
+          }]);
         }
-
-        const { error } = await supabase.from("profile_connections").insert([{
-          requester_user_id: currentUserId,
-          target_user_id: userId,
-          connection_type: type,
-        }]);
-        if (error) { alert(error.message); return; }
-
-        // Notify the other person
-        const verb = type === "worked_with" ? "worked with" : "knows";
-        notify(userId, `${currentUserName} says they ${verb} you`, currentUserId);
+        await loadConnections(userId, currentUserId);
+      } catch (err) {
+        console.error("Legacy toggle worked_with error:", err);
+        alert("Failed to update connection");
+      } finally {
+        setTogglingConnection(null);
       }
-
+      return;
+    }
+    try {
+      setTogglingConnection("worked_with");
+      const { error } = await supabase
+        .from("profile_connections")
+        .update({
+          worked_with: !currentUserWorkedWith,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", activeConnectionId)
+        .eq("status", "accepted");
+      if (error) { alert(error.message); return; }
       await loadConnections(userId, currentUserId);
     } catch (err) {
-      console.error("Toggle connection error:", err);
+      console.error("Toggle worked_with error:", err);
       alert("Failed to update connection");
     } finally {
       setTogglingConnection(null);
@@ -1616,30 +1853,123 @@ export default function PublicProfilePage() {
                       </div>
                     )}
                     <div style={{ display: "flex", gap: 14, marginTop: 8, alignItems: "flex-start" }}>
-                      {(["worked_with", "know", "recruited"] as ConnListType[]).map((type) => (
-                        <button key={type} type="button" onClick={() => openConnList(type)}
+                      <div style={{ textAlign: "left" }}>
+                        <button type="button" onClick={() => openConnList("know")}
+                          style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                          <div style={{ fontWeight: 900, fontSize: 17 }}>{knowCount}</div>
+                          <div style={{ fontSize: 10, color: t.textMuted }}>Know</div>
+                        </button>
+                        {knowCount > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center" }}>
+                              {knownPreviewUsers.slice(0, 5).map((u, idx) => {
+                                const n = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
+                                return (
+                                  <a
+                                    key={u.user_id}
+                                    href={`/profile/${u.user_id}`}
+                                    title={n}
+                                    style={{
+                                      width: 26,
+                                      height: 26,
+                                      marginLeft: idx === 0 ? 0 : -8,
+                                      borderRadius: "50%",
+                                      border: `2px solid ${t.surface}`,
+                                      overflow: "hidden",
+                                      background: t.badgeBg,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      color: t.textMuted,
+                                      fontSize: 11,
+                                      fontWeight: 700,
+                                      textDecoration: "none",
+                                    }}
+                                  >
+                                    {u.photo_url ? <img src={u.photo_url} alt={n} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (n[0] || "U").toUpperCase()}
+                                  </a>
+                                );
+                              })}
+                            </div>
+                            {knowCount > 5 && (
+                              <button type="button" onClick={() => openConnList("know")} style={{ background: "none", border: "none", color: "#1d4ed8", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: 0 }}>
+                                +{knowCount - 5} more
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <button type="button" onClick={() => openConnList("recruited")}
                           style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                           <div style={{ fontWeight: 900, fontSize: 17 }}>
-                            {type === "worked_with" ? workedWithCount : type === "know" ? knowCount : getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
+                            {getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
                           </div>
-                          <div style={{ fontSize: 10, color: t.textMuted }}>{type === "worked_with" ? "Worked With" : type === "know" ? "Know" : "Recruited"}</div>
+                          <div style={{ fontSize: 10, color: t.textMuted }}>Recruited</div>
                         </button>
-                      ))}
+                        {isOwnWall && profile.referral_code && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
+                              setCopiedReferral(true);
+                              setTimeout(() => setCopiedReferral(false), 2000);
+                            }}
+                            style={{
+                              marginTop: 6,
+                              background: copiedReferral ? "#16a34a" : "#111",
+                              color: "white",
+                              border: "none",
+                              borderRadius: 999,
+                              padding: "4px 10px",
+                              minWidth: 104,
+                              fontWeight: 700,
+                              fontSize: 10,
+                              cursor: "pointer",
+                              transition: "background 0.2s",
+                            }}
+                          >
+                            {copiedReferral ? "Copied" : "Referral Link"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 {/* Connection buttons */}
                 {!isOwnWall && currentUserId && (
-                  <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                    <button type="button" onClick={() => toggleConnection("worked_with")} disabled={togglingConnection === "worked_with"} style={{ flex: 1, background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer", opacity: togglingConnection === "worked_with" ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-                      {togglingConnection === "worked_with" && <span className={currentUserWorkedWith ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
-                      {currentUserWorkedWith ? "Worked With ✓" : "Worked With"}
-                    </button>
-                    <button type="button" onClick={() => !currentUserWorkedWith && toggleConnection("know")} disabled={togglingConnection === "know" || currentUserWorkedWith} style={{ flex: 1, background: (currentUserKnows || currentUserWorkedWith) ? "#111" : t.surface, color: (currentUserKnows || currentUserWorkedWith) ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: (togglingConnection === "know" || currentUserWorkedWith) ? "not-allowed" : "pointer", opacity: currentUserWorkedWith ? 0.55 : togglingConnection === "know" ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-                      {togglingConnection === "know" && <span className={(currentUserKnows || currentUserWorkedWith) ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
-                      {(currentUserKnows || currentUserWorkedWith) ? "Know ✓" : "Know"}
-                    </button>
+                  <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                    {currentUserKnowStatus === "none" && (
+                      <button type="button" onClick={requestKnow} disabled={togglingConnection === "know"} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        {togglingConnection === "know" && <span className="btn-spinner btn-spinner-dark" />}
+                        Know
+                      </button>
+                    )}
+                    {currentUserKnowStatus === "pending_outgoing" && (
+                      <button type="button" onClick={cancelKnowRequest} disabled={togglingConnection === "know"} style={{ flex: 1, background: t.surface, color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        {togglingConnection === "know" && <span className="btn-spinner btn-spinner-dark" />}
+                        Request Sent
+                      </button>
+                    )}
+                    {currentUserKnowStatus === "pending_incoming" && (
+                      <>
+                        <button type="button" onClick={() => respondToKnowRequest(true)} disabled={togglingConnection === "confirm"} style={{ flex: 1, background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                          {togglingConnection === "confirm" && <span className="btn-spinner" />}
+                          Confirm Know
+                        </button>
+                        <button type="button" onClick={() => respondToKnowRequest(false)} disabled={togglingConnection === "deny"} style={{ flex: 1, background: t.surface, color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                          {togglingConnection === "deny" && <span className="btn-spinner btn-spinner-dark" />}
+                          Deny
+                        </button>
+                      </>
+                    )}
+                    {currentUserKnowStatus === "accepted" && (
+                      <button type="button" onClick={toggleWorkedWith} disabled={togglingConnection === "worked_with"} style={{ flex: 1, background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                        {togglingConnection === "worked_with" && <span className={currentUserWorkedWith ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
+                        {currentUserWorkedWith ? "Worked With ✓" : "Mark Worked With"}
+                      </button>
+                    )}
                     <a href={`/messages?with=${userId}`} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       Message
                     </a>
@@ -1725,27 +2055,119 @@ export default function PublicProfilePage() {
                   </div>
 
                   <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%", alignItems: "flex-start" }}>
-                    {(["worked_with", "know", "recruited"] as ConnListType[]).map((type) => (
-                      <button key={type} type="button" onClick={() => openConnList(type)}
+                    <div style={{ textAlign: "left" }}>
+                      <button type="button" onClick={() => openConnList("know")}
+                        style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                        <div style={{ fontWeight: 900, fontSize: 20 }}>{knowCount}</div>
+                        <div style={{ fontSize: 12, color: t.textMuted }}>Know</div>
+                      </button>
+                      {knowCount > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center" }}>
+                            {knownPreviewUsers.slice(0, 6).map((u, idx) => {
+                              const n = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
+                              return (
+                                <a
+                                  key={u.user_id}
+                                  href={`/profile/${u.user_id}`}
+                                  title={n}
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    marginLeft: idx === 0 ? 0 : -8,
+                                    borderRadius: "50%",
+                                    border: `2px solid ${t.surface}`,
+                                    overflow: "hidden",
+                                    background: t.badgeBg,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    color: t.textMuted,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    textDecoration: "none",
+                                  }}
+                                >
+                                  {u.photo_url ? <img src={u.photo_url} alt={n} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (n[0] || "U").toUpperCase()}
+                                </a>
+                              );
+                            })}
+                          </div>
+                          {knowCount > 6 && (
+                            <button type="button" onClick={() => openConnList("know")} style={{ background: "none", border: "none", color: "#1d4ed8", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>
+                              +{knowCount - 6} more
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <button type="button" onClick={() => openConnList("recruited")}
                         style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                         <div style={{ fontWeight: 900, fontSize: 20 }}>
-                          {type === "worked_with" ? workedWithCount : type === "know" ? knowCount : getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
+                          {getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
                         </div>
-                        <div style={{ fontSize: 12, color: t.textMuted }}>{type === "worked_with" ? "Worked With" : type === "know" ? "Know" : "Recruited"}</div>
+                        <div style={{ fontSize: 12, color: t.textMuted }}>Recruited</div>
                       </button>
-                    ))}
+                      {isOwnWall && profile.referral_code && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
+                            setCopiedReferral(true);
+                            setTimeout(() => setCopiedReferral(false), 2000);
+                          }}
+                          style={{
+                            marginTop: 7,
+                            background: copiedReferral ? "#16a34a" : "#111",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "5px 12px",
+                            minWidth: 112,
+                            fontWeight: 700,
+                            fontSize: 11,
+                            cursor: "pointer",
+                            transition: "background 0.2s",
+                          }}
+                        >
+                          {copiedReferral ? "Copied" : "Referral Link"}
+                        </button>
+                      )}
+                    </div>
                   </div>
-
                   {!isOwnWall && currentUserId && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-                      <button type="button" onClick={() => toggleConnection("worked_with")} disabled={togglingConnection === "worked_with"} style={{ background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: togglingConnection === "worked_with" ? "not-allowed" : "pointer", opacity: togglingConnection === "worked_with" ? 0.7 : 1, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                        {togglingConnection === "worked_with" && <span className={currentUserWorkedWith ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
-                        {currentUserWorkedWith ? "Worked With ✓" : "Worked With"}
-                      </button>
-                      <button type="button" onClick={() => !currentUserWorkedWith && toggleConnection("know")} disabled={togglingConnection === "know" || currentUserWorkedWith} style={{ background: (currentUserKnows || currentUserWorkedWith) ? "#111" : t.surface, color: (currentUserKnows || currentUserWorkedWith) ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: (togglingConnection === "know" || currentUserWorkedWith) ? "not-allowed" : "pointer", opacity: currentUserWorkedWith ? 0.55 : togglingConnection === "know" ? 0.7 : 1, width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                        {togglingConnection === "know" && <span className={(currentUserKnows || currentUserWorkedWith) ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
-                        {(currentUserKnows || currentUserWorkedWith) ? "Know ✓" : "Know"}
-                      </button>
+                      {currentUserKnowStatus === "none" && (
+                        <button type="button" onClick={requestKnow} disabled={togglingConnection === "know"} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                          {togglingConnection === "know" && <span className="btn-spinner btn-spinner-dark" />}
+                          Know
+                        </button>
+                      )}
+                      {currentUserKnowStatus === "pending_outgoing" && (
+                        <button type="button" onClick={cancelKnowRequest} disabled={togglingConnection === "know"} style={{ background: t.surface, color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                          {togglingConnection === "know" && <span className="btn-spinner btn-spinner-dark" />}
+                          Request Sent
+                        </button>
+                      )}
+                      {currentUserKnowStatus === "pending_incoming" && (
+                        <>
+                          <button type="button" onClick={() => respondToKnowRequest(true)} disabled={togglingConnection === "confirm"} style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                            {togglingConnection === "confirm" && <span className="btn-spinner" />}
+                            Confirm Know
+                          </button>
+                          <button type="button" onClick={() => respondToKnowRequest(false)} disabled={togglingConnection === "deny"} style={{ background: t.surface, color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                            {togglingConnection === "deny" && <span className="btn-spinner btn-spinner-dark" />}
+                            Deny
+                          </button>
+                        </>
+                      )}
+                      {currentUserKnowStatus === "accepted" && (
+                        <button type="button" onClick={toggleWorkedWith} disabled={togglingConnection === "worked_with"} style={{ background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                          {togglingConnection === "worked_with" && <span className={currentUserWorkedWith ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
+                          {currentUserWorkedWith ? "Worked With ✓" : "Mark Worked With"}
+                        </button>
+                      )}
                       <a href={`/messages?with=${userId}`} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "block", width: "100%", boxSizing: "border-box" }}>
                         Message
                       </a>
@@ -1851,38 +2273,6 @@ export default function PublicProfilePage() {
                 <button type="button" onClick={() => setEditingProfile(false)} style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: "pointer" }}>
                   Cancel
                 </button>
-              </div>
-            </div>
-          )}
-
-          {/* ── Referral card (own profile only) ── */}
-          {isOwnWall && profile.referral_code && (
-            <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 20 }}>
-              <div style={{ fontWeight: 900, fontSize: 15, marginBottom: 4 }}>Your Referral Link</div>
-              <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 12 }}>
-                Share this link to invite EOD colleagues. You earn a recruiter badge once verified members join through your code.
-              </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                <div style={{ flex: 1, minWidth: 0, background: t.bg, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 12px", fontSize: 13, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  eod-hub.com/login?ref={profile.referral_code}
-                </div>
-                <button
-                  onClick={() => { navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`); setCopiedReferral(true); setTimeout(() => setCopiedReferral(false), 2000); }}
-                  style={{ background: copiedReferral ? "#16a34a" : "#111", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", flexShrink: 0, transition: "background 0.2s" }}
-                >
-                  {copiedReferral ? "Copied!" : "Copy"}
-                </button>
-              </div>
-              <div style={{ marginTop: 12, display: "flex", gap: 16, fontSize: 13 }}>
-                <div><strong>{referralCount}</strong> <span style={{ color: t.textMuted }}>verified referral{referralCount !== 1 ? "s" : ""}</span></div>
-                {referralBadge && (
-                  <div style={{ background: referralBadge.bg, color: referralBadge.color, fontWeight: 800, padding: "2px 10px", borderRadius: 20, border: `1px solid ${referralBadge.color}33` }}>
-                    {referralBadge.label}
-                  </div>
-                )}
-                {!referralBadge && referralCount < 5 && (
-                  <div style={{ color: t.textMuted }}>{5 - referralCount} more to Bronze</div>
-                )}
               </div>
             </div>
           )}
@@ -2417,7 +2807,7 @@ export default function PublicProfilePage() {
         <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 20, padding: 24, width: "100%", maxWidth: 420, maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.25)" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <div style={{ fontWeight: 900, fontSize: 17 }}>
-              {connListOpen === "worked_with" ? "Worked With" : connListOpen === "know" ? "Know" : "Recruited"}
+              {connListOpen === "know" ? "Know" : "Recruited"}
             </div>
             <button type="button" onClick={() => setConnListOpen(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>×</button>
           </div>
@@ -2426,7 +2816,7 @@ export default function PublicProfilePage() {
               <div style={{ textAlign: "center", padding: "24px 0", color: t.textMuted, fontSize: 14 }}>Loading...</div>
             ) : connListUsers.length === 0 ? (
               <div style={{ textAlign: "center", padding: "24px 0", color: t.textMuted, fontSize: 14 }}>
-                {connListOpen === "worked_with" ? "No worked-with connections yet." : connListOpen === "know" ? "No know connections yet." : "No recruits yet."}
+                {connListOpen === "know" ? "No know connections yet." : "No recruits yet."}
               </div>
             ) : (
               connListUsers.map((u) => {
@@ -2441,6 +2831,7 @@ export default function PublicProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{name}</div>
+                      {u.worked_with && <div style={{ fontSize: 11, color: "#16a34a", fontWeight: 700 }}>✔ Worked With</div>}
                       {u.service && <div style={{ fontSize: 12, color: t.textMuted }}>{u.service}</div>}
                     </div>
                   </a>
