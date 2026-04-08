@@ -3295,7 +3295,7 @@ export default function HomePage() {
                   <div style={{ padding: 14 }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                       <Link href={`/profile/${p.user_id}`} style={{ textDecoration: "none" }}>
-                        <Avatar photoUrl={p.author_photo} name={p.author_name} size={38} ringColor={getServiceRingColor(null)} />
+                        <Avatar photoUrl={p.author_photo} name={p.author_name} size={38} />
                       </Link>
                       <div style={{ minWidth: 0, flex: 1 }}>
                         <div style={{ fontSize: 14, fontWeight: 700 }}>{p.author_name}</div>
