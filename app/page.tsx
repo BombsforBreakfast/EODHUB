@@ -1331,14 +1331,37 @@ export default function HomePage() {
 
     if (rawPosts.length > 0) {
       const rankedIds = rawPosts.map((p) => p.id);
+      // Always strip wall-targeted posts from the public feed.
+      const { data: wallRows, error: wallErr } = await supabase
+        .from("posts")
+        .select("id, wall_user_id")
+        .in("id", rankedIds);
+      if (!wallErr) {
+        const publicFeedIds = new Set(
+          (wallRows ?? [])
+            .filter((r: { wall_user_id?: string | null }) => !r.wall_user_id)
+            .map((r: { id: string }) => r.id)
+        );
+        rawPosts = rawPosts.filter((p) => publicFeedIds.has(p.id));
+      } else {
+        console.warn("Wall visibility filter unavailable; loading feed without wall-target filter.", wallErr.message);
+      }
+
+      const candidateIds = rawPosts.map((p) => p.id);
+      if (candidateIds.length === 0) {
+        setPosts([]);
+        setPostsLoaded(true);
+        return;
+      }
+
       const { data: visRows, error: visErr } = await supabase
         .from("posts")
-        .select("id, hidden_for_review, wall_user_id")
-        .in("id", rankedIds);
+        .select("id, hidden_for_review")
+        .in("id", candidateIds);
       if (!visErr) {
         const visibleIds = new Set(
           (visRows ?? [])
-            .filter((r: { hidden_for_review?: boolean | null; wall_user_id?: string | null }) => !r.hidden_for_review && !r.wall_user_id)
+            .filter((r: { hidden_for_review?: boolean | null }) => !r.hidden_for_review)
             .map((r: { id: string }) => r.id)
         );
         rawPosts = rawPosts.filter((p) => visibleIds.has(p.id));

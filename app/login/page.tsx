@@ -234,10 +234,10 @@ export default function LoginPage() {
   }
 
   const inputStyle: React.CSSProperties = {
-    padding: 10,
-    borderRadius: 10,
+    padding: "12px 14px",
+    borderRadius: 14,
     border: `1px solid ${t.inputBorder}`,
-    fontSize: 16,
+    fontSize: 18,
     width: "100%",
     boxSizing: "border-box",
     background: t.input,
@@ -245,8 +245,8 @@ export default function LoginPage() {
   };
 
   const buttonPrimary: React.CSSProperties = {
-    padding: 12,
-    borderRadius: 12,
+    padding: "14px 12px",
+    borderRadius: 14,
     border: "none",
     background: t.text,
     color: t.surface,
@@ -255,8 +255,8 @@ export default function LoginPage() {
   };
 
   const buttonSecondary: React.CSSProperties = {
-    padding: 12,
-    borderRadius: 12,
+    padding: "13px 12px",
+    borderRadius: 14,
     border: `1px solid ${t.border}`,
     background: t.surface,
     color: t.text,
@@ -269,50 +269,76 @@ export default function LoginPage() {
       style={{
         minHeight: "100vh",
         boxSizing: "border-box",
-        padding: 40,
+        padding: 20,
         maxWidth: 500,
         margin: "0 auto",
         color: t.text,
         background: t.bg,
       }}
     >
-      <div style={{ textAlign: "center", marginBottom: 32 }}>
-        <div style={{ fontSize: 52, fontWeight: 900, letterSpacing: -1, lineHeight: 1, color: t.text }}>EOD HUB</div>
-        <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
+      <div style={{ textAlign: "center", marginBottom: 18 }}>
+        <div style={{ fontSize: 50, fontWeight: 900, letterSpacing: -1, lineHeight: 1, color: t.text }}>EOD HUB</div>
+        <div style={{ marginTop: 8, display: "flex", justifyContent: "center" }}>
           <EodCrabLogo variant="login" priority />
         </div>
-        <div style={{ fontSize: 14, color: t.textMuted, marginTop: 14, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Built for EOD Techs, by an EOD Tech.</div>
-        <div
-          aria-live="polite"
-          aria-atomic="true"
-          style={{
-            marginTop: 18,
-            fontSize: 15,
-            lineHeight: 1.45,
-            color: t.textMuted,
-            fontWeight: 600,
-            padding: "12px 16px",
-            borderRadius: 12,
-            border: `1px solid ${t.border}`,
-            background: countFlash ? (isDark ? "rgba(124, 58, 237, 0.18)" : "rgba(124, 58, 237, 0.08)") : t.surface,
-            transition: "background 0.35s ease",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {signupCount === null ? (
-            <span style={{ opacity: 0.7 }}>Loading community size…</span>
-          ) : (
-            <>
-              <span style={{ color: t.text, fontWeight: 800, fontSize: 17 }}>{signupCount.toLocaleString()}</span>{" "}
-              EOD HUB users have already signed up!
-            </>
-          )}
+        <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Built for EOD Techs, by an EOD Tech.</div>
+      </div>
+
+      <div
+        style={{
+          marginBottom: 14,
+          borderTop: `1px solid ${t.border}`,
+          borderBottom: `1px solid ${t.border}`,
+          padding: "10px 6px",
+          color: t.textMuted,
+        }}
+      >
+        <div style={{ fontSize: 18, lineHeight: 1.4, fontWeight: 700, color: t.text }}>
+          EOD Hub connects the community in one place—built by and for those who&apos;ve done the work
+        </div>
+        <div style={{ marginTop: 10, fontSize: 16, lineHeight: 1.55, color: t.text }}>
+          <div>- Jobs, businesses, and events</div>
+          <div>- Groups and real conversations</div>
+          <div>- Resources and deep-dive knowledge</div>
+        </div>
+        <div style={{ marginTop: 10, fontSize: 16, lineHeight: 1.45, color: t.text }}>
+          Join the network. Find opportunities. Stay connected.
         </div>
       </div>
 
-      <h1 style={{ fontSize: 28, fontWeight: 700 }}>
-        {mode === "login" ? "Login" : mode === "signup" ? "Sign Up" : "Reset Password"}
-      </h1>
+      <div
+        aria-live="polite"
+        aria-atomic="true"
+        style={{
+          marginBottom: 12,
+          fontSize: 12,
+          lineHeight: 1.35,
+          color: t.textMuted,
+          fontWeight: 700,
+          padding: "8px 10px",
+          borderRadius: 10,
+          border: `1px solid ${t.border}`,
+          background: countFlash ? (isDark ? "rgba(124, 58, 237, 0.18)" : "rgba(124, 58, 237, 0.08)") : t.surface,
+          transition: "background 0.35s ease",
+          fontVariantNumeric: "tabular-nums",
+          textAlign: "center",
+        }}
+      >
+        {signupCount === null ? (
+          <span style={{ opacity: 0.7 }}>Loading community size...</span>
+        ) : (
+          <>
+            <span style={{ color: t.text, fontWeight: 800, fontSize: 14 }}>{signupCount.toLocaleString()}</span>{" "}
+            EOD HUB users have already signed up!
+          </>
+        )}
+      </div>
+
+      {mode !== "login" && (
+        <h1 style={{ fontSize: 40, fontWeight: 800, margin: "0 0 6px" }}>
+          {mode === "signup" ? "Sign Up" : "Reset Password"}
+        </h1>
+      )}
 
       {/* ── Forgot password flow ── */}
       {mode === "forgot" && (
@@ -370,7 +396,7 @@ export default function LoginPage() {
       {mode !== "forgot" && (
         <form
           onSubmit={(e) => { e.preventDefault(); mode === "login" ? handleLogin() : handleSignup(); }}
-          style={{ display: "grid", gap: 12, marginTop: 20 }}
+          style={{ display: "grid", gap: 12, marginTop: mode === "login" ? 0 : 8 }}
         >
           <input
             type="email"
