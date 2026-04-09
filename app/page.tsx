@@ -458,6 +458,9 @@ export default function HomePage() {
 
   const [loading, setLoading] = useState(true);
   const [postsLoaded, setPostsLoaded] = useState(false);
+  // Set to the postId when a deep-link target post is known to be unavailable
+  // (deleted, hidden for review, or a wall post not shown in the public feed).
+  const [deepLinkPostUnavailable, setDeepLinkPostUnavailable] = useState<string | null>(null);
   const [jobsLoaded, setJobsLoaded] = useState(false);
   const [jobsLastUpdated, setJobsLastUpdated] = useState<string | null>(null);
   const [jobsTotalApprovedCount, setJobsTotalApprovedCount] = useState<number | null>(null);
@@ -1372,6 +1375,11 @@ export default function HomePage() {
             },
             ...rawPosts,
           ];
+        } else {
+          // Post is deleted, hidden for review, or a wall-only post — it will never
+          // appear in the public feed. Flag it so the scroll effect can clean up
+          // the URL params instead of retrying forever.
+          setDeepLinkPostUnavailable(deepId);
         }
       }
     }
@@ -2689,13 +2697,6 @@ export default function HomePage() {
     const commentId = params.get("commentId");
     if (!postId) return;
 
-    setExpandedComments((prev) => ({ ...prev, [postId]: true }));
-
-    let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    let attempt = 0;
-    const maxAttempts = 28;
-
     const stripDeepLinkParams = () => {
       const url = new URL(window.location.href);
       url.searchParams.delete("postId");
@@ -2703,6 +2704,20 @@ export default function HomePage() {
       const qs = url.searchParams.toString();
       window.history.replaceState({}, "", `${url.pathname}${qs ? `?${qs}` : ""}${url.hash}`);
     };
+
+    // Post was fetched individually and confirmed unavailable (deleted, hidden, or
+    // wall-only). Nothing to highlight — clean up the URL and stop.
+    if (deepLinkPostUnavailable === postId) {
+      stripDeepLinkParams();
+      return;
+    }
+
+    setExpandedComments((prev) => ({ ...prev, [postId]: true }));
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const maxAttempts = 28;
 
     const tryScroll = () => {
       if (cancelled) return;
@@ -2719,9 +2734,9 @@ export default function HomePage() {
       attempt += 1;
       if (attempt < maxAttempts) {
         timeoutId = window.setTimeout(tryScroll, 80);
-      } else {
-        stripDeepLinkParams();
       }
+      // Don't strip URL params on exhaustion — avoids killing the params before
+      // the target element renders, which would prevent any re-attempt.
     };
 
     timeoutId = window.setTimeout(tryScroll, 120);
@@ -2730,7 +2745,7 @@ export default function HomePage() {
       cancelled = true;
       if (timeoutId != null) window.clearTimeout(timeoutId);
     };
-  }, [postsLoaded, posts]);
+  }, [postsLoaded, posts, deepLinkPostUnavailable]);
 
   const sortedJobs = useMemo(() => {
     if (jobs.length === 0) return jobs;

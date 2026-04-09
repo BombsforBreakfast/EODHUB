@@ -92,6 +92,7 @@ export async function POST(req: NextRequest) {
     // In-app notification
     await adminClient.from("notifications").insert({
       user_id: vouchee_user_id,
+      type: "user_verified",
       message: `You've been verified! ${voucherName} cast the final vote. Welcome to EOD HUB.`,
       actor_name: voucherName,
       post_owner_id: null,

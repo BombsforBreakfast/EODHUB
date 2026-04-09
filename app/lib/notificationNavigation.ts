@@ -90,8 +90,14 @@ export function getNotificationHref(
   if (nNorm.type === "unit_join_request" && slug) {
     return `/units/${encodeURIComponent(slug)}/admin`;
   }
+  if (nNorm.type === "unit_join_approval" && slug) {
+    return `/units/${encodeURIComponent(slug)}`;
+  }
   if (nNorm.type === "unit_invite" && slug) {
     return `/units/${encodeURIComponent(slug)}`;
+  }
+  if (nNorm.type === "user_verified") {
+    return ctx.currentUserId ? `/profile/${ctx.currentUserId}` : "/";
   }
 
   if (nNorm.type === "unit_hot" || nNorm.type === "unit_post_like" || nNorm.type === "unit_post_comment") {

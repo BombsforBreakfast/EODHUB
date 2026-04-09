@@ -69,7 +69,7 @@ export default function NavBar() {
   const [showNotifPanel, setShowNotifPanel] = useState(false);
 
   /** In-app notifications (not DMs — those stay on Sidebars). */
-  const unreadNotifCount = notifications.filter((n) => !n.is_read).length;
+  const unreadNotifCount = notifications.length;
   const canAccessRabbithole = isFounderUser(currentUserId);
 
   async function loadUnreadMessages(uid: string) {

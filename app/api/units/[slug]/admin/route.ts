@@ -179,9 +179,12 @@ export async function PATCH(
     // Notify user
     await db.from("notifications").insert({
       user_id,
+      type: "unit_join_approval",
       message: `Your request to join ${unit.name} was approved`,
       actor_name: unit.name,
+      unit_id: unit.id,
       post_owner_id: null,
+      metadata: { unit_slug: slug },
       is_read: false,
     });
     return NextResponse.json({ success: true });

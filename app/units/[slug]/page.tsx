@@ -252,9 +252,10 @@ export default function UnitPage() {
       attempt += 1;
       if (attempt < maxAttempts) {
         timeoutId = window.setTimeout(tryScroll, 80);
-      } else {
-        stripDeepLinkParams();
       }
+      // Don't strip URL params on exhaustion — if a commentId was requested and
+      // comments haven't loaded yet, this effect will re-run when `comments` state
+      // updates and will find the element on the next pass.
     };
 
     timeoutId = window.setTimeout(tryScroll, 120);
