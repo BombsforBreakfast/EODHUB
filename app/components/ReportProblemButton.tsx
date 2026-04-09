@@ -63,22 +63,25 @@ export default function ReportProblemButton({ inline = false }: { inline?: boole
       }]);
       if (insertErr) throw new Error(insertErr.message);
 
-      // Notify all admins
-      const { data: admins } = await supabase
-        .from("profiles")
-        .select("user_id")
-        .eq("is_admin", true);
-      if (admins && admins.length > 0 && userId) {
-        await supabase.from("notifications").insert(
-          admins.map((a: { user_id: string }) => ({
-            user_id: a.user_id,
-            actor_id: userId,
-            actor_name: "A user",
-            type: "activity",
-            message: `Bug report submitted: "${message.trim().slice(0, 60)}${message.trim().length > 60 ? "..." : ""}"`,
-            post_owner_id: null,
-          }))
-        );
+      // Notify all admins via server route (anon client can't insert for other users)
+      if (userId) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const { data: admins } = await supabase
+          .from("profiles")
+          .select("user_id")
+          .eq("is_admin", true);
+        if (admins && admins.length > 0 && session?.access_token) {
+          const notifMsg = `Bug report submitted: "${message.trim().slice(0, 60)}${message.trim().length > 60 ? "..." : ""}"`;
+          await Promise.all(
+            admins.map((a: { user_id: string }) =>
+              fetch("/api/notify", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+                body: JSON.stringify({ user_id: a.user_id, message: notifMsg, type: "activity", actor_name: "A user" }),
+              })
+            )
+          );
+        }
       }
 
       setDone(true);
