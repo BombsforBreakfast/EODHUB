@@ -2715,7 +2715,7 @@ export default function HomePage() {
     setExpandedComments((prev) => ({ ...prev, [postId]: true }));
 
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let timeoutId: number | null = null;
     let attempt = 0;
     const maxAttempts = 28;
 
