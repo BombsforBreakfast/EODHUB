@@ -265,7 +265,7 @@ export default function UnitPage() {
     }
 
     let cancelled = false;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let timeoutId: number | null = null;
     let attempt = 0;
     const maxAttempts = 32;
 
