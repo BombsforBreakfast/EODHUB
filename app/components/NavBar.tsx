@@ -124,8 +124,8 @@ export default function NavBar() {
   }
 
   async function openNotification(id: string, href: string) {
-    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    await supabase.from("notifications").delete().eq("id", id);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
     setShowNotifPanel(false);
     window.location.href = href;
   }

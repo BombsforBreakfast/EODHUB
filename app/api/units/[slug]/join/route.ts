@@ -131,9 +131,13 @@ export async function POST(
     await adminClient.from("notifications").insert(
       leaders.map((l: { user_id: string }) => ({
         user_id: l.user_id,
+        actor_id: user.id,
+        type: "unit_join_request",
         message: `${name} is requesting to join ${unit.name}`,
         actor_name: name,
         post_owner_id: null,
+        unit_id: unit.id,
+        metadata: { unit_slug: slug },
         is_read: false,
       }))
     );

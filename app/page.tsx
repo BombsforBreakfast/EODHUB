@@ -1941,6 +1941,7 @@ export default function HomePage() {
             message: `${currentUserName ?? "Someone"} mentioned you in a post`,
             post_owner_id: userId,
             post_id: postId,
+            metadata: { feed: true },
           })),
         );
       }
@@ -2204,6 +2205,8 @@ export default function HomePage() {
         code?: string;
       } | null = null;
 
+      let insertedCommentId: string | null = null;
+
       const insertWithImage = await supabase.from("post_comments").insert([
         {
           post_id: postId,
@@ -2212,9 +2215,12 @@ export default function HomePage() {
           image_url: imageUrl,
           gif_url: commentGif,
         },
-      ]);
+      ]).select("id").single();
 
       insertError = insertWithImage.error;
+      if (!insertError && insertWithImage.data?.id) {
+        insertedCommentId = insertWithImage.data.id;
+      }
 
       if (insertError && isMissingColumnError(insertError, "image_url")) {
         const fallbackInsert = await supabase.from("post_comments").insert([
@@ -2223,9 +2229,12 @@ export default function HomePage() {
             user_id: userId,
             content: commentText,
           },
-        ]);
+        ]).select("id").single();
 
         insertError = fallbackInsert.error;
+        if (!insertError && fallbackInsert.data?.id) {
+          insertedCommentId = fallbackInsert.data.id;
+        }
 
         if (!insertError && selectedCommentImage) {
           alert(
@@ -2245,6 +2254,8 @@ export default function HomePage() {
       if (mentionIds.length > 0) {
         const post = posts.find((p) => p.id === postId);
         const ownerId = post?.user_id ?? userId;
+        const meta: Record<string, unknown> = { feed: true };
+        if (insertedCommentId) meta.comment_id = insertedCommentId;
         await supabase.from("notifications").insert(
           mentionIds.map((uid) => ({
             user_id: uid,
@@ -2254,6 +2265,7 @@ export default function HomePage() {
             message: `${currentUserName ?? "Someone"} mentioned you in a comment`,
             post_owner_id: ownerId,
             post_id: postId,
+            metadata: meta,
           })),
         );
       }
@@ -2618,14 +2630,30 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!postsLoaded || posts.length === 0) return;
-    const postId = new URLSearchParams(window.location.search).get("postId");
+    const params = new URLSearchParams(window.location.search);
+    const postId = params.get("postId");
+    const commentId = params.get("commentId");
     if (!postId) return;
-    const el = document.getElementById(`feed-post-${postId}`);
-    if (el) {
-      requestAnimationFrame(() => {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      });
-    }
+
+    setExpandedComments((prev) => ({ ...prev, [postId]: true }));
+
+    const t = window.setTimeout(() => {
+      const commentEl = commentId ? document.getElementById(`feed-comment-${commentId}`) : null;
+      const postEl = document.getElementById(`feed-post-${postId}`);
+      const target = commentEl ?? postEl;
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.classList.add("feed-notification-highlight");
+        window.setTimeout(() => target.classList.remove("feed-notification-highlight"), 2800);
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.delete("postId");
+      url.searchParams.delete("commentId");
+      const qs = url.searchParams.toString();
+      window.history.replaceState({}, "", `${url.pathname}${qs ? `?${qs}` : ""}${url.hash}`);
+    }, 120);
+
+    return () => window.clearTimeout(t);
   }, [postsLoaded, posts]);
 
   const sortedJobs = useMemo(() => {
@@ -3972,6 +4000,7 @@ export default function HomePage() {
 
                           return (
                             <div
+                              id={`feed-comment-${comment.id}`}
                               key={comment.id}
                               style={{
                                 background: t.bg,

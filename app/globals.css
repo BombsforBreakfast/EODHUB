@@ -72,6 +72,23 @@ button:active, a.nav-btn:active {
   border-top-color: rgba(0,0,0,0.6);
 }
 
+/* Deep-link from notifications — brief soft glow on post or comment */
+@keyframes feed-notif-glow {
+  0% {
+    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.22);
+    outline: 1px solid rgba(59, 130, 246, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+    outline: 1px solid transparent;
+  }
+}
+.feed-notification-highlight {
+  animation: feed-notif-glow 2.6s ease-out;
+  border-radius: 12px;
+  transition: box-shadow 0.3s ease, outline 0.3s ease;
+}
+
 /* Desktop defaults — mobile-only elements hidden */
 .nav-units-mobile { display: none; }
 .nav-hub-mobile   { display: none; }

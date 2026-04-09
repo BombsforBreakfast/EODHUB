@@ -122,9 +122,13 @@ export async function POST(
   await adminClient.from("notifications").insert(
     toInvite.map((userId) => ({
       user_id: userId,
+      actor_id: user.id,
+      type: "unit_invite",
       message: `${inviterName} invited you to join ${unit.name}`,
       actor_name: inviterName,
       post_owner_id: null,
+      unit_id: unit.id,
+      metadata: { unit_slug: slug },
       is_read: false,
     }))
   );

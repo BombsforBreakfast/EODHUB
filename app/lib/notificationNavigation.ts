@@ -19,6 +19,33 @@ function metaSlug(n: NotificationNavInput): string | null {
   return typeof s === "string" && s.length > 0 ? s : null;
 }
 
+function isFeedMention(n: NotificationNavInput): boolean {
+  const m = n.metadata;
+  if (!m || typeof m !== "object") return false;
+  return (m as { feed?: unknown }).feed === true;
+}
+
+function isWallMention(n: NotificationNavInput): boolean {
+  const m = n.metadata;
+  if (!m || typeof m !== "object") return false;
+  return (m as { wall?: unknown }).wall === true;
+}
+
+function metaCommentId(n: NotificationNavInput): string | null {
+  const m = n.metadata;
+  if (!m || typeof m !== "object") return null;
+  const c = (m as { comment_id?: unknown }).comment_id;
+  return typeof c === "string" && c.length > 0 ? c : null;
+}
+
+/** Home feed URL with optional deep link to a comment (soft-highlight on landing). */
+export function feedDeepLink(postId: string, commentId?: string | null): string {
+  const q = new URLSearchParams();
+  q.set("postId", postId);
+  if (commentId) q.set("commentId", commentId);
+  return `/?${q.toString()}`;
+}
+
 export function getNotificationHref(
   n: NotificationNavInput,
   ctx: { currentUserId: string | null; isAdmin: boolean },
@@ -27,6 +54,13 @@ export function getNotificationHref(
   const lower = m.toLowerCase();
   const slug = metaSlug(n);
 
+  if (n.type === "unit_join_request" && slug) {
+    return `/units/${encodeURIComponent(slug)}/admin`;
+  }
+  if (n.type === "unit_invite" && slug) {
+    return `/units/${encodeURIComponent(slug)}`;
+  }
+
   if (n.type === "unit_hot" || n.type === "unit_post_like" || n.type === "unit_post_comment") {
     if (slug) return `/units/${encodeURIComponent(slug)}`;
     return "/units";
@@ -34,7 +68,10 @@ export function getNotificationHref(
 
   if (lower.includes("message request")) return "/sidebar";
 
-  if (lower.includes("requesting to join")) return "/units";
+  if (lower.includes("requesting to join")) {
+    if (slug) return `/units/${encodeURIComponent(slug)}/admin`;
+    return "/units";
+  }
 
   if (ctx.isAdmin && (lower.includes("bug report") || lower.includes("flagged"))) {
     return "/admin";
@@ -57,13 +94,22 @@ export function getNotificationHref(
     return `/profile/${n.post_owner_id}`;
   }
 
+  if ((n.type === "mention_post" || n.type === "mention_comment") && isFeedMention(n) && n.post_id) {
+    const cid = n.type === "mention_comment" ? metaCommentId(n) : null;
+    return feedDeepLink(n.post_id, cid);
+  }
+
+  if ((n.type === "mention_post" || n.type === "mention_comment") && isWallMention(n) && n.post_owner_id) {
+    return `/profile/${n.post_owner_id}`;
+  }
+
   if (n.type === "mention_post" || n.type === "mention_comment") {
+    if (n.post_id) return feedDeepLink(n.post_id, n.type === "mention_comment" ? metaCommentId(n) : null);
     if (n.post_owner_id) return `/profile/${n.post_owner_id}`;
-    if (n.post_id) return `/?postId=${encodeURIComponent(n.post_id)}`;
   }
 
   if (n.post_id && n.type?.startsWith("feed_")) {
-    return `/?postId=${encodeURIComponent(n.post_id)}`;
+    return feedDeepLink(n.post_id);
   }
 
   if (n.post_owner_id == null) {

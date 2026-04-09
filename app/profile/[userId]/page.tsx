@@ -809,6 +809,7 @@ export default function PublicProfilePage() {
             message: `${currentUserName} mentioned you in a comment`,
             post_owner_id: profile?.user_id ?? null,
             post_id: postId,
+            metadata: { wall: true },
           })),
         );
       }
@@ -1188,6 +1189,7 @@ export default function PublicProfilePage() {
             message: `${currentUserName} mentioned you in a post`,
             post_owner_id: userId ?? null,
             post_id: postId,
+            metadata: { wall: true },
           })),
         );
       }
