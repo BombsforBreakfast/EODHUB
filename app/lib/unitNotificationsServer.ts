@@ -1,8 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  computeUnitEngagementScore,
+  getUnitHotEngagementThreshold,
+} from "./notificationPolicy";
 
-const DEFAULT_HOT_THRESHOLD = 12;
-
-/** Sum: likes + 2×comments — crosses threshold once → notify other unit members (excluding author + actor). */
+/** Crosses threshold once → notify other unit members (excluding author + actor). See `notificationPolicy.ts`. */
 export async function maybeNotifyUnitHotEngagement(
   admin: SupabaseClient,
   params: {
@@ -12,10 +14,11 @@ export async function maybeNotifyUnitHotEngagement(
     unitName: string;
     postAuthorId: string;
     actorUserId: string;
+    /** Override policy threshold (e.g. tests). */
     threshold?: number;
   },
 ): Promise<void> {
-  const threshold = params.threshold ?? DEFAULT_HOT_THRESHOLD;
+  const threshold = params.threshold ?? getUnitHotEngagementThreshold();
 
   const { count: lc } = await admin
     .from("unit_post_likes")
@@ -26,7 +29,7 @@ export async function maybeNotifyUnitHotEngagement(
     .select("*", { count: "exact", head: true })
     .eq("unit_post_id", params.postId);
 
-  const engagement = (lc ?? 0) + (cc ?? 0) * 2;
+  const engagement = computeUnitEngagementScore(lc ?? 0, cc ?? 0);
   if (engagement < threshold) return;
 
   const { data: postRow } = await admin
