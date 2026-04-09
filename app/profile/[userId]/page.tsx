@@ -485,7 +485,7 @@ export default function PublicProfilePage() {
     const { data: rawData, error } = await supabase
       .from("posts")
       .select("id, user_id, wall_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name")
-      .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
+      .or(`and(user_id.eq.${targetUserId},wall_user_id.is.null),wall_user_id.eq.${targetUserId}`)
       .order("created_at", { ascending: false });
 
     if (error) {

@@ -1333,12 +1333,12 @@ export default function HomePage() {
       const rankedIds = rawPosts.map((p) => p.id);
       const { data: visRows, error: visErr } = await supabase
         .from("posts")
-        .select("id, hidden_for_review")
+        .select("id, hidden_for_review, wall_user_id")
         .in("id", rankedIds);
       if (!visErr) {
         const visibleIds = new Set(
           (visRows ?? [])
-            .filter((r: { hidden_for_review?: boolean | null }) => !r.hidden_for_review)
+            .filter((r: { hidden_for_review?: boolean | null; wall_user_id?: string | null }) => !r.hidden_for_review && !r.wall_user_id)
             .map((r: { id: string }) => r.id)
         );
         rawPosts = rawPosts.filter((p) => visibleIds.has(p.id));
