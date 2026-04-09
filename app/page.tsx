@@ -2108,15 +2108,23 @@ export default function HomePage() {
   ) {
     if (!userId || recipientId === userId) return;
     const actorName = currentUserName?.trim() || "Someone";
-    void supabase.from("notifications").insert([{
-      user_id: recipientId,
-      actor_id: userId,
-      actor_name: actorName,
-      type: extra?.type ?? "feed_activity",
-      message,
-      post_owner_id: postOwnerId,
-      post_id: extra?.post_id ?? null,
-    }]);
+    // Use the server-side route so the insert uses the service role key and
+    // isn't blocked by RLS (anon client can't insert notifications for other users).
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.access_token) return;
+      void fetch("/api/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({
+          user_id: recipientId,
+          message,
+          post_owner_id: postOwnerId,
+          type: extra?.type ?? "feed_activity",
+          post_id: extra?.post_id ?? null,
+          actor_name: actorName,
+        }),
+      });
+    });
   }
 
   async function toggleLike(postId: string, isCurrentlyLiked: boolean) {
