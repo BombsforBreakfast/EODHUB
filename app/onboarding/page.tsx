@@ -3,6 +3,12 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import MemberPaywallModal from "../components/MemberPaywallModal";
+import Link from "next/link";
+import {
+  COMMUNITY_GUIDELINES_TEXT,
+  PRIVACY_POLICY_TEXT,
+  TERMS_OF_SERVICE_TEXT,
+} from "../lib/legalText";
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
 const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
@@ -33,6 +39,9 @@ export default function OnboardingPage() {
   const [referralInput, setReferralInput] = useState("");
   const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
   const [resumeSubscriptionAckOnly, setResumeSubscriptionAckOnly] = useState(false);
+  const [agreedTerms, setAgreedTerms] = useState(false);
+  const [agreedPrivacy, setAgreedPrivacy] = useState(false);
+  const [agreedGuidelines, setAgreedGuidelines] = useState(false);
 
   useEffect(() => {
     async function check() {
@@ -130,6 +139,11 @@ export default function OnboardingPage() {
         alert("Please fill in all required fields.");
         return;
       }
+    }
+
+    if (!agreedTerms || !agreedPrivacy || !agreedGuidelines) {
+      alert("Please review and agree to the Terms of Service, Privacy Policy, and Community Guidelines.");
+      return;
     }
 
     setSubmitting(true);
@@ -439,6 +453,57 @@ export default function OnboardingPage() {
                 />
                 <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
                   If a community member invited you, enter their code here.
+                </div>
+              </div>
+
+              <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, marginTop: 4 }}>
+                <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 10 }}>Legal Agreements</div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
+                  Review each document below. These are required to create your account.
+                </div>
+
+                <div style={{ display: "grid", gap: 12 }}>
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
+                      <span style={{ fontWeight: 800, fontSize: 13 }}>Terms of Service</span>
+                      <Link href="/terms" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
+                    </div>
+                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                      {TERMS_OF_SERVICE_TEXT}
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                      <input type="checkbox" checked={agreedTerms} onChange={(e) => setAgreedTerms(e.target.checked)} />
+                      I agree to the Terms of Service
+                    </label>
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
+                      <span style={{ fontWeight: 800, fontSize: 13 }}>Privacy Policy</span>
+                      <Link href="/privacy" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
+                    </div>
+                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                      {PRIVACY_POLICY_TEXT}
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                      <input type="checkbox" checked={agreedPrivacy} onChange={(e) => setAgreedPrivacy(e.target.checked)} />
+                      I agree to the Privacy Policy
+                    </label>
+                  </div>
+
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
+                      <span style={{ fontWeight: 800, fontSize: 13 }}>Community Guidelines</span>
+                      <Link href="/guidelines" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
+                    </div>
+                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                      {COMMUNITY_GUIDELINES_TEXT}
+                    </div>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                      <input type="checkbox" checked={agreedGuidelines} onChange={(e) => setAgreedGuidelines(e.target.checked)} />
+                      I agree to the Community Guidelines
+                    </label>
+                  </div>
                 </div>
               </div>
 

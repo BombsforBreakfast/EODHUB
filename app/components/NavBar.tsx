@@ -68,7 +68,7 @@ export default function NavBar() {
 
   async function loadUnreadMessages(uid: string) {
     // Skip re-fetch while on messages page — badge is managed locally there
-    if (typeof window !== "undefined" && window.location.pathname === "/messages") {
+    if (typeof window !== "undefined" && (window.location.pathname === "/messages" || window.location.pathname === "/sidebar")) {
       setUnreadMessages(0);
       return;
     }
@@ -296,8 +296,8 @@ export default function NavBar() {
           .eq("is_approved", true)
           .or(`title.ilike.%${q}%,company_name.ilike.%${q}%,location.ilike.%${q}%`).limit(5),
         supabase.from("units").select("id, name, slug, type, description").ilike("name", `%${q}%`).limit(5),
-        supabase.from("unit_directory").select("id, name, org_type, state, unit_slug")
-          .or(`name.ilike.%${q}%,org_type.ilike.%${q}%,state.ilike.%${q}%`).limit(5),
+        supabase.from("unit_directory").select("id, name, org_type, state, unit_slug, base_city")
+          .or(`name.ilike.%${q}%,org_type.ilike.%${q}%,state.ilike.%${q}%,base_city.ilike.%${q}%`).limit(5),
       ]);
       const rabbitholeMatches = canAccessRabbithole
         ? await searchRabbitholeThreads(supabase, q, 5)
@@ -335,8 +335,8 @@ export default function NavBar() {
         });
       });
 
-      ((directoryRes.data ?? []) as { id: string; name: string; org_type: string; state: string | null; unit_slug: string | null }[]).forEach((row) => {
-        const subtitle = [row.org_type, row.state].filter(Boolean).join(" · ") || "Directory";
+      ((directoryRes.data ?? []) as { id: string; name: string; org_type: string; state: string | null; unit_slug: string | null; base_city: string | null }[]).forEach((row) => {
+        const subtitle = [row.org_type, row.state, row.base_city].filter(Boolean).join(" · ") || "Directory";
         results.push({
           type: "directory",
           id: row.id,
@@ -447,6 +447,16 @@ export default function NavBar() {
     fontWeight: 700,
     background: t.navBg,
     color: t.text,
+  };
+  const rightToolbarButton: React.CSSProperties = {
+    ...navButton,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    minHeight: 42,
+    borderRadius: 12,
+    padding: "10px 16px",
+    fontWeight: 800,
   };
 
   const badge = (count: number) => (
@@ -563,21 +573,22 @@ export default function NavBar() {
           {(unreadMessages + unreadProfileNotifs + unreadFeedNotifs) > 0 && !showHub && badge(unreadMessages + unreadProfileNotifs + unreadFeedNotifs)}
         </button>
 
-        {/* Messages button */}
+        {/* Sidebars (private messages) */}
         {currentUserId && (
           <a
-            href="/messages"
-            onClick={async (e) => { e.preventDefault(); await markMessagesRead(); window.location.href = "/messages"; }}
+            href="/sidebar"
+            onClick={async (e) => { e.preventDefault(); await markMessagesRead(); window.location.href = "/sidebar"; }}
             className="nav-btn nav-messages-btn"
             style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
           >
-            Messages
+            Sidebars
             {unreadMessages > 0 && badge(unreadMessages)}
           </a>
         )}
       </div>
 
-      {/* Brand — desktop only; centered; links to feed */}
+      {/* Logo + main search — centered under logo (desktop); stacked full-width search (mobile) */}
+      <div className="nav-center-stack">
       <Link
         href="/"
         className="nav-brand"
@@ -608,19 +619,6 @@ export default function NavBar() {
         )}
       </Link>
 
-      <div className="nav-trailing">
-      {currentUserId && isAdmin && (
-        <div className="nav-admin-bar">
-          <Link
-            href="/admin"
-            className="nav-btn nav-admin"
-            style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
-          >
-            Admin
-            {adminPendingTotal > 0 && badge(adminPendingTotal)}
-          </Link>
-        </div>
-      )}
       {/* Search bar row */}
       <div className="nav-search-row">
         <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "1 1 0", minWidth: 0, width: "100%" }}>
@@ -703,11 +701,43 @@ export default function NavBar() {
           )}
         </div>
       </div>
+      </div>
 
-      {/* Right: logout */}
-      <div className="nav-right" style={{ display: "flex", gap: 12, flexWrap: "nowrap", flexShrink: 0, alignItems: "center" }}>
+      <div className="nav-trailing">
+      <div
+        className="nav-right"
+        style={{
+          display: "flex",
+          gap: 8,
+          flexWrap: "nowrap",
+          flexShrink: 0,
+          alignItems: "center",
+          border: `1px solid ${t.navBorder}`,
+          borderRadius: 0,
+          padding: 4,
+          background: t.navBg,
+        }}
+      >
         {!authLoaded ? null : currentUserId ? (
           <>
+            {isAdmin && (
+              <Link
+                href="/admin"
+                className="nav-btn nav-admin nav-admin-bar"
+                style={{ ...rightToolbarButton, gap: 6 }}
+              >
+                Admin
+                {adminPendingTotal > 0 && badge(adminPendingTotal)}
+              </Link>
+            )}
+            <Link
+              href="/directory"
+              className="nav-btn nav-directory"
+              style={rightToolbarButton}
+              onClick={() => { setShowHub(false); setShowSearchDropdown(false); }}
+            >
+              Directory
+            </Link>
             <Link
               href="/profile"
               className="nav-btn nav-account-settings"
@@ -717,24 +747,21 @@ export default function NavBar() {
                 setShowHub(false);
                 setShowSearchDropdown(false);
               }}
-              style={{ ...navButton, display: "flex", alignItems: "center", justifyContent: "center", padding: "10px 12px" }}
+              style={{ ...rightToolbarButton, padding: "10px 12px", minWidth: 48 }}
             >
               <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .55.22 1.05.59 1.41.37.37.86.59 1.41.59H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
             </Link>
-            <Link href="/directory" className="nav-btn nav-directory" style={navButton} onClick={() => { setShowHub(false); setShowSearchDropdown(false); }}>
-              Directory
-            </Link>
-            <button onClick={handleLogout} className="nav-logout" style={{ ...navButton, cursor: "pointer" }}>Log Out</button>
+            <button onClick={handleLogout} className="nav-logout" style={{ ...rightToolbarButton, cursor: "pointer" }}>Log Out</button>
           </>
         ) : (
           <>
-            <Link href="/directory" className="nav-btn nav-directory" style={navButton}>
+            <Link href="/directory" className="nav-btn nav-directory" style={rightToolbarButton}>
               Directory
             </Link>
-            <Link href="/login" className="nav-logout" style={navButton}>Log In</Link>
+            <Link href="/login" className="nav-logout" style={rightToolbarButton}>Log In</Link>
           </>
         )}
       </div>
@@ -819,7 +846,7 @@ export default function NavBar() {
                     ...(isAdmin
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),
-                    { label: "Messages", href: "/messages", emoji: "💬", badge: unreadMessages, onNav: markMessagesRead },
+                    { label: "Sidebars", href: "/sidebar", emoji: "💬", badge: unreadMessages, onNav: markMessagesRead },
                   ].map((item) => (
                     <a
                       key={item.label}

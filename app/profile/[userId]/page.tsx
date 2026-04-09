@@ -9,7 +9,10 @@ import ImageCropDialog from "../../components/ImageCropDialog";
 import { useTheme } from "../../lib/ThemeContext";
 import { ASPECT_AVATAR, ASPECT_EMPLOYER_LOGO } from "../../lib/imageCropTargets";
 import MentionTextarea, { extractMentionIds } from "../../components/MentionTextarea";
+import GifPickerButton from "../../components/GifPickerButton";
 import { PostLikersStack, type PostLikerBrief } from "../../components/PostLikersStack";
+import SidebarThreadDrawer from "../../components/SidebarThreadDrawer";
+import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../lib/commentSidebarEligibility";
 
 type Profile = {
   user_id: string;
@@ -63,6 +66,7 @@ type Post = {
   content: string;
   created_at: string;
   image_url: string | null;
+  gif_url: string | null;
   image_urls: string[];
   likeCount: number;
   commentCount: number;
@@ -97,6 +101,13 @@ type PhotoComment = {
   created_at: string;
   authorName: string;
   authorPhotoUrl: string | null;
+};
+
+type GroupTile = {
+  id: string;
+  name: string;
+  slug: string;
+  cover_photo_url: string | null;
 };
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
@@ -198,12 +209,20 @@ export default function PublicProfilePage() {
       ? rawUserId[0]
       : null;
 
-  const { t } = useTheme();
+  const { t, isDark } = useTheme();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [photos, setPhotos] = useState<ProfilePhoto[]>([]);
+  const [myGroups, setMyGroups] = useState<GroupTile[]>([]);
+  const [showAllModal, setShowAllModal] = useState<"photos" | "groups" | null>(null);
   const [loading, setLoading] = useState(true);
+
+  /** Own-wall only: saved events (saved jobs live under My Account) */
+  const [wallSavedEvents, setWallSavedEvents] = useState<
+    { id: string; title: string | null; organization: string | null; date: string | null; signup_url: string | null }[]
+  >([]);
+  const [unsavingWallEvent, setUnsavingWallEvent] = useState<string | null>(null);
 
   const [postContent, setPostContent] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -212,6 +231,7 @@ export default function PublicProfilePage() {
   const [fetchingOg, setFetchingOg] = useState(false);
   const ogDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedPostImages, setSelectedPostImages] = useState<{ file: File; previewUrl: string }[]>([]);
+  const [selectedPostGif, setSelectedPostGif] = useState<string | null>(null);
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
   const postContentRawRef = useRef("");
   const commentRawsRef = useRef<Record<string, string>>({});
@@ -232,6 +252,12 @@ export default function PublicProfilePage() {
   const [galleryExpanded, setGalleryExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
+
+  const [sidebarDrawer, setSidebarDrawer] = useState<{ open: boolean; peerId: string | null }>({
+    open: false,
+    peerId: null,
+  });
+  const [sidebarNudgeBump, setSidebarNudgeBump] = useState(0);
 
   const [editingProfile, setEditingProfile] = useState(false);
   const [editRole, setEditRole] = useState("");
@@ -474,11 +500,13 @@ export default function PublicProfilePage() {
 
     // Legacy single image_url
     const { data: legacyImgData } = await supabase
-      .from("posts").select("id, image_url").in("id", postIds);
+      .from("posts").select("id, image_url, gif_url").in("id", postIds);
     const legacyImageMap = new Map<string, string | null>();
-    ((legacyImgData ?? []) as { id: string; image_url: string | null }[]).forEach((r) =>
-      legacyImageMap.set(r.id, r.image_url ?? null)
-    );
+    const gifUrlMap = new Map<string, string | null>();
+    ((legacyImgData ?? []) as { id: string; image_url: string | null; gif_url: string | null }[]).forEach((r) => {
+      legacyImageMap.set(r.id, r.image_url ?? null);
+      gifUrlMap.set(r.id, r.gif_url ?? null);
+    });
 
     // Multi-image post_images table
     const { data: postImgData } = await supabase
@@ -608,6 +636,7 @@ export default function PublicProfilePage() {
       return {
         ...p,
         image_url: legacyImage,
+        gif_url: gifUrlMap.get(p.id) ?? null,
         image_urls: multiImages.length > 0 ? multiImages : legacyImage ? [legacyImage] : [],
         likeCount: postLikes.length,
         commentCount: postComments.length,
@@ -797,6 +826,82 @@ export default function PublicProfilePage() {
     const result = (data as ProfilePhoto[]) ?? [];
     setPhotos(result);
     return result;
+  }
+
+  async function loadMyGroups(targetUserId: string): Promise<GroupTile[]> {
+    const { data: memberships, error: memError } = await supabase
+      .from("unit_members")
+      .select("unit_id")
+      .eq("user_id", targetUserId)
+      .eq("status", "approved");
+
+    if (memError) {
+      console.error("My groups membership load error:", memError);
+      setMyGroups([]);
+      return [];
+    }
+
+    const unitIds = ((memberships ?? []) as { unit_id: string }[]).map((m) => m.unit_id);
+    if (unitIds.length === 0) {
+      setMyGroups([]);
+      return [];
+    }
+
+    const { data: units, error: unitsError } = await supabase
+      .from("units")
+      .select("id, name, slug, cover_photo_url")
+      .in("id", unitIds);
+
+    if (unitsError) {
+      console.error("My groups units load error:", unitsError);
+      setMyGroups([]);
+      return [];
+    }
+
+    const result = ((units ?? []) as GroupTile[]).sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })
+    );
+    setMyGroups(result);
+    return result;
+  }
+
+  async function loadWallSavedEvents(uid: string) {
+    const { data, error } = await supabase
+      .from("saved_events")
+      .select("id, event_id, events(title, organization, date, signup_url)")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error("Wall saved events load error:", error);
+      setWallSavedEvents([]);
+      return;
+    }
+    type RawRow = {
+      id: string;
+      events: { title: string | null; organization: string | null; date: string | null; signup_url: string | null } | null | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }[];
+    };
+    setWallSavedEvents(
+      ((data ?? []) as unknown as RawRow[]).map((r) => {
+        const ev = Array.isArray(r.events) ? r.events[0] ?? null : r.events;
+        return {
+          id: r.id,
+          title: ev?.title ?? null,
+          organization: ev?.organization ?? null,
+          date: ev?.date ?? null,
+          signup_url: ev?.signup_url ?? null,
+        };
+      })
+    );
+  }
+
+  async function unsaveWallEvent(rowId: string) {
+    try {
+      setUnsavingWallEvent(rowId);
+      await supabase.from("saved_events").delete().eq("id", rowId);
+      setWallSavedEvents((prev) => prev.filter((e) => e.id !== rowId));
+    } finally {
+      setUnsavingWallEvent(null);
+    }
   }
 
   async function loadPhotoInteractions(photoIds: string[], signedInUserId?: string | null) {
@@ -1007,12 +1112,13 @@ export default function PublicProfilePage() {
       return;
     }
 
-    if (!userId || (!postContent.trim() && selectedPostImages.length === 0)) return;
+    if (!userId || (!postContent.trim() && selectedPostImages.length === 0 && !selectedPostGif)) return;
 
     try {
       setSubmittingPost(true);
       const currentOg = ogPreview;
       const imagesToUpload = [...selectedPostImages];
+      const gifToPost = selectedPostGif;
 
       const rawPostContent = (postContentRawRef.current || postContent).trim();
       const { data: inserted, error: insertError } = await supabase
@@ -1021,6 +1127,8 @@ export default function PublicProfilePage() {
           user_id: currentUserId,
           wall_user_id: !isOwnWall && userId ? userId : null,
           content: rawPostContent,
+          image_url: null,
+          gif_url: gifToPost ?? null,
           og_url: currentOg?.url ?? null,
           og_title: currentOg?.title ?? null,
           og_description: currentOg?.description ?? null,
@@ -1070,6 +1178,7 @@ export default function PublicProfilePage() {
       setPostContent("");
       postContentRawRef.current = "";
       setOgPreview(null);
+      setSelectedPostGif(null);
       setSelectedPostImages((prev) => { prev.forEach((item) => URL.revokeObjectURL(item.previewUrl)); return []; });
       await loadPosts(userId);
     } catch (err) {
@@ -1362,6 +1471,8 @@ export default function PublicProfilePage() {
         loadPosts(userId),
         loadPhotos(userId),
         loadConnections(userId, signedInUserId),
+        loadMyGroups(userId),
+        loadWallSavedEvents(userId),
       ]);
       await loadPhotoInteractions((photoResults ?? []).map((p) => p.id), signedInUserId);
 
@@ -1473,6 +1584,12 @@ export default function PublicProfilePage() {
 
   const isOwnWall = currentUserId === profile?.user_id;
 
+  function isWallSidebarNudgeDismissed(postId: string, peerId: string) {
+    void sidebarNudgeBump;
+    if (!currentUserId || typeof window === "undefined") return true;
+    return localStorage.getItem(sidebarNudgeDismissStorageKey(postId, currentUserId, peerId)) === "1";
+  }
+
   function getBadgeEmoji(count: number): string {
     if (count >= 50) return "💎";
     if (count >= 25) return "🥇";
@@ -1508,6 +1625,12 @@ export default function PublicProfilePage() {
 
   const pinnedPhotos = photos.filter((photo) => photo.is_pinned).slice(0, 4);
   const galleryPhotos = photos.filter((photo) => !photo.is_pinned);
+  const photoPreviewItems = isMobile ? pinnedPhotos : pinnedPhotos.slice(0, 4);
+  const groupPreviewItems = isMobile ? myGroups : myGroups.slice(0, 4);
+
+  /** Same 4-column row as My Groups so a single pinned photo stays thumbnail-sized, not full column width. */
+  const desktopPhotoGridCols = !isMobile ? "repeat(4, minmax(0, 1fr))" : "repeat(auto-fill, minmax(96px, 1fr))";
+  const groupsGridCols = !isMobile ? "repeat(4, minmax(0, 1fr))" : "repeat(auto-fill, minmax(110px, 1fr))";
 
   return (
     <>
@@ -1530,7 +1653,7 @@ export default function PublicProfilePage() {
       {/* Mobile unread messages banner — own wall only */}
       {isMobile && isOwnWall && (
         <a
-          href="/messages"
+          href="/sidebar"
           style={{
             display: "flex",
             alignItems: "center",
@@ -1548,7 +1671,7 @@ export default function PublicProfilePage() {
             boxSizing: "border-box",
           }}
         >
-          <span>My Messages</span>
+          <span>Sidebars</span>
           <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 20, height: 20, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
             {unreadMessages > 9 ? "9+" : unreadMessages}
           </span>
@@ -1853,14 +1976,14 @@ export default function PublicProfilePage() {
                       </div>
                     )}
                     <div style={{ display: "flex", gap: 14, marginTop: 8, alignItems: "flex-start" }}>
-                      <div style={{ textAlign: "left" }}>
+                      <div style={{ textAlign: "center" }}>
                         <button type="button" onClick={() => openConnList("know")}
                           style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                           <div style={{ fontWeight: 900, fontSize: 17 }}>{knowCount}</div>
                           <div style={{ fontSize: 10, color: t.textMuted }}>Know</div>
                         </button>
                         {knowCount > 0 && (
-                          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, marginTop: 8 }}>
                             <div style={{ display: "flex", alignItems: "center" }}>
                               {knownPreviewUsers.slice(0, 5).map((u, idx) => {
                                 const n = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
@@ -1907,31 +2030,6 @@ export default function PublicProfilePage() {
                           </div>
                           <div style={{ fontSize: 10, color: t.textMuted }}>Recruited</div>
                         </button>
-                        {isOwnWall && profile.referral_code && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
-                              setCopiedReferral(true);
-                              setTimeout(() => setCopiedReferral(false), 2000);
-                            }}
-                            style={{
-                              marginTop: 6,
-                              background: copiedReferral ? "#16a34a" : "#111",
-                              color: "white",
-                              border: "none",
-                              borderRadius: 999,
-                              padding: "4px 10px",
-                              minWidth: 104,
-                              fontWeight: 700,
-                              fontSize: 10,
-                              cursor: "pointer",
-                              transition: "background 0.2s",
-                            }}
-                          >
-                            {copiedReferral ? "Copied" : "Referral Link"}
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -1970,7 +2068,7 @@ export default function PublicProfilePage() {
                         {currentUserWorkedWith ? "Worked With ✓" : "Mark Worked With"}
                       </button>
                     )}
-                    <a href={`/messages?with=${userId}`} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <a href={`/sidebar?with=${userId}`} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       Message
                     </a>
                   </div>
@@ -2010,6 +2108,32 @@ export default function PublicProfilePage() {
                       </a>
                     </div>
                   ) : null}
+                  {isOwnWall && profile.referral_code && (
+                    <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start" }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
+                          setCopiedReferral(true);
+                          setTimeout(() => setCopiedReferral(false), 2000);
+                        }}
+                        style={{
+                          background: copiedReferral ? "#16a34a" : "#111",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 999,
+                          padding: "6px 12px",
+                          minWidth: 110,
+                          fontWeight: 700,
+                          fontSize: 11,
+                          cursor: "pointer",
+                          transition: "background 0.2s",
+                        }}
+                      >
+                        {copiedReferral ? "Copied" : "Referral Link"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ) : (
@@ -2055,14 +2179,14 @@ export default function PublicProfilePage() {
                   </div>
 
                   <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%", alignItems: "flex-start" }}>
-                    <div style={{ textAlign: "left" }}>
+                    <div style={{ textAlign: "center" }}>
                       <button type="button" onClick={() => openConnList("know")}
                         style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
                         <div style={{ fontWeight: 900, fontSize: 20 }}>{knowCount}</div>
                         <div style={{ fontSize: 12, color: t.textMuted }}>Know</div>
                       </button>
                       {knowCount > 0 && (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, marginTop: 8 }}>
                           <div style={{ display: "flex", alignItems: "center" }}>
                             {knownPreviewUsers.slice(0, 6).map((u, idx) => {
                               const n = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
@@ -2109,31 +2233,6 @@ export default function PublicProfilePage() {
                         </div>
                         <div style={{ fontSize: 12, color: t.textMuted }}>Recruited</div>
                       </button>
-                      {isOwnWall && profile.referral_code && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
-                            setCopiedReferral(true);
-                            setTimeout(() => setCopiedReferral(false), 2000);
-                          }}
-                          style={{
-                            marginTop: 7,
-                            background: copiedReferral ? "#16a34a" : "#111",
-                            color: "white",
-                            border: "none",
-                            borderRadius: 999,
-                            padding: "5px 12px",
-                            minWidth: 112,
-                            fontWeight: 700,
-                            fontSize: 11,
-                            cursor: "pointer",
-                            transition: "background 0.2s",
-                          }}
-                        >
-                          {copiedReferral ? "Copied" : "Referral Link"}
-                        </button>
-                      )}
                     </div>
                   </div>
                   {!isOwnWall && currentUserId && (
@@ -2168,7 +2267,7 @@ export default function PublicProfilePage() {
                           {currentUserWorkedWith ? "Worked With ✓" : "Mark Worked With"}
                         </button>
                       )}
-                      <a href={`/messages?with=${userId}`} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "block", width: "100%", boxSizing: "border-box" }}>
+                      <a href={`/sidebar?with=${userId}`} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "block", width: "100%", boxSizing: "border-box" }}>
                         Message
                       </a>
                     </div>
@@ -2212,6 +2311,32 @@ export default function PublicProfilePage() {
                       </a>
                     </div>
                   ) : null}
+                  {isOwnWall && profile.referral_code && (
+                    <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start" }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
+                          setCopiedReferral(true);
+                          setTimeout(() => setCopiedReferral(false), 2000);
+                        }}
+                        style={{
+                          background: copiedReferral ? "#16a34a" : "#111",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 999,
+                          padding: "6px 12px",
+                          minWidth: 112,
+                          fontWeight: 700,
+                          fontSize: 11,
+                          cursor: "pointer",
+                          transition: "background 0.2s",
+                        }}
+                      >
+                        {copiedReferral ? "Copied" : "Referral Link"}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -2277,71 +2402,217 @@ export default function PublicProfilePage() {
             </div>
           )}
 
-          {/* ── Photo Strip ── */}
           <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, overflow: "hidden" }}>
-            <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
-              {/* Title row */}
-              <div style={{ fontSize: 15, fontWeight: 900 }}>Photos</div>
-
-              {/* Pinned photos — horizontal scroll, full width */}
-              <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4 }}>
-                {pinnedPhotos.length === 0 && (
-                  <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center" }}>
-                    {photos.length > 0 ? "Pin photos from the gallery to feature them here." : "No photos yet."}
-                  </div>
-                )}
-                {pinnedPhotos.map((photo) => (
-                  <div key={photo.id} style={{ flexShrink: 0, display: "flex", flexDirection: "column", gap: 4 }}>
-                    <div
-                      onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
-                      style={{ width: 100, height: 100, borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
-                    >
-                      <img src={photo.photo_url} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                    </div>
+            <div
+              style={{
+                padding: 16,
+                display: "grid",
+                gridTemplateColumns: isMobile
+                  ? "1fr"
+                  : "minmax(0, 2fr) 1px minmax(0, 2fr) 1px minmax(0, 1fr)",
+                gap: 14,
+                alignItems: "start",
+              }}
+            >
+              {/* ── Photo Strip ── */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+                {/* Title + gallery / add (matches common profile strip layout) */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 15, fontWeight: 900 }}>Photos</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                    {galleryPhotos.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setGalleryExpanded(!galleryExpanded)}
+                        style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        Gallery ({galleryPhotos.length}) {galleryExpanded ? "▲" : "▼"}
+                      </button>
+                    )}
                     {isOwnWall && (
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button
-                          onClick={() => togglePinned(photo)}
-                          disabled={togglingPinnedId === photo.id}
-                          style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1, color: t.text }}
-                        >
-                          {togglingPinnedId === photo.id ? "..." : "Unpin"}
-                        </button>
-                        <button
-                          onClick={() => deletePhoto(photo)}
-                          disabled={deletingPhotoId === photo.id}
-                          style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1, color: t.text }}
-                        >
-                          {deletingPhotoId === photo.id ? "..." : "Del"}
-                        </button>
-                      </div>
+                      <label style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: t.surface, color: t.text, whiteSpace: "nowrap", display: "inline-block" }}>
+                        + Add Photo
+                        <input type="file" accept="image/*" onChange={handleGalleryUpload} style={{ display: "none" }} />
+                      </label>
+                    )}
+                    {uploadingGallery && <span style={{ fontSize: 12, color: t.textMuted }}>Uploading...</span>}
+                    {!isMobile && pinnedPhotos.length > photoPreviewItems.length && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllModal("photos")}
+                        style={{ border: "none", background: "none", color: "#2563eb", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0 }}
+                      >
+                        Show all ({pinnedPhotos.length})
+                      </button>
                     )}
                   </div>
-                ))}
-              </div>
+                </div>
 
-              {/* Controls row — below photos */}
-              {(galleryPhotos.length > 0 || isOwnWall) && (
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  {galleryPhotos.length > 0 && (
+                <div style={{ display: "grid", gridTemplateColumns: desktopPhotoGridCols, gap: 8 }}>
+                  {pinnedPhotos.length === 0 && (
+                    <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
+                      {photos.length > 0
+                        ? (isOwnWall ? "Pin photos from the gallery to feature them here." : "No featured photos yet.")
+                        : "No photos yet."}
+                    </div>
+                  )}
+                  {photoPreviewItems.map((photo) => (
+                    <div key={photo.id} style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                      <div
+                        onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
+                        style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
+                      >
+                        <img src={photo.photo_url} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      </div>
+                      {isOwnWall && (
+                        <div style={{ display: "flex", flexDirection: "row", gap: 6, alignItems: "stretch" }}>
+                          <button
+                            type="button"
+                            onClick={() => deletePhoto(photo)}
+                            disabled={deletingPhotoId === photo.id}
+                            style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1, color: t.text, minWidth: 0 }}
+                          >
+                            {deletingPhotoId === photo.id ? "..." : "Del"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => togglePinned(photo)}
+                            disabled={togglingPinnedId === photo.id}
+                            style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1, color: t.text, minWidth: 0 }}
+                          >
+                            {togglingPinnedId === photo.id ? "..." : "Unpin"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {!isMobile && <div style={{ width: 1, alignSelf: "stretch", background: t.border }} />}
+
+              {/* ── My Groups ── */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <div style={{ fontSize: 15, fontWeight: 900 }}>My Groups</div>
+                  {!isMobile && myGroups.length > groupPreviewItems.length && (
                     <button
-                      onClick={() => setGalleryExpanded(!galleryExpanded)}
-                      style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                      type="button"
+                      onClick={() => setShowAllModal("groups")}
+                      style={{ border: "none", background: "none", color: "#2563eb", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0 }}
                     >
-                      Gallery ({galleryPhotos.length}) {galleryExpanded ? "▲" : "▼"}
+                      Show all ({myGroups.length})
                     </button>
                   )}
-                  {isOwnWall && (
-                    <label style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: t.surface, color: t.text, whiteSpace: "nowrap", display: "inline-block" }}>
-                      + Add Photo
-                      <input type="file" accept="image/*" onChange={handleGalleryUpload} style={{ display: "none" }} />
-                    </label>
-                  )}
-                  {uploadingGallery && <span style={{ fontSize: 12, color: t.textMuted }}>Uploading...</span>}
                 </div>
-              )}
-            </div>
+                <div style={{ display: "grid", gridTemplateColumns: groupsGridCols, gap: 8 }}>
+                  {myGroups.length === 0 && (
+                    <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
+                      No groups yet.
+                    </div>
+                  )}
+                  {groupPreviewItems.map((group) => (
+                    <div key={group.id} style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                      <a
+                        href={`/units/${group.slug}`}
+                        style={{ textDecoration: "none", color: "inherit", display: "block", minWidth: 0, width: "100%" }}
+                      >
+                        <div style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, border: `1px solid ${t.border}` }}>
+                          {group.cover_photo_url ? (
+                            <img src={group.cover_photo_url} alt={group.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          ) : (
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontWeight: 800, fontSize: 12 }}>
+                              {group.name.slice(0, 1).toUpperCase()}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, lineHeight: 1.3, color: t.text, textAlign: "left", minWidth: 0 }}>
+                          <span style={{ display: "block", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                            {group.name}
+                          </span>
+                        </div>
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              {!isMobile && <div style={{ width: 1, alignSelf: "stretch", background: t.border }} />}
 
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Events</div>
+                {wallSavedEvents.length === 0 ? (
+                  <div style={{ color: t.textFaint, fontSize: 13, lineHeight: 1.45 }}>
+                    No saved events
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {wallSavedEvents.map((ev) => (
+                      <div
+                        key={ev.id}
+                        style={{
+                          border: `1px solid ${t.border}`,
+                          borderRadius: 12,
+                          padding: "12px 14px",
+                          background: t.bg,
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 6,
+                          minWidth: 0,
+                        }}
+                      >
+                        <div style={{ fontWeight: 800, fontSize: 14, color: t.text, lineHeight: 1.25 }}>{ev.title || "Event"}</div>
+                        {ev.organization ? (
+                          <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.3 }}>{ev.organization}</div>
+                        ) : null}
+                        {ev.date ? (
+                          <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.3 }}>
+                            {new Date(ev.date + "T12:00:00").toLocaleDateString("en-US", {
+                              weekday: "short",
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </div>
+                        ) : null}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
+                          {ev.signup_url ? (
+                            <a
+                              href={ev.signup_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ fontWeight: 700, fontSize: 13, color: "#2563eb", textDecoration: "none" }}
+                            >
+                              Sign up →
+                            </a>
+                          ) : (
+                            <span />
+                          )}
+                          {isOwnWall ? (
+                            <button
+                              type="button"
+                              onClick={() => unsaveWallEvent(ev.id)}
+                              disabled={unsavingWallEvent === ev.id}
+                              style={{
+                                background: "transparent",
+                                border: `1px solid ${t.border}`,
+                                color: t.textMuted,
+                                borderRadius: 8,
+                                padding: "4px 10px",
+                                fontSize: 11,
+                                fontWeight: 700,
+                                cursor: unsavingWallEvent === ev.id ? "not-allowed" : "pointer",
+                                opacity: unsavingWallEvent === ev.id ? 0.6 : 1,
+                              }}
+                            >
+                              {unsavingWallEvent === ev.id ? "…" : "Remove"}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
             {/* Expanded gallery grid */}
             {galleryExpanded && galleryPhotos.length > 0 && (
               <div style={{ borderTop: `1px solid ${t.border}`, padding: 16 }}>
@@ -2380,6 +2651,53 @@ export default function PublicProfilePage() {
             )}
           </div>
 
+          {showAllModal && (
+            <div
+              onClick={() => setShowAllModal(null)}
+              style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{ width: "100%", maxWidth: 920, maxHeight: "85vh", overflow: "auto", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16 }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ fontSize: 16, fontWeight: 900 }}>{showAllModal === "photos" ? "All Pinned Photos" : "All My Groups"}</div>
+                  <button type="button" onClick={() => setShowAllModal(null)} style={{ border: "none", background: "none", fontSize: 20, lineHeight: 1, cursor: "pointer", color: t.textMuted }}>×</button>
+                </div>
+                {showAllModal === "photos" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
+                    {pinnedPhotos.map((photo) => (
+                      <div key={photo.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <div onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); setShowAllModal(null); }} style={{ aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", cursor: "pointer", background: t.bg }}>
+                          <img src={photo.photo_url} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))", gap: 10 }}>
+                    {myGroups.map((group) => (
+                      <div key={group.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        <a href={`/units/${group.slug}`} style={{ textDecoration: "none", color: "inherit" }}>
+                          <div style={{ aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", background: t.bg, border: `1px solid ${t.border}` }}>
+                            {group.cover_photo_url ? (
+                              <img src={group.cover_photo_url} alt={group.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                            ) : (
+                              <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontWeight: 800, fontSize: 14 }}>
+                                {group.name.slice(0, 1).toUpperCase()}
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{group.name}</div>
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Wall */}
           <div style={{ paddingTop: 4 }}>
 
@@ -2392,6 +2710,13 @@ export default function PublicProfilePage() {
                   onChangeRaw={(raw) => { postContentRawRef.current = raw; }}
                   style={{ width: "100%", minHeight: 80, border: "none", outline: "none", resize: "vertical", fontSize: 16, boxSizing: "border-box", background: t.input, color: t.text }}
                 />
+
+                {selectedPostGif && (
+                  <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
+                    <img src={selectedPostGif} alt="Selected GIF" style={{ maxWidth: 200, borderRadius: 10, display: "block" }} />
+                    <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                  </div>
+                )}
 
                 {fetchingOg && <div style={{ fontSize: 12, color: t.textFaint, marginTop: 4 }}>Fetching link preview...</div>}
                 {ogPreview && (
@@ -2472,6 +2797,10 @@ export default function PublicProfilePage() {
                     >
                       {selectedPostImages.length > 0 ? "Add More Photos" : "Add Photo"}
                     </button>
+                    <GifPickerButton
+                      onSelect={(url) => setSelectedPostGif(url)}
+                      theme={isDark ? "dark" : "light"}
+                    />
                     <button
                       onClick={submitPost}
                       disabled={submittingPost}
@@ -2540,6 +2869,12 @@ export default function PublicProfilePage() {
 
                     {/* Post content */}
                     {post.content && <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>}
+
+                    {post.gif_url && (
+                      <div style={{ marginTop: 10 }}>
+                        <img src={post.gif_url} alt="GIF" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 12, display: "block" }} />
+                      </div>
+                    )}
 
                     {post.og_url && (post.og_title || post.og_image) && (
                       <OgCard og={{ url: post.og_url, title: post.og_title, description: post.og_description, image: post.og_image, siteName: post.og_site_name }} />
@@ -2667,6 +3002,66 @@ export default function PublicProfilePage() {
                           ); })}
                         </div>
                         )}
+                        {currentUserId &&
+                          (() => {
+                            const nudge = getSidebarNudgePeer(post.comments, currentUserId);
+                            if (!nudge || isWallSidebarNudgeDismissed(post.id, nudge.peerUserId)) return null;
+                            return (
+                              <div
+                                style={{
+                                  marginTop: 12,
+                                  padding: "10px 12px",
+                                  borderRadius: 10,
+                                  border: `1px dashed ${t.border}`,
+                                  background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+                                }}
+                              >
+                                <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 8 }}>
+                                  Take this to Sidebar?
+                                </div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSidebarDrawer({ open: true, peerId: nudge.peerUserId })}
+                                    style={{
+                                      border: "none",
+                                      borderRadius: 8,
+                                      padding: "8px 14px",
+                                      fontWeight: 800,
+                                      fontSize: 13,
+                                      cursor: "pointer",
+                                      background: "#111",
+                                      color: "#fff",
+                                    }}
+                                  >
+                                    Open Sidebar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      localStorage.setItem(
+                                        sidebarNudgeDismissStorageKey(post.id, currentUserId, nudge.peerUserId),
+                                        "1",
+                                      );
+                                      setSidebarNudgeBump((b) => b + 1);
+                                    }}
+                                    style={{
+                                      border: `1px solid ${t.border}`,
+                                      borderRadius: 8,
+                                      padding: "8px 14px",
+                                      fontWeight: 700,
+                                      fontSize: 13,
+                                      cursor: "pointer",
+                                      background: t.surface,
+                                      color: t.textMuted,
+                                    }}
+                                  >
+                                    Dismiss
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         {!commentsOpen && post.comments.length > 2 && (
                           <button
                             type="button"
@@ -2841,6 +3236,14 @@ export default function PublicProfilePage() {
           </div>
         </div>
       </div>
+    )}
+    {currentUserId && (
+      <SidebarThreadDrawer
+        open={sidebarDrawer.open}
+        onClose={() => setSidebarDrawer({ open: false, peerId: null })}
+        currentUserId={currentUserId}
+        peerUserId={sidebarDrawer.peerId}
+      />
     )}
     </>
   );
