@@ -2106,16 +2106,18 @@ export default function PublicProfilePage() {
                     </div>
                   ) : isOwnWall ? (
                     <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, lineHeight: 1.6 }}>
-                      <a
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          openWallEditProfile();
-                        }}
-                        style={{ color: "#1d4ed8", fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}
-                      >
-                        input bio information
-                      </a>
+                      <div style={{ border: `1px dashed ${t.border}`, borderRadius: 10, padding: "12px 14px", background: t.bg }}>
+                        <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>
+                          Add a short bio so other members can quickly understand your background.
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openWallEditProfile}
+                          style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Complete Bio
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                   {isOwnWall && profile.referral_code && (
@@ -2309,16 +2311,18 @@ export default function PublicProfilePage() {
                     </div>
                   ) : isOwnWall ? (
                     <div style={{ marginTop: 14, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14 }}>
-                      <a
-                        href="#"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          openWallEditProfile();
-                        }}
-                        style={{ color: "#1d4ed8", fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}
-                      >
-                        input bio information
-                      </a>
+                      <div style={{ border: `1px dashed ${t.border}`, borderRadius: 10, padding: "12px 14px", background: t.bg, maxWidth: 520 }}>
+                        <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>
+                          Add a short bio so other members can quickly understand your background.
+                        </div>
+                        <button
+                          type="button"
+                          onClick={openWallEditProfile}
+                          style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Complete Bio
+                        </button>
+                      </div>
                     </div>
                   ) : null}
                   {isOwnWall && profile.referral_code && (
