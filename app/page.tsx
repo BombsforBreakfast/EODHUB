@@ -884,7 +884,14 @@ export default function HomePage() {
       const mentionIds = extractMentionIds(text).filter(id => id !== userId);
       if (mentionIds.length > 0) {
         await supabase.from("notifications").insert(
-          mentionIds.map(uid => ({ user_id: uid, message: `${currentUserName ?? "Someone"} mentioned you in a memorial comment`, actor_name: currentUserName ?? "Someone", post_owner_id: null }))
+          mentionIds.map((uid) => ({
+            user_id: uid,
+            actor_id: userId,
+            actor_name: currentUserName ?? "Someone",
+            type: "memorial_mention",
+            message: `${currentUserName ?? "Someone"} mentioned you in a memorial comment`,
+            post_owner_id: null,
+          })),
         );
       }
     }
@@ -1926,12 +1933,15 @@ export default function HomePage() {
       const mentionIds = extractMentionIds(contentToPost).filter(id => id !== userId);
       if (mentionIds.length > 0) {
         await supabase.from("notifications").insert(
-          mentionIds.map(uid => ({
+          mentionIds.map((uid) => ({
             user_id: uid,
-            message: `${currentUserName ?? "Someone"} mentioned you in a post`,
+            actor_id: userId,
             actor_name: currentUserName ?? "Someone",
-            post_owner_id: null,
-          }))
+            type: "mention_post",
+            message: `${currentUserName ?? "Someone"} mentioned you in a post`,
+            post_owner_id: userId,
+            post_id: postId,
+          })),
         );
       }
       const uploadedUrls: string[] = [];
@@ -2041,15 +2051,21 @@ export default function HomePage() {
     } finally { setSubmittingBiz(false); }
   }
 
-  function notify(recipientId: string, message: string, postOwnerId: string) {
+  function notify(
+    recipientId: string,
+    message: string,
+    postOwnerId: string,
+    extra?: { type?: string; post_id?: string | null },
+  ) {
     if (!userId || recipientId === userId || !currentUserName) return;
-    supabase.from("notifications").insert([{
+    void supabase.from("notifications").insert([{
       user_id: recipientId,
       actor_id: userId,
       actor_name: currentUserName,
-      type: "activity",
+      type: extra?.type ?? "feed_activity",
       message,
       post_owner_id: postOwnerId,
+      post_id: extra?.post_id ?? null,
     }]);
   }
 
@@ -2089,7 +2105,7 @@ export default function HomePage() {
 
         const post = posts.find((p) => p.id === postId);
         if (post && post.user_id !== userId) {
-          notify(post.user_id, `${currentUserName} liked your post`, post.user_id);
+          notify(post.user_id, `${currentUserName} liked your post`, post.user_id, { type: "feed_like", post_id: postId });
         }
       }
 
@@ -2136,7 +2152,9 @@ export default function HomePage() {
         const comment = posts.flatMap((p) => p.comments).find((c) => c.id === commentId);
         if (comment && comment.user_id !== userId) {
           const ownerPost = posts.find((p) => p.id === comment.post_id);
-          if (ownerPost) notify(comment.user_id, `${currentUserName} liked your comment`, ownerPost.user_id);
+          if (ownerPost) {
+            notify(comment.user_id, `${currentUserName} liked your comment`, ownerPost.user_id, { type: "feed_comment_like", post_id: comment.post_id });
+          }
         }
       }
 
@@ -2225,13 +2243,18 @@ export default function HomePage() {
       // Mention notifications
       const mentionIds = extractMentionIds(commentText).filter(id => id !== userId);
       if (mentionIds.length > 0) {
+        const post = posts.find((p) => p.id === postId);
+        const ownerId = post?.user_id ?? userId;
         await supabase.from("notifications").insert(
-          mentionIds.map(uid => ({
+          mentionIds.map((uid) => ({
             user_id: uid,
-            message: `${currentUserName ?? "Someone"} mentioned you in a comment`,
+            actor_id: userId,
             actor_name: currentUserName ?? "Someone",
-            post_owner_id: null,
-          }))
+            type: "mention_comment",
+            message: `${currentUserName ?? "Someone"} mentioned you in a comment`,
+            post_owner_id: ownerId,
+            post_id: postId,
+          })),
         );
       }
 
@@ -2255,11 +2278,13 @@ export default function HomePage() {
       const post = posts.find((p) => p.id === postId);
       if (post && currentUserName && userId) {
         if (post.user_id !== userId) {
-          notify(post.user_id, `${currentUserName} commented on your post`, post.user_id);
+          notify(post.user_id, `${currentUserName} commented on your post`, post.user_id, { type: "feed_comment", post_id: postId });
         }
         supabase.from("post_comments").select("user_id").eq("post_id", postId).neq("user_id", userId).then(({ data: td }) => {
           const participants = [...new Set(((td ?? []) as { user_id: string }[]).map((c) => c.user_id))].filter((id) => id !== post.user_id);
-          participants.forEach((pid) => notify(pid, `${currentUserName} also commented on a post you're following`, post.user_id));
+          participants.forEach((pid) =>
+            notify(pid, `${currentUserName} also commented on a post you're following`, post.user_id, { type: "feed_comment_thread", post_id: postId }),
+          );
         });
       }
 
@@ -2590,6 +2615,18 @@ export default function HomePage() {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [discoverProfiles]);
+
+  useEffect(() => {
+    if (!postsLoaded || posts.length === 0) return;
+    const postId = new URLSearchParams(window.location.search).get("postId");
+    if (!postId) return;
+    const el = document.getElementById(`feed-post-${postId}`);
+    if (el) {
+      requestAnimationFrame(() => {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+  }, [postsLoaded, posts]);
 
   const sortedJobs = useMemo(() => {
     if (jobs.length === 0) return jobs;
@@ -3582,6 +3619,7 @@ export default function HomePage() {
 
               return (
                 <div
+                  id={`feed-post-${post.id}`}
                   key={post.id}
                   style={{
                     border: `1px solid ${t.border}`,

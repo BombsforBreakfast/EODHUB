@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../../../lib/memberSubscriptionServer";
+import { fetchActorName, maybeNotifyUnitHotEngagement } from "../../../../../../lib/unitNotificationsServer";
 
 function getAdminClient() {
   return createClient(
@@ -126,11 +127,11 @@ export async function POST(
   }
 
   const adminClient = getAdminClient();
-  const { postId } = await params;
+  const { postId, slug: slugParam } = await params;
 
   const { data: post, error: postError } = await adminClient
     .from("unit_posts")
-    .select("id, unit_id")
+    .select("id, unit_id, user_id")
     .eq("id", postId)
     .single();
 
@@ -153,6 +154,14 @@ export async function POST(
   if (!gate.ok) {
     return NextResponse.json({ error: gate.message }, { status: 403 });
   }
+
+  const { data: unitRow } = await adminClient
+    .from("units")
+    .select("id, name, slug")
+    .eq("id", post.unit_id)
+    .maybeSingle();
+  const unitName = (unitRow as { name?: string } | null)?.name ?? "your group";
+  const unitSlug = (unitRow as { slug?: string } | null)?.slug ?? slugParam;
 
   const body = await req.json();
   const { content } = body as { content?: string };
@@ -177,6 +186,30 @@ export async function POST(
       { status: 500 }
     );
   }
+
+  if (post.user_id !== user.id) {
+    const actorName = await fetchActorName(adminClient, user.id);
+    await adminClient.from("notifications").insert({
+      user_id: post.user_id,
+      actor_id: user.id,
+      actor_name: actorName,
+      type: "unit_post_comment",
+      message: `${actorName} commented on your post in ${unitName}`,
+      post_owner_id: post.user_id,
+      unit_id: post.unit_id,
+      unit_post_id: postId,
+      metadata: { unit_slug: unitSlug },
+    });
+  }
+
+  await maybeNotifyUnitHotEngagement(adminClient, {
+    postId,
+    unitId: post.unit_id,
+    unitSlug,
+    unitName,
+    postAuthorId: post.user_id,
+    actorUserId: user.id,
+  });
 
   return NextResponse.json({ comment }, { status: 201 });
 }

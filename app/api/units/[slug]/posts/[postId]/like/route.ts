@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../../../lib/memberSubscriptionServer";
+import { fetchActorName, maybeNotifyUnitHotEngagement } from "../../../../../../lib/unitNotificationsServer";
 
 function getAdminClient() {
   return createClient(
@@ -34,11 +35,11 @@ export async function POST(
   }
 
   const adminClient = getAdminClient();
-  const { postId } = await params;
+  const { postId, slug: slugParam } = await params;
 
   const { data: post, error: postError } = await adminClient
     .from("unit_posts")
-    .select("id, unit_id")
+    .select("id, unit_id, user_id")
     .eq("id", postId)
     .single();
 
@@ -84,6 +85,40 @@ export async function POST(
       user_id: user.id,
     });
     liked = true;
+  }
+
+  const { data: unitRow } = await adminClient
+    .from("units")
+    .select("id, name, slug")
+    .eq("id", post.unit_id)
+    .maybeSingle();
+  const unitName = (unitRow as { name?: string } | null)?.name ?? "your group";
+  const unitSlug = (unitRow as { slug?: string } | null)?.slug ?? slugParam;
+
+  if (liked && post.user_id !== user.id) {
+    const actorName = await fetchActorName(adminClient, user.id);
+    await adminClient.from("notifications").insert({
+      user_id: post.user_id,
+      actor_id: user.id,
+      actor_name: actorName,
+      type: "unit_post_like",
+      message: `${actorName} liked your post in ${unitName}`,
+      post_owner_id: post.user_id,
+      unit_id: post.unit_id,
+      unit_post_id: postId,
+      metadata: { unit_slug: unitSlug },
+    });
+  }
+
+  if (liked) {
+    await maybeNotifyUnitHotEngagement(adminClient, {
+      postId,
+      unitId: post.unit_id,
+      unitSlug,
+      unitName,
+      postAuthorId: post.user_id,
+      actorUserId: user.id,
+    });
   }
 
   const { count } = await adminClient

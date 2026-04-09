@@ -197,6 +197,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const [reportsFilter, setReportsFilter] = useState<"unreviewed" | "all">("unreviewed");
 
   const [directoryEntries, setDirectoryEntries] = useState<DirectoryEntry[]>([]);
+  const [editingDirectory, setEditingDirectory] = useState<DirectoryEntry | null>(null);
+  const [dirEditSaving, setDirEditSaving] = useState(false);
   const [locationRequests, setLocationRequests] = useState<LocationRequest[]>([]);
   const [pendingCounts, setPendingCounts] = useState({
     biz: 0,
@@ -949,6 +951,40 @@ const [memWizUrl, setMemWizUrl] = useState("");
     });
   }
 
+  async function saveDirectoryEdit() {
+    if (!editingDirectory) return;
+    const name = editingDirectory.name.trim();
+    const org = editingDirectory.org_type.trim();
+    if (!name || !org) {
+      alert("Name and organization type are required.");
+      return;
+    }
+    setDirEditSaving(true);
+    try {
+      const { error } = await supabase
+        .from("unit_directory")
+        .update({
+          org_type: org,
+          name,
+          phone: editingDirectory.phone?.trim() || null,
+          state: editingDirectory.state?.trim() || null,
+          base_city: editingDirectory.base_city?.trim() || null,
+          unit_slug: editingDirectory.unit_slug?.trim() || null,
+          photo_url: editingDirectory.photo_url?.trim() || null,
+        })
+        .eq("id", editingDirectory.id);
+      if (error) {
+        alert(error.message);
+      } else {
+        showToast("Directory entry updated.");
+        setEditingDirectory(null);
+        await loadDirectory();
+      }
+    } finally {
+      setDirEditSaving(false);
+    }
+  }
+
   const tabStyle = (tab: Tab): React.CSSProperties => ({
     padding: "9px 20px",
     borderRadius: 10,
@@ -1110,6 +1146,83 @@ const [memWizUrl, setMemWizUrl] = useState("");
                 style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "#ef4444", color: "white", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
               >
                 Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingDirectory && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: t.surface, borderRadius: 16, padding: "24px 28px", maxWidth: 480, width: "100%", boxShadow: "0 8px 40px rgba(0,0,0,0.2)", maxHeight: "90vh", overflow: "auto" }}>
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 6, color: t.text }}>Edit directory entry</div>
+            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>Update listing details, phone, location, slug, or photo URL.</div>
+            <div style={{ display: "grid", gap: 10 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Organization type</label>
+              <input
+                value={editingDirectory.org_type}
+                onChange={(e) => setEditingDirectory({ ...editingDirectory, org_type: e.target.value })}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Name</label>
+              <input
+                value={editingDirectory.name}
+                onChange={(e) => setEditingDirectory({ ...editingDirectory, name: e.target.value })}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Phone</label>
+              <input
+                value={editingDirectory.phone ?? ""}
+                onChange={(e) => setEditingDirectory({ ...editingDirectory, phone: e.target.value || null })}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>State / region</label>
+              <input
+                value={editingDirectory.state ?? ""}
+                onChange={(e) => setEditingDirectory({ ...editingDirectory, state: e.target.value || null })}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Base / city</label>
+              <input
+                value={editingDirectory.base_city ?? ""}
+                onChange={(e) => setEditingDirectory({ ...editingDirectory, base_city: e.target.value || null })}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Unit slug (groups page)</label>
+              <input
+                value={editingDirectory.unit_slug ?? ""}
+                onChange={(e) => setEditingDirectory({ ...editingDirectory, unit_slug: e.target.value || null })}
+                placeholder="e.g. 192d-eod-bn"
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Photo URL</label>
+              <input
+                value={editingDirectory.photo_url ?? ""}
+                onChange={(e) => setEditingDirectory({ ...editingDirectory, photo_url: e.target.value || null })}
+                placeholder="https://…"
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              {editingDirectory.photo_url ? (
+                // eslint-disable-next-line @next/next/no-img-element -- admin preview
+                <img src={editingDirectory.photo_url} alt="" style={{ width: 72, height: 72, borderRadius: 8, objectFit: "cover", border: `1px solid ${t.border}` }} />
+              ) : null}
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 20 }}>
+              <button
+                type="button"
+                onClick={() => setEditingDirectory(null)}
+                disabled={dirEditSaving}
+                style={{ padding: "10px 20px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveDirectoryEdit()}
+                disabled={dirEditSaving}
+                style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "#1d4ed8", color: "white", fontWeight: 700, cursor: "pointer", fontSize: 14, opacity: dirEditSaving ? 0.7 : 1 }}
+              >
+                {dirEditSaving ? "Saving…" : "Save"}
               </button>
             </div>
           </div>
@@ -1734,6 +1847,13 @@ const [memWizUrl, setMemWizUrl] = useState("");
                         Approve
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => setEditingDirectory({ ...entry })}
+                      style={{ ...actionBtn("#374151"), display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      Edit
+                    </button>
                     <button
                       onClick={() => denyDirectoryEntry(entry.id)}
                       disabled={actionLoading === entry.id}

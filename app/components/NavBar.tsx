@@ -10,6 +10,7 @@ import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPending
 import { getFeatureAccess } from "../lib/featureAccess";
 import { isFounderUser } from "../lib/rabbitholeAccess";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
+import NotificationCenter from "./NotificationCenter";
 
 type Notification = {
   id: string;
@@ -18,6 +19,12 @@ type Notification = {
   created_at: string;
   actor_name: string;
   post_owner_id: string | null;
+  type?: string | null;
+  actor_id?: string | null;
+  post_id?: string | null;
+  unit_id?: string | null;
+  unit_post_id?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type SearchResult = {
@@ -59,11 +66,10 @@ export default function NavBar() {
   /** Mobile breakpoint — EOD Hub menu is a modal only when narrow. */
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
 
-  // Unread counts derived from notifications
-  // Profile badge: notifications that link to a profile (wall activity)
-  const unreadProfileNotifs = notifications.filter((n) => !n.is_read && n.post_owner_id !== null).length;
-  // Feed badge: notifications that link to the home feed
-  const unreadFeedNotifs = notifications.filter((n) => !n.is_read && n.post_owner_id === null).length;
+  const [showNotifPanel, setShowNotifPanel] = useState(false);
+
+  /** In-app notifications (not DMs — those stay on Sidebars). */
+  const unreadNotifCount = notifications.filter((n) => !n.is_read).length;
   const canAccessRabbithole = isFounderUser(currentUserId);
 
   async function loadUnreadMessages(uid: string) {
@@ -93,27 +99,35 @@ export default function NavBar() {
   }
 
   async function loadNotifications(uid: string) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("notifications")
-      .select("id, message, is_read, created_at, actor_name, post_owner_id")
+      .select("*")
       .eq("user_id", uid)
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(50);
+    if (error) {
+      const { data: fallback } = await supabase
+        .from("notifications")
+        .select("id, message, is_read, created_at, actor_name, post_owner_id")
+        .eq("user_id", uid)
+        .order("created_at", { ascending: false })
+        .limit(50);
+      setNotifications((fallback ?? []) as Notification[]);
+      return;
+    }
     setNotifications((data ?? []) as Notification[]);
   }
 
-  async function markProfileNotifsRead() {
-    if (!currentUserId || unreadProfileNotifs === 0) return;
-    const ids = notifications.filter((n) => !n.is_read && n.post_owner_id !== null).map((n) => n.id);
-    await supabase.from("notifications").update({ is_read: true }).in("id", ids);
-    setNotifications((prev) => prev.map((n) => n.post_owner_id !== null ? { ...n, is_read: true } : n));
+  async function dismissNotification(id: string) {
+    await supabase.from("notifications").delete().eq("id", id);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
   }
 
-  async function markFeedNotifsRead() {
-    if (!currentUserId || unreadFeedNotifs === 0) return;
-    const ids = notifications.filter((n) => !n.is_read && n.post_owner_id === null).map((n) => n.id);
-    await supabase.from("notifications").update({ is_read: true }).in("id", ids);
-    setNotifications((prev) => prev.map((n) => n.post_owner_id === null ? { ...n, is_read: true } : n));
+  async function openNotification(id: string, href: string) {
+    await supabase.from("notifications").update({ is_read: true }).eq("id", id);
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: true } : n)));
+    setShowNotifPanel(false);
+    window.location.href = href;
   }
 
   async function markMessagesRead() {
@@ -489,21 +503,10 @@ export default function NavBar() {
           className="nav-logo-mobile"
           aria-label="EOD HUB home — feed"
           title="Home feed"
-          onClick={async (e) => {
-            if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-            e.preventDefault();
-            await markFeedNotifsRead();
-            window.location.href = "/";
-          }}
           style={{ display: "flex", alignItems: "center", textDecoration: "none" }}
         >
           <EodCrabLogo variant="navMobile" />
         </Link>
-        {unreadFeedNotifs > 0 && (
-          <span style={{ position: "absolute", top: -4, right: -6, zIndex: 2, pointerEvents: "none" }}>
-            {badge(unreadFeedNotifs)}
-          </span>
-        )}
       </div>
 
       {/* Left: avatar + nav links */}
@@ -514,16 +517,12 @@ export default function NavBar() {
             className="nav-avatar"
             aria-label="My profile"
             title="My profile"
-            onClick={async (e) => {
+            onClick={(e) => {
               setShowHub(false);
               if (!authLoaded) {
                 e.preventDefault();
                 return;
               }
-              if (!currentUserId) return;
-              e.preventDefault();
-              await markProfileNotifsRead();
-              window.location.href = `/profile/${currentUserId}`;
             }}
             style={{
               width: 38,
@@ -550,11 +549,6 @@ export default function NavBar() {
               userInitial
             )}
           </Link>
-          {currentUserId && unreadProfileNotifs > 0 && (
-            <span style={{ position: "absolute", top: -4, right: -4, zIndex: 2, pointerEvents: "none" }}>
-              {badge(unreadProfileNotifs)}
-            </span>
-          )}
         </div>
 
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
@@ -570,8 +564,26 @@ export default function NavBar() {
           style={{ ...navButton, cursor: "pointer", alignItems: "center", gap: 6 }}
         >
           EOD Hub
-          {(unreadMessages + unreadProfileNotifs + unreadFeedNotifs) > 0 && !showHub && badge(unreadMessages + unreadProfileNotifs + unreadFeedNotifs)}
+          {unreadMessages > 0 && !showHub && badge(unreadMessages)}
         </button>
+
+        {/* Notifications center */}
+        {currentUserId && (
+          <button
+            type="button"
+            className="nav-btn nav-notifications-btn"
+            aria-label="Notifications"
+            title="Notifications"
+            onClick={() => { setShowNotifPanel((v) => !v); setShowHub(false); setShowSearchDropdown(false); }}
+            style={{ ...navButton, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+            </svg>
+            {unreadNotifCount > 0 && badge(unreadNotifCount)}
+          </button>
+        )}
 
         {/* Sidebars (private messages) */}
         {currentUserId && (
@@ -594,12 +606,6 @@ export default function NavBar() {
         className="nav-brand"
         aria-label="EOD HUB home — feed"
         title="Home feed"
-        onClick={async (e) => {
-          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-          e.preventDefault();
-          await markFeedNotifsRead();
-          window.location.href = "/";
-        }}
         style={{
           textDecoration: "none",
           color: t.text,
@@ -612,11 +618,6 @@ export default function NavBar() {
       >
         <EodCrabLogo variant="navDesktop" />
         <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: -0.5 }}>EOD HUB</div>
-        {unreadFeedNotifs > 0 && (
-          <span style={{ position: "absolute", top: -2, right: -12, zIndex: 2, pointerEvents: "none" }}>
-            {badge(unreadFeedNotifs)}
-          </span>
-        )}
       </Link>
 
       {/* Search bar row */}
@@ -834,7 +835,7 @@ export default function NavBar() {
                 </div>
                 <div className="nav-hub-modal-grid">
                   {[
-                    { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤", badge: unreadProfileNotifs, onNav: markProfileNotifsRead },
+                    { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤", badge: 0, onNav: null },
                     { label: "Jobs", href: "/?tab=jobs", emoji: "💼", badge: 0, onNav: null },
                     { label: "Businesses", href: "/?tab=businesses", emoji: "🏢", badge: 0, onNav: null },
                     { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
@@ -870,6 +871,16 @@ export default function NavBar() {
             document.body,
           )
         : null}
+
+      <NotificationCenter
+        open={showNotifPanel}
+        onClose={() => setShowNotifPanel(false)}
+        notifications={notifications}
+        currentUserId={currentUserId}
+        isAdmin={isAdmin}
+        onDismiss={dismissNotification}
+        onOpenItem={openNotification}
+      />
     </>
   );
 }
