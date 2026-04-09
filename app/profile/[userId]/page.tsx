@@ -485,7 +485,7 @@ export default function PublicProfilePage() {
     const { data: rawData, error } = await supabase
       .from("posts")
       .select("id, user_id, wall_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name")
-      .or(`and(user_id.eq.${targetUserId},wall_user_id.is.null),wall_user_id.eq.${targetUserId}`)
+      .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -493,7 +493,17 @@ export default function PublicProfilePage() {
       return;
     }
 
-    const rawPosts = (rawData ?? []) as { id: string; user_id: string; wall_user_id?: string | null; content: string; created_at: string; og_url?: string | null; og_title?: string | null; og_description?: string | null; og_image?: string | null; og_site_name?: string | null }[];
+    const allMatchedPosts = (rawData ?? []) as { id: string; user_id: string; wall_user_id?: string | null; content: string; created_at: string; og_url?: string | null; og_title?: string | null; og_description?: string | null; og_image?: string | null; og_site_name?: string | null }[];
+    const rawPosts = allMatchedPosts.filter((p) => {
+      // Keep posts that are explicitly addressed to this wall.
+      if ((p.wall_user_id ?? null) === targetUserId) return true;
+      // Keep self-authored profile history posts (legacy/global posts with null wall target).
+      // Exclude posts authored by this user on someone else's wall.
+      if (p.user_id === targetUserId) {
+        return !p.wall_user_id || p.wall_user_id === targetUserId;
+      }
+      return false;
+    });
     if (rawPosts.length === 0) { setPosts([]); return; }
 
     const postIds = rawPosts.map((p) => p.id);
@@ -1125,7 +1135,7 @@ export default function PublicProfilePage() {
         .from("posts")
         .insert([{
           user_id: currentUserId,
-          wall_user_id: !isOwnWall && userId ? userId : null,
+          wall_user_id: userId ?? null,
           content: rawPostContent,
           image_url: null,
           gif_url: gifToPost ?? null,

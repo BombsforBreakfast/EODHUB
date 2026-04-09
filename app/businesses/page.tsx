@@ -7,6 +7,10 @@ import { supabase } from "../lib/lib/supabaseClient";
 
 type BizListingType = "business" | "organization" | "resource";
 type BizPageFilter = "all" | BizListingType;
+type BizFilterState = {
+  listingType: BizPageFilter;
+  keyword: string;
+};
 
 type BusinessListing = {
   id: string;
@@ -69,7 +73,7 @@ export default function BusinessesPage() {
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [listings, setListings] = useState<BusinessListing[]>([]);
-  const [filter, setFilter] = useState<BizPageFilter>("all");
+  const [filters, setFilters] = useState<BizFilterState>({ listingType: "all", keyword: "" });
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 900);
@@ -120,9 +124,25 @@ export default function BusinessesPage() {
   }, []);
 
   const visibleListings = useMemo(() => {
-    const filtered = filter === "all"
-      ? listings
-      : listings.filter((l) => normalizeBizListingTypeForListing(l) === filter);
+    const keyword = filters.keyword.trim().toLowerCase();
+    const filtered = listings.filter((l) => {
+      if (filters.listingType !== "all" && normalizeBizListingTypeForListing(l) !== filters.listingType) {
+        return false;
+      }
+      if (!keyword) return true;
+      const haystack = [
+        l.business_name ?? "",
+        l.og_title ?? "",
+        l.og_description ?? "",
+        l.og_site_name ?? "",
+        l.custom_blurb ?? "",
+        l.website_url ?? "",
+        normalizeBizListingTypeForListing(l),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(keyword);
+    });
     return [...filtered].sort((a, b) => {
       const aPinned = isPermanentlyFeaturedListing(a) ? 1 : 0;
       const bPinned = isPermanentlyFeaturedListing(b) ? 1 : 0;
@@ -136,7 +156,7 @@ export default function BusinessesPage() {
       const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
       return bTime - aTime;
     });
-  }, [listings, filter]);
+  }, [listings, filters]);
 
   return (
     <div
@@ -161,34 +181,31 @@ export default function BusinessesPage() {
       </div>
 
       <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: 12, marginBottom: 14 }}>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {([
-            { id: "all", label: "All" },
-            { id: "business", label: "Businesses" },
-            { id: "organization", label: "Organizations" },
-            { id: "resource", label: "Resources" },
-          ] as { id: BizPageFilter; label: string }[]).map((opt) => {
-            const active = filter === opt.id;
-            return (
-              <button
-                key={opt.id}
-                type="button"
-                onClick={() => setFilter(opt.id)}
-                style={{
-                  borderRadius: 999,
-                  border: `1px solid ${active ? "#111" : t.border}`,
-                  background: active ? "#111" : t.surface,
-                  color: active ? "white" : t.text,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  padding: "6px 12px",
-                  cursor: "pointer",
-                }}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))",
+            gap: 10,
+          }}
+        >
+          <select
+            value={filters.listingType}
+            onChange={(e) => setFilters((prev) => ({ ...prev, listingType: e.target.value as BizPageFilter }))}
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text }}
+          >
+            <option value="all">All listing types</option>
+            <option value="business">Businesses</option>
+            <option value="organization">Organizations</option>
+            <option value="resource">Resources</option>
+          </select>
+
+          <input
+            type="text"
+            value={filters.keyword}
+            onChange={(e) => setFilters((prev) => ({ ...prev, keyword: e.target.value }))}
+            placeholder="Keyword/site (e.g. disposal, training, foundation)"
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
+          />
         </div>
       </div>
 

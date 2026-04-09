@@ -712,10 +712,10 @@ export default function NavBar() {
           flexWrap: "nowrap",
           flexShrink: 0,
           alignItems: "center",
-          border: `1px solid ${t.navBorder}`,
+          border: "none",
           borderRadius: 0,
-          padding: 4,
-          background: t.navBg,
+          padding: 0,
+          background: "transparent",
         }}
       >
         {!authLoaded ? null : currentUserId ? (
