@@ -22,7 +22,6 @@ export type JobListItem = {
 export type JobFilterState = {
   location: string;
   keyword: string;
-  minSalary: string;
 };
 
 function toLower(v: string | null | undefined): string {
@@ -32,8 +31,6 @@ function toLower(v: string | null | undefined): string {
 export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState): JobListItem[] {
   const keyword = filters.keyword.trim().toLowerCase();
   const location = filters.location.trim().toLowerCase();
-  const minSalaryNum = Number.parseInt(filters.minSalary, 10);
-  const useMinSalary = Number.isFinite(minSalaryNum) && minSalaryNum > 0;
 
   return jobs.filter((job) => {
     if (location && !toLower(job.location).includes(location)) return false;
@@ -52,11 +49,6 @@ export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState): J
         .join(" ")
         .toLowerCase();
       if (!haystack.includes(keyword)) return false;
-    }
-
-    if (useMinSalary) {
-      const maxPay = job.pay_max ?? job.pay_min ?? null;
-      if (maxPay === null || maxPay < minSalaryNum) return false;
     }
 
     return true;

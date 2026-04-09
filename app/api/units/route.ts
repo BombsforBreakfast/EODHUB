@@ -25,6 +25,21 @@ function generateSlug(name: string): string {
     .slice(0, 60);
 }
 
+const MEMBER_PREVIEW_LIMIT = 5;
+
+const UNIT_MEMBER_ROLE_ORDER: Record<string, number> = {
+  owner: 0,
+  admin: 1,
+  member: 2,
+};
+
+type UnitMemberRow = {
+  unit_id: string;
+  user_id: string;
+  role: string;
+  created_at: string | null;
+};
+
 export async function GET(req: NextRequest) {
   const adminClient = getAdminClient();
   const q = req.nextUrl.searchParams.get("q") ?? "";
@@ -53,25 +68,96 @@ export async function GET(req: NextRequest) {
 
   const unitIds = filteredUnits.map((u: { id: string }) => u.id);
 
-  const { data: memberCounts, error: countError } = await adminClient
+  const { data: memberRows, error: membersFetchError } = await adminClient
     .from("unit_members")
-    .select("unit_id")
+    .select("unit_id, user_id, role, created_at")
     .in("unit_id", unitIds)
     .eq("status", "approved");
 
-  if (countError) {
-    return NextResponse.json({ error: countError.message }, { status: 500 });
+  if (membersFetchError) {
+    return NextResponse.json({ error: membersFetchError.message }, { status: 500 });
+  }
+
+  const grouped = new Map<string, UnitMemberRow[]>();
+  for (const row of (memberRows ?? []) as UnitMemberRow[]) {
+    const list = grouped.get(row.unit_id) ?? [];
+    list.push(row);
+    grouped.set(row.unit_id, list);
+  }
+
+  for (const [, list] of grouped) {
+    list.sort((a, b) => {
+      const ra = UNIT_MEMBER_ROLE_ORDER[a.role] ?? 3;
+      const rb = UNIT_MEMBER_ROLE_ORDER[b.role] ?? 3;
+      if (ra !== rb) return ra - rb;
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return ta - tb;
+    });
   }
 
   const countMap: Record<string, number> = {};
-  for (const row of memberCounts ?? []) {
-    countMap[row.unit_id] = (countMap[row.unit_id] ?? 0) + 1;
+  for (const id of unitIds) {
+    countMap[id] = grouped.get(id)?.length ?? 0;
   }
 
-  const enriched = filteredUnits.map((u: Record<string, unknown>) => ({
-    ...u,
-    member_count: countMap[u.id as string] ?? 0,
-  }));
+  const previewUserIds = new Set<string>();
+  const previewIdsByUnit = new Map<string, string[]>();
+  for (const id of unitIds) {
+    const list = grouped.get(id) ?? [];
+    const ids = list.slice(0, MEMBER_PREVIEW_LIMIT).map((m) => m.user_id);
+    previewIdsByUnit.set(id, ids);
+    for (const uid of ids) previewUserIds.add(uid);
+  }
+
+  type ProfileMini = {
+    user_id: string;
+    first_name: string | null;
+    last_name: string | null;
+    display_name: string | null;
+    photo_url: string | null;
+  };
+
+  const profileMap: Record<string, ProfileMini> = {};
+  if (previewUserIds.size > 0) {
+    const { data: profiles, error: profErr } = await adminClient
+      .from("profiles")
+      .select("user_id, first_name, last_name, display_name, photo_url")
+      .in("user_id", [...previewUserIds]);
+
+    if (profErr) {
+      return NextResponse.json({ error: profErr.message }, { status: 500 });
+    }
+    for (const p of (profiles ?? []) as ProfileMini[]) {
+      profileMap[p.user_id] = p;
+    }
+  }
+
+  function previewLabel(p: ProfileMini | undefined): string {
+    if (!p) return "Member";
+    const dn = (p.display_name ?? "").trim();
+    if (dn) return dn;
+    const n = `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim();
+    return n || "Member";
+  }
+
+  const enriched = filteredUnits.map((u: Record<string, unknown>) => {
+    const id = u.id as string;
+    const ids = previewIdsByUnit.get(id) ?? [];
+    const member_preview = ids.map((user_id) => {
+      const prof = profileMap[user_id];
+      return {
+        user_id,
+        photo_url: prof?.photo_url ?? null,
+        label: previewLabel(prof),
+      };
+    });
+    return {
+      ...u,
+      member_count: countMap[id] ?? 0,
+      member_preview,
+    };
+  });
 
   return NextResponse.json({ units: enriched, searched: q.trim() });
 }

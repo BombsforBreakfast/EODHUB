@@ -11,9 +11,12 @@ import MentionTextarea, { extractMentionIds } from "./components/MentionTextarea
 import { PostLikersStack, type PostLikerBrief } from "./components/PostLikersStack";
 import OnlineNowStrip from "./components/OnlineNowStrip";
 import MemberPaywallModal from "./components/MemberPaywallModal";
+import SidebarThreadDrawer from "./components/SidebarThreadDrawer";
+import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "./lib/commentSidebarEligibility";
 import { memberHasInteractionAccess } from "./lib/subscriptionAccess";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "./lib/flagCategories";
 import UpgradePromptModal from "./components/UpgradePromptModal";
+import EventFeedActions from "./components/EventFeedActions";
 import { getFeatureAccess } from "./lib/featureAccess";
 import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "./lib/jobFilters";
 
@@ -170,6 +173,15 @@ type OgPreview = {
   siteName: string | null;
 };
 
+type FeedEventSnapshot = {
+  id: string;
+  title: string;
+  date: string;
+  organization: string | null;
+  signup_url: string | null;
+  image_url: string | null;
+};
+
 type FeedPost = RankedPostRow & {
   image_url: string | null;
   image_urls: string[];
@@ -188,6 +200,12 @@ type FeedPost = RankedPostRow & {
   og_description: string | null;
   og_image: string | null;
   og_site_name: string | null;
+  event_id: string | null;
+  feed_event: FeedEventSnapshot | null;
+  event_interested_count: number;
+  event_going_count: number;
+  event_my_attendance: "interested" | "going" | null;
+  event_saved: boolean;
 };
 
 type UnitFeedHighlight = {
@@ -231,6 +249,7 @@ function normalizeUrl(url: string): string {
 }
 
 type BizListingType = "business" | "organization" | "resource";
+type BizMobileFilter = "all" | BizListingType;
 
 function normalizeBizListingType(value: string | null | undefined): BizListingType {
   if (value === "organization" || value === "resource") return value;
@@ -444,7 +463,7 @@ export default function HomePage() {
   const [jobsTotalApprovedCount, setJobsTotalApprovedCount] = useState<number | null>(null);
   const [jobsNewTodayCount, setJobsNewTodayCount] = useState<number | null>(null);
   const [jobSort, setJobSort] = useState<"recent" | "az" | "za">("recent");
-  const [jobFilters, setJobFilters] = useState<JobFilterState>({ location: "", keyword: "", minSalary: "" });
+  const [jobFilters, setJobFilters] = useState<JobFilterState>({ location: "", keyword: "" });
   const [canViewFullJobs, setCanViewFullJobs] = useState(true);
   const [canUseJobFilters, setCanUseJobFilters] = useState(true);
   const [showJobsUpgradePrompt, setShowJobsUpgradePrompt] = useState(false);
@@ -475,6 +494,7 @@ export default function HomePage() {
   const [bizName, setBizName] = useState("");
   const [bizBlurb, setBizBlurb] = useState("");
   const [bizType, setBizType] = useState<BizListingType>("business");
+  const [bizMobileFilter, setBizMobileFilter] = useState<BizMobileFilter>("all");
   const [bizOgPreview, setBizOgPreview] = useState<OgPreview | null>(null);
   const [featuredBizBillboardIndex, setFeaturedBizBillboardIndex] = useState(0);
   const [fetchingBizOg, setFetchingBizOg] = useState(false);
@@ -560,6 +580,18 @@ export default function HomePage() {
   const commentImageInputRefs = useRef<Record<string, HTMLInputElement | null>>(
     {}
   );
+
+  const [sidebarDrawer, setSidebarDrawer] = useState<{ open: boolean; peerId: string | null }>({
+    open: false,
+    peerId: null,
+  });
+  const [sidebarNudgeBump, setSidebarNudgeBump] = useState(0);
+
+  function isCommentSidebarNudgeDismissed(postId: string, peerId: string) {
+    void sidebarNudgeBump;
+    if (!userId || typeof window === "undefined") return true;
+    return localStorage.getItem(sidebarNudgeDismissStorageKey(postId, userId, peerId)) === "1";
+  }
   const ogDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedPostImagesRef = useRef<SelectedPostImage[]>([]);
@@ -1325,11 +1357,33 @@ export default function HomePage() {
     const postIds = rawPosts.map((post) => post.id);
     const uniqueUserIds = [...new Set(rawPosts.map((post) => post.user_id))];
 
-    const { data: legacyPostImagesData, error: legacyPostImagesError } =
-      await supabase.from("posts").select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name").in("id", postIds);
+    type LegacyPostRow = LegacyPostImageRow & {
+      gif_url?: string | null;
+      og_url?: string | null;
+      og_title?: string | null;
+      og_description?: string | null;
+      og_image?: string | null;
+      og_site_name?: string | null;
+      event_id?: string | null;
+    };
 
-    if (legacyPostImagesError) {
-      console.error("Legacy post image load error:", legacyPostImagesError);
+    const legacyWithEvent = await supabase
+      .from("posts")
+      .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id")
+      .in("id", postIds);
+
+    let legacyPostImagesData: LegacyPostRow[] | null = legacyWithEvent.data as LegacyPostRow[] | null;
+    if (legacyWithEvent.error && isMissingColumnError(legacyWithEvent.error, "event_id")) {
+      const fb = await supabase
+        .from("posts")
+        .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name")
+        .in("id", postIds);
+      legacyPostImagesData = (fb.data as LegacyPostRow[] | null)?.map((row) => ({ ...row, event_id: null })) ?? null;
+      if (fb.error) {
+        console.error("Legacy post image load error:", fb.error);
+      }
+    } else if (legacyWithEvent.error) {
+      console.error("Legacy post image load error:", legacyWithEvent.error);
     }
 
     const { data: postImagesData, error: postImagesError } = await supabase
@@ -1343,14 +1397,15 @@ export default function HomePage() {
       console.error("Post images load error:", postImagesError);
     }
 
-    type LegacyPostRow = LegacyPostImageRow & { gif_url?: string | null; og_url?: string | null; og_title?: string | null; og_description?: string | null; og_image?: string | null; og_site_name?: string | null };
     const legacyPostImageMap = new Map<string, string | null>();
     const postGifMap = new Map<string, string | null>();
     const postOgMap = new Map<string, { og_url: string | null; og_title: string | null; og_description: string | null; og_image: string | null; og_site_name: string | null }>();
+    const eventIdByPostId = new Map<string, string | null>();
     ((legacyPostImagesData ?? []) as LegacyPostRow[]).forEach((row) => {
       legacyPostImageMap.set(row.id, row.image_url ?? null);
       postGifMap.set(row.id, row.gif_url ?? null);
       postOgMap.set(row.id, { og_url: row.og_url ?? null, og_title: row.og_title ?? null, og_description: row.og_description ?? null, og_image: row.og_image ?? null, og_site_name: row.og_site_name ?? null });
+      eventIdByPostId.set(row.id, row.event_id ?? null);
     });
 
     const multiPostImageMap = new Map<string, string[]>();
@@ -1463,6 +1518,61 @@ export default function HomePage() {
       commentsByPost.set(comment.post_id, existing);
     });
 
+    const uniqueFeedEventIds = [
+      ...new Set(
+        Array.from(eventIdByPostId.values()).filter((id): id is string => Boolean(id))
+      ),
+    ];
+
+    const eventSnapshotById = new Map<string, FeedEventSnapshot>();
+    const eventAttCounts = new Map<string, { interested: number; going: number }>();
+    const eventMyAttendance = new Map<string, "interested" | "going" | null>();
+    const savedFeedEventIds = new Set<string>();
+
+    if (uniqueFeedEventIds.length > 0) {
+      const { data: evRows, error: evErr } = await supabase
+        .from("events")
+        .select("id, title, date, organization, signup_url, image_url")
+        .in("id", uniqueFeedEventIds);
+      if (evErr) {
+        console.error("Feed events load error:", evErr);
+      } else {
+        ((evRows ?? []) as FeedEventSnapshot[]).forEach((e) => {
+          eventSnapshotById.set(e.id, e);
+        });
+      }
+
+      const { data: attRows, error: attErr } = await supabase
+        .from("event_attendance")
+        .select("event_id, user_id, status")
+        .in("event_id", uniqueFeedEventIds);
+      if (attErr) {
+        console.error("Feed event attendance load error:", attErr);
+      } else {
+        ((attRows ?? []) as { event_id: string; user_id: string; status: "interested" | "going" }[]).forEach((r) => {
+          const cur = eventAttCounts.get(r.event_id) ?? { interested: 0, going: 0 };
+          cur[r.status]++;
+          eventAttCounts.set(r.event_id, cur);
+          if (effectiveUserId && r.user_id === effectiveUserId) {
+            eventMyAttendance.set(r.event_id, r.status);
+          }
+        });
+      }
+
+      if (effectiveUserId) {
+        const { data: savedEv, error: savedErr } = await supabase
+          .from("saved_events")
+          .select("event_id")
+          .eq("user_id", effectiveUserId)
+          .in("event_id", uniqueFeedEventIds);
+        if (savedErr) {
+          console.error("Feed saved events load error:", savedErr);
+        } else {
+          ((savedEv ?? []) as { event_id: string }[]).forEach((r) => savedFeedEventIds.add(r.event_id));
+        }
+      }
+    }
+
     const mergedPosts: FeedPost[] = rawPosts.map((post) => {
       const likesForPost = likesByPost.get(post.id) || [];
       const seenLiker = new Set<string>();
@@ -1483,6 +1593,12 @@ export default function HomePage() {
       const legacyImage = legacyPostImageMap.get(post.id) ?? null;
       const gifUrl = postGifMap.get(post.id) ?? null;
       const ogData = postOgMap.get(post.id);
+
+      const eid = eventIdByPostId.get(post.id) ?? null;
+      const feedEvent = eid ? eventSnapshotById.get(eid) ?? null : null;
+      const ac = eid ? eventAttCounts.get(eid) ?? { interested: 0, going: 0 } : { interested: 0, going: 0 };
+      const myEvAtt = eid ? eventMyAttendance.get(eid) ?? null : null;
+      const evSaved = Boolean(eid && effectiveUserId && savedFeedEventIds.has(eid));
 
       return {
         ...post,
@@ -1506,6 +1622,12 @@ export default function HomePage() {
         og_description: ogData?.og_description ?? null,
         og_image: ogData?.og_image ?? null,
         og_site_name: ogData?.og_site_name ?? null,
+        event_id: eid,
+        feed_event: feedEvent,
+        event_interested_count: ac.interested,
+        event_going_count: ac.going,
+        event_my_attendance: myEvAtt,
+        event_saved: evSaved,
       };
     });
 
@@ -2511,7 +2633,9 @@ export default function HomePage() {
     : null;
 
   const businessListingsForPane = isMobile
-    ? businessListings
+    ? (bizMobileFilter === "all"
+        ? businessListings
+        : businessListings.filter((b) => normalizeBizListingTypeForListing(b) === bizMobileFilter))
     : featuredBizPool
         .filter((b) => !desktopBillboardListing || b.id !== desktopBillboardListing.id)
         .slice(0, 5);
@@ -2673,14 +2797,6 @@ export default function HomePage() {
                     value={jobFilters.keyword}
                     onChange={(e) => setJobFilters((prev) => ({ ...prev, keyword: e.target.value }))}
                     placeholder="Keyword/tag (UXO, TSS-E, Safety)"
-                    style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    value={jobFilters.minSalary}
-                    onChange={(e) => setJobFilters((prev) => ({ ...prev, minSalary: e.target.value }))}
-                    placeholder="Minimum salary"
                     style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
                   />
                 </div>
@@ -3692,6 +3808,38 @@ export default function HomePage() {
                     </div>
                   )}
 
+                  {post.feed_event && post.event_id && (
+                    <>
+                      {post.feed_event.image_url ? (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            borderRadius: 12,
+                            overflow: "hidden",
+                            border: `1px solid ${t.border}`,
+                            maxWidth: 480,
+                            background: t.bg,
+                          }}
+                        >
+                          <img
+                            src={httpsAssetUrl(post.feed_event.image_url)}
+                            alt=""
+                            style={{ width: "100%", height: "auto", maxHeight: 220, objectFit: "cover", display: "block" }}
+                          />
+                        </div>
+                      ) : null}
+                      <EventFeedActions
+                        eventId={post.event_id}
+                        signupUrl={post.feed_event.signup_url}
+                        initialInterested={post.event_interested_count}
+                        initialGoing={post.event_going_count}
+                        initialMyAttendance={post.event_my_attendance}
+                        initialSaved={post.event_saved}
+                        userId={userId}
+                      />
+                    </>
+                  )}
+
                   <div
                     style={{
                       display: "flex",
@@ -4018,6 +4166,66 @@ export default function HomePage() {
 
                       </div>
                       )}
+                      {userId &&
+                        (() => {
+                          const nudge = getSidebarNudgePeer(post.comments, userId);
+                          if (!nudge || isCommentSidebarNudgeDismissed(post.id, nudge.peerUserId)) return null;
+                          return (
+                            <div
+                              style={{
+                                marginTop: 12,
+                                padding: "10px 12px",
+                                borderRadius: 10,
+                                border: `1px dashed ${t.border}`,
+                                background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+                              }}
+                            >
+                              <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 8 }}>
+                                Take this to Sidebar?
+                              </div>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setSidebarDrawer({ open: true, peerId: nudge.peerUserId })}
+                                  style={{
+                                    border: "none",
+                                    borderRadius: 8,
+                                    padding: "8px 14px",
+                                    fontWeight: 800,
+                                    fontSize: 13,
+                                    cursor: "pointer",
+                                    background: "#111",
+                                    color: "#fff",
+                                  }}
+                                >
+                                  Open Sidebar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    localStorage.setItem(
+                                      sidebarNudgeDismissStorageKey(post.id, userId, nudge.peerUserId),
+                                      "1",
+                                    );
+                                    setSidebarNudgeBump((b) => b + 1);
+                                  }}
+                                  style={{
+                                    border: `1px solid ${t.border}`,
+                                    borderRadius: 8,
+                                    padding: "8px 14px",
+                                    fontWeight: 700,
+                                    fontSize: 13,
+                                    cursor: "pointer",
+                                    background: t.surface,
+                                    color: t.textMuted,
+                                  }}
+                                >
+                                  Dismiss
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       {!commentsOpen && post.comments.length > 2 && (
                         <button
                           type="button"
@@ -4189,7 +4397,10 @@ export default function HomePage() {
             top: 20,
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, marginBottom: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+            <div style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>
+              {isMobile ? "Approved listings" : "Featured listings"}
+            </div>
             <button
               type="button"
               onClick={() => { setShowBizForm((p) => !p); setBizSubmitSuccess(false); }}
@@ -4197,15 +4408,47 @@ export default function HomePage() {
             >
               {showBizForm ? "Cancel" : "Submit Biz/Org/Resource"}
             </button>
-            <a
-              href="/businesses"
-              style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}
-            >
-              See all Biz/Org/Resources →
-            </a>
-            <div style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>
-              {isMobile ? "Approved listings" : "Featured listings"}
-            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, marginBottom: 12 }}>
+            {!isMobile && (
+              <a
+                href="/businesses"
+                style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}
+              >
+                See all Biz/Org/Resources →
+              </a>
+            )}
+            {isMobile && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {([
+                  { id: "all", label: "All" },
+                  { id: "business", label: "Businesses" },
+                  { id: "organization", label: "Organizations" },
+                  { id: "resource", label: "Resources" },
+                ] as { id: BizMobileFilter; label: string }[]).map((opt) => {
+                  const active = bizMobileFilter === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setBizMobileFilter(opt.id)}
+                      style={{
+                        borderRadius: 999,
+                        border: `1px solid ${active ? "#111" : t.border}`,
+                        background: active ? "#111" : t.surface,
+                        color: active ? "white" : t.text,
+                        fontSize: 12,
+                        fontWeight: 700,
+                        padding: "5px 10px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Submission form */}
@@ -4703,6 +4946,14 @@ export default function HomePage() {
 
       <UpgradePromptModal open={showJobsUpgradePrompt} onClose={() => setShowJobsUpgradePrompt(false)} />
       <MemberPaywallModal open={memberPaywallOpen} onClose={() => setMemberPaywallOpen(false)} />
+      {userId && (
+        <SidebarThreadDrawer
+          open={sidebarDrawer.open}
+          onClose={() => setSidebarDrawer({ open: false, peerId: null })}
+          currentUserId={userId}
+          peerUserId={sidebarDrawer.peerId}
+        />
+      )}
     </div>
   );
 }

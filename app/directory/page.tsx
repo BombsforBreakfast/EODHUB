@@ -1,8 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
+import ImageCropDialog from "../components/ImageCropDialog";
+import { ASPECT_AVATAR } from "../lib/imageCropTargets";
 
 const US_STATES = [
   "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut",
@@ -18,8 +20,6 @@ const US_STATES = [
 const OVERSEAS_LOCATIONS = [
   "Germany","Guam","Japan","Puerto Rico","Sinai","South Korea",
 ];
-
-const ALL_LOCATIONS = [...US_STATES, ...OVERSEAS_LOCATIONS];
 
 const ORG_TYPES = ["Army","Navy","Marines","Air Force","LEO","Federal","Fire","Other"];
 
@@ -41,6 +41,8 @@ type DirectoryEntry = {
   phone: string | null;
   state: string | null;
   unit_slug: string | null;
+  base_city: string | null;
+  photo_url: string | null;
 };
 
 function formatPhone(raw: string): string {
@@ -70,7 +72,17 @@ export default function DirectoryPage() {
   const [formName, setFormName] = useState("");
   const [formPhone, setFormPhone] = useState("");
   const [formLocation, setFormLocation] = useState(US_STATES[0]);
+  const [formBaseCity, setFormBaseCity] = useState("");
   const [formSlug, setFormSlug] = useState("");
+  const [directoryPhotoUrl, setDirectoryPhotoUrl] = useState("");
+  const [directoryPhotoPreview, setDirectoryPhotoPreview] = useState<string | null>(null);
+  const [dirCropOpen, setDirCropOpen] = useState(false);
+  const [dirCropSrc, setDirCropSrc] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const [isMobile, setIsMobile] = useState(false);
+  const [callSheet, setCallSheet] = useState<{ display: string; digits: string } | null>(null);
 
   // Request new location modal
   const [locModalOpen, setLocModalOpen] = useState(false);
@@ -83,11 +95,27 @@ export default function DirectoryPage() {
     loadEntries();
   }, []);
 
+  useEffect(() => {
+    const mq = () => setIsMobile(typeof window !== "undefined" && window.innerWidth <= 768);
+    mq();
+    window.addEventListener("resize", mq);
+    return () => window.removeEventListener("resize", mq);
+  }, []);
+
+  useEffect(() => {
+    if (!callSheet) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setCallSheet(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [callSheet]);
+
   async function loadEntries() {
     setLoadingEntries(true);
     const { data } = await supabase
       .from("unit_directory")
-      .select("id, org_type, name, phone, state, unit_slug")
+      .select("id, org_type, name, phone, state, unit_slug, base_city, photo_url")
       .eq("is_approved", true)
       .order("state")
       .order("name");
@@ -104,19 +132,64 @@ export default function DirectoryPage() {
   function openSubmitModal() {
     if (!currentUserId) { window.location.href = "/login"; return; }
     setSubmitDone(false);
-    setFormName(""); setFormPhone(""); setFormSlug("");
+    setFormName("");
+    setFormPhone("");
+    setFormBaseCity("");
+    setFormSlug("");
+    setDirectoryPhotoUrl("");
+    setDirectoryPhotoPreview(null);
+    setDirCropSrc((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setDirCropOpen(false);
     setModalOpen(true);
+  }
+
+  function closeDirCrop() {
+    if (dirCropSrc) URL.revokeObjectURL(dirCropSrc);
+    setDirCropSrc(null);
+    setDirCropOpen(false);
+  }
+
+  async function uploadDirectoryPhotoBlob(blob: Blob) {
+    setPhotoUploading(true);
+    try {
+      const file = new File([blob], "directory-unit.jpg", { type: "image/jpeg" });
+      const path = `unit-directory/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.jpg`;
+      const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
+      if (error) throw new Error(error.message);
+      const { data } = supabase.storage.from("feed-images").getPublicUrl(path);
+      setDirectoryPhotoUrl(data.publicUrl);
+      setDirectoryPhotoPreview(data.publicUrl);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Photo upload failed");
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
+  function onPickDirectoryPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f || !f.type.startsWith("image/")) return;
+    if (dirCropSrc) URL.revokeObjectURL(dirCropSrc);
+    setDirCropSrc(URL.createObjectURL(f));
+    setDirCropOpen(true);
   }
 
   async function handleSubmit() {
     if (!formName.trim()) return;
     if (formPhone && !isValidPhone(formPhone)) return;
+    if (photoUploading) return;
     setSubmitting(true);
     const { error } = await supabase.from("unit_directory").insert({
       org_type: formOrgType,
       name: formName.trim(),
       phone: formPhone || null,
       state: formLocation,
+      base_city: formBaseCity.trim() || null,
+      photo_url: directoryPhotoUrl.trim() || null,
       unit_slug: formSlug.trim() || null,
       submitted_by: currentUserId,
       is_approved: false,
@@ -156,6 +229,56 @@ export default function DirectoryPage() {
 
   return (
     <div style={{ background: t.bg, minHeight: "100vh" }}>
+      <ImageCropDialog
+        open={dirCropOpen}
+        imageSrc={dirCropSrc}
+        aspect={ASPECT_AVATAR}
+        cropShape="rect"
+        title="Crop unit photo"
+        onCancel={closeDirCrop}
+        onComplete={async (blob) => {
+          await uploadDirectoryPhotoBlob(blob);
+          closeDirCrop();
+        }}
+      />
+      {callSheet && (
+        <>
+          <div
+            role="presentation"
+            aria-hidden
+            style={{ position: "fixed", inset: 0, zIndex: 2400, background: "rgba(0,0,0,0.45)" }}
+            onClick={() => setCallSheet(null)}
+          />
+          <div
+            style={{
+              position: "fixed",
+              left: 16,
+              right: 16,
+              bottom: 24,
+              zIndex: 2401,
+              paddingBottom: "max(12px, env(safe-area-inset-bottom, 0px))",
+            }}
+          >
+            <a
+              href={`tel:${callSheet.digits}`}
+              style={{
+                display: "block",
+                textAlign: "center",
+                padding: "14px 20px",
+                borderRadius: 14,
+                background: "#16a34a",
+                color: "white",
+                fontWeight: 800,
+                fontSize: 17,
+                textDecoration: "none",
+                boxShadow: "0 4px 24px rgba(0,0,0,0.25)",
+              }}
+            >
+              Call {callSheet.display}
+            </a>
+          </div>
+        </>
+      )}
       <NavBar />
       <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px" }}>
 
@@ -228,6 +351,14 @@ export default function DirectoryPage() {
                   key={entry.id}
                   style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}
                 >
+                  {entry.photo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- directory listing thumb
+                    <img
+                      src={entry.photo_url}
+                      alt=""
+                      style={{ width: 52, height: 52, borderRadius: 10, objectFit: "cover", flexShrink: 0, border: `1px solid ${t.border}` }}
+                    />
+                  ) : null}
                   <span style={{ background: color.bg, color: "#fff", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0 }}>
                     {entry.org_type}
                   </span>
@@ -236,15 +367,40 @@ export default function DirectoryPage() {
                     {entry.state && (
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{entry.state}</div>
                     )}
+                    {entry.base_city && (
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{entry.base_city}</div>
+                    )}
                   </div>
                   <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                     {entry.phone && (
-                      <a
-                        href={`tel:${entry.phone.replace(/-/g, "")}`}
-                        style={{ color: t.text, fontWeight: 700, fontSize: 14, textDecoration: "none", whiteSpace: "nowrap" }}
-                      >
-                        📞 {entry.phone}
-                      </a>
+                      isMobile ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setCallSheet({ display: entry.phone!, digits: entry.phone!.replace(/\D/g, "") })
+                          }
+                          style={{
+                            background: "none",
+                            border: "none",
+                            cursor: "pointer",
+                            color: t.text,
+                            fontWeight: 700,
+                            fontSize: 14,
+                            padding: 0,
+                            fontFamily: "inherit",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          📞 {entry.phone}
+                        </button>
+                      ) : (
+                        <a
+                          href={`tel:${entry.phone.replace(/-/g, "")}`}
+                          style={{ color: t.text, fontWeight: 700, fontSize: 14, textDecoration: "none", whiteSpace: "nowrap" }}
+                        >
+                          📞 {entry.phone}
+                        </a>
+                      )
                     )}
                     {entry.unit_slug && (
                       <a
@@ -312,6 +468,59 @@ export default function DirectoryPage() {
                     </select>
                   </div>
                   <div>
+                    <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 5 }}>
+                      Base / installation / city
+                    </label>
+                    <input
+                      value={formBaseCity}
+                      onChange={(e) => setFormBaseCity(e.target.value)}
+                      placeholder="e.g. Fort Liberty, Colorado Springs"
+                      style={inputStyle}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 5 }}>
+                      Photo <span style={{ fontWeight: 400, fontSize: 12 }}>(optional)</span>
+                    </label>
+                    <input ref={photoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPickDirectoryPhoto} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => photoInputRef.current?.click()}
+                        disabled={photoUploading}
+                        style={{
+                          padding: "9px 16px",
+                          borderRadius: 10,
+                          border: `1px dashed ${t.border}`,
+                          background: t.bg,
+                          color: t.text,
+                          fontWeight: 700,
+                          fontSize: 14,
+                          cursor: photoUploading ? "not-allowed" : "pointer",
+                          opacity: photoUploading ? 0.6 : 1,
+                        }}
+                      >
+                        {photoUploading ? "Uploading…" : directoryPhotoPreview ? "Change photo" : "Add photo"}
+                      </button>
+                      {directoryPhotoPreview && (
+                        <>
+                          {/* eslint-disable-next-line @next/next/no-img-element -- form preview */}
+                          <img src={directoryPhotoPreview} alt="" style={{ width: 56, height: 56, borderRadius: 10, objectFit: "cover", border: `1px solid ${t.border}` }} />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDirectoryPhotoUrl("");
+                              setDirectoryPhotoPreview(null);
+                            }}
+                            style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, background: "none", border: "none", cursor: "pointer", padding: 0 }}
+                          >
+                            Remove
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <div>
                     <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 5 }}>Contact Phone</label>
                     <input
                       value={formPhone}
@@ -336,8 +545,8 @@ export default function DirectoryPage() {
                   </div>
                   <button
                     onClick={handleSubmit}
-                    disabled={submitting || !formName.trim() || (!!formPhone && !isValidPhone(formPhone))}
-                    style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 10, padding: "11px 0", fontWeight: 800, fontSize: 15, cursor: submitting || !formName.trim() ? "not-allowed" : "pointer", opacity: submitting || !formName.trim() ? 0.5 : 1, marginTop: 4 }}
+                    disabled={submitting || photoUploading || !formName.trim() || (!!formPhone && !isValidPhone(formPhone))}
+                    style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 10, padding: "11px 0", fontWeight: 800, fontSize: 15, cursor: submitting || photoUploading || !formName.trim() ? "not-allowed" : "pointer", opacity: submitting || photoUploading || !formName.trim() ? 0.5 : 1, marginTop: 4 }}
                   >
                     {submitting ? "Submitting..." : "Submit for Review"}
                   </button>

@@ -1,12 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import NavBar from "../components/NavBar";
 import ImageCropDialog from "../components/ImageCropDialog";
 import { ASPECT_UNIT_COVER } from "../lib/imageCropTargets";
+
+type UnitMemberPreview = {
+  user_id: string;
+  photo_url: string | null;
+  label: string;
+};
 
 type Unit = {
   id: string;
@@ -18,6 +24,7 @@ type Unit = {
   member_count: number;
   created_at: string;
   my_role?: string;
+  member_preview?: UnitMemberPreview[];
 };
 
 const UNIT_TYPES = [
@@ -33,18 +40,31 @@ function typeLabel(type: string) {
   return UNIT_TYPES.find((t) => t.value === type)?.label ?? type;
 }
 
+/** Case-insensitive substring match across name, type, type label, and description. */
+function unitMatchesLocalFilter(unit: Unit, raw: string): boolean {
+  const q = raw.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [
+    unit.name,
+    unit.type,
+    typeLabel(unit.type),
+    unit.description ?? "",
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(q);
+}
+
 export default function UnitsPage() {
   const { t, isDark } = useTheme();
   const router = useRouter();
 
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searched, setSearched] = useState("");
-  const [showMyUnits, setShowMyUnits] = useState(false);
+  /** Local-only filter for groups on this page (does not call the API). */
+  const [groupFilter, setGroupFilter] = useState("");
   const [myUnits, setMyUnits] = useState<Unit[]>([]);
   const [myUnitsLoaded, setMyUnitsLoaded] = useState(false);
-  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -67,44 +87,70 @@ export default function UnitsPage() {
       setCurrentUserId(uid);
       if (uid) loadMyUnits(uid);
     });
-    loadUnits("");
+    loadUnits();
   }, []);
 
   async function loadMyUnits(uid: string) {
-    const { data } = await supabase
+    const { data: memberRows, error: membersError } = await supabase
       .from("unit_members")
-      .select("role, units(id, name, slug, description, cover_photo_url, type, created_at)")
+      .select("unit_id, role, status")
       .eq("user_id", uid)
-      .eq("status", "approved");
-    if (data) {
-      const rows = data as unknown as { role: string; units: Unit | null }[];
-      setMyUnits(
-        rows
-          .filter((r) => r.units !== null)
-          .map((r) => ({ ...r.units!, member_count: 0, my_role: r.role }))
-      );
+      .in("status", ["approved", "active"]);
+
+    if (membersError) {
+      console.error("My groups membership load error:", membersError);
+      setMyUnits([]);
+      setMyUnitsLoaded(true);
+      return;
     }
+
+    const members = (memberRows ?? []) as { unit_id: string; role: string; status: string }[];
+    if (members.length === 0) {
+      setMyUnits([]);
+      setMyUnitsLoaded(true);
+      return;
+    }
+
+    const roleByUnit = new Map<string, string>();
+    members.forEach((m) => {
+      // Prefer stronger role if duplicates exist.
+      const prev = roleByUnit.get(m.unit_id);
+      if (!prev) roleByUnit.set(m.unit_id, m.role);
+      if (prev === "member" && (m.role === "admin" || m.role === "owner")) roleByUnit.set(m.unit_id, m.role);
+      if (prev === "admin" && m.role === "owner") roleByUnit.set(m.unit_id, m.role);
+    });
+
+    const unitIds = Array.from(new Set(members.map((m) => m.unit_id)));
+    const { data: unitsRows, error: unitsError } = await supabase
+      .from("units")
+      .select("id, name, slug, description, cover_photo_url, type, created_at")
+      .in("id", unitIds);
+
+    if (unitsError) {
+      console.error("My groups units load error:", unitsError);
+      setMyUnits([]);
+      setMyUnitsLoaded(true);
+      return;
+    }
+
+    const rows = (unitsRows ?? []) as Unit[];
+    setMyUnits(
+      rows
+        .map((u) => ({ ...u, member_count: 0, my_role: roleByUnit.get(u.id) ?? "member" }))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }))
+    );
     setMyUnitsLoaded(true);
   }
 
-  async function loadUnits(q: string) {
+  async function loadUnits() {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (q.trim()) params.set("q", q.trim());
-      const res = await fetch(`/api/units?${params}`);
+      const res = await fetch("/api/units");
       const json = await res.json();
       setUnits(json.units ?? []);
-      setSearched(json.searched ?? "");
     } finally {
       setLoading(false);
     }
-  }
-
-  function handleSearchChange(value: string) {
-    setSearchQuery(value);
-    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-    searchDebounceRef.current = setTimeout(() => loadUnits(value), 350);
   }
 
   function closeCoverCrop() {
@@ -178,7 +224,20 @@ export default function UnitsPage() {
     boxSizing: "border-box",
   };
 
-  const noResults = !loading && units.length === 0;
+  const filteredUnits = useMemo(
+    () => units.filter((u) => unitMatchesLocalFilter(u, groupFilter)),
+    [units, groupFilter],
+  );
+
+  const filteredMyUnits = useMemo(
+    () => myUnits.filter((u) => unitMatchesLocalFilter(u, groupFilter)),
+    [myUnits, groupFilter],
+  );
+
+  const filterActive = groupFilter.trim().length > 0;
+  const emptyDirectory = !loading && units.length === 0;
+  const noFilterMatches =
+    !loading && units.length > 0 && filterActive && filteredUnits.length === 0;
 
   const padX = { paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))" } as const;
 
@@ -214,128 +273,256 @@ export default function UnitsPage() {
           maxWidth: 1800,
           margin: "0 auto",
           boxSizing: "border-box",
-          paddingTop: 16,
-          paddingBottom: 32,
+          paddingTop: 10,
+          paddingBottom: 24,
           ...padX,
         }}
       >
 
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 28, fontWeight: 900 }}>Groups</div>
-            <div style={{ fontSize: 14, color: t.textMuted, marginTop: 2, lineHeight: 1.55, maxWidth: 520 }}>
-              <div style={{ fontWeight: 700, color: t.text, marginBottom: 4 }}>Your network, organized.</div>
-              <div>
-                Create private units for current teams, alumni groups, organizations, or shared interests. Share updates, coordinate, and stay connected in a more focused space.
+        <div className="groups-page-shell">
+        {/* Hero: first two grid tracks = intro + filter; last two = My Groups (900px+), aligned with directory below */}
+        <div className="groups-page-grid groups-page-hero">
+          <div className={`groups-top-left ${currentUserId ? "groups-page-span-2" : "groups-page-span-4"}`}>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 28, fontWeight: 900 }}>Groups</div>
+              <div style={{ fontSize: 14, color: t.textMuted, marginTop: 4, lineHeight: 1.5, maxWidth: 560 }}>
+                <div style={{ fontWeight: 700, color: t.text, marginBottom: 3 }}>Your network, organized.</div>
+                <div>
+                  Create private units for current teams, alumni groups, organizations, or shared interests. Share updates, coordinate, and stay connected in a more focused space.
+                </div>
+                <div style={{ marginTop: 3 }}>
+                  Relevant activity from your units will also surface in your feed.
+                </div>
               </div>
-              <div style={{ marginTop: 4 }}>
-                Relevant activity from your units will also surface in your feed.
+            </div>
+
+            {/* Local filter + create — unchanged behavior, full width of left column */}
+            <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "stretch" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: t.textFaint, letterSpacing: 0.4, marginBottom: 6, textTransform: "uppercase" }}>
+                On this page
+              </div>
+              <div
+                className="units-filter-combo-bar"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  flexWrap: "nowrap",
+                  gap: 8,
+                  boxSizing: "border-box",
+                  border: `1px solid ${isDark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)"}`,
+                  borderRadius: 10,
+                  background: isDark ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
+                  padding: "6px 8px 6px 11px",
+                  minWidth: 0,
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={t.textFaint} strokeWidth="2.2" strokeLinecap="round" aria-hidden style={{ flexShrink: 0 }}>
+                  <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="22" y2="22" />
+                </svg>
+                <input
+                  type="text"
+                  value={groupFilter}
+                  onChange={(e) => setGroupFilter(e.target.value)}
+                  placeholder="Find a unit…"
+                  aria-label="Filter groups on this page"
+                  style={{ border: "none", outline: "none", fontSize: 14, flex: "1 1 120px", minWidth: 0, background: "transparent", color: t.text }}
+                />
+                {filterActive && (
+                  <button
+                    type="button"
+                    aria-label="Clear filter"
+                    onClick={() => setGroupFilter("")}
+                    style={{
+                      flexShrink: 0,
+                      width: 26,
+                      height: 26,
+                      border: "none",
+                      borderRadius: 8,
+                      background: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+                      color: t.textMuted,
+                      fontSize: 16,
+                      lineHeight: 1,
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+                {currentUserId && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCreate(true)}
+                    style={{
+                      flexShrink: 0,
+                      marginLeft: "auto",
+                      background: "#111",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      fontWeight: 800,
+                      fontSize: 12,
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    + Create Group
+                  </button>
+                )}
               </div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {currentUserId && myUnitsLoaded && myUnits.length > 0 && (
-              <button
-                onClick={() => setShowMyUnits((v) => !v)}
-                style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: showMyUnits ? 0.75 : 1 }}
-              >
-                My Groups {showMyUnits ? "✕" : `(${myUnits.length})`}
-              </button>
-            )}
-            {currentUserId && (
-              <button
-                onClick={() => setShowCreate(true)}
-                style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
-              >
-                + Create Unit
-              </button>
-            )}
-          </div>
-        </div>
 
-        {/* Search */}
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: "8px 14px", gap: 8 }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="22" y2="22" />
-            </svg>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Search groups..."
-              style={{ border: "none", outline: "none", fontSize: 15, width: "100%", background: "transparent", color: t.text }}
-            />
-          </div>
-        </div>
-
-        {/* My Units panel */}
-        {showMyUnits && (
-          <div style={{ marginBottom: 24, border: `1px solid ${t.border}`, borderRadius: 14, padding: 20, background: t.surface }}>
-            <div style={{ fontSize: 13, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 14 }}>My Groups</div>
-            <div style={{ display: "grid", gap: 10 }}>
-              {myUnits.map((u) => (
-                <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: `1px solid ${t.border}`, borderRadius: 12, background: t.bg }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 8, background: u.cover_photo_url ? `url(${u.cover_photo_url}) center/cover` : "#1e3a5f", flexShrink: 0 }} />
-                  <a href={`/units/${u.slug}`} style={{ flex: 1, minWidth: 0, textDecoration: "none", color: t.text }}>
-                    <div style={{ fontWeight: 800, fontSize: 14 }}>{u.name}</div>
-                    <div style={{ fontSize: 12, color: t.textMuted, textTransform: "capitalize" }}>{u.type.replace(/_/g, " ")}</div>
-                  </a>
-                  {(u.my_role === "owner" || u.my_role === "admin") && (
+          {currentUserId && (
+            <aside className="groups-top-right groups-page-span-2" aria-label="Your groups">
+              <div
+                className="groups-my-panel"
+                style={{
+                  minHeight: 0,
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  height: "100%",
+                  boxSizing: "border-box",
+                  padding: 0,
+                  background: "transparent",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: t.text, letterSpacing: -0.2 }}>My Groups</div>
+                  {myUnitsLoaded && myUnits.length > 0 && (
                     <a
-                      href={`/units/${u.slug}/admin`}
-                      style={{ padding: "5px 12px", borderRadius: 8, background: "#1e3a5f", color: "#fff", fontSize: 12, fontWeight: 800, textDecoration: "none", flexShrink: 0 }}
+                      href="#groups-directory"
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 700,
+                        color: t.textFaint,
+                        textDecoration: "none",
+                        flexShrink: 0,
+                      }}
                     >
-                      Admin
+                      View all
                     </a>
                   )}
-                  <a href={`/units/${u.slug}`} style={{ fontSize: 18, color: t.textFaint, textDecoration: "none" }}>›</a>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+
+                {!myUnitsLoaded && (
+                  <div style={{ fontSize: 12, color: t.textMuted, padding: "4px 0 8px" }}>Loading…</div>
+                )}
+
+                {myUnitsLoaded && myUnits.length === 0 && (
+                  <div style={{ padding: "2px 0 4px" }}>
+                    <div style={{ fontSize: 13, color: t.text, fontWeight: 600, lineHeight: 1.4 }}>
+                      You haven&apos;t joined any groups yet.
+                    </div>
+                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 6, lineHeight: 1.45 }}>
+                      Explore groups below.
+                    </div>
+                  </div>
+                )}
+
+                {myUnitsLoaded && myUnits.length > 0 && filteredMyUnits.length === 0 && filterActive && (
+                  <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45, paddingBottom: 4 }}>No groups match that filter.</div>
+                )}
+
+                {myUnitsLoaded && myUnits.length > 0 && filteredMyUnits.length > 0 && (
+                  <div className="groups-my-panel-scroller">
+                    {filteredMyUnits.map((u) => {
+                      const initial = u.name.trim().charAt(0).toUpperCase() || "?";
+                      return (
+                        <a key={u.id} href={`/units/${u.slug}`} className="groups-mini-tile" title={u.name}>
+                          <div
+                            style={{
+                              width: 95,
+                              height: 95,
+                              margin: "0 auto",
+                              borderRadius: 18,
+                              overflow: "hidden",
+                              background: t.bg,
+                              border: `1px solid ${t.border}`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            {u.cover_photo_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element -- tiny thumbnail
+                              <img src={u.cover_photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                            ) : (
+                              <span style={{ fontSize: 28, fontWeight: 800, color: t.textFaint }}>{initial}</span>
+                            )}
+                          </div>
+                          <div
+                            style={{
+                              marginTop: 10,
+                              fontSize: 14,
+                              fontWeight: 700,
+                              lineHeight: 1.25,
+                              color: t.text,
+                              textAlign: "center",
+                              display: "-webkit-box",
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: "vertical",
+                              overflow: "hidden",
+                              wordBreak: "break-word",
+                            }}
+                          >
+                            {u.name}
+                          </div>
+                        </a>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </aside>
+          )}
+        </div>
 
         {/* Loading */}
         {loading && (
           <div style={{ color: t.textMuted, textAlign: "center", padding: 40, fontSize: 15 }}>Loading...</div>
         )}
 
-        {/* No results — "create it?" card */}
-        {noResults && searched.length >= 2 && (
-          <div style={{ border: `2px dashed ${t.border}`, borderRadius: 16, padding: 32, textAlign: "center" }}>
-            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
-              No unit found for &ldquo;{searched}&rdquo;
-            </div>
+        {/* Filter matched nothing (directory has units) */}
+        {noFilterMatches && (
+          <div style={{ textAlign: "center", padding: "28px 16px", marginBottom: 8 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, color: t.text, marginBottom: 6 }}>No groups match that filter.</div>
             <div style={{ color: t.textMuted, fontSize: 14, marginBottom: 20 }}>
-              Looks like this unit doesn&apos;t exist yet. Be the first to build it.
+              Try a different word, clear the filter, or create a new unit.
             </div>
-            {currentUserId ? (
+            {filterActive && groupFilter.trim().length >= 2 && currentUserId && (
               <button
-                onClick={() => { setCreateName(searched); setShowCreate(true); }}
+                type="button"
+                onClick={() => { setCreateName(groupFilter.trim()); setShowCreate(true); }}
                 style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 22px", fontWeight: 800, fontSize: 14, cursor: "pointer" }}
               >
-                Create &ldquo;{searched}&rdquo;
+                Create &ldquo;{groupFilter.trim()}&rdquo;
               </button>
-            ) : (
-              <a href="/login" style={{ display: "inline-block", background: "#111", color: "#fff", textDecoration: "none", borderRadius: 10, padding: "10px 22px", fontWeight: 800, fontSize: 14 }}>
-                Log in to create this unit
-              </a>
             )}
           </div>
         )}
 
-        {noResults && searched.length < 2 && (
-          <div style={{ color: t.textMuted, textAlign: "center", padding: 40, fontSize: 15 }}>
+        {/* Empty directory (no units in system) */}
+        {emptyDirectory && (
+          <div style={{ color: t.textMuted, textAlign: "center", padding: 36, fontSize: 15 }}>
             No units yet. Be the first to create one.
           </div>
         )}
 
-        {/* Units grid */}
-        {!loading && units.length > 0 && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-            {units.map((unit) => (
+        {/* Main groups directory — same 4-column template as hero (900px+) */}
+        {!loading && filteredUnits.length > 0 && (
+          <div id="groups-directory" className="groups-page-grid" style={{ scrollMarginTop: 72 }}>
+            {filterActive && (
+              <div className="groups-page-grid-full-row" style={{ fontSize: 13, color: t.textFaint, fontWeight: 600, marginBottom: 0 }}>
+                Showing {filteredUnits.length} {filteredUnits.length === 1 ? "group" : "groups"}
+              </div>
+            )}
+            {filteredUnits.map((unit) => (
               <div
                 key={unit.id}
                 onClick={() => router.push(`/units/${unit.slug}`)}
@@ -354,35 +541,97 @@ export default function UnitsPage() {
                   ) : null}
                 </div>
                 <div className="unit-card-body">
-                  <span
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                    <span
+                      style={{
+                        alignSelf: "flex-start",
+                        background: isDark ? "#1a1a2e" : "#dbeafe",
+                        color: isDark ? "#93c5fd" : "#1d4ed8",
+                        fontSize: 10,
+                        fontWeight: 800,
+                        padding: "3px 8px",
+                        borderRadius: 20,
+                        textTransform: "uppercase",
+                        letterSpacing: 0.6,
+                      }}
+                    >
+                      {typeLabel(unit.type)}
+                    </span>
+                    <div className="unit-card-title" style={{ fontWeight: 900, fontSize: 16, color: t.text, lineHeight: 1.25 }}>{unit.name}</div>
+                    {unit.description && (
+                      <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                        {unit.description}
+                      </div>
+                    )}
+                  </div>
+                  <div
                     style={{
-                      alignSelf: "flex-start",
-                      background: isDark ? "#1a1a2e" : "#dbeafe",
-                      color: isDark ? "#93c5fd" : "#1d4ed8",
-                      fontSize: 10,
-                      fontWeight: 800,
-                      padding: "3px 8px",
-                      borderRadius: 20,
-                      textTransform: "uppercase",
-                      letterSpacing: 0.6,
+                      marginTop: "auto",
+                      paddingTop: 12,
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-start",
+                      gap: 8,
                     }}
                   >
-                    {typeLabel(unit.type)}
-                  </span>
-                  <div style={{ fontWeight: 900, fontSize: 16, color: t.text, lineHeight: 1.25 }}>{unit.name}</div>
-                  {unit.description && (
-                    <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                      {unit.description}
+                    <div style={{ fontSize: 12, color: t.textFaint, fontWeight: 700 }}>
+                      {unit.member_count} {unit.member_count === 1 ? "member" : "members"}
                     </div>
-                  )}
-                  <div style={{ fontSize: 12, color: t.textFaint, fontWeight: 700 }}>
-                    {unit.member_count} {unit.member_count === 1 ? "member" : "members"}
+                    {unit.member_preview && unit.member_preview.length > 0 && (
+                      <div
+                        style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 8, flexWrap: "wrap" }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div style={{ display: "flex", alignItems: "center" }}>
+                          {unit.member_preview.map((m, idx) => {
+                            const initial = (m.label.trim().charAt(0) || "U").toUpperCase();
+                            return (
+                              <a
+                                key={m.user_id}
+                                href={`/profile/${m.user_id}`}
+                                title={m.label}
+                                style={{
+                                  width: 26,
+                                  height: 26,
+                                  marginLeft: idx === 0 ? 0 : -8,
+                                  borderRadius: "50%",
+                                  border: `2px solid ${t.surface}`,
+                                  overflow: "hidden",
+                                  background: t.badgeBg,
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  color: t.textMuted,
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  textDecoration: "none",
+                                }}
+                              >
+                                {m.photo_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element -- small avatar thumb
+                                  <img src={m.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                ) : (
+                                  initial
+                                )}
+                              </a>
+                            );
+                          })}
+                        </div>
+                        {unit.member_count > unit.member_preview.length && (
+                          <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
+                            +{unit.member_count - unit.member_preview.length}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
             ))}
           </div>
         )}
+        </div>
+
       </div>
 
       {/* Create Unit Modal */}

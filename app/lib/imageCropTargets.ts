@@ -1,6 +1,9 @@
 /** Matches group header left column (portrait) after vertical split layout */
 export const ASPECT_UNIT_COVER = 3 / 4;
 
+/** Event banner / feed card (wide) */
+export const ASPECT_EVENT_COVER = 16 / 9;
+
 export const ASPECT_AVATAR = 1;
 
 /** My Account employer logo slot (160×72) */

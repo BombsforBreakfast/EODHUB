@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
+import ImageCropDialog from "../components/ImageCropDialog";
+import { ASPECT_EVENT_COVER } from "../lib/imageCropTargets";
 import { useTheme } from "../lib/ThemeContext";
 
 type CalendarEvent = {
@@ -13,6 +15,7 @@ type CalendarEvent = {
   date: string;
   organization: string | null;
   signup_url: string | null;
+  image_url: string | null;
   created_at: string;
 };
 
@@ -65,6 +68,18 @@ function formatEventDate(date: string) {
   });
 }
 
+function httpsAssetUrl(url: string | null | undefined): string {
+  if (!url?.trim()) return "";
+  const u = url.trim();
+  if (u.startsWith("http://")) return `https://${u.slice(7)}`;
+  return u;
+}
+
+function isMissingDbColumn(err: unknown, column: string): boolean {
+  const m = String((err as { message?: string } | null)?.message ?? "").toLowerCase();
+  return m.includes(column.toLowerCase()) && (m.includes("column") || m.includes("schema"));
+}
+
 export default function EventsPage() {
   const today = new Date();
 
@@ -99,6 +114,11 @@ export default function EventsPage() {
     signup_url: "",
   });
   const [submittingEvent, setSubmittingEvent] = useState(false);
+  const eventPhotoInputRef = useRef<HTMLInputElement>(null);
+  const [eventCoverCropOpen, setEventCoverCropOpen] = useState(false);
+  const [eventCoverCropSrc, setEventCoverCropSrc] = useState<string | null>(null);
+  const [eventCoverUrl, setEventCoverUrl] = useState<string | null>(null);
+  const [uploadingEventCover, setUploadingEventCover] = useState(false);
 
   const [showMemorialForm, setShowMemorialForm] = useState(false);
   const [memWizUrl, setMemWizUrl] = useState("");
@@ -259,6 +279,37 @@ export default function EventsPage() {
     setSavedEventIds(new Set((data ?? []).map((r: { event_id: string }) => r.event_id)));
   }
 
+  function closeEventCoverCrop() {
+    if (eventCoverCropSrc) URL.revokeObjectURL(eventCoverCropSrc);
+    setEventCoverCropSrc(null);
+    setEventCoverCropOpen(false);
+  }
+
+  async function uploadEventCoverBlob(blob: Blob) {
+    setUploadingEventCover(true);
+    try {
+      const file = new File([blob], "event-cover.jpg", { type: "image/jpeg" });
+      const path = `event-covers/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.jpg`;
+      const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
+      if (error) throw new Error(error.message);
+      const { data } = supabase.storage.from("feed-images").getPublicUrl(path);
+      setEventCoverUrl(data.publicUrl);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploadingEventCover(false);
+    }
+  }
+
+  function onPickEventPhoto(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (e.target) e.target.value = "";
+    if (!f || !f.type.startsWith("image/")) return;
+    if (eventCoverCropSrc) URL.revokeObjectURL(eventCoverCropSrc);
+    setEventCoverCropSrc(URL.createObjectURL(f));
+    setEventCoverCropOpen(true);
+  }
+
   async function toggleSaveEvent(eventId: string) {
     if (!userId) {
       window.location.href = "/login";
@@ -316,21 +367,30 @@ export default function EventsPage() {
     try {
       setSubmittingEvent(true);
 
-      const { error } = await supabase.from("events").insert([
-        {
-          user_id: userId,
-          title: eventForm.title.trim(),
-          description: eventForm.description.trim() || null,
-          date: eventForm.date,
-          organization: eventForm.organization.trim() || null,
-          signup_url: eventForm.signup_url.trim() || null,
-        },
-      ]);
+      let insertRow: Record<string, unknown> = {
+        user_id: userId,
+        title: eventForm.title.trim(),
+        description: eventForm.description.trim() || null,
+        date: eventForm.date,
+        organization: eventForm.organization.trim() || null,
+        signup_url: eventForm.signup_url.trim() || null,
+        image_url: eventCoverUrl?.trim() || null,
+      };
+
+      let { data: insertedEvent, error } = await supabase.from("events").insert([insertRow]).select("id").single();
+
+      if (error && isMissingDbColumn(error, "image_url")) {
+        const { image_url: _i, ...rest } = insertRow;
+        insertRow = rest;
+        ({ data: insertedEvent, error } = await supabase.from("events").insert([insertRow]).select("id").single());
+      }
 
       if (error) {
         alert(error.message);
         return;
       }
+
+      const newEventId = insertedEvent?.id as string | undefined;
 
       // Create a feed post scheduled for next 5pm
       const formattedDate = formatEventDate(eventForm.date);
@@ -342,13 +402,24 @@ export default function EventsPage() {
         eventForm.signup_url.trim() ? `\nSign up: ${eventForm.signup_url.trim()}` : null,
       ].filter(Boolean);
 
-      await supabase.from("posts").insert([{
+      const postPayload: Record<string, unknown> = {
         user_id: userId,
         content: lines.join("\n"),
         created_at: getNext5pm(),
-      }]);
+      };
+      if (newEventId) postPayload.event_id = newEventId;
+
+      let { error: postErr } = await supabase.from("posts").insert([postPayload]);
+      if (postErr && newEventId && isMissingDbColumn(postErr, "event_id")) {
+        const { event_id: _e, ...fallback } = postPayload;
+        postErr = (await supabase.from("posts").insert([fallback])).error;
+      }
+      if (postErr) {
+        console.error("Event feed post error:", postErr);
+      }
 
       setEventForm({ title: "", description: "", date: "", organization: "", signup_url: "" });
+      setEventCoverUrl(null);
       setShowEventForm(false);
       await Promise.all([loadEvents(), loadAllUpcomingEvents()]);
     } finally {
@@ -517,6 +588,18 @@ export default function EventsPage() {
 
   return (
     <div style={{ padding: "24px 16px", background: t.bg, color: t.text, minHeight: "100vh" }}>
+      <ImageCropDialog
+        open={eventCoverCropOpen}
+        imageSrc={eventCoverCropSrc}
+        aspect={ASPECT_EVENT_COVER}
+        cropShape="rect"
+        title="Crop event image"
+        onCancel={closeEventCoverCrop}
+        onComplete={async (blob) => {
+          await uploadEventCoverBlob(blob);
+          closeEventCoverCrop();
+        }}
+      />
       <NavBar />
 
       <div
@@ -556,6 +639,10 @@ export default function EventsPage() {
               <button
                 type="button"
                 onClick={() => {
+                  if (eventCoverCropSrc) URL.revokeObjectURL(eventCoverCropSrc);
+                  setEventCoverCropSrc(null);
+                  setEventCoverCropOpen(false);
+                  setEventCoverUrl(null);
                   setShowEventForm(true);
                   setShowMemorialForm(false);
                 }}
@@ -597,7 +684,13 @@ export default function EventsPage() {
             <div style={{ fontSize: 18, fontWeight: 900 }}>Add Event</div>
             <button
               type="button"
-              onClick={() => setShowEventForm(false)}
+              onClick={() => {
+                if (eventCoverCropSrc) URL.revokeObjectURL(eventCoverCropSrc);
+                setEventCoverCropSrc(null);
+                setEventCoverCropOpen(false);
+                setEventCoverUrl(null);
+                setShowEventForm(false);
+              }}
               style={{
                 background: "transparent",
                 border: "none",
@@ -642,6 +735,44 @@ export default function EventsPage() {
             placeholder="Event details..."
           />
 
+          <label style={labelStyle}>Event image</label>
+          <input ref={eventPhotoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPickEventPhoto} />
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+            <button
+              type="button"
+              onClick={() => eventPhotoInputRef.current?.click()}
+              disabled={uploadingEventCover}
+              style={{
+                border: `1px solid ${t.border}`,
+                borderRadius: 10,
+                padding: "8px 14px",
+                fontWeight: 700,
+                background: t.surface,
+                color: t.text,
+                cursor: uploadingEventCover ? "not-allowed" : "pointer",
+                opacity: uploadingEventCover ? 0.7 : 1,
+              }}
+            >
+              {uploadingEventCover ? "Uploading…" : eventCoverUrl ? "Change image" : "Choose & crop image"}
+            </button>
+            {eventCoverUrl ? (
+              <button
+                type="button"
+                onClick={() => setEventCoverUrl(null)}
+                style={{ background: "transparent", border: "none", color: t.textMuted, fontWeight: 700, cursor: "pointer", fontSize: 13 }}
+              >
+                Remove
+              </button>
+            ) : null}
+          </div>
+          {eventCoverUrl ? (
+            <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, maxWidth: 420, aspectRatio: "16 / 9", background: t.bg }}>
+              <img src={eventCoverUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            </div>
+          ) : (
+            <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint }}>Optional. Same crop flow as group covers — 16×9.</div>
+          )}
+
           <label style={labelStyle}>Sign-up / External URL</label>
           <input
             style={inputStyle}
@@ -653,7 +784,13 @@ export default function EventsPage() {
           <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 10 }}>
             <button
               type="button"
-              onClick={() => setShowEventForm(false)}
+              onClick={() => {
+                if (eventCoverCropSrc) URL.revokeObjectURL(eventCoverCropSrc);
+                setEventCoverCropSrc(null);
+                setEventCoverCropOpen(false);
+                setEventCoverUrl(null);
+                setShowEventForm(false);
+              }}
               style={{
                 border: `1px solid ${t.border}`,
                 borderRadius: 10,
@@ -1237,6 +1374,12 @@ export default function EventsPage() {
                     )}
                   </div>
 
+                  {ev.image_url ? (
+                    <div style={{ flexShrink: 0, width: 88, height: 88, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.bg }}>
+                      <img src={httpsAssetUrl(ev.image_url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    </div>
+                  ) : null}
+
                   {/* Event details */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.2 }}>{ev.title}</div>
@@ -1322,7 +1465,12 @@ export default function EventsPage() {
                 gap: 12,
               }}
             >
-              <div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {selectedEvent.image_url ? (
+                  <div style={{ marginBottom: 14, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "16 / 9", maxHeight: 220, background: t.bg }}>
+                    <img src={httpsAssetUrl(selectedEvent.image_url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  </div>
+                ) : null}
                 <div style={{ fontSize: 24, fontWeight: 900 }}>
                   {selectedEvent.title || "Untitled Event"}
                 </div>

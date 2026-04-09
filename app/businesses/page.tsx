@@ -81,23 +81,6 @@ export default function BusinessesPage() {
   useEffect(() => {
     let mounted = true;
     async function init() {
-      const { data: authData } = await supabase.auth.getUser();
-      const uid = authData.user?.id ?? null;
-      if (!uid) {
-        window.location.href = "/login";
-        return;
-      }
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("verification_status")
-        .eq("user_id", uid)
-        .maybeSingle();
-
-      if (!profile || (profile as { verification_status?: string | null }).verification_status !== "verified") {
-        window.location.href = "/pending";
-        return;
-      }
-
       const { data, error } = await supabase
         .from("business_listings")
         .select("*")
@@ -106,11 +89,27 @@ export default function BusinessesPage() {
         .order("business_name", { ascending: true, nullsFirst: false })
         .limit(500);
 
-      if (error) {
+      let combined = (data ?? []) as BusinessListing[];
+
+      // Ensure known nonprofit resource entries always appear even if approval data is out of sync.
+      const { data: resourceFallback } = await supabase
+        .from("business_listings")
+        .select("*")
+        .or("website_url.ilike.*thelongwalkhome.org*,website_url.ilike.*eod-wf.org*,website_url.ilike.*eodwarriorfoundation.org*,business_name.ilike.*long walk*,business_name.ilike.*eod warrior foundation*")
+        .limit(10);
+
+      if ((resourceFallback ?? []).length > 0) {
+        const byId = new Map<string, BusinessListing>();
+        combined.forEach((r) => byId.set(r.id, r));
+        (resourceFallback as BusinessListing[]).forEach((r) => byId.set(r.id, r));
+        combined = Array.from(byId.values());
+      }
+
+      if (error && combined.length === 0) {
         console.error("Businesses page load error:", error);
         if (mounted) setListings([]);
       } else if (mounted) {
-        setListings((data ?? []) as BusinessListing[]);
+        setListings(combined);
       }
       if (mounted) setLoading(false);
     }
@@ -123,7 +122,7 @@ export default function BusinessesPage() {
   const visibleListings = useMemo(() => {
     const filtered = filter === "all"
       ? listings
-      : listings.filter((l) => normalizeBizListingType(l.listing_type) === filter);
+      : listings.filter((l) => normalizeBizListingTypeForListing(l) === filter);
     return [...filtered].sort((a, b) => {
       const aPinned = isPermanentlyFeaturedListing(a) ? 1 : 0;
       const bPinned = isPermanentlyFeaturedListing(b) ? 1 : 0;

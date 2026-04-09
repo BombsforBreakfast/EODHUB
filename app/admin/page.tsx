@@ -67,6 +67,8 @@ type DirectoryEntry = {
   phone: string | null;
   state: string | null;
   unit_slug: string | null;
+  base_city: string | null;
+  photo_url: string | null;
   is_approved: boolean;
   created_at: string;
 };
@@ -1710,11 +1712,15 @@ const [memWizUrl, setMemWizUrl] = useState("");
                   {!entry.is_approved && (
                     <span style={{ background: "#fef3c7", color: "#92400e", borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 800, flexShrink: 0 }}>PENDING</span>
                   )}
+                  {entry.photo_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- admin preview
+                    <img src={entry.photo_url} alt="" style={{ width: 44, height: 44, borderRadius: 8, objectFit: "cover", flexShrink: 0, border: `1px solid ${t.border}` }} />
+                  ) : null}
                   <span style={{ background: "#374151", color: "#fff", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 800, whiteSpace: "nowrap", flexShrink: 0 }}>{entry.org_type}</span>
                   <div style={{ flex: 1, minWidth: 120 }}>
                     <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{entry.name}</div>
                     <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
-                      {[entry.state, entry.phone, entry.unit_slug ? `slug: ${entry.unit_slug}` : null].filter(Boolean).join(" · ")}
+                      {[entry.state, entry.base_city, entry.phone, entry.unit_slug ? `slug: ${entry.unit_slug}` : null].filter(Boolean).join(" · ")}
                     </div>
                   </div>
                   <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>

@@ -16,7 +16,6 @@ type ProfileRow = {
 const DEFAULT_FILTERS: JobFilterState = {
   location: "",
   keyword: "",
-  minSalary: "",
 };
 
 export default function JobsPage() {
@@ -133,7 +132,7 @@ export default function JobsPage() {
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))",
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))",
               gap: 10,
             }}
           >
@@ -155,15 +154,6 @@ export default function JobsPage() {
               value={filters.keyword}
               onChange={(e) => setFilters((prev) => ({ ...prev, keyword: e.target.value }))}
               placeholder="Keyword/tag (e.g. UXO, TSS-E, Safety)"
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
-            />
-
-            <input
-              type="number"
-              value={filters.minSalary}
-              onChange={(e) => setFilters((prev) => ({ ...prev, minSalary: e.target.value }))}
-              placeholder="Minimum salary"
-              min={0}
               style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
             />
           </div>

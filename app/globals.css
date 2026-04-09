@@ -79,13 +79,14 @@ button:active, a.nav-btn:active {
 /* Mobile-only home logo; hidden on desktop */
 .nav-logo-mobile  { display: none !important; }
 
-/* Desktop: three columns — links | centered brand | search + account */
+/* Desktop: side columns size to content; center column grows so the search bar can use width up to 1120px */
 .nav-root {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
+  align-items: start;
   gap: 12px;
-  margin-bottom: 38px;
+  row-gap: 0;
+  margin-bottom: 22px;
   width: 100%;
   box-sizing: border-box;
   position: relative;
@@ -132,24 +133,28 @@ button:active, a.nav-btn:active {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-self: center;
 }
 
-/*
- * Desktop: pin to home feed column (grid on /: 280px | minmax(0,1fr) | 360px; gap 24px).
- * left + right avoids % width quirks; matches post stream column exactly.
- */
+/* Crab logo + search: centered in the flexible middle grid column; search fills up to 1120px */
+.nav-center-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  justify-self: center;
+  width: min(1120px, 100%);
+  max-width: 1120px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .nav-search-row {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  position: absolute;
-  left: 304px; /* 280px jobs rail + 24px gap */
-  right: calc(360px + 24px); /* 360px businesses rail + gap before it */
-  width: auto;
-  top: calc(100% + 10px);
-  transform: none;
+  position: static;
+  width: 100%;
   box-sizing: border-box;
   z-index: 2;
 }
@@ -229,7 +234,17 @@ button:active, a.nav-btn:active {
   /* Brand column hidden on mobile — replaced by compact logo in .nav-left */
   .nav-brand         { display: none !important; }
 
-  /* Unwrap trailing so search row + account stay in correct flex order */
+  /* Logo column becomes full-width search row under row 1 */
+  .nav-center-stack {
+    order: 3 !important;
+    flex: 0 0 100% !important;
+    width: 100% !important;
+    max-width: none !important;
+    align-items: stretch !important;
+    gap: 0 !important;
+  }
+
+  /* Unwrap trailing so account controls stay in correct flex order */
   .nav-trailing {
     display: contents !important;
   }
@@ -259,17 +274,12 @@ button:active, a.nav-btn:active {
     align-items: center !important;
   }
 
-  /* Row 2: full-width search bar */
   .nav-search-row {
-    order: 3 !important;
-    flex: 0 0 100% !important;
+    flex: 0 0 auto !important;
     min-width: 0 !important;
     max-width: none !important;
     position: static !important;
-    left: auto !important;
-    top: auto !important;
-    transform: none !important;
-    width: auto !important;
+    width: 100% !important;
   }
   .nav-search {
     flex: 1 1 0 !important;
@@ -355,43 +365,58 @@ button:active, a.nav-btn:active {
   flex-direction: row;
   align-items: stretch;
   width: 100%;
-  min-height: 168px;
+  box-sizing: border-box;
+  /* Uniform card height on the directory grid (rows with fewer items match full rows) */
+  height: 256px;
+  min-height: 256px;
 }
 .unit-card-cover-col {
   flex: 0 0 40%;
   min-width: 120px;
   max-width: 48%;
-  min-height: 168px;
+  height: 100%;
+  min-height: 0;
   position: relative;
   background: #1a1a2e;
   align-self: stretch;
 }
 .unit-card-cover-col img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
-  min-height: 168px;
   object-fit: cover;
   display: block;
 }
 .unit-card-body {
   flex: 1 1 0;
   min-width: 0;
+  min-height: 0;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
+  overflow: hidden;
+}
+.unit-card-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
 }
 @media (max-width: 480px) {
   .unit-card-split {
     flex-direction: column;
     min-height: 0;
+    height: auto;
   }
   .unit-card-cover-col {
     flex: 0 0 auto;
     width: 100%;
     max-width: none;
-    min-height: 0;
+    height: auto;
     aspect-ratio: 3 / 4;
     max-height: 240px;
   }
@@ -403,3 +428,115 @@ button:active, a.nav-btn:active {
     object-fit: cover;
   }
 }
+
+/* Groups page: filter + create spans parent column (full width of left column on desktop) */
+.units-filter-combo-bar {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Groups page — one column rhythm from 900px up matches directory (4 tracks); hero is 2+2 */
+.groups-page-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.groups-page-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 640px) and (max-width: 899px) {
+  .groups-page-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 900px) {
+  .groups-page-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.groups-page-grid.groups-page-hero {
+  align-items: stretch;
+}
+
+.groups-page-span-2 {
+  grid-column: span 2;
+  min-width: 0;
+}
+
+.groups-page-span-4 {
+  grid-column: 1 / -1;
+  min-width: 0;
+}
+
+@media (max-width: 899px) {
+  .groups-page-span-2 {
+    grid-column: span 1;
+  }
+}
+
+.groups-page-grid-full-row {
+  grid-column: 1 / -1;
+}
+
+.groups-top-left {
+  min-width: 0;
+}
+
+.groups-top-right {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.groups-my-panel-scroller {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 7.5px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 2px 8px;
+  margin: 0 -2px;
+  align-items: flex-start;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-gutter: stable;
+}
+
+.groups-mini-tile {
+  display: block;
+  flex: 0 0 auto;
+  width: 152px;
+  text-decoration: none;
+  color: inherit;
+  border-radius: 15px;
+  padding: 10px 8px;
+  border: none;
+  box-sizing: border-box;
+  transition: transform 0.12s ease;
+}
+.groups-mini-tile:hover {
+  transform: translateY(-1px);
+}
+.groups-mini-tile:focus-visible {
+  outline: 2px solid rgba(147, 197, 253, 0.8);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .groups-mini-tile {
+    transition: none;
+  }
+  .groups-mini-tile:hover {
+    transform: none;
+  }
+}
+
