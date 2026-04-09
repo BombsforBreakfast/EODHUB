@@ -447,23 +447,12 @@ export default function LoginPage() {
             </div>
           )}
 
-          {siteKey && (
-            <Turnstile
-              ref={turnstileRef}
-              siteKey={siteKey}
-              onSuccess={(token) => setTurnstileToken(token)}
-              onExpire={() => setTurnstileToken(null)}
-              onError={() => { setTurnstileToken(null); setTurnstileError(true); }}
-              options={{ theme: "light", size: "normal" }}
-            />
-          )}
-
           {mode === "login" ? (
             <>
               <button
                 onClick={handleLogin}
                 disabled={submitting || (!!siteKey && !turnstileToken && !turnstileError)}
-                style={{ ...buttonPrimary, marginTop: 2, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
+                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
                 Login
@@ -514,6 +503,17 @@ export default function LoginPage() {
                 Back to Login
               </button>
             </>
+          )}
+
+          {siteKey && (
+            <Turnstile
+              ref={turnstileRef}
+              siteKey={siteKey}
+              onSuccess={(token) => setTurnstileToken(token)}
+              onExpire={() => setTurnstileToken(null)}
+              onError={() => { setTurnstileToken(null); setTurnstileError(true); }}
+              options={{ theme: "light", size: "normal" }}
+            />
           )}
         </form>
       )}
