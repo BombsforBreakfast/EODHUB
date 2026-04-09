@@ -98,10 +98,13 @@ export default function NavBar() {
     setUnreadMessages(unreadMsgCount);
   }
 
+  const NOTIFICATION_SELECT =
+    "id, message, is_read, created_at, actor_name, post_owner_id, type, actor_id, post_id, unit_id, unit_post_id, metadata";
+
   async function loadNotifications(uid: string) {
     const { data, error } = await supabase
       .from("notifications")
-      .select("*")
+      .select(NOTIFICATION_SELECT)
       .eq("user_id", uid)
       .order("created_at", { ascending: false })
       .limit(50);

@@ -198,6 +198,73 @@ export default function UnitPage() {
     }
   }, [activeTab, membership]);
 
+  // Deep-link from notifications: ?unitPostId=…&commentId=… (unit_post_comments id)
+  useEffect(() => {
+    if (loading) return;
+    if (membership?.status !== "approved") return;
+    const params = new URLSearchParams(window.location.search);
+    const unitPostId = params.get("unitPostId");
+    const commentId = params.get("commentId");
+    if (!unitPostId) return;
+    if (!posts.some((p) => p.id === unitPostId)) return;
+
+    setActiveTab("wall");
+    setExpandedComments((prev) => new Set(prev).add(unitPostId));
+
+    if (!comments[unitPostId]) {
+      void (async () => {
+        const token = await getToken();
+        const res = await fetch(`/api/units/${slug}/posts/${unitPostId}/comments`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const json = await res.json();
+          setComments((prev) => ({ ...prev, [unitPostId]: json.comments ?? [] }));
+        }
+      })();
+    }
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const maxAttempts = 32;
+
+    const stripDeepLinkParams = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("unitPostId");
+      url.searchParams.delete("commentId");
+      const qs = url.searchParams.toString();
+      window.history.replaceState({}, "", `${url.pathname}${qs ? `?${qs}` : ""}${url.hash}`);
+    };
+
+    const tryScroll = () => {
+      if (cancelled) return;
+      const commentEl = commentId ? document.getElementById(`unit-comment-${commentId}`) : null;
+      const postEl = document.getElementById(`unit-post-${unitPostId}`);
+      const target = commentEl ?? postEl;
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "center" });
+        target.classList.add("feed-notification-highlight");
+        window.setTimeout(() => target.classList.remove("feed-notification-highlight"), 4000);
+        stripDeepLinkParams();
+        return;
+      }
+      attempt += 1;
+      if (attempt < maxAttempts) {
+        timeoutId = window.setTimeout(tryScroll, 80);
+      } else {
+        stripDeepLinkParams();
+      }
+    };
+
+    timeoutId = window.setTimeout(tryScroll, 120);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+    };
+  }, [loading, membership?.status, posts, slug, comments]);
+
   // ── Join ─────────────────────────────────────────────────────────────────
 
   async function requestJoin() {
@@ -904,7 +971,7 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
 }) {
   const [submittingComment, setSubmittingComment] = useState(false);
   return (
-    <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+    <div id={`unit-post-${post.id}`} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
         <Avatar photo={post.author_photo} name={post.author_name} size={38} />
         <div>
@@ -921,21 +988,52 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
         <img src={post.photo_url} alt="" style={{ width: "100%", borderRadius: 10, objectFit: "cover", maxHeight: 400, marginBottom: 0 }} />
       )}
 
-      {/* Like / Comment bar */}
-      <div style={{ display: "flex", gap: 16, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${t.borderLight}` }}>
+      {/* Like / Comment — match home feed (text actions + counts) */}
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          alignItems: "center",
+          marginTop: 14,
+          flexWrap: "wrap",
+        }}
+      >
         <button
+          type="button"
           onClick={onToggleLike}
-          style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: post.user_liked ? "#ef4444" : t.textMuted, padding: 0 }}
+          style={{
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            fontWeight: 700,
+            color: post.user_liked ? t.text : t.textMuted,
+            fontSize: 14,
+          }}
         >
-          <span style={{ fontSize: 15 }}>{post.user_liked ? "❤️" : "🤍"}</span>
-          {post.like_count > 0 && post.like_count}
+          {post.user_liked ? "Unlike" : "Like"}
         </button>
         <button
+          type="button"
           onClick={onToggleComments}
-          style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: 13, fontWeight: 700, color: t.textMuted, padding: 0 }}
+          style={{
+            background: "transparent",
+            border: "none",
+            padding: 0,
+            cursor: "pointer",
+            fontWeight: 700,
+            color: t.textMuted,
+            fontSize: 14,
+          }}
         >
-          💬 {post.comment_count > 0 ? post.comment_count : "Comment"}
+          {expanded ? "Hide Comments" : "Comment"}
         </button>
+        <div style={{ fontSize: 14, color: t.textMuted }}>
+          {post.like_count} {post.like_count === 1 ? "like" : "likes"}
+        </div>
+        <div style={{ fontSize: 14, color: t.textMuted }}>
+          {post.comment_count} {post.comment_count === 1 ? "comment" : "comments"}
+        </div>
       </div>
 
       {/* Comments */}
@@ -945,7 +1043,7 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
             <div style={{ color: t.textFaint, fontSize: 13, marginBottom: 10 }}>No comments yet.</div>
           )}
           {(comments ?? []).map((c) => (
-            <div key={c.id} style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+            <div key={c.id} id={`unit-comment-${c.id}`} style={{ display: "flex", gap: 10, marginBottom: 10 }}>
               <Avatar photo={c.author_photo} name={c.author_name} size={28} />
               <div style={{ background: t.badgeBg, borderRadius: 10, padding: "7px 12px", flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 2 }}>{c.author_name}</div>

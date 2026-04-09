@@ -198,7 +198,7 @@ export async function POST(
       post_owner_id: post.user_id,
       unit_id: post.unit_id,
       unit_post_id: postId,
-      metadata: { unit_slug: unitSlug },
+      metadata: { unit_slug: unitSlug, comment_id: comment.id },
     });
   }
 

@@ -674,11 +674,12 @@ export default function PublicProfilePage() {
     postOwnerIdForNav: string,
     extra?: { type?: string; post_id?: string | null },
   ) {
-    if (!currentUserId || recipientId === currentUserId || !currentUserName) return;
+    if (!currentUserId || recipientId === currentUserId) return;
+    const actorName = currentUserName?.trim() || "Someone";
     void supabase.from("notifications").insert([{
       user_id: recipientId,
       actor_id: currentUserId,
-      actor_name: currentUserName,
+      actor_name: actorName,
       type: extra?.type ?? "wall_activity",
       message,
       post_owner_id: postOwnerIdForNav,
@@ -759,8 +760,25 @@ export default function PublicProfilePage() {
         await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", currentUserId);
       } else {
         await supabase.from("post_likes").insert([{ post_id: postId, user_id: currentUserId }]);
-        if (profile && currentUserId !== profile.user_id) {
-          notify(profile.user_id, `${currentUserName} liked your post`, profile.user_id, { type: "wall_like", post_id: postId });
+        let post = posts.find((p) => p.id === postId);
+        if (!post) {
+          const { data: row } = await supabase
+            .from("posts")
+            .select("user_id, wall_user_id")
+            .eq("id", postId)
+            .maybeSingle();
+          if (row) {
+            post = {
+              id: postId,
+              user_id: row.user_id,
+              wall_user_id: row.wall_user_id ?? null,
+            } as Post;
+          }
+        }
+        if (post && profile && currentUserId !== post.user_id) {
+          const navOwner = post.wall_user_id ?? post.user_id;
+          const actorName = currentUserName?.trim() || "Someone";
+          notify(post.user_id, `${actorName} liked your post`, navOwner, { type: "wall_like", post_id: postId });
         }
       }
       if (userId) await loadPosts(userId);

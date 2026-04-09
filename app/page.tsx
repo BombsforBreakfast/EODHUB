@@ -1071,7 +1071,7 @@ export default function HomePage() {
     await supabase.from("profile_connections").insert([
       { requester_user_id: userId, target_user_id: targetUserId, status: "pending", worked_with: false },
     ]);
-    notify(targetUserId, `${currentUserName} says they know you`, targetUserId);
+    notify(targetUserId, `${currentUserName?.trim() || "Someone"} says they know you`, targetUserId);
     const updater = (prev: DiscoverProfile[]): DiscoverProfile[] =>
       prev.filter((p) => p.user_id !== targetUserId);
     setDiscoverProfiles(updater);
@@ -1335,6 +1335,46 @@ export default function HomePage() {
     }
 
     let rawPosts = (rankedPostsData ?? []) as RankedPostRow[];
+
+    // Notification deep links use /?postId=…; that post may not appear in ranked_posts anymore.
+    if (typeof window !== "undefined") {
+      const deepId = new URLSearchParams(window.location.search).get("postId");
+      if (deepId && !rawPosts.some((p) => p.id === deepId)) {
+        let deepQuery = await supabase
+          .from("posts")
+          .select("id, user_id, content, created_at, wall_user_id, hidden_for_review")
+          .eq("id", deepId)
+          .maybeSingle();
+        if (deepQuery.error && isMissingColumnError(deepQuery.error, "hidden_for_review")) {
+          deepQuery = await supabase
+            .from("posts")
+            .select("id, user_id, content, created_at, wall_user_id")
+            .eq("id", deepId)
+            .maybeSingle();
+        }
+        const deepRow = deepQuery.data as {
+          id: string;
+          user_id: string;
+          content: string;
+          created_at: string;
+          wall_user_id?: string | null;
+          hidden_for_review?: boolean | null;
+        } | null;
+        if (!deepQuery.error && deepRow && !deepRow.wall_user_id && !deepRow.hidden_for_review) {
+          rawPosts = [
+            {
+              id: deepRow.id,
+              user_id: deepRow.user_id,
+              content: deepRow.content,
+              created_at: deepRow.created_at,
+              score: 0,
+              ranking_score: 0,
+            },
+            ...rawPosts,
+          ];
+        }
+      }
+    }
 
     if (rawPosts.length > 0) {
       const rankedIds = rawPosts.map((p) => p.id);
@@ -2058,11 +2098,12 @@ export default function HomePage() {
     postOwnerId: string,
     extra?: { type?: string; post_id?: string | null },
   ) {
-    if (!userId || recipientId === userId || !currentUserName) return;
+    if (!userId || recipientId === userId) return;
+    const actorName = currentUserName?.trim() || "Someone";
     void supabase.from("notifications").insert([{
       user_id: recipientId,
       actor_id: userId,
-      actor_name: currentUserName,
+      actor_name: actorName,
       type: extra?.type ?? "feed_activity",
       message,
       post_owner_id: postOwnerId,
@@ -2104,9 +2145,20 @@ export default function HomePage() {
           return;
         }
 
-        const post = posts.find((p) => p.id === postId);
+        let post = posts.find((p) => p.id === postId);
+        if (!post) {
+          const { data: row } = await supabase
+            .from("posts")
+            .select("user_id")
+            .eq("id", postId)
+            .maybeSingle();
+          if (row?.user_id) {
+            post = { user_id: row.user_id } as FeedPost;
+          }
+        }
+        const actorName = currentUserName?.trim() || "Someone";
         if (post && post.user_id !== userId) {
-          notify(post.user_id, `${currentUserName} liked your post`, post.user_id, { type: "feed_like", post_id: postId });
+          notify(post.user_id, `${actorName} liked your post`, post.user_id, { type: "feed_like", post_id: postId });
         }
       }
 
@@ -2154,7 +2206,8 @@ export default function HomePage() {
         if (comment && comment.user_id !== userId) {
           const ownerPost = posts.find((p) => p.id === comment.post_id);
           if (ownerPost) {
-            notify(comment.user_id, `${currentUserName} liked your comment`, ownerPost.user_id, { type: "feed_comment_like", post_id: comment.post_id });
+            const actorName = currentUserName?.trim() || "Someone";
+            notify(comment.user_id, `${actorName} liked your comment`, ownerPost.user_id, { type: "feed_comment_like", post_id: comment.post_id });
           }
         }
       }
@@ -2288,14 +2341,15 @@ export default function HomePage() {
 
       // Notifications
       const post = posts.find((p) => p.id === postId);
-      if (post && currentUserName && userId) {
+      if (post && userId) {
+        const actorName = currentUserName?.trim() || "Someone";
         if (post.user_id !== userId) {
-          notify(post.user_id, `${currentUserName} commented on your post`, post.user_id, { type: "feed_comment", post_id: postId });
+          notify(post.user_id, `${actorName} commented on your post`, post.user_id, { type: "feed_comment", post_id: postId });
         }
         supabase.from("post_comments").select("user_id").eq("post_id", postId).neq("user_id", userId).then(({ data: td }) => {
           const participants = [...new Set(((td ?? []) as { user_id: string }[]).map((c) => c.user_id))].filter((id) => id !== post.user_id);
           participants.forEach((pid) =>
-            notify(pid, `${currentUserName} also commented on a post you're following`, post.user_id, { type: "feed_comment_thread", post_id: postId }),
+            notify(pid, `${actorName} also commented on a post you're following`, post.user_id, { type: "feed_comment_thread", post_id: postId }),
           );
         });
       }
@@ -2629,7 +2683,7 @@ export default function HomePage() {
   }, [discoverProfiles]);
 
   useEffect(() => {
-    if (!postsLoaded || posts.length === 0) return;
+    if (!postsLoaded) return;
     const params = new URLSearchParams(window.location.search);
     const postId = params.get("postId");
     const commentId = params.get("commentId");
@@ -2637,23 +2691,45 @@ export default function HomePage() {
 
     setExpandedComments((prev) => ({ ...prev, [postId]: true }));
 
-    const t = window.setTimeout(() => {
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let attempt = 0;
+    const maxAttempts = 28;
+
+    const stripDeepLinkParams = () => {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("postId");
+      url.searchParams.delete("commentId");
+      const qs = url.searchParams.toString();
+      window.history.replaceState({}, "", `${url.pathname}${qs ? `?${qs}` : ""}${url.hash}`);
+    };
+
+    const tryScroll = () => {
+      if (cancelled) return;
       const commentEl = commentId ? document.getElementById(`feed-comment-${commentId}`) : null;
       const postEl = document.getElementById(`feed-post-${postId}`);
       const target = commentEl ?? postEl;
       if (target) {
         target.scrollIntoView({ behavior: "smooth", block: "center" });
         target.classList.add("feed-notification-highlight");
-        window.setTimeout(() => target.classList.remove("feed-notification-highlight"), 2800);
+        window.setTimeout(() => target.classList.remove("feed-notification-highlight"), 4000);
+        stripDeepLinkParams();
+        return;
       }
-      const url = new URL(window.location.href);
-      url.searchParams.delete("postId");
-      url.searchParams.delete("commentId");
-      const qs = url.searchParams.toString();
-      window.history.replaceState({}, "", `${url.pathname}${qs ? `?${qs}` : ""}${url.hash}`);
-    }, 120);
+      attempt += 1;
+      if (attempt < maxAttempts) {
+        timeoutId = window.setTimeout(tryScroll, 80);
+      } else {
+        stripDeepLinkParams();
+      }
+    };
 
-    return () => window.clearTimeout(t);
+    timeoutId = window.setTimeout(tryScroll, 120);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId != null) window.clearTimeout(timeoutId);
+    };
   }, [postsLoaded, posts]);
 
   const sortedJobs = useMemo(() => {
