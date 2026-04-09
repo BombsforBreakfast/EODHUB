@@ -117,6 +117,46 @@ export default function UnitPage() {
   // Join
   const [joining, setJoining] = useState(false);
 
+  // Admin modal (join requests inline)
+  const [showAdminModal, setShowAdminModal] = useState(false);
+  type AdminPendingMember = { user_id: string; display_name: string; photo_url: string | null; service: string | null; job_title: string | null; requested_at: string };
+  const [adminPending, setAdminPending] = useState<AdminPendingMember[]>([]);
+  const [adminPendingLoaded, setAdminPendingLoaded] = useState(false);
+  const [adminWorking, setAdminWorking] = useState<string | null>(null);
+
+  async function openAdminModal() {
+    setShowAdminModal(true);
+    if (adminPendingLoaded) return;
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/units/${slug}/admin`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setAdminPending(json.pending ?? []);
+        setAdminPendingLoaded(true);
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  async function handleAdminAction(action: "approve_member" | "deny_member", userId: string) {
+    setAdminWorking(userId);
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/units/${slug}/admin`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action, user_id: userId }),
+      });
+      if (res.ok) {
+        setAdminPending((prev) => prev.filter((m) => m.user_id !== userId));
+      }
+    } finally {
+      setAdminWorking(null);
+    }
+  }
+
   // Invite modal
   const [showInvite, setShowInvite] = useState(false);
   const [inviteUsers, setInviteUsers] = useState<InviteUser[]>([]);
@@ -558,9 +598,17 @@ export default function UnitPage() {
                   </div>
                 )}
                 {membership?.status === "approved" && isGod && (
-                  <button onClick={openInviteModal} style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
-                    Invite Members
-                  </button>
+                  <>
+                    <button
+                      onClick={openAdminModal}
+                      style={{ background: "transparent", color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      ⚙ Admin
+                    </button>
+                    <button onClick={openInviteModal} style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
+                      Invite Members
+                    </button>
+                  </>
                 )}
                 {membership?.status === "approved" && !isGod && (
                   <button onClick={openInviteModal} style={{ background: t.badgeBg, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
@@ -758,6 +806,71 @@ export default function UnitPage() {
           </>
         )}
       </div>
+
+      {/* Admin Modal — join requests inline */}
+      {showAdminModal && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAdminModal(false); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 16 }}
+        >
+          <div style={{ background: t.surface, borderRadius: 20, padding: 28, width: "100%", maxWidth: 480, border: `1px solid ${t.border}`, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexShrink: 0 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: t.text }}>{unit.name}</div>
+                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Join Requests</div>
+              </div>
+              <button onClick={() => setShowAdminModal(false)} style={{ background: "transparent", border: "none", color: t.textMuted, fontSize: 22, cursor: "pointer", lineHeight: 1, padding: 4 }}>×</button>
+            </div>
+
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {!adminPendingLoaded && (
+                <div style={{ color: t.textMuted, fontSize: 14, textAlign: "center", padding: "32px 0" }}>Loading…</div>
+              )}
+              {adminPendingLoaded && adminPending.length === 0 && (
+                <div style={{ color: t.textMuted, fontSize: 14, textAlign: "center", padding: "32px 0" }}>No pending requests.</div>
+              )}
+              {adminPendingLoaded && adminPending.map((p) => (
+                <div key={p.user_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: `1px solid ${t.borderLight}` }}>
+                  <div style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0, overflow: "hidden", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: t.textMuted }}>
+                    {p.photo_url ? <img src={p.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : p.display_name.charAt(0).toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>{p.display_name}</div>
+                    <div style={{ fontSize: 12, color: t.textMuted }}>{[p.service, p.job_title].filter(Boolean).join(" · ") || "EOD Professional"}</div>
+                    <div style={{ fontSize: 11, color: t.textFaint, marginTop: 2 }}>Requested {new Date(p.requested_at).toLocaleDateString()}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <button
+                      disabled={adminWorking === p.user_id}
+                      onClick={() => handleAdminAction("approve_member", p.user_id)}
+                      style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      {adminWorking === p.user_id && <span className="btn-spinner" />}
+                      Approve
+                    </button>
+                    <button
+                      disabled={adminWorking === p.user_id}
+                      onClick={() => handleAdminAction("deny_member", p.user_id)}
+                      style={{ background: "transparent", color: "#dc2626", border: "1px solid #dc2626", borderRadius: 8, padding: "6px 14px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${t.borderLight}`, flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <a href={`/units/${slug}/admin`} style={{ fontSize: 12, color: t.textMuted, textDecoration: "none", fontWeight: 700 }}>
+                Full admin page →
+              </a>
+              <button onClick={() => setShowAdminModal(false)} style={{ background: t.badgeBg, color: t.text, border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Invite Modal */}
       {showInvite && (

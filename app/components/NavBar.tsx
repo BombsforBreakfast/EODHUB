@@ -57,6 +57,7 @@ export default function NavBar() {
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPendingTotal, setAdminPendingTotal] = useState(0);
+  const [groupPendingTotal, setGroupPendingTotal] = useState(0);
   const [canViewFullJobs, setCanViewFullJobs] = useState(true);
 
   /** Mobile: reserve vertical space so fixed nav does not cover page content (height tracks hub/search). */
@@ -196,10 +197,25 @@ export default function NavBar() {
         await loadNavProfile(uid);
         await loadNotifications(uid);
         await loadUnreadMessages(uid);
+        // Load group pending count for any logged-in user (not just site admins)
+        const { data: { session: s } } = await supabase.auth.getSession();
+        if (s?.access_token) {
+          fetch("/api/units/pending-summary", {
+            headers: { Authorization: `Bearer ${s.access_token}` },
+          })
+            .then((r) => r.ok ? r.json() : { groups: [] })
+            .then((j: { groups: { pending_count: number }[] }) => {
+              if (!mounted) return;
+              const total = (j.groups ?? []).reduce((sum: number, g: { pending_count: number }) => sum + g.pending_count, 0);
+              setGroupPendingTotal(total);
+            })
+            .catch(() => { /* non-fatal */ });
+        }
       } else {
         setAvatarPhotoUrl(null);
         setIsAdmin(false);
         setAdminPendingTotal(0);
+        setGroupPendingTotal(0);
         setCanViewFullJobs(true);
       }
     }
@@ -556,7 +572,10 @@ export default function NavBar() {
 
         <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
         {canViewFullJobs && <Link href="/jobs" className="nav-btn nav-jobs" style={navButton}>Jobs</Link>}
-        <Link href="/units" className="nav-btn nav-units" style={navButton}>Groups</Link>
+        <Link href="/units" className="nav-btn nav-units" style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}>
+          Groups
+          {groupPendingTotal > 0 && badge(groupPendingTotal)}
+        </Link>
         {canAccessRabbithole && <Link href="/rabbithole" className="nav-btn nav-rabbithole" style={navButton}>Rabbithole</Link>}
 
         {/* EOD Hub — mobile only */}
@@ -842,7 +861,7 @@ export default function NavBar() {
                     { label: "Jobs", href: "/?tab=jobs", emoji: "💼", badge: 0, onNav: null },
                     { label: "Businesses", href: "/?tab=businesses", emoji: "🏢", badge: 0, onNav: null },
                     { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
-                    { label: "Groups", href: "/units", emoji: "🪖", badge: 0, onNav: null },
+                    { label: "Groups", href: "/units", emoji: "🪖", badge: groupPendingTotal, onNav: null },
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
                     ...(canAccessRabbithole
                       ? [{ label: "Rabbithole", href: "/rabbithole", emoji: "🕳️", badge: 0, onNav: null as (() => Promise<void>) | null }]

@@ -81,11 +81,76 @@ export default function UnitsPage() {
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
+  // ── Admin inbox (pending join requests across all groups I own/admin) ──────
+  type PendingGroup = { id: string; name: string; slug: string; cover_photo_url: string | null; pending_count: number };
+  const [pendingGroups, setPendingGroups] = useState<PendingGroup[]>([]);
+  // Which group's requests are open in the inline modal (slug)
+  const [adminModalSlug, setAdminModalSlug] = useState<string | null>(null);
+  type PendingMember = { user_id: string; display_name: string; photo_url: string | null; service: string | null; job_title: string | null; requested_at: string };
+  const [adminModalPending, setAdminModalPending] = useState<PendingMember[]>([]);
+  const [adminModalLoading, setAdminModalLoading] = useState(false);
+  const [adminModalWorking, setAdminModalWorking] = useState<string | null>(null);
+
+  async function loadPendingSummary(token: string) {
+    try {
+      const res = await fetch("/api/units/pending-summary", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setPendingGroups(json.groups ?? []);
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  async function openAdminModal(slug: string) {
+    setAdminModalSlug(slug);
+    setAdminModalPending([]);
+    setAdminModalLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/units/${slug}/admin`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (res.ok) {
+        const json = await res.json();
+        setAdminModalPending(json.pending ?? []);
+      }
+    } finally {
+      setAdminModalLoading(false);
+    }
+  }
+
+  async function adminModalAction(slug: string, action: "approve_member" | "deny_member", userId: string) {
+    setAdminModalWorking(userId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/units/${slug}/admin`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
+        body: JSON.stringify({ action, user_id: userId }),
+      });
+      if (!res.ok) return;
+      // Remove from local pending list
+      setAdminModalPending((prev) => prev.filter((m) => m.user_id !== userId));
+      // Decrement badge on the group card
+      setPendingGroups((prev) =>
+        prev.map((g) => g.slug === slug ? { ...g, pending_count: g.pending_count - 1 } : g)
+            .filter((g) => g.pending_count > 0)
+      );
+    } finally {
+      setAdminModalWorking(null);
+    }
+  }
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       const uid = session?.user?.id ?? null;
       setCurrentUserId(uid);
-      if (uid) loadMyUnits(uid);
+      if (uid) {
+        loadMyUnits(uid);
+        if (session?.access_token) loadPendingSummary(session.access_token);
+      }
     });
     loadUnits();
   }, []);
@@ -483,6 +548,40 @@ export default function UnitsPage() {
           )}
         </div>
 
+        {/* ── Admin Inbox: pending join requests across all groups I own/admin ── */}
+        {pendingGroups.length > 0 && (
+          <div style={{ margin: "16px 0 8px", border: `1px solid ${isDark ? "rgba(251,191,36,0.25)" : "rgba(180,130,0,0.2)"}`, borderRadius: 14, background: isDark ? "rgba(251,191,36,0.05)" : "rgba(251,191,36,0.06)", padding: "16px 20px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+              <span style={{ fontSize: 16 }}>🪖</span>
+              <span style={{ fontWeight: 900, fontSize: 14, color: t.text }}>Group Requests</span>
+              <span style={{ background: "#f97316", color: "#fff", borderRadius: 20, padding: "1px 8px", fontSize: 11, fontWeight: 800 }}>
+                {pendingGroups.reduce((s, g) => s + g.pending_count, 0)} pending
+              </span>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {pendingGroups.map((g) => (
+                <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 8, flexShrink: 0, overflow: "hidden", background: isDark ? "#1a1a2e" : "#1e3a5f", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {g.cover_photo_url
+                      ? <img src={g.cover_photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      : <span style={{ color: "#fff", fontWeight: 800, fontSize: 14 }}>{g.name.charAt(0).toUpperCase()}</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 13, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.name}</div>
+                    <div style={{ fontSize: 11, color: t.textMuted }}>{g.pending_count} {g.pending_count === 1 ? "request" : "requests"} waiting</div>
+                  </div>
+                  <button
+                    onClick={() => openAdminModal(g.slug)}
+                    style={{ flexShrink: 0, background: "#111", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+                  >
+                    Review
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Loading */}
         {loading && (
           <div style={{ color: t.textMuted, textAlign: "center", padding: 40, fontSize: 15 }}>Loading...</div>
@@ -730,6 +829,72 @@ export default function UnitsPage() {
                   Create Unit
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Admin Inbox Modal: pending requests for a specific group ── */}
+      {adminModalSlug && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setAdminModalSlug(null); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 16 }}
+        >
+          <div style={{ background: t.surface, borderRadius: 20, padding: 28, width: "100%", maxWidth: 480, border: `1px solid ${t.border}`, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexShrink: 0 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 900, color: t.text }}>
+                  {pendingGroups.find((g) => g.slug === adminModalSlug)?.name ?? "Group"}
+                </div>
+                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Join Requests</div>
+              </div>
+              <button onClick={() => setAdminModalSlug(null)} style={{ background: "transparent", border: "none", color: t.textMuted, fontSize: 22, cursor: "pointer", lineHeight: 1, padding: 4 }}>×</button>
+            </div>
+
+            <div style={{ overflowY: "auto", flex: 1 }}>
+              {adminModalLoading && (
+                <div style={{ color: t.textMuted, fontSize: 14, textAlign: "center", padding: "32px 0" }}>Loading…</div>
+              )}
+              {!adminModalLoading && adminModalPending.length === 0 && (
+                <div style={{ color: t.textMuted, fontSize: 14, textAlign: "center", padding: "32px 0" }}>No pending requests.</div>
+              )}
+              {!adminModalLoading && adminModalPending.map((p) => (
+                <div key={p.user_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: `1px solid ${t.borderLight}` }}>
+                  <div style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0, overflow: "hidden", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: t.textMuted }}>
+                    {p.photo_url ? <img src={p.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : p.display_name.charAt(0).toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>{p.display_name}</div>
+                    <div style={{ fontSize: 12, color: t.textMuted }}>{[p.service, p.job_title].filter(Boolean).join(" · ") || "EOD Professional"}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                    <button
+                      disabled={adminModalWorking === p.user_id}
+                      onClick={() => adminModalAction(adminModalSlug, "approve_member", p.user_id)}
+                      style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      {adminModalWorking === p.user_id && <span className="btn-spinner" />}
+                      Approve
+                    </button>
+                    <button
+                      disabled={adminModalWorking === p.user_id}
+                      onClick={() => adminModalAction(adminModalSlug, "deny_member", p.user_id)}
+                      style={{ background: "transparent", color: "#dc2626", border: "1px solid #dc2626", borderRadius: 8, padding: "6px 14px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
+                    >
+                      Deny
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${t.borderLight}`, flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <a href={`/units/${adminModalSlug}/admin`} style={{ fontSize: 12, color: t.textMuted, textDecoration: "none", fontWeight: 700 }}>
+                Full admin page →
+              </a>
+              <button onClick={() => setAdminModalSlug(null)} style={{ background: t.badgeBg, color: t.text, border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                Done
+              </button>
             </div>
           </div>
         </div>
