@@ -286,11 +286,10 @@ export default function LoginPage() {
 
       <div
         style={{
-          marginBottom: 14,
-          borderTop: `1px solid ${t.border}`,
-          borderBottom: `1px solid ${t.border}`,
-          padding: "10px 6px",
+          marginBottom: 10,
+          padding: "6px 6px 4px",
           color: t.textMuted,
+          textAlign: "center",
         }}
       >
         <div style={{ fontSize: 18, lineHeight: 1.4, fontWeight: 700, color: t.text }}>
@@ -310,7 +309,7 @@ export default function LoginPage() {
         aria-live="polite"
         aria-atomic="true"
         style={{
-          marginBottom: 12,
+          marginBottom: 10,
           fontSize: 12,
           lineHeight: 1.35,
           color: t.textMuted,
@@ -396,7 +395,7 @@ export default function LoginPage() {
       {mode !== "forgot" && (
         <form
           onSubmit={(e) => { e.preventDefault(); mode === "login" ? handleLogin() : handleSignup(); }}
-          style={{ display: "grid", gap: 12, marginTop: mode === "login" ? 0 : 8 }}
+          style={{ display: "grid", gap: mode === "login" ? 9 : 12, marginTop: mode === "login" ? 0 : 8 }}
         >
           <input
             type="email"
@@ -464,7 +463,7 @@ export default function LoginPage() {
               <button
                 onClick={handleLogin}
                 disabled={submitting || (!!siteKey && !turnstileToken && !turnstileError)}
-                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
+                style={{ ...buttonPrimary, marginTop: 2, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
                 Login
