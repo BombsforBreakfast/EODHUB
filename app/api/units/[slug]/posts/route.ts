@@ -32,6 +32,7 @@ interface UnitPost {
   post_type: string;
   content: string | null;
   photo_url: string | null;
+  gif_url: string | null;
   created_at: string;
   meta: Record<string, unknown> | null;
 }
@@ -236,14 +237,15 @@ export async function POST(
   }
 
   const body = await req.json();
-  const { content, photo_url } = body as {
+  const { content, photo_url, gif_url } = body as {
     content?: string;
     photo_url?: string;
+    gif_url?: string | null;
   };
 
-  if (!content?.trim() && !photo_url?.trim()) {
+  if (!content?.trim() && !photo_url?.trim() && !gif_url) {
     return NextResponse.json(
-      { error: "Content or photo_url is required" },
+      { error: "Content, photo_url, or gif_url is required" },
       { status: 400 }
     );
   }
@@ -255,6 +257,7 @@ export async function POST(
       user_id: user.id,
       content: content?.trim() ?? null,
       photo_url: photo_url?.trim() ?? null,
+      gif_url: gif_url ?? null,
       post_type: "post",
     })
     .select()

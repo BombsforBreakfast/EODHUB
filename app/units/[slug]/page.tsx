@@ -31,6 +31,7 @@ type UnitPost = {
   user_id: string;
   content: string | null;
   photo_url: string | null;
+  gif_url: string | null;
   post_type: "post" | "join_request";
   meta: { requester_id: string; requester_name: string; avatar_url: string | null } | null;
   created_at: string;
@@ -110,6 +111,7 @@ export default function UnitPage() {
   const [postPhotoPreview, setPostPhotoPreview] = useState<string | null>(null);
   const [postPhotoFile, setPostPhotoFile] = useState<File | null>(null);
   const postPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const [postGif, setPostGif] = useState<string | null>(null);
   const [submittingPost, setSubmittingPost] = useState(false);
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
@@ -367,7 +369,7 @@ export default function UnitPage() {
   }
 
   async function submitPost() {
-    if (!postInput.trim() && !postPhotoFile && !postPhotoUrl.trim()) return;
+    if (!postInput.trim() && !postPhotoFile && !postPhotoUrl.trim() && !postGif) return;
     setSubmittingPost(true);
     try {
       let finalPhotoUrl = postPhotoUrl.trim() || null;
@@ -378,7 +380,7 @@ export default function UnitPage() {
       const res = await fetch(`/api/units/${slug}/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ content: postInput.trim() || null, photo_url: finalPhotoUrl }),
+        body: JSON.stringify({ content: postInput.trim() || null, photo_url: finalPhotoUrl, gif_url: postGif }),
       });
       if (res.ok) {
         setPostInput("");
@@ -386,6 +388,7 @@ export default function UnitPage() {
         setPostPhotoPreview(null);
         if (postPhotoInputRef.current) postPhotoInputRef.current.value = "";
         setPostPhotoUrl("");
+        setPostGif(null);
         await loadPosts();
       }
     } finally {
@@ -686,42 +689,66 @@ export default function UnitPage() {
                     onChange={(e) => setPostInput(e.target.value)}
                     placeholder="Post to the unit wall..."
                     rows={3}
-                    style={{ ...inputStyle, resize: "none", marginBottom: 10 }}
+                    style={{ width: "100%", border: "none", outline: "none", resize: "vertical", fontSize: 15, boxSizing: "border-box", background: t.surface, color: t.text, fontFamily: "inherit" }}
                   />
+
+                  {postGif && (
+                    <div style={{ marginTop: 8, position: "relative", display: "inline-block" }}>
+                      <img src={postGif} alt="GIF" style={{ maxWidth: 200, borderRadius: 10, display: "block" }} />
+                      <button type="button" onClick={() => setPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "#fff", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                    </div>
+                  )}
+
                   {postPhotoPreview && (
-                    <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
-                      <img src={postPhotoPreview} alt="preview" style={{ maxHeight: 120, maxWidth: "100%", borderRadius: 8, objectFit: "cover", display: "block" }} />
+                    <div style={{ marginTop: 8, position: "relative", display: "inline-block", width: 200, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}` }}>
+                      <img src={postPhotoPreview} alt="preview" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
                       <button
                         type="button"
                         onClick={() => { setPostPhotoPreview(null); setPostPhotoFile(null); if (postPhotoInputRef.current) postPhotoInputRef.current.value = ""; }}
-                        style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
+                        style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.75)", color: "#fff", border: "none", borderRadius: "50%", width: 26, height: 26, fontWeight: 800, cursor: "pointer", fontSize: 14, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}
                       >×</button>
                     </div>
                   )}
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                    <input
-                      ref={postPhotoInputRef}
-                      type="file"
-                      accept="image/*"
-                      style={{ display: "none" }}
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        setPostPhotoFile(file);
-                        setPostPhotoPreview(URL.createObjectURL(file));
-                      }}
-                    />
+
+                  <input
+                    ref={postPhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setPostPhotoFile(file);
+                      setPostPhotoPreview(URL.createObjectURL(file));
+                      setPostGif(null);
+                    }}
+                  />
+
+                  <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginTop: 12 }}>
                     <button
                       type="button"
                       onClick={() => postPhotoInputRef.current?.click()}
-                      style={{ ...inputStyle, flex: 1, textAlign: "left", cursor: "pointer", color: postPhotoFile ? t.text : t.textMuted, background: t.input }}
+                      style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                     >
-                      {postPhotoFile ? postPhotoFile.name : "📷 Add Photo (optional)"}
+                      {postPhotoFile ? "Change Photo" : "Add Photo"}
                     </button>
+
+                    <EmojiPickerButton
+                      value={postInput}
+                      onChange={setPostInput}
+                      inputRef={{ current: null }}
+                      theme={isDark ? "dark" : "light"}
+                    />
+
+                    <GifPickerButton
+                      onSelect={(url) => { setPostGif(url); setPostPhotoFile(null); setPostPhotoPreview(null); }}
+                      theme={isDark ? "dark" : "light"}
+                    />
+
                     <button
                       onClick={submitPost}
-                      disabled={submittingPost || (!postInput.trim() && !postPhotoFile)}
-                      style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0, display: "flex", alignItems: "center", gap: 6 }}
+                      disabled={submittingPost || (!postInput.trim() && !postPhotoFile && !postGif)}
+                      style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: submittingPost || (!postInput.trim() && !postPhotoFile && !postGif) ? "not-allowed" : "pointer", opacity: submittingPost || (!postInput.trim() && !postPhotoFile && !postGif) ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}
                     >
                       {submittingPost && <span className="btn-spinner" />}
                       Post
@@ -1140,8 +1167,15 @@ function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChang
 
       {/* Photo — square aspect ratio matching feed */}
       {post.photo_url && (
-        <div style={{ marginTop: post.content ? 0 : 0, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "1 / 1", maxWidth: 420 }}>
+        <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "1 / 1", maxWidth: 420 }}>
           <img src={post.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        </div>
+      )}
+
+      {/* GIF */}
+      {post.gif_url && (
+        <div style={{ marginTop: 10 }}>
+          <img src={post.gif_url} alt="GIF" style={{ maxWidth: 320, borderRadius: 12, display: "block" }} />
         </div>
       )}
 
