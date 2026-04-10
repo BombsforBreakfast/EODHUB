@@ -8,7 +8,6 @@ export async function POST(req: NextRequest) {
   }
   const token = authHeader.slice(7);
 
-  // Verify the user via their JWT
   const userClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -17,13 +16,51 @@ export async function POST(req: NextRequest) {
   const { data: { user } } = await userClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  // Use service role to bypass RLS for the update
   const adminClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Get all accepted conversation IDs for this user
+  let conversationId: string | undefined;
+  try {
+    const text = await req.text();
+    if (text.trim()) {
+      const j = JSON.parse(text) as { conversation_id?: string };
+      if (typeof j.conversation_id === "string" && j.conversation_id.length > 0) {
+        conversationId = j.conversation_id;
+      }
+    }
+  } catch {
+    /* ignore invalid body */
+  }
+
+  if (conversationId) {
+    const { data: conv } = await adminClient
+      .from("conversations")
+      .select("id")
+      .eq("id", conversationId)
+      .or(`participant_1.eq.${user.id},participant_2.eq.${user.id}`)
+      .maybeSingle();
+
+    if (!conv) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    const { error } = await adminClient
+      .from("messages")
+      .update({ is_read: true })
+      .eq("conversation_id", conversationId)
+      .neq("sender_id", user.id)
+      .eq("is_read", false);
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true, scope: "conversation" });
+  }
+
+  // Legacy: mark all unread in all accepted conversations (avoid when possible)
   const { data: convs } = await adminClient
     .from("conversations")
     .select("id")
@@ -36,7 +73,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ updated: 0 });
   }
 
-  // Mark all unread received messages as read (bypasses RLS via service role)
   const { error } = await adminClient
     .from("messages")
     .update({ is_read: true })
@@ -48,5 +84,5 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, scope: "all" });
 }

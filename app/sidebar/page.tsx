@@ -97,15 +97,6 @@ export default function SidebarPage() {
         .maybeSingle();
       const n = profile as { first_name: string | null; last_name: string | null; display_name: string | null } | null;
       setMyName(n?.display_name || `${n?.first_name ?? ""} ${n?.last_name ?? ""}`.trim() || "Someone");
-      // Mark all messages as read via server-side route (bypasses RLS) BEFORE loading conversations
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        await fetch("/api/mark-messages-read", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
-      }
-      window.dispatchEvent(new CustomEvent("messages-all-read"));
       const convs = await loadConversations(user.id);
       // Auto-show Requests tab if there are pending requests and no ?with= pre-selects a thread
       const params = new URLSearchParams(window.location.search);
@@ -316,12 +307,15 @@ export default function SidebarPage() {
 
   async function markConversationRead(convId: string) {
     if (!userId) return;
-    // Use server-side route to bypass RLS for is_read updates
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
       await fetch("/api/mark-messages-read", {
         method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ conversation_id: convId }),
       });
     }
     setConversations((prev) =>
@@ -344,12 +338,15 @@ export default function SidebarPage() {
           return [...filtered, msg];
         });
         if (msg.sender_id !== userId) {
-          // Mark via server-side route to bypass RLS
           supabase.auth.getSession().then(({ data: { session } }) => {
             if (session?.access_token) {
-              fetch("/api/mark-messages-read", {
+              void fetch("/api/mark-messages-read", {
                 method: "POST",
-                headers: { Authorization: `Bearer ${session.access_token}` },
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ conversation_id: convId }),
               });
             }
           });
@@ -423,8 +420,6 @@ export default function SidebarPage() {
   const acceptedConvs = conversations.filter((c) => c.status === "accepted");
   const sentPending = conversations.filter((c) => c.status === "pending" && c.initiated_by === userId);
   const receivedRequests = conversations.filter((c) => c.status === "pending" && c.initiated_by !== userId);
-  const totalUnread = acceptedConvs.reduce((sum, c) => sum + c.unread_count, 0);
-
   const avatarStyle = (name: string, photo: string | null, size = 40): React.CSSProperties => ({
     width: size, height: size, borderRadius: "50%", flexShrink: 0,
     background: photo ? "transparent" : "#111",
@@ -449,11 +444,6 @@ export default function SidebarPage() {
           }}
         >
           Inbox
-          {totalUnread > 0 && (
-            <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px" }}>
-              {totalUnread}
-            </span>
-          )}
         </button>
         <button
           onClick={() => setInboxTab("requests")}
@@ -515,6 +505,24 @@ export default function SidebarPage() {
                 onMouseEnter={(e) => { if (activeConvId !== conv.id) e.currentTarget.style.background = t.surfaceHover; }}
                 onMouseLeave={(e) => { if (activeConvId !== conv.id) e.currentTarget.style.background = t.surface; }}
               >
+                <div
+                  style={{ width: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
+                  aria-hidden
+                >
+                  {conv.unread_count > 0 ? (
+                    <span
+                      title="Unread"
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: "#fbbf24",
+                        flexShrink: 0,
+                        boxShadow: isDark ? "0 0 0 1px rgba(0,0,0,0.35)" : undefined,
+                      }}
+                    />
+                  ) : null}
+                </div>
                 <a href={`/profile/${conv.other_user_id}`} onClick={(e) => e.stopPropagation()} style={{ textDecoration: "none", flexShrink: 0 }}>
                   <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
                     {conv.other_user_photo
@@ -527,15 +535,8 @@ export default function SidebarPage() {
                     <span style={{ fontWeight: conv.unread_count > 0 ? 800 : 600, fontSize: 14, color: t.text }}>{conv.other_user_name}</span>
                     <span style={{ fontSize: 11, color: t.textFaint, flexShrink: 0 }}>{timeAgo(conv.last_message_at)}</span>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                    <div style={{ fontSize: 13, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}>
-                      {conv.last_message_preview ?? "Start a conversation"}
-                    </div>
-                    {conv.unread_count > 0 && (
-                      <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", flexShrink: 0 }}>
-                        {conv.unread_count}
-                      </span>
-                    )}
+                  <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {conv.last_message_preview ?? "Start a conversation"}
                   </div>
                 </div>
               </div>

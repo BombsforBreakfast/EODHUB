@@ -47,8 +47,6 @@ export default function NavBar() {
   const [userInitial, setUserInitial] = useState<string>("?");
   const [avatarPhotoUrl, setAvatarPhotoUrl] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadMessages, setUnreadMessages] = useState(0);
-
   const [showHub, setShowHub] = useState(false);
   const hubBtnRef = useRef<HTMLButtonElement>(null);
   const hubPanelRef = useRef<HTMLDivElement>(null);
@@ -80,32 +78,6 @@ export default function NavBar() {
     ? notifications.filter((n) => !n.read_at && !n.archived_at).length
     : notifications.length;
   const canAccessRabbithole = isFounderUser(currentUserId);
-
-  async function loadUnreadMessages(uid: string) {
-    // Skip re-fetch while on messages page — badge is managed locally there
-    if (typeof window !== "undefined" && (window.location.pathname === "/messages" || window.location.pathname === "/sidebar")) {
-      setUnreadMessages(0);
-      return;
-    }
-    const { data: convs } = await supabase
-      .from("conversations")
-      .select("id, status")
-      .or(`participant_1.eq.${uid},participant_2.eq.${uid}`)
-      .eq("status", "accepted");
-    const acceptedIds = ((convs ?? []) as { id: string }[]).map((c) => c.id);
-
-    let unreadMsgCount = 0;
-    if (acceptedIds.length > 0) {
-      const { count } = await supabase
-        .from("messages")
-        .select("*", { count: "exact", head: true })
-        .eq("is_read", false)
-        .neq("sender_id", uid)
-        .in("conversation_id", acceptedIds);
-      unreadMsgCount = count ?? 0;
-    }
-    setUnreadMessages(unreadMsgCount);
-  }
 
   const NOTIFICATION_SELECT =
     "id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key, type, actor_id, post_id, unit_id, unit_post_id, metadata";
@@ -171,18 +143,6 @@ export default function NavBar() {
     setNotifications((prev) => prev.map((n) => (n.archived_at || n.read_at ? n : { ...n, is_read: true, read_at: now })));
   }
 
-  async function markMessagesRead() {
-    if (!currentUserId) return;
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      await fetch("/api/mark-messages-read", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-    }
-    setUnreadMessages(0);
-  }
-
   useEffect(() => {
     let mounted = true;
 
@@ -233,7 +193,6 @@ export default function NavBar() {
       if (uid) {
         await loadNavProfile(uid);
         await loadNotifications(uid);
-        await loadUnreadMessages(uid);
         // Load group pending count for any logged-in user (not just site admins)
         const { data: { session: s } } = await supabase.auth.getSession();
         if (s?.access_token) {
@@ -267,7 +226,6 @@ export default function NavBar() {
       if (uid) {
         void loadNavProfile(uid);
         void loadNotifications(uid);
-        void loadUnreadMessages(uid);
       } else {
         setAvatarPhotoUrl(null);
         setIsAdmin(false);
@@ -304,14 +262,7 @@ export default function NavBar() {
     };
   }, [currentUserId, isAdmin]);
 
-  // Messages page signals that all messages were read
-  useEffect(() => {
-    function onAllRead() { setUnreadMessages(0); }
-    window.addEventListener("messages-all-read", onAllRead);
-    return () => window.removeEventListener("messages-all-read", onAllRead);
-  }, []);
-
-  // Realtime: notifications + messages + conversations — single channel per user
+  // Realtime: in-app notifications
   useEffect(() => {
     if (!currentUserId) return;
     const channel = supabase
@@ -324,30 +275,6 @@ export default function NavBar() {
           ? `recipient_user_id=eq.${currentUserId}`
           : `user_id=eq.${currentUserId}`,
       }, () => loadNotifications(currentUserId))
-      .on("postgres_changes", {
-        event: "INSERT",
-        schema: "public",
-        table: "messages",
-      }, (payload) => {
-        const msg = payload.new as { sender_id: string; is_read: boolean };
-        if (msg.sender_id !== currentUserId && !msg.is_read) {
-          setUnreadMessages((prev) => prev + 1);
-        }
-      })
-      .on("postgres_changes", {
-        event: "UPDATE",
-        schema: "public",
-        table: "messages",
-      }, () => {
-        loadUnreadMessages(currentUserId);
-      })
-      .on("postgres_changes", {
-        event: "*",
-        schema: "public",
-        table: "conversations",
-      }, () => {
-        loadUnreadMessages(currentUserId);
-      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId, notificationsV2Enabled]);
@@ -625,7 +552,6 @@ export default function NavBar() {
           style={{ ...navButton, cursor: "pointer", alignItems: "center", gap: 6 }}
         >
           EOD Hub
-          {unreadMessages > 0 && !showHub && badge(unreadMessages)}
         </button>
 
         {/* Notifications center */}
@@ -648,15 +574,13 @@ export default function NavBar() {
 
         {/* Sidebars (private messages) */}
         {currentUserId && (
-          <a
+          <Link
             href="/sidebar"
-            onClick={async (e) => { e.preventDefault(); await markMessagesRead(); window.location.href = "/sidebar"; }}
             className="nav-btn nav-messages-btn"
             style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
           >
             Sidebars
-            {unreadMessages > 0 && badge(unreadMessages)}
-          </a>
+          </Link>
         )}
       </div>
 
@@ -908,7 +832,7 @@ export default function NavBar() {
                     ...(isAdmin
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),
-                    { label: "Sidebars", href: "/sidebar", emoji: "💬", badge: unreadMessages, onNav: markMessagesRead },
+                    { label: "Sidebars", href: "/sidebar", emoji: "💬", badge: 0, onNav: null },
                   ].map((item) => (
                     <a
                       key={item.label}

@@ -93,9 +93,12 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
 
       await fetch("/api/mark-messages-read", {
         method: "POST",
-        headers: { Authorization: `Bearer ${session.access_token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ conversation_id: cid }),
       });
-      window.dispatchEvent(new CustomEvent("messages-all-read"));
 
       if (channelRef.current) supabase.removeChannel(channelRef.current);
       channelRef.current = supabase
@@ -117,7 +120,11 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
                 if (s?.access_token) {
                   void fetch("/api/mark-messages-read", {
                     method: "POST",
-                    headers: { Authorization: `Bearer ${s.access_token}` },
+                    headers: {
+                      "Content-Type": "application/json",
+                      Authorization: `Bearer ${s.access_token}`,
+                    },
+                    body: JSON.stringify({ conversation_id: cid }),
                   });
                 }
               });
