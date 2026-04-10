@@ -13,6 +13,11 @@ import {
   sumAdminPending,
 } from "../lib/adminPendingCounts";
 import { FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
+import { isFounderUser } from "../lib/rabbitholeAccess";
+import {
+  FOUNDER_NOTIFICATIONS_V2_OVERRIDE_KEY,
+  getNotificationsV2Default,
+} from "../lib/notificationFlags";
 
 type BusinessListing = {
   id: string;
@@ -157,6 +162,8 @@ type EventEdit = {
 export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
+  const [isFounder, setIsFounder] = useState(false);
+  const [notificationsV2Enabled, setNotificationsV2Enabled] = useState(getNotificationsV2Default());
   const [activeTab, setActiveTab] = useState<Tab>("businesses");
 
   const [businesses, setBusinesses] = useState<BusinessListing[]>([]);
@@ -356,6 +363,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
     async function init() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.href = "/login"; return; }
+      setIsFounder(isFounderUser(user.id));
 
       const { data: profile } = await supabase
         .from("profiles")
@@ -375,6 +383,38 @@ const [memWizUrl, setMemWizUrl] = useState("");
     }
     init();
   }, []);
+
+  useEffect(() => {
+    const envDefault = getNotificationsV2Default();
+    if (typeof window === "undefined") {
+      setNotificationsV2Enabled(envDefault);
+      return;
+    }
+    const override = window.localStorage.getItem(FOUNDER_NOTIFICATIONS_V2_OVERRIDE_KEY);
+    if (override === "true") {
+      setNotificationsV2Enabled(true);
+      return;
+    }
+    if (override === "false") {
+      setNotificationsV2Enabled(false);
+      return;
+    }
+    setNotificationsV2Enabled(envDefault);
+  }, [isFounder]);
+
+  function setNotificationsOverride(mode: "v2" | "legacy" | "env") {
+    if (typeof window === "undefined") return;
+    if (mode === "env") {
+      window.localStorage.removeItem(FOUNDER_NOTIFICATIONS_V2_OVERRIDE_KEY);
+      setNotificationsV2Enabled(getNotificationsV2Default());
+      showToast("Notifications mode reset to env default.");
+      return;
+    }
+    const next = mode === "v2";
+    window.localStorage.setItem(FOUNDER_NOTIFICATIONS_V2_OVERRIDE_KEY, next ? "true" : "false");
+    setNotificationsV2Enabled(next);
+    showToast(next ? "Notifications V2 enabled for this browser." : "Notifications legacy mode enabled for this browser.");
+  }
 
   useEffect(() => {
     if (!authorized) return;
@@ -1237,6 +1277,40 @@ const [memWizUrl, setMemWizUrl] = useState("");
           </h1>
           <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5 }}>Admin Only</span>
         </div>
+        {isFounder && (
+          <div
+            style={{
+              marginTop: 12,
+              padding: "12px 14px",
+              borderRadius: 12,
+              border: `1px solid ${t.border}`,
+              background: t.surface,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              flexWrap: "wrap",
+            }}
+          >
+            <div style={{ minWidth: 220 }}>
+              <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>Founder Controls · Notifications Mode</div>
+              <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
+                Current: <strong>{notificationsV2Enabled ? "V2 centralized" : "Legacy fallback"}</strong> (env default: {getNotificationsV2Default() ? "V2" : "Legacy"})
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" onClick={() => setNotificationsOverride("v2")} style={actionBtn("#16a34a")}>
+                Use V2
+              </button>
+              <button type="button" onClick={() => setNotificationsOverride("legacy")} style={actionBtn("#92400e")}>
+                Use Legacy
+              </button>
+              <button type="button" onClick={() => setNotificationsOverride("env")} style={actionBtn("#374151")}>
+                Use Env Default
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 8, marginTop: 24, flexWrap: "wrap" }}>

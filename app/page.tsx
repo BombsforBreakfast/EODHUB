@@ -19,6 +19,8 @@ import UpgradePromptModal from "./components/UpgradePromptModal";
 import EventFeedActions from "./components/EventFeedActions";
 import { getFeatureAccess } from "./lib/featureAccess";
 import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "./lib/jobFilters";
+import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "./lib/likeNotifyDelay";
+import { postNotifyJson } from "./lib/postNotifyClient";
 
 type Job = {
   id: string;
@@ -601,10 +603,15 @@ export default function HomePage() {
   const selectedCommentImagesRef = useRef<
     Record<string, SelectedCommentImage | null>
   >({});
+  const postsRef = useRef<FeedPost[]>([]);
 
   useEffect(() => {
     selectedPostImagesRef.current = selectedPostImages;
   }, [selectedPostImages]);
+
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
 
   useEffect(() => {
     function check() { setIsMobile(window.innerWidth <= 900); }
@@ -886,15 +893,19 @@ export default function HomePage() {
       memorialCommentRawsRef.current[memorialId] = "";
       const mentionIds = extractMentionIds(text).filter(id => id !== userId);
       if (mentionIds.length > 0) {
-        await supabase.from("notifications").insert(
-          mentionIds.map((uid) => ({
-            user_id: uid,
-            actor_id: userId,
-            actor_name: currentUserName ?? "Someone",
-            type: "memorial_mention",
-            message: `${currentUserName ?? "Someone"} mentioned you in a memorial comment`,
-            post_owner_id: null,
-          })),
+        await Promise.all(
+          mentionIds.map((uid) =>
+            postNotifyJson(supabase, {
+              user_id: uid,
+              type: "memorial_mention",
+              category: "social",
+              message: `${currentUserName ?? "Someone"} mentioned you in a memorial comment`,
+              actor_name: currentUserName ?? "Someone",
+              group_key: `memorial:${memorialId}:mentions`,
+              dedupe_key: `memorial_mention:${memorialId}:${uid}:${data.id}`,
+              metadata: { memorial_id: memorialId, comment_id: data.id },
+            }),
+          ),
         );
       }
     }
@@ -1074,7 +1085,7 @@ export default function HomePage() {
     await supabase.from("profile_connections").insert([
       { requester_user_id: userId, target_user_id: targetUserId, status: "pending", worked_with: false },
     ]);
-    notify(targetUserId, `${currentUserName?.trim() || "Someone"} says they know you`, targetUserId);
+    void notify(targetUserId, `${currentUserName?.trim() || "Someone"} says they know you`, targetUserId);
     const updater = (prev: DiscoverProfile[]): DiscoverProfile[] =>
       prev.filter((p) => p.user_id !== targetUserId);
     setDiscoverProfiles(updater);
@@ -1115,14 +1126,16 @@ export default function HomePage() {
         // Notify job poster (fire and forget — no actor name for privacy)
         const job = jobs.find((j) => j.id === jobId);
         if (job?.source_type === "community" && job.user_id && job.user_id !== userId) {
-          void supabase.from("notifications").insert([{
+          void postNotifyJson(supabase, {
             user_id: job.user_id,
-            actor_id: userId,
             actor_name: "A member",
             type: "job_save",
+            category: "jobs",
             message: `Someone saved your job listing: ${job.title || "your posting"}`,
-            post_owner_id: null,
-          }]);
+            group_key: `job:${jobId}:saves`,
+            dedupe_key: `job_save:${jobId}:${userId}`,
+            metadata: { job_id: jobId },
+          });
         }
       }
     } catch (err) {
@@ -1980,17 +1993,22 @@ export default function HomePage() {
       // Mention notifications
       const mentionIds = extractMentionIds(contentToPost).filter(id => id !== userId);
       if (mentionIds.length > 0) {
-        await supabase.from("notifications").insert(
-          mentionIds.map((uid) => ({
-            user_id: uid,
-            actor_id: userId,
-            actor_name: currentUserName ?? "Someone",
-            type: "mention_post",
-            message: `${currentUserName ?? "Someone"} mentioned you in a post`,
-            post_owner_id: userId,
-            post_id: postId,
-            metadata: { feed: true },
-          })),
+        await Promise.all(
+          mentionIds.map((uid) =>
+            postNotifyJson(supabase, {
+              user_id: uid,
+              actor_name: currentUserName ?? "Someone",
+              post_owner_id: userId,
+              type: "mention_post",
+              category: "social",
+              post_id: postId,
+              message: `${currentUserName ?? "Someone"} mentioned you in a post`,
+              link: `/?postId=${encodeURIComponent(postId)}`,
+              group_key: `post:${postId}:mentions`,
+              dedupe_key: `mention_post:${postId}:${uid}`,
+              metadata: { feed: true, post_id: postId },
+            }),
+          ),
         );
       }
       const uploadedUrls: string[] = [];
@@ -2100,30 +2118,31 @@ export default function HomePage() {
     } finally { setSubmittingBiz(false); }
   }
 
-  function notify(
+  async function notify(
     recipientId: string,
     message: string,
     postOwnerId: string,
-    extra?: { type?: string; post_id?: string | null },
+    extra?: { type?: string; post_id?: string | null; parent_entity_id?: string | null },
   ) {
     if (!userId || recipientId === userId) return;
     const actorName = currentUserName?.trim() || "Someone";
-    // Use the server-side route so the insert uses the service role key and
-    // isn't blocked by RLS (anon client can't insert notifications for other users).
-    void supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!session?.access_token) return;
-      void fetch("/api/notify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify({
-          user_id: recipientId,
-          message,
-          post_owner_id: postOwnerId,
-          type: extra?.type ?? "feed_activity",
-          post_id: extra?.post_id ?? null,
-          actor_name: actorName,
-        }),
-      });
+    return postNotifyJson(supabase, {
+      user_id: recipientId,
+      message,
+      post_owner_id: postOwnerId,
+      type: extra?.type ?? "feed_activity",
+      category: "social",
+      post_id: extra?.post_id ?? null,
+      link: extra?.post_id ? `/?postId=${encodeURIComponent(extra.post_id)}` : null,
+      group_key: extra?.post_id
+        ? `post:${extra.post_id}:${extra?.type ?? "feed_activity"}`
+        : `feed:${extra?.type ?? "activity"}`,
+      dedupe_key: extra?.post_id
+        ? `${extra?.type ?? "feed_activity"}:${extra.post_id}:${userId}`
+        : `${extra?.type ?? "feed_activity"}:${recipientId}:${userId}`,
+      parent_entity_type: extra?.parent_entity_id ? "comment" : null,
+      parent_entity_id: extra?.parent_entity_id ?? null,
+      actor_name: actorName,
     });
   }
 
@@ -2136,6 +2155,7 @@ export default function HomePage() {
 
     try {
       setTogglingLikeFor(postId);
+      cancelDelayedLikeNotify(`feed:post:${postId}:${userId}`);
 
       if (isCurrentlyLiked) {
         const { error } = await supabase
@@ -2174,7 +2194,12 @@ export default function HomePage() {
         }
         const actorName = currentUserName?.trim() || "Someone";
         if (post && post.user_id !== userId) {
-          notify(post.user_id, `${actorName} liked your post`, post.user_id, { type: "feed_like", post_id: postId });
+          const recipientId = post.user_id;
+          scheduleDelayedLikeNotify(`feed:post:${postId}:${userId}`, () => {
+            const p = postsRef.current.find((x) => x.id === postId);
+            if (!p?.likedByCurrentUser) return;
+            return notify(recipientId, `${actorName} liked your post`, recipientId, { type: "feed_like", post_id: postId });
+          });
         }
       }
 
@@ -2193,6 +2218,7 @@ export default function HomePage() {
 
     try {
       setTogglingCommentLikeFor(commentId);
+      cancelDelayedLikeNotify(`feed:comment:${commentId}:${userId}`);
 
       if (isCurrentlyLiked) {
         const { error } = await supabase
@@ -2223,7 +2249,15 @@ export default function HomePage() {
           const ownerPost = posts.find((p) => p.id === comment.post_id);
           if (ownerPost) {
             const actorName = currentUserName?.trim() || "Someone";
-            notify(comment.user_id, `${actorName} liked your comment`, ownerPost.user_id, { type: "feed_comment_like", post_id: comment.post_id });
+            const postIdForComment = comment.post_id;
+            const ownerId = ownerPost.user_id;
+            const recipientCommentUserId = comment.user_id;
+            scheduleDelayedLikeNotify(`feed:comment:${commentId}:${userId}`, () => {
+              const p = postsRef.current.find((x) => x.id === postIdForComment);
+              const c = p?.comments.find((x) => x.id === commentId);
+              if (!c?.likedByCurrentUser) return;
+              return notify(recipientCommentUserId, `${actorName} liked your comment`, ownerId, { type: "feed_comment_like", post_id: postIdForComment });
+            });
           }
         }
       }
@@ -2325,17 +2359,24 @@ export default function HomePage() {
         const ownerId = post?.user_id ?? userId;
         const meta: Record<string, unknown> = { feed: true };
         if (insertedCommentId) meta.comment_id = insertedCommentId;
-        await supabase.from("notifications").insert(
-          mentionIds.map((uid) => ({
-            user_id: uid,
-            actor_id: userId,
-            actor_name: currentUserName ?? "Someone",
-            type: "mention_comment",
-            message: `${currentUserName ?? "Someone"} mentioned you in a comment`,
-            post_owner_id: ownerId,
-            post_id: postId,
-            metadata: meta,
-          })),
+        await Promise.all(
+          mentionIds.map((uid) =>
+            postNotifyJson(supabase, {
+              user_id: uid,
+              actor_name: currentUserName ?? "Someone",
+              post_owner_id: ownerId,
+              type: "mention_comment",
+              category: "social",
+              post_id: postId,
+              parent_entity_type: "comment",
+              parent_entity_id: insertedCommentId,
+              message: `${currentUserName ?? "Someone"} mentioned you in a comment`,
+              link: `/?postId=${encodeURIComponent(postId)}${insertedCommentId ? `&commentId=${encodeURIComponent(insertedCommentId)}` : ""}`,
+              group_key: `post:${postId}:mentions`,
+              dedupe_key: insertedCommentId ? `mention_comment:${insertedCommentId}:${uid}` : `mention_comment:${postId}:${uid}`,
+              metadata: meta,
+            }),
+          ),
         );
       }
 
@@ -2353,23 +2394,27 @@ export default function HomePage() {
         [postId]: true,
       }));
 
-      setSubmittingCommentFor(null);
-
-      // Notifications
+      // Notifications (await delivery so failures are not silent)
       const post = posts.find((p) => p.id === postId);
       if (post && userId) {
         const actorName = currentUserName?.trim() || "Someone";
+        const tasks: Promise<unknown>[] = [];
         if (post.user_id !== userId) {
-          notify(post.user_id, `${actorName} commented on your post`, post.user_id, { type: "feed_comment", post_id: postId });
+          tasks.push(
+            notify(post.user_id, `${actorName} commented on your post`, post.user_id, { type: "feed_comment", post_id: postId }),
+          );
         }
-        supabase.from("post_comments").select("user_id").eq("post_id", postId).neq("user_id", userId).then(({ data: td }) => {
-          const participants = [...new Set(((td ?? []) as { user_id: string }[]).map((c) => c.user_id))].filter((id) => id !== post.user_id);
-          participants.forEach((pid) =>
+        const { data: td } = await supabase.from("post_comments").select("user_id").eq("post_id", postId).neq("user_id", userId);
+        const participants = [...new Set(((td ?? []) as { user_id: string }[]).map((c) => c.user_id))].filter((id) => id !== post.user_id);
+        for (const pid of participants) {
+          tasks.push(
             notify(pid, `${actorName} also commented on a post you're following`, post.user_id, { type: "feed_comment_thread", post_id: postId }),
           );
-        });
+        }
+        await Promise.all(tasks);
       }
 
+      setSubmittingCommentFor(null);
       void loadPosts();
     } catch (err) {
       console.error("submitComment crashed:", err);

@@ -13,6 +13,8 @@ import GifPickerButton from "../../components/GifPickerButton";
 import { PostLikersStack, type PostLikerBrief } from "../../components/PostLikersStack";
 import SidebarThreadDrawer from "../../components/SidebarThreadDrawer";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../lib/commentSidebarEligibility";
+import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../lib/likeNotifyDelay";
+import { postNotifyJson } from "../../lib/postNotifyClient";
 
 type Profile = {
   user_id: string;
@@ -271,6 +273,8 @@ export default function PublicProfilePage() {
 
   const [lightboxPhoto, setLightboxPhoto] = useState<ProfilePhoto | null>(null);
   const [photoLikes, setPhotoLikes] = useState<Record<string, { count: number; likedByMe: boolean }>>({});
+  const postsRef = useRef<Post[]>([]);
+  const photoLikesRef = useRef<Record<string, { count: number; likedByMe: boolean }>>({});
   const [photoComments, setPhotoComments] = useState<Record<string, PhotoComment[]>>({});
   const [photoCommentInput, setPhotoCommentInput] = useState("");
   const [togglingPhotoLikeFor, setTogglingPhotoLikeFor] = useState<string | null>(null);
@@ -297,6 +301,14 @@ export default function PublicProfilePage() {
   const [wallAvatarCropSrc, setWallAvatarCropSrc] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
+
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
+
+  useEffect(() => {
+    photoLikesRef.current = photoLikes;
+  }, [photoLikes]);
 
   function closeWallAvatarCrop() {
     if (wallAvatarCropSrc) URL.revokeObjectURL(wallAvatarCropSrc);
@@ -668,7 +680,7 @@ export default function PublicProfilePage() {
     setPosts(merged);
   }
 
-  function notify(
+  async function notify(
     recipientId: string,
     message: string,
     postOwnerIdForNav: string,
@@ -676,15 +688,22 @@ export default function PublicProfilePage() {
   ) {
     if (!currentUserId || recipientId === currentUserId) return;
     const actorName = currentUserName?.trim() || "Someone";
-    void supabase.from("notifications").insert([{
+    return postNotifyJson(supabase, {
       user_id: recipientId,
-      actor_id: currentUserId,
       actor_name: actorName,
       type: extra?.type ?? "wall_activity",
+      category: "social",
       message,
       post_owner_id: postOwnerIdForNav,
       post_id: extra?.post_id ?? null,
-    }]);
+      link: postOwnerIdForNav ? `/profile/${encodeURIComponent(postOwnerIdForNav)}` : null,
+      group_key: extra?.post_id
+        ? `post:${extra.post_id}:${extra?.type ?? "wall_activity"}`
+        : `wall:${postOwnerIdForNav}:${extra?.type ?? "wall_activity"}`,
+      dedupe_key: extra?.post_id
+        ? `${extra?.type ?? "wall_activity"}:${extra.post_id}:${currentUserId}`
+        : `${extra?.type ?? "wall_activity"}:${recipientId}:${currentUserId}`,
+    });
   }
 
   function isConnV2MissingColumnError(error: unknown): boolean {
@@ -754,6 +773,7 @@ export default function PublicProfilePage() {
 
   async function toggleLike(postId: string, isLiked: boolean) {
     if (!currentUserId) { window.location.href = "/login"; return; }
+    cancelDelayedLikeNotify(`wall:post:${postId}:${currentUserId}`);
     try {
       setTogglingLikeFor(postId);
       if (isLiked) {
@@ -778,7 +798,12 @@ export default function PublicProfilePage() {
         if (post && profile && currentUserId !== post.user_id) {
           const navOwner = post.wall_user_id ?? post.user_id;
           const actorName = currentUserName?.trim() || "Someone";
-          notify(post.user_id, `${actorName} liked your post`, navOwner, { type: "wall_like", post_id: postId });
+          const recipientId = post.user_id;
+          scheduleDelayedLikeNotify(`wall:post:${postId}:${currentUserId}`, () => {
+            const p = postsRef.current.find((x) => x.id === postId);
+            if (!p?.likedByCurrentUser) return;
+            return notify(recipientId, `${actorName} liked your post`, navOwner, { type: "wall_like", post_id: postId });
+          });
         }
       }
       if (userId) await loadPosts(userId);
@@ -787,6 +812,7 @@ export default function PublicProfilePage() {
 
   async function toggleCommentLike(commentId: string, isLiked: boolean) {
     if (!currentUserId) { window.location.href = "/login"; return; }
+    cancelDelayedLikeNotify(`wall:comment:${commentId}:${currentUserId}`);
     try {
       setTogglingCommentLikeFor(commentId);
       if (isLiked) {
@@ -796,7 +822,16 @@ export default function PublicProfilePage() {
         const comment = posts.flatMap((p) => p.comments).find((c) => c.id === commentId);
         const ownerPost = comment ? posts.find((p) => p.id === comment.post_id) : undefined;
         if (comment && comment.user_id !== currentUserId && ownerPost) {
-          notify(comment.user_id, `${currentUserName} liked your comment`, ownerPost.user_id, { type: "wall_comment_like", post_id: comment.post_id });
+          const postIdForComment = comment.post_id;
+          const ownerId = ownerPost.user_id;
+          const recipientId = comment.user_id;
+          const name = currentUserName?.trim() || "Someone";
+          scheduleDelayedLikeNotify(`wall:comment:${commentId}:${currentUserId}`, () => {
+            const p = postsRef.current.find((x) => x.id === postIdForComment);
+            const c = p?.comments.find((x) => x.id === commentId);
+            if (!c?.likedByCurrentUser) return;
+            return notify(recipientId, `${name} liked your comment`, ownerId, { type: "wall_comment_like", post_id: postIdForComment });
+          });
         }
       }
       if (userId) await loadPosts(userId);
@@ -814,29 +849,35 @@ export default function PublicProfilePage() {
       commentRawsRef.current[postId] = "";
       setExpandedComments((prev) => ({ ...prev, [postId]: true }));
       if (profile && currentUserId !== profile.user_id) {
-        notify(profile.user_id, `${currentUserName} commented on your post`, profile.user_id, { type: "wall_comment", post_id: postId });
+        await notify(profile.user_id, `${currentUserName} commented on your post`, profile.user_id, { type: "wall_comment", post_id: postId });
       }
       const mentionIds = extractMentionIds(text).filter(id => id !== currentUserId);
       if (mentionIds.length > 0) {
-        await supabase.from("notifications").insert(
-          mentionIds.map((uid) => ({
-            user_id: uid,
-            actor_id: currentUserId,
-            actor_name: currentUserName,
-            type: "mention_comment",
-            message: `${currentUserName} mentioned you in a comment`,
-            post_owner_id: profile?.user_id ?? null,
-            post_id: postId,
-            metadata: { wall: true },
-          })),
+        await Promise.all(
+          mentionIds.map((uid) =>
+            postNotifyJson(supabase, {
+              user_id: uid,
+              actor_name: currentUserName,
+              type: "mention_comment",
+              category: "social",
+              message: `${currentUserName} mentioned you in a comment`,
+              post_owner_id: profile?.user_id ?? null,
+              post_id: postId,
+              link: `/profile/${encodeURIComponent(profile?.user_id ?? uid)}`,
+              group_key: `post:${postId}:mentions`,
+              dedupe_key: `mention_comment:${postId}:${uid}:${currentUserId}`,
+              metadata: { wall: true, post_id: postId },
+            }),
+          ),
         );
       }
-      supabase.from("post_comments").select("user_id").eq("post_id", postId).neq("user_id", currentUserId).then(({ data: td }) => {
-        const participants = [...new Set(((td ?? []) as { user_id: string }[]).map((c) => c.user_id))].filter((id) => id !== profile?.user_id);
-        participants.forEach((pid) =>
+      const { data: td } = await supabase.from("post_comments").select("user_id").eq("post_id", postId).neq("user_id", currentUserId);
+      const participants = [...new Set(((td ?? []) as { user_id: string }[]).map((c) => c.user_id))].filter((id) => id !== profile?.user_id);
+      await Promise.all(
+        participants.map((pid) =>
           notify(pid, `${currentUserName} also commented on a post you're following`, profile?.user_id ?? pid, { type: "wall_comment_thread", post_id: postId }),
-        );
-      });
+        ),
+      );
       if (userId) await loadPosts(userId);
     } finally { setSubmittingCommentFor(null); }
   }
@@ -1001,6 +1042,7 @@ export default function PublicProfilePage() {
 
   async function togglePhotoLike(photoId: string) {
     if (!currentUserId) { window.location.href = "/login"; return; }
+    cancelDelayedLikeNotify(`wall:photo:${photoId}:${currentUserId}`);
     const isLiked = photoLikes[photoId]?.likedByMe ?? false;
     try {
       setTogglingPhotoLikeFor(photoId);
@@ -1009,7 +1051,12 @@ export default function PublicProfilePage() {
       } else {
         await supabase.from("profile_photo_likes").insert([{ photo_id: photoId, user_id: currentUserId }]);
         if (profile && currentUserId !== profile.user_id) {
-          notify(profile.user_id, `${currentUserName} liked your photo`, profile.user_id);
+          const uid = profile.user_id;
+          const name = currentUserName?.trim() || "Someone";
+          scheduleDelayedLikeNotify(`wall:photo:${photoId}:${currentUserId}`, () => {
+            if (!photoLikesRef.current[photoId]?.likedByMe) return;
+            return notify(uid, `${name} liked your photo`, uid);
+          });
         }
       }
       await loadPhotoInteractions(photos.map((p) => p.id));
@@ -1024,7 +1071,7 @@ export default function PublicProfilePage() {
       setSubmittingPhotoComment(true);
       await supabase.from("profile_photo_comments").insert([{ photo_id: photoId, user_id: currentUserId, content: text }]);
       if (profile && currentUserId !== profile.user_id) {
-        notify(profile.user_id, `${currentUserName} commented on your photo`, profile.user_id);
+        await notify(profile.user_id, `${currentUserName} commented on your photo`, profile.user_id);
       }
       setPhotoCommentInput("");
       await loadPhotoInteractions(photos.map((p) => p.id));
@@ -1198,17 +1245,22 @@ export default function PublicProfilePage() {
       // Mention notifications
       const mentionIds = extractMentionIds(rawPostContent).filter(id => id !== currentUserId);
       if (mentionIds.length > 0) {
-        await supabase.from("notifications").insert(
-          mentionIds.map((uid) => ({
-            user_id: uid,
-            actor_id: currentUserId,
-            actor_name: currentUserName,
-            type: "mention_post",
-            message: `${currentUserName} mentioned you in a post`,
-            post_owner_id: userId ?? null,
-            post_id: postId,
-            metadata: { wall: true },
-          })),
+        await Promise.all(
+          mentionIds.map((uid) =>
+            postNotifyJson(supabase, {
+              user_id: uid,
+              actor_name: currentUserName,
+              type: "mention_post",
+              category: "social",
+              message: `${currentUserName} mentioned you in a post`,
+              post_owner_id: userId ?? null,
+              post_id: postId,
+              link: `/profile/${encodeURIComponent(userId ?? uid)}`,
+              group_key: `post:${postId}:mentions`,
+              dedupe_key: `mention_post:${postId}:${uid}`,
+              metadata: { wall: true, post_id: postId },
+            }),
+          ),
         );
       }
 
@@ -1231,7 +1283,7 @@ export default function PublicProfilePage() {
 
       // Notify wall owner when someone else posts on their wall
       if (!isOwnWall && userId && currentUserId !== userId) {
-        notify(userId, `${currentUserName} posted on your wall`, userId, { type: "wall_post", post_id: postId });
+        await notify(userId, `${currentUserName} posted on your wall`, userId, { type: "wall_post", post_id: postId });
       }
 
       setPostContent("");
@@ -1275,7 +1327,7 @@ export default function PublicProfilePage() {
           return;
         }
       }
-      notify(userId, `${currentUserName} wants to connect (Know)`, currentUserId, { type: "connection_request" });
+      await notify(userId, `${currentUserName} wants to connect (Know)`, currentUserId, { type: "connection_request" });
       await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Request know error:", err);
@@ -1329,9 +1381,9 @@ export default function PublicProfilePage() {
       if (rel) {
         const requesterId = rel.requester_user_id;
         if (accept) {
-          notify(requesterId, `${currentUserName} accepted your Know request`, currentUserId, { type: "connection_accepted" });
+          await notify(requesterId, `${currentUserName} accepted your Know request`, currentUserId, { type: "connection_accepted" });
         } else {
-          notify(requesterId, `${currentUserName} declined your Know request`, currentUserId, { type: "connection_denied" });
+          await notify(requesterId, `${currentUserName} declined your Know request`, currentUserId, { type: "connection_denied" });
         }
       }
       await loadConnections(userId, currentUserId);
@@ -1397,7 +1449,7 @@ export default function PublicProfilePage() {
         .eq("status", "accepted");
       if (error) { alert(error.message); return; }
       if (turningOn && userId) {
-        notify(userId, `${currentUserName} marked you as worked with`, currentUserId, { type: "worked_with" });
+        await notify(userId, `${currentUserName} marked you as worked with`, currentUserId, { type: "worked_with" });
       }
       await loadConnections(userId, currentUserId);
     } catch (err) {

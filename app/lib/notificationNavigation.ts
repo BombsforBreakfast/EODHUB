@@ -5,6 +5,7 @@
 export type NotificationNavInput = {
   message: string;
   post_owner_id: string | null;
+  link?: string | null;
   type?: string | null;
   post_id?: string | null;
   unit_id?: string | null;
@@ -83,6 +84,7 @@ export function getNotificationHref(
 ): string {
   const parsedMeta = normalizeMetadata(n.metadata);
   const nNorm: NotificationNavInput = { ...n, metadata: parsedMeta };
+  if (nNorm.link && nNorm.link.trim().length > 0) return nNorm.link;
   const m = (nNorm.message ?? "").trim();
   const lower = m.toLowerCase();
   const slug = metaSlug(nNorm);

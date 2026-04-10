@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useParams } from "next/navigation";
+import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../lib/likeNotifyDelay";
+import { postNotifyJson } from "../../lib/postNotifyClient";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import NavBar from "../../components/NavBar";
@@ -106,6 +108,7 @@ export default function UnitPage() {
 
   // Wall
   const [posts, setPosts] = useState<UnitPost[]>([]);
+  const postsRef = useRef<UnitPost[]>([]);
   const [postInput, setPostInput] = useState("");
   const [postPhotoUrl, setPostPhotoUrl] = useState("");
   const [postPhotoPreview, setPostPhotoPreview] = useState<string | null>(null);
@@ -184,6 +187,10 @@ export default function UnitPage() {
     }
     init();
   }, [slug]);
+
+  useEffect(() => {
+    postsRef.current = posts;
+  }, [posts]);
 
   async function getToken() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -397,18 +404,35 @@ export default function UnitPage() {
   }
 
   async function toggleLike(postId: string) {
+    if (!currentUserId) {
+      window.location.href = "/login";
+      return;
+    }
+    cancelDelayedLikeNotify(`unit:post:${postId}:${currentUserId}`);
     const token = await getToken();
     const res = await fetch(`/api/units/${slug}/posts/${postId}/like`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) {
-      const json = await res.json();
+      const json = await res.json() as {
+        liked: boolean;
+        like_count: number;
+        pending_like_notify: Record<string, unknown> | null;
+      };
       setPosts((prev) =>
         prev.map((p) =>
           p.id === postId ? { ...p, user_liked: json.liked, like_count: json.like_count } : p
         )
       );
+      if (json.liked && json.pending_like_notify) {
+        const payload = json.pending_like_notify as Record<string, unknown>;
+        scheduleDelayedLikeNotify(`unit:post:${postId}:${currentUserId}`, async () => {
+          const p = postsRef.current.find((x) => x.id === postId);
+          if (!p?.user_liked) return;
+          await postNotifyJson(supabase, payload);
+        });
+      }
     }
   }
 

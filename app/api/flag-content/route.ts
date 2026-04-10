@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { FLAG_CATEGORY_LABELS, type FlagCategory, isFlagCategory } from "../../lib/flagCategories";
+import { createNotification } from "../../lib/notificationsServer";
 
 function getUserClient(token: string) {
   return createClient(
@@ -133,16 +134,19 @@ export async function POST(req: NextRequest) {
   const reasonLabel = FLAG_CATEGORY_LABELS[category as FlagCategory];
   const notifMessage = `Your ${contentLabel(contentType)} was flagged (${reasonLabel}) and is temporarily hidden pending review.`;
 
-  await admin.from("notifications").insert([
-    {
-      user_id: authorId,
-      actor_id: user.id,
-      actor_name: "Community",
-      type: "activity",
-      message: notifMessage,
-      post_owner_id: null,
-    },
-  ]);
+  await createNotification(admin, {
+    recipientUserId: authorId,
+    actorUserId: user.id,
+    actorName: "Community",
+    type: "activity",
+    category: "system",
+    entityType: contentType,
+    entityId: contentId,
+    message: notifMessage,
+    groupKey: `${contentType}:${contentId}:flags`,
+    dedupeKey: `flag_notice:${contentType}:${contentId}:${authorId}`,
+    metadata: { content_type: contentType, content_id: contentId, category },
+  });
 
   const { data: admins } = await admin.from("profiles").select("user_id").eq("is_admin", true);
   const { data: reporterProfile } = await admin
@@ -156,15 +160,23 @@ export async function POST(req: NextRequest) {
     "A member";
 
   if (admins && admins.length > 0) {
-    await admin.from("notifications").insert(
-      admins.map((a: { user_id: string }) => ({
-        user_id: a.user_id,
-        actor_id: user.id,
-        actor_name: reporterName,
-        type: "activity",
-        message: `${contentType} flagged (${reasonLabel}) — ID ${contentId.slice(0, 8)}…`,
-        post_owner_id: null,
-      }))
+    await Promise.all(
+      admins.map((a: { user_id: string }) =>
+        createNotification(admin, {
+          recipientUserId: a.user_id,
+          actorUserId: user.id,
+          actorName: reporterName,
+          type: "activity",
+          category: "system",
+          entityType: contentType,
+          entityId: contentId,
+          message: `${contentType} flagged (${reasonLabel}) — ID ${contentId.slice(0, 8)}...`,
+          link: "/admin",
+          groupKey: `admin:flags:${contentType}:${contentId}`,
+          dedupeKey: `admin_flag:${contentType}:${contentId}:${a.user_id}`,
+          metadata: { content_type: contentType, content_id: contentId, category, reporter_id: user.id },
+        }),
+      ),
     );
   }
 

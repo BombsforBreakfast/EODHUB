@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../lib/memberSubscriptionServer";
+import { createNotification } from "../../../../lib/notificationsServer";
 
 function getAdminClient() {
   return createClient(
@@ -128,18 +129,23 @@ export async function POST(
     .in("role", ["owner", "admin"]);
 
   if (leaders && leaders.length > 0) {
-    await adminClient.from("notifications").insert(
-      leaders.map((l: { user_id: string }) => ({
-        user_id: l.user_id,
-        actor_id: user.id,
-        type: "unit_join_request",
-        message: `${name} is requesting to join ${unit.name}`,
-        actor_name: name,
-        post_owner_id: null,
-        unit_id: unit.id,
-        metadata: { unit_slug: slug },
-        is_read: false,
-      }))
+    await Promise.all(
+      leaders.map((leader: { user_id: string }) =>
+        createNotification(adminClient, {
+          recipientUserId: leader.user_id,
+          actorUserId: user.id,
+          actorName: name,
+          type: "unit_join_request",
+          category: "group",
+          entityType: "unit",
+          entityId: unit.id,
+          message: `${name} is requesting to join ${unit.name}`,
+          link: `/units/${encodeURIComponent(slug)}/admin`,
+          groupKey: `unit:${unit.id}:join_requests`,
+          dedupeKey: `unit_join_request:${unit.id}:${user.id}`,
+          metadata: { unit_slug: slug, unit_id: unit.id, requester_id: user.id },
+        }),
+      ),
     );
   }
 

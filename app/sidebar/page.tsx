@@ -8,6 +8,7 @@ import EmojiPickerButton from "../components/EmojiPickerButton";
 import GifPickerButton from "../components/GifPickerButton";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
+import { postNotifyJson } from "../lib/postNotifyClient";
 
 type Conversation = {
   id: string;
@@ -248,15 +249,20 @@ export default function SidebarPage() {
         alert("Message failed to send. Please try again.");
         return;
       }
-      // Notify recipient
-      await supabase.from("notifications").insert([{
+      await postNotifyJson(supabase, {
         user_id: otherId,
-        actor_id: userId,
         actor_name: myName,
-        type: "activity",
-        message: `${myName} sent you a message request`,
         post_owner_id: userId,
-      }]);
+        type: "message_request",
+        category: "message",
+        entity_type: "thread",
+        entity_id: created.id,
+        message: `${myName} sent you a message request`,
+        link: "/sidebar",
+        group_key: `thread:${created.id}:messages`,
+        dedupe_key: `message_request:${created.id}:${otherId}`,
+        metadata: { conversation_id: created.id },
+      });
       setRequestTarget(null);
       setRequestDraft("");
       await loadConversations(userId);
@@ -386,8 +392,30 @@ export default function SidebarPage() {
       gif_url: gif ?? null,
     };
     setMessages((prev) => [...prev, optimisticMsg]);
-    await supabase.from("messages").insert({ conversation_id: activeConvId, sender_id: userId, content, gif_url: gif ?? null });
+    const { data: insertedMessage } = await supabase
+      .from("messages")
+      .insert({ conversation_id: activeConvId, sender_id: userId, content, gif_url: gif ?? null })
+      .select("id")
+      .single();
     await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", activeConvId);
+    if (activeConv?.other_user_id) {
+      await postNotifyJson(supabase, {
+        user_id: activeConv.other_user_id,
+        actor_name: myName,
+        post_owner_id: userId,
+        type: "message_received",
+        category: "message",
+        entity_type: "thread",
+        entity_id: activeConvId,
+        parent_entity_type: "message",
+        parent_entity_id: insertedMessage?.id ?? null,
+        message: `${myName} sent you a message`,
+        link: "/sidebar",
+        group_key: `thread:${activeConvId}:messages`,
+        dedupe_key: insertedMessage?.id ? `message_received:${insertedMessage.id}` : null,
+        metadata: { conversation_id: activeConvId },
+      });
+    }
     setSending(false);
   }
 
@@ -645,15 +673,30 @@ export default function SidebarPage() {
       await supabase.from("flags").insert([{ reporter_id: userId, content_type: "message", content_id: msg.id, reason: null, reviewed: false }]);
       const { data: admins } = await supabase.from("profiles").select("user_id").eq("is_admin", true);
       if (admins && admins.length > 0) {
-        await supabase.from("notifications").insert(
-          admins.map((a: { user_id: string }) => ({
-            user_id: a.user_id, actor_id: userId, actor_name: myName, type: "activity",
-            message: `Message flagged: "${(msg.content || "[GIF]").slice(0, 60)}"`,
-            post_owner_id: null,
-          }))
+        const results = await Promise.all(
+          admins.map((a: { user_id: string }) =>
+            postNotifyJson(supabase, {
+              user_id: a.user_id,
+              actor_name: myName,
+              type: "activity",
+              category: "system",
+              message: `Message flagged: "${(msg.content || "[GIF]").slice(0, 60)}"`,
+              link: "/admin",
+              group_key: `admin:flags:message:${msg.id}`,
+              dedupe_key: `admin_flag_message:${msg.id}:${a.user_id}`,
+              metadata: { content_type: "message", content_id: msg.id },
+            }),
+          ),
         );
+        const anyOk = results.some((r) => r.ok);
+        alert(
+          anyOk
+            ? "Message flagged. Admins have been notified."
+            : "Message flagged, but notifications could not be delivered. Check your connection.",
+        );
+      } else {
+        alert("Message flagged.");
       }
-      alert("Message flagged. Admins have been notified.");
     } finally { setFlaggingId(null); }
   }
 

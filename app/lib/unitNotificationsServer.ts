@@ -3,6 +3,7 @@ import {
   computeUnitEngagementScore,
   getUnitHotEngagementThreshold,
 } from "./notificationPolicy";
+import { createNotification } from "./notificationsServer";
 
 /** Crosses threshold once → notify other unit members (excluding author + actor). See `notificationPolicy.ts`. */
 export async function maybeNotifyUnitHotEngagement(
@@ -57,19 +58,24 @@ export async function maybeNotifyUnitHotEngagement(
 
   if (recipients.length === 0) return;
 
-  const rows = recipients.map((user_id) => ({
-    user_id,
-    actor_id: params.actorUserId,
-    actor_name: params.unitName,
-    type: "unit_hot",
-    message: `🔥 A post in ${params.unitName} is getting high engagement.`,
-    post_owner_id: null,
-    unit_id: params.unitId,
-    unit_post_id: params.postId,
-    metadata: { unit_slug: params.unitSlug, unit_post_id: params.postId },
-  }));
-
-  await admin.from("notifications").insert(rows);
+  await Promise.all(
+    recipients.map((recipientUserId) =>
+      createNotification(admin, {
+        recipientUserId,
+        actorUserId: params.actorUserId,
+        actorName: params.unitName,
+        type: "unit_hot",
+        category: "group",
+        entityType: "unit_post",
+        entityId: params.postId,
+        message: `🔥 A post in ${params.unitName} is getting high engagement.`,
+        link: `/units/${encodeURIComponent(params.unitSlug)}?unitPostId=${encodeURIComponent(params.postId)}`,
+        groupKey: `unit_post:${params.postId}:unit_hot`,
+        dedupeKey: `unit_hot:${params.postId}`,
+        metadata: { unit_slug: params.unitSlug, unit_post_id: params.postId, unit_id: params.unitId },
+      }),
+    ),
+  );
 }
 
 export async function fetchActorName(admin: SupabaseClient, userId: string): Promise<string> {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createNotification } from "../../../../lib/notificationsServer";
 
 function getAdminClient() {
   return createClient(
@@ -177,15 +178,18 @@ export async function PATCH(
     // Remove join request post
     await db.from("unit_posts").delete().eq("unit_id", unit.id).eq("user_id", user_id).eq("post_type", "join_request");
     // Notify user
-    await db.from("notifications").insert({
-      user_id,
+    await createNotification(db, {
+      recipientUserId: user_id,
+      actorName: unit.name,
       type: "unit_join_approval",
+      category: "group",
+      entityType: "unit",
+      entityId: unit.id,
       message: `Your request to join ${unit.name} was approved`,
-      actor_name: unit.name,
-      unit_id: unit.id,
-      post_owner_id: null,
-      metadata: { unit_slug: slug },
-      is_read: false,
+      link: `/units/${encodeURIComponent(slug)}`,
+      groupKey: `unit:${unit.id}:join_approvals`,
+      dedupeKey: `unit_join_approval:${unit.id}:${user_id}`,
+      metadata: { unit_slug: slug, unit_id: unit.id },
     });
     return NextResponse.json({ success: true });
   }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import { assertMemberInteractionAllowed } from "../../lib/memberSubscriptionServer";
+import { createNotification } from "../../lib/notificationsServer";
 
 const VOUCHES_NEEDED = 3;
 
@@ -90,12 +91,17 @@ export async function POST(req: NextRequest) {
     const voucherName = voucher.display_name || `${voucher.first_name ?? ""} ${voucher.last_name ?? ""}`.trim() || "A member";
 
     // In-app notification
-    await adminClient.from("notifications").insert({
-      user_id: vouchee_user_id,
+    await createNotification(adminClient, {
+      recipientUserId: vouchee_user_id,
+      actorUserId: user.id,
+      actorName: voucherName,
       type: "user_verified",
+      category: "system",
       message: `You've been verified! ${voucherName} cast the final vote. Welcome to EOD HUB.`,
-      actor_name: voucherName,
-      post_owner_id: null,
+      link: `/profile/${encodeURIComponent(vouchee_user_id)}`,
+      groupKey: `user:${vouchee_user_id}:verification`,
+      dedupeKey: `user_verified:${vouchee_user_id}`,
+      metadata: { vouchee_user_id },
     });
 
     // Verification email

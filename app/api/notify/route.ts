@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { createNotification } from "../../lib/notificationsServer";
 
 /**
  * POST /api/notify
@@ -27,6 +28,15 @@ export async function POST(req: NextRequest) {
     type?: string | null;
     post_id?: string | null;
     actor_name?: string | null;
+    category?: string | null;
+    entity_type?: string | null;
+    entity_id?: string | null;
+    parent_entity_type?: string | null;
+    parent_entity_id?: string | null;
+    link?: string | null;
+    group_key?: string | null;
+    dedupe_key?: string | null;
+    metadata?: Record<string, unknown> | null;
   };
 
   if (!body.user_id || !body.message) {
@@ -43,18 +53,27 @@ export async function POST(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const { error } = await db.from("notifications").insert({
-    user_id: body.user_id,
-    actor_id: user.id,
-    actor_name: body.actor_name ?? null,
-    type: body.type ?? "feed_activity",
-    message: body.message,
-    post_owner_id: body.post_owner_id ?? null,
-    post_id: body.post_id ?? null,
-  });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  try {
+    await createNotification(db, {
+      recipientUserId: body.user_id,
+      actorUserId: user.id,
+      actorName: body.actor_name ?? null,
+      postOwnerId: body.post_owner_id ?? null,
+      type: body.type ?? "feed_activity",
+      category: body.category ?? "social",
+      entityType: body.entity_type ?? (body.post_id ? "post" : null),
+      entityId: body.entity_id ?? body.post_id ?? null,
+      parentEntityType: body.parent_entity_type ?? null,
+      parentEntityId: body.parent_entity_id ?? null,
+      message: body.message,
+      link: body.link ?? null,
+      groupKey: body.group_key ?? null,
+      dedupeKey: body.dedupe_key ?? null,
+      metadata: body.metadata ?? {},
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to create notification";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });

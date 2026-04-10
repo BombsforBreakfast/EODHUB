@@ -9,6 +9,7 @@ import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
 import { getFeatureAccess } from "../lib/featureAccess";
 import { isFounderUser } from "../lib/rabbitholeAccess";
+import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import NotificationCenter from "./NotificationCenter";
 
@@ -16,9 +17,13 @@ type Notification = {
   id: string;
   message: string;
   is_read: boolean;
+  read_at?: string | null;
+  archived_at?: string | null;
   created_at: string;
   actor_name: string;
   post_owner_id: string | null;
+  link?: string | null;
+  group_key?: string | null;
   type?: string | null;
   actor_id?: string | null;
   post_id?: string | null;
@@ -70,7 +75,10 @@ export default function NavBar() {
   const [showNotifPanel, setShowNotifPanel] = useState(false);
 
   /** In-app notifications (not DMs — those stay on Sidebars). */
-  const unreadNotifCount = notifications.length;
+  const notificationsV2Enabled = getNotificationsV2Enabled(currentUserId);
+  const unreadNotifCount = notificationsV2Enabled
+    ? notifications.filter((n) => !n.read_at && !n.archived_at).length
+    : notifications.length;
   const canAccessRabbithole = isFounderUser(currentUserId);
 
   async function loadUnreadMessages(uid: string) {
@@ -100,22 +108,24 @@ export default function NavBar() {
   }
 
   const NOTIFICATION_SELECT =
-    "id, message, is_read, created_at, actor_name, post_owner_id, type, actor_id, post_id, unit_id, unit_post_id, metadata";
+    "id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key, type, actor_id, post_id, unit_id, unit_post_id, metadata";
 
   async function loadNotifications(uid: string) {
-    const { data, error } = await supabase
+    const baseQuery = supabase
       .from("notifications")
       .select(NOTIFICATION_SELECT)
-      .eq("user_id", uid)
-      .order("created_at", { ascending: false })
-      .limit(50);
+      .order("created_at", { ascending: false });
+    const { data, error } = notificationsV2Enabled
+      ? await baseQuery.eq("recipient_user_id", uid).is("archived_at", null).limit(100)
+      : await baseQuery.eq("user_id", uid).limit(50);
     if (error) {
       const { data: fallback } = await supabase
         .from("notifications")
-        .select("id, message, is_read, created_at, actor_name, post_owner_id")
+        .select("id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key")
         .eq("user_id", uid)
+        .is("archived_at", null)
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(100);
       setNotifications((fallback ?? []) as Notification[]);
       return;
     }
@@ -123,15 +133,42 @@ export default function NavBar() {
   }
 
   async function dismissNotification(id: string) {
-    await supabase.from("notifications").delete().eq("id", id);
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    if (!notificationsV2Enabled) {
+      await supabase.from("notifications").delete().eq("id", id);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      return;
+    }
+    const now = new Date().toISOString();
+    await supabase.from("notifications").update({ archived_at: now, is_read: true, read_at: now }).eq("id", id);
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, archived_at: now, read_at: now, is_read: true } : n)));
   }
 
   async function openNotification(id: string, href: string) {
-    await supabase.from("notifications").delete().eq("id", id);
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    if (!notificationsV2Enabled) {
+      await supabase.from("notifications").delete().eq("id", id);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      setShowNotifPanel(false);
+      window.location.href = href;
+      return;
+    }
+    const now = new Date().toISOString();
+    await supabase.from("notifications").update({ is_read: true, read_at: now }).eq("id", id);
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: now, is_read: true } : n)));
     setShowNotifPanel(false);
     window.location.href = href;
+  }
+
+  async function markAllNotificationsRead() {
+    if (!notificationsV2Enabled) return;
+    if (!currentUserId) return;
+    const now = new Date().toISOString();
+    await supabase
+      .from("notifications")
+      .update({ is_read: true, read_at: now })
+      .eq("recipient_user_id", currentUserId)
+      .is("read_at", null)
+      .is("archived_at", null);
+    setNotifications((prev) => prev.map((n) => (n.archived_at || n.read_at ? n : { ...n, is_read: true, read_at: now })));
   }
 
   async function markMessagesRead() {
@@ -280,10 +317,12 @@ export default function NavBar() {
     const channel = supabase
       .channel(`nav-live-${currentUserId}`)
       .on("postgres_changes", {
-        event: "INSERT",
+        event: "*",
         schema: "public",
         table: "notifications",
-        filter: `user_id=eq.${currentUserId}`,
+        filter: notificationsV2Enabled
+          ? `recipient_user_id=eq.${currentUserId}`
+          : `user_id=eq.${currentUserId}`,
       }, () => loadNotifications(currentUserId))
       .on("postgres_changes", {
         event: "INSERT",
@@ -311,7 +350,7 @@ export default function NavBar() {
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [currentUserId]);
+  }, [currentUserId, notificationsV2Enabled]);
 
   async function performSearch(query: string) {
     const q = query.trim();
@@ -898,10 +937,12 @@ export default function NavBar() {
         open={showNotifPanel}
         onClose={() => setShowNotifPanel(false)}
         notifications={notifications}
+        unreadCount={unreadNotifCount}
         currentUserId={currentUserId}
         isAdmin={isAdmin}
         onDismiss={dismissNotification}
         onOpenItem={openNotification}
+        onMarkAllRead={notificationsV2Enabled ? markAllNotificationsRead : undefined}
       />
     </>
   );

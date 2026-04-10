@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../../../lib/memberSubscriptionServer";
 import { fetchActorName, maybeNotifyUnitHotEngagement } from "../../../../../../lib/unitNotificationsServer";
+import { createNotification } from "../../../../../../lib/notificationsServer";
 
 function getAdminClient() {
   return createClient(
@@ -191,16 +192,22 @@ export async function POST(
 
   if (post.user_id !== user.id) {
     const actorName = await fetchActorName(adminClient, user.id);
-    await adminClient.from("notifications").insert({
-      user_id: post.user_id,
-      actor_id: user.id,
-      actor_name: actorName,
+    await createNotification(adminClient, {
+      recipientUserId: post.user_id,
+      actorUserId: user.id,
+      actorName,
+      postOwnerId: post.user_id,
       type: "unit_post_comment",
+      category: "group",
+      entityType: "unit_post",
+      entityId: postId,
+      parentEntityType: "comment",
+      parentEntityId: comment.id,
       message: `${actorName} commented on your post in ${unitName}`,
-      post_owner_id: post.user_id,
-      unit_id: post.unit_id,
-      unit_post_id: postId,
-      metadata: { unit_slug: unitSlug, comment_id: comment.id },
+      link: `/units/${encodeURIComponent(unitSlug)}?unitPostId=${encodeURIComponent(postId)}&commentId=${encodeURIComponent(comment.id)}`,
+      groupKey: `unit_post:${postId}:comments`,
+      dedupeKey: `unit_post_comment:${comment.id}`,
+      metadata: { unit_slug: unitSlug, unit_id: post.unit_id, unit_post_id: postId, comment_id: comment.id },
     });
   }
 

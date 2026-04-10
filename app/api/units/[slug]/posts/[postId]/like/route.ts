@@ -95,19 +95,23 @@ export async function POST(
   const unitName = (unitRow as { name?: string } | null)?.name ?? "your group";
   const unitSlug = (unitRow as { slug?: string } | null)?.slug ?? slugParam;
 
+  let pending_like_notify: Record<string, unknown> | null = null;
   if (liked && post.user_id !== user.id) {
     const actorName = await fetchActorName(adminClient, user.id);
-    await adminClient.from("notifications").insert({
+    pending_like_notify = {
       user_id: post.user_id,
-      actor_id: user.id,
       actor_name: actorName,
-      type: "unit_post_like",
-      message: `${actorName} liked your post in ${unitName}`,
       post_owner_id: post.user_id,
-      unit_id: post.unit_id,
-      unit_post_id: postId,
-      metadata: { unit_slug: unitSlug },
-    });
+      message: `${actorName} liked your post in ${unitName}`,
+      type: "unit_post_like",
+      category: "group",
+      entity_type: "unit_post",
+      entity_id: postId,
+      link: `/units/${encodeURIComponent(unitSlug)}?unitPostId=${encodeURIComponent(postId)}`,
+      group_key: `unit_post:${postId}:likes`,
+      dedupe_key: `unit_post_like:${postId}:${user.id}`,
+      metadata: { unit_slug: unitSlug, unit_id: post.unit_id, unit_post_id: postId },
+    };
   }
 
   if (liked) {
@@ -126,5 +130,5 @@ export async function POST(
     .select("*", { count: "exact", head: true })
     .eq("unit_post_id", postId);
 
-  return NextResponse.json({ liked, like_count: count ?? 0 });
+  return NextResponse.json({ liked, like_count: count ?? 0, pending_like_notify });
 }

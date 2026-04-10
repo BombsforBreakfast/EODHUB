@@ -8,6 +8,10 @@ import { getNotificationHref, getNotificationIcon, type NotificationNavInput } f
 export type CenterNotification = NotificationNavInput & {
   id: string;
   is_read: boolean;
+  read_at?: string | null;
+  archived_at?: string | null;
+  group_key?: string | null;
+  link?: string | null;
   created_at: string;
   actor_name: string;
   actor_id?: string | null;
@@ -33,20 +37,24 @@ type Props = {
   open: boolean;
   onClose: () => void;
   notifications: CenterNotification[];
+  unreadCount: number;
   currentUserId: string | null;
   isAdmin: boolean;
   onDismiss: (id: string) => void;
   onOpenItem: (id: string, href: string) => void;
+  onMarkAllRead?: () => void;
 };
 
 export default function NotificationCenter({
   open,
   onClose,
   notifications,
+  unreadCount,
   currentUserId,
   isAdmin,
   onDismiss,
   onOpenItem,
+  onMarkAllRead,
 }: Props) {
   const { t, isDark } = useTheme();
 
@@ -67,6 +75,22 @@ export default function NotificationCenter({
   const cardBg = isDark
     ? "rgba(40, 40, 48, 0.75)"
     : "rgba(255, 255, 255, 0.72)";
+
+  const grouped = notifications.reduce((acc, item) => {
+    if (item.archived_at) return acc;
+    const key = item.group_key || item.id;
+    const existing = acc.get(key);
+    const isUnread = !item.read_at && !item.is_read;
+    if (!existing) {
+      acc.set(key, { lead: item, count: 1, unreadCount: isUnread ? 1 : 0 });
+      return acc;
+    }
+    existing.count += 1;
+    if (isUnread) existing.unreadCount += 1;
+    return acc;
+  }, new Map<string, { lead: CenterNotification; count: number; unreadCount: number }>());
+
+  const groupedItems = Array.from(grouped.values());
 
   return createPortal(
     <div
@@ -120,28 +144,49 @@ export default function NotificationCenter({
           <span style={{ fontWeight: 800, fontSize: 17, color: t.text, letterSpacing: -0.3 }}>
             Notifications
           </span>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: "50%",
-              border: `1px solid ${t.border}`,
-              background: t.bg,
-              color: t.text,
-              fontSize: 22,
-              lineHeight: 1,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              padding: 0,
-            }}
-          >
-            ×
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {unreadCount > 0 && onMarkAllRead && (
+              <button
+                type="button"
+                onClick={onMarkAllRead}
+                style={{
+                  border: `1px solid ${t.border}`,
+                  background: t.bg,
+                  color: t.text,
+                  fontSize: 12,
+                  lineHeight: 1,
+                  cursor: "pointer",
+                  borderRadius: 999,
+                  padding: "7px 10px",
+                  fontWeight: 700,
+                }}
+              >
+                Mark all read
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={onClose}
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: "50%",
+                border: `1px solid ${t.border}`,
+                background: t.bg,
+                color: t.text,
+                fontSize: 22,
+                lineHeight: 1,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <div
@@ -154,13 +199,14 @@ export default function NotificationCenter({
             gap: 8,
           }}
         >
-          {notifications.length === 0 ? (
+          {groupedItems.length === 0 ? (
             <div style={{ padding: "32px 16px", textAlign: "center", color: t.textMuted, fontSize: 14 }}>
               You&apos;re all caught up.
             </div>
           ) : (
-            notifications.map((n) => {
-              const href = getNotificationHref(n, { currentUserId, isAdmin });
+            groupedItems.map((item) => {
+              const n = item.lead;
+              const href = n.link || getNotificationHref(n, { currentUserId, isAdmin });
               const icon = getNotificationIcon(n);
               const title = n.actor_name?.trim() ? n.actor_name : "EOD HUB";
               return (
@@ -209,12 +255,20 @@ export default function NotificationCenter({
                       </span>
                       <span style={{ minWidth: 0, flex: 1 }}>
                         <span style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-                          <span style={{ fontWeight: 800, fontSize: 13, color: t.text }}>{title}</span>
+                          <span style={{ fontWeight: 800, fontSize: 13, color: t.text }}>
+                            {title}
+                            {item.unreadCount > 0 ? ` · ${item.unreadCount} new` : ""}
+                          </span>
                           <span style={{ fontSize: 11, color: t.textMuted, flexShrink: 0 }}>{formatRelativeTime(n.created_at)}</span>
                         </span>
                         <span style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.35, display: "block" }}>
                           {n.message}
                         </span>
+                        {item.count > 1 && (
+                          <span style={{ fontSize: 12, color: t.textMuted, marginTop: 4, display: "block" }}>
+                            +{item.count - 1} more in this stack
+                          </span>
+                        )}
                       </span>
                     </button>
                     <button

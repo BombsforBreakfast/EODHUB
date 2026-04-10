@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../lib/memberSubscriptionServer";
+import { createNotification } from "../../../../lib/notificationsServer";
 
 function getAdminClient() {
   return createClient(
@@ -119,18 +120,23 @@ export async function POST(
   }
 
   // Notify every invited user directly from toInvite (don't rely on upsert return)
-  await adminClient.from("notifications").insert(
-    toInvite.map((userId) => ({
-      user_id: userId,
-      actor_id: user.id,
-      type: "unit_invite",
-      message: `${inviterName} invited you to join ${unit.name}`,
-      actor_name: inviterName,
-      post_owner_id: null,
-      unit_id: unit.id,
-      metadata: { unit_slug: slug },
-      is_read: false,
-    }))
+  await Promise.all(
+    toInvite.map((recipientUserId) =>
+      createNotification(adminClient, {
+        recipientUserId,
+        actorUserId: user.id,
+        actorName: inviterName,
+        type: "unit_invite",
+        category: "group",
+        entityType: "unit",
+        entityId: unit.id,
+        message: `${inviterName} invited you to join ${unit.name}`,
+        link: `/units/${encodeURIComponent(slug)}`,
+        groupKey: `unit:${unit.id}:invites`,
+        dedupeKey: `unit_invite:${unit.id}:${recipientUserId}`,
+        metadata: { unit_slug: slug, unit_id: unit.id },
+      }),
+    ),
   );
 
   return NextResponse.json({ invited: toInvite.length });
