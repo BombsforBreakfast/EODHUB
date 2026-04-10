@@ -164,9 +164,9 @@ export async function POST(
   const unitSlug = (unitRow as { slug?: string } | null)?.slug ?? slugParam;
 
   const body = await req.json();
-  const { content } = body as { content?: string };
+  const { content, image_url, gif_url } = body as { content?: string; image_url?: string | null; gif_url?: string | null };
 
-  if (!content?.trim()) {
+  if (!content?.trim() && !image_url && !gif_url) {
     return NextResponse.json({ error: "Content is required" }, { status: 400 });
   }
 
@@ -175,7 +175,9 @@ export async function POST(
     .insert({
       unit_post_id: postId,
       user_id: user.id,
-      content: content.trim(),
+      content: content?.trim() ?? "",
+      image_url: image_url ?? null,
+      gif_url: gif_url ?? null,
     })
     .select()
     .single();

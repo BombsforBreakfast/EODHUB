@@ -5,6 +5,8 @@ import { useParams } from "next/navigation";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import NavBar from "../../components/NavBar";
+import GifPickerButton from "../../components/GifPickerButton";
+import EmojiPickerButton from "../../components/EmojiPickerButton";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -47,6 +49,8 @@ type Comment = {
   created_at: string;
   author_name: string;
   author_photo: string | null;
+  image_url?: string | null;
+  gif_url?: string | null;
 };
 
 type Member = {
@@ -423,14 +427,25 @@ export default function UnitPage() {
     }
   }
 
-  async function submitComment(postId: string) {
-    const content = commentInputs[postId]?.trim();
-    if (!content) return;
+  async function submitComment(postId: string, imageFile?: File | null, gifUrl?: string | null) {
+    const content = commentInputs[postId]?.trim() ?? "";
+    if (!content && !imageFile && !gifUrl) return;
+
+    let uploadedImageUrl: string | null = null;
+    if (imageFile && currentUserId) {
+      const path = `unit-comments/${currentUserId}/${postId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      const { error: upErr } = await supabase.storage.from("feed-images").upload(path, imageFile, { upsert: false });
+      if (!upErr) {
+        const { data } = supabase.storage.from("feed-images").getPublicUrl(path);
+        uploadedImageUrl = data.publicUrl;
+      }
+    }
+
     const token = await getToken();
     const res = await fetch(`/api/units/${slug}/posts/${postId}/comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, image_url: uploadedImageUrl, gif_url: gifUrl ?? null }),
     });
     if (res.ok) {
       const json = await res.json();
@@ -740,13 +755,14 @@ export default function UnitPage() {
                       key={post.id}
                       post={post}
                       t={t}
+                      isDark={isDark}
                       comments={comments[post.id]}
                       commentInput={commentInputs[post.id] ?? ""}
                       onCommentInputChange={(v) => setCommentInputs((prev) => ({ ...prev, [post.id]: v }))}
                       expanded={expandedComments.has(post.id)}
                       onToggleLike={() => toggleLike(post.id)}
                       onToggleComments={() => toggleComments(post.id)}
-                      onSubmitComment={() => submitComment(post.id)}
+                      onSubmitComment={(imageFile, gifUrl) => submitComment(post.id, imageFile, gifUrl)}
                     />
                   );
                 })}
@@ -1073,19 +1089,42 @@ function JoinRequestCard({ post, isGod, currentUserId, onVote, onApprove, onDeny
   );
 }
 
-function PostCard({ post, t, comments, commentInput, onCommentInputChange, expanded, onToggleLike, onToggleComments, onSubmitComment }: {
-  post: UnitPost; t: ThemeTokens;
+function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChange, expanded, onToggleLike, onToggleComments, onSubmitComment }: {
+  post: UnitPost; t: ThemeTokens; isDark: boolean;
   comments: Comment[] | undefined;
   commentInput: string;
   onCommentInputChange: (v: string) => void;
   expanded: boolean;
   onToggleLike: () => void;
   onToggleComments: () => void;
-  onSubmitComment: () => void;
+  onSubmitComment: (imageFile?: File | null, gifUrl?: string | null) => Promise<void>;
 }) {
   const [submittingComment, setSubmittingComment] = useState(false);
+  const [commentGif, setCommentGif] = useState<string | null>(null);
+  const [commentImage, setCommentImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const commentImageInputRef = useRef<HTMLInputElement | null>(null);
+
+  function clearCommentMedia() {
+    setCommentGif(null);
+    if (commentImage) URL.revokeObjectURL(commentImage.previewUrl);
+    setCommentImage(null);
+    if (commentImageInputRef.current) commentImageInputRef.current.value = "";
+  }
+
+  async function handleSend() {
+    if (submittingComment) return;
+    setSubmittingComment(true);
+    try {
+      await onSubmitComment(commentImage?.file ?? null, commentGif);
+      clearCommentMedia();
+    } finally {
+      setSubmittingComment(false);
+    }
+  }
+
   return (
     <div id={`unit-post-${post.id}`} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+      {/* Author row */}
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
         <Avatar photo={post.author_photo} name={post.author_name} size={38} />
         <div>
@@ -1094,63 +1133,39 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
         </div>
       </div>
 
+      {/* Content */}
       {post.content && (
         <div style={{ fontSize: 15, lineHeight: 1.6, marginBottom: post.photo_url ? 12 : 0, color: t.text }}>{post.content}</div>
       )}
 
+      {/* Photo — square aspect ratio matching feed */}
       {post.photo_url && (
-        <img src={post.photo_url} alt="" style={{ width: "100%", borderRadius: 10, objectFit: "cover", maxHeight: 400, marginBottom: 0 }} />
+        <div style={{ marginTop: post.content ? 0 : 0, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "1 / 1", maxWidth: 420 }}>
+          <img src={post.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        </div>
       )}
 
-      {/* Like / Comment — match home feed (text actions + counts) */}
-      <div
-        style={{
-          display: "flex",
-          gap: 16,
-          alignItems: "center",
-          marginTop: 14,
-          flexWrap: "wrap",
-        }}
-      >
+      {/* Like / Comment / counts */}
+      <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
         <button
           type="button"
           onClick={onToggleLike}
-          style={{
-            background: "transparent",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
-            fontWeight: 700,
-            color: post.user_liked ? t.text : t.textMuted,
-            fontSize: 14,
-          }}
+          style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: post.user_liked ? t.text : t.textMuted, fontSize: 14 }}
         >
           {post.user_liked ? "Unlike" : "Like"}
         </button>
         <button
           type="button"
           onClick={onToggleComments}
-          style={{
-            background: "transparent",
-            border: "none",
-            padding: 0,
-            cursor: "pointer",
-            fontWeight: 700,
-            color: t.textMuted,
-            fontSize: 14,
-          }}
+          style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: t.textMuted, fontSize: 14 }}
         >
           {expanded ? "Hide Comments" : "Comment"}
         </button>
-        <div style={{ fontSize: 14, color: t.textMuted }}>
-          {post.like_count} {post.like_count === 1 ? "like" : "likes"}
-        </div>
-        <div style={{ fontSize: 14, color: t.textMuted }}>
-          {post.comment_count} {post.comment_count === 1 ? "comment" : "comments"}
-        </div>
+        <div style={{ fontSize: 14, color: t.textMuted }}>{post.like_count} {post.like_count === 1 ? "like" : "likes"}</div>
+        <div style={{ fontSize: 14, color: t.textMuted }}>{post.comment_count} {post.comment_count === 1 ? "comment" : "comments"}</div>
       </div>
 
-      {/* Comments */}
+      {/* Comments section */}
       {expanded && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.borderLight}` }}>
           {(comments ?? []).length === 0 && (
@@ -1161,26 +1176,95 @@ function PostCard({ post, t, comments, commentInput, onCommentInputChange, expan
               <Avatar photo={c.author_photo} name={c.author_name} size={28} />
               <div style={{ background: t.badgeBg, borderRadius: 10, padding: "7px 12px", flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 2 }}>{c.author_name}</div>
-                <div style={{ fontSize: 13, color: t.text }}>{c.content}</div>
+                {c.content && <div style={{ fontSize: 13, color: t.text, lineHeight: 1.45 }}>{c.content}</div>}
+                {c.image_url && (
+                  <div style={{ marginTop: 8, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
+                    <img src={c.image_url} alt="Comment image" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+                  </div>
+                )}
+                {c.gif_url && (
+                  <div style={{ marginTop: 8 }}>
+                    <img src={c.gif_url} alt="GIF" style={{ maxWidth: 180, borderRadius: 10, display: "block" }} />
+                  </div>
+                )}
               </div>
             </div>
           ))}
-          <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-            <input
+
+          {/* Comment input */}
+          <div style={{ marginTop: 8 }}>
+            <textarea
               value={commentInput}
               onChange={(e) => onCommentInputChange(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && onSubmitComment()}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleSend(); } }}
               placeholder="Write a comment..."
-              style={{ flex: 1, padding: "8px 12px", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 13, outline: "none" }}
+              rows={2}
+              style={{ width: "100%", padding: "8px 12px", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 13, outline: "none", resize: "vertical", boxSizing: "border-box" }}
             />
-            <button
-              disabled={submittingComment}
-              onClick={async () => { setSubmittingComment(true); try { await Promise.resolve(onSubmitComment()); } finally { setSubmittingComment(false); } }}
-              style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: submittingComment ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}
-            >
-              {submittingComment && <span className="btn-spinner" />}
-              Send
-            </button>
+
+            <input
+              ref={commentImageInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                if (commentImage) URL.revokeObjectURL(commentImage.previewUrl);
+                setCommentImage({ file, previewUrl: URL.createObjectURL(file) });
+                setCommentGif(null);
+              }}
+            />
+
+            {/* GIF preview */}
+            {commentGif && (
+              <div style={{ marginTop: 8, position: "relative", display: "inline-block" }}>
+                <img src={commentGif} alt="GIF" style={{ maxWidth: 180, borderRadius: 10, display: "block" }} />
+                <button type="button" onClick={() => setCommentGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "#fff", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              </div>
+            )}
+
+            {/* Image preview */}
+            {commentImage && (
+              <div style={{ marginTop: 8, position: "relative", display: "inline-block", width: 120, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
+                <img src={commentImage.previewUrl} alt="" style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }} />
+                <button type="button" onClick={() => { if (commentImage) URL.revokeObjectURL(commentImage.previewUrl); setCommentImage(null); if (commentImageInputRef.current) commentImageInputRef.current.value = ""; }} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.75)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "#fff", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+              </div>
+            )}
+
+            {/* Action row: Photo / Emoji / GIF / Send */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => commentImageInputRef.current?.click()}
+                style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "7px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+              >
+                {commentImage ? "Change Photo" : "Add Photo"}
+              </button>
+
+              <EmojiPickerButton
+                value={commentInput}
+                onChange={onCommentInputChange}
+                inputRef={{ current: null }}
+                theme={isDark ? "dark" : "light"}
+              />
+
+              <GifPickerButton
+                onSelect={(url) => { setCommentGif(url); setCommentImage(null); }}
+                theme={isDark ? "dark" : "light"}
+              />
+
+              <button
+                type="button"
+                disabled={submittingComment}
+                onClick={() => void handleSend()}
+                style={{ marginLeft: "auto", background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: submittingComment ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6, opacity: submittingComment ? 0.7 : 1 }}
+              >
+                {submittingComment && <span className="btn-spinner" />}
+                Send
+              </button>
+            </div>
           </div>
         </div>
       )}
