@@ -19,6 +19,7 @@ import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "./lib/
 import UpgradePromptModal from "./components/UpgradePromptModal";
 import EventFeedActions from "./components/EventFeedActions";
 import KangarooCourtFeedSection from "./components/KangarooCourtFeedSection";
+import { KangarooCourtVerdictBanner } from "./components/KangarooCourtVerdictBanner";
 import { getFeatureAccess } from "./lib/featureAccess";
 import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "./lib/jobFilters";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "./lib/likeNotifyDelay";
@@ -4339,6 +4340,12 @@ export default function HomePage() {
                     </div>
                   </div>
 
+                  {!isEditingPost &&
+                    post.kangaroo?.court?.status === "closed" &&
+                    post.kangaroo?.verdict && (
+                      <KangarooCourtVerdictBanner verdict={post.kangaroo.verdict} />
+                    )}
+
                   {isEditingPost ? (
                     <div style={{ marginTop: 10 }}>
                       <textarea
@@ -4553,14 +4560,7 @@ export default function HomePage() {
                     </>
                   )}
 
-                  {/* Feed order: post body (+ optional event) → Kangaroo Court → like/comment toolbar → comment list */}
-                  <KangarooCourtFeedSection
-                    postId={post.id}
-                    userId={userId}
-                    bundle={post.kangaroo ?? null}
-                    onAfterChange={() => void loadPosts()}
-                  />
-
+                  {/* Feed order: post body (+ optional event) → toolbar → court card → comment list */}
                   <div
                     style={{
                       display: "flex",
@@ -4602,6 +4602,15 @@ export default function HomePage() {
                       {commentsOpen ? "Hide Comments" : "Comment"}
                     </button>
 
+                    {/* KC trigger: judge avatar in toolbar, floats confirm/builder below */}
+                    <KangarooCourtFeedSection
+                      postId={post.id}
+                      userId={userId}
+                      bundle={post.kangaroo ?? null}
+                      onAfterChange={() => void loadPosts()}
+                      mode="trigger-inline"
+                    />
+
                     {post.likeCount > 0 && <PostLikersStack likers={post.likers} />}
 
                     <div style={{ fontSize: 14, color: t.textMuted }}>
@@ -4613,6 +4622,15 @@ export default function HomePage() {
                       {post.commentCount === 1 ? "comment" : "comments"}
                     </div>
                   </div>
+
+                  {/* KC court card: active/closed court displayed below toolbar */}
+                  <KangarooCourtFeedSection
+                    postId={post.id}
+                    userId={userId}
+                    bundle={post.kangaroo ?? null}
+                    onAfterChange={() => void loadPosts()}
+                    mode="card-only"
+                  />
 
                   {(post.comments.length > 0 || commentsOpen) && (
                     <div

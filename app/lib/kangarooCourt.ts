@@ -5,7 +5,22 @@
  */
 
 export const JUDGE_DISPLAY_NAME = "Judge N. E. W.";
-export const JUDGE_SUBTITLE = "Newton E. Wentworth, Presiding";
+export const JUDGE_SUBTITLE = "Newton E. Wentworth, Honorable";
+
+/**
+ * `close_expired_kangaroo_courts` embeds the judge header in `verdict.body`; the feed shows one
+ * header (avatar + JUDGE_*). Strip the duplicated leading lines when rendering.
+ */
+export function stripVerdictBodyLeadingDuplicate(body: string): string {
+  const lines = body.split(/\r?\n/);
+  let i = 0;
+  if (lines[i]?.trim() === "Judge N. E. W.") i += 1;
+  const sub = lines[i]?.trim() ?? "";
+  if (/^Newton E\. Wentworth,\s*(Presiding|Honorable)$/i.test(sub)) i += 1;
+  while (i < lines.length && (lines[i] === "" || lines[i]?.trim() === "")) i += 1;
+  const rest = lines.slice(i).join("\n").trim();
+  return rest.length > 0 ? rest : body;
+}
 
 export const KC_CONFIRM_TITLE = "Take this to Kangaroo Court?";
 export const KC_CONFIRM_SUBTITLE = "Let the community decide by vote.";
