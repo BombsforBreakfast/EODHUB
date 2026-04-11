@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "./lib/lib/supabaseClient";
 import NavBar from "./components/NavBar";
@@ -17,10 +18,24 @@ import { memberHasInteractionAccess } from "./lib/subscriptionAccess";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "./lib/flagCategories";
 import UpgradePromptModal from "./components/UpgradePromptModal";
 import EventFeedActions from "./components/EventFeedActions";
+import KangarooCourtFeedSection from "./components/KangarooCourtFeedSection";
 import { getFeatureAccess } from "./lib/featureAccess";
 import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "./lib/jobFilters";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "./lib/likeNotifyDelay";
 import { postNotifyJson } from "./lib/postNotifyClient";
+import type {
+  FeedKangarooBundle,
+  KangarooCourtOptionRow,
+  KangarooCourtRow,
+  KangarooCourtVerdictRow,
+  KcDurationHours,
+} from "./lib/kangarooCourt";
+import {
+  judgeAvatarSrc,
+  KC_CONFIRM_SUBTITLE,
+  KC_CONFIRM_TITLE,
+  KC_DURATION_HOURS,
+} from "./lib/kangarooCourt";
 
 type Job = {
   id: string;
@@ -208,6 +223,8 @@ type FeedPost = RankedPostRow & {
   event_going_count: number;
   event_my_attendance: "interested" | "going" | null;
   event_saved: boolean;
+  kangaroo?: FeedKangarooBundle | null;
+  court_verdict_at?: string | null;
 };
 
 type UnitFeedHighlight = {
@@ -574,7 +591,23 @@ export default function HomePage() {
   const [fetchingOg, setFetchingOg] = useState(false);
 
   const [selectedPostGif, setSelectedPostGif] = useState<string | null>(null);
+  const [kcComposerPhase, setKcComposerPhase] = useState<null | "confirm" | "builder">(null);
+  const [kcOpt1, setKcOpt1] = useState("");
+  const [kcOpt2, setKcOpt2] = useState("");
+  const [kcOpt3, setKcOpt3] = useState("");
+  const [kcOpt4, setKcOpt4] = useState("");
+  const [kcComposerDuration, setKcComposerDuration] = useState<KcDurationHours>(24);
   const [selectedCommentGifs, setSelectedCommentGifs] = useState<Record<string, string | null>>({});
+
+  /** Clears KC composer UI (confirm/builder, options, duration). Called on cancel, judge toggle-off, and successful post. Failed posts leave state so the user can retry. */
+  function resetKcComposer() {
+    setKcComposerPhase(null);
+    setKcOpt1("");
+    setKcOpt2("");
+    setKcOpt3("");
+    setKcOpt4("");
+    setKcComposerDuration(24);
+  }
 
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
   const postTextareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1228,7 +1261,21 @@ export default function HomePage() {
   }
 
   async function loadPosts(currentUserId?: string | null) {
-    const effectiveUserId = currentUserId ?? userId;
+    // Home `init()` sends unauthenticated users to /login before the first loadPosts; KC RLS is
+    // authenticated-only. Realtime can call loadPosts() before React `userId` is set — resolve
+    // from the session so Kangaroo bundles and close_expired still run when a session exists.
+    let effectiveUserId = currentUserId ?? userId;
+    if (effectiveUserId == null) {
+      const { data: { session } } = await supabase.auth.getSession();
+      effectiveUserId = session?.user?.id ?? null;
+    }
+
+    if (effectiveUserId) {
+      const { error: closeKcErr } = await supabase.rpc("close_expired_kangaroo_courts");
+      if (closeKcErr) {
+        console.warn("close_expired_kangaroo_courts:", closeKcErr.message);
+      }
+    }
 
     if (effectiveUserId) {
       const { data: memberships } = await supabase
@@ -1664,6 +1711,102 @@ export default function HomePage() {
       }
     }
 
+    const kcBundleByPostId = new Map<string, FeedKangarooBundle>();
+    const verdictAtByPostId = new Map<string, string | null>();
+
+    if (postIds.length > 0) {
+      const bumpRes = await supabase.from("posts").select("id, court_verdict_at").in("id", postIds);
+      if (!bumpRes.error && bumpRes.data) {
+        for (const row of bumpRes.data as { id: string; court_verdict_at: string | null }[]) {
+          verdictAtByPostId.set(row.id, row.court_verdict_at ?? null);
+        }
+      } else if (bumpRes.error && !isMissingColumnError(bumpRes.error, "court_verdict_at")) {
+        console.warn("court_verdict_at:", bumpRes.error.message);
+      }
+    }
+
+    if (postIds.length > 0 && effectiveUserId) {
+      const { data: courtsRaw, error: courtsErr } = await supabase
+        .from("kangaroo_courts")
+        .select(
+          "id, feed_post_id, unit_post_id, unit_id, opened_by, status, duration_hours, expires_at, closed_at, winning_option_id, total_votes, source, created_at"
+        )
+        .in("feed_post_id", postIds);
+
+      if (courtsErr) {
+        console.warn("kangaroo_courts:", courtsErr.message);
+      } else {
+        const courtsList = (courtsRaw ?? []) as KangarooCourtRow[];
+        if (courtsList.length > 0) {
+          const byPost = new Map<string, KangarooCourtRow[]>();
+          for (const c of courtsList) {
+            if (!c.feed_post_id) continue;
+            const arr = byPost.get(c.feed_post_id) ?? [];
+            arr.push(c);
+            byPost.set(c.feed_post_id, arr);
+          }
+
+          const courtIds = courtsList.map((c) => c.id);
+
+          // Verdicts live in kangaroo_court_verdicts; full page reload rehydrates via this query (no client-only cache).
+          const [{ data: optsRaw }, { data: verdictsRaw }, { data: votesRaw }] = await Promise.all([
+            supabase
+              .from("kangaroo_court_options")
+              .select("id, court_id, label, sort_order")
+              .in("court_id", courtIds)
+              .order("sort_order", { ascending: true }),
+            supabase
+              .from("kangaroo_court_verdicts")
+              .select("id, court_id, winning_option_id, winning_label_snapshot, total_votes, body, created_at")
+              .in("court_id", courtIds),
+            supabase.from("kangaroo_court_votes").select("court_id, option_id, user_id").in("court_id", courtIds),
+          ]);
+
+          const optsByCourt = new Map<string, KangarooCourtOptionRow[]>();
+          for (const o of (optsRaw ?? []) as KangarooCourtOptionRow[]) {
+            const arr = optsByCourt.get(o.court_id) ?? [];
+            arr.push(o);
+            optsByCourt.set(o.court_id, arr);
+          }
+
+          const verdictByCourt = new Map<string, KangarooCourtVerdictRow>();
+          for (const v of (verdictsRaw ?? []) as KangarooCourtVerdictRow[]) {
+            verdictByCourt.set(v.court_id, v);
+          }
+
+          const voteRows = (votesRaw ?? []) as { court_id: string; option_id: string; user_id: string }[];
+
+          for (const [, courtArr] of byPost) {
+            courtArr.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+            const court = courtArr[0];
+            const postKey = court.feed_post_id;
+            if (!postKey) continue;
+
+            const opts = optsByCourt.get(court.id) ?? [];
+            const verdict = verdictByCourt.get(court.id) ?? null;
+            const vForCourt = voteRows.filter((x) => x.court_id === court.id);
+            const voteCounts: Record<string, number> = {};
+            for (const v of vForCourt) {
+              voteCounts[v.option_id] = (voteCounts[v.option_id] ?? 0) + 1;
+            }
+            let myVoteOptionId: string | null = null;
+            if (effectiveUserId) {
+              const mine = vForCourt.find((v) => v.user_id === effectiveUserId);
+              myVoteOptionId = mine?.option_id ?? null;
+            }
+
+            kcBundleByPostId.set(postKey, {
+              court,
+              options: opts,
+              verdict,
+              myVoteOptionId,
+              voteCounts,
+            });
+          }
+        }
+      }
+    }
+
     const mergedPosts: FeedPost[] = rawPosts.map((post) => {
       const likesForPost = likesByPost.get(post.id) || [];
       const seenLiker = new Set<string>();
@@ -1719,6 +1862,8 @@ export default function HomePage() {
         event_going_count: ac.going,
         event_my_attendance: myEvAtt,
         event_saved: evSaved,
+        kangaroo: kcBundleByPostId.get(post.id) ?? null,
+        court_verdict_at: verdictAtByPostId.get(post.id) ?? null,
       };
     });
 
@@ -1747,13 +1892,22 @@ export default function HomePage() {
     // Rank: fresh posts float to top by default; engagement fights time decay.
     // Connection affinity adds a mild social boost once Know is mutually accepted.
     const now = Date.now();
+    function verdictBoost(at: string | null | undefined): number {
+      if (!at) return 1;
+      const ms = now - new Date(at).getTime();
+      if (ms < 0) return 1;
+      const hours = ms / 3_600_000;
+      if (hours >= 48) return 1;
+      return 1 + 0.2 * (1 - hours / 48);
+    }
+
     mergedPosts.sort((a, b) => {
       const ageA = (now - new Date(a.created_at).getTime()) / 3_600_000;
       const ageB = (now - new Date(b.created_at).getTime()) / 3_600_000;
       const baseA = (a.likeCount + a.commentCount * 2 + 1) / Math.pow(ageA + 2, 1.5);
       const baseB = (b.likeCount + b.commentCount * 2 + 1) / Math.pow(ageB + 2, 1.5);
-      const scoreA = baseA * (authorAffinityBoost.get(a.user_id) ?? 1);
-      const scoreB = baseB * (authorAffinityBoost.get(b.user_id) ?? 1);
+      const scoreA = baseA * (authorAffinityBoost.get(a.user_id) ?? 1) * verdictBoost(a.court_verdict_at);
+      const scoreB = baseB * (authorAffinityBoost.get(b.user_id) ?? 1) * verdictBoost(b.court_verdict_at);
       return scoreB - scoreA;
     });
 
@@ -1954,6 +2108,18 @@ export default function HomePage() {
     }
     if (blockMemberInteraction()) return;
 
+    const labelsForKc = [kcOpt1, kcOpt2, kcOpt3, kcOpt4].map((s) => s.trim()).filter(Boolean);
+    if (kcComposerPhase === "confirm") {
+      alert('Use “Start Court” to add poll options, or click the judge again to cancel Kangaroo Court.');
+      return;
+    }
+    if (kcComposerPhase === "builder") {
+      if (labelsForKc.length < 2 || labelsForKc.length > 4) {
+        alert("Enter between 2 and 4 options for Kangaroo Court.");
+        return;
+      }
+    }
+
     if (!content.trim() && selectedPostImages.length === 0 && !selectedPostGif) return;
 
     try {
@@ -1964,6 +2130,71 @@ export default function HomePage() {
       const gifToPost = selectedPostGif;
 
       const currentOg = ogPreview;
+
+      if (kcComposerPhase === "builder" && labelsForKc.length >= 2) {
+        const uploadedUrls: string[] = [];
+        const uploadPrefix = `${userId}/posts/kc-${Date.now()}`;
+        for (let i = 0; i < imagesToUpload.length; i += 1) {
+          const item = imagesToUpload[i];
+          const publicUrl = await uploadFileToFeedImagesBucket(item.file, uploadPrefix);
+          uploadedUrls.push(publicUrl);
+        }
+
+        const { data: kcRpcData, error: kcRpcError } = await supabase.rpc("create_feed_post_with_kangaroo_court", {
+          p_content: contentToPost,
+          p_gif_url: gifToPost ?? "",
+          p_og_url: currentOg?.url ?? "",
+          p_og_title: currentOg?.title ?? "",
+          p_og_description: currentOg?.description ?? "",
+          p_og_image: currentOg?.image ?? "",
+          p_og_site_name: currentOg?.siteName ?? "",
+          p_image_urls: uploadedUrls,
+          p_option_labels: labelsForKc,
+          p_duration_hours: kcComposerDuration,
+        });
+
+        if (kcRpcError || kcRpcData == null) {
+          console.error("create_feed_post_with_kangaroo_court:", kcRpcError);
+          alert(kcRpcError?.message || "Failed to create post with Kangaroo Court.");
+          setSubmittingPost(false);
+          return;
+        }
+
+        const kcRow = Array.isArray(kcRpcData) ? kcRpcData[0] : kcRpcData;
+        const postId = (kcRow as { post_id: string }).post_id;
+
+        const mentionIds = extractMentionIds(contentToPost).filter((id) => id !== userId);
+        if (mentionIds.length > 0) {
+          await Promise.all(
+            mentionIds.map((uid) =>
+              postNotifyJson(supabase, {
+                user_id: uid,
+                actor_name: currentUserName ?? "Someone",
+                post_owner_id: userId,
+                type: "mention_post",
+                category: "social",
+                post_id: postId,
+                message: `${currentUserName ?? "Someone"} mentioned you in a post`,
+                link: `/?postId=${encodeURIComponent(postId)}`,
+                group_key: `post:${postId}:mentions`,
+                dedupe_key: `mention_post:${postId}:${uid}`,
+                metadata: { feed: true, post_id: postId },
+              }),
+            ),
+          );
+        }
+
+        setContent("");
+        contentRawRef.current = "";
+        setOgPreview(null);
+        clearSelectedPostImages();
+        setSelectedPostGif(null);
+        resetKcComposer();
+        setSubmittingPost(false);
+        void loadPosts();
+        return;
+      }
+
       const { data: insertedPost, error: insertError } = await supabase
         .from("posts")
         .insert([
@@ -1985,6 +2216,7 @@ export default function HomePage() {
       if (insertError || !insertedPost?.id) {
         console.error("INSERT ERROR:", insertError);
         alert(insertError?.message || "Failed to create post.");
+        setSubmittingPost(false);
         return;
       }
 
@@ -2036,6 +2268,7 @@ export default function HomePage() {
         if (postImagesInsertError) {
           console.error("POST IMAGES INSERT ERROR:", postImagesInsertError);
           alert(postImagesInsertError.message);
+          setSubmittingPost(false);
           return;
         }
 
@@ -2054,6 +2287,7 @@ export default function HomePage() {
       setOgPreview(null);
       clearSelectedPostImages();
       setSelectedPostGif(null);
+      resetKcComposer();
       setSubmittingPost(false);
 
       void loadPosts();
@@ -3471,6 +3705,178 @@ export default function HomePage() {
               </div>
             )}
 
+            {kcComposerPhase === "confirm" && (
+              <div
+                style={{
+                  marginTop: 14,
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 12,
+                  padding: 14,
+                  background: isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)",
+                  maxWidth: 400,
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>{KC_CONFIRM_TITLE}</div>
+                <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 12 }}>{KC_CONFIRM_SUBTITLE}</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setKcComposerPhase("builder");
+                    }}
+                    style={{
+                      background: "#111",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: 10,
+                      padding: "8px 16px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Start Court
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => resetKcComposer()}
+                    style={{
+                      border: `1px solid ${t.border}`,
+                      borderRadius: 10,
+                      padding: "8px 16px",
+                      fontWeight: 700,
+                      background: t.surface,
+                      color: t.text,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {kcComposerPhase === "builder" && (
+              <div
+                style={{
+                  marginTop: 14,
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 12,
+                  padding: 14,
+                  background: t.surface,
+                }}
+              >
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>Kangaroo Court</div>
+                <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10 }}>
+                  Add 2–4 options and a duration, then press Post. Your text and photos will publish with the poll.
+                </div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: t.textMuted }}>Option 1</label>
+                <input
+                  value={kcOpt1}
+                  onChange={(e) => setKcOpt1(e.target.value)}
+                  placeholder="Option A"
+                  style={{
+                    width: "100%",
+                    marginTop: 4,
+                    marginBottom: 8,
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${t.inputBorder}`,
+                    background: t.input,
+                    color: t.text,
+                    boxSizing: "border-box",
+                  }}
+                />
+                <label style={{ fontSize: 12, fontWeight: 600, color: t.textMuted }}>Option 2</label>
+                <input
+                  value={kcOpt2}
+                  onChange={(e) => setKcOpt2(e.target.value)}
+                  placeholder="Option B"
+                  style={{
+                    width: "100%",
+                    marginTop: 4,
+                    marginBottom: 8,
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${t.inputBorder}`,
+                    background: t.input,
+                    color: t.text,
+                    boxSizing: "border-box",
+                  }}
+                />
+                <label style={{ fontSize: 12, fontWeight: 600, color: t.textMuted }}>Option 3 (optional)</label>
+                <input
+                  value={kcOpt3}
+                  onChange={(e) => setKcOpt3(e.target.value)}
+                  style={{
+                    width: "100%",
+                    marginTop: 4,
+                    marginBottom: 8,
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${t.inputBorder}`,
+                    background: t.input,
+                    color: t.text,
+                    boxSizing: "border-box",
+                  }}
+                />
+                <label style={{ fontSize: 12, fontWeight: 600, color: t.textMuted }}>Option 4 (optional)</label>
+                <input
+                  value={kcOpt4}
+                  onChange={(e) => setKcOpt4(e.target.value)}
+                  style={{
+                    width: "100%",
+                    marginTop: 4,
+                    marginBottom: 10,
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${t.inputBorder}`,
+                    background: t.input,
+                    color: t.text,
+                    boxSizing: "border-box",
+                  }}
+                />
+                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 6, color: t.textMuted }}>Duration</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                  {KC_DURATION_HOURS.map((h) => (
+                    <button
+                      key={h}
+                      type="button"
+                      onClick={() => setKcComposerDuration(h)}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 8,
+                        border:
+                          kcComposerDuration === h ? `2px solid ${t.text}` : `1px solid ${t.border}`,
+                        background: kcComposerDuration === h ? (isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)") : t.surface,
+                        fontWeight: 700,
+                        fontSize: 12,
+                        cursor: "pointer",
+                        color: t.text,
+                      }}
+                    >
+                      {h}h
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => resetKcComposer()}
+                  style={{
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 10,
+                    padding: "8px 16px",
+                    fontWeight: 700,
+                    background: t.bg,
+                    color: t.textMuted,
+                    cursor: "pointer",
+                    fontSize: 13,
+                  }}
+                >
+                  Exit Kangaroo Court
+                </button>
+              </div>
+            )}
+
             <div
               style={{
                 marginTop: 12,
@@ -3531,6 +3937,28 @@ export default function HomePage() {
                 />
 
                 <button
+                  type="button"
+                  title={kcComposerPhase ? "Exit Kangaroo Court" : "Kangaroo Court — add a poll to this post"}
+                  onClick={() => {
+                    if (kcComposerPhase) resetKcComposer();
+                    else setKcComposerPhase("confirm");
+                  }}
+                  style={{
+                    width: 40,
+                    height: 40,
+                    padding: 0,
+                    borderRadius: 999,
+                    border: `2px solid ${kcComposerPhase ? "#7c3aed" : t.border}`,
+                    background: t.surface,
+                    cursor: "pointer",
+                    overflow: "hidden",
+                    flexShrink: 0,
+                  }}
+                >
+                  <Image src={judgeAvatarSrc()} alt="" width={40} height={40} style={{ objectFit: "cover", display: "block" }} unoptimized />
+                </button>
+
+                <button
                   onClick={submitPost}
                   disabled={submittingPost}
                   style={{
@@ -3548,7 +3976,7 @@ export default function HomePage() {
                   }}
                 >
                   {submittingPost && <span className="btn-spinner" />}
-                  Post
+                  {kcComposerPhase === "builder" ? "Post with court" : "Post"}
                 </button>
               </div>
             </div>
@@ -4072,6 +4500,14 @@ export default function HomePage() {
                       />
                     </>
                   )}
+
+                  {/* Feed order: post body (+ optional event) → Kangaroo Court → like/comment toolbar → comment list */}
+                  <KangarooCourtFeedSection
+                    postId={post.id}
+                    userId={userId}
+                    bundle={post.kangaroo ?? null}
+                    onAfterChange={() => void loadPosts()}
+                  />
 
                   <div
                     style={{
