@@ -22,6 +22,16 @@ type Props = {
   onAfterChange: () => void;
 };
 
+/** Supabase RPC errors are plain objects with `message`, not always `instanceof Error`. */
+function rpcErrMsg(e: unknown, fallback: string): string {
+  if (e instanceof Error && e.message) return e.message;
+  if (typeof e === "object" && e !== null && "message" in e) {
+    const m = (e as { message: unknown }).message;
+    if (typeof m === "string" && m.length > 0) return m;
+  }
+  return fallback;
+}
+
 function formatRemaining(expiresAt: string): string {
   const ms = new Date(expiresAt).getTime() - Date.now();
   if (ms <= 0) return "0m";
@@ -63,13 +73,20 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
         p_option_labels: labels,
         p_duration_hours: duration,
       });
-      if (error) throw error;
-      if (!data) throw new Error("No court id returned");
+      if (error) {
+        console.error("open_kangaroo_court_on_feed_post", error);
+        alert(rpcErrMsg(error, "Could not start court."));
+        return;
+      }
+      if (!data) {
+        alert("No court id returned");
+        return;
+      }
       setBuilderOpen(false);
       setConfirmOpen(false);
       onAfterChange();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Could not start court.");
+      alert(rpcErrMsg(e, "Could not start court."));
     } finally {
       setSubmitting(false);
     }
@@ -83,10 +100,15 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
         p_court_id: court.id,
         p_option_id: optionId,
       });
-      if (error) throw error;
+      if (error) {
+        console.error("vote_kangaroo_court", error);
+        alert(rpcErrMsg(error, "Vote failed."));
+        return;
+      }
       onAfterChange();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Vote failed.");
+      console.error("vote_kangaroo_court", e);
+      alert(rpcErrMsg(e, "Vote failed."));
     } finally {
       setVoteBusy(false);
     }
