@@ -1261,14 +1261,12 @@ export default function HomePage() {
   }
 
   async function loadPosts(currentUserId?: string | null) {
-    // Home `init()` sends unauthenticated users to /login before the first loadPosts; KC RLS is
-    // authenticated-only. Realtime can call loadPosts() before React `userId` is set — resolve
-    // from the session so Kangaroo bundles and close_expired still run when a session exists.
-    let effectiveUserId = currentUserId ?? userId;
-    if (effectiveUserId == null) {
-      const { data: { session } } = await supabase.auth.getSession();
-      effectiveUserId = session?.user?.id ?? null;
-    }
+    // Resolve user id from the live session first. Google OAuth often hydrates the Supabase session
+    // before React `userId` updates; realtime loadPosts() can also close over a stale null userId.
+    // Kangaroo Court (and other RLS paths) need a consistent id that matches the JWT.
+    const { data: { session } } = await supabase.auth.getSession();
+    const effectiveUserId =
+      session?.user?.id ?? currentUserId ?? userId ?? null;
 
     if (effectiveUserId) {
       const { error: closeKcErr } = await supabase.rpc("close_expired_kangaroo_courts");
@@ -1721,11 +1719,30 @@ export default function HomePage() {
           verdictAtByPostId.set(row.id, row.court_verdict_at ?? null);
         }
       } else if (bumpRes.error && !isMissingColumnError(bumpRes.error, "court_verdict_at")) {
-        console.warn("court_verdict_at:", bumpRes.error.message);
+        console.error("[KC] court_verdict_at posts query:", bumpRes.error.message, bumpRes.error);
       }
     }
 
-    if (postIds.length > 0 && effectiveUserId) {
+    // --- Kangaroo Court: isolated from React userId; uses a fresh getSession() for JWT-backed RLS ---
+    // Phase A: courts, options, verdicts, aggregate vote counts (metadata for all viewers with a session).
+    // Phase B: myVoteOptionId only (viewer-specific); never gates whether bundles exist.
+    const kcDebug =
+      typeof window !== "undefined" && window.localStorage?.getItem("eod_debug_kc") === "1";
+    const { data: kcAuth } = await supabase.auth.getSession();
+    const kcViewerId = kcAuth.session?.user?.id ?? null;
+
+    if (kcDebug) {
+      console.info("[KC loadPosts] auth snapshot", {
+        sessionUserId: session?.user?.id,
+        kcViewerIdFresh: kcViewerId,
+        currentUserIdArg: currentUserId,
+        closureUserId: userId,
+        effectiveUserId,
+        postIdsCount: postIds.length,
+      });
+    }
+
+    if (postIds.length > 0 && kcViewerId) {
       const { data: courtsRaw, error: courtsErr } = await supabase
         .from("kangaroo_courts")
         .select(
@@ -1734,33 +1751,57 @@ export default function HomePage() {
         .in("feed_post_id", postIds);
 
       if (courtsErr) {
-        console.warn("kangaroo_courts:", courtsErr.message);
-      } else {
-        const courtsList = (courtsRaw ?? []) as KangarooCourtRow[];
-        if (courtsList.length > 0) {
-          const byPost = new Map<string, KangarooCourtRow[]>();
-          for (const c of courtsList) {
-            if (!c.feed_post_id) continue;
-            const arr = byPost.get(c.feed_post_id) ?? [];
-            arr.push(c);
-            byPost.set(c.feed_post_id, arr);
-          }
+        console.error("[KC] Phase A kangaroo_courts failed:", courtsErr.message, courtsErr);
+      } else if (kcDebug) {
+        console.info("[KC] courts rows:", (courtsRaw ?? []).length, courtsRaw);
+      }
 
-          const courtIds = courtsList.map((c) => c.id);
+      const courtsList = (courtsRaw ?? []) as KangarooCourtRow[];
+      if (!courtsErr && courtsList.length > 0) {
+        const byPost = new Map<string, KangarooCourtRow[]>();
+        for (const c of courtsList) {
+          if (!c.feed_post_id) continue;
+          const arr = byPost.get(c.feed_post_id) ?? [];
+          arr.push(c);
+          byPost.set(c.feed_post_id, arr);
+        }
 
-          // Verdicts live in kangaroo_court_verdicts; full page reload rehydrates via this query (no client-only cache).
-          const [{ data: optsRaw }, { data: verdictsRaw }, { data: votesRaw }] = await Promise.all([
-            supabase
-              .from("kangaroo_court_options")
-              .select("id, court_id, label, sort_order")
-              .in("court_id", courtIds)
-              .order("sort_order", { ascending: true }),
-            supabase
-              .from("kangaroo_court_verdicts")
-              .select("id, court_id, winning_option_id, winning_label_snapshot, total_votes, body, created_at")
-              .in("court_id", courtIds),
-            supabase.from("kangaroo_court_votes").select("court_id, option_id, user_id").in("court_id", courtIds),
-          ]);
+        const courtIds = courtsList.map((c) => c.id);
+
+        const optsRes = await supabase
+          .from("kangaroo_court_options")
+          .select("id, court_id, label, sort_order")
+          .in("court_id", courtIds)
+          .order("sort_order", { ascending: true });
+        const verdictsRes = await supabase
+          .from("kangaroo_court_verdicts")
+          .select("id, court_id, winning_option_id, winning_label_snapshot, total_votes, body, created_at")
+          .in("court_id", courtIds);
+        const votesRes = await supabase
+          .from("kangaroo_court_votes")
+          .select("court_id, option_id, user_id")
+          .in("court_id", courtIds);
+
+        if (optsRes.error) {
+          console.error("[KC] Phase A kangaroo_court_options failed:", optsRes.error.message, optsRes.error);
+        } else if (kcDebug) {
+          console.info("[KC] options rows:", (optsRes.data ?? []).length);
+        }
+        if (verdictsRes.error) {
+          console.error("[KC] Phase A kangaroo_court_verdicts failed:", verdictsRes.error.message, verdictsRes.error);
+        } else if (kcDebug) {
+          console.info("[KC] verdicts rows:", (verdictsRes.data ?? []).length);
+        }
+        if (votesRes.error) {
+          console.error("[KC] Phase A kangaroo_court_votes failed:", votesRes.error.message, votesRes.error);
+        } else if (kcDebug) {
+          console.info("[KC] votes rows:", (votesRes.data ?? []).length);
+        }
+
+        if (!optsRes.error) {
+          const optsRaw = optsRes.data;
+          const verdictsRaw = verdictsRes.data;
+          const votesRaw = votesRes.error ? [] : votesRes.data;
 
           const optsByCourt = new Map<string, KangarooCourtOptionRow[]>();
           for (const o of (optsRaw ?? []) as KangarooCourtOptionRow[]) {
@@ -1770,8 +1811,10 @@ export default function HomePage() {
           }
 
           const verdictByCourt = new Map<string, KangarooCourtVerdictRow>();
-          for (const v of (verdictsRaw ?? []) as KangarooCourtVerdictRow[]) {
-            verdictByCourt.set(v.court_id, v);
+          if (!verdictsRes.error) {
+            for (const v of (verdictsRes.data ?? []) as KangarooCourtVerdictRow[]) {
+              verdictByCourt.set(v.court_id, v);
+            }
           }
 
           const voteRows = (votesRaw ?? []) as { court_id: string; option_id: string; user_id: string }[];
@@ -1789,11 +1832,10 @@ export default function HomePage() {
             for (const v of vForCourt) {
               voteCounts[v.option_id] = (voteCounts[v.option_id] ?? 0) + 1;
             }
-            let myVoteOptionId: string | null = null;
-            if (effectiveUserId) {
-              const mine = vForCourt.find((v) => v.user_id === effectiveUserId);
-              myVoteOptionId = mine?.option_id ?? null;
-            }
+
+            // Phase B: viewer's vote (JWT from isolated getSession).
+            const mine = vForCourt.find((v) => v.user_id === kcViewerId);
+            const myVoteOptionId: string | null = mine?.option_id ?? null;
 
             kcBundleByPostId.set(postKey, {
               court,
@@ -1804,7 +1846,21 @@ export default function HomePage() {
             });
           }
         }
+      } else if (postIds.length > 0 && kcViewerId && !courtsErr && courtsList.length === 0 && kcDebug) {
+        console.info("[KC] courts query returned 0 rows for these post ids (no KC or RLS empty)");
       }
+    } else if (postIds.length > 0 && !kcViewerId) {
+      if (kcDebug) {
+        console.info("[KC] skipped Phase A+B: no JWT (kcViewerId). Enable localStorage eod_debug_kc=1 for details.");
+      }
+    }
+
+    if (kcDebug) {
+      let withKc = 0;
+      for (const id of postIds) {
+        if (kcBundleByPostId.has(id)) withKc += 1;
+      }
+      console.info("[KC] final posts with kangaroo bundle:", withKc, "/", postIds.length);
     }
 
     const mergedPosts: FeedPost[] = rawPosts.map((post) => {

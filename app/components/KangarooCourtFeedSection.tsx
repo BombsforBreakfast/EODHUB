@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import type { FeedKangarooBundle } from "../lib/kangarooCourt";
@@ -44,6 +44,15 @@ function formatRemaining(expiresAt: string): string {
 
 export default function KangarooCourtFeedSection({ postId, userId, bundle, onAfterChange }: Props) {
   const { t, isDark } = useTheme();
+  /** OAuth can lag React `userId`; session is enough to vote / open KC CTA. */
+  const [viewerIdFromSession, setViewerIdFromSession] = useState<string | null>(null);
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      setViewerIdFromSession(session?.user?.id ?? null);
+    });
+  }, []);
+  const effectiveViewerId = userId ?? viewerIdFromSession;
+
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [opt1, setOpt1] = useState("");
@@ -93,7 +102,7 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
   }
 
   async function vote(optionId: string) {
-    if (!userId || !court || voteBusy) return;
+    if (!effectiveViewerId || !court || voteBusy) return;
     setVoteBusy(true);
     try {
       const { error } = await supabase.rpc("vote_kangaroo_court", {
@@ -119,7 +128,7 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
 
   return (
     <div style={{ marginTop: 14 }}>
-      {!court && userId && (
+      {!court && effectiveViewerId && (
         <div>
           {!confirmOpen && !builderOpen && (
             <button
@@ -368,7 +377,7 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
                 <button
                   key={opt.id}
                   type="button"
-                  disabled={!active || !userId || voteBusy || Boolean(bundle?.myVoteOptionId)}
+                  disabled={!active || !effectiveViewerId || voteBusy || Boolean(bundle?.myVoteOptionId)}
                   onClick={() => void vote(opt.id)}
                   style={{
                     display: "flex",
@@ -379,7 +388,7 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
                     borderRadius: 10,
                     border: `1px solid ${winner ? "#c4b5fd" : border}`,
                     background: selected || winner ? (isDark ? "rgba(124,58,237,0.15)" : "#f5f3ff") : t.surface,
-                    cursor: active && userId && !bundle?.myVoteOptionId ? "pointer" : "default",
+                    cursor: active && effectiveViewerId && !bundle?.myVoteOptionId ? "pointer" : "default",
                     color: t.text,
                     fontSize: 13,
                   }}

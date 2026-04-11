@@ -46,6 +46,7 @@ export type KangarooCourtRow = {
   created_at: string;
 };
 
+/** Built in loadPosts: court/options/verdict/counts are session-backed (RLS); myVoteOptionId is viewer-specific. */
 export type FeedKangarooBundle = {
   court: KangarooCourtRow;
   options: KangarooCourtOptionRow[];
