@@ -1742,7 +1742,7 @@ export default function HomePage() {
       });
     }
 
-    if (postIds.length > 0 && kcViewerId) {
+    if (postIds.length > 0) {
       const { data: courtsRaw, error: courtsErr } = await supabase
         .from("kangaroo_courts")
         .select(
@@ -1848,10 +1848,6 @@ export default function HomePage() {
         }
       } else if (postIds.length > 0 && kcViewerId && !courtsErr && courtsList.length === 0 && kcDebug) {
         console.info("[KC] courts query returned 0 rows for these post ids (no KC or RLS empty)");
-      }
-    } else if (postIds.length > 0 && !kcViewerId) {
-      if (kcDebug) {
-        console.info("[KC] skipped Phase A+B: no JWT (kcViewerId). Enable localStorage eod_debug_kc=1 for details.");
       }
     }
 
