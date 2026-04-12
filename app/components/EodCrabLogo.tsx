@@ -19,7 +19,7 @@ const VARIANT = {
     width: 518,
     height: 324,
     sizes: "160px",
-    img: { height: 34, width: "auto", display: "block" } satisfies CSSProperties,
+    img: { height: 45, width: "auto", display: "block" } satisfies CSSProperties,
     pad: "0",
     radius: 0,
   },

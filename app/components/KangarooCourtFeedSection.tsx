@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import type { FeedKangarooBundle } from "../lib/kangarooCourt";
@@ -22,6 +22,11 @@ type Props = {
   bundle: FeedKangarooBundle | null;
   onAfterChange: () => void;
   suppressVerdictFooter?: boolean;
+  /**
+   * Profile wall: with `trigger-inline`, only show the read-only judge chip when a court
+   * exists — never open the “start court” flow from the wall.
+   */
+  wallStaticToolbar?: boolean;
   /**
    * "full"           – original behavior: trigger button + court card in one block (default)
    * "trigger-inline" – renders only the judge avatar button (for the toolbar row);
@@ -53,7 +58,15 @@ function formatRemaining(expiresAt: string): string {
   return `${m}m`;
 }
 
-export default function KangarooCourtFeedSection({ postId, userId, bundle, onAfterChange, suppressVerdictFooter, mode = "full" }: Props) {
+export default function KangarooCourtFeedSection({
+  postId,
+  userId,
+  bundle,
+  onAfterChange,
+  suppressVerdictFooter,
+  wallStaticToolbar,
+  mode = "full",
+}: Props) {
   const { t, isDark } = useTheme();
   /** OAuth can lag React `userId`; session is enough to vote / open KC CTA. */
   const [viewerIdFromSession, setViewerIdFromSession] = useState<string | null>(null);
@@ -138,22 +151,103 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
   const border = t.border;
 
   // ── trigger-inline ──────────────────────────────────────────────────────────
-  // Renders only the circular judge avatar button in the toolbar.
-  // Confirm + builder panels float down via absolute positioning.
-  // Returns null if a court already exists (card-only handles display then).
+  // Always show the 48px judge chip when logged in (left of Like/Comment). If a court
+  // already exists on this post, show the same asset non-interactively — do not hide it
+  // (hiding made it look like the layout “reverted” on every post with KC).
+  /** 32px → +50% = 48px; distinct from user avatars */
+  const triggerSize = 48;
+
   if (mode === "trigger-inline") {
-    if (court || !effectiveViewerId) return null;
+    if (!effectiveViewerId) return null;
+
+    // Profile wall: display-only chip when a court exists; no “start court” UI.
+    if (wallStaticToolbar) {
+      if (!court) return null;
+      const wallTitle = closed
+        ? "Kangaroo Court — verdict below"
+        : active
+          ? "Kangaroo Court — in session (see poll below)"
+          : "Kangaroo Court";
+      return (
+        <div style={{ position: "relative", flexShrink: 0, marginRight: 6 }} title={wallTitle}>
+          <div
+            aria-hidden
+            style={{
+              width: triggerSize,
+              height: triggerSize,
+              borderRadius: "50%",
+              overflow: "hidden",
+              border: `2px solid ${closed ? "#7c3aed" : border}`,
+              opacity: closed ? 0.95 : 0.88,
+              flexShrink: 0,
+              boxSizing: "border-box",
+            }}
+          >
+            <Image
+              src={judgeAvatarSrc()}
+              alt=""
+              width={triggerSize}
+              height={triggerSize}
+              style={{ objectFit: "cover", width: "100%", height: "100%", display: "block" }}
+              unoptimized
+            />
+          </div>
+        </div>
+      );
+    }
+
+    const courtChipTitle = court
+      ? closed
+        ? "Kangaroo Court — verdict below"
+        : active
+          ? "Kangaroo Court — in session (see poll below)"
+          : "Kangaroo Court"
+      : "Take this post to Kangaroo Court";
+
+    const chipShell = (child: ReactNode) => (
+      <div style={{ position: "relative", flexShrink: 0, marginRight: 6 }} title={courtChipTitle}>
+        {child}
+      </div>
+    );
+
+    if (court) {
+      return chipShell(
+        <div
+          aria-hidden
+          style={{
+            width: triggerSize,
+            height: triggerSize,
+            borderRadius: "50%",
+            overflow: "hidden",
+            border: `2px solid ${closed ? "#7c3aed" : border}`,
+            opacity: closed ? 0.95 : 0.88,
+            flexShrink: 0,
+            boxSizing: "border-box",
+          }}
+        >
+          <Image
+            src={judgeAvatarSrc()}
+            alt=""
+            width={triggerSize}
+            height={triggerSize}
+            style={{ objectFit: "cover", width: "100%", height: "100%", display: "block" }}
+            unoptimized
+          />
+        </div>,
+      );
+    }
+
     return (
-      <div style={{ position: "relative", flexShrink: 0 }}>
-        {/* Judge avatar button */}
+      <div style={{ position: "relative", flexShrink: 0, marginRight: 6 }}>
+        {/* Judge avatar button — start new court */}
         {!confirmOpen && !builderOpen && (
           <button
             type="button"
             title="Take to Kangaroo Court"
             onClick={() => setConfirmOpen(true)}
             style={{
-              width: 32,
-              height: 32,
+              width: triggerSize,
+              height: triggerSize,
               borderRadius: "50%",
               overflow: "hidden",
               padding: 0,
@@ -167,8 +261,8 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
             <Image
               src={judgeAvatarSrc()}
               alt="Kangaroo Court"
-              width={32}
-              height={32}
+              width={triggerSize}
+              height={triggerSize}
               style={{ objectFit: "cover", width: "100%", height: "100%", display: "block" }}
               unoptimized
             />
@@ -179,8 +273,8 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
         {(confirmOpen || builderOpen) && (
           <div
             style={{
-              width: 32,
-              height: 32,
+              width: triggerSize,
+              height: triggerSize,
               borderRadius: "50%",
               overflow: "hidden",
               border: `2px solid ${t.textMuted}`,
@@ -191,8 +285,8 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
             <Image
               src={judgeAvatarSrc()}
               alt=""
-              width={32}
-              height={32}
+              width={triggerSize}
+              height={triggerSize}
               style={{ objectFit: "cover", width: "100%", height: "100%", display: "block" }}
               unoptimized
             />
@@ -204,7 +298,7 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
           <div
             style={{
               position: "absolute",
-              top: 40,
+              top: triggerSize + 8,
               left: 0,
               zIndex: 50,
               border: `1px solid ${border}`,
@@ -242,7 +336,7 @@ export default function KangarooCourtFeedSection({ postId, userId, bundle, onAft
           <div
             style={{
               position: "absolute",
-              top: 40,
+              top: triggerSize + 8,
               left: 0,
               zIndex: 50,
               border: `1px solid ${border}`,

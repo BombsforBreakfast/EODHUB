@@ -18,6 +18,8 @@ export type CreateNotificationInput = {
   groupKey?: string | null;
   dedupeKey?: string | null;
   metadata?: Record<string, unknown>;
+  /** When set, stored on `notifications.post_id` for feed deep links and grouping. */
+  postId?: string | null;
 };
 
 export async function createNotification(
@@ -42,6 +44,7 @@ export async function createNotification(
     p_group_key: input.groupKey ?? null,
     p_dedupe_key: input.dedupeKey ?? null,
     p_metadata: input.metadata ?? {},
+    p_post_id: input.postId ?? null,
   });
 
   if (error) throw error;

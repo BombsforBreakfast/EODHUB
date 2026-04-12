@@ -102,6 +102,12 @@ export function getNotificationHref(
     return ctx.currentUserId ? `/profile/${ctx.currentUserId}` : "/";
   }
 
+  if (nNorm.type === "kangaroo_court_opened" || nNorm.type === "kangaroo_court_verdict") {
+    if (nNorm.post_id) return feedDeepLink(nNorm.post_id);
+    const fp = parsedMeta?.feed_post_id;
+    if (typeof fp === "string" && fp.length > 0) return feedDeepLink(fp);
+  }
+
   if (nNorm.type === "unit_hot" || nNorm.type === "unit_post_like" || nNorm.type === "unit_post_comment") {
     const upId = nNorm.unit_post_id;
     if (slug && upId) {
@@ -188,6 +194,7 @@ export function getNotificationIcon(n: NotificationNavInput): string {
   const lower = (n.message ?? "").toLowerCase();
   const t = n.type ?? "";
   if (t.startsWith("unit_")) return "🪖";
+  if (t === "kangaroo_court_opened" || t === "kangaroo_court_verdict") return "⚖️";
   if (t === "job_save" || (lower.includes("job") && lower.includes("saved"))) return "💼";
   if (lower.includes("message") || t === "connection_request") return "💬";
   if (lower.includes("verified") || lower.includes("vouch")) return "✅";

@@ -7,7 +7,6 @@ import { supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "./EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
-import { getFeatureAccess } from "../lib/featureAccess";
 import { isFounderUser } from "../lib/rabbitholeAccess";
 import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
@@ -61,13 +60,12 @@ export default function NavBar() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminPendingTotal, setAdminPendingTotal] = useState(0);
   const [groupPendingTotal, setGroupPendingTotal] = useState(0);
-  const [canViewFullJobs, setCanViewFullJobs] = useState(true);
 
   /** Mobile: reserve vertical space so fixed nav does not cover page content (height tracks hub/search). */
   const navRootRef = useRef<HTMLDivElement>(null);
   const [mobileNavSpacerPx, setMobileNavSpacerPx] = useState(0);
 
-  /** Mobile breakpoint — EOD Hub menu is a modal only when narrow. */
+  /** Mobile breakpoint — fixed nav + layout. */
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
 
   const [showNotifPanel, setShowNotifPanel] = useState(false);
@@ -158,7 +156,7 @@ export default function NavBar() {
     async function loadNavProfile(uid: string) {
       const { data } = await supabase
         .from("profiles")
-        .select("first_name, display_name, photo_url, is_admin, access_tier")
+        .select("first_name, display_name, photo_url, is_admin")
         .eq("user_id", uid)
         .maybeSingle();
       if (!mounted) return;
@@ -167,11 +165,9 @@ export default function NavBar() {
         display_name: string | null;
         photo_url: string | null;
         is_admin: boolean | null;
-        access_tier: string | null;
       } | null;
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
       setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
-      setCanViewFullJobs(getFeatureAccess(row?.access_tier).canViewFullJobs);
       if (row?.is_admin) {
         setIsAdmin(true);
         await refreshAdminPendingBadge();
@@ -212,7 +208,6 @@ export default function NavBar() {
         setIsAdmin(false);
         setAdminPendingTotal(0);
         setGroupPendingTotal(0);
-        setCanViewFullJobs(true);
       }
     }
 
@@ -231,7 +226,6 @@ export default function NavBar() {
         setIsAdmin(false);
         setAdminPendingTotal(0);
         setUserInitial("?");
-        setCanViewFullJobs(true);
       }
     });
 
@@ -388,17 +382,22 @@ export default function NavBar() {
   }, []);
 
   useEffect(() => {
-    if (!isNarrowViewport) setShowHub(false);
-  }, [isNarrowViewport]);
-
-  useEffect(() => {
-    if (!showHub || !isNarrowViewport || typeof document === "undefined") return;
+    if (!showHub || typeof document === "undefined") return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [showHub, isNarrowViewport]);
+  }, [showHub]);
+
+  useEffect(() => {
+    if (!showHub) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setShowHub(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [showHub]);
 
   async function handleLogout() {
     const { error } = await supabase.auth.signOut();
@@ -438,23 +437,27 @@ export default function NavBar() {
     };
   }, [showSearchDropdown, authLoaded, currentUserId]);
 
+  /** Matches `.nav-search-inner` height (38px border-box) on desktop */
   const navButton: React.CSSProperties = {
-    padding: "10px 16px",
-    borderRadius: 10,
+    padding: "0 12px",
+    height: 38,
+    minHeight: 38,
+    boxSizing: "border-box",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
     border: `1px solid ${t.navBorder}`,
     textDecoration: "none",
     fontWeight: 700,
     background: t.navBg,
     color: t.text,
+    lineHeight: 1.2,
   };
   const rightToolbarButton: React.CSSProperties = {
     ...navButton,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    minHeight: 42,
-    borderRadius: 12,
-    padding: "10px 16px",
+    borderRadius: 11,
+    padding: "0 12px",
     fontWeight: 800,
   };
 
@@ -494,9 +497,9 @@ export default function NavBar() {
         </Link>
       </div>
 
-      {/* Left: avatar + nav links */}
-      <div className="nav-left" style={{ display: "flex", gap: 12, alignItems: "center" }}>
-        <div style={{ position: "relative", flexShrink: 0 }}>
+      {/* Desktop: grid [ avatar+bell+search | centered logo | Hub+account ]; mobile: contents + order */}
+      <div className="nav-cell-left">
+        <div className="nav-primary-avatar" style={{ position: "relative", flexShrink: 0 }}>
           <Link
             href={currentUserId ? `/profile/${currentUserId}` : "/login"}
             className="nav-avatar"
@@ -510,8 +513,8 @@ export default function NavBar() {
               }
             }}
             style={{
-              width: 38,
-              height: 38,
+              width: 62,
+              height: 62,
               borderRadius: "50%",
               background: t.text,
               color: t.navBg,
@@ -519,7 +522,7 @@ export default function NavBar() {
               alignItems: "center",
               justifyContent: "center",
               fontWeight: 700,
-              fontSize: 16,
+              fontSize: 25,
               border: "none",
               cursor: "pointer",
               padding: 0,
@@ -536,29 +539,10 @@ export default function NavBar() {
           </Link>
         </div>
 
-        <Link href="/events" className="nav-btn nav-events" style={navButton}>Events</Link>
-        {canViewFullJobs && <Link href="/jobs" className="nav-btn nav-jobs" style={navButton}>Jobs</Link>}
-        <Link href="/units" className="nav-btn nav-units" style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}>
-          Groups
-          {groupPendingTotal > 0 && badge(groupPendingTotal)}
-        </Link>
-        {canAccessRabbithole && <Link href="/rabbithole" className="nav-btn nav-rabbithole" style={navButton}>Rabbithole</Link>}
-
-        {/* EOD Hub — mobile only */}
-        <button
-          ref={hubBtnRef}
-          onClick={() => setShowHub((v) => !v)}
-          className="nav-btn nav-hub-mobile"
-          style={{ ...navButton, cursor: "pointer", alignItems: "center", gap: 6 }}
-        >
-          EOD Hub
-        </button>
-
-        {/* Notifications center */}
         {currentUserId && (
           <button
             type="button"
-            className="nav-btn nav-notifications-btn"
+            className="nav-btn nav-notifications-btn nav-primary-bell"
             aria-label="Notifications"
             title="Notifications"
             onClick={() => { setShowNotifPanel((v) => !v); setShowHub(false); setShowSearchDropdown(false); }}
@@ -572,43 +556,10 @@ export default function NavBar() {
           </button>
         )}
 
-        {/* Sidebars (private messages) */}
-        {currentUserId && (
-          <Link
-            href="/sidebar"
-            className="nav-btn nav-messages-btn"
-            style={{ ...navButton, display: "flex", alignItems: "center", gap: 6 }}
-          >
-            Sidebars
-          </Link>
-        )}
-      </div>
-
-      {/* Logo + main search — centered under logo (desktop); stacked full-width search (mobile) */}
-      <div className="nav-center-stack">
-      <Link
-        href="/"
-        className="nav-brand"
-        aria-label="EOD HUB home — feed"
-        title="Home feed"
-        style={{
-          textDecoration: "none",
-          color: t.text,
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 6,
-          lineHeight: 1,
-          position: "relative",
-        }}
-      >
-        <EodCrabLogo variant="navDesktop" />
-        <div style={{ fontSize: 20, fontWeight: 900, letterSpacing: -0.5 }}>EOD HUB</div>
-      </Link>
-
-      {/* Search bar row */}
+        <div className="nav-search-slot">
       <div className="nav-search-row">
         <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "1 1 0", minWidth: 0, width: "100%" }}>
-          <div style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: "6px 10px", gap: 6, minWidth: 0 }}>
+          <div className="nav-search-inner" style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 9, background: t.input, padding: "0 10px", gap: 6, minWidth: 0, boxSizing: "border-box" }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.2" strokeLinecap="round">
               <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
             </svg>
@@ -620,7 +571,7 @@ export default function NavBar() {
               placeholder={canAccessRabbithole
                 ? "Search people, jobs, groups, businesses, directory, Rabbithole…"
                 : "Search people, jobs, groups, businesses, directory…"}
-              style={{ border: "none", outline: "none", fontSize: 13, flex: "1 1 0", minWidth: 0, width: "100%", background: "transparent", color: t.text }}
+              style={{ border: "none", outline: "none", fontSize: 13, flex: "1 1 0", minWidth: 0, width: "100%", background: "transparent", color: t.text, height: 36, lineHeight: "36px", padding: 0 }}
             />
             {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
           </div>
@@ -686,75 +637,93 @@ export default function NavBar() {
             </div>
           )}
         </div>
-      </div>
+        </div>
+        </div>
       </div>
 
-      <div className="nav-trailing">
-      <div
-        className="nav-right"
-        style={{
-          display: "flex",
-          gap: 8,
-          flexWrap: "nowrap",
-          flexShrink: 0,
-          alignItems: "center",
-          border: "none",
-          borderRadius: 0,
-          padding: 0,
-          background: "transparent",
-        }}
-      >
-        {!authLoaded ? null : currentUserId ? (
-          <>
-            {isAdmin && (
-              <Link
-                href="/admin"
-                className="nav-btn nav-admin nav-admin-bar"
-                style={{ ...rightToolbarButton, gap: 6 }}
-              >
-                Admin
-                {adminPendingTotal > 0 && badge(adminPendingTotal)}
-              </Link>
-            )}
-            <Link
-              href="/directory"
-              className="nav-btn nav-directory"
-              style={rightToolbarButton}
-              onClick={() => { setShowHub(false); setShowSearchDropdown(false); }}
-            >
-              Directory
-            </Link>
-            <Link
-              href="/profile"
-              className="nav-btn nav-account-settings"
-              aria-label="My account"
-              title="My account"
-              onClick={() => {
-                setShowHub(false);
-                setShowSearchDropdown(false);
-              }}
-              style={{ ...rightToolbarButton, padding: "10px 12px", minWidth: 48 }}
-            >
-              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .55.22 1.05.59 1.41.37.37.86.59 1.41.59H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </Link>
-            <button onClick={handleLogout} className="nav-logout" style={{ ...rightToolbarButton, cursor: "pointer" }}>Log Out</button>
-          </>
-        ) : (
-          <>
-            <Link href="/directory" className="nav-btn nav-directory" style={rightToolbarButton}>
-              Directory
-            </Link>
-            <Link href="/login" className="nav-logout" style={rightToolbarButton}>Log In</Link>
-          </>
-        )}
+      <div className="nav-cell-center nav-logo-desktop-only">
+        <Link
+          href="/"
+          className="nav-feed-home-desktop"
+          aria-label="EOD HUB home — feed"
+          title="Home feed"
+          onClick={() => { setShowHub(false); setShowSearchDropdown(false); }}
+          style={{
+            textDecoration: "none",
+            color: t.text,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            lineHeight: 1,
+            flexShrink: 0,
+          }}
+        >
+          <EodCrabLogo variant="navDesktop" />
+        </Link>
       </div>
+
+      <div className="nav-cell-right">
+        <button
+          ref={hubBtnRef}
+          type="button"
+          onClick={() => {
+            setShowHub((v) => !v);
+            setShowSearchDropdown(false);
+          }}
+          className="nav-btn nav-hub-toggle"
+          aria-expanded={showHub}
+          aria-haspopup="dialog"
+          style={{ ...navButton, cursor: "pointer", alignItems: "center", gap: 6 }}
+        >
+          EOD Hub
+        </button>
+        <div
+          className="nav-right"
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "nowrap",
+            flexShrink: 0,
+            alignItems: "center",
+            border: "none",
+            borderRadius: 0,
+            padding: 0,
+            background: "transparent",
+          }}
+        >
+          {!authLoaded ? null : currentUserId ? (
+            <>
+              <Link
+                href="/profile"
+                className="nav-btn nav-account-settings"
+                aria-label="My account"
+                title="My account"
+                onClick={() => {
+                  setShowHub(false);
+                  setShowSearchDropdown(false);
+                }}
+                style={{ ...rightToolbarButton, padding: "0 11px", minWidth: 44 }}
+              >
+                <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .55.22 1.05.59 1.41.37.37.86.59 1.41.59H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+              </Link>
+              <button onClick={handleLogout} className="nav-logout" style={{ ...rightToolbarButton, cursor: "pointer" }}>Log Out</button>
+            </>
+          ) : (
+            <>
+              <Link href="/directory" className="nav-btn nav-directory" style={rightToolbarButton}>
+                Directory
+              </Link>
+              <Link href="/login" className="nav-logout" style={rightToolbarButton}>Log In</Link>
+            </>
+          )}
+        </div>
       </div>
     </div>
 
-      {typeof document !== "undefined" && isNarrowViewport && showHub
+      {typeof document !== "undefined" && showHub
         ? createPortal(
             <div
               className="nav-hub-modal-backdrop"
@@ -820,9 +789,22 @@ export default function NavBar() {
                 </div>
                 <div className="nav-hub-modal-grid">
                   {[
+                    { label: "Feed", href: "/", emoji: "🏠", badge: 0, onNav: null },
                     { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤", badge: 0, onNav: null },
-                    { label: "Jobs", href: "/?tab=jobs", emoji: "💼", badge: 0, onNav: null },
-                    { label: "Businesses", href: "/?tab=businesses", emoji: "🏢", badge: 0, onNav: null },
+                    {
+                      label: "Jobs",
+                      href: isNarrowViewport ? "/?tab=jobs" : "/jobs",
+                      emoji: "💼",
+                      badge: 0,
+                      onNav: null,
+                    },
+                    {
+                      label: "Businesses",
+                      href: isNarrowViewport ? "/?tab=businesses" : "/businesses",
+                      emoji: "🏢",
+                      badge: 0,
+                      onNav: null,
+                    },
                     { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
                     { label: "Groups", href: "/units", emoji: "🪖", badge: groupPendingTotal, onNav: null },
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },

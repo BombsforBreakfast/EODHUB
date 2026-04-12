@@ -15,6 +15,14 @@ import SidebarThreadDrawer from "../../components/SidebarThreadDrawer";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../lib/commentSidebarEligibility";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../lib/likeNotifyDelay";
 import { postNotifyJson } from "../../lib/postNotifyClient";
+import KangarooCourtFeedSection from "../../components/KangarooCourtFeedSection";
+import { KangarooCourtVerdictBanner } from "../../components/KangarooCourtVerdictBanner";
+import type {
+  FeedKangarooBundle,
+  KangarooCourtOptionRow,
+  KangarooCourtRow,
+  KangarooCourtVerdictRow,
+} from "../../lib/kangarooCourt";
 
 type Profile = {
   user_id: string;
@@ -84,6 +92,8 @@ type Post = {
   author_name: string | null;
   authorPhotoUrl: string | null;
   authorService: string | null;
+  /** Same feed bundles as home — courts attach via `feed_post_id` */
+  kangaroo?: FeedKangarooBundle | null;
 };
 
 type ProfilePhoto = {
@@ -494,6 +504,11 @@ export default function PublicProfilePage() {
   }
 
   async function loadPosts(targetUserId: string) {
+    const { error: closeKcErr } = await supabase.rpc("close_expired_kangaroo_courts");
+    if (closeKcErr) {
+      console.warn("close_expired_kangaroo_courts (wall):", closeKcErr.message);
+    }
+
     const { data: rawData, error } = await supabase
       .from("posts")
       .select("id, user_id, wall_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name")
@@ -637,6 +652,93 @@ export default function PublicProfilePage() {
         });
     }
 
+    const kcBundleByPostId = new Map<string, FeedKangarooBundle>();
+    const { data: kcAuth } = await supabase.auth.getSession();
+    const kcViewerId = kcAuth.session?.user?.id ?? null;
+
+    if (postIds.length > 0) {
+      const { data: courtsRaw, error: courtsErr } = await supabase
+        .from("kangaroo_courts")
+        .select(
+          "id, feed_post_id, unit_post_id, unit_id, opened_by, status, duration_hours, expires_at, closed_at, winning_option_id, total_votes, source, created_at",
+        )
+        .in("feed_post_id", postIds);
+
+      if (courtsErr) {
+        console.error("[KC wall] kangaroo_courts:", courtsErr.message);
+      } else {
+        const courtsList = (courtsRaw ?? []) as KangarooCourtRow[];
+        if (courtsList.length > 0) {
+          const byPost = new Map<string, KangarooCourtRow[]>();
+          for (const c of courtsList) {
+            if (!c.feed_post_id) continue;
+            const arr = byPost.get(c.feed_post_id) ?? [];
+            arr.push(c);
+            byPost.set(c.feed_post_id, arr);
+          }
+
+          const courtIds = courtsList.map((c) => c.id);
+          const optsRes = await supabase
+            .from("kangaroo_court_options")
+            .select("id, court_id, label, sort_order")
+            .in("court_id", courtIds)
+            .order("sort_order", { ascending: true });
+          const verdictsRes = await supabase
+            .from("kangaroo_court_verdicts")
+            .select("id, court_id, winning_option_id, winning_label_snapshot, total_votes, body, created_at")
+            .in("court_id", courtIds);
+          const votesRes = await supabase
+            .from("kangaroo_court_votes")
+            .select("court_id, option_id, user_id")
+            .in("court_id", courtIds);
+
+          if (!optsRes.error && !verdictsRes.error) {
+            const optsByCourt = new Map<string, KangarooCourtOptionRow[]>();
+            for (const o of (optsRes.data ?? []) as KangarooCourtOptionRow[]) {
+              const arr = optsByCourt.get(o.court_id) ?? [];
+              arr.push(o);
+              optsByCourt.set(o.court_id, arr);
+            }
+            const verdictByCourt = new Map<string, KangarooCourtVerdictRow>();
+            for (const v of (verdictsRes.data ?? []) as KangarooCourtVerdictRow[]) {
+              verdictByCourt.set(v.court_id, v);
+            }
+            const voteRows = (votesRes.error ? [] : (votesRes.data ?? [])) as {
+              court_id: string;
+              option_id: string;
+              user_id: string;
+            }[];
+            if (votesRes.error) {
+              console.warn("[KC wall] kangaroo_court_votes:", votesRes.error.message);
+            }
+
+            for (const [, courtArr] of byPost) {
+              courtArr.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+              const court = courtArr[0];
+              const postKey = court.feed_post_id;
+              if (!postKey) continue;
+              const opts = optsByCourt.get(court.id) ?? [];
+              const verdict = verdictByCourt.get(court.id) ?? null;
+              const vForCourt = voteRows.filter((x) => x.court_id === court.id);
+              const voteCounts: Record<string, number> = {};
+              for (const v of vForCourt) {
+                voteCounts[v.option_id] = (voteCounts[v.option_id] ?? 0) + 1;
+              }
+              const mine = vForCourt.find((v) => v.user_id === kcViewerId);
+              const myVoteOptionId: string | null = mine?.option_id ?? null;
+              kcBundleByPostId.set(postKey, {
+                court,
+                options: opts,
+                verdict,
+                myVoteOptionId,
+                voteCounts,
+              });
+            }
+          }
+        }
+      }
+    }
+
     const merged: Post[] = rawPosts.map((p) => {
       const postLikes = likesByPost.get(p.id) || [];
       const seenLiker = new Set<string>();
@@ -674,6 +776,7 @@ export default function PublicProfilePage() {
         author_name: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorNameMap.get(p.user_id) ?? null) : null,
         authorPhotoUrl: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorPhotoMap.get(p.user_id) ?? null) : null,
         authorService: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorServiceMap.get(p.user_id) ?? null) : null,
+        kangaroo: kcBundleByPostId.get(p.id) ?? null,
       };
     });
 
@@ -3046,8 +3149,35 @@ export default function PublicProfilePage() {
                       );
                     })()}
 
-                    {/* Like / Comment bar */}
+                    {/* Kangaroo Court — same order as home feed: post body above, then verdict, then poll */}
+                    {post.kangaroo?.court?.status === "closed" && post.kangaroo?.verdict && (
+                      <KangarooCourtVerdictBanner verdict={post.kangaroo.verdict} />
+                    )}
+                    <KangarooCourtFeedSection
+                      postId={post.id}
+                      userId={currentUserId}
+                      bundle={post.kangaroo ?? null}
+                      onAfterChange={() => {
+                        if (userId) void loadPosts(userId);
+                      }}
+                      mode="card-only"
+                      suppressVerdictFooter={
+                        post.kangaroo?.court?.status === "closed" && Boolean(post.kangaroo?.verdict)
+                      }
+                    />
+
+                    {/* Like / Comment bar — KC chip is display-only on wall (no “start court”) */}
                     <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
+                      <KangarooCourtFeedSection
+                        postId={post.id}
+                        userId={currentUserId}
+                        bundle={post.kangaroo ?? null}
+                        onAfterChange={() => {
+                          if (userId) void loadPosts(userId);
+                        }}
+                        mode="trigger-inline"
+                        wallStaticToolbar
+                      />
                       <button
                         type="button"
                         onClick={() => toggleLike(post.id, post.likedByCurrentUser)}
@@ -3079,18 +3209,20 @@ export default function PublicProfilePage() {
                             return (
                             <div key={comment.id} style={{ background: t.bg, borderRadius: 10, padding: 6 }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                                <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                                <div style={{ display: "flex", gap: 10, alignItems: "center", flex: 1, minWidth: 0 }}>
                                   <div style={{ width: 24, height: 24, borderRadius: "50%", overflow: "hidden", background: t.border, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: getServiceRingColor(comment.authorService) ? `3px solid ${getServiceRingColor(comment.authorService)}` : undefined }}>
                                     {comment.authorPhotoUrl
                                       ? <img src={comment.authorPhotoUrl} alt={comment.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                                       : comment.authorName[0]?.toUpperCase()}
                                   </div>
-                                  <div>
-                                    <Link href={`/profile/${comment.user_id}`} style={{ fontWeight: 700, fontSize: 14, color: t.text, textDecoration: "none" }}>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <Link href={`/profile/${comment.user_id}`} style={{ fontWeight: 700, fontSize: 14, color: t.text, textDecoration: "none", display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                       {comment.authorName}
                                     </Link>
-                                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{formatDate(comment.created_at)}</div>
                                   </div>
+                                  <span style={{ fontSize: 12, color: t.textMuted, flexShrink: 0, whiteSpace: "nowrap", alignSelf: "center" }}>
+                                    {formatDate(comment.created_at)}
+                                  </span>
                                 </div>
                                 {currentUserId === comment.user_id && (
                                   <button

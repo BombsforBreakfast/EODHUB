@@ -103,48 +103,55 @@ button:active, a.nav-btn:active {
 
 /* Desktop defaults — mobile-only elements hidden */
 .nav-units-mobile { display: none; }
-.nav-hub-mobile   { display: none; }
 .nav-hub-panel    { display: none; }
 /* Mobile-only home logo; hidden on desktop */
 .nav-logo-mobile  { display: none !important; }
 
-/* Desktop: side columns size to content; center column grows so the search bar can use width up to 1120px */
+/* Desktop: true center logo — grid 1fr | auto | 1fr; search ends at center column; Hub + account start after logo */
 .nav-root {
   display: grid;
-  grid-template-columns: minmax(0, auto) minmax(0, 1fr) minmax(0, auto);
-  align-items: start;
-  gap: 12px;
-  row-gap: 0;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  column-gap: 14px;
+  row-gap: 8px;
   margin-bottom: 22px;
   width: 100%;
   box-sizing: border-box;
   position: relative;
 }
-.nav-left {
-  justify-self: start;
-  min-width: 0;
-  max-width: 100%;
-  /* One row of nav links; scroll locally if the viewport is tight */
+.nav-cell-left {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
   flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  gap: 8px;
+  min-width: 0;
+}
+.nav-cell-center {
+  justify-self: center;
+}
+.nav-feed-home-desktop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* ~25% larger than prior compact search: scales with viewport */
+.nav-search-slot {
+  flex: 1 1 31.25%;
+  min-width: 12rem;
+  max-width: min(22.5rem, 35vw);
+  box-sizing: border-box;
 }
 .nav-logo-mobile-wrap {
   display: none !important;
 }
-.nav-left::-webkit-scrollbar {
-  display: none;
-}
-.nav-trailing {
+.nav-cell-right {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
+  justify-content: flex-start;
   flex-wrap: nowrap;
+  gap: 8px;
   min-width: 0;
-  justify-self: end;
 }
 
 /* Admin in trailing cluster — right column, clear of centered crab logo (desktop + mobile via display:contents). */
@@ -164,17 +171,11 @@ button:active, a.nav-btn:active {
   align-items: center;
 }
 
-/* Crab logo + search: centered in the flexible middle grid column; search fills up to 1120px */
-.nav-center-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  justify-self: center;
-  width: min(1120px, 100%);
-  max-width: 1120px;
-  min-width: 0;
-  box-sizing: border-box;
+/* Mobile: desktop-only centered logo column hidden — crab uses .nav-logo-mobile-wrap */
+@media (max-width: 900px) {
+  .nav-logo-desktop-only {
+    display: none !important;
+  }
 }
 
 .nav-search-row {
@@ -217,16 +218,38 @@ button:active, a.nav-btn:active {
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) !important;
   }
 
-  /* Row 1: avatar + EOD Hub button + alerts + logout — compact */
-  .nav-left {
-    gap: 5px !important;
-    flex-wrap: nowrap !important;
-    flex: 1 1 0 !important;
+  /* Flatten three columns so flex order can place: avatar, bell, hub, settings…, then full-width search */
+  .nav-cell-left,
+  .nav-cell-right {
+    display: contents !important;
+  }
+  .nav-primary-avatar {
+    order: 10 !important;
+  }
+  .nav-primary-bell {
+    order: 20 !important;
+  }
+  .nav-hub-toggle {
+    order: 35 !important;
+  }
+  .nav-account-settings {
+    order: 36 !important;
+  }
+  .nav-directory {
+    order: 36 !important;
+  }
+  .nav-logout {
+    order: 37 !important;
+  }
+  .nav-search-slot {
+    order: 45 !important;
+    flex: 1 1 100% !important;
+    width: 100% !important;
     min-width: 0 !important;
-    overflow: visible !important;
+    max-width: none !important;
   }
   .nav-right {
-    flex-shrink: 0 !important;
+    display: contents !important;
   }
   .nav-btn {
     padding: 6px 9px !important;
@@ -235,9 +258,9 @@ button:active, a.nav-btn:active {
     white-space: nowrap;
   }
   .nav-avatar {
-    width: 30px !important;
-    height: 30px !important;
-    font-size: 13px !important;
+    width: 35px !important;
+    height: 35px !important;
+    font-size: 15px !important;
     flex-shrink: 0 !important;
   }
   .nav-logout {
@@ -252,31 +275,8 @@ button:active, a.nav-btn:active {
     min-width: unset !important;
   }
 
-  /* Hide from row 1 on mobile — live in EOD Hub panel instead. */
-  .nav-events        { display: none !important; }
-  .nav-jobs          { display: none !important; }
-  .nav-messages-btn  { display: none !important; }
-  .nav-units         { display: none !important; }
-  .nav-directory     { display: none !important; }
-  .nav-rabbithole    { display: none !important; }
-  .nav-admin-bar     { display: none !important; }
-  /* Brand column hidden on mobile — replaced by compact logo in .nav-left */
+  /* Brand column hidden on mobile — replaced by compact logo in .nav-logo-mobile-wrap */
   .nav-brand         { display: none !important; }
-
-  /* Logo column becomes full-width search row under row 1 */
-  .nav-center-stack {
-    order: 3 !important;
-    flex: 0 0 100% !important;
-    width: 100% !important;
-    max-width: none !important;
-    align-items: stretch !important;
-    gap: 0 !important;
-  }
-
-  /* Unwrap trailing so account controls stay in correct flex order */
-  .nav-trailing {
-    display: contents !important;
-  }
 
   .nav-logo-mobile {
     display: flex !important;
@@ -297,8 +297,7 @@ button:active, a.nav-btn:active {
     z-index: 4 !important;
   }
 
-  /* Show mobile hub toggle */
-  .nav-hub-mobile {
+  .nav-hub-toggle {
     display: flex !important;
     align-items: center !important;
   }

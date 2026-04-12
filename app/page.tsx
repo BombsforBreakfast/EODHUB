@@ -4581,6 +4581,15 @@ export default function HomePage() {
                       flexWrap: "wrap",
                     }}
                   >
+                    {/* KC trigger: left of Like/Comment so it reads as a distinct action, not another avatar */}
+                    <KangarooCourtFeedSection
+                      postId={post.id}
+                      userId={userId}
+                      bundle={post.kangaroo ?? null}
+                      onAfterChange={() => void loadPosts()}
+                      mode="trigger-inline"
+                    />
+
                     <button
                       type="button"
                       onClick={() => toggleLike(post.id, post.likedByCurrentUser)}
@@ -4612,15 +4621,6 @@ export default function HomePage() {
                     >
                       {commentsOpen ? "Hide Comments" : "Comment"}
                     </button>
-
-                    {/* KC trigger: judge avatar in toolbar, floats confirm/builder below */}
-                    <KangarooCourtFeedSection
-                      postId={post.id}
-                      userId={userId}
-                      bundle={post.kangaroo ?? null}
-                      onAfterChange={() => void loadPosts()}
-                      mode="trigger-inline"
-                    />
 
                     {post.likeCount > 0 && <PostLikersStack likers={post.likers} />}
 
@@ -4668,10 +4668,10 @@ export default function HomePage() {
                                   alignItems: "flex-start",
                                 }}
                               >
-                                <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                                <div style={{ display: "flex", gap: 10, alignItems: "center", flex: 1, minWidth: 0 }}>
                                   <Link
                                     href={`/profile/${comment.user_id}`}
-                                    style={{ textDecoration: "none" }}
+                                    style={{ textDecoration: "none", flexShrink: 0, lineHeight: 0 }}
                                   >
                                     <Avatar
                                       photoUrl={comment.authorPhotoUrl}
@@ -4681,8 +4681,7 @@ export default function HomePage() {
                                       isEmployer={comment.authorIsEmployer}
                                     />
                                   </Link>
-
-                                  <div>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
                                     <Link
                                       href={`/profile/${comment.user_id}`}
                                       style={{
@@ -4690,15 +4689,26 @@ export default function HomePage() {
                                         fontSize: 14,
                                         color: t.text,
                                         textDecoration: "none",
+                                        display: "block",
+                                        overflow: "hidden",
+                                        textOverflow: "ellipsis",
+                                        whiteSpace: "nowrap",
                                       }}
                                     >
                                       {comment.authorName}
                                     </Link>
-
-                                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                                      {formatDate(comment.created_at)}
-                                    </div>
                                   </div>
+                                  <span
+                                    style={{
+                                      fontSize: 12,
+                                      color: t.textMuted,
+                                      flexShrink: 0,
+                                      whiteSpace: "nowrap",
+                                      alignSelf: "center",
+                                    }}
+                                  >
+                                    {formatDate(comment.created_at)}
+                                  </span>
                                 </div>
 
                                 <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
