@@ -942,7 +942,16 @@ export default function SidebarPage() {
 
   return (
     <div style={{ background: t.bg, height: "100dvh", overflow: "hidden", color: t.text }}>
-      <div style={{ padding: 20, maxWidth: 1100, margin: "0 auto" }}>
+      <div
+        className="sidebar-page-shell"
+        style={{
+          width: "100%",
+          maxWidth: "100%",
+          margin: 0,
+          boxSizing: "border-box",
+          padding: "20px max(20px, env(safe-area-inset-right)) 20px max(20px, env(safe-area-inset-left))",
+        }}
+      >
         <NavBar />
         <div style={{
           border: `1px solid ${t.border}`, borderRadius: 16, overflow: "hidden", background: t.surface,

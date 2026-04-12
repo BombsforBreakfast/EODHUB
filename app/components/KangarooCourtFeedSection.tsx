@@ -12,6 +12,7 @@ import {
   KC_CONFIRM_TITLE,
   KC_DURATION_HOURS,
   judgeAvatarSrc,
+  stripVerdictBodyLeadingDuplicate,
   type KcDurationHours,
 } from "../lib/kangarooCourt";
 
@@ -459,7 +460,9 @@ function CourtCard({ court, active, closed, verdict, bundle, effectiveViewerId, 
             <div>
               <div style={{ fontWeight: 800, fontSize: 14 }}>{JUDGE_DISPLAY_NAME}</div>
               <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 6 }}>{JUDGE_SUBTITLE}</div>
-              <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{verdict.body}</div>
+              <div style={{ fontSize: 13, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                {stripVerdictBodyLeadingDuplicate(verdict.body)}
+              </div>
             </div>
           </div>
         </div>

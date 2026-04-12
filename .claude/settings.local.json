@@ -6,7 +6,10 @@
       "Bash(git push:*)",
       "Bash(npx tsc:*)",
       "Bash(curl -s \"https://eod-wf.org/category/virtual-memorial/\")",
-      "Bash(grep -r \"setInterval\\\\|setTimeout\\\\|cron\\\\|schedule\" /c/Users/miche/eod-job-board/app --include=*.ts --include=*.tsx)"
+      "Bash(grep -r \"setInterval\\\\|setTimeout\\\\|cron\\\\|schedule\" /c/Users/miche/eod-job-board/app --include=*.ts --include=*.tsx)",
+      "Bash(xargs grep:*)",
+      "Bash(find /c/Users/miche/eod-job-board/supabase -name \"*.sql\" -exec grep -l \"CREATE TABLE.*notifications\\\\|CREATE TABLE public.notifications\" {} \\\\;)",
+      "Bash(grep -n \"notifications\\\\b\" c:/Users/miche/eod-job-board/app/api/units/[slug]/admin/route.ts c:/Users/miche/eod-job-board/app/api/profile-vouch/route.ts)"
     ]
   }
 }

@@ -4340,12 +4340,6 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  {!isEditingPost &&
-                    post.kangaroo?.court?.status === "closed" &&
-                    post.kangaroo?.verdict && (
-                      <KangarooCourtVerdictBanner verdict={post.kangaroo.verdict} />
-                    )}
-
                   {isEditingPost ? (
                     <div style={{ marginTop: 10 }}>
                       <textarea
@@ -4560,7 +4554,24 @@ export default function HomePage() {
                     </>
                   )}
 
-                  {/* Feed order: post body (+ optional event) → toolbar → court card → comment list */}
+                  {!isEditingPost &&
+                    post.kangaroo?.court?.status === "closed" &&
+                    post.kangaroo?.verdict && (
+                      <KangarooCourtVerdictBanner verdict={post.kangaroo.verdict} />
+                    )}
+
+                  {/* KC poll card: order is original post → verdict → poll → toolbar → comments */}
+                  <KangarooCourtFeedSection
+                    postId={post.id}
+                    userId={userId}
+                    bundle={post.kangaroo ?? null}
+                    onAfterChange={() => void loadPosts()}
+                    mode="card-only"
+                    suppressVerdictFooter={
+                      post.kangaroo?.court?.status === "closed" && Boolean(post.kangaroo?.verdict)
+                    }
+                  />
+
                   <div
                     style={{
                       display: "flex",
@@ -4622,15 +4633,6 @@ export default function HomePage() {
                       {post.commentCount === 1 ? "comment" : "comments"}
                     </div>
                   </div>
-
-                  {/* KC court card: active/closed court displayed below toolbar */}
-                  <KangarooCourtFeedSection
-                    postId={post.id}
-                    userId={userId}
-                    bundle={post.kangaroo ?? null}
-                    onAfterChange={() => void loadPosts()}
-                    mode="card-only"
-                  />
 
                   {(post.comments.length > 0 || commentsOpen) && (
                     <div

@@ -68,6 +68,14 @@ function formatEventDate(date: string) {
   });
 }
 
+/** yyyy-mm-dd → mm/dd/yyyy for the Add Event date control */
+function formatShortUsDateFromIso(iso: string) {
+  if (!iso) return "";
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "numeric" });
+}
+
 function httpsAssetUrl(url: string | null | undefined): string {
   if (!url?.trim()) return "";
   const u = url.trim();
@@ -115,6 +123,7 @@ export default function EventsPage() {
   });
   const [submittingEvent, setSubmittingEvent] = useState(false);
   const eventPhotoInputRef = useRef<HTMLInputElement>(null);
+  const eventDateInputRef = useRef<HTMLInputElement>(null);
   const [eventCoverCropOpen, setEventCoverCropOpen] = useState(false);
   const [eventCoverCropSrc, setEventCoverCropSrc] = useState<string | null>(null);
   const [eventCoverUrl, setEventCoverUrl] = useState<string | null>(null);
@@ -586,6 +595,17 @@ export default function EventsPage() {
     color: t.text,
   };
 
+  function openEventDatePicker() {
+    const el = eventDateInputRef.current;
+    if (!el) return;
+    try {
+      if (typeof el.showPicker === "function") el.showPicker();
+      else el.focus();
+    } catch {
+      el.focus();
+    }
+  }
+
   return (
     <div style={{ padding: "24px 16px", background: t.bg, color: t.text, minHeight: "100vh" }}>
       <ImageCropDialog
@@ -711,13 +731,86 @@ export default function EventsPage() {
             placeholder="Event title"
           />
 
-          <label style={labelStyle}>Date *</label>
-          <input
-            style={inputStyle}
-            type="date"
-            value={eventForm.date}
-            onChange={(e) => setEventForm((p) => ({ ...p, date: e.target.value }))}
-          />
+          <label htmlFor="event-form-date" style={labelStyle}>Date *</label>
+          <div
+            style={{
+              ...inputStyle,
+              display: "flex",
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "flex-start",
+              gap: 8,
+              padding: "10px 12px",
+              position: "relative",
+            }}
+          >
+            <button
+              type="button"
+              aria-label={eventForm.date ? "Change date" : "Choose date"}
+              onClick={() => openEventDatePicker()}
+              style={{
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                margin: 0,
+                cursor: "pointer",
+                fontSize: 14,
+                fontFamily: "inherit",
+                color: eventForm.date ? t.text : t.textMuted,
+                flexShrink: 0,
+              }}
+            >
+              {eventForm.date ? formatShortUsDateFromIso(eventForm.date) : "mm/dd/yyyy"}
+            </button>
+            <button
+              type="button"
+              aria-label="Open calendar"
+              onClick={(e) => {
+                e.preventDefault();
+                openEventDatePicker();
+              }}
+              style={{
+                border: "none",
+                background: "transparent",
+                padding: 0,
+                margin: 0,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: isDark ? "#ffffff" : "#111827",
+                flexShrink: 0,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                <line x1="16" y1="2" x2="16" y2="6" />
+                <line x1="8" y1="2" x2="8" y2="6" />
+                <line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
+            <input
+              id="event-form-date"
+              ref={eventDateInputRef}
+              type="date"
+              value={eventForm.date}
+              onChange={(e) => setEventForm((p) => ({ ...p, date: e.target.value }))}
+              style={{
+                position: "absolute",
+                width: 1,
+                height: 1,
+                padding: 0,
+                margin: -1,
+                overflow: "hidden",
+                clip: "rect(0,0,0,0)",
+                whiteSpace: "nowrap",
+                border: 0,
+                opacity: 0,
+                pointerEvents: "none",
+              }}
+            />
+          </div>
 
           <label style={labelStyle}>Organization</label>
           <input

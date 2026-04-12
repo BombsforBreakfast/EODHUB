@@ -626,7 +626,7 @@ export default function UnitsPage() {
                 key={unit.id}
                 onClick={() => router.push(`/units/${unit.slug}`)}
                 className="unit-card-split"
-                style={{ border: `1px solid ${t.border}`, borderRadius: 16, overflow: "hidden", background: t.surface, cursor: "pointer", transition: "box-shadow 0.15s" }}
+                style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, cursor: "pointer", transition: "box-shadow 0.15s" }}
                 onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "0 4px 20px rgba(0,0,0,0.12)")}
                 onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "none")}
               >

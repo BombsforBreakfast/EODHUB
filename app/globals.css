@@ -396,6 +396,7 @@ button:active, a.nav-btn:active {
   align-items: stretch;
   width: 100%;
   box-sizing: border-box;
+  overflow: hidden;
   /* Uniform card height on the directory grid (rows with fewer items match full rows) */
   height: 256px;
   min-height: 256px;
@@ -436,11 +437,14 @@ button:active, a.nav-btn:active {
   overflow: hidden;
   word-break: break-word;
 }
-@media (max-width: 480px) {
+/* Stacked cards (phone / narrow): extra vertical room so member avatars aren’t clipped */
+@media (max-width: 639px) {
   .unit-card-split {
     flex-direction: column;
     min-height: 0;
     height: auto;
+    min-height: 320px;
+    overflow: visible;
   }
   .unit-card-cover-col {
     flex: 0 0 auto;
@@ -448,7 +452,7 @@ button:active, a.nav-btn:active {
     max-width: none;
     height: auto;
     aspect-ratio: 3 / 4;
-    max-height: 240px;
+    max-height: 280px;
   }
   .unit-card-cover-col img {
     position: absolute;
@@ -457,13 +461,24 @@ button:active, a.nav-btn:active {
     height: 100%;
     object-fit: cover;
   }
+  .unit-card-body {
+    overflow: visible;
+    flex: 1 1 auto;
+    min-height: 0;
+    padding-bottom: 16px;
+  }
 }
 
-/* Groups page: filter + create spans parent column (full width of left column on desktop) */
+/* Groups page: filter + create — same max width as intro copy (560px); full width on small screens */
 .units-filter-combo-bar {
   box-sizing: border-box;
   width: 100%;
-  max-width: 100%;
+  max-width: 560px;
+}
+@media (max-width: 639px) {
+  .units-filter-combo-bar {
+    max-width: 100%;
+  }
 }
 
 /* Groups page — one column rhythm from 900px up matches directory (4 tracks); hero is 2+2 */
@@ -493,6 +508,38 @@ button:active, a.nav-btn:active {
 
 .groups-page-grid.groups-page-hero {
   align-items: stretch;
+}
+
+/* Desktop only: hero row — left column shrink-wraps (intro + search); My Groups follows immediately, not pushed to the far right */
+@media (min-width: 900px) {
+  .groups-page-grid.groups-page-hero {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: flex-start;
+    gap: 24px 28px;
+  }
+  .groups-page-grid.groups-page-hero > .groups-top-left {
+    flex: 0 1 auto;
+    width: fit-content;
+    max-width: min(640px, 100%);
+    min-width: 0;
+  }
+  /* Fill remaining row width so tiles use the space; scroll only when content overflows */
+  .groups-page-grid.groups-page-hero > .groups-top-right {
+    flex: 1 1 0;
+    min-width: 0;
+    max-width: none;
+    align-self: stretch;
+  }
+  .groups-page-grid.groups-page-hero .groups-my-panel {
+    width: 100%;
+    min-width: 0;
+  }
+  .groups-page-grid.groups-page-hero .groups-my-panel-scroller {
+    width: 100%;
+  }
 }
 
 .groups-page-span-2 {
@@ -535,11 +582,13 @@ button:active, a.nav-btn:active {
   overflow-y: hidden;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   padding: 4px 2px 8px;
   margin: 0 -2px;
   align-items: flex-start;
   -webkit-overflow-scrolling: touch;
-  scrollbar-gutter: stable;
+  /* stable reserves scrollbar space even when not needed; auto avoids a track when content fits */
+  scrollbar-gutter: auto;
 }
 
 .groups-mini-tile {
