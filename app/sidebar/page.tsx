@@ -9,6 +9,10 @@ import GifPickerButton from "../components/GifPickerButton";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
 import { postNotifyJson } from "../lib/postNotifyClient";
+import UrlPreviewCard from "../components/UrlPreviewCard";
+import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
+
+const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
 type Conversation = {
   id: string;
@@ -70,6 +74,8 @@ export default function SidebarPage() {
   const [editGifUrl, setEditGifUrl] = useState<string | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
   const [flaggingId, setFlaggingId] = useState<string | null>(null);
+  const [urlPreviews, setUrlPreviews] = useState<Record<string, UrlPreview | null>>({});
+  const previewFetchesRef = useRef<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -176,9 +182,14 @@ export default function SidebarPage() {
         last_message_preview: previewMap.get(c.id) ?? null,
       };
     });
+    const sorted = [...convs].sort((a, b) => {
+      const unreadDelta = (b.unread_count > 0 ? 1 : 0) - (a.unread_count > 0 ? 1 : 0);
+      if (unreadDelta !== 0) return unreadDelta;
+      return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
+    });
 
-    setConversations(convs);
-    return convs;
+    setConversations(sorted);
+    return sorted;
   }
 
   async function openOrCreateConversation(otherId: string) {
@@ -368,6 +379,53 @@ export default function SidebarPage() {
   useEffect(() => {
     return () => { if (realtimeRef.current) supabase.removeChannel(realtimeRef.current); };
   }, []);
+
+  async function ensurePreview(url: string) {
+    if (!url || previewFetchesRef.current.has(url) || Object.prototype.hasOwnProperty.call(urlPreviews, url)) return;
+    previewFetchesRef.current.add(url);
+    try {
+      const res = await fetch("/api/preview-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) {
+        setUrlPreviews((prev) => ({ ...prev, [url]: null }));
+        return;
+      }
+      const data = await res.json();
+      const hasPreview = data?.title || data?.description || data?.image;
+      setUrlPreviews((prev) => ({
+        ...prev,
+        [url]: hasPreview
+          ? {
+              url,
+              title: data.title ?? null,
+              description: data.description ?? null,
+              image: data.image ?? null,
+              siteName: data.siteName ?? null,
+            }
+          : null,
+      }));
+    } catch {
+      setUrlPreviews((prev) => ({ ...prev, [url]: null }));
+    }
+  }
+
+  useEffect(() => {
+    const urls = new Set<string>();
+    messages.forEach((msg) => {
+      const u = extractFirstUrl(msg.content || "");
+      if (u) urls.add(u);
+    });
+    [newMessage, editContent, requestDraft].forEach((text) => {
+      const u = extractFirstUrl(text || "");
+      if (u) urls.add(u);
+    });
+    urls.forEach((u) => {
+      void ensurePreview(u);
+    });
+  }, [messages, newMessage, editContent, requestDraft]);
 
   async function sendMessage() {
     const gif = selectedGifUrl;
@@ -705,6 +763,32 @@ export default function SidebarPage() {
     <button onClick={onClick} disabled={disabled} title={label} style={{ background: "none", border: "none", cursor: disabled ? "default" : "pointer", fontSize: 13, color, padding: "2px 6px", borderRadius: 6, lineHeight: 1, opacity: disabled ? 0.4 : 0.7 }}>{label === "Delete" ? "✕" : label === "Edit" ? "✎" : "⚑"}</button>
   );
 
+  function renderMessageTextWithLinks(text: string) {
+    const parts: React.ReactNode[] = [];
+    const re = new RegExp(URL_RENDER_RE.source, "g");
+    let lastIndex = 0;
+    let match: RegExpExecArray | null = null;
+    while ((match = re.exec(text)) !== null) {
+      if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+      const raw = match[0].replace(/[.,)>]+$/, "");
+      const href = raw.startsWith("http") ? raw : `https://${raw}`;
+      parts.push(
+        <a
+          key={`msg-url-${match.index}`}
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "inherit", textDecoration: "underline", wordBreak: "break-all" }}
+        >
+          {raw}
+        </a>,
+      );
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+    return parts;
+  }
+
   const MessageBubbles = (
     <div ref={messagesContainerRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
       {messages.map((msg) => {
@@ -768,13 +852,28 @@ export default function SidebarPage() {
               </div>
             ) : !isConfirm && (
               <div style={{
-                maxWidth: "72%", padding: msg.gif_url && !msg.content ? "4px" : "10px 14px",
+                maxWidth: extractFirstUrl(msg.content || "") ? "60%" : "72%",
+                padding: msg.gif_url && !msg.content ? "4px" : "10px 14px",
                 borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
                 background: isMe ? "#111" : t.badgeBg,
                 color: isMe ? "white" : t.text,
                 fontSize: 14, lineHeight: 1.5,
               }}>
-                {msg.content && <div>{msg.content}</div>}
+                {msg.content && <div>{renderMessageTextWithLinks(msg.content)}</div>}
+                {msg.content && (() => {
+                  const url = extractFirstUrl(msg.content);
+                  const preview = url ? urlPreviews[url] : null;
+                  return preview ? (
+                    <UrlPreviewCard
+                      preview={preview}
+                      borderColor={isMe ? "rgba(255,255,255,0.25)" : t.border}
+                      bgColor={isMe ? "rgba(255,255,255,0.06)" : t.surface}
+                      titleColor={isMe ? "#fff" : t.text}
+                      mutedTextColor={isMe ? "rgba(255,255,255,0.75)" : t.textMuted}
+                      compact
+                    />
+                  ) : null;
+                })()}
                 {msg.gif_url && (
                   <div style={{ marginTop: msg.content ? 8 : 0 }}>
                     <img src={msg.gif_url} alt="GIF" style={{ maxWidth: 220, borderRadius: 12, display: "block" }} />
@@ -866,6 +965,22 @@ export default function SidebarPage() {
               Send
             </button>
           </div>
+          {(() => {
+            const url = extractFirstUrl(requestDraft);
+            const preview = url ? urlPreviews[url] : null;
+            return preview ? (
+              <div style={{ padding: "0 16px 12px" }}>
+                <UrlPreviewCard
+                  preview={preview}
+                  borderColor={t.border}
+                  bgColor={t.surface}
+                  titleColor={t.text}
+                  mutedTextColor={t.textMuted}
+                  compact
+                />
+              </div>
+            ) : null;
+          })()}
         </>
       ) : isPendingSent ? (
         /* Pending sent — show the message they sent + waiting footer */
@@ -933,6 +1048,20 @@ export default function SidebarPage() {
                   Send
                 </button>
               </div>
+              {(() => {
+                const url = extractFirstUrl(newMessage);
+                const preview = url ? urlPreviews[url] : null;
+                return preview ? (
+                  <UrlPreviewCard
+                    preview={preview}
+                    borderColor={t.border}
+                    bgColor={t.surface}
+                    titleColor={t.text}
+                    mutedTextColor={t.textMuted}
+                    compact
+                  />
+                ) : null;
+              })()}
             </div>
           )}
         </>

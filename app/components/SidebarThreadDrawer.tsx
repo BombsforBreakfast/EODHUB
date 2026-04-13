@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
+import UrlPreviewCard from "./UrlPreviewCard";
+import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
+
+const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
 type MessageRow = {
   id: string;
@@ -19,9 +23,10 @@ type Props = {
   onClose: () => void;
   currentUserId: string;
   peerUserId: string | null;
+  modalOnDesktop?: boolean;
 };
 
-export default function SidebarThreadDrawer({ open, onClose, currentUserId, peerUserId }: Props) {
+export default function SidebarThreadDrawer({ open, onClose, currentUserId, peerUserId, modalOnDesktop = false }: Props) {
   const { t, isDark } = useTheme();
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [peerName, setPeerName] = useState("Member");
@@ -30,6 +35,8 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [urlPreviews, setUrlPreviews] = useState<Record<string, UrlPreview | null>>({});
+  const previewFetchesRef = useRef<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -152,6 +159,51 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
 
+  async function ensurePreview(url: string) {
+    if (!url || previewFetchesRef.current.has(url) || Object.prototype.hasOwnProperty.call(urlPreviews, url)) return;
+    previewFetchesRef.current.add(url);
+    try {
+      const res = await fetch("/api/preview-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      if (!res.ok) {
+        setUrlPreviews((prev) => ({ ...prev, [url]: null }));
+        return;
+      }
+      const data = await res.json();
+      const hasPreview = data?.title || data?.description || data?.image;
+      setUrlPreviews((prev) => ({
+        ...prev,
+        [url]: hasPreview
+          ? {
+              url,
+              title: data.title ?? null,
+              description: data.description ?? null,
+              image: data.image ?? null,
+              siteName: data.siteName ?? null,
+            }
+          : null,
+      }));
+    } catch {
+      setUrlPreviews((prev) => ({ ...prev, [url]: null }));
+    }
+  }
+
+  useEffect(() => {
+    const urls = new Set<string>();
+    messages.forEach((msg) => {
+      const u = extractFirstUrl(msg.content || "");
+      if (u) urls.add(u);
+    });
+    const draftUrl = extractFirstUrl(draft);
+    if (draftUrl) urls.add(draftUrl);
+    urls.forEach((u) => {
+      void ensurePreview(u);
+    });
+  }, [messages, draft]);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -185,6 +237,32 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
     setSending(false);
   }
 
+  function renderMessageTextWithLinks(text: string) {
+    const parts: React.ReactNode[] = [];
+    const re = new RegExp(URL_RENDER_RE.source, "g");
+    let lastIndex = 0;
+    let match: RegExpExecArray | null = null;
+    while ((match = re.exec(text)) !== null) {
+      if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+      const raw = match[0].replace(/[.,)>]+$/, "");
+      const href = raw.startsWith("http") ? raw : `https://${raw}`;
+      parts.push(
+        <a
+          key={`drawer-msg-url-${match.index}`}
+          href={href}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "inherit", textDecoration: "underline", wordBreak: "break-all" }}
+        >
+          {raw}
+        </a>,
+      );
+      lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+    return parts;
+  }
+
   if (!open || !peerUserId) return null;
 
   const backdrop = (
@@ -211,6 +289,21 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
         zIndex: 2001,
         ...(isMobile
           ? { inset: 0, display: "flex", flexDirection: "column", background: t.surface }
+          : modalOnDesktop
+          ? {
+              top: "6vh",
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: "min(980px, calc(100vw - 36px))",
+              height: "88vh",
+              boxShadow: isDark ? "0 24px 60px rgba(0,0,0,0.6)" : "0 24px 60px rgba(0,0,0,0.22)",
+              border: `1px solid ${t.border}`,
+              borderRadius: 16,
+              background: t.surface,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }
           : {
               top: 0,
               right: 0,
@@ -267,7 +360,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
               key={m.id}
               style={{
                 alignSelf: mine ? "flex-end" : "flex-start",
-                maxWidth: "88%",
+                maxWidth: extractFirstUrl(m.content || "") ? "76%" : "88%",
                 padding: "8px 12px",
                 borderRadius: 12,
                 background: mine ? (isDark ? "#1e3a5f" : "#111") : t.badgeBg,
@@ -276,7 +369,21 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
                 lineHeight: 1.45,
               }}
             >
-              {m.content}
+              {m.content ? <div>{renderMessageTextWithLinks(m.content)}</div> : null}
+              {m.content && (() => {
+                const url = extractFirstUrl(m.content);
+                const preview = url ? urlPreviews[url] : null;
+                return preview ? (
+                  <UrlPreviewCard
+                    preview={preview}
+                    borderColor={mine ? "rgba(255,255,255,0.25)" : t.border}
+                    bgColor={mine ? "rgba(255,255,255,0.06)" : t.surface}
+                    titleColor={mine ? "#fff" : t.text}
+                    mutedTextColor={mine ? "rgba(255,255,255,0.75)" : t.textMuted}
+                    compact
+                  />
+                ) : null;
+              })()}
             </div>
           );
         })}
@@ -324,6 +431,20 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
             Send
           </button>
         </div>
+        {(() => {
+          const url = extractFirstUrl(draft);
+          const preview = url ? urlPreviews[url] : null;
+          return preview ? (
+            <UrlPreviewCard
+              preview={preview}
+              borderColor={t.border}
+              bgColor={t.surface}
+              titleColor={t.text}
+              mutedTextColor={t.textMuted}
+              compact
+            />
+          ) : null;
+        })()}
       </div>
     </div>
   );

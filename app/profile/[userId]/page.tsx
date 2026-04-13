@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../lib/lib/supabaseClient";
 import NavBar from "../../components/NavBar";
+import DesktopLayout from "../../components/DesktopLayout";
 import ImageCropDialog from "../../components/ImageCropDialog";
 import { useTheme } from "../../lib/ThemeContext";
 import { ASPECT_AVATAR, ASPECT_EMPLOYER_LOGO } from "../../lib/imageCropTargets";
@@ -68,6 +69,52 @@ type OgPreview = {
   description: string | null;
   image: string | null;
   siteName: string | null;
+};
+
+type SavedEventRow = {
+  id: string;
+  title: string | null;
+  organization: string | null;
+  date: string | null;
+  signup_url: string | null;
+};
+
+type SavedJobRow = {
+  id: string;
+  job_id: string;
+  title: string | null;
+  company_name: string | null;
+  location: string | null;
+  category: string | null;
+  apply_url: string | null;
+  created_at: string | null;
+};
+
+type DesktopCalendarEvent = {
+  id: string;
+  title: string;
+  organization: string | null;
+  date: string;
+  signup_url: string | null;
+};
+
+type DesktopMemorial = {
+  id: string;
+  name: string;
+  death_date: string;
+  source_url: string | null;
+};
+
+type DesktopConversation = {
+  id: string;
+  participant_1: string;
+  participant_2: string;
+  last_message_at: string;
+  other_user_id: string;
+  other_user_name: string;
+  other_user_photo: string | null;
+  unread_count: number;
+  last_message_preview: string | null;
 };
 
 type Post = {
@@ -210,6 +257,33 @@ function formatDate(dateString: string) {
   return new Date(dateString).toLocaleString();
 }
 
+const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function toDateStr(year: number, month: number, day: number) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function anniversaryDate(deathDate: string, year: number) {
+  const parts = deathDate.split("-");
+  return `${year}-${parts[1]}-${parts[2]}`;
+}
+
+function formatShortDate(date: Date) {
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function timeAgoShort(dateString: string) {
+  const diff = Date.now() - new Date(dateString).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "now";
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d`;
+  return new Date(dateString).toLocaleDateString();
+}
+
 export default function PublicProfilePage() {
   const params = useParams();
 
@@ -232,9 +306,17 @@ export default function PublicProfilePage() {
 
   /** Own-wall only: saved events (saved jobs live under My Account) */
   const [wallSavedEvents, setWallSavedEvents] = useState<
-    { id: string; title: string | null; organization: string | null; date: string | null; signup_url: string | null }[]
+    SavedEventRow[]
   >([]);
+  const [desktopSavedEvents, setDesktopSavedEvents] = useState<SavedEventRow[]>([]);
+  const [desktopSavedJobs, setDesktopSavedJobs] = useState<SavedJobRow[]>([]);
   const [unsavingWallEvent, setUnsavingWallEvent] = useState<string | null>(null);
+  const [unsavingDesktopJobId, setUnsavingDesktopJobId] = useState<string | null>(null);
+  const [desktopCalendarDate, setDesktopCalendarDate] = useState(() => new Date());
+  const [desktopCalendarEvents, setDesktopCalendarEvents] = useState<DesktopCalendarEvent[]>([]);
+  const [desktopMemorials, setDesktopMemorials] = useState<DesktopMemorial[]>([]);
+  const [desktopSelectedDay, setDesktopSelectedDay] = useState<string | null>(null);
+  const [desktopConversations, setDesktopConversations] = useState<DesktopConversation[]>([]);
 
   const [postContent, setPostContent] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -1059,7 +1141,7 @@ export default function PublicProfilePage() {
     return result;
   }
 
-  async function loadWallSavedEvents(uid: string) {
+  async function loadSavedEventsForUser(uid: string) {
     const { data, error } = await supabase
       .from("saved_events")
       .select("id, event_id, events(title, organization, date, signup_url)")
@@ -1074,18 +1156,75 @@ export default function PublicProfilePage() {
       id: string;
       events: { title: string | null; organization: string | null; date: string | null; signup_url: string | null } | null | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }[];
     };
-    setWallSavedEvents(
-      ((data ?? []) as unknown as RawRow[]).map((r) => {
-        const ev = Array.isArray(r.events) ? r.events[0] ?? null : r.events;
-        return {
-          id: r.id,
-          title: ev?.title ?? null,
-          organization: ev?.organization ?? null,
-          date: ev?.date ?? null,
-          signup_url: ev?.signup_url ?? null,
-        };
-      })
-    );
+    const rows = ((data ?? []) as unknown as RawRow[]).map((r) => {
+      const ev = Array.isArray(r.events) ? r.events[0] ?? null : r.events;
+      return {
+        id: r.id,
+        title: ev?.title ?? null,
+        organization: ev?.organization ?? null,
+        date: ev?.date ?? null,
+        signup_url: ev?.signup_url ?? null,
+      };
+    });
+    setWallSavedEvents(rows);
+  }
+
+  async function loadDesktopSavedEvents(uid: string) {
+    const { data, error } = await supabase
+      .from("saved_events")
+      .select("id, event_id, events(title, organization, date, signup_url)")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false });
+    if (error) {
+      setDesktopSavedEvents([]);
+      return;
+    }
+    type RawRow = {
+      id: string;
+      events: { title: string | null; organization: string | null; date: string | null; signup_url: string | null } | null | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }[];
+    };
+    const rows = ((data ?? []) as unknown as RawRow[]).map((r) => {
+      const ev = Array.isArray(r.events) ? r.events[0] ?? null : r.events;
+      return {
+        id: r.id,
+        title: ev?.title ?? null,
+        organization: ev?.organization ?? null,
+        date: ev?.date ?? null,
+        signup_url: ev?.signup_url ?? null,
+      };
+    });
+    setDesktopSavedEvents(rows);
+  }
+
+  async function loadDesktopSavedJobs(uid: string) {
+    const { data, error } = await supabase
+      .from("saved_jobs")
+      .select("id, job_id, jobs(title, company_name, location, category, apply_url, created_at)")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false });
+    if (error) {
+      setDesktopSavedJobs([]);
+      return;
+    }
+    type RawRow = {
+      id: string;
+      job_id: string;
+      jobs: { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null } | { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null }[] | null;
+    };
+    const rows = ((data ?? []) as unknown as RawRow[]).map((r) => {
+      const job = Array.isArray(r.jobs) ? r.jobs[0] ?? null : r.jobs;
+      return {
+        id: r.id,
+        job_id: r.job_id,
+        title: job?.title ?? null,
+        company_name: job?.company_name ?? null,
+        location: job?.location ?? null,
+        category: job?.category ?? null,
+        apply_url: job?.apply_url ?? null,
+        created_at: job?.created_at ?? null,
+      };
+    });
+    setDesktopSavedJobs(rows);
   }
 
   async function unsaveWallEvent(rowId: string) {
@@ -1093,9 +1232,100 @@ export default function PublicProfilePage() {
       setUnsavingWallEvent(rowId);
       await supabase.from("saved_events").delete().eq("id", rowId);
       setWallSavedEvents((prev) => prev.filter((e) => e.id !== rowId));
+      setDesktopSavedEvents((prev) => prev.filter((e) => e.id !== rowId));
     } finally {
       setUnsavingWallEvent(null);
     }
+  }
+
+  async function unsaveDesktopSavedJob(savedJobRowId: string) {
+    try {
+      setUnsavingDesktopJobId(savedJobRowId);
+      await supabase.from("saved_jobs").delete().eq("id", savedJobRowId);
+      setDesktopSavedJobs((prev) => prev.filter((j) => j.id !== savedJobRowId));
+    } finally {
+      setUnsavingDesktopJobId(null);
+    }
+  }
+
+  async function loadDesktopCalendarData(date: Date) {
+    const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const end = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const startIso = toDateStr(start.getFullYear(), start.getMonth(), start.getDate());
+    const endIso = toDateStr(end.getFullYear(), end.getMonth(), end.getDate());
+
+    const [{ data: eventsData }, { data: memorialData }] = await Promise.all([
+      supabase
+        .from("events")
+        .select("id, title, organization, date, signup_url")
+        .gte("date", startIso)
+        .lte("date", endIso)
+        .order("date", { ascending: true }),
+      supabase
+        .from("memorials")
+        .select("id, name, death_date, source_url"),
+    ]);
+
+    setDesktopCalendarEvents((eventsData ?? []) as DesktopCalendarEvent[]);
+    setDesktopMemorials((memorialData ?? []) as DesktopMemorial[]);
+  }
+
+  async function loadDesktopConversations(uid: string): Promise<DesktopConversation[]> {
+    const { data, error } = await supabase
+      .from("conversations")
+      .select("id, participant_1, participant_2, last_message_at")
+      .or(`participant_1.eq.${uid},participant_2.eq.${uid}`)
+      .order("last_message_at", { ascending: false });
+
+    if (error || !data) {
+      setDesktopConversations([]);
+      return [];
+    }
+
+    const otherIds = data.map((c) => (c.participant_1 === uid ? c.participant_2 : c.participant_1));
+    const { data: profiles } = await supabase
+      .from("profiles")
+      .select("user_id, first_name, last_name, display_name, photo_url")
+      .in("user_id", otherIds);
+    const profileMap = new Map((profiles ?? []).map((p: {
+      user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null;
+    }) => [p.user_id, p]));
+
+    const allIds = data.map((c) => c.id);
+    const unreadMap = new Map<string, number>();
+    const previewMap = new Map<string, string>();
+    if (allIds.length > 0) {
+      const { data: msgData } = await supabase
+        .from("messages")
+        .select("conversation_id, content, is_read, sender_id, created_at")
+        .in("conversation_id", allIds)
+        .order("created_at", { ascending: false });
+      (msgData ?? []).forEach((m: { conversation_id: string; content: string; is_read: boolean; sender_id: string }) => {
+        if (!previewMap.has(m.conversation_id)) previewMap.set(m.conversation_id, m.content);
+        if (m.sender_id !== uid && !m.is_read) unreadMap.set(m.conversation_id, (unreadMap.get(m.conversation_id) ?? 0) + 1);
+      });
+    }
+
+    const convs: DesktopConversation[] = data.map((c) => {
+      const otherId = c.participant_1 === uid ? c.participant_2 : c.participant_1;
+      const profile = profileMap.get(otherId);
+      const name = profile?.display_name || `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "EOD Member";
+      return {
+        ...c,
+        other_user_id: otherId,
+        other_user_name: name,
+        other_user_photo: profile?.photo_url ?? null,
+        unread_count: unreadMap.get(c.id) ?? 0,
+        last_message_preview: previewMap.get(c.id) ?? null,
+      };
+    });
+    const sorted = [...convs].sort((a, b) => {
+      const unreadDelta = (b.unread_count > 0 ? 1 : 0) - (a.unread_count > 0 ? 1 : 0);
+      if (unreadDelta !== 0) return unreadDelta;
+      return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
+    });
+    setDesktopConversations(sorted);
+    return sorted;
   }
 
   async function loadPhotoInteractions(photoIds: string[], signedInUserId?: string | null) {
@@ -1687,14 +1917,13 @@ export default function PublicProfilePage() {
         const nd = nameData as { first_name: string | null; last_name: string | null } | null;
         setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
 
-        // Load unread message count for own wall badge
-        if (signedInUserId === userId) {
-          const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
-          const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);
-          if (convIds.length > 0) {
-            const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("is_read", false).neq("sender_id", signedInUserId).in("conversation_id", convIds);
-            setUnreadMessages(count ?? 0);
-          }
+        const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
+        const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);
+        if (convIds.length > 0) {
+          const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("is_read", false).neq("sender_id", signedInUserId).in("conversation_id", convIds);
+          setUnreadMessages(count ?? 0);
+        } else {
+          setUnreadMessages(0);
         }
       }
 
@@ -1704,8 +1933,17 @@ export default function PublicProfilePage() {
         loadPhotos(userId),
         loadConnections(userId, signedInUserId),
         loadMyGroups(userId),
-        loadWallSavedEvents(userId),
+        loadSavedEventsForUser(userId),
       ]);
+      if (signedInUserId) {
+        await Promise.all([
+          loadDesktopSavedEvents(signedInUserId),
+          loadDesktopSavedJobs(signedInUserId),
+        ]);
+      } else {
+        setDesktopSavedEvents([]);
+        setDesktopSavedJobs([]);
+      }
       await loadPhotoInteractions((photoResults ?? []).map((p) => p.id), signedInUserId);
 
       setLoading(false);
@@ -1713,6 +1951,30 @@ export default function PublicProfilePage() {
 
     init();
   }, [userId]);
+
+  useEffect(() => {
+    if (!currentUserId) {
+      setDesktopConversations([]);
+      return;
+    }
+    loadDesktopConversations(currentUserId).catch((err) => {
+      console.error("Desktop conversations load failed:", err);
+    });
+  }, [currentUserId]);
+
+  useEffect(() => {
+    loadDesktopCalendarData(desktopCalendarDate).then(() => {
+      setDesktopSelectedDay(
+        toDateStr(
+          desktopCalendarDate.getFullYear(),
+          desktopCalendarDate.getMonth(),
+          desktopCalendarDate.getDate()
+        )
+      );
+    }).catch((err) => {
+      console.error("Desktop calendar load failed:", err);
+    });
+  }, [desktopCalendarDate]);
 
   // Auto-generate referral code for existing users who don't have one yet
   useEffect(() => {
@@ -1944,8 +2206,184 @@ export default function PublicProfilePage() {
         </div>
       )}
 
-      {/* Single-column page layout */}
-      {!loading && profile && <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 20 }}>
+      {/* Single-column mobile layout + three-column desktop layout */}
+      {!loading && profile && <DesktopLayout
+        isMobile={isMobile}
+        desktopColumns="320px minmax(0, 1fr) 360px"
+        desktopGap={24}
+        left={
+          <aside
+            style={{
+              display: isMobile ? "none" : "block",
+              position: "sticky",
+              top: 20,
+              marginRight: isMobile ? undefined : -11,
+              maxHeight: "calc(100vh - 80px)",
+              overflowY: "auto",
+              overflowX: "hidden",
+              scrollbarGutter: "stable",
+            }}
+          >
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 900, color: t.text, marginBottom: 10 }}>Events</div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>
+                  Add
+                </span>
+                <a
+                  href="/events"
+                  style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
+                >
+                  Memorial
+                </a>
+                <span style={{ fontSize: 11, color: t.textFaint }}>|</span>
+                <a
+                  href="/events"
+                  style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
+                >
+                  Event
+                </a>
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <a href="/events" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
+                  See full events →
+                </a>
+              </div>
+
+              <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 10, background: t.bg }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() - 1))}
+                    style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+                  >
+                    ←
+                  </button>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: t.text }}>
+                    {formatShortDate(desktopCalendarDate)}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1))}
+                    style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+                  >
+                    →
+                  </button>
+                </div>
+                {(() => {
+                  const d = desktopCalendarDate;
+                  const iso = toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
+                  const eventCount = desktopCalendarEvents.filter((ev) => ev.date === iso).length;
+                  const memorialCount = desktopMemorials.filter((m) => anniversaryDate(m.death_date, d.getFullYear()) === iso).length;
+                  const hasItems = eventCount + memorialCount > 0;
+                  return (
+                    <div
+                      style={{
+                        border: `1px solid ${t.border}`,
+                        borderRadius: 8,
+                        minHeight: 50,
+                        padding: "8px 10px",
+                        background: t.surface,
+                        position: "relative",
+                      }}
+                    >
+                      <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 700 }}>{CALENDAR_DAY_LABELS[d.getDay()]}</div>
+                      <div style={{ fontSize: 18, fontWeight: 900, color: t.text, lineHeight: 1.1 }}>{d.getDate()}</div>
+                      {hasItems && (
+                        <span style={{ position: "absolute", top: 8, right: 10, fontSize: 11, color: "#2563eb", fontWeight: 800 }}>
+                          {eventCount + memorialCount} item{eventCount + memorialCount === 1 ? "" : "s"}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {desktopSelectedDay && (
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  {[...desktopCalendarEvents
+                    .filter((ev) => ev.date === desktopSelectedDay)
+                    .map((ev) => ({ id: `ev-${ev.id}`, title: ev.title, sub: ev.organization || "Event", link: ev.signup_url || "/events" })),
+                  ...desktopMemorials
+                    .filter((m) => anniversaryDate(m.death_date, new Date(desktopSelectedDay + "T12:00:00").getFullYear()) === desktopSelectedDay)
+                    .map((m) => ({ id: `mem-${m.id}`, title: m.name, sub: "EOD Memorial Foundation", link: m.source_url || "/events" }))].slice(0, 4).map((item) => (
+                    <div key={item.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>{item.title}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{item.sub}</div>
+                      <a href={item.link} target={item.link.startsWith("http") ? "_blank" : undefined} rel="noreferrer" style={{ marginTop: 4, display: "inline-block", fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                        {item.link.startsWith("http") ? "Open →" : "Sign up →"}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ marginTop: 12, borderTop: `1px solid ${t.border}`, paddingTop: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 8 }}>Saved events</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {desktopSavedEvents.length === 0 && (
+                    <div style={{ color: t.textFaint, fontSize: 12 }}>No saved events.</div>
+                  )}
+                  {desktopSavedEvents.slice(0, 4).map((ev) => (
+                    <div key={ev.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{ev.title || "Event"}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
+                      <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        {ev.signup_url ? (
+                          <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                            Sign up →
+                          </a>
+                        ) : <span />}
+                        <button
+                          type="button"
+                          onClick={() => unsaveWallEvent(ev.id)}
+                          disabled={unsavingWallEvent === ev.id}
+                          style={{ border: `1px solid ${t.border}`, background: "transparent", color: t.textMuted, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: unsavingWallEvent === ev.id ? "not-allowed" : "pointer" }}
+                        >
+                          {unsavingWallEvent === ev.id ? "..." : "Remove"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginTop: 12, borderTop: `1px solid ${t.border}`, paddingTop: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 8 }}>Saved jobs</div>
+                <div style={{ marginTop: -4, marginBottom: 8, fontSize: 11, color: t.textFaint, fontWeight: 700 }}>
+                  *not visible to other users
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {desktopSavedJobs.length === 0 && (
+                    <div style={{ color: t.textFaint, fontSize: 12 }}>No saved jobs.</div>
+                  )}
+                  {desktopSavedJobs.slice(0, 4).map((job) => (
+                    <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{job.title || "Job"}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{job.company_name || "Saved listing"}</div>
+                      <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        {job.apply_url ? (
+                          <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                            View job →
+                          </a>
+                        ) : <span />}
+                        <button
+                          type="button"
+                          onClick={() => unsaveDesktopSavedJob(job.id)}
+                          disabled={unsavingDesktopJobId === job.id}
+                          style={{ border: `1px solid ${t.border}`, background: "transparent", color: t.textMuted, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: unsavingDesktopJobId === job.id ? "not-allowed" : "pointer" }}
+                        >
+                          {unsavingDesktopJobId === job.id ? "..." : "Remove"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </aside>
+        }
+        center={<div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: isMobile ? 20 : 0 }}>
 
         {false && <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -2773,7 +3211,7 @@ export default function PublicProfilePage() {
               </div>
               {!isMobile && <div style={{ width: 1, alignSelf: "stretch", background: t.border }} />}
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
+              {isMobile && <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Events</div>
                 {wallSavedEvents.length === 0 ? (
                   <div style={{ color: t.textFaint, fontSize: 13, lineHeight: 1.45 }}>
@@ -2847,7 +3285,7 @@ export default function PublicProfilePage() {
                     ))}
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
             {/* Expanded gallery grid */}
             {galleryExpanded && galleryPhotos.length > 0 && (
@@ -3367,6 +3805,63 @@ export default function PublicProfilePage() {
             </div>
           </div>
       </div>}
+        right={
+          <aside
+            style={{
+              display: isMobile ? "none" : "block",
+              position: "sticky",
+              top: 20,
+            }}
+          >
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 900, color: t.text, marginBottom: 10 }}>Messages</div>
+              <div style={{ marginBottom: 10 }}>
+                <a href="/sidebar" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
+                  See full messages →
+                </a>
+              </div>
+              <div style={{ display: "grid", gap: 8, maxHeight: 270, overflowY: "auto", paddingRight: 2 }}>
+                {desktopConversations.length === 0 && (
+                  <div style={{ color: t.textFaint, fontSize: 12 }}>No conversations yet.</div>
+                )}
+                {desktopConversations.map((conv) => {
+                  return (
+                    <button
+                      key={conv.id}
+                      type="button"
+                      onClick={() => setSidebarDrawer({ open: true, peerId: conv.other_user_id })}
+                      style={{
+                        border: `1px solid ${t.border}`,
+                        background: t.bg,
+                        borderRadius: 10,
+                        padding: "8px 10px",
+                        textAlign: "left",
+                        cursor: "pointer",
+                        width: "100%",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {conv.other_user_name}
+                        </div>
+                        <div style={{ fontSize: 10, color: t.textFaint, flexShrink: 0 }}>{timeAgoShort(conv.last_message_at)}</div>
+                      </div>
+                      <div style={{ marginTop: 2, fontSize: 11, color: t.textMuted, display: "-webkit-box", WebkitLineClamp: 1, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                        {conv.last_message_preview || "Start a conversation"}
+                      </div>
+                      {conv.unread_count > 0 && (
+                        <div style={{ marginTop: 4, fontSize: 10, color: "#b45309", fontWeight: 800 }}>
+                          {conv.unread_count > 9 ? "9+" : conv.unread_count} new
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </aside>
+        }
+      />}
     </div>
 
     {/* Photo Lightbox Modal */}
@@ -3508,6 +4003,7 @@ export default function PublicProfilePage() {
         onClose={() => setSidebarDrawer({ open: false, peerId: null })}
         currentUserId={currentUserId}
         peerUserId={sidebarDrawer.peerId}
+        modalOnDesktop
       />
     )}
     </>

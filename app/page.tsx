@@ -20,6 +20,7 @@ import UpgradePromptModal from "./components/UpgradePromptModal";
 import EventFeedActions from "./components/EventFeedActions";
 import KangarooCourtFeedSection from "./components/KangarooCourtFeedSection";
 import { KangarooCourtVerdictBanner } from "./components/KangarooCourtVerdictBanner";
+import DesktopLayout from "./components/DesktopLayout";
 import { getFeatureAccess } from "./lib/featureAccess";
 import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "./lib/jobFilters";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "./lib/likeNotifyDelay";
@@ -3229,17 +3230,7 @@ export default function HomePage() {
       <NavBar />
 
 
-      <div
-        style={isMobile ? { marginTop: 12 } : {
-          display: "grid",
-          gridTemplateColumns: "280px minmax(0, 1fr) 360px",
-          gap: 24,
-          alignItems: "start",
-          marginTop: 20,
-          width: "100%",
-        }}
-      >
-        {/* Jobs pane */}
+      <DesktopLayout isMobile={isMobile} left={
         <aside
           style={{
             display: isMobile ? (mobileTab === "jobs" ? "block" : "none") : "block",
@@ -3503,7 +3494,7 @@ export default function HomePage() {
             </button>
           </div>
         </aside>
-
+      } center={
         <main style={{ display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined, minWidth: 0 }}>
 
           {/* Pending Members — community vouching */}
@@ -5141,7 +5132,7 @@ export default function HomePage() {
             })}
           </div>
         </main>
-
+      } right={
         <aside
           style={{
             display: isMobile ? (mobileTab === "businesses" ? "block" : "none") : undefined,
@@ -5429,7 +5420,7 @@ export default function HomePage() {
             })}
           </div>
         </aside>
-      </div>
+      } />
 
       {/* Donate modal — in-app iframe over EOD Warrior Foundation donation form */}
       {donateModalOpen && (
