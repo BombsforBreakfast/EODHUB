@@ -1,43 +1,44 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import Image from "next/image";
 import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { supabase } from "./lib/lib/supabaseClient";
-import NavBar from "./components/NavBar";
-import { useTheme } from "./lib/ThemeContext";
-import EmojiPickerButton from "./components/EmojiPickerButton";
-import GifPickerButton from "./components/GifPickerButton";
-import MentionTextarea, { extractMentionIds } from "./components/MentionTextarea";
-import { PostLikersStack, type PostLikerBrief } from "./components/PostLikersStack";
-import OnlineNowStrip from "./components/OnlineNowStrip";
-import MemberPaywallModal from "./components/MemberPaywallModal";
-import SidebarThreadDrawer from "./components/SidebarThreadDrawer";
-import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "./lib/commentSidebarEligibility";
-import { memberHasInteractionAccess } from "./lib/subscriptionAccess";
-import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "./lib/flagCategories";
-import UpgradePromptModal from "./components/UpgradePromptModal";
-import EventFeedActions from "./components/EventFeedActions";
-import KangarooCourtFeedSection from "./components/KangarooCourtFeedSection";
-import { KangarooCourtVerdictBanner } from "./components/KangarooCourtVerdictBanner";
-import DesktopLayout from "./components/DesktopLayout";
-import { getFeatureAccess } from "./lib/featureAccess";
-import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "./lib/jobFilters";
-import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "./lib/likeNotifyDelay";
-import { postNotifyJson } from "./lib/postNotifyClient";
+import { supabase } from "../lib/lib/supabaseClient";
+import NavBar from "../components/NavBar";
+import { useTheme } from "../lib/ThemeContext";
+import EmojiPickerButton from "../components/EmojiPickerButton";
+import GifPickerButton from "../components/GifPickerButton";
+import MentionTextarea, { extractMentionIds } from "../components/MentionTextarea";
+import { PostLikersStack, type PostLikerBrief } from "../components/PostLikersStack";
+import OnlineNowStrip from "../components/OnlineNowStrip";
+import MemberPaywallModal from "../components/MemberPaywallModal";
+import SidebarThreadDrawer from "../components/SidebarThreadDrawer";
+import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
+import { memberHasInteractionAccess } from "../lib/subscriptionAccess";
+import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
+import UpgradePromptModal from "../components/UpgradePromptModal";
+import EventFeedActions from "../components/EventFeedActions";
+import KangarooCourtFeedSection from "../components/KangarooCourtFeedSection";
+import { KangarooCourtVerdictBanner } from "../components/KangarooCourtVerdictBanner";
+import DesktopLayout from "../components/DesktopLayout";
+import { useMasterShell } from "../components/master/masterShellContext";
+import { getFeatureAccess } from "../lib/featureAccess";
+import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "../lib/jobFilters";
+import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
+import { postNotifyJson } from "../lib/postNotifyClient";
 import type {
   FeedKangarooBundle,
   KangarooCourtOptionRow,
   KangarooCourtRow,
   KangarooCourtVerdictRow,
   KcDurationHours,
-} from "./lib/kangarooCourt";
+} from "../lib/kangarooCourt";
 import {
   judgeAvatarSrc,
   KC_CONFIRM_SUBTITLE,
   KC_CONFIRM_TITLE,
   KC_DURATION_HOURS,
-} from "./lib/kangarooCourt";
+} from "../lib/kangarooCourt";
 
 type Job = {
   id: string;
@@ -494,6 +495,7 @@ export default function HomePage() {
   const [bizLoaded, setBizLoaded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const { isDesktopShell, openSidebarPeer } = useMasterShell();
   const [mobileTab, setMobileTab] = useState<"feed" | "jobs" | "businesses">(() => {
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search).get("tab");
@@ -1017,7 +1019,7 @@ export default function HomePage() {
   }
 
   async function loadPendingMembers(currentUserId: string) {
-    // Community members awaiting vouches — same cohort as /pending (not in People You May Know)
+    // Community members awaiting vouches ΓÇö same cohort as /pending (not in People You May Know)
     const { data: pending } = await supabase
       .from("profiles")
       .select("user_id, first_name, last_name, display_name, photo_url, service, created_at")
@@ -1158,7 +1160,7 @@ export default function HomePage() {
       } else {
         await supabase.from("saved_jobs").insert([{ user_id: userId, job_id: jobId }]);
         setSavedJobIds((prev) => new Set(prev).add(jobId));
-        // Notify job poster (fire and forget — no actor name for privacy)
+        // Notify job poster (fire and forget ΓÇö no actor name for privacy)
         const job = jobs.find((j) => j.id === jobId);
         if (job?.source_type === "community" && job.user_id && job.user_id !== userId) {
           void postNotifyJson(supabase, {
@@ -1399,7 +1401,7 @@ export default function HomePage() {
 
     let rawPosts = (rankedPostsData ?? []) as RankedPostRow[];
 
-    // Notification deep links use /?postId=…; that post may not appear in ranked_posts anymore.
+    // Notification deep links use /?postId=ΓÇª; that post may not appear in ranked_posts anymore.
     if (typeof window !== "undefined") {
       const deepId = new URLSearchParams(window.location.search).get("postId");
       if (deepId && !rawPosts.some((p) => p.id === deepId)) {
@@ -1436,7 +1438,7 @@ export default function HomePage() {
             ...rawPosts,
           ];
         } else {
-          // Post is deleted, hidden for review, or a wall-only post — it will never
+          // Post is deleted, hidden for review, or a wall-only post ΓÇö it will never
           // appear in the public feed. Flag it so the scroll effect can clean up
           // the URL params instead of retrying forever.
           setDeepLinkPostUnavailable(deepId);
@@ -2164,7 +2166,7 @@ export default function HomePage() {
 
     const labelsForKc = [kcOpt1, kcOpt2, kcOpt3, kcOpt4].map((s) => s.trim()).filter(Boolean);
     if (kcComposerPhase === "confirm") {
-      alert('Use “Start Court” to add poll options, or click the judge again to cancel Kangaroo Court.');
+      alert('Use ΓÇ£Start CourtΓÇ¥ to add poll options, or click the judge again to cancel Kangaroo Court.');
       return;
     }
     if (kcComposerPhase === "builder") {
@@ -2900,7 +2902,7 @@ export default function HomePage() {
           return;
         }
 
-        // Check verification status — unverified users go to /pending
+        // Check verification status ΓÇö unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
           .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status, referral_code, is_admin, access_tier")
@@ -3047,7 +3049,7 @@ export default function HomePage() {
     };
 
     // Post was fetched individually and confirmed unavailable (deleted, hidden, or
-    // wall-only). Nothing to highlight — clean up the URL and stop.
+    // wall-only). Nothing to highlight ΓÇö clean up the URL and stop.
     if (deepLinkPostUnavailable === postId) {
       stripDeepLinkParams();
       return;
@@ -3076,7 +3078,7 @@ export default function HomePage() {
       if (attempt < maxAttempts) {
         timeoutId = window.setTimeout(tryScroll, 80);
       }
-      // Don't strip URL params on exhaustion — avoids killing the params before
+      // Don't strip URL params on exhaustion ΓÇö avoids killing the params before
       // the target element renders, which would prevent any re-attempt.
     };
 
@@ -3214,290 +3216,10 @@ export default function HomePage() {
     );
   }
 
-  return (
-    <div
-      style={{
-        width: "100%",
-        maxWidth: 1800,
-        margin: "0 auto",
-        padding: "24px 20px",
-        boxSizing: "border-box",
-        background: t.bg,
-        minHeight: "100vh",
-        color: t.text,
-      }}
-    >
-      <NavBar />
-
-
-      <DesktopLayout isMobile={isMobile} left={
-        <aside
-          style={{
-            display: isMobile ? (mobileTab === "jobs" ? "block" : "none") : "block",
-            position: isMobile ? "static" : "sticky",
-            top: 20,
-            height: isMobile ? undefined : "calc(100vh - 80px)",
-            maxHeight: isMobile ? undefined : "calc(100vh - 80px)",
-            overflowY: isMobile ? undefined : "auto",
-            overflowX: "hidden",
-            scrollbarGutter: isMobile ? undefined : "stable",
-          }}
-        >
-          {jobsLoaded && (
-            <>
-              <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
-                <div>
-                  ({jobsTotalApprovedCount !== null ? jobsTotalApprovedCount.toLocaleString() : "—"}) jobs as of{" "}
-                  {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
-                </div>
-                <div style={{ marginTop: 4 }}>
-                  ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "—"}) new jobs today!
-                </div>
-                {!isMobile && (
-                  <div style={{ marginTop: 6 }}>
-                    <a
-                      href="/jobs"
-                      style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}
-                    >
-                      See all jobs →
-                    </a>
-                  </div>
-                )}
-              </div>
-              {isMobile && canUseJobFilters && (
-                <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12, color: t.textFaint, fontWeight: 600, flexShrink: 0 }}>Sort</span>
-                    <select
-                      id="job-sort"
-                      value={jobSort}
-                      onChange={(e) => setJobSort(e.target.value as "recent" | "az" | "za")}
-                      aria-label="Sort jobs"
-                      style={{
-                        flex: 1,
-                        minWidth: 0,
-                        fontSize: 13,
-                        padding: "5px 8px",
-                        borderRadius: 8,
-                        border: `1px solid ${t.inputBorder}`,
-                        background: t.input,
-                        color: t.text,
-                      }}
-                    >
-                      <option value="recent">Most recently listed</option>
-                      <option value="az">Alphabetical A–Z</option>
-                      <option value="za">Alphabetical Z–A</option>
-                    </select>
-                  </div>
-                  <select
-                    value={jobFilters.location}
-                    onChange={(e) => setJobFilters((prev) => ({ ...prev, location: e.target.value }))}
-                    aria-label="Filter jobs by location"
-                    style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text }}
-                  >
-                    <option value="">All locations</option>
-                    {jobLocationOptions.map((loc) => (
-                      <option key={loc} value={loc}>
-                        {loc}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={jobFilters.keyword}
-                    onChange={(e) => setJobFilters((prev) => ({ ...prev, keyword: e.target.value }))}
-                    placeholder="Keyword/tag (UXO, TSS-E, Safety)"
-                    style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
-                  />
-                </div>
-              )}
-            </>
-          )}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            {jobsLastUpdated ? (
-              <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 600 }}>
-                Updated {new Date(jobsLastUpdated).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}{" "}
-                {new Date(jobsLastUpdated).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
-              </div>
-            ) : <div />}
-            <Link
-              href="/post-job"
-              onClick={(e) => {
-                if (blockMemberInteraction()) e.preventDefault();
-              }}
-              style={{ background: "#111", color: "white", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}
-            >
-              Post Job
-            </Link>
-          </div>
-
-          {/* Community leaderboard */}
-          {showJobLeaderboard && isMobile && canViewFullJobs && jobLeaderboard.length > 0 && (
-            <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: "12px 16px" }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>
-                Top Community Contributors
-              </div>
-              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                {jobLeaderboard.map((entry, i) => {
-                  const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : null;
-                  return (
-                    <a
-                      key={entry.user_id}
-                      href={`/profile/${entry.user_id}`}
-                      style={{ display: "flex", alignItems: "center", gap: 7, textDecoration: "none", padding: "5px 10px", borderRadius: 20, border: `1px solid ${t.border}`, background: t.bg }}
-                    >
-                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: t.text }}>
-                        {entry.photo_url
-                          ? <img src={entry.photo_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                          : entry.name[0]?.toUpperCase()}
-                      </div>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{entry.name}</span>
-                      {medal && <span style={{ fontSize: 13 }}>{medal}</span>}
-                      <span style={{ fontSize: 11, color: t.textFaint, fontWeight: 600 }}>{entry.count}</span>
-                    </a>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
-            {!jobsLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
-            {jobsLoaded && jobsForPane.length === 0 && (
-              <div style={{ fontSize: 14, color: t.textMuted }}>
-                No approved jobs yet.
-              </div>
-            )}
-
-            {jobsLoaded && jobsForPane.map((job) => (
-              <div
-                key={job.id}
-                style={{
-                  border: `1px solid ${t.border}`,
-                  borderRadius: 12,
-                  overflow: "hidden",
-                  background: t.surface,
-                }}
-              >
-                {job.og_image && (
-                  <img
-                    src={httpsAssetUrl(job.og_image)}
-                    alt={job.title || job.og_title || "Job preview"}
-                    style={{
-                      width: "100%",
-                      height: 120,
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
-                )}
-
-                <div style={{ padding: 12 }}>
-                  <div style={{ fontWeight: 800, lineHeight: 1.3 }}>
-                    {job.title || job.og_title || "Untitled Job"}
-                  </div>
-
-                  <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>
-                    {job.company_name || job.og_site_name || "Unknown Company"}
-                  </div>
-
-                  <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted }}>
-                    {job.location || "Location not listed"}
-                  </div>
-
-                  <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <span>{job.category || "General"}</span>
-                    {job.created_at && <span>• {new Date(job.created_at).toLocaleDateString()}</span>}
-                    {job.source_type === "community" && (
-                      <span style={{ background: "#dcfce7", color: "#15803d", borderRadius: 20, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>
-                        Community
-                      </span>
-                    )}
-                  </div>
-                  {job.source_type === "community" && !job.anonymous && jobSubmitters.get(job.user_id ?? "") && (
-                    <div style={{ marginTop: 3, fontSize: 11, color: t.textFaint }}>
-                      posted by {jobSubmitters.get(job.user_id ?? "")}
-                    </div>
-                  )}
-
-                  {job.og_description && (
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 13,
-                        color: t.textMuted,
-                        lineHeight: 1.4,
-                        display: "-webkit-box",
-                        WebkitLineClamp: 4,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {job.og_description}
-                    </div>
-                  )}
-
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, flexWrap: "wrap", gap: 8 }}>
-                    {job.apply_url && (
-                      <a
-                        href={job.apply_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ fontSize: 14, fontWeight: 700 }}
-                      >
-                        View Job
-                      </a>
-                    )}
-
-                    {userId && (
-                      <button
-                        type="button"
-                        onClick={() => toggleSaveJob(job.id)}
-                        disabled={togglingJobSaveFor === job.id}
-                        style={{
-                          background: savedJobIds.has(job.id) ? "#111" : t.surface,
-                          color: savedJobIds.has(job.id) ? "white" : t.textMuted,
-                          border: `1px solid ${t.border}`,
-                          borderRadius: 8,
-                          padding: "5px 10px",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: togglingJobSaveFor === job.id ? "not-allowed" : "pointer",
-                          opacity: togglingJobSaveFor === job.id ? 0.6 : 1,
-                        }}
-                      >
-                        {togglingJobSaveFor === job.id ? "..." : savedJobIds.has(job.id) ? "Saved ✓" : "Save"}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <button
-              type="button"
-              onClick={openAllJobs}
-              style={{
-                width: "100%",
-                background: "#111",
-                color: "white",
-                border: "none",
-                borderRadius: 10,
-                padding: "9px 12px",
-                fontWeight: 700,
-                fontSize: 14,
-                cursor: "pointer",
-              }}
-            >
-              See All Jobs
-            </button>
-          </div>
-        </aside>
-      } center={
+  const renderFeedCenter = () => (
         <main style={{ display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined, minWidth: 0 }}>
 
-          {/* Pending Members — community vouching */}
+          {/* Pending Members ΓÇö community vouching */}
           {userId && pendingMembers.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
               {pendingMembers.map((m) => {
@@ -3534,7 +3256,7 @@ export default function HomePage() {
                             Vouch
                           </button>
                         ) : (
-                          <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>✓ Vouched</span>
+                          <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>Γ£ô Vouched</span>
                         )}
                         {isAdmin && (
                           <>
@@ -3576,11 +3298,11 @@ export default function HomePage() {
               gap: 12,
             }}>
               <div style={{ flex: 1, minWidth: 0, display: "flex", gap: 8, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 22, flexShrink: 0 }}>🎖️</span>
+                <span style={{ fontSize: 22, flexShrink: 0 }}>≡ƒÄû∩╕Å</span>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 14, color: isDark ? "#a5b4fc" : "#4338ca" }}>Invite 5 colleagues, earn a Recruiter Badge</div>
                   <div style={{ fontSize: 13, color: isDark ? "#818cf8" : "#6366f1", marginTop: 2 }}>
-                    Your referral link is on your profile — share it to grow the EOD HUB community.
+                    Your referral link is on your profile ΓÇö share it to grow the EOD HUB community.
                   </div>
                 </div>
               </div>
@@ -3615,7 +3337,7 @@ export default function HomePage() {
               gap: 12,
               flexWrap: "wrap",
             }}>
-              <span style={{ fontSize: 22 }}>👤</span>
+              <span style={{ fontSize: 22 }}>≡ƒæñ</span>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: isDark ? "#fbbf24" : "#92400e" }}>Add a profile photo</div>
                 <div style={{ fontSize: 13, color: isDark ? "#d97706" : "#b45309", marginTop: 2 }}>
@@ -3666,7 +3388,7 @@ export default function HomePage() {
             {selectedPostGif && (
               <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
                 <img src={selectedPostGif} alt="Selected GIF" style={{ maxWidth: 200, borderRadius: 10, display: "block" }} />
-                <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>├ù</button>
               </div>
             )}
 
@@ -3674,7 +3396,7 @@ export default function HomePage() {
             {ogPreview && (
               <div style={{ position: "relative" }}>
                 <OgCard og={ogPreview} />
-                <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>├ù</button>
               </div>
             )}
 
@@ -3742,7 +3464,7 @@ export default function HomePage() {
                         cursor: "pointer",
                       }}
                     >
-                      ×
+                      ├ù
                     </button>
                   </div>
                 ))}
@@ -3811,7 +3533,7 @@ export default function HomePage() {
               >
                 <div style={{ fontWeight: 800, marginBottom: 6 }}>Kangaroo Court</div>
                 <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10 }}>
-                  Add 2–4 options and a duration, then press Post. Your text and photos will publish with the poll.
+                  Add 2ΓÇô4 options and a duration, then press Post. Your text and photos will publish with the poll.
                 </div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: t.textMuted }}>Option 1</label>
                 <input
@@ -3982,7 +3704,7 @@ export default function HomePage() {
 
                 <button
                   type="button"
-                  title={kcComposerPhase ? "Exit Kangaroo Court" : "Kangaroo Court — add a poll to this post"}
+                  title={kcComposerPhase ? "Exit Kangaroo Court" : "Kangaroo Court ΓÇö add a poll to this post"}
                   onClick={() => {
                     if (kcComposerPhase) resetKcComposer();
                     else setKcComposerPhase("confirm");
@@ -4026,7 +3748,7 @@ export default function HomePage() {
             </div>
           </div>
 
-          {/* People You May Know — verified members only; below composer so vouch cards stay above */}
+          {/* People You May Know ΓÇö verified members only; below composer so vouch cards stay above */}
           {discoverVisible.length > 0 && (
             <div style={{ marginTop: 16, marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
               <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 12 }}>
@@ -4038,7 +3760,7 @@ export default function HomePage() {
                   onClick={() => shuffleDiscover()}
                   title="Previous"
                   style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                >‹</button>
+                >ΓÇ╣</button>
                 <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 4, flex: 1 }}>
                 {discoverVisible.map((p) => {
                   const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
@@ -4092,7 +3814,7 @@ export default function HomePage() {
                   onClick={() => shuffleDiscover()}
                   title="Next"
                   style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                >›</button>
+                >ΓÇ║</button>
               </div>
             </div>
           )}
@@ -4132,7 +3854,7 @@ export default function HomePage() {
                           />
                         )}
                         <div style={{ marginTop: 9, fontSize: 12, color: t.textMuted }}>
-                          {p.like_count} likes · {p.comment_count} comments
+                          {p.like_count} likes ┬╖ {p.comment_count} comments
                         </div>
                       </div>
                     </div>
@@ -4144,14 +3866,14 @@ export default function HomePage() {
 
           <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
             {!postsLoaded && [0,1,2,3].map((i) => <SkeletonPost key={i} />)}
-            {/* Memorial anniversary cards — auto-injected on anniversary date */}
+            {/* Memorial anniversary cards ΓÇö auto-injected on anniversary date */}
             {todayMemorials.filter(m => !dismissedMemorialIds.has(m.id)).map((m) => {
               const bioExpanded = expandedMemorialBios.has(m.id);
               return (
                 <div key={`memorial-${m.id}`} style={{ border: "2px solid #7c3aed", borderRadius: 14, overflow: "hidden" }}>
                   {/* Header banner */}
                   <div style={{ background: "#7c3aed", padding: "11px 20px", display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ color: "white", fontSize: 17 }}>✦</span>
+                    <span style={{ color: "white", fontSize: 17 }}>Γ£ª</span>
                     <span style={{ color: "white", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" }}>We Remember</span>
                     <span style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, fontWeight: 600, marginLeft: "auto", marginRight: 12 }}>
                       {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}
@@ -4161,7 +3883,7 @@ export default function HomePage() {
                       onClick={() => dismissMemorial(m.id)}
                       title="Dismiss"
                       style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "white", fontWeight: 900, fontSize: 16, lineHeight: 1, cursor: "pointer", padding: "2px 7px", flexShrink: 0 }}
-                    >×</button>
+                    >├ù</button>
                   </div>
                   {/* Card body */}
                   <div style={{ padding: 20, background: isDark ? "#1a0d2e" : "#faf5ff", display: "flex", gap: 16, alignItems: "flex-start" }}>
@@ -4174,7 +3896,7 @@ export default function HomePage() {
                       <div style={{ fontSize: 20, fontWeight: 900, color: isDark ? "#f3e8ff" : "#1a1a1a" }}>{m.name}</div>
                       <div style={{ fontSize: 13, color: "#7c3aed", marginTop: 2 }}>
                         {new Date(m.death_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-                        {" · "}
+                        {" ┬╖ "}
                         {new Date().getFullYear() - parseInt(m.death_date.split("-")[0])} years ago
                       </div>
                       {m.bio && (
@@ -4206,17 +3928,17 @@ export default function HomePage() {
                           <>
                             <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${isDark ? "#3b1f6b" : "#e9d5ff"}` }}>
                               <button type="button" onClick={() => toggleMemorialLike(m.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: myLiked ? "#7c3aed" : t.textMuted, fontWeight: myLiked ? 700 : 400, fontSize: 14, padding: 0 }}>
-                                {myLiked ? "♥" : "♡"}{likes.length > 0 && <span style={{ fontSize: 13 }}>{likes.length}</span>}
+                                {myLiked ? "ΓÖÑ" : "ΓÖí"}{likes.length > 0 && <span style={{ fontSize: 13 }}>{likes.length}</span>}
                               </button>
                               <button type="button" onClick={() => setMemorialCommentsOpen(p => ({ ...p, [m.id]: !commentsOpen }))} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: t.textMuted, fontSize: 14, padding: 0 }}>
-                                💬{comments.length > 0 && <span style={{ fontSize: 13 }}>{comments.length}</span>}
+                                ≡ƒÆ¼{comments.length > 0 && <span style={{ fontSize: 13 }}>{comments.length}</span>}
                               </button>
                             </div>
 
                             {/* Donate strip */}
                             <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? "#3b1f6b" : "#e9d5ff"}` }}>
                               <button type="button" onClick={() => setDonateModalOpen(true)} style={{ background: "#7c3aed", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
-                                💜 Donate to EOD Warrior Foundation
+                                ≡ƒÆ£ Donate to EOD Warrior Foundation
                               </button>
                             </div>
                             {commentsOpen && (
@@ -4241,7 +3963,7 @@ export default function HomePage() {
                                     style={{ flex: 1, minHeight: 60, border: `1px solid ${isDark ? "#3b1f6b" : "#c4b5fd"}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: isDark ? "#1a0d2e" : "#faf5ff", color: t.text, outline: "none" }}
                                   />
                                   <button type="button" onClick={() => submitMemorialComment(m.id)} disabled={submittingMemorialComment === m.id} style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 700, cursor: submittingMemorialComment === m.id ? "not-allowed" : "pointer", opacity: submittingMemorialComment === m.id ? 0.7 : 1, fontSize: 13, flexShrink: 0 }}>
-                                    {submittingMemorialComment === m.id ? "…" : "Reply"}
+                                    {submittingMemorialComment === m.id ? "ΓÇª" : "Reply"}
                                   </button>
                                 </div>
                               </div>
@@ -4325,7 +4047,7 @@ export default function HomePage() {
                       )}
                       {!isOwnPost && (
                         <button type="button" onClick={() => openFlagModal("post", post.id)} disabled={flaggingId === post.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === post.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 15, lineHeight: 1 }}>
-                          ⚑
+                          ΓÜæ
                         </button>
                       )}
                     </div>
@@ -4468,7 +4190,7 @@ export default function HomePage() {
                                         {!showOverlay && (
                                           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
                                             <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                              <span style={{ color: "white", fontSize: 16, paddingLeft: 2 }}>▶</span>
+                                              <span style={{ color: "white", fontSize: 16, paddingLeft: 2 }}>Γû╢</span>
                                             </div>
                                           </div>
                                         )}
@@ -4551,7 +4273,7 @@ export default function HomePage() {
                       <KangarooCourtVerdictBanner verdict={post.kangaroo.verdict} />
                     )}
 
-                  {/* KC poll card: order is original post → verdict → poll → toolbar → comments */}
+                  {/* KC poll card: order is original post ΓåÆ verdict ΓåÆ poll ΓåÆ toolbar ΓåÆ comments */}
                   <KangarooCourtFeedSection
                     postId={post.id}
                     userId={userId}
@@ -4705,7 +4427,7 @@ export default function HomePage() {
                                 <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                                   {!isOwnComment && (
                                     <button type="button" onClick={() => openFlagModal("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 13, lineHeight: 1 }}>
-                                      ⚑
+                                      ΓÜæ
                                     </button>
                                   )}
                                   {isOwnComment && (
@@ -4929,7 +4651,10 @@ export default function HomePage() {
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                                 <button
                                   type="button"
-                                  onClick={() => setSidebarDrawer({ open: true, peerId: nudge.peerUserId })}
+                                  onClick={() => {
+                                    if (isDesktopShell) openSidebarPeer(nudge.peerUserId);
+                                    else setSidebarDrawer({ open: true, peerId: nudge.peerUserId });
+                                  }}
                                   style={{
                                     border: "none",
                                     borderRadius: 8,
@@ -5013,7 +4738,7 @@ export default function HomePage() {
                         {selectedCommentGifs[post.id] && (
                           <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
                             <img src={selectedCommentGifs[post.id]!} alt="GIF" style={{ maxWidth: 180, borderRadius: 10, display: "block" }} />
-                            <button type="button" onClick={() => setSelectedCommentGifs((prev) => ({ ...prev, [post.id]: null }))} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                            <button type="button" onClick={() => setSelectedCommentGifs((prev) => ({ ...prev, [post.id]: null }))} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>├ù</button>
                           </div>
                         )}
 
@@ -5057,7 +4782,7 @@ export default function HomePage() {
                                   cursor: "pointer",
                                 }}
                               >
-                                ×
+                                ├ù
                               </button>
                             </div>
                           </div>
@@ -5132,7 +4857,297 @@ export default function HomePage() {
             })}
           </div>
         </main>
-      } right={
+  );
+
+  return (
+    <>
+      {!isDesktopShell ? (
+    <div
+      style={{
+        width: "100%",
+        maxWidth: 1800,
+        margin: "0 auto",
+        padding: "24px 20px",
+        boxSizing: "border-box",
+        background: t.bg,
+        minHeight: "100vh",
+        color: t.text,
+      }}
+    >
+      <NavBar />
+
+
+      <DesktopLayout
+        isMobile={isMobile}
+        desktopColumns="272px minmax(0, 1.08fr) 372px"
+        desktopGap={20}
+        left={
+        <aside
+          style={{
+            display: isMobile ? (mobileTab === "jobs" ? "block" : "none") : "block",
+            position: isMobile ? "static" : "sticky",
+            top: 20,
+            height: isMobile ? undefined : "calc(100vh - 80px)",
+            maxHeight: isMobile ? undefined : "calc(100vh - 80px)",
+            overflowY: isMobile ? undefined : "auto",
+            overflowX: "hidden",
+            scrollbarGutter: isMobile ? undefined : "stable",
+          }}
+        >
+          {jobsLoaded && (
+            <>
+              <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
+                <div>
+                  ({jobsTotalApprovedCount !== null ? jobsTotalApprovedCount.toLocaleString() : "ΓÇö"}) jobs as of{" "}
+                  {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
+                </div>
+                <div style={{ marginTop: 4 }}>
+                  ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "ΓÇö"}) new jobs today!
+                </div>
+                {!isMobile && (
+                  <div style={{ marginTop: 6 }}>
+                    <a
+                      href="/jobs"
+                      style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}
+                    >
+                      See all jobs ΓåÆ
+                    </a>
+                  </div>
+                )}
+              </div>
+              {isMobile && canUseJobFilters && (
+                <div style={{ display: "grid", gap: 8, marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, color: t.textFaint, fontWeight: 600, flexShrink: 0 }}>Sort</span>
+                    <select
+                      id="job-sort"
+                      value={jobSort}
+                      onChange={(e) => setJobSort(e.target.value as "recent" | "az" | "za")}
+                      aria-label="Sort jobs"
+                      style={{
+                        flex: 1,
+                        minWidth: 0,
+                        fontSize: 13,
+                        padding: "5px 8px",
+                        borderRadius: 8,
+                        border: `1px solid ${t.inputBorder}`,
+                        background: t.input,
+                        color: t.text,
+                      }}
+                    >
+                      <option value="recent">Most recently listed</option>
+                      <option value="az">Alphabetical AΓÇôZ</option>
+                      <option value="za">Alphabetical ZΓÇôA</option>
+                    </select>
+                  </div>
+                  <select
+                    value={jobFilters.location}
+                    onChange={(e) => setJobFilters((prev) => ({ ...prev, location: e.target.value }))}
+                    aria-label="Filter jobs by location"
+                    style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text }}
+                  >
+                    <option value="">All locations</option>
+                    {jobLocationOptions.map((loc) => (
+                      <option key={loc} value={loc}>
+                        {loc}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={jobFilters.keyword}
+                    onChange={(e) => setJobFilters((prev) => ({ ...prev, keyword: e.target.value }))}
+                    placeholder="Keyword/tag (UXO, TSS-E, Safety)"
+                    style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
+                  />
+                </div>
+              )}
+            </>
+          )}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            {jobsLastUpdated ? (
+              <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 600 }}>
+                Updated {new Date(jobsLastUpdated).toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}{" "}
+                {new Date(jobsLastUpdated).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}
+              </div>
+            ) : <div />}
+            <Link
+              href="/post-job"
+              onClick={(e) => {
+                if (blockMemberInteraction()) e.preventDefault();
+              }}
+              style={{ background: "#111", color: "white", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}
+            >
+              Post Job
+            </Link>
+          </div>
+
+          {/* Community leaderboard */}
+          {showJobLeaderboard && isMobile && canViewFullJobs && jobLeaderboard.length > 0 && (
+            <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: "12px 16px" }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 10 }}>
+                Top Community Contributors
+              </div>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                {jobLeaderboard.map((entry, i) => {
+                  const medal = i === 0 ? "≡ƒÑç" : i === 1 ? "≡ƒÑê" : i === 2 ? "≡ƒÑë" : null;
+                  return (
+                    <a
+                      key={entry.user_id}
+                      href={`/profile/${entry.user_id}`}
+                      style={{ display: "flex", alignItems: "center", gap: 7, textDecoration: "none", padding: "5px 10px", borderRadius: 20, border: `1px solid ${t.border}`, background: t.bg }}
+                    >
+                      <div style={{ width: 24, height: 24, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 800, color: t.text }}>
+                        {entry.photo_url
+                          ? <img src={entry.photo_url} alt={entry.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : entry.name[0]?.toUpperCase()}
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{entry.name}</span>
+                      {medal && <span style={{ fontSize: 13 }}>{medal}</span>}
+                      <span style={{ fontSize: 11, color: t.textFaint, fontWeight: 600 }}>{entry.count}</span>
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+            {!jobsLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
+            {jobsLoaded && jobsForPane.length === 0 && (
+              <div style={{ fontSize: 14, color: t.textMuted }}>
+                No approved jobs yet.
+              </div>
+            )}
+
+            {jobsLoaded && jobsForPane.map((job) => (
+              <div
+                key={job.id}
+                style={{
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 12,
+                  overflow: "hidden",
+                  background: t.surface,
+                }}
+              >
+                {job.og_image && (
+                  <img
+                    src={httpsAssetUrl(job.og_image)}
+                    alt={job.title || job.og_title || "Job preview"}
+                    style={{
+                      width: "100%",
+                      height: 120,
+                      objectFit: "cover",
+                      display: "block",
+                    }}
+                  />
+                )}
+
+                <div style={{ padding: 12 }}>
+                  <div style={{ fontWeight: 800, lineHeight: 1.3 }}>
+                    {job.title || job.og_title || "Untitled Job"}
+                  </div>
+
+                  <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>
+                    {job.company_name || job.og_site_name || "Unknown Company"}
+                  </div>
+
+                  <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted }}>
+                    {job.location || "Location not listed"}
+                  </div>
+
+                  <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                    <span>{job.category || "General"}</span>
+                    {job.created_at && <span>ΓÇó {new Date(job.created_at).toLocaleDateString()}</span>}
+                    {job.source_type === "community" && (
+                      <span style={{ background: "#dcfce7", color: "#15803d", borderRadius: 20, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>
+                        Community
+                      </span>
+                    )}
+                  </div>
+                  {job.source_type === "community" && !job.anonymous && jobSubmitters.get(job.user_id ?? "") && (
+                    <div style={{ marginTop: 3, fontSize: 11, color: t.textFaint }}>
+                      posted by {jobSubmitters.get(job.user_id ?? "")}
+                    </div>
+                  )}
+
+                  {job.og_description && (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        fontSize: 13,
+                        color: t.textMuted,
+                        lineHeight: 1.4,
+                        display: "-webkit-box",
+                        WebkitLineClamp: 4,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                      }}
+                    >
+                      {job.og_description}
+                    </div>
+                  )}
+
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, flexWrap: "wrap", gap: 8 }}>
+                    {job.apply_url && (
+                      <a
+                        href={job.apply_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: 14, fontWeight: 700 }}
+                      >
+                        View Job
+                      </a>
+                    )}
+
+                    {userId && (
+                      <button
+                        type="button"
+                        onClick={() => toggleSaveJob(job.id)}
+                        disabled={togglingJobSaveFor === job.id}
+                        style={{
+                          background: savedJobIds.has(job.id) ? "#111" : t.surface,
+                          color: savedJobIds.has(job.id) ? "white" : t.textMuted,
+                          border: `1px solid ${t.border}`,
+                          borderRadius: 8,
+                          padding: "5px 10px",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: togglingJobSaveFor === job.id ? "not-allowed" : "pointer",
+                          opacity: togglingJobSaveFor === job.id ? 0.6 : 1,
+                        }}
+                      >
+                        {togglingJobSaveFor === job.id ? "..." : savedJobIds.has(job.id) ? "Saved Γ£ô" : "Save"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              onClick={openAllJobs}
+              style={{
+                width: "100%",
+                background: "#111",
+                color: "white",
+                border: "none",
+                borderRadius: 10,
+                padding: "9px 12px",
+                fontWeight: 700,
+                fontSize: 14,
+                cursor: "pointer",
+              }}
+            >
+              See All Jobs
+            </button>
+          </div>
+        </aside>
+      }
+      center={renderFeedCenter()}
+      right={
         <aside
           style={{
             display: isMobile ? (mobileTab === "businesses" ? "block" : "none") : undefined,
@@ -5158,7 +5173,7 @@ export default function HomePage() {
                 href="/businesses"
                 style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}
               >
-                See all Biz/Org/Resources →
+                See all Biz/Org/Resources ΓåÆ
               </a>
             )}
             {isMobile && (
@@ -5199,7 +5214,7 @@ export default function HomePage() {
             <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
               {bizSubmitSuccess ? (
                 <div style={{ textAlign: "center", padding: "16px 0", color: "#16a34a", fontWeight: 700, fontSize: 14 }}>
-                  ✓ Submitted! Our team will review and approve your listing.
+                  Γ£ô Submitted! Our team will review and approve your listing.
                 </div>
               ) : (
                 <>
@@ -5420,9 +5435,14 @@ export default function HomePage() {
             })}
           </div>
         </aside>
-      } />
+      }
+      />
+    </div>
+      ) : (
+        renderFeedCenter()
+      )}
 
-      {/* Donate modal — in-app iframe over EOD Warrior Foundation donation form */}
+      {/* Donate modal ΓÇö in-app iframe over EOD Warrior Foundation donation form */}
       {donateModalOpen && (
         <div
           onClick={() => setDonateModalOpen(false)}
@@ -5439,7 +5459,7 @@ export default function HomePage() {
                 type="button"
                 onClick={() => setDonateModalOpen(false)}
                 style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "white", fontWeight: 900, fontSize: 18, lineHeight: 1, cursor: "pointer", padding: "2px 8px" }}
-              >×</button>
+              >├ù</button>
             </div>
             {/* Iframe */}
             <iframe
@@ -5496,7 +5516,7 @@ export default function HomePage() {
                 cursor: "pointer",
               }}
             >
-              ×
+              ├ù
             </button>
 
             {galleryImages.length > 1 && (
@@ -5520,7 +5540,7 @@ export default function HomePage() {
                     cursor: "pointer",
                   }}
                 >
-                  ‹
+                  ΓÇ╣
                 </button>
 
                 <button
@@ -5542,7 +5562,7 @@ export default function HomePage() {
                     cursor: "pointer",
                   }}
                 >
-                  ›
+                  ΓÇ║
                 </button>
               </>
             )}
@@ -5689,7 +5709,7 @@ export default function HomePage() {
 
       <UpgradePromptModal open={showJobsUpgradePrompt} onClose={() => setShowJobsUpgradePrompt(false)} />
       <MemberPaywallModal open={memberPaywallOpen} onClose={() => setMemberPaywallOpen(false)} />
-      {userId && (
+      {userId && !isDesktopShell && (
         <SidebarThreadDrawer
           open={sidebarDrawer.open}
           onClose={() => setSidebarDrawer({ open: false, peerId: null })}
@@ -5697,6 +5717,6 @@ export default function HomePage() {
           peerUserId={sidebarDrawer.peerId}
         />
       )}
-    </div>
+    </>
   );
 }

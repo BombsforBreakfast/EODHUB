@@ -497,8 +497,8 @@ export default function NavBar() {
         </Link>
       </div>
 
-      {/* Desktop: grid [ avatar+bell+search | centered logo | Hub+account ]; mobile: contents + order */}
-      <div className="nav-cell-left">
+      {/* Desktop: centered cluster — avatar | [ row: bell+crab+hub+account; row: search ]; mobile: flattened via display:contents */}
+      <div className="nav-desktop-cluster">
         <div className="nav-primary-avatar" style={{ position: "relative", flexShrink: 0 }}>
           <Link
             href={currentUserId ? `/profile/${currentUserId}` : "/login"}
@@ -513,8 +513,8 @@ export default function NavBar() {
               }
             }}
             style={{
-              width: 62,
-              height: 62,
+              width: 81,
+              height: 81,
               borderRadius: "50%",
               background: t.text,
               color: t.navBg,
@@ -522,7 +522,7 @@ export default function NavBar() {
               alignItems: "center",
               justifyContent: "center",
               fontWeight: 700,
-              fontSize: 25,
+              fontSize: 33,
               border: "none",
               cursor: "pointer",
               padding: 0,
@@ -539,186 +539,190 @@ export default function NavBar() {
           </Link>
         </div>
 
-        {currentUserId && (
-          <button
-            type="button"
-            className="nav-btn nav-notifications-btn nav-primary-bell"
-            aria-label="Notifications"
-            title="Notifications"
-            onClick={() => { setShowNotifPanel((v) => !v); setShowHub(false); setShowSearchDropdown(false); }}
-            style={{ ...navButton, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}
-          >
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-              <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-            </svg>
-            {unreadNotifCount > 0 && badge(unreadNotifCount)}
-          </button>
-        )}
-
-        <div className="nav-search-slot">
-      <div className="nav-search-row">
-        <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "1 1 0", minWidth: 0, width: "100%" }}>
-          <div className="nav-search-inner" style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 9, background: t.input, padding: "0 10px", gap: 6, minWidth: 0, boxSizing: "border-box" }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.2" strokeLinecap="round">
-              <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
-            </svg>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-              onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
-              placeholder={canAccessRabbithole
-                ? "Search people, jobs, groups, businesses, directory, Rabbithole…"
-                : "Search people, jobs, groups, businesses, directory…"}
-              style={{ border: "none", outline: "none", fontSize: 13, flex: "1 1 0", minWidth: 0, width: "100%", background: "transparent", color: t.text, height: 36, lineHeight: "36px", padding: 0 }}
-            />
-            {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
-          </div>
-
-          {showSearchDropdown && (
-            <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.22)", zIndex: 300, overflow: "hidden", maxHeight: 420, overflowY: "auto" }}>
-              {searchResults.length === 0 && !searching && (
-                <div style={{ padding: "12px 14px" }}>
-                  <div style={{ fontSize: 14, color: t.textMuted, textAlign: "center", marginBottom: 10 }}>No results found.</div>
-                  <div
-                    onClick={() => { setShowSearchDropdown(false); window.location.href = `/units?q=${encodeURIComponent(searchQuery)}`; }}
-                    style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${t.border}`, borderRadius: 10, color: t.text }}
-                    onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
-                    onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
-                  >
-                    <span style={{ background: "#ede9fe", color: "#7c3aed", fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>Group</span>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 13 }}>No group &ldquo;{searchQuery}&rdquo; found</div>
-                      <div style={{ fontSize: 12, color: t.textMuted }}>Click to create this group →</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {(canAccessRabbithole
-                ? (["user", "unit", "job", "business", "directory", "rabbithole"] as const)
-                : (["user", "unit", "job", "business", "directory"] as const)
-              ).map((type) => {
-                const group = searchResults.filter((r) => r.type === type);
-                if (group.length === 0) return null;
-                const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Groups" : type === "business" ? "Businesses" : type === "directory" ? "Directory" : "Rabbithole";
-                const badgeColors: Record<SearchResult["type"], string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe", rabbithole: "#fee2e2", directory: "#cffafe" };
-                const badgeText: Record<SearchResult["type"], string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed", rabbithole: "#991b1b", directory: "#0e7490" };
-                const badgeLabel: Record<SearchResult["type"], string> = { user: "Person", job: "Job", business: "Biz", unit: "Group", rabbithole: "Library", directory: "Org" };
-                return (
-                  <div key={type}>
-                    <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
-                    {group.map((result) => (
-                      <div
-                        key={result.id}
-                        onClick={() => handleSearchResultClick(result)}
-                        style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${t.borderLight}`, background: t.surface, color: t.text }}
-                        onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
-                        onMouseLeave={(e) => (e.currentTarget.style.background = t.surface)}
-                      >
-                        <span style={{ background: badgeColors[type], color: badgeText[type], fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>
-                          {badgeLabel[type]}
-                        </span>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.title}</div>
-                          <div style={{ fontSize: 12, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.subtitle}</div>
-                        </div>
-                        {result.external && (
-                          <svg style={{ flexShrink: 0, marginLeft: "auto" }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2.2" strokeLinecap="round">
-                            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
-                          </svg>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        </div>
-        </div>
-      </div>
-
-      <div className="nav-cell-center nav-logo-desktop-only">
-        <Link
-          href="/"
-          className="nav-feed-home-desktop"
-          aria-label="EOD HUB home — feed"
-          title="Home feed"
-          onClick={() => { setShowHub(false); setShowSearchDropdown(false); }}
-          style={{
-            textDecoration: "none",
-            color: t.text,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            lineHeight: 1,
-            flexShrink: 0,
-          }}
-        >
-          <EodCrabLogo variant="navDesktop" />
-        </Link>
-      </div>
-
-      <div className="nav-cell-right">
-        <button
-          ref={hubBtnRef}
-          type="button"
-          onClick={() => {
-            setShowHub((v) => !v);
-            setShowSearchDropdown(false);
-          }}
-          className="nav-btn nav-hub-toggle"
-          aria-expanded={showHub}
-          aria-haspopup="dialog"
-          style={{ ...navButton, cursor: "pointer", alignItems: "center", gap: 6 }}
-        >
-          EOD Hub
-        </button>
-        <div
-          className="nav-right"
-          style={{
-            display: "flex",
-            gap: 6,
-            flexWrap: "nowrap",
-            flexShrink: 0,
-            alignItems: "center",
-            border: "none",
-            borderRadius: 0,
-            padding: 0,
-            background: "transparent",
-          }}
-        >
-          {!authLoaded ? null : currentUserId ? (
-            <>
-              <Link
-                href="/profile"
-                className="nav-btn nav-account-settings"
-                aria-label="My account"
-                title="My account"
-                onClick={() => {
-                  setShowHub(false);
-                  setShowSearchDropdown(false);
-                }}
-                style={{ ...rightToolbarButton, padding: "0 11px", minWidth: 44 }}
+        <div className="nav-stack-main">
+          <div className="nav-toolbar-search-wrap">
+            <div className="nav-desktop-toolbar-row">
+            {currentUserId && (
+              <button
+                type="button"
+                className="nav-btn nav-notifications-btn nav-primary-bell"
+                aria-label="Notifications"
+                title="Notifications"
+                onClick={() => { setShowNotifPanel((v) => !v); setShowHub(false); setShowSearchDropdown(false); }}
+                style={{ ...navButton, display: "flex", alignItems: "center", gap: 6, cursor: "pointer", background: "transparent", border: "none", boxShadow: "none" }}
               >
-                <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .55.22 1.05.59 1.41.37.37.86.59 1.41.59H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                 </svg>
+                {unreadNotifCount > 0 && badge(unreadNotifCount)}
+              </button>
+            )}
+
+            <div className="nav-cell-center nav-logo-desktop-only">
+              <Link
+                href="/"
+                className="nav-feed-home-desktop"
+                aria-label="EOD HUB home — feed"
+                title="Home feed"
+                onClick={() => { setShowHub(false); setShowSearchDropdown(false); }}
+                style={{
+                  textDecoration: "none",
+                  color: t.text,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  lineHeight: 1,
+                  flexShrink: 0,
+                }}
+              >
+                <EodCrabLogo variant="navDesktop" />
               </Link>
-              <button onClick={handleLogout} className="nav-logout" style={{ ...rightToolbarButton, cursor: "pointer" }}>Log Out</button>
-            </>
-          ) : (
-            <>
-              <Link href="/directory" className="nav-btn nav-directory" style={rightToolbarButton}>
-                Directory
-              </Link>
-              <Link href="/login" className="nav-logout" style={rightToolbarButton}>Log In</Link>
-            </>
-          )}
+            </div>
+
+            <button
+              ref={hubBtnRef}
+              type="button"
+              onClick={() => {
+                setShowHub((v) => !v);
+                setShowSearchDropdown(false);
+              }}
+              className="nav-btn nav-hub-toggle"
+              aria-expanded={showHub}
+              aria-haspopup="dialog"
+              style={{ ...navButton, cursor: "pointer", alignItems: "center", gap: 6, background: "transparent", border: "none", boxShadow: "none" }}
+            >
+              EOD Hub
+            </button>
+            <div
+              className="nav-right"
+              style={{
+                display: "flex",
+                gap: 6,
+                flexWrap: "nowrap",
+                flexShrink: 0,
+                alignItems: "center",
+                border: "none",
+                borderRadius: 0,
+                padding: 0,
+                background: "transparent",
+              }}
+            >
+              {!authLoaded ? null : currentUserId ? (
+                <>
+                  <Link
+                    href="/profile"
+                    className="nav-btn nav-account-settings"
+                    aria-label="My account"
+                    title="My account"
+                    onClick={() => {
+                      setShowHub(false);
+                      setShowSearchDropdown(false);
+                    }}
+                    style={{ ...rightToolbarButton, padding: "0 11px", minWidth: 44, background: "transparent", border: "none", boxShadow: "none" }}
+                  >
+                    <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c0 .55.22 1.05.59 1.41.37.37.86.59 1.41.59H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                    </svg>
+                  </Link>
+                  <button onClick={handleLogout} className="nav-logout" style={{ ...rightToolbarButton, cursor: "pointer", background: "transparent", border: "none", boxShadow: "none" }}>Log Out</button>
+                </>
+              ) : (
+                <>
+                  <Link href="/directory" className="nav-btn nav-directory" style={rightToolbarButton}>
+                    Directory
+                  </Link>
+                  <Link href="/login" className="nav-logout" style={rightToolbarButton}>Log In</Link>
+                </>
+              )}
+            </div>
+            </div>
+
+            <div className="nav-search-slot">
+            <div className="nav-search-row">
+              <div ref={searchRef} className="nav-search" style={{ position: "relative", flex: "1 1 0", minWidth: 0, width: "100%" }}>
+                <div className="nav-search-inner" style={{ display: "flex", alignItems: "center", border: `1px solid ${t.inputBorder}`, borderRadius: 9, background: t.input, padding: "0 10px", gap: 6, minWidth: 0, boxSizing: "border-box" }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#999" strokeWidth="2.2" strokeLinecap="round">
+                    <circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/>
+                  </svg>
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => handleSearchChange(e.target.value)}
+                    onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
+                    placeholder={canAccessRabbithole
+                      ? "Search people, jobs, groups, businesses, directory, Rabbithole…"
+                      : "Search people, jobs, groups, businesses, directory…"}
+                    style={{ border: "none", outline: "none", fontSize: 13, flex: "1 1 0", minWidth: 0, width: "100%", background: "transparent", color: t.text, height: 36, lineHeight: "36px", padding: 0 }}
+                  />
+                  {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
+                </div>
+
+                {showSearchDropdown && (
+                  <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, background: t.surface, border: `1px solid ${t.border}`, borderRadius: 12, boxShadow: "0 8px 32px rgba(0,0,0,0.22)", zIndex: 300, overflow: "hidden", maxHeight: 420, overflowY: "auto" }}>
+                    {searchResults.length === 0 && !searching && (
+                      <div style={{ padding: "12px 14px" }}>
+                        <div style={{ fontSize: 14, color: t.textMuted, textAlign: "center", marginBottom: 10 }}>No results found.</div>
+                        <div
+                          onClick={() => { setShowSearchDropdown(false); window.location.href = `/units?q=${encodeURIComponent(searchQuery)}`; }}
+                          style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, border: `1px dashed ${t.border}`, borderRadius: 10, color: t.text }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                        >
+                          <span style={{ background: "#ede9fe", color: "#7c3aed", fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>Group</span>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 13 }}>No group &ldquo;{searchQuery}&rdquo; found</div>
+                            <div style={{ fontSize: 12, color: t.textMuted }}>Click to create this group →</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {(canAccessRabbithole
+                      ? (["user", "unit", "job", "business", "directory", "rabbithole"] as const)
+                      : (["user", "unit", "job", "business", "directory"] as const)
+                    ).map((type) => {
+                      const group = searchResults.filter((r) => r.type === type);
+                      if (group.length === 0) return null;
+                      const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Groups" : type === "business" ? "Businesses" : type === "directory" ? "Directory" : "Rabbithole";
+                      const badgeColors: Record<SearchResult["type"], string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe", rabbithole: "#fee2e2", directory: "#cffafe" };
+                      const badgeText: Record<SearchResult["type"], string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed", rabbithole: "#991b1b", directory: "#0e7490" };
+                      const badgeLabel: Record<SearchResult["type"], string> = { user: "Person", job: "Job", business: "Biz", unit: "Group", rabbithole: "Library", directory: "Org" };
+                      return (
+                        <div key={type}>
+                          <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
+                          {group.map((result) => (
+                            <div
+                              key={result.id}
+                              onClick={() => handleSearchResultClick(result)}
+                              style={{ padding: "10px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, borderTop: `1px solid ${t.borderLight}`, background: t.surface, color: t.text }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = t.surface)}
+                            >
+                              <span style={{ background: badgeColors[type], color: badgeText[type], fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>
+                                {badgeLabel[type]}
+                              </span>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.title}</div>
+                                <div style={{ fontSize: 12, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.subtitle}</div>
+                              </div>
+                              {result.external && (
+                                <svg style={{ flexShrink: 0, marginLeft: "auto" }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#aaa" strokeWidth="2.2" strokeLinecap="round">
+                                  <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+                                </svg>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

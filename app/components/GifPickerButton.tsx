@@ -104,10 +104,11 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
   const border = theme === "dark" ? "#333" : "#e5e7eb";
   const text = theme === "dark" ? "#fff" : "#111";
   const inputBg = theme === "dark" ? "#2a2a2a" : "#f3f4f6";
+  const isMobileSheet = open && isMobile;
 
   return (
     <>
-      {open && isMobile && (
+      {isMobileSheet && (
         <div
           onClick={() => setOpen(false)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 999 }}
@@ -138,17 +139,18 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
         <div
           style={isMobile ? {
             position: "fixed",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
+            left: 10,
+            right: 10,
+            bottom: 10,
             zIndex: 1000,
-            width: "92vw",
-            maxWidth: 360,
+            maxHeight: "72vh",
             background: bg,
             border: `1px solid ${border}`,
             borderRadius: 14,
             boxShadow: "0 8px 32px rgba(0,0,0,0.3)",
             overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
           } : {
             position: "absolute",
             bottom: "calc(100% + 6px)",
@@ -162,6 +164,26 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
             overflow: "hidden",
           }}
         >
+          {isMobile && (
+            <div style={{ display: "flex", justifyContent: "flex-end", padding: "8px 10px 0" }}>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  color: text,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  opacity: 0.75,
+                  padding: "4px 6px",
+                }}
+              >
+                Close
+              </button>
+            </div>
+          )}
           <div style={{ padding: "10px 10px 8px" }}>
             <input
               autoFocus
@@ -184,7 +206,7 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
 
           <div
             style={{
-              height: 320,
+              height: isMobile ? "min(42vh, 280px)" : 320,
               overflowY: "auto",
               padding: "0 10px 10px",
               display: "grid",

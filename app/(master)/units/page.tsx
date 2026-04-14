@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../lib/lib/supabaseClient";
-import { useTheme } from "../lib/ThemeContext";
-import NavBar from "../components/NavBar";
-import ImageCropDialog from "../components/ImageCropDialog";
-import { ASPECT_UNIT_COVER } from "../lib/imageCropTargets";
+import { supabase } from "../../lib/lib/supabaseClient";
+import { useTheme } from "../../lib/ThemeContext";
+import NavBar from "../../components/NavBar";
+import { useMasterShell } from "../../components/master/masterShellContext";
+import ImageCropDialog from "../../components/ImageCropDialog";
+import { ASPECT_UNIT_COVER } from "../../lib/imageCropTargets";
 
 type UnitMemberPreview = {
   user_id: string;
@@ -58,6 +59,7 @@ function unitMatchesLocalFilter(unit: Unit, raw: string): boolean {
 export default function UnitsPage() {
   const { t, isDark } = useTheme();
   const router = useRouter();
+  const { isDesktopShell } = useMasterShell();
 
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -320,7 +322,8 @@ export default function UnitsPage() {
           closeCoverCrop();
         }}
       />
-      {/* Full-width nav (not constrained by content max-width) */}
+      {/* Full-width nav (not constrained by content max-width); MasterShell provides nav on desktop */}
+      {!isDesktopShell && (
       <div
         style={{
           width: "100%",
@@ -332,22 +335,23 @@ export default function UnitsPage() {
       >
         <NavBar />
       </div>
+      )}
       <div
         style={{
           width: "100%",
           maxWidth: 1800,
           margin: "0 auto",
           boxSizing: "border-box",
-          paddingTop: 10,
+          paddingTop: isDesktopShell ? 0 : 10,
           paddingBottom: 24,
           ...padX,
         }}
       >
 
         <div className="groups-page-shell">
-        {/* Hero: first two grid tracks = intro + filter; last two = My Groups (900px+), aligned with directory below */}
+        {/* Hero: intro + search; My Groups sits below the search bar, full width, horizontal scroll */}
         <div className="groups-page-grid groups-page-hero">
-          <div className={`groups-top-left ${currentUserId ? "groups-page-span-2" : "groups-page-span-4"}`}>
+          <div className="groups-top-left groups-page-span-4">
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 28, fontWeight: 900 }}>Groups</div>
               <div style={{ fontSize: 14, color: t.textMuted, marginTop: 4, lineHeight: 1.5, maxWidth: 560 }}>
@@ -440,10 +444,9 @@ export default function UnitsPage() {
                 )}
               </div>
             </div>
-          </div>
 
           {currentUserId && (
-            <aside className="groups-top-right groups-page-span-2" aria-label="Your groups">
+            <aside className="groups-my-below-search" aria-label="Your groups" style={{ marginTop: 18, width: "100%", minWidth: 0 }}>
               <div
                 className="groups-my-panel"
                 style={{
@@ -451,7 +454,6 @@ export default function UnitsPage() {
                   flex: 1,
                   display: "flex",
                   flexDirection: "column",
-                  height: "100%",
                   boxSizing: "border-box",
                   padding: 0,
                   background: "transparent",
@@ -546,6 +548,7 @@ export default function UnitsPage() {
               </div>
             </aside>
           )}
+          </div>
         </div>
 
         {/* ── Admin Inbox: pending join requests across all groups I own/admin ── */}

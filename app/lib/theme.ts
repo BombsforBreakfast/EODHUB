@@ -3,7 +3,7 @@
 export type Theme = typeof lightTheme;
 
 export const lightTheme = {
-  bg: "#f3f4f6",
+  bg: "#e8eaee",
   surface: "#ffffff",
   surfaceHover: "#f9fafb",
   border: "#d1d5db",

@@ -1,29 +1,30 @@
-"use client";
+﻿"use client";
 
 import React, { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "../../lib/lib/supabaseClient";
-import NavBar from "../../components/NavBar";
-import DesktopLayout from "../../components/DesktopLayout";
-import ImageCropDialog from "../../components/ImageCropDialog";
-import { useTheme } from "../../lib/ThemeContext";
-import { ASPECT_AVATAR, ASPECT_EMPLOYER_LOGO } from "../../lib/imageCropTargets";
-import MentionTextarea, { extractMentionIds } from "../../components/MentionTextarea";
-import GifPickerButton from "../../components/GifPickerButton";
-import { PostLikersStack, type PostLikerBrief } from "../../components/PostLikersStack";
-import SidebarThreadDrawer from "../../components/SidebarThreadDrawer";
-import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../lib/commentSidebarEligibility";
-import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../lib/likeNotifyDelay";
-import { postNotifyJson } from "../../lib/postNotifyClient";
-import KangarooCourtFeedSection from "../../components/KangarooCourtFeedSection";
-import { KangarooCourtVerdictBanner } from "../../components/KangarooCourtVerdictBanner";
+import { supabase } from "../../../lib/lib/supabaseClient";
+import NavBar from "../../../components/NavBar";
+import DesktopLayout from "../../../components/DesktopLayout";
+import ImageCropDialog from "../../../components/ImageCropDialog";
+import { useTheme } from "../../../lib/ThemeContext";
+import { ASPECT_AVATAR, ASPECT_EMPLOYER_LOGO } from "../../../lib/imageCropTargets";
+import MentionTextarea, { extractMentionIds } from "../../../components/MentionTextarea";
+import GifPickerButton from "../../../components/GifPickerButton";
+import { PostLikersStack, type PostLikerBrief } from "../../../components/PostLikersStack";
+import SidebarThreadDrawer from "../../../components/SidebarThreadDrawer";
+import { useMasterShell } from "../../../components/master/masterShellContext";
+import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
+import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
+import { postNotifyJson } from "../../../lib/postNotifyClient";
+import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
+import { KangarooCourtVerdictBanner } from "../../../components/KangarooCourtVerdictBanner";
 import type {
   FeedKangarooBundle,
   KangarooCourtOptionRow,
   KangarooCourtRow,
   KangarooCourtVerdictRow,
-} from "../../lib/kangarooCourt";
+} from "../../../lib/kangarooCourt";
 
 type Profile = {
   user_id: string;
@@ -139,7 +140,7 @@ type Post = {
   author_name: string | null;
   authorPhotoUrl: string | null;
   authorService: string | null;
-  /** Same feed bundles as home — courts attach via `feed_post_id` */
+  /** Same feed bundles as home ΓÇö courts attach via `feed_post_id` */
   kangaroo?: FeedKangarooBundle | null;
 };
 
@@ -352,6 +353,13 @@ export default function PublicProfilePage() {
     peerId: null,
   });
   const [sidebarNudgeBump, setSidebarNudgeBump] = useState(0);
+
+  const { isDesktopShell, openSidebarPeer } = useMasterShell();
+
+  function openThreadSidebar(peerId: string) {
+    if (isDesktopShell) openSidebarPeer(peerId);
+    else setSidebarDrawer({ open: true, peerId });
+  }
 
   const [editingProfile, setEditingProfile] = useState(false);
   const [editRole, setEditRole] = useState("");
@@ -2056,7 +2064,7 @@ export default function PublicProfilePage() {
   if (!loading && !profile) {
     return (
       <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
-        <NavBar />
+        {!isDesktopShell && <NavBar />}
         <div style={{ marginTop: 20 }}>Profile not found.</div>
       </div>
     );
@@ -2085,10 +2093,10 @@ export default function PublicProfilePage() {
   }
 
   function getBadgeEmoji(count: number): string {
-    if (count >= 50) return "💎";
-    if (count >= 25) return "🥇";
-    if (count >= 10) return "🥈";
-    if (count >= 5)  return "🥉";
+    if (count >= 50) return "≡ƒÆÄ";
+    if (count >= 25) return "≡ƒÑç";
+    if (count >= 10) return "≡ƒÑê";
+    if (count >= 5)  return "≡ƒÑë";
     return "";
   }
 
@@ -2122,268 +2130,22 @@ export default function PublicProfilePage() {
   const photoPreviewItems = isMobile ? pinnedPhotos : pinnedPhotos.slice(0, 4);
   const groupPreviewItems = isMobile ? myGroups : myGroups.slice(0, 4);
 
-  /** Same 4-column row as My Groups so a single pinned photo stays thumbnail-sized, not full column width. */
-  const desktopPhotoGridCols = !isMobile ? "repeat(4, minmax(0, 1fr))" : "repeat(auto-fill, minmax(96px, 1fr))";
-  const groupsGridCols = !isMobile ? "repeat(4, minmax(0, 1fr))" : "repeat(auto-fill, minmax(110px, 1fr))";
+  /** Desktop Photos + My Groups share this max width so all 8 thumbnails are the same cell size and line up. */
+  const STRIP_THUMB_AREA_MAX = 320;
+  const stripThumbGridStyleDesktop: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+    gap: 8,
+    width: "100%",
+    maxWidth: STRIP_THUMB_AREA_MAX,
+  };
+  const mobilePhotoGridCols = "repeat(auto-fill, minmax(96px, 1fr))";
+  const mobileGroupsGridCols = "repeat(auto-fill, minmax(110px, 1fr))";
 
-  return (
-    <>
-    <div style={{ padding: "24px 16px", background: t.bg, minHeight: "100vh", color: t.text }}>
-      <NavBar />
-
-      <ImageCropDialog
-        open={wallAvatarCropOpen}
-        imageSrc={wallAvatarCropSrc}
-        aspect={profile?.is_employer ? ASPECT_EMPLOYER_LOGO : ASPECT_AVATAR}
-        cropShape={profile?.is_employer ? "rect" : "round"}
-        title={profile?.is_employer ? "Crop employer logo" : "Crop profile photo"}
-        onCancel={closeWallAvatarCrop}
-        onComplete={async (blob) => {
-          await finalizeWallAvatarUpload(blob);
-          closeWallAvatarCrop();
-        }}
-      />
-
-      {/* Mobile unread messages banner — own wall only */}
-      {isMobile && isOwnWall && (
-        <a
-          href="/sidebar"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginTop: 10,
-            padding: "11px 16px",
-            borderRadius: 10,
-            border: `1px solid ${t.border}`,
-            background: t.surface,
-            textDecoration: "none",
-            color: t.text,
-            fontWeight: 700,
-            fontSize: 14,
-            width: "100%",
-            boxSizing: "border-box",
-          }}
-        >
-          <span>Sidebars</span>
-          <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 20, height: 20, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
-            {unreadMessages > 9 ? "9+" : unreadMessages}
-          </span>
-        </a>
-      )}
-
-      {/* Skeleton while loading */}
-      {loading && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20 }}>
-          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
-            <div style={{ display: "flex", gap: 20 }}>
-              <div style={{ ...skeletonBase, width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ ...skeletonBase, height: 24, width: "40%", marginBottom: 10 }} />
-                <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 8 }} />
-                <div style={{ ...skeletonBase, height: 14, width: "60%" }} />
-              </div>
-            </div>
-          </div>
-          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 16, background: t.surface, display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ ...skeletonBase, height: 14, width: 56, flexShrink: 0 }} />
-            {[1,2,3,4].map((i) => <div key={i} style={{ ...skeletonBase, width: 100, height: 100, borderRadius: 10, flexShrink: 0 }} />)}
-          </div>
-          {[1,2,3].map((i) => (
-            <div key={i} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
-              <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
-                <div style={{ ...skeletonBase, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 6 }} />
-                  <div style={{ ...skeletonBase, height: 11, width: "20%" }} />
-                </div>
-              </div>
-              <div style={{ ...skeletonBase, height: 13, marginBottom: 6 }} />
-              <div style={{ ...skeletonBase, height: 13, width: "75%", marginBottom: 6 }} />
-              <div style={{ ...skeletonBase, height: 13, width: "50%" }} />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Single-column mobile layout + three-column desktop layout */}
-      {!loading && profile && <DesktopLayout
-        isMobile={isMobile}
-        desktopColumns="320px minmax(0, 1fr) 360px"
-        desktopGap={24}
-        left={
-          <aside
-            style={{
-              display: isMobile ? "none" : "block",
-              position: "sticky",
-              top: 20,
-              marginRight: isMobile ? undefined : -11,
-              maxHeight: "calc(100vh - 80px)",
-              overflowY: "auto",
-              overflowX: "hidden",
-              scrollbarGutter: "stable",
-            }}
-          >
-            <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 14 }}>
-              <div style={{ fontSize: 15, fontWeight: 900, color: t.text, marginBottom: 10 }}>Events</div>
-              <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
-                <span style={{ fontSize: 12, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>
-                  Add
-                </span>
-                <a
-                  href="/events"
-                  style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
-                >
-                  Memorial
-                </a>
-                <span style={{ fontSize: 11, color: t.textFaint }}>|</span>
-                <a
-                  href="/events"
-                  style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
-                >
-                  Event
-                </a>
-              </div>
-              <div style={{ marginBottom: 10 }}>
-                <a href="/events" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
-                  See full events →
-                </a>
-              </div>
-
-              <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 10, background: t.bg }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                  <button
-                    type="button"
-                    onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() - 1))}
-                    style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
-                  >
-                    ←
-                  </button>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: t.text }}>
-                    {formatShortDate(desktopCalendarDate)}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1))}
-                    style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
-                  >
-                    →
-                  </button>
-                </div>
-                {(() => {
-                  const d = desktopCalendarDate;
-                  const iso = toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
-                  const eventCount = desktopCalendarEvents.filter((ev) => ev.date === iso).length;
-                  const memorialCount = desktopMemorials.filter((m) => anniversaryDate(m.death_date, d.getFullYear()) === iso).length;
-                  const hasItems = eventCount + memorialCount > 0;
-                  return (
-                    <div
-                      style={{
-                        border: `1px solid ${t.border}`,
-                        borderRadius: 8,
-                        minHeight: 50,
-                        padding: "8px 10px",
-                        background: t.surface,
-                        position: "relative",
-                      }}
-                    >
-                      <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 700 }}>{CALENDAR_DAY_LABELS[d.getDay()]}</div>
-                      <div style={{ fontSize: 18, fontWeight: 900, color: t.text, lineHeight: 1.1 }}>{d.getDate()}</div>
-                      {hasItems && (
-                        <span style={{ position: "absolute", top: 8, right: 10, fontSize: 11, color: "#2563eb", fontWeight: 800 }}>
-                          {eventCount + memorialCount} item{eventCount + memorialCount === 1 ? "" : "s"}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-
-              {desktopSelectedDay && (
-                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                  {[...desktopCalendarEvents
-                    .filter((ev) => ev.date === desktopSelectedDay)
-                    .map((ev) => ({ id: `ev-${ev.id}`, title: ev.title, sub: ev.organization || "Event", link: ev.signup_url || "/events" })),
-                  ...desktopMemorials
-                    .filter((m) => anniversaryDate(m.death_date, new Date(desktopSelectedDay + "T12:00:00").getFullYear()) === desktopSelectedDay)
-                    .map((m) => ({ id: `mem-${m.id}`, title: m.name, sub: "EOD Memorial Foundation", link: m.source_url || "/events" }))].slice(0, 4).map((item) => (
-                    <div key={item.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
-                      <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>{item.title}</div>
-                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{item.sub}</div>
-                      <a href={item.link} target={item.link.startsWith("http") ? "_blank" : undefined} rel="noreferrer" style={{ marginTop: 4, display: "inline-block", fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                        {item.link.startsWith("http") ? "Open →" : "Sign up →"}
-                      </a>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div style={{ marginTop: 12, borderTop: `1px solid ${t.border}`, paddingTop: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 8 }}>Saved events</div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {desktopSavedEvents.length === 0 && (
-                    <div style={{ color: t.textFaint, fontSize: 12 }}>No saved events.</div>
-                  )}
-                  {desktopSavedEvents.slice(0, 4).map((ev) => (
-                    <div key={ev.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{ev.title || "Event"}</div>
-                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
-                      <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        {ev.signup_url ? (
-                          <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                            Sign up →
-                          </a>
-                        ) : <span />}
-                        <button
-                          type="button"
-                          onClick={() => unsaveWallEvent(ev.id)}
-                          disabled={unsavingWallEvent === ev.id}
-                          style={{ border: `1px solid ${t.border}`, background: "transparent", color: t.textMuted, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: unsavingWallEvent === ev.id ? "not-allowed" : "pointer" }}
-                        >
-                          {unsavingWallEvent === ev.id ? "..." : "Remove"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ marginTop: 12, borderTop: `1px solid ${t.border}`, paddingTop: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 8 }}>Saved jobs</div>
-                <div style={{ marginTop: -4, marginBottom: 8, fontSize: 11, color: t.textFaint, fontWeight: 700 }}>
-                  *not visible to other users
-                </div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {desktopSavedJobs.length === 0 && (
-                    <div style={{ color: t.textFaint, fontSize: 12 }}>No saved jobs.</div>
-                  )}
-                  {desktopSavedJobs.slice(0, 4).map((job) => (
-                    <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
-                      <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{job.title || "Job"}</div>
-                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{job.company_name || "Saved listing"}</div>
-                      <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        {job.apply_url ? (
-                          <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                            View job →
-                          </a>
-                        ) : <span />}
-                        <button
-                          type="button"
-                          onClick={() => unsaveDesktopSavedJob(job.id)}
-                          disabled={unsavingDesktopJobId === job.id}
-                          style={{ border: `1px solid ${t.border}`, background: "transparent", color: t.textMuted, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: unsavingDesktopJobId === job.id ? "not-allowed" : "pointer" }}
-                        >
-                          {unsavingDesktopJobId === job.id ? "..." : "Remove"}
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </aside>
-        }
-        center={<div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: isMobile ? 20 : 0 }}>
+  const renderProfileCenter = () => {
+    if (!profile) return null;
+    return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: isMobile ? 20 : 0 }}>
 
         {false && <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -2568,7 +2330,7 @@ export default function PublicProfilePage() {
           )}
         </div>}
 
-        {/* ── Content ── */}
+        {/* ΓöÇΓöÇ Content ΓöÇΓöÇ */}
 
           {/* Profile / Contact Card */}
           <div
@@ -2583,31 +2345,8 @@ export default function PublicProfilePage() {
             {isOwnWall && (
               <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} aria-hidden />
             )}
-            {isOwnWall && !editingProfile && (
-              isMobile ? (
-                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 10 }}>
-                  <button
-                    type="button"
-                    onClick={openWallEditProfile}
-                    style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}
-                  >
-                    Edit Profile
-                  </button>
-                </div>
-              ) : (
-                <div style={{ position: "absolute", top: 16, right: 24, zIndex: 2 }}>
-                  <button
-                    type="button"
-                    onClick={openWallEditProfile}
-                    style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer" }}
-                  >
-                    Edit Profile
-                  </button>
-                </div>
-              )
-            )}
             {isMobile ? (
-              /* ── Mobile profile card layout ── */
+              /* ΓöÇΓöÇ Mobile profile card layout ΓöÇΓöÇ */
               <div>
                 {/* Top row: avatar + name + stats */}
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
@@ -2625,7 +2364,7 @@ export default function PublicProfilePage() {
                         onMouseEnter={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "1"; }}
                         onMouseLeave={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "0"; }}
                       >
-                        <span style={{ fontSize: 14 }}>📷</span>
+                        <span style={{ fontSize: 14 }}>≡ƒô╖</span>
                         <span style={{ fontSize: 9, color: "white", fontWeight: 700 }}>{uploadingAvatar ? "..." : "Update"}</span>
                       </div>
                     )}
@@ -2636,7 +2375,7 @@ export default function PublicProfilePage() {
                       {isOwnWall ? "My Profile" : "Member Profile"}
                       {profile.is_employer && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
-                          {profile.employer_verified ? "✓ Employer" : "Employer"}
+                          {profile.employer_verified ? "Γ£ô Employer" : "Employer"}
                         </span>
                       )}
                     </div>
@@ -2735,7 +2474,7 @@ export default function PublicProfilePage() {
                     {currentUserKnowStatus === "accepted" && (
                       <button type="button" onClick={toggleWorkedWith} disabled={togglingConnection === "worked_with"} style={{ flex: 1, background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
                         {togglingConnection === "worked_with" && <span className={currentUserWorkedWith ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
-                        {currentUserWorkedWith ? "Worked With ✓" : "Mark Worked With"}
+                        {currentUserWorkedWith ? "Worked With Γ£ô" : "Mark Worked With"}
                       </button>
                     )}
                     <a href={`/sidebar?with=${userId}`} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -2744,19 +2483,19 @@ export default function PublicProfilePage() {
                   </div>
                 )}
 
-                {/* Profile details — full width below */}
+                {/* Profile details ΓÇö full width below */}
                 <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
-                    <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "—")}</div>
-                    <div><strong>Service:</strong> {profile.service || "—"}</div>
-                    <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "—"}</div>
-                    <div><strong>Experience:</strong> {profile.years_experience || "—"}</div>
-                    <div><strong>Badge:</strong> {profile.skill_badge || "—"}</div>
+                    <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "ΓÇö")}</div>
+                    <div><strong>Service:</strong> {profile.service || "ΓÇö"}</div>
+                    <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "ΓÇö"}</div>
+                    <div><strong>Experience:</strong> {profile.years_experience || "ΓÇö"}</div>
+                    <div><strong>Badge:</strong> {profile.skill_badge || "ΓÇö"}</div>
                     {profile.is_employer && (
                       <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
                         {profile.company_website
                           ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
-                          : <span style={{ color: "#9ca3af" }}>—</span>}
+                          : <span style={{ color: "#9ca3af" }}>ΓÇö</span>}
                       </div>
                     )}
                   </div>
@@ -2780,36 +2519,58 @@ export default function PublicProfilePage() {
                       </div>
                     </div>
                   ) : null}
-                  {isOwnWall && profile.referral_code && (
-                    <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start" }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
-                          setCopiedReferral(true);
-                          setTimeout(() => setCopiedReferral(false), 2000);
-                        }}
-                        style={{
-                          background: copiedReferral ? "#16a34a" : "#111",
-                          color: "white",
-                          border: "none",
-                          borderRadius: 999,
-                          padding: "6px 12px",
-                          minWidth: 110,
-                          fontWeight: 700,
-                          fontSize: 11,
-                          cursor: "pointer",
-                          transition: "background 0.2s",
-                        }}
-                      >
-                        {copiedReferral ? "Copied" : "Referral Link"}
-                      </button>
+                  {isOwnWall && (profile.referral_code || !editingProfile) && (
+                    <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+                      {profile.referral_code && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
+                            setCopiedReferral(true);
+                            setTimeout(() => setCopiedReferral(false), 2000);
+                          }}
+                          style={{
+                            background: copiedReferral ? "#16a34a" : "#111",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "6px 12px",
+                            minWidth: 112,
+                            fontWeight: 700,
+                            fontSize: 11,
+                            cursor: "pointer",
+                            transition: "background 0.2s",
+                          }}
+                        >
+                          {copiedReferral ? "Copied" : "Referral Link"}
+                        </button>
+                      )}
+                      {!editingProfile && (
+                        <button
+                          type="button"
+                          onClick={openWallEditProfile}
+                          style={{
+                            background: "#111",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "6px 12px",
+                            minWidth: 112,
+                            fontWeight: 700,
+                            fontSize: 11,
+                            cursor: "pointer",
+                            transition: "background 0.2s",
+                          }}
+                        >
+                          Edit Profile
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
               </div>
             ) : (
-              /* ── Desktop profile card layout ── */
+              /* ΓöÇΓöÇ Desktop profile card layout ΓöÇΓöÇ */
               <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
                 {/* Identity: photo + name + stats + buttons */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flexShrink: 0, width: 180 }}>
@@ -2827,7 +2588,7 @@ export default function PublicProfilePage() {
                         onMouseEnter={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "1"; }}
                         onMouseLeave={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "0"; }}
                       >
-                        <span style={{ fontSize: 22 }}>📷</span>
+                        <span style={{ fontSize: 22 }}>≡ƒô╖</span>
                         <span style={{ fontSize: 11, color: "white", fontWeight: 700 }}>{uploadingAvatar ? "Uploading..." : "Update"}</span>
                       </div>
                     )}
@@ -2839,7 +2600,7 @@ export default function PublicProfilePage() {
                       {isOwnWall ? "My Profile" : "Member Profile"}
                       {profile.is_employer && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
-                          {profile.employer_verified ? "✓ Employer" : "Employer"}
+                          {profile.employer_verified ? "Γ£ô Employer" : "Employer"}
                         </span>
                       )}
                     </div>
@@ -2936,7 +2697,7 @@ export default function PublicProfilePage() {
                       {currentUserKnowStatus === "accepted" && (
                         <button type="button" onClick={toggleWorkedWith} disabled={togglingConnection === "worked_with"} style={{ background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                           {togglingConnection === "worked_with" && <span className={currentUserWorkedWith ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
-                          {currentUserWorkedWith ? "Worked With ✓" : "Mark Worked With"}
+                          {currentUserWorkedWith ? "Worked With Γ£ô" : "Mark Worked With"}
                         </button>
                       )}
                       <a href={`/sidebar?with=${userId}`} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "block", width: "100%", boxSizing: "border-box" }}>
@@ -2985,30 +2746,52 @@ export default function PublicProfilePage() {
                       </div>
                     </div>
                   ) : null}
-                  {isOwnWall && profile.referral_code && (
-                    <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start" }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
-                          setCopiedReferral(true);
-                          setTimeout(() => setCopiedReferral(false), 2000);
-                        }}
-                        style={{
-                          background: copiedReferral ? "#16a34a" : "#111",
-                          color: "white",
-                          border: "none",
-                          borderRadius: 999,
-                          padding: "6px 12px",
-                          minWidth: 112,
-                          fontWeight: 700,
-                          fontSize: 11,
-                          cursor: "pointer",
-                          transition: "background 0.2s",
-                        }}
-                      >
-                        {copiedReferral ? "Copied" : "Referral Link"}
-                      </button>
+                  {isOwnWall && (profile.referral_code || !editingProfile) && (
+                    <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+                      {profile.referral_code && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
+                            setCopiedReferral(true);
+                            setTimeout(() => setCopiedReferral(false), 2000);
+                          }}
+                          style={{
+                            background: copiedReferral ? "#16a34a" : "#111",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "6px 12px",
+                            minWidth: 112,
+                            fontWeight: 700,
+                            fontSize: 11,
+                            cursor: "pointer",
+                            transition: "background 0.2s",
+                          }}
+                        >
+                          {copiedReferral ? "Copied" : "Referral Link"}
+                        </button>
+                      )}
+                      {!editingProfile && (
+                        <button
+                          type="button"
+                          onClick={openWallEditProfile}
+                          style={{
+                            background: "#111",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "6px 12px",
+                            minWidth: 112,
+                            fontWeight: 700,
+                            fontSize: 11,
+                            cursor: "pointer",
+                            transition: "background 0.2s",
+                          }}
+                        >
+                          Edit Profile
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -3016,7 +2799,7 @@ export default function PublicProfilePage() {
             )}
           </div>
 
-          {/* Edit profile (own wall) — same fields as My Account */}
+          {/* Edit profile (own wall) ΓÇö same fields as My Account */}
           {isOwnWall && editingProfile && (
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
               <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 16, color: t.text }}>Edit Profile</div>
@@ -3083,15 +2866,15 @@ export default function PublicProfilePage() {
                 display: "grid",
                 gridTemplateColumns: isMobile
                   ? "1fr"
-                  : "minmax(0, 2fr) 1px minmax(0, 2fr) 1px minmax(0, 1fr)",
+                  : "minmax(0, 1fr) 1px minmax(0, max-content)",
                 gap: 14,
                 alignItems: "start",
               }}
             >
-              {/* ── Photo Strip ── */}
+              {/* ΓöÇΓöÇ Photo Strip ΓöÇΓöÇ */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                 {/* Title + gallery / add (matches common profile strip layout) */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", minHeight: 56, alignContent: "center" }}>
                   <div style={{ fontSize: 15, fontWeight: 900 }}>Photos</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
                     {galleryPhotos.length > 0 && (
@@ -3100,7 +2883,7 @@ export default function PublicProfilePage() {
                         onClick={() => setGalleryExpanded(!galleryExpanded)}
                         style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
                       >
-                        Gallery ({galleryPhotos.length}) {galleryExpanded ? "▲" : "▼"}
+                        Gallery ({galleryPhotos.length}) {galleryExpanded ? "\u25B2" : "\u25BC"}
                       </button>
                     )}
                     {isOwnWall && (
@@ -3122,7 +2905,7 @@ export default function PublicProfilePage() {
                   </div>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: desktopPhotoGridCols, gap: 8 }}>
+                <div style={!isMobile ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobilePhotoGridCols, gap: 8 }}>
                   {pinnedPhotos.length === 0 && (
                     <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
                       {photos.length > 0
@@ -3164,9 +2947,17 @@ export default function PublicProfilePage() {
               </div>
               {!isMobile && <div style={{ width: 1, alignSelf: "stretch", background: t.border }} />}
 
-              {/* ── My Groups ── */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+              {/* My Groups — desktop: right-aligned strip; mobile: full width below Photos */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                  minWidth: 0,
+                  ...(!isMobile ? { alignItems: "flex-end" as const, width: "100%" } : {}),
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: 56, alignContent: "center", width: "100%", maxWidth: !isMobile ? STRIP_THUMB_AREA_MAX : undefined }}>
                   <div style={{ fontSize: 15, fontWeight: 900 }}>My Groups</div>
                   {!isMobile && myGroups.length > groupPreviewItems.length && (
                     <button
@@ -3178,7 +2969,7 @@ export default function PublicProfilePage() {
                     </button>
                   )}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: groupsGridCols, gap: 8 }}>
+                <div style={!isMobile ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobileGroupsGridCols, gap: 8 }}>
                   {myGroups.length === 0 && (
                     <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
                       No groups yet.
@@ -3209,7 +3000,6 @@ export default function PublicProfilePage() {
                   ))}
                 </div>
               </div>
-              {!isMobile && <div style={{ width: 1, alignSelf: "stretch", background: t.border }} />}
 
               {isMobile && <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Events</div>
@@ -3255,7 +3045,7 @@ export default function PublicProfilePage() {
                               rel="noreferrer"
                               style={{ fontWeight: 700, fontSize: 13, color: "#2563eb", textDecoration: "none" }}
                             >
-                              Sign up →
+                              Sign up ΓåÆ
                             </a>
                           ) : (
                             <span />
@@ -3277,7 +3067,7 @@ export default function PublicProfilePage() {
                                 opacity: unsavingWallEvent === ev.id ? 0.6 : 1,
                               }}
                             >
-                              {unsavingWallEvent === ev.id ? "…" : "Remove"}
+                              {unsavingWallEvent === ev.id ? "ΓÇª" : "Remove"}
                             </button>
                           ) : null}
                         </div>
@@ -3336,7 +3126,7 @@ export default function PublicProfilePage() {
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontSize: 16, fontWeight: 900 }}>{showAllModal === "photos" ? "All Pinned Photos" : "All My Groups"}</div>
-                  <button type="button" onClick={() => setShowAllModal(null)} style={{ border: "none", background: "none", fontSize: 20, lineHeight: 1, cursor: "pointer", color: t.textMuted }}>×</button>
+                  <button type="button" onClick={() => setShowAllModal(null)} style={{ border: "none", background: "none", fontSize: 20, lineHeight: 1, cursor: "pointer", color: t.textMuted }}>├ù</button>
                 </div>
                 {showAllModal === "photos" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
@@ -3388,7 +3178,7 @@ export default function PublicProfilePage() {
                 {selectedPostGif && (
                   <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
                     <img src={selectedPostGif} alt="Selected GIF" style={{ maxWidth: 200, borderRadius: 10, display: "block" }} />
-                    <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                    <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>├ù</button>
                   </div>
                 )}
 
@@ -3396,7 +3186,7 @@ export default function PublicProfilePage() {
                 {ogPreview && (
                   <div style={{ position: "relative" }}>
                     <OgCard og={ogPreview} />
-                    <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                    <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>├ù</button>
                   </div>
                 )}
 
@@ -3435,7 +3225,7 @@ export default function PublicProfilePage() {
                           <video src={item.previewUrl} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : item.file.type === "application/pdf" ? (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: t.textMuted }}>
-                            <span style={{ fontSize: 28 }}>📄</span>
+                            <span style={{ fontSize: 28 }}>≡ƒôä</span>
                             <span style={{ textAlign: "center", padding: "0 4px", wordBreak: "break-all" }}>{item.file.name}</span>
                           </div>
                         ) : (
@@ -3445,7 +3235,7 @@ export default function PublicProfilePage() {
                           type="button"
                           onClick={() => setSelectedPostImages((prev) => { URL.revokeObjectURL(prev[i].previewUrl); return prev.filter((_, idx) => idx !== i); })}
                           style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}
-                        >×</button>
+                        >├ù</button>
                       </div>
                     ))}
                   </div>
@@ -3568,7 +3358,7 @@ export default function PublicProfilePage() {
                                   {!(i === 2 && remaining > 0) && (
                                     <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
                                       <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                        <span style={{ color: "white", fontSize: 16, paddingLeft: 2 }}>▶</span>
+                                        <span style={{ color: "white", fontSize: 16, paddingLeft: 2 }}>Γû╢</span>
                                       </div>
                                     </div>
                                   )}
@@ -3587,7 +3377,7 @@ export default function PublicProfilePage() {
                       );
                     })()}
 
-                    {/* Kangaroo Court — same order as home feed: post body above, then verdict, then poll */}
+                    {/* Kangaroo Court ΓÇö same order as home feed: post body above, then verdict, then poll */}
                     {post.kangaroo?.court?.status === "closed" && post.kangaroo?.verdict && (
                       <KangarooCourtVerdictBanner verdict={post.kangaroo.verdict} />
                     )}
@@ -3604,7 +3394,7 @@ export default function PublicProfilePage() {
                       }
                     />
 
-                    {/* Like / Comment bar — KC chip is display-only on wall (no “start court”) */}
+                    {/* Like / Comment bar ΓÇö KC chip is display-only on wall (no ΓÇ£start courtΓÇ¥) */}
                     <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
                       <KangarooCourtFeedSection
                         postId={post.id}
@@ -3725,7 +3515,7 @@ export default function PublicProfilePage() {
                                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                                   <button
                                     type="button"
-                                    onClick={() => setSidebarDrawer({ open: true, peerId: nudge.peerUserId })}
+                                    onClick={() => openThreadSidebar(nudge.peerUserId)}
                                     style={{
                                       border: "none",
                                       borderRadius: 8,
@@ -3804,7 +3594,269 @@ export default function PublicProfilePage() {
               })}
             </div>
           </div>
-      </div>}
+    </div>
+    );
+  };
+
+  return (
+    <>
+      <ImageCropDialog
+        open={wallAvatarCropOpen}
+        imageSrc={wallAvatarCropSrc}
+        aspect={profile?.is_employer ? ASPECT_EMPLOYER_LOGO : ASPECT_AVATAR}
+        cropShape={profile?.is_employer ? "rect" : "round"}
+        title={profile?.is_employer ? "Crop employer logo" : "Crop profile photo"}
+        onCancel={closeWallAvatarCrop}
+        onComplete={async (blob) => {
+          await finalizeWallAvatarUpload(blob);
+          closeWallAvatarCrop();
+        }}
+      />
+
+      {!isDesktopShell ? (
+    <div style={{ padding: "24px 16px", background: t.bg, minHeight: "100vh", color: t.text }}>
+      <NavBar />
+
+      {/* Mobile unread messages banner ΓÇö own wall only */}
+      {isMobile && isOwnWall && (
+        <a
+          href="/sidebar"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            marginTop: 10,
+            padding: "11px 16px",
+            borderRadius: 10,
+            border: `1px solid ${t.border}`,
+            background: t.surface,
+            textDecoration: "none",
+            color: t.text,
+            fontWeight: 700,
+            fontSize: 14,
+            width: "100%",
+            boxSizing: "border-box",
+          }}
+        >
+          <span>Sidebars</span>
+          <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 20, height: 20, fontSize: 11, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 6px" }}>
+            {unreadMessages > 9 ? "9+" : unreadMessages}
+          </span>
+        </a>
+      )}
+
+      {/* Skeleton while loading */}
+      {loading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20 }}>
+          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
+            <div style={{ display: "flex", gap: 20 }}>
+              <div style={{ ...skeletonBase, width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ ...skeletonBase, height: 24, width: "40%", marginBottom: 10 }} />
+                <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 8 }} />
+                <div style={{ ...skeletonBase, height: 14, width: "60%" }} />
+              </div>
+            </div>
+          </div>
+          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 16, background: t.surface, display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ ...skeletonBase, height: 14, width: 56, flexShrink: 0 }} />
+            {[1,2,3,4].map((i) => <div key={i} style={{ ...skeletonBase, width: 100, height: 100, borderRadius: 10, flexShrink: 0 }} />)}
+          </div>
+          {[1,2,3].map((i) => (
+            <div key={i} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+              <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+                <div style={{ ...skeletonBase, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 6 }} />
+                  <div style={{ ...skeletonBase, height: 11, width: "20%" }} />
+                </div>
+              </div>
+              <div style={{ ...skeletonBase, height: 13, marginBottom: 6 }} />
+              <div style={{ ...skeletonBase, height: 13, width: "75%", marginBottom: 6 }} />
+              <div style={{ ...skeletonBase, height: 13, width: "50%" }} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Single-column mobile layout + three-column desktop layout */}
+      {!loading && profile && <DesktopLayout
+        isMobile={isMobile}
+        desktopColumns="320px minmax(0, 1fr) 360px"
+        desktopGap={24}
+        left={
+          <aside
+            style={{
+              display: isMobile ? "none" : "block",
+              position: "sticky",
+              top: 20,
+              marginRight: isMobile ? undefined : -11,
+              maxHeight: "calc(100vh - 80px)",
+              overflowY: "auto",
+              overflowX: "hidden",
+              scrollbarGutter: "stable",
+            }}
+          >
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 900, color: t.text, marginBottom: 10 }}>Events</div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
+                <span style={{ fontSize: 12, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>
+                  Add
+                </span>
+                <a
+                  href="/events"
+                  style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
+                >
+                  Memorial
+                </a>
+                <span style={{ fontSize: 11, color: t.textFaint }}>|</span>
+                <a
+                  href="/events"
+                  style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
+                >
+                  Event
+                </a>
+              </div>
+              <div style={{ marginBottom: 10 }}>
+                <a href="/events" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
+                  See full events ΓåÆ
+                </a>
+              </div>
+
+              <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 10, background: t.bg }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() - 1))}
+                    style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+                  >
+                    ΓåÉ
+                  </button>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: t.text }}>
+                    {formatShortDate(desktopCalendarDate)}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1))}
+                    style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+                  >
+                    ΓåÆ
+                  </button>
+                </div>
+                {(() => {
+                  const d = desktopCalendarDate;
+                  const iso = toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
+                  const eventCount = desktopCalendarEvents.filter((ev) => ev.date === iso).length;
+                  const memorialCount = desktopMemorials.filter((m) => anniversaryDate(m.death_date, d.getFullYear()) === iso).length;
+                  const hasItems = eventCount + memorialCount > 0;
+                  return (
+                    <div
+                      style={{
+                        border: `1px solid ${t.border}`,
+                        borderRadius: 8,
+                        minHeight: 50,
+                        padding: "8px 10px",
+                        background: t.surface,
+                        position: "relative",
+                      }}
+                    >
+                      <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 700 }}>{CALENDAR_DAY_LABELS[d.getDay()]}</div>
+                      <div style={{ fontSize: 18, fontWeight: 900, color: t.text, lineHeight: 1.1 }}>{d.getDate()}</div>
+                      {hasItems && (
+                        <span style={{ position: "absolute", top: 8, right: 10, fontSize: 11, color: "#2563eb", fontWeight: 800 }}>
+                          {eventCount + memorialCount} item{eventCount + memorialCount === 1 ? "" : "s"}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {desktopSelectedDay && (
+                <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                  {[...desktopCalendarEvents
+                    .filter((ev) => ev.date === desktopSelectedDay)
+                    .map((ev) => ({ id: `ev-${ev.id}`, title: ev.title, sub: ev.organization || "Event", link: ev.signup_url || "/events" })),
+                  ...desktopMemorials
+                    .filter((m) => anniversaryDate(m.death_date, new Date(desktopSelectedDay + "T12:00:00").getFullYear()) === desktopSelectedDay)
+                    .map((m) => ({ id: `mem-${m.id}`, title: m.name, sub: "EOD Memorial Foundation", link: m.source_url || "/events" }))].slice(0, 4).map((item) => (
+                    <div key={item.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>{item.title}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{item.sub}</div>
+                      <a href={item.link} target={item.link.startsWith("http") ? "_blank" : undefined} rel="noreferrer" style={{ marginTop: 4, display: "inline-block", fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                        {item.link.startsWith("http") ? "Open ΓåÆ" : "Sign up ΓåÆ"}
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ marginTop: 12, borderTop: `1px solid ${t.border}`, paddingTop: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 8 }}>Saved events</div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {desktopSavedEvents.length === 0 && (
+                    <div style={{ color: t.textFaint, fontSize: 12 }}>No saved events.</div>
+                  )}
+                  {desktopSavedEvents.slice(0, 4).map((ev) => (
+                    <div key={ev.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{ev.title || "Event"}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
+                      <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        {ev.signup_url ? (
+                          <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                            Sign up ΓåÆ
+                          </a>
+                        ) : <span />}
+                        <button
+                          type="button"
+                          onClick={() => unsaveWallEvent(ev.id)}
+                          disabled={unsavingWallEvent === ev.id}
+                          style={{ border: `1px solid ${t.border}`, background: "transparent", color: t.textMuted, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: unsavingWallEvent === ev.id ? "not-allowed" : "pointer" }}
+                        >
+                          {unsavingWallEvent === ev.id ? "..." : "Remove"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginTop: 12, borderTop: `1px solid ${t.border}`, paddingTop: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 8 }}>Saved jobs</div>
+                <div style={{ marginTop: -4, marginBottom: 8, fontSize: 11, color: t.textFaint, fontWeight: 700 }}>
+                  *not visible to other users
+                </div>
+                <div style={{ display: "grid", gap: 8 }}>
+                  {desktopSavedJobs.length === 0 && (
+                    <div style={{ color: t.textFaint, fontSize: 12 }}>No saved jobs.</div>
+                  )}
+                  {desktopSavedJobs.slice(0, 4).map((job) => (
+                    <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{job.title || "Job"}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{job.company_name || "Saved listing"}</div>
+                      <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        {job.apply_url ? (
+                          <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                            View job ΓåÆ
+                          </a>
+                        ) : <span />}
+                        <button
+                          type="button"
+                          onClick={() => unsaveDesktopSavedJob(job.id)}
+                          disabled={unsavingDesktopJobId === job.id}
+                          style={{ border: `1px solid ${t.border}`, background: "transparent", color: t.textMuted, borderRadius: 8, padding: "3px 8px", fontSize: 11, fontWeight: 700, cursor: unsavingDesktopJobId === job.id ? "not-allowed" : "pointer" }}
+                        >
+                          {unsavingDesktopJobId === job.id ? "..." : "Remove"}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </aside>
+        }
+        center={renderProfileCenter()}
         right={
           <aside
             style={{
@@ -3817,7 +3869,7 @@ export default function PublicProfilePage() {
               <div style={{ fontSize: 15, fontWeight: 900, color: t.text, marginBottom: 10 }}>Messages</div>
               <div style={{ marginBottom: 10 }}>
                 <a href="/sidebar" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
-                  See full messages →
+                  See full messages ΓåÆ
                 </a>
               </div>
               <div style={{ display: "grid", gap: 8, maxHeight: 270, overflowY: "auto", paddingRight: 2 }}>
@@ -3829,7 +3881,7 @@ export default function PublicProfilePage() {
                     <button
                       key={conv.id}
                       type="button"
-                      onClick={() => setSidebarDrawer({ open: true, peerId: conv.other_user_id })}
+                      onClick={() => openThreadSidebar(conv.other_user_id)}
                       style={{
                         border: `1px solid ${t.border}`,
                         background: t.bg,
@@ -3863,6 +3915,43 @@ export default function PublicProfilePage() {
         }
       />}
     </div>
+      ) : (
+        <>
+          {loading && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20 }}>
+          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
+            <div style={{ display: "flex", gap: 20 }}>
+              <div style={{ ...skeletonBase, width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ ...skeletonBase, height: 24, width: "40%", marginBottom: 10 }} />
+                <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 8 }} />
+                <div style={{ ...skeletonBase, height: 14, width: "60%" }} />
+              </div>
+            </div>
+          </div>
+          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 16, background: t.surface, display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ ...skeletonBase, height: 14, width: 56, flexShrink: 0 }} />
+            {[1,2,3,4].map((i) => <div key={i} style={{ ...skeletonBase, width: 100, height: 100, borderRadius: 10, flexShrink: 0 }} />)}
+          </div>
+          {[1,2,3].map((i) => (
+            <div key={i} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+              <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+                <div style={{ ...skeletonBase, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 6 }} />
+                  <div style={{ ...skeletonBase, height: 11, width: "20%" }} />
+                </div>
+              </div>
+              <div style={{ ...skeletonBase, height: 13, marginBottom: 6 }} />
+              <div style={{ ...skeletonBase, height: 13, width: "75%", marginBottom: 6 }} />
+              <div style={{ ...skeletonBase, height: 13, width: "50%" }} />
+            </div>
+          ))}
+        </div>
+          )}
+          {!loading && profile && renderProfileCenter()}
+        </>
+      )}
 
     {/* Photo Lightbox Modal */}
     {lightboxPhoto && (
@@ -3885,7 +3974,7 @@ export default function PublicProfilePage() {
               onClick={() => setLightboxPhoto(null)}
               style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "white", fontWeight: 900, fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
             >
-              ×
+              ├ù
             </button>
           </div>
 
@@ -3964,7 +4053,7 @@ export default function PublicProfilePage() {
             <div style={{ fontWeight: 900, fontSize: 17 }}>
               {connListOpen === "know" ? "Know" : "Recruited"}
             </div>
-            <button type="button" onClick={() => setConnListOpen(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>×</button>
+            <button type="button" onClick={() => setConnListOpen(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>├ù</button>
           </div>
           <div style={{ overflowY: "auto", flex: 1 }}>
             {connListLoading ? (
@@ -3986,7 +4075,7 @@ export default function PublicProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{name}</div>
-                      {u.worked_with && <div style={{ fontSize: 11, color: "#16a34a", fontWeight: 700 }}>✔ Worked With</div>}
+                      {u.worked_with && <div style={{ fontSize: 11, color: "#16a34a", fontWeight: 700 }}>Γ£ö Worked With</div>}
                       {u.service && <div style={{ fontSize: 12, color: t.textMuted }}>{u.service}</div>}
                     </div>
                   </a>
@@ -3997,7 +4086,7 @@ export default function PublicProfilePage() {
         </div>
       </div>
     )}
-    {currentUserId && (
+    {currentUserId && !isDesktopShell && (
       <SidebarThreadDrawer
         open={sidebarDrawer.open}
         onClose={() => setSidebarDrawer({ open: false, peerId: null })}

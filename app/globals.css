@@ -22,12 +22,46 @@
 
 /* App theme from ThemeProvider — overrides OS so text and background always match */
 html[data-theme="light"] {
-  --background: #f3f4f6;
+  --background: #e8eaee;
   --foreground: #0a0a0a;
 }
 html[data-theme="dark"] {
   --background: #0f0f0f;
   --foreground: #f0f0f0;
+  color-scheme: dark;
+  --scrollbar-track: #1a1a1a;
+  --scrollbar-thumb: rgba(255, 255, 255, 0.32);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.48);
+  --scrollbar-thumb-active: rgba(255, 255, 255, 0.58);
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
+}
+
+/* Dark theme scrollbars — dark track, light thumb (Firefox + Chrome / Edge / Safari) */
+html[data-theme="dark"] * {
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+html[data-theme="dark"] *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+html[data-theme="dark"] *::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+html[data-theme="dark"] *::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 6px;
+  border: 2px solid var(--scrollbar-track);
+  background-clip: padding-box;
+}
+html[data-theme="dark"] *::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+html[data-theme="dark"] *::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+}
+html[data-theme="dark"] *::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track);
 }
 
 body {
@@ -107,11 +141,13 @@ button:active, a.nav-btn:active {
 /* Mobile-only home logo; hidden on desktop */
 .nav-logo-mobile  { display: none !important; }
 
-/* Desktop: true center logo — grid 1fr | auto | 1fr; search ends at center column; Hub + account start after logo */
+/* Desktop: centered cluster — avatar | column [ toolbar row; full-width search ] */
 .nav-root {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: center;
   column-gap: 14px;
   row-gap: 8px;
   margin-bottom: 22px;
@@ -119,39 +155,105 @@ button:active, a.nav-btn:active {
   box-sizing: border-box;
   position: relative;
 }
-.nav-cell-left {
+.nav-desktop-cluster {
   display: flex;
+  flex-direction: row;
   align-items: center;
-  justify-content: flex-end;
-  flex-wrap: nowrap;
-  gap: 8px;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  max-width: min(900px, 100%);
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+.nav-stack-main {
+  flex: 1 1 0;
   min-width: 0;
+  max-width: min(720px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+.nav-desktop-toolbar-row {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
 }
 .nav-cell-center {
-  justify-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 .nav-feed-home-desktop {
   display: flex;
   align-items: center;
   justify-content: center;
 }
-/* ~25% larger than prior compact search: scales with viewport */
+/* Search sits on its own row below toolbar; full width of stack */
 .nav-search-slot {
-  flex: 1 1 31.25%;
-  min-width: 12rem;
-  max-width: min(22.5rem, 35vw);
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  max-width: none;
   box-sizing: border-box;
 }
 .nav-logo-mobile-wrap {
   display: none !important;
 }
-.nav-cell-right {
+
+/* Desktop master shell: NavBar in center column — cluster centered horizontally in the feed */
+.master-shell-main {
   display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  flex-wrap: nowrap;
-  gap: 8px;
+  flex-direction: column;
+  align-items: stretch;
   min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.master-shell-main .nav-desktop-cluster {
+  max-width: 100%;
+  width: fit-content;
+  margin-left: auto;
+  margin-right: auto;
+  justify-content: center;
+}
+/* Toolbar + search share one shrink-wrapped width so search aligns with Log Out */
+.master-shell-main .nav-stack-main {
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.master-shell-main .nav-toolbar-search-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: max-content;
+  max-width: 100%;
+}
+.master-shell-main .nav-desktop-toolbar-row {
+  justify-content: center;
+  flex-wrap: nowrap;
+  width: max-content;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.master-shell-main .nav-search-slot,
+.master-shell-main .nav-search-row {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.master-shell-main .nav-root {
+  margin-bottom: 18px;
+  justify-content: center;
+  width: 100%;
 }
 
 /* Admin in trailing cluster — right column, clear of centered crab logo (desktop + mobile via display:contents). */
@@ -204,7 +306,7 @@ button:active, a.nav-btn:active {
     background: var(--background) !important;
     display: flex !important;
     flex-wrap: wrap !important;
-    justify-content: space-between !important;
+    justify-content: flex-start !important;
     gap: 6px !important;
     margin-bottom: 10px !important;
     /* Align with typical page wrapper horizontal padding (e.g. 20px) so width matches pre-fixed layout */
@@ -218,9 +320,11 @@ button:active, a.nav-btn:active {
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) !important;
   }
 
-  /* Flatten three columns so flex order can place: avatar, bell, hub, settings…, then full-width search */
-  .nav-cell-left,
-  .nav-cell-right {
+  /* Flatten cluster so flex order can place: avatar, bell, hub, settings…, then full-width search */
+  .nav-desktop-cluster,
+  .nav-stack-main,
+  .nav-toolbar-search-wrap,
+  .nav-desktop-toolbar-row {
     display: contents !important;
   }
   .nav-primary-avatar {
@@ -247,6 +351,7 @@ button:active, a.nav-btn:active {
     width: 100% !important;
     min-width: 0 !important;
     max-width: none !important;
+    overflow-x: clip !important;
   }
   .nav-right {
     display: contents !important;
@@ -255,6 +360,8 @@ button:active, a.nav-btn:active {
     padding: 6px 9px !important;
     font-size: 12px !important;
     border-radius: 8px !important;
+    height: auto !important;
+    min-height: 0 !important;
     white-space: nowrap;
   }
   .nav-avatar {
@@ -289,12 +396,7 @@ button:active, a.nav-btn:active {
     pointer-events: auto !important;
   }
   .nav-logo-mobile-wrap {
-    display: block !important;
-    position: absolute !important;
-    left: 50% !important;
-    top: calc(env(safe-area-inset-top, 0px) + 6px) !important;
-    transform: translateX(-50%) !important;
-    z-index: 4 !important;
+    display: none !important;
   }
 
   .nav-hub-toggle {
@@ -308,10 +410,18 @@ button:active, a.nav-btn:active {
     max-width: none !important;
     position: static !important;
     width: 100% !important;
+    overflow-x: clip !important;
   }
   .nav-search {
     flex: 1 1 0 !important;
     min-width: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* Prevent horizontal overflow on iOS that shrinks feed card width visually. */
+  html, body {
+    overflow-x: hidden !important;
   }
 
   /* Referral nudge card: stack text above buttons on mobile */
@@ -480,7 +590,7 @@ button:active, a.nav-btn:active {
   }
 }
 
-/* Groups page — one column rhythm from 900px up matches directory (4 tracks); hero is 2+2 */
+/* Groups page — one column rhythm from 900px up matches directory (2 tracks on desktop) */
 .groups-page-shell {
   display: flex;
   flex-direction: column;
@@ -493,15 +603,9 @@ button:active, a.nav-btn:active {
   grid-template-columns: 1fr;
 }
 
-@media (min-width: 640px) and (max-width: 899px) {
+@media (min-width: 640px) {
   .groups-page-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 900px) {
-  .groups-page-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
 
@@ -509,28 +613,19 @@ button:active, a.nav-btn:active {
   align-items: stretch;
 }
 
-/* Desktop only: hero row — left column shrink-wraps (intro + search); My Groups follows immediately, not pushed to the far right */
+/* Desktop: hero is one full-width column (intro + search + My Groups below search) */
 @media (min-width: 900px) {
   .groups-page-grid.groups-page-hero {
     display: flex;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: flex-start;
-    gap: 24px 28px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
   }
   .groups-page-grid.groups-page-hero > .groups-top-left {
-    flex: 0 1 auto;
-    width: fit-content;
-    max-width: min(640px, 100%);
-    min-width: 0;
-  }
-  /* Fill remaining row width so tiles use the space; scroll only when content overflows */
-  .groups-page-grid.groups-page-hero > .groups-top-right {
-    flex: 1 1 0;
-    min-width: 0;
+    flex: 1 1 auto;
+    width: 100%;
     max-width: none;
-    align-self: stretch;
+    min-width: 0;
   }
   .groups-page-grid.groups-page-hero .groups-my-panel {
     width: 100%;
@@ -539,6 +634,11 @@ button:active, a.nav-btn:active {
   .groups-page-grid.groups-page-hero .groups-my-panel-scroller {
     width: 100%;
   }
+}
+
+.groups-my-below-search {
+  display: block;
+  min-width: 0;
 }
 
 .groups-page-span-2 {
