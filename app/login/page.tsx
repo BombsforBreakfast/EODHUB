@@ -284,6 +284,14 @@ export default function LoginPage() {
         <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>Built for EOD Techs, by an EOD Tech.</div>
       </div>
 
+      <section className="sr-only" aria-label="About EOD Hub">
+        <p>
+          EOD Hub is a professional network and community platform built specifically for the Explosive Ordnance Disposal (EOD) community.
+          It connects active duty technicians, veterans, and industry professionals through job opportunities, business listings, events, and real conversations.
+          The goal of EOD Hub is to bring the EOD community together in one place-making it easier to stay connected, find opportunities, and share knowledge.
+        </p>
+      </section>
+
       <div
         style={{
           marginBottom: 10,

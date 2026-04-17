@@ -111,7 +111,6 @@ type Profile = {
   years_experience: string | null;
   skill_badge: string | null;
   is_admin: boolean | null;
-  seeking_employment: boolean | null;
   account_type: string | null;
   subscription_status: string | null;
   is_employer: boolean | null;
@@ -129,9 +128,6 @@ export default function MyAccountPage() {
   const [linkedSuccess, setLinkedSuccess] = useState(false);
 
   const [employerJobs, setEmployerJobs] = useState<{ id: string; title: string | null; company_name: string | null; is_approved: boolean | null; created_at: string | null; saveCount: number }[]>([]);
-
-  const [seekingEmployment, setSeekingEmployment] = useState(false);
-  const [togglingSeek, setTogglingSeek] = useState(false);
 
   const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
   const [unsavingJobId, setUnsavingJobId] = useState<string | null>(null);
@@ -204,7 +200,6 @@ export default function MyAccountPage() {
 
     const p = (data as Profile | null) ?? null;
     setProfile(p);
-    setSeekingEmployment(p?.seeking_employment ?? false);
     if (p?.is_employer) loadEmployerJobs(userId);
     return p;
   }
@@ -225,19 +220,6 @@ export default function MyAccountPage() {
     const saveCounts = new Map<string, number>();
     ((saves ?? []) as { job_id: string }[]).forEach((s) => saveCounts.set(s.job_id, (saveCounts.get(s.job_id) ?? 0) + 1));
     setEmployerJobs(jobs.map((j) => ({ ...j, saveCount: saveCounts.get(j.id) ?? 0 })));
-  }
-
-  async function toggleSeekingEmployment() {
-    if (!currentUserId || togglingSeek) return;
-    const next = !seekingEmployment;
-    setSeekingEmployment(next);
-    setTogglingSeek(true);
-    const { error } = await supabase
-      .from("profiles")
-      .update({ seeking_employment: next })
-      .eq("user_id", currentUserId);
-    if (error) setSeekingEmployment(!next); // revert on failure
-    setTogglingSeek(false);
   }
 
   useEffect(() => {
@@ -305,6 +287,21 @@ export default function MyAccountPage() {
       <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.55, marginTop: 10, marginBottom: 0 }}>
         Account settings, sign-in, billing, and saved jobs. Your profile, photo, saved events, and groups are on your profile page.
       </p>
+      <nav aria-label="Legal" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <a
+          href="/privacy"
+          style={{ fontSize: 12, color: t.textMuted, textDecoration: "underline", textUnderlineOffset: 2 }}
+        >
+          Privacy Policy
+        </a>
+        <span aria-hidden="true" style={{ color: t.textFaint, fontSize: 11 }}>•</span>
+        <a
+          href="/terms"
+          style={{ fontSize: 12, color: t.textMuted, textDecoration: "underline", textUnderlineOffset: 2 }}
+        >
+          Terms of Service
+        </a>
+      </nav>
       {!loading && currentUserId && (
         <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
           <a
@@ -419,25 +416,6 @@ export default function MyAccountPage() {
             </button>
           </div>
 
-          {/* Seeking Employment Toggle — members only */}
-          {!profile?.is_employer && (
-            <div style={{ ...card, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Open to Opportunities</div>
-                <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3, lineHeight: 1.5 }}>
-                  Only visible to verified employer accounts — never shown to other members or publicly.
-                </div>
-              </div>
-              <button
-                onClick={toggleSeekingEmployment}
-                disabled={togglingSeek}
-                style={{ width: 52, height: 28, borderRadius: 14, border: "none", cursor: "pointer", flexShrink: 0, background: seekingEmployment ? "#16a34a" : "#d1d5db", position: "relative", transition: "background 0.2s", padding: 0 }}
-                aria-label="Toggle seeking employment"
-              >
-                <span style={{ position: "absolute", top: 3, left: seekingEmployment ? 27 : 3, width: 22, height: 22, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s", display: "block" }} />
-              </button>
-            </div>
-          )}
         </div>
       )}
 

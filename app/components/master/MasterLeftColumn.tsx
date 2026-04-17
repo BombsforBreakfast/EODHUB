@@ -62,12 +62,19 @@ type Props = {
   userId: string | null;
   memberInteractionAllowedRef: React.MutableRefObject<boolean>;
   onMemberPaywall: () => void;
+  railState: "expanded" | "collapsed";
+  onToggleRail: () => void;
+  /** When false, skip Supabase work so the center column can hydrate first (desktop cold load). */
+  sideRailsReady: boolean;
 };
 
 export default function MasterLeftColumn({
   userId,
   memberInteractionAllowedRef,
   onMemberPaywall,
+  railState,
+  onToggleRail,
+  sideRailsReady,
 }: Props) {
   const { t } = useTheme();
 
@@ -260,6 +267,7 @@ export default function MasterLeftColumn({
   }, []);
 
   useEffect(() => {
+    if (!sideRailsReady) return;
     let cancelled = false;
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -283,9 +291,10 @@ export default function MasterLeftColumn({
     return () => {
       cancelled = true;
     };
-  }, [loadJobs, loadSavedJobIds, loadDesktopSavedEvents, loadDesktopSavedJobs]);
+  }, [sideRailsReady, loadJobs, loadSavedJobIds, loadDesktopSavedEvents, loadDesktopSavedJobs]);
 
   useEffect(() => {
+    if (!sideRailsReady) return;
     loadDesktopCalendarData(desktopCalendarDate)
       .then(() => {
         setDesktopSelectedDay(
@@ -293,7 +302,7 @@ export default function MasterLeftColumn({
         );
       })
       .catch((err) => console.error("Desktop calendar load failed:", err));
-  }, [desktopCalendarDate, loadDesktopCalendarData]);
+  }, [sideRailsReady, desktopCalendarDate, loadDesktopCalendarData]);
 
   const sortedJobs = useMemo(() => {
     if (jobs.length === 0) return jobs;
@@ -387,6 +396,87 @@ export default function MasterLeftColumn({
     );
   }
 
+  if (railState === "collapsed") {
+    return (
+      <aside
+        style={{
+          position: "sticky",
+          top: 20,
+          height: "calc(100vh - 80px)",
+          border: `1px solid ${t.border}`,
+          borderRadius: 14,
+          background: t.surface,
+          color: t.textMuted,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 8px",
+          boxSizing: "border-box",
+          overflow: "hidden",
+          transition: "border-color 140ms ease, background-color 140ms ease",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: 0.4,
+            writingMode: "vertical-rl",
+            transform: "rotate(180deg)",
+            textTransform: "uppercase",
+            userSelect: "none",
+          }}
+        >
+          Jobs
+        </span>
+        <button
+          type="button"
+          onClick={onToggleRail}
+          aria-label="Expand left panel"
+          title="Expand left panel"
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = t.surfaceHover;
+            e.currentTarget.style.borderColor = t.border;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.borderColor = t.borderLight;
+          }}
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            border: `1px solid ${t.borderLight}`,
+            background: "transparent",
+            color: t.text,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 900,
+            lineHeight: 1,
+          }}
+        >
+          »
+        </button>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: 0.4,
+            writingMode: "vertical-rl",
+            transform: "rotate(180deg)",
+            textTransform: "uppercase",
+            userSelect: "none",
+          }}
+        >
+          Events
+        </span>
+      </aside>
+    );
+  }
+
   return (
     <aside
       style={{
@@ -402,11 +492,41 @@ export default function MasterLeftColumn({
     >
       {/* Top: events + saved */}
       <div style={{ border: "1px solid transparent", borderRadius: 16, background: "transparent", padding: 0, marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 14, marginBottom: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Events</div>
-          <a href="/events" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
-            See all →
-          </a>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Events</div>
+            <a href="/events" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
+              See all →
+            </a>
+          </div>
+          <button
+            type="button"
+            onClick={onToggleRail}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = t.surfaceHover;
+              e.currentTarget.style.borderColor = t.border;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.borderColor = t.borderLight;
+            }}
+            style={{
+              border: `1px solid ${t.borderLight}`,
+              background: "transparent",
+              color: t.textMuted,
+              borderRadius: 8,
+              padding: "4px 8px",
+              fontSize: 11,
+              fontWeight: 800,
+              cursor: "pointer",
+              lineHeight: 1.1,
+              flexShrink: 0,
+            }}
+            aria-label="Collapse left panel"
+            title="Collapse left panel"
+          >
+            Collapse
+          </button>
         </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
           <span style={{ fontSize: 12, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>Add</span>

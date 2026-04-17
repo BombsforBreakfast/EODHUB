@@ -52,6 +52,10 @@ type Props = {
   memberInteractionAllowedRef: React.MutableRefObject<boolean>;
   onMemberPaywall: () => void;
   onOpenConversation: (peerId: string) => void;
+  railState: "expanded" | "collapsed";
+  onToggleRail: () => void;
+  /** When false, skip Supabase work so the center column can hydrate first (desktop cold load). */
+  sideRailsReady: boolean;
 };
 
 export default function MasterRightColumn({
@@ -59,6 +63,9 @@ export default function MasterRightColumn({
   memberInteractionAllowedRef,
   onMemberPaywall,
   onOpenConversation,
+  railState,
+  onToggleRail,
+  sideRailsReady,
 }: Props) {
   const { t } = useTheme();
 
@@ -191,20 +198,22 @@ export default function MasterRightColumn({
   }, []);
 
   useEffect(() => {
+    if (!sideRailsReady) return;
     loadBusinessListings().catch((e) => console.error(e));
-  }, [loadBusinessListings]);
+  }, [sideRailsReady, loadBusinessListings]);
 
   useEffect(() => {
+    if (!sideRailsReady) return;
     if (!userId) {
       setDesktopConversations([]);
       return;
     }
     loadBizLikes(userId).catch(() => {});
     loadDesktopConversations(userId).catch((err) => console.error("Desktop conversations load failed:", err));
-  }, [userId, loadBizLikes, loadDesktopConversations]);
+  }, [sideRailsReady, userId, loadBizLikes, loadDesktopConversations]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!sideRailsReady || !userId) return;
     const ch = supabase
       .channel("master-shell-conversations")
       .on(
@@ -218,10 +227,10 @@ export default function MasterRightColumn({
     return () => {
       void supabase.removeChannel(ch);
     };
-  }, [userId, loadDesktopConversations]);
+  }, [sideRailsReady, userId, loadDesktopConversations]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!sideRailsReady || !userId) return;
     const ch = supabase
       .channel("master-shell-biz")
       .on(
@@ -235,7 +244,7 @@ export default function MasterRightColumn({
     return () => {
       void supabase.removeChannel(ch);
     };
-  }, [userId, loadBusinessListings]);
+  }, [sideRailsReady, userId, loadBusinessListings]);
 
   const featuredBizPool = useMemo(
     () =>
@@ -381,6 +390,87 @@ export default function MasterRightColumn({
     setTogglingBizLikeFor(null);
   }
 
+  if (railState === "collapsed") {
+    return (
+      <aside
+        style={{
+          position: "sticky",
+          top: 20,
+          height: "calc(100vh - 80px)",
+          border: `1px solid ${t.border}`,
+          borderRadius: 14,
+          background: t.surface,
+          color: t.textMuted,
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 8px",
+          boxSizing: "border-box",
+          overflow: "hidden",
+          transition: "border-color 140ms ease, background-color 140ms ease",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: 0.4,
+            writingMode: "vertical-rl",
+            transform: "rotate(180deg)",
+            textTransform: "uppercase",
+            userSelect: "none",
+          }}
+        >
+          Sidebars
+        </span>
+        <button
+          type="button"
+          onClick={onToggleRail}
+          aria-label="Expand right panel"
+          title="Expand right panel"
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = t.surfaceHover;
+            e.currentTarget.style.borderColor = t.border;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.borderColor = t.borderLight;
+          }}
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            border: `1px solid ${t.borderLight}`,
+            background: "transparent",
+            color: t.text,
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 900,
+            lineHeight: 1,
+          }}
+        >
+          «
+        </button>
+        <span
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: 0.4,
+            writingMode: "vertical-rl",
+            transform: "rotate(180deg)",
+            textTransform: "uppercase",
+            userSelect: "none",
+          }}
+        >
+          Businesses
+        </span>
+      </aside>
+    );
+  }
+
   return (
     <aside
       style={{
@@ -397,11 +487,41 @@ export default function MasterRightColumn({
     >
       {/* Messages */}
       <div style={{ border: "1px solid transparent", borderRadius: 16, background: "transparent", padding: 0, marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 14, marginBottom: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Sidebars</div>
-          <a href="/sidebar" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
-            See all →
-          </a>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Sidebars</div>
+            <a href="/sidebar" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
+              See all →
+            </a>
+          </div>
+          <button
+            type="button"
+            onClick={onToggleRail}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = t.surfaceHover;
+              e.currentTarget.style.borderColor = t.border;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.borderColor = t.borderLight;
+            }}
+            style={{
+              border: `1px solid ${t.borderLight}`,
+              background: "transparent",
+              color: t.textMuted,
+              borderRadius: 8,
+              padding: "4px 8px",
+              fontSize: 11,
+              fontWeight: 800,
+              cursor: "pointer",
+              lineHeight: 1.1,
+              flexShrink: 0,
+            }}
+            aria-label="Collapse right panel"
+            title="Collapse right panel"
+          >
+            Collapse
+          </button>
         </div>
         <div style={{ display: "grid", gap: 8, maxHeight: 270, overflowY: "auto", paddingRight: 2 }}>
           {desktopConversations.length === 0 && <div style={{ color: t.textFaint, fontSize: 12 }}>No conversations yet.</div>}

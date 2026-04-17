@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../../lib/ThemeContext";
 import NavBar from "../NavBar";
 import DesktopLayout from "../DesktopLayout";
@@ -9,27 +10,31 @@ import SidebarThreadDrawer from "../SidebarThreadDrawer";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { MasterShellProvider } from "./masterShellContext";
-import MasterLeftColumn from "./MasterLeftColumn";
-import MasterRightColumn from "./MasterRightColumn";
+
+const MasterLeftColumn = dynamic(() => import("./MasterLeftColumn"), { ssr: true });
+const MasterRightColumn = dynamic(() => import("./MasterRightColumn"), { ssr: true });
 
 export default function MasterShell({ children }: { children: React.ReactNode }) {
   const { t } = useTheme();
   const [isDesktop, setIsDesktop] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [leftRailState, setLeftRailState] = useState<"expanded" | "collapsed">("expanded");
+  const [rightRailState, setRightRailState] = useState<"expanded" | "collapsed">("expanded");
   const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
   const memberInteractionAllowedRef = useRef(true);
   const [sidebarDrawer, setSidebarDrawer] = useState<{ open: boolean; peerId: string | null }>({
     open: false,
     peerId: null,
   });
+  /** Defer heavy side-rail Supabase work until after first paint / idle so center feed wins on cold load. */
+  const [sideRailsReady, setSideRailsReady] = useState(false);
 
-  useEffect(() => {
-    function check() {
-      setIsDesktop(window.innerWidth > 900);
-    }
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
+  useLayoutEffect(() => {
+    const mq = window.matchMedia("(min-width: 901px)");
+    setIsDesktop(mq.matches);
+    const onChange = () => setIsDesktop(mq.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
   }, []);
 
   useEffect(() => {
@@ -57,6 +62,44 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isDesktop) {
+      setSideRailsReady(false);
+      return;
+    }
+    // Keep side rails from competing with initial feed paint on cold desktop loads.
+    // We intentionally wait a bit (not just "idle") because idle can fire almost immediately.
+    setSideRailsReady(false);
+    const tid = window.setTimeout(() => {
+      setSideRailsReady(true);
+    }, 900);
+    return () => {
+      window.clearTimeout(tid);
+    };
+  }, [isDesktop]);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    try {
+      const savedLeft = window.localStorage.getItem("eod-master-rail-left");
+      const savedRight = window.localStorage.getItem("eod-master-rail-right");
+      if (savedLeft === "expanded" || savedLeft === "collapsed") setLeftRailState(savedLeft);
+      if (savedRight === "expanded" || savedRight === "collapsed") setRightRailState(savedRight);
+    } catch {
+      // Ignore localStorage read issues (private mode, blocked storage)
+    }
+  }, [isDesktop]);
+
+  useEffect(() => {
+    if (!isDesktop) return;
+    try {
+      window.localStorage.setItem("eod-master-rail-left", leftRailState);
+      window.localStorage.setItem("eod-master-rail-right", rightRailState);
+    } catch {
+      // Ignore localStorage write issues
+    }
+  }, [isDesktop, leftRailState, rightRailState]);
 
   const openSidebarPeer = useCallback((peerId: string) => {
     setSidebarDrawer({ open: true, peerId });
@@ -91,7 +134,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       >
         <DesktopLayout
           isMobile={false}
-          desktopColumns="320px minmax(0, 1fr) 360px"
+          desktopColumns={`${leftRailState === "collapsed" ? "54px" : "320px"} minmax(0, 1fr) ${rightRailState === "collapsed" ? "54px" : "360px"}`}
           desktopGap={24}
           desktopMarginTop={0}
           left={
@@ -99,6 +142,9 @@ export default function MasterShell({ children }: { children: React.ReactNode })
               userId={userId}
               memberInteractionAllowedRef={memberInteractionAllowedRef}
               onMemberPaywall={() => setMemberPaywallOpen(true)}
+              railState={leftRailState}
+              onToggleRail={() => setLeftRailState((prev) => (prev === "expanded" ? "collapsed" : "expanded"))}
+              sideRailsReady={sideRailsReady}
             />
           }
           center={
@@ -113,6 +159,9 @@ export default function MasterShell({ children }: { children: React.ReactNode })
               memberInteractionAllowedRef={memberInteractionAllowedRef}
               onMemberPaywall={() => setMemberPaywallOpen(true)}
               onOpenConversation={(peerId) => setSidebarDrawer({ open: true, peerId })}
+              railState={rightRailState}
+              onToggleRail={() => setRightRailState((prev) => (prev === "expanded" ? "collapsed" : "expanded"))}
+              sideRailsReady={sideRailsReady}
             />
           }
         />

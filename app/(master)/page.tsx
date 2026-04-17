@@ -18,10 +18,12 @@ import { memberHasInteractionAccess } from "../lib/subscriptionAccess";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import EventFeedActions from "../components/EventFeedActions";
+import FeedPostHeader from "../components/FeedPostHeader";
 import KangarooCourtFeedSection from "../components/KangarooCourtFeedSection";
 import { KangarooCourtVerdictBanner } from "../components/KangarooCourtVerdictBanner";
 import DesktopLayout from "../components/DesktopLayout";
 import { useMasterShell } from "../components/master/masterShellContext";
+import { Award, UserCircle2, Play, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
 import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "../lib/jobFilters";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
@@ -39,6 +41,11 @@ import {
   KC_CONFIRM_TITLE,
   KC_DURATION_HOURS,
 } from "../lib/kangarooCourt";
+import {
+  FEED_POST_CARD_PADDING,
+  FEED_POST_EMBED_MAX_WIDTH,
+  FEED_POST_IMAGES_MAX_WIDTH,
+} from "../lib/feedLayout";
 
 type Job = {
   id: string;
@@ -125,7 +132,18 @@ type DiscoverProfile = {
   photo_url: string | null;
   service: string | null;
   status: string | null;
+  professional_tags: string[] | null;
+  unit_history_tags: string[] | null;
+  affinityScore: number;
+  affinityReasons: string[];
   knowStatus: "none" | "pending_outgoing" | "accepted";
+};
+
+type DiscoverAffinitySource = {
+  service: string | null;
+  status: string | null;
+  professional_tags: string[] | null;
+  unit_history_tags: string[] | null;
 };
 
 function isConnV2MissingColumnError(error: unknown): boolean {
@@ -144,6 +162,71 @@ function getServiceRingColor(service: string | null | undefined): string | null 
     case "Federal": return "#7c3aed";
     default: return null;
   }
+}
+
+function normalizeTagArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const deduped = new Set<string>();
+  const out: string[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "string") continue;
+    const cleaned = raw.replace(/\s+/g, " ").trim();
+    if (!cleaned) continue;
+    const key = cleaned.toLowerCase();
+    if (deduped.has(key)) continue;
+    deduped.add(key);
+    out.push(cleaned);
+  }
+  return out;
+}
+
+function toComparableTagSet(tags: string[] | null | undefined): Set<string> {
+  return new Set(normalizeTagArray(tags).map((tag) => tag.toLowerCase()));
+}
+
+function countSharedTagOverlap(base: Set<string>, tags: string[] | null | undefined): number {
+  if (base.size === 0) return 0;
+  let count = 0;
+  for (const tag of normalizeTagArray(tags)) {
+    if (base.has(tag.toLowerCase())) count += 1;
+  }
+  return count;
+}
+
+function scoreDiscoverProfileAffinity(
+  candidate: Pick<DiscoverProfile, "service" | "status" | "professional_tags" | "unit_history_tags">,
+  source: DiscoverAffinitySource
+): { score: number; reasons: string[] } {
+  const reasons: string[] = [];
+  let score = 0;
+
+  const sharedProfessionalTags = countSharedTagOverlap(
+    toComparableTagSet(source.professional_tags),
+    candidate.professional_tags
+  );
+  const sharedUnitHistoryTags = countSharedTagOverlap(
+    toComparableTagSet(source.unit_history_tags),
+    candidate.unit_history_tags
+  );
+
+  if (sharedProfessionalTags > 0) {
+    score += Math.min(sharedProfessionalTags * 6, 18);
+    reasons.push(`Shared professional background (${sharedProfessionalTags})`);
+  }
+  if (sharedUnitHistoryTags > 0) {
+    score += Math.min(sharedUnitHistoryTags * 8, 24);
+    reasons.push(`Shared unit history (${sharedUnitHistoryTags})`);
+  }
+  if (source.service && candidate.service && source.service === candidate.service) {
+    score += 6;
+    reasons.push(`Same service branch (${source.service})`);
+  }
+  if (source.status && candidate.status && source.status === candidate.status) {
+    score += 2;
+    reasons.push(`Similar status (${source.status})`);
+  }
+
+  return { score, reasons };
 }
 
 type Comment = {
@@ -561,12 +644,16 @@ export default function HomePage() {
 
   const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
   const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
-  const [expandedMemorialBios, setExpandedMemorialBios] = useState<Set<string>>(new Set());
+  const [expandedMemorialCards, setExpandedMemorialCards] = useState<Record<string, boolean>>({});
   const [memorialLikes, setMemorialLikes] = useState<Record<string, string[]>>({});
   const [memorialComments, setMemorialComments] = useState<Record<string, MemorialComment[]>>({});
   const [memorialCommentInputs, setMemorialCommentInputs] = useState<Record<string, string>>({});
   const [submittingMemorialComment, setSubmittingMemorialComment] = useState<string | null>(null);
   const [memorialCommentsOpen, setMemorialCommentsOpen] = useState<Record<string, boolean>>({});
+  const [editingMemorialCommentId, setEditingMemorialCommentId] = useState<string | null>(null);
+  const [editingMemorialCommentContent, setEditingMemorialCommentContent] = useState("");
+  const [savingMemorialCommentId, setSavingMemorialCommentId] = useState<string | null>(null);
+  const [deletingMemorialCommentId, setDeletingMemorialCommentId] = useState<string | null>(null);
   const [donateModalOpen, setDonateModalOpen] = useState(false);
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
   const [discoverVisible, setDiscoverVisible] = useState<DiscoverProfile[]>([]);
@@ -949,9 +1036,53 @@ export default function HomePage() {
     setSubmittingMemorialComment(null);
   }
 
+  async function saveMemorialCommentEdit(memorialId: string, commentId: string) {
+    if (!userId) return;
+    const content = editingMemorialCommentContent.trim();
+    if (!content) return;
+    setSavingMemorialCommentId(commentId);
+    const { error } = await supabase
+      .from("memorial_comments")
+      .update({ content })
+      .eq("id", commentId)
+      .eq("user_id", userId);
+    if (!error) {
+      setMemorialComments((prev) => ({
+        ...prev,
+        [memorialId]: (prev[memorialId] ?? []).map((c) => (c.id === commentId ? { ...c, content } : c)),
+      }));
+      setEditingMemorialCommentId(null);
+      setEditingMemorialCommentContent("");
+    }
+    setSavingMemorialCommentId(null);
+  }
+
+  async function deleteMemorialComment(memorialId: string, commentId: string) {
+    if (!userId) return;
+    setDeletingMemorialCommentId(commentId);
+    const { error } = await supabase
+      .from("memorial_comments")
+      .delete()
+      .eq("id", commentId)
+      .eq("user_id", userId);
+    if (!error) {
+      setMemorialComments((prev) => ({
+        ...prev,
+        [memorialId]: (prev[memorialId] ?? []).filter((c) => c.id !== commentId),
+      }));
+      if (editingMemorialCommentId === commentId) {
+        setEditingMemorialCommentId(null);
+        setEditingMemorialCommentContent("");
+      }
+    }
+    setDeletingMemorialCommentId(null);
+  }
+
   function pickDiscoverSlice(pool: DiscoverProfile[]): DiscoverProfile[] {
     if (pool.length === 0) return [];
-    const arr = [...pool];
+  // Keep rotation diverse while still biasing toward the highest affinity candidates.
+  const rankedWindow = pool.slice(0, Math.min(pool.length, 15));
+  const arr = [...rankedWindow];
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];
@@ -964,10 +1095,10 @@ export default function HomePage() {
     setDiscoverVisible(pickDiscoverSlice(source));
   }
 
-  async function loadDiscoverProfiles(currentUserId: string) {
+async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: DiscoverAffinitySource) {
     const { data } = await supabase
       .from("profiles")
-      .select("user_id, first_name, last_name, photo_url, service, status")
+    .select("user_id, first_name, last_name, photo_url, service, status, professional_tags, unit_history_tags")
       .eq("verification_status", "verified")
       .neq("user_id", currentUserId)
       .not("first_name", "is", null)
@@ -1006,12 +1137,23 @@ export default function HomePage() {
       );
     }
 
-    const pool = data
+  const basePool = data
       .filter((p) => !connectedUserIds.has(p.user_id))
       .map((p) => ({
         ...p,
+      affinityScore: 0,
+      affinityReasons: [],
         knowStatus: "none" as const,
       })) as DiscoverProfile[];
+
+  const pool = sourceProfile
+    ? basePool
+      .map((candidate) => {
+        const scored = scoreDiscoverProfileAffinity(candidate, sourceProfile);
+        return { ...candidate, affinityScore: scored.score, affinityReasons: scored.reasons };
+      })
+      .sort((a, b) => b.affinityScore - a.affinityScore || a.user_id.localeCompare(b.user_id))
+    : basePool;
 
     setDiscoverProfiles(pool);
     const initial = pickDiscoverSlice(pool);
@@ -1271,13 +1413,6 @@ export default function HomePage() {
     const { data: { session } } = await supabase.auth.getSession();
     const effectiveUserId =
       session?.user?.id ?? currentUserId ?? userId ?? null;
-
-    if (effectiveUserId) {
-      const { error: closeKcErr } = await supabase.rpc("close_expired_kangaroo_courts");
-      if (closeKcErr) {
-        console.warn("close_expired_kangaroo_courts:", closeKcErr.message);
-      }
-    }
 
     if (effectiveUserId) {
       const { data: memberships } = await supabase
@@ -2166,7 +2301,7 @@ export default function HomePage() {
 
     const labelsForKc = [kcOpt1, kcOpt2, kcOpt3, kcOpt4].map((s) => s.trim()).filter(Boolean);
     if (kcComposerPhase === "confirm") {
-      alert('Use ΓÇ£Start CourtΓÇ¥ to add poll options, or click the judge again to cancel Kangaroo Court.');
+      alert('Use "Start Court" to add poll options, or click the judge again to cancel Kangaroo Court.');
       return;
     }
     if (kcComposerPhase === "builder") {
@@ -2884,6 +3019,34 @@ export default function HomePage() {
 
   useEffect(() => {
     let isMounted = true;
+    let feedRefreshTimer: number | null = null;
+    let feedRefreshInFlight = false;
+    let feedRefreshQueued = false;
+
+    const scheduleFeedRefresh = () => {
+      if (!isMounted) return;
+      if (feedRefreshTimer) {
+        window.clearTimeout(feedRefreshTimer);
+      }
+      // Coalesce bursty realtime events (likes/comments/image rows) into one feed refresh.
+      feedRefreshTimer = window.setTimeout(async () => {
+        feedRefreshTimer = null;
+        if (feedRefreshInFlight) {
+          feedRefreshQueued = true;
+          return;
+        }
+        feedRefreshInFlight = true;
+        try {
+          await loadPosts();
+        } finally {
+          feedRefreshInFlight = false;
+          if (feedRefreshQueued) {
+            feedRefreshQueued = false;
+            scheduleFeedRefresh();
+          }
+        }
+      }, 250);
+    };
 
     async function init() {
       try {
@@ -2905,7 +3068,7 @@ export default function HomePage() {
         // Check verification status ΓÇö unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
-          .select("verification_status, first_name, last_name, photo_url, service, company_name, account_type, subscription_status, referral_code, is_admin, access_tier")
+          .select("verification_status, first_name, last_name, photo_url, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, access_tier")
           .eq("user_id", currentUserId)
           .maybeSingle();
 
@@ -2950,22 +3113,42 @@ export default function HomePage() {
           setIsAdmin(!!nd?.is_admin);
         }
 
-        await Promise.all([
-          loadJobs(jobsAccess.canViewFullJobs ? 500 : 5).catch((err) => console.error("loadJobs failed:", err)),
-          loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err)),
-          loadBusinessListings().catch((err) => console.error("loadBusinessListings failed:", err)),
-          loadBizLikes(currentUserId).catch((err) => console.error("loadBizLikes failed:", err)),
-          loadSavedJobs(currentUserId).catch((err) => console.error("loadSavedJobs failed:", err)),
-          loadTodayMemorials().catch((err) => console.error("loadTodayMemorials failed:", err)),
-          loadDiscoverProfiles(currentUserId).catch((err) => console.error("loadDiscoverProfiles failed:", err)),
-          loadPendingMembers(currentUserId).catch((err) => console.error("loadPendingMembers failed:", err)),
-        ]);
-      } catch (error) {
-        console.error("Homepage init error:", error);
-      } finally {
+        // Prioritize feed readiness: render as soon as posts are loaded, then hydrate secondary data.
+        await loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err));
         if (isMounted) {
           setLoading(false);
         }
+
+        const isDesktopViewport = typeof window !== "undefined" && window.innerWidth > 900;
+        const inDesktopShell = isDesktopShell || isDesktopViewport;
+        const deferredTasks: Promise<unknown>[] = [
+          loadTodayMemorials().catch((err) => console.error("loadTodayMemorials failed:", err)),
+          loadDiscoverProfiles(currentUserId, {
+            service: (profileCheck as { service?: string | null } | null)?.service ?? null,
+            status: (profileCheck as { status?: string | null } | null)?.status ?? null,
+            professional_tags: ((profileCheck as { professional_tags?: string[] | null } | null)?.professional_tags ?? null),
+            unit_history_tags: ((profileCheck as { unit_history_tags?: string[] | null } | null)?.unit_history_tags ?? null),
+          }).catch((err) => console.error("loadDiscoverProfiles failed:", err)),
+          loadPendingMembers(currentUserId).catch((err) => console.error("loadPendingMembers failed:", err)),
+        ];
+
+        // Desktop shell already has dedicated left/right column loaders; avoid duplicate heavy fetches here.
+        if (!inDesktopShell) {
+          deferredTasks.push(
+            loadJobs(jobsAccess.canViewFullJobs ? 500 : 5).catch((err) => console.error("loadJobs failed:", err)),
+            loadBusinessListings().catch((err) => console.error("loadBusinessListings failed:", err)),
+            loadBizLikes(currentUserId).catch((err) => console.error("loadBizLikes failed:", err)),
+            loadSavedJobs(currentUserId).catch((err) => console.error("loadSavedJobs failed:", err))
+          );
+        }
+        void Promise.all(deferredTasks);
+      } catch (error) {
+        console.error("Homepage init error:", error);
+        if (isMounted) {
+          setLoading(false);
+        }
+      } finally {
+        // no-op: loading is now set right after feed load to improve perceived speed
       }
     }
 
@@ -2983,32 +3166,35 @@ export default function HomePage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "posts" },
-        () => void loadPosts()
+        () => scheduleFeedRefresh()
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "post_images" },
-        () => void loadPosts()
+        () => scheduleFeedRefresh()
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "post_comments" },
-        () => void loadPosts()
+        () => scheduleFeedRefresh()
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "post_likes" },
-        () => void loadPosts()
+        () => scheduleFeedRefresh()
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "post_comment_likes" },
-        () => void loadPosts()
+        () => scheduleFeedRefresh()
       )
       .subscribe();
 
     return () => {
       isMounted = false;
+      if (feedRefreshTimer) {
+        window.clearTimeout(feedRefreshTimer);
+      }
       subscription.unsubscribe();
       supabase.removeChannel(channel);
 
@@ -3217,7 +3403,16 @@ export default function HomePage() {
   }
 
   const renderFeedCenter = () => (
-        <main style={{ display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined, minWidth: 0 }}>
+        <main
+          style={{
+            display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined,
+            minWidth: 0,
+            width: "100%",
+            maxWidth: "100%",
+            overflowX: "clip",
+            boxSizing: "border-box",
+          }}
+        >
 
           {/* Pending Members ΓÇö community vouching */}
           {userId && pendingMembers.length > 0 && (
@@ -3256,7 +3451,7 @@ export default function HomePage() {
                             Vouch
                           </button>
                         ) : (
-                          <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>Γ£ô Vouched</span>
+                          <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>Vouched</span>
                         )}
                         {isAdmin && (
                           <>
@@ -3298,11 +3493,11 @@ export default function HomePage() {
               gap: 12,
             }}>
               <div style={{ flex: 1, minWidth: 0, display: "flex", gap: 8, alignItems: "flex-start" }}>
-                <span style={{ fontSize: 22, flexShrink: 0 }}>≡ƒÄû∩╕Å</span>
+                <Award size={22} color={isDark ? "#a5b4fc" : "#4338ca"} style={{ flexShrink: 0 }} />
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 14, color: isDark ? "#a5b4fc" : "#4338ca" }}>Invite 5 colleagues, earn a Recruiter Badge</div>
                   <div style={{ fontSize: 13, color: isDark ? "#818cf8" : "#6366f1", marginTop: 2 }}>
-                    Your referral link is on your profile ΓÇö share it to grow the EOD HUB community.
+                    Your referral link is on your profile — share it to grow the EOD HUB community.
                   </div>
                 </div>
               </div>
@@ -3337,7 +3532,7 @@ export default function HomePage() {
               gap: 12,
               flexWrap: "wrap",
             }}>
-              <span style={{ fontSize: 22 }}>≡ƒæñ</span>
+              <UserCircle2 size={22} color={isDark ? "#fbbf24" : "#92400e"} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, color: isDark ? "#fbbf24" : "#92400e" }}>Add a profile photo</div>
                 <div style={{ fontSize: 13, color: isDark ? "#d97706" : "#b45309", marginTop: 2 }}>
@@ -3388,7 +3583,7 @@ export default function HomePage() {
             {selectedPostGif && (
               <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
                 <img src={selectedPostGif} alt="Selected GIF" style={{ maxWidth: 200, borderRadius: 10, display: "block" }} />
-                <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>├ù</button>
+                <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>x</button>
               </div>
             )}
 
@@ -3396,7 +3591,7 @@ export default function HomePage() {
             {ogPreview && (
               <div style={{ position: "relative" }}>
                 <OgCard og={ogPreview} />
-                <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>├ù</button>
+                <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>x</button>
               </div>
             )}
 
@@ -3464,7 +3659,7 @@ export default function HomePage() {
                         cursor: "pointer",
                       }}
                     >
-                      ├ù
+                      x
                     </button>
                   </div>
                 ))}
@@ -3533,7 +3728,7 @@ export default function HomePage() {
               >
                 <div style={{ fontWeight: 800, marginBottom: 6 }}>Kangaroo Court</div>
                 <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10 }}>
-                  Add 2ΓÇô4 options and a duration, then press Post. Your text and photos will publish with the poll.
+                  Add 2-4 options and a duration, then press Post. Your text and photos will publish with the poll.
                 </div>
                 <label style={{ fontSize: 12, fontWeight: 600, color: t.textMuted }}>Option 1</label>
                 <input
@@ -3704,7 +3899,7 @@ export default function HomePage() {
 
                 <button
                   type="button"
-                  title={kcComposerPhase ? "Exit Kangaroo Court" : "Kangaroo Court ΓÇö add a poll to this post"}
+                  title={kcComposerPhase ? "Exit Kangaroo Court" : "Kangaroo Court — add a poll to this post"}
                   onClick={() => {
                     if (kcComposerPhase) resetKcComposer();
                     else setKcComposerPhase("confirm");
@@ -3760,12 +3955,13 @@ export default function HomePage() {
                   onClick={() => shuffleDiscover()}
                   title="Previous"
                   style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                >ΓÇ╣</button>
+                >{"<"}</button>
                 <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 4, flex: 1 }}>
                 {discoverVisible.map((p) => {
                   const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
                   const ringColor = getServiceRingColor(p.service);
                   const isPendingKnow = p.knowStatus === "pending_outgoing";
+                  const affinityHint = p.affinityReasons[0] || (p.service ? `Service: ${p.service}` : "Community member");
                   return (
                     <div
                       key={p.user_id}
@@ -3782,6 +3978,21 @@ export default function HomePage() {
                           }
                         </div>
                         <div style={{ fontSize: 11, fontWeight: 600, color: t.text, textAlign: "center", lineHeight: 1.3, wordBreak: "break-word" }}>{fullName}</div>
+                        <div
+                          title={affinityHint}
+                          style={{
+                            fontSize: 9,
+                            color: t.textFaint,
+                            textAlign: "center",
+                            lineHeight: 1.2,
+                            maxWidth: "100%",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {affinityHint}
+                        </div>
                       </a>
                       {userId && (
                         <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "100%" }}>
@@ -3814,7 +4025,7 @@ export default function HomePage() {
                   onClick={() => shuffleDiscover()}
                   title="Next"
                   style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                >ΓÇ║</button>
+                >{">"}</button>
               </div>
             </div>
           )}
@@ -3864,16 +4075,18 @@ export default function HomePage() {
             </div>
           )}
 
-          <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+          <div style={{ marginTop: 20, display: "grid", gap: "clamp(12px, 3vw, 16px)", width: "100%", minWidth: 0, boxSizing: "border-box" }}>
             {!postsLoaded && [0,1,2,3].map((i) => <SkeletonPost key={i} />)}
-            {/* Memorial anniversary cards ΓÇö auto-injected on anniversary date */}
+            {/* Memorial anniversary cards - auto-injected on anniversary date */}
             {todayMemorials.filter(m => !dismissedMemorialIds.has(m.id)).map((m) => {
-              const bioExpanded = expandedMemorialBios.has(m.id);
+              const isExpanded = !!expandedMemorialCards[m.id];
+              const memorialCommentList = memorialComments[m.id] ?? [];
+              const compactPreviewComments = memorialCommentList.slice(0, 2);
               return (
                 <div key={`memorial-${m.id}`} style={{ border: "2px solid #7c3aed", borderRadius: 14, overflow: "hidden" }}>
                   {/* Header banner */}
                   <div style={{ background: "#7c3aed", padding: "11px 20px", display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ color: "white", fontSize: 17 }}>Γ£ª</span>
+                    <span style={{ color: "white", fontSize: 15, fontWeight: 800 }}>In Memoriam</span>
                     <span style={{ color: "white", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" }}>We Remember</span>
                     <span style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, fontWeight: 600, marginLeft: "auto", marginRight: 12 }}>
                       {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}
@@ -3883,9 +4096,9 @@ export default function HomePage() {
                       onClick={() => dismissMemorial(m.id)}
                       title="Dismiss"
                       style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "white", fontWeight: 900, fontSize: 16, lineHeight: 1, cursor: "pointer", padding: "2px 7px", flexShrink: 0 }}
-                    >├ù</button>
+                    >x</button>
                   </div>
-                  {/* Card body */}
+                  {/* Card body: compact by default, full memorial view on expand */}
                   <div style={{ padding: 20, background: isDark ? "#1a0d2e" : "#faf5ff", display: "flex", gap: 16, alignItems: "flex-start" }}>
                     {m.photo_url && (
                       <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "3px solid #7c3aed" }}>
@@ -3896,81 +4109,161 @@ export default function HomePage() {
                       <div style={{ fontSize: 20, fontWeight: 900, color: isDark ? "#f3e8ff" : "#1a1a1a" }}>{m.name}</div>
                       <div style={{ fontSize: 13, color: "#7c3aed", marginTop: 2 }}>
                         {new Date(m.death_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
-                        {" ┬╖ "}
+                        {" - "}
                         {new Date().getFullYear() - parseInt(m.death_date.split("-")[0])} years ago
                       </div>
-                      {m.bio && (
-                        <>
-                          <div style={{ marginTop: 10, lineHeight: 1.6, color: t.textMuted, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: bioExpanded ? undefined : 3 }}>
-                            {m.bio}
-                          </div>
+                      {!isExpanded && (
+                        <div style={{ marginTop: 10 }}>
                           <button
                             type="button"
-                            onClick={() => setExpandedMemorialBios(prev => {
-                              const next = new Set(prev);
-                              bioExpanded ? next.delete(m.id) : next.add(m.id);
-                              return next;
-                            })}
-                            style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#7c3aed", fontSize: 13, fontWeight: 700, marginTop: 4 }}
+                            onClick={() => setExpandedMemorialCards((prev) => ({ ...prev, [m.id]: true }))}
+                            style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#7c3aed", fontSize: 13, fontWeight: 700 }}
                           >
-                            {bioExpanded ? "Show less" : "Show more"}
+                            Show full bio
                           </button>
-                        </>
-                      )}
-
-                      {/* Interaction bar */}
-                      {(() => {
-                        const likes = memorialLikes[m.id] ?? [];
-                        const myLiked = userId ? likes.includes(userId) : false;
-                        const comments = memorialComments[m.id] ?? [];
-                        const commentsOpen = !!memorialCommentsOpen[m.id];
-                        return (
-                          <>
-                            <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${isDark ? "#3b1f6b" : "#e9d5ff"}` }}>
-                              <button type="button" onClick={() => toggleMemorialLike(m.id)} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: myLiked ? "#7c3aed" : t.textMuted, fontWeight: myLiked ? 700 : 400, fontSize: 14, padding: 0 }}>
-                                {myLiked ? "ΓÖÑ" : "ΓÖí"}{likes.length > 0 && <span style={{ fontSize: 13 }}>{likes.length}</span>}
-                              </button>
-                              <button type="button" onClick={() => setMemorialCommentsOpen(p => ({ ...p, [m.id]: !commentsOpen }))} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: t.textMuted, fontSize: 14, padding: 0 }}>
-                                ≡ƒÆ¼{comments.length > 0 && <span style={{ fontSize: 13 }}>{comments.length}</span>}
-                              </button>
-                            </div>
-
-                            {/* Donate strip */}
-                            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? "#3b1f6b" : "#e9d5ff"}` }}>
-                              <button type="button" onClick={() => setDonateModalOpen(true)} style={{ background: "#7c3aed", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
-                                ≡ƒÆ£ Donate to EOD Warrior Foundation
-                              </button>
-                            </div>
-                            {commentsOpen && (
-                              <div style={{ marginTop: 12 }}>
-                                {comments.map(c => (
-                                  <div key={c.id} style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                                    <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.text }}>
-                                      {c.authorPhotoUrl ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : c.authorName[0]?.toUpperCase()}
-                                    </div>
-                                    <div style={{ background: isDark ? "#2a1050" : "#f3e8ff", borderRadius: 10, padding: "6px 10px", flex: 1 }}>
-                                      <div style={{ fontWeight: 700, fontSize: 12, color: "#7c3aed", marginBottom: 2 }}>{c.authorName}</div>
-                                      <div style={{ fontSize: 13, lineHeight: 1.45, color: t.text }}>{renderContent(c.content)}</div>
-                                    </div>
+                          <div style={{ marginTop: 10, fontSize: 13, color: t.textMuted, fontWeight: 700 }}>
+                            Comments {memorialCommentList.length}
+                          </div>
+                          {compactPreviewComments.length > 0 && (
+                            <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                              {compactPreviewComments.map((c) => (
+                                <div key={`compact-${c.id}`} style={{ display: "flex", gap: 8 }}>
+                                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.text }}>
+                                    {c.authorPhotoUrl ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : c.authorName[0]?.toUpperCase()}
                                   </div>
-                                ))}
-                                <div style={{ display: "flex", gap: 8, alignItems: "flex-end", marginTop: 4 }}>
-                                  <MentionTextarea
-                                    value={memorialCommentInputs[m.id] || ""}
-                                    onChange={val => setMemorialCommentInputs(p => ({ ...p, [m.id]: val }))}
-                                    onChangeRaw={raw => { memorialCommentRawsRef.current[m.id] = raw; }}
-                                    placeholder="Leave a tribute..."
-                                    style={{ flex: 1, minHeight: 60, border: `1px solid ${isDark ? "#3b1f6b" : "#c4b5fd"}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: isDark ? "#1a0d2e" : "#faf5ff", color: t.text, outline: "none" }}
-                                  />
-                                  <button type="button" onClick={() => submitMemorialComment(m.id)} disabled={submittingMemorialComment === m.id} style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 700, cursor: submittingMemorialComment === m.id ? "not-allowed" : "pointer", opacity: submittingMemorialComment === m.id ? 0.7 : 1, fontSize: 13, flexShrink: 0 }}>
-                                    {submittingMemorialComment === m.id ? "ΓÇª" : "Reply"}
+                                  <div style={{ background: isDark ? "#2a1050" : "#f3e8ff", borderRadius: 10, padding: "6px 10px", flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 700, fontSize: 12, color: "#7c3aed", marginBottom: 2 }}>{c.authorName}</div>
+                                    <div style={{ fontSize: 13, lineHeight: 1.45, color: t.text }}>{renderContent(c.content)}</div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setExpandedMemorialCards((prev) => ({ ...prev, [m.id]: true }));
+                              setMemorialCommentsOpen((prev) => ({ ...prev, [m.id]: true }));
+                            }}
+                            style={{ marginTop: 8, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#7c3aed", fontSize: 13, fontWeight: 700 }}
+                          >
+                            See all comments
+                          </button>
+                        </div>
+                      )}
+                      {isExpanded && (
+                        <>
+                          {m.bio && (
+                            <div style={{ marginTop: 10, lineHeight: 1.6, color: t.textMuted }}>
+                              {m.bio}
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setExpandedMemorialCards((prev) => ({ ...prev, [m.id]: false }))}
+                            style={{ marginTop: 6, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#7c3aed", fontSize: 13, fontWeight: 700 }}
+                          >
+                            Back to compact card
+                          </button>
+                          {(() => {
+                            const comments = memorialComments[m.id] ?? [];
+                            const commentsOpen = !!memorialCommentsOpen[m.id];
+                            return (
+                              <>
+                                <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${isDark ? "#3b1f6b" : "#e9d5ff"}` }}>
+                                  <button type="button" onClick={() => setMemorialCommentsOpen(p => ({ ...p, [m.id]: !commentsOpen }))} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: t.textMuted, fontSize: 14, padding: 0 }}>
+                                    Comments{comments.length > 0 && <span style={{ fontSize: 13 }}>{comments.length}</span>}
                                   </button>
                                 </div>
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
+                                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? "#3b1f6b" : "#e9d5ff"}` }}>
+                                  <button type="button" onClick={() => setDonateModalOpen(true)} style={{ background: "#7c3aed", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
+                                    Donate as Tribute to the EOD Warrior Foundation
+                                  </button>
+                                </div>
+                                {commentsOpen && (
+                                  <div style={{ marginTop: 12 }}>
+                                    {comments.map(c => (
+                                      <div key={c.id} style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                                        <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.text }}>
+                                          {c.authorPhotoUrl ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : c.authorName[0]?.toUpperCase()}
+                                        </div>
+                                        <div style={{ background: isDark ? "#2a1050" : "#f3e8ff", borderRadius: 10, padding: "6px 10px", flex: 1 }}>
+                                          <div style={{ fontWeight: 700, fontSize: 12, color: "#7c3aed", marginBottom: 2 }}>{c.authorName}</div>
+                                          {editingMemorialCommentId === c.id ? (
+                                            <div>
+                                              <textarea
+                                                value={editingMemorialCommentContent}
+                                                onChange={(e) => setEditingMemorialCommentContent(e.target.value)}
+                                                rows={3}
+                                                style={{ width: "100%", border: `1px solid ${isDark ? "#3b1f6b" : "#c4b5fd"}`, borderRadius: 8, padding: 8, fontSize: 13, boxSizing: "border-box", background: isDark ? "#1a0d2e" : "#faf5ff", color: t.text, resize: "vertical" }}
+                                              />
+                                              <div style={{ marginTop: 6, display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => setEditingMemorialCommentId(null)}
+                                                  style={{ background: "transparent", border: `1px solid ${t.border}`, borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, color: t.text, cursor: "pointer" }}
+                                                >
+                                                  Cancel
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => saveMemorialCommentEdit(m.id, c.id)}
+                                                  disabled={savingMemorialCommentId === c.id || !editingMemorialCommentContent.trim()}
+                                                  style={{ background: "#7c3aed", border: "none", borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, color: "white", cursor: savingMemorialCommentId === c.id ? "not-allowed" : "pointer", opacity: savingMemorialCommentId === c.id ? 0.7 : 1 }}
+                                                >
+                                                  {savingMemorialCommentId === c.id ? "Saving..." : "Save"}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <>
+                                              <div style={{ fontSize: 13, lineHeight: 1.45, color: t.text }}>{renderContent(c.content)}</div>
+                                              {c.user_id === userId && (
+                                                <div style={{ marginTop: 6, display: "flex", gap: 8 }}>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setEditingMemorialCommentId(c.id);
+                                                      setEditingMemorialCommentContent(c.content);
+                                                    }}
+                                                    style={{ background: "transparent", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: "#7c3aed", cursor: "pointer" }}
+                                                  >
+                                                    Edit
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => deleteMemorialComment(m.id, c.id)}
+                                                    disabled={deletingMemorialCommentId === c.id}
+                                                    style={{ background: "transparent", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: "#ef4444", cursor: deletingMemorialCommentId === c.id ? "not-allowed" : "pointer", opacity: deletingMemorialCommentId === c.id ? 0.7 : 1 }}
+                                                  >
+                                                    {deletingMemorialCommentId === c.id ? "Deleting..." : "Delete"}
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+                                      <MentionTextarea
+                                        value={memorialCommentInputs[m.id] || ""}
+                                        onChange={val => setMemorialCommentInputs(p => ({ ...p, [m.id]: val }))}
+                                        onChangeRaw={raw => { memorialCommentRawsRef.current[m.id] = raw; }}
+                                        placeholder="Leave a tribute..."
+                                        style={{ width: "100%", minHeight: 70, border: `1px solid ${isDark ? "#3b1f6b" : "#c4b5fd"}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: isDark ? "#1a0d2e" : "#faf5ff", color: t.text, outline: "none" }}
+                                      />
+                                      <button type="button" onClick={() => submitMemorialComment(m.id)} disabled={submittingMemorialComment === m.id} style={{ alignSelf: "flex-end", background: "#7c3aed", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: submittingMemorialComment === m.id ? "not-allowed" : "pointer", opacity: submittingMemorialComment === m.id ? 0.7 : 1, fontSize: 13 }}>
+                                        {submittingMemorialComment === m.id ? "..." : "Reply"}
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -3990,68 +4283,36 @@ export default function HomePage() {
                   style={{
                     border: `1px solid ${t.border}`,
                     borderRadius: 14,
-                    padding: 16,
+                    padding: FEED_POST_CARD_PADDING,
                     background: t.surface,
+                    minWidth: 0,
+                    maxWidth: "100%",
+                    boxSizing: "border-box",
                   }}
                 >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      alignItems: "flex-start",
-                    }}
-                  >
-                    <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-                      <Link
-                        href={`/profile/${post.user_id}`}
-                        style={{ textDecoration: "none" }}
-                      >
-                        <Avatar
-                          photoUrl={post.authorPhotoUrl}
-                          name={post.authorName}
-                          size={46}
-                          service={post.authorService}
-                          isEmployer={post.authorIsEmployer}
-                        />
-                      </Link>
-
-                      <div>
-                        <Link
-                          href={`/profile/${post.user_id}`}
-                          style={{
-                            fontWeight: 800,
-                            color: t.text,
-                            textDecoration: "none",
-                          }}
-                        >
-                          {post.authorName}
-                        </Link>
-
-                        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
-                          {formatDate(post.created_at)}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                      {isOwnPost && !isEditingPost && (
-                        <button type="button" onClick={() => startEditPost(post.id, post.content)} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontWeight: 700 }}>
-                          Edit
-                        </button>
-                      )}
-                      {isOwnPost && (
-                        <button type="button" onClick={() => deletePost(post.id)} disabled={deletingPostId === post.id} style={{ background: "transparent", border: "none", padding: 0, cursor: deletingPostId === post.id ? "not-allowed" : "pointer", color: t.textMuted, fontWeight: 700, opacity: deletingPostId === post.id ? 0.6 : 1 }}>
-                          {deletingPostId === post.id ? "Deleting..." : "Delete"}
-                        </button>
-                      )}
-                      {!isOwnPost && (
-                        <button type="button" onClick={() => openFlagModal("post", post.id)} disabled={flaggingId === post.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === post.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 15, lineHeight: 1 }}>
-                          ΓÜæ
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <FeedPostHeader
+                    profileHref={`/profile/${post.user_id}`}
+                    avatar={
+                      <Avatar
+                        photoUrl={post.authorPhotoUrl}
+                        name={post.authorName}
+                        size={46}
+                        service={post.authorService}
+                        isEmployer={post.authorIsEmployer}
+                      />
+                    }
+                    authorName={post.authorName}
+                    createdAtLabel={formatDate(post.created_at)}
+                    t={t}
+                    isOwnPost={isOwnPost}
+                    isEditingPost={isEditingPost}
+                    isMobile={isMobile}
+                    isDeleting={deletingPostId === post.id}
+                    isFlagging={flaggingId === post.id}
+                    onEdit={() => startEditPost(post.id, post.content)}
+                    onDelete={() => deletePost(post.id)}
+                    onFlag={() => openFlagModal("post", post.id)}
+                  />
 
                   {isEditingPost ? (
                     <div style={{ marginTop: 10 }}>
@@ -4124,7 +4385,17 @@ export default function HomePage() {
                       {post.og_url && (() => {
                         const ytId = getYouTubeId(post.og_url);
                         if (ytId) return (
-                          <div style={{ marginTop: 12, borderRadius: 12, overflow: "hidden", aspectRatio: "16/9", maxWidth: 480 }}>
+                          <div
+                            style={{
+                              marginTop: 12,
+                              borderRadius: 12,
+                              overflow: "hidden",
+                              aspectRatio: "16/9",
+                              width: "100%",
+                              maxWidth: FEED_POST_EMBED_MAX_WIDTH,
+                              boxSizing: "border-box",
+                            }}
+                          >
                             <iframe
                               src={`https://www.youtube.com/embed/${ytId}`}
                               style={{ width: "100%", height: "100%", border: "none", display: "block" }}
@@ -4155,8 +4426,10 @@ export default function HomePage() {
                                     : visibleImages.length === 2
                                     ? "repeat(2, minmax(0, 1fr))"
                                     : "repeat(3, minmax(0, 1fr))",
-                                gap: 8,
-                                maxWidth: 420,
+                                gap: "clamp(6px, 1.8vw, 10px)",
+                                width: "100%",
+                                maxWidth: FEED_POST_IMAGES_MAX_WIDTH,
+                                boxSizing: "border-box",
                               }}
                             >
                               {visibleImages.map((url, index) => {
@@ -4190,7 +4463,7 @@ export default function HomePage() {
                                         {!showOverlay && (
                                           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
                                             <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                              <span style={{ color: "white", fontSize: 16, paddingLeft: 2 }}>Γû╢</span>
+                                              <Play size={16} color="white" fill="white" />
                                             </div>
                                           </div>
                                         )}
@@ -4230,8 +4503,26 @@ export default function HomePage() {
                   )}
 
                   {post.gif_url && (
-                    <div style={{ marginTop: 12 }}>
-                      <img src={post.gif_url} alt="GIF" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 12, display: "block" }} />
+                    <div
+                      style={{
+                        marginTop: 12,
+                        width: "100%",
+                        maxWidth: FEED_POST_EMBED_MAX_WIDTH,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <img
+                        src={post.gif_url}
+                        alt="GIF"
+                        style={{
+                          width: "100%",
+                          height: "auto",
+                          maxHeight: 300,
+                          borderRadius: 12,
+                          display: "block",
+                          objectFit: "contain",
+                        }}
+                      />
                     </div>
                   )}
 
@@ -4244,7 +4535,9 @@ export default function HomePage() {
                             borderRadius: 12,
                             overflow: "hidden",
                             border: `1px solid ${t.border}`,
-                            maxWidth: 480,
+                            width: "100%",
+                            maxWidth: FEED_POST_EMBED_MAX_WIDTH,
+                            boxSizing: "border-box",
                             background: t.bg,
                           }}
                         >
@@ -4288,10 +4581,13 @@ export default function HomePage() {
                   <div
                     style={{
                       display: "flex",
-                      gap: 16,
+                      gap: "clamp(10px, 2.8vw, 16px)",
                       alignItems: "center",
                       marginTop: 14,
                       flexWrap: "wrap",
+                      width: "100%",
+                      minWidth: 0,
+                      boxSizing: "border-box",
                     }}
                   >
                     {/* KC trigger: left of Like/Comment so it reads as a distinct action, not another avatar */}
@@ -4377,11 +4673,24 @@ export default function HomePage() {
                                 style={{
                                   display: "flex",
                                   justifyContent: "space-between",
-                                  gap: 12,
+                                  gap: "clamp(8px, 2.2vw, 12px)",
                                   alignItems: "flex-start",
+                                  flexWrap: "wrap",
+                                  minWidth: 0,
+                                  width: "100%",
+                                  boxSizing: "border-box",
                                 }}
                               >
-                                <div style={{ display: "flex", gap: 10, alignItems: "center", flex: 1, minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: "clamp(6px, 2vw, 10px)",
+                                    alignItems: "center",
+                                    flex: 1,
+                                    minWidth: 0,
+                                    flexWrap: "wrap",
+                                  }}
+                                >
                                   <Link
                                     href={`/profile/${comment.user_id}`}
                                     style={{ textDecoration: "none", flexShrink: 0, lineHeight: 0 }}
@@ -4413,10 +4722,9 @@ export default function HomePage() {
                                   </div>
                                   <span
                                     style={{
-                                      fontSize: 12,
+                                      fontSize: "clamp(11px, 2.8vw, 12px)",
                                       color: t.textMuted,
                                       flexShrink: 0,
-                                      whiteSpace: "nowrap",
                                       alignSelf: "center",
                                     }}
                                   >
@@ -4424,10 +4732,18 @@ export default function HomePage() {
                                   </span>
                                 </div>
 
-                                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    gap: "clamp(6px, 1.8vw, 10px)",
+                                    alignItems: "center",
+                                    flexShrink: 0,
+                                    flexWrap: "wrap",
+                                  }}
+                                >
                                   {!isOwnComment && (
                                     <button type="button" onClick={() => openFlagModal("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 13, lineHeight: 1 }}>
-                                      ΓÜæ
+                                      ...
                                     </button>
                                   )}
                                   {isOwnComment && (
@@ -4561,10 +4877,12 @@ export default function HomePage() {
                                     <div
                                       style={{
                                         marginTop: 10,
-                                        maxWidth: 180,
+                                        width: "100%",
+                                        maxWidth: "min(180px, 100%)",
                                         borderRadius: 10,
                                         overflow: "hidden",
                                         border: `1px solid ${t.border}`,
+                                        boxSizing: "border-box",
                                       }}
                                     >
                                       <img
@@ -4581,8 +4899,25 @@ export default function HomePage() {
                                   )}
 
                                   {comment.gif_url && (
-                                    <div style={{ marginTop: 8 }}>
-                                      <img src={comment.gif_url} alt="GIF" style={{ maxWidth: 180, borderRadius: 10, display: "block" }} />
+                                    <div
+                                      style={{
+                                        marginTop: 8,
+                                        width: "100%",
+                                        maxWidth: "min(180px, 100%)",
+                                        boxSizing: "border-box",
+                                      }}
+                                    >
+                                      <img
+                                        src={comment.gif_url}
+                                        alt="GIF"
+                                        style={{
+                                          width: "100%",
+                                          height: "auto",
+                                          maxWidth: 180,
+                                          borderRadius: 10,
+                                          display: "block",
+                                        }}
+                                      />
                                     </div>
                                   )}
                                 </>
@@ -4738,7 +5073,7 @@ export default function HomePage() {
                         {selectedCommentGifs[post.id] && (
                           <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
                             <img src={selectedCommentGifs[post.id]!} alt="GIF" style={{ maxWidth: 180, borderRadius: 10, display: "block" }} />
-                            <button type="button" onClick={() => setSelectedCommentGifs((prev) => ({ ...prev, [post.id]: null }))} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>├ù</button>
+                            <button type="button" onClick={() => setSelectedCommentGifs((prev) => ({ ...prev, [post.id]: null }))} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>x</button>
                           </div>
                         )}
 
@@ -4782,7 +5117,7 @@ export default function HomePage() {
                                   cursor: "pointer",
                                 }}
                               >
-                                ├ù
+                                x
                               </button>
                             </div>
                           </div>
@@ -4863,6 +5198,7 @@ export default function HomePage() {
     <>
       {!isDesktopShell ? (
     <div
+      className="feed-page-shell"
       style={{
         width: "100%",
         maxWidth: 1800,
@@ -4879,6 +5215,7 @@ export default function HomePage() {
 
       <DesktopLayout
         isMobile={isMobile}
+        mobileStyle={{ marginTop: 12, width: "100%", maxWidth: "100%", minWidth: 0, overflowX: "clip", boxSizing: "border-box" }}
         desktopColumns="272px minmax(0, 1.08fr) 372px"
         desktopGap={20}
         left={
@@ -4898,11 +5235,11 @@ export default function HomePage() {
             <>
               <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
                 <div>
-                  ({jobsTotalApprovedCount !== null ? jobsTotalApprovedCount.toLocaleString() : "ΓÇö"}) jobs as of{" "}
+                  ({jobsTotalApprovedCount !== null ? jobsTotalApprovedCount.toLocaleString() : "—"}) jobs as of{" "}
                   {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
                 </div>
                 <div style={{ marginTop: 4 }}>
-                  ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "ΓÇö"}) new jobs today!
+                  ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "—"}) new jobs today!
                 </div>
                 {!isMobile && (
                   <div style={{ marginTop: 6 }}>
@@ -4936,8 +5273,8 @@ export default function HomePage() {
                       }}
                     >
                       <option value="recent">Most recently listed</option>
-                      <option value="az">Alphabetical AΓÇôZ</option>
-                      <option value="za">Alphabetical ZΓÇôA</option>
+                      <option value="az">Alphabetical A-Z</option>
+                      <option value="za">Alphabetical Z-A</option>
                     </select>
                   </div>
                   <select
@@ -4990,7 +5327,7 @@ export default function HomePage() {
               </div>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
                 {jobLeaderboard.map((entry, i) => {
-                  const medal = i === 0 ? "≡ƒÑç" : i === 1 ? "≡ƒÑê" : i === 2 ? "≡ƒÑë" : null;
+                  const medalColor = i === 0 ? "#FFD700" : i === 1 ? "#C0C0C0" : i === 2 ? "#CD7F32" : null;
                   return (
                     <a
                       key={entry.user_id}
@@ -5003,7 +5340,7 @@ export default function HomePage() {
                           : entry.name[0]?.toUpperCase()}
                       </div>
                       <span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{entry.name}</span>
-                      {medal && <span style={{ fontSize: 13 }}>{medal}</span>}
+                      {medalColor && <Medal size={14} color={medalColor} />}
                       <span style={{ fontSize: 11, color: t.textFaint, fontWeight: 600 }}>{entry.count}</span>
                     </a>
                   );
@@ -5058,7 +5395,7 @@ export default function HomePage() {
 
                   <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                     <span>{job.category || "General"}</span>
-                    {job.created_at && <span>ΓÇó {new Date(job.created_at).toLocaleDateString()}</span>}
+                    {job.created_at && <span>• {new Date(job.created_at).toLocaleDateString()}</span>}
                     {job.source_type === "community" && (
                       <span style={{ background: "#dcfce7", color: "#15803d", borderRadius: 20, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>
                         Community
@@ -5117,7 +5454,7 @@ export default function HomePage() {
                           opacity: togglingJobSaveFor === job.id ? 0.6 : 1,
                         }}
                       >
-                        {togglingJobSaveFor === job.id ? "..." : savedJobIds.has(job.id) ? "Saved Γ£ô" : "Save"}
+                        {togglingJobSaveFor === job.id ? "..." : savedJobIds.has(job.id) ? "Saved" : "Save"}
                       </button>
                     )}
                   </div>
@@ -5214,7 +5551,7 @@ export default function HomePage() {
             <div style={{ marginTop: 14, border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
               {bizSubmitSuccess ? (
                 <div style={{ textAlign: "center", padding: "16px 0", color: "#16a34a", fontWeight: 700, fontSize: 14 }}>
-                  Γ£ô Submitted! Our team will review and approve your listing.
+                  Submitted! Our team will review and approve your listing.
                 </div>
               ) : (
                 <>
@@ -5454,17 +5791,17 @@ export default function HomePage() {
           >
             {/* Modal header */}
             <div style={{ background: "#7c3aed", padding: "12px 18px", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-              <span style={{ color: "white", fontSize: 15, fontWeight: 800, flex: 1 }}>Donate to EOD Warrior Foundation</span>
+              <span style={{ color: "white", fontSize: 15, fontWeight: 800, flex: 1 }}>Donate as Tribute to the EOD Warrior Foundation</span>
               <button
                 type="button"
                 onClick={() => setDonateModalOpen(false)}
                 style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "white", fontWeight: 900, fontSize: 18, lineHeight: 1, cursor: "pointer", padding: "2px 8px" }}
-              >├ù</button>
+              >x</button>
             </div>
             {/* Iframe */}
             <iframe
               src="https://eod-wf.org/?form=supportEODWF"
-              title="Donate to EOD Warrior Foundation"
+              title="Donate as Tribute to the EOD Warrior Foundation"
               style={{ flex: 1, border: "none", width: "100%" }}
               allow="payment"
             />
@@ -5516,7 +5853,7 @@ export default function HomePage() {
                 cursor: "pointer",
               }}
             >
-              ├ù
+              x
             </button>
 
             {galleryImages.length > 1 && (
@@ -5540,7 +5877,7 @@ export default function HomePage() {
                     cursor: "pointer",
                   }}
                 >
-                  ΓÇ╣
+                  {"<"}
                 </button>
 
                 <button
@@ -5562,7 +5899,7 @@ export default function HomePage() {
                     cursor: "pointer",
                   }}
                 >
-                  ΓÇ║
+                  {">"}
                 </button>
               </>
             )}

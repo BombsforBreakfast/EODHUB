@@ -1,0 +1,20 @@
+alter table public.profiles
+  add column if not exists open_to_opportunities boolean default false,
+  add column if not exists employer_summary text,
+  add column if not exists resume_url text,
+  add column if not exists education_url text,
+  add column if not exists specialized_training text[],
+  add column if not exists availability_type text,
+  add column if not exists availability_date date,
+  add column if not exists current_city text,
+  add column if not exists current_state text,
+  add column if not exists willing_to_relocate boolean default false,
+  add column if not exists willing_to_travel text,
+  add column if not exists work_preference text,
+  add column if not exists clearance_level text,
+  add column if not exists clearance_status text,
+  add column if not exists clearance_expiration_date date,
+  add column if not exists has_oconus_experience boolean default false,
+  add column if not exists has_contract_experience boolean default false,
+  add column if not exists has_federal_le_military_crossover boolean default false;
+

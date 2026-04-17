@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { useParams } from "next/navigation";
-import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../lib/likeNotifyDelay";
-import { postNotifyJson } from "../../lib/postNotifyClient";
-import { supabase } from "../../lib/lib/supabaseClient";
-import { useTheme } from "../../lib/ThemeContext";
-import NavBar from "../../components/NavBar";
-import GifPickerButton from "../../components/GifPickerButton";
-import EmojiPickerButton from "../../components/EmojiPickerButton";
+import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
+import { postNotifyJson } from "../../../lib/postNotifyClient";
+import { supabase } from "../../../lib/lib/supabaseClient";
+import { useTheme } from "../../../lib/ThemeContext";
+import NavBar from "../../../components/NavBar";
+import GifPickerButton from "../../../components/GifPickerButton";
+import EmojiPickerButton from "../../../components/EmojiPickerButton";
+import { useMasterShell } from "../../../components/master/masterShellContext";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -96,6 +97,7 @@ function displayName(user: { display_name?: string | null; first_name?: string |
 
 export default function UnitPage() {
   const { t, isDark } = useTheme();
+  const { isDesktopShell } = useMasterShell();
   const params = useParams();
   const slug = params.slug as string;
 
@@ -338,6 +340,27 @@ export default function UnitPage() {
     }
   }
 
+  async function leaveGroup() {
+    if (!currentUserId || !unit) return;
+    if (!window.confirm(`Leave ${unit.name}?`)) return;
+    setJoining(true);
+    try {
+      const { error } = await supabase
+        .from("unit_members")
+        .delete()
+        .eq("unit_id", unit.id)
+        .eq("user_id", currentUserId);
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      setMembership(null);
+      window.location.href = "/units";
+    } finally {
+      setJoining(false);
+    }
+  }
+
   // ── Approvals ────────────────────────────────────────────────────────────
 
   async function handleApproval(requesterUserId: string, action: "vote" | "approve" | "deny") {
@@ -548,14 +571,23 @@ export default function UnitPage() {
 
   const padX = { paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))" } as const;
   const navShell: CSSProperties = { width: "100%", boxSizing: "border-box", paddingTop: 24, background: t.bg, ...padX };
-  const bodyShell: CSSProperties = { maxWidth: 860, margin: "0 auto", boxSizing: "border-box", paddingTop: 16, paddingBottom: 48, ...padX };
+  const bodyShell: CSSProperties = {
+    maxWidth: 860,
+    margin: "0 auto",
+    boxSizing: "border-box",
+    paddingTop: isDesktopShell ? 0 : 16,
+    paddingBottom: 48,
+    ...padX,
+  };
 
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-        <div style={navShell}>
-          <NavBar />
-        </div>
+        {!isDesktopShell && (
+          <div style={navShell}>
+            <NavBar />
+          </div>
+        )}
         <div style={bodyShell}>
           <div style={{ color: t.textMuted, textAlign: "center", padding: 60 }}>Loading...</div>
         </div>
@@ -566,9 +598,11 @@ export default function UnitPage() {
   if (notFound || !unit) {
     return (
       <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-        <div style={navShell}>
-          <NavBar />
-        </div>
+        {!isDesktopShell && (
+          <div style={navShell}>
+            <NavBar />
+          </div>
+        )}
         <div style={bodyShell}>
           <div style={{ textAlign: "center", padding: 60 }}>
             <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 8 }}>Unit not found</div>
@@ -583,9 +617,11 @@ export default function UnitPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-      <div style={navShell}>
-        <NavBar />
-      </div>
+      {!isDesktopShell && (
+        <div style={navShell}>
+          <NavBar />
+        </div>
+      )}
       <div style={bodyShell}>
         {/* Back */}
         <a href="/units" style={{ color: t.textMuted, fontSize: 13, fontWeight: 700, textDecoration: "none", display: "inline-block", marginBottom: 16 }}>
@@ -650,12 +686,28 @@ export default function UnitPage() {
                     <button onClick={openInviteModal} style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
                       Invite Members
                     </button>
+                    <button
+                      onClick={leaveGroup}
+                      disabled={joining}
+                      style={{ background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: joining ? "not-allowed" : "pointer", opacity: joining ? 0.7 : 1 }}
+                    >
+                      {joining ? "Leaving..." : "Leave Group"}
+                    </button>
                   </>
                 )}
                 {membership?.status === "approved" && !isGod && (
-                  <button onClick={openInviteModal} style={{ background: t.badgeBg, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-                    Invite
-                  </button>
+                  <>
+                    <button onClick={openInviteModal} style={{ background: t.badgeBg, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                      Invite
+                    </button>
+                    <button
+                      onClick={leaveGroup}
+                      disabled={joining}
+                      style={{ background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: joining ? "not-allowed" : "pointer", opacity: joining ? 0.7 : 1 }}
+                    >
+                      {joining ? "Leaving..." : "Leave Group"}
+                    </button>
+                  </>
                 )}
               </div>
             </div>

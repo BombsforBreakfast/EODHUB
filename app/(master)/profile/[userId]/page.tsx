@@ -19,6 +19,7 @@ import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib
 import { postNotifyJson } from "../../../lib/postNotifyClient";
 import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
 import { KangarooCourtVerdictBanner } from "../../../components/KangarooCourtVerdictBanner";
+import { Gem, Medal, Camera, FileText, Play, Check } from "lucide-react";
 import type {
   FeedKangarooBundle,
   KangarooCourtOptionRow,
@@ -45,6 +46,27 @@ type Profile = {
   is_employer: boolean | null;
   employer_verified: boolean | null;
   company_website: string | null;
+  professional_tags: string[] | null;
+  unit_history_tags: string[] | null;
+  open_to_opportunities: boolean | null;
+  employer_summary: string | null;
+  resume_url: string | null;
+  education_url: string | null;
+  specialized_training: string[] | null;
+  specialized_training_docs: Record<string, string> | null;
+  availability_type: string | null;
+  availability_date: string | null;
+  current_city: string | null;
+  current_state: string | null;
+  willing_to_relocate: boolean | null;
+  willing_to_travel: string | null;
+  work_preference: string | null;
+  clearance_level: string | null;
+  clearance_status: string | null;
+  clearance_expiration_date: string | null;
+  has_oconus_experience: boolean | null;
+  has_contract_experience: boolean | null;
+  has_federal_le_military_crossover: boolean | null;
 };
 
 type RawComment = {
@@ -174,6 +196,12 @@ const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service"
 const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
+const WORK_TAG_PREVIEW_LIMIT = 3;
+const WORK_TAG_MAX = 30;
+const AVAILABILITY_TYPES = ["ETS", "Retirement", "Available From", "Contract End"];
+const WORK_PREFERENCES = ["Remote", "Hybrid", "Onsite", "Flexible"];
+const CLEARANCE_LEVELS = ["None", "Secret", "TS", "TS-SCI"];
+const CLEARANCE_STATUSES = ["Active", "Expired"];
 
 type KnowStatus = "none" | "pending_outgoing" | "pending_incoming" | "accepted";
 
@@ -256,6 +284,53 @@ function getServiceRingColor(service: string | null | undefined): string | null 
 
 function formatDate(dateString: string) {
   return new Date(dateString).toLocaleString();
+}
+
+function normalizeTagInput(raw: string): string {
+  return raw.replace(/\s+/g, " ").trim();
+}
+
+function normalizeTagArray(value: unknown): string[] {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+
+  const seen = new Set<string>();
+  const cleaned: string[] = [];
+  for (const item of rawValues) {
+    if (typeof item !== "string") continue;
+    const normalized = normalizeTagInput(item);
+    if (!normalized) continue;
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleaned.push(normalized);
+    if (cleaned.length >= WORK_TAG_MAX) break;
+  }
+  return cleaned;
+}
+
+function normalizeTrainingDocs(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof k !== "string" || typeof v !== "string") continue;
+    const key = normalizeTagInput(k);
+    const url = v.trim();
+    if (!key || !url) continue;
+    out[key] = url;
+  }
+  return out;
+}
+
+function addUniqueTag(tags: string[], rawValue: string): string[] {
+  const nextValue = normalizeTagInput(rawValue);
+  if (!nextValue) return tags;
+  if (tags.some((tag) => tag.toLowerCase() === nextValue.toLowerCase())) return tags;
+  if (tags.length >= WORK_TAG_MAX) return tags;
+  return [...tags, nextValue];
 }
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -369,6 +444,30 @@ export default function PublicProfilePage() {
   const [editYearsExp, setEditYearsExp] = useState("");
   const [editSkillBadge, setEditSkillBadge] = useState("");
   const [editCompanyWebsite, setEditCompanyWebsite] = useState("");
+  const [editOpenToOpportunities, setEditOpenToOpportunities] = useState(false);
+  const [editEmployerSummary, setEditEmployerSummary] = useState("");
+  const [editResumeUrl, setEditResumeUrl] = useState("");
+  const [editEducationUrl, setEditEducationUrl] = useState("");
+  const [editSpecializedTraining, setEditSpecializedTraining] = useState<string[]>([]);
+  const [editSpecializedTrainingDocs, setEditSpecializedTrainingDocs] = useState<Record<string, string>>({});
+  const [draftSpecializedTraining, setDraftSpecializedTraining] = useState("");
+  const [editAvailabilityType, setEditAvailabilityType] = useState("");
+  const [editAvailabilityDate, setEditAvailabilityDate] = useState("");
+  const [editCurrentCity, setEditCurrentCity] = useState("");
+  const [editCurrentState, setEditCurrentState] = useState("");
+  const [editWillingToRelocate, setEditWillingToRelocate] = useState(false);
+  const [editWillingToTravel, setEditWillingToTravel] = useState("");
+  const [editWorkPreference, setEditWorkPreference] = useState("");
+  const [editClearanceLevel, setEditClearanceLevel] = useState("");
+  const [editClearanceStatus, setEditClearanceStatus] = useState("");
+  const [editClearanceExpirationDate, setEditClearanceExpirationDate] = useState("");
+  const [editHasOconusExperience, setEditHasOconusExperience] = useState(false);
+  const [editHasContractExperience, setEditHasContractExperience] = useState(false);
+  const [editHasFederalLeMilitaryCrossover, setEditHasFederalLeMilitaryCrossover] = useState(false);
+  const [editProfessionalTags, setEditProfessionalTags] = useState<string[]>([]);
+  const [editUnitHistoryTags, setEditUnitHistoryTags] = useState<string[]>([]);
+  const [draftProfessionalTag, setDraftProfessionalTag] = useState("");
+  const [draftUnitHistoryTag, setDraftUnitHistoryTag] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [lightboxPhoto, setLightboxPhoto] = useState<ProfilePhoto | null>(null);
@@ -381,6 +480,8 @@ export default function PublicProfilePage() {
   const [submittingPhotoComment, setSubmittingPhotoComment] = useState(false);
 
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [viewerIsEmployer, setViewerIsEmployer] = useState(false);
+  const [viewerIsAdmin, setViewerIsAdmin] = useState(false);
   const [referralCount, setReferralCount] = useState(0);
 
   type ConnListType = "know" | "recruited";
@@ -400,7 +501,17 @@ export default function PublicProfilePage() {
   const [wallAvatarCropOpen, setWallAvatarCropOpen] = useState(false);
   const [wallAvatarCropSrc, setWallAvatarCropSrc] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const resumeFileInputRef = useRef<HTMLInputElement | null>(null);
+  const educationFileInputRef = useRef<HTMLInputElement | null>(null);
+  const trainingFileInputRef = useRef<HTMLInputElement | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
+  const [showDesktopProfileBack, setShowDesktopProfileBack] = useState(false);
+  const [showAllWorkHistoryTags, setShowAllWorkHistoryTags] = useState(false);
+  const canViewEmployerBackNow = (currentUserId === profile?.user_id) || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities);
+  const [uploadingResumeDoc, setUploadingResumeDoc] = useState(false);
+  const [uploadingEducationDoc, setUploadingEducationDoc] = useState(false);
+  const [uploadingTrainingTag, setUploadingTrainingTag] = useState<string | null>(null);
+  const [trainingUploadTargetTag, setTrainingUploadTargetTag] = useState<string | null>(null);
 
   useEffect(() => {
     postsRef.current = posts;
@@ -409,6 +520,18 @@ export default function PublicProfilePage() {
   useEffect(() => {
     photoLikesRef.current = photoLikes;
   }, [photoLikes]);
+
+  useEffect(() => {
+    if (isMobile) setShowDesktopProfileBack(false);
+  }, [isMobile, userId]);
+
+  useEffect(() => {
+    if (!canViewEmployerBackNow) setShowDesktopProfileBack(false);
+  }, [canViewEmployerBackNow]);
+
+  useEffect(() => {
+    setShowAllWorkHistoryTags(false);
+  }, [userId]);
 
   function closeWallAvatarCrop() {
     if (wallAvatarCropSrc) URL.revokeObjectURL(wallAvatarCropSrc);
@@ -455,6 +578,63 @@ export default function PublicProfilePage() {
     setWallAvatarCropOpen(true);
   }
 
+  async function uploadEmployerDocument(file: File, folder: string): Promise<string> {
+    if (!currentUserId || currentUserId !== userId) throw new Error("Not authorized");
+    const ext = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "bin";
+    const safeExt = ext && /^[a-z0-9]+$/.test(ext) ? ext : "bin";
+    const filePath = `${currentUserId}/${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+    const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: true });
+    if (error) throw error;
+    const { data } = supabase.storage.from("feed-images").getPublicUrl(filePath);
+    return data.publicUrl;
+  }
+
+  async function handleResumeFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      setUploadingResumeDoc(true);
+      const url = await uploadEmployerDocument(file, "resume");
+      setEditResumeUrl(url);
+    } catch (err) {
+      alert(`Resume upload failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setUploadingResumeDoc(false);
+    }
+  }
+
+  async function handleEducationFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      setUploadingEducationDoc(true);
+      const url = await uploadEmployerDocument(file, "education");
+      setEditEducationUrl(url);
+    } catch (err) {
+      alert(`Education upload failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setUploadingEducationDoc(false);
+    }
+  }
+
+  async function handleTrainingFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !trainingUploadTargetTag) return;
+    try {
+      setUploadingTrainingTag(trainingUploadTargetTag);
+      const url = await uploadEmployerDocument(file, "training");
+      setEditSpecializedTrainingDocs((prev) => ({ ...prev, [trainingUploadTargetTag]: url }));
+    } catch (err) {
+      alert(`Training document upload failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setUploadingTrainingTag(null);
+      setTrainingUploadTargetTag(null);
+    }
+  }
+
   function openWallEditProfile() {
     if (!profile || currentUserId !== profile.user_id) return;
     setEditRole(profile.role ?? "");
@@ -464,6 +644,30 @@ export default function PublicProfilePage() {
     setEditYearsExp(profile.years_experience ?? "");
     setEditSkillBadge(profile.skill_badge ?? "");
     setEditCompanyWebsite(profile.company_website ?? "");
+    setEditOpenToOpportunities(!!profile.open_to_opportunities);
+    setEditEmployerSummary(profile.employer_summary ?? "");
+    setEditResumeUrl(profile.resume_url ?? "");
+    setEditEducationUrl(profile.education_url ?? "");
+    setEditSpecializedTraining(normalizeTagArray(profile.specialized_training));
+    setEditSpecializedTrainingDocs(normalizeTrainingDocs(profile.specialized_training_docs));
+    setDraftSpecializedTraining("");
+    setEditAvailabilityType(profile.availability_type ?? "");
+    setEditAvailabilityDate(profile.availability_date ?? "");
+    setEditCurrentCity(profile.current_city ?? "");
+    setEditCurrentState(profile.current_state ?? "");
+    setEditWillingToRelocate(!!profile.willing_to_relocate);
+    setEditWillingToTravel(profile.willing_to_travel ?? "");
+    setEditWorkPreference(profile.work_preference ?? "");
+    setEditClearanceLevel(profile.clearance_level ?? "");
+    setEditClearanceStatus(profile.clearance_status ?? "");
+    setEditClearanceExpirationDate(profile.clearance_expiration_date ?? "");
+    setEditHasOconusExperience(!!profile.has_oconus_experience);
+    setEditHasContractExperience(!!profile.has_contract_experience);
+    setEditHasFederalLeMilitaryCrossover(!!profile.has_federal_le_military_crossover);
+    setEditProfessionalTags(normalizeTagArray(profile.professional_tags));
+    setEditUnitHistoryTags(normalizeTagArray(profile.unit_history_tags));
+    setDraftProfessionalTag("");
+    setDraftUnitHistoryTag("");
     setEditingProfile(true);
   }
 
@@ -481,6 +685,27 @@ export default function PublicProfilePage() {
           years_experience: editYearsExp || null,
           skill_badge: editSkillBadge || null,
           company_website: editCompanyWebsite || null,
+          open_to_opportunities: editOpenToOpportunities,
+          employer_summary: editEmployerSummary || null,
+          resume_url: editResumeUrl || null,
+          education_url: editEducationUrl || null,
+          specialized_training: editSpecializedTraining.length ? editSpecializedTraining : null,
+          specialized_training_docs: Object.keys(editSpecializedTrainingDocs).length ? editSpecializedTrainingDocs : null,
+          availability_type: editAvailabilityType || null,
+          availability_date: editAvailabilityDate || null,
+          current_city: editCurrentCity || null,
+          current_state: editCurrentState || null,
+          willing_to_relocate: editWillingToRelocate,
+          willing_to_travel: editWillingToTravel || null,
+          work_preference: editWorkPreference || null,
+          clearance_level: editClearanceLevel || null,
+          clearance_status: editClearanceStatus || null,
+          clearance_expiration_date: editClearanceExpirationDate || null,
+          has_oconus_experience: editHasOconusExperience,
+          has_contract_experience: editHasContractExperience,
+          has_federal_le_military_crossover: editHasFederalLeMilitaryCrossover,
+          professional_tags: editProfessionalTags.length ? editProfessionalTags : null,
+          unit_history_tags: editUnitHistoryTags.length ? editUnitHistoryTags : null,
         })
         .eq("user_id", currentUserId);
       if (error) {
@@ -497,9 +722,7 @@ export default function PublicProfilePage() {
   async function loadProfile(targetUserId: string) {
     const { data, error } = await supabase
       .from("profiles")
-      .select(
-        "user_id, display_name, first_name, last_name, bio, photo_url, role, resume_text, tech_types, verification_status, service, status, years_experience, skill_badge, referral_code, is_employer, employer_verified, company_website"
-      )
+      .select("*")
       .eq("user_id", targetUserId)
       .maybeSingle();
 
@@ -1921,9 +2144,11 @@ export default function PublicProfilePage() {
       setCurrentUserId(signedInUserId);
 
       if (signedInUserId) {
-        const { data: nameData } = await supabase.from("profiles").select("first_name, last_name").eq("user_id", signedInUserId).maybeSingle();
-        const nd = nameData as { first_name: string | null; last_name: string | null } | null;
+        const { data: nameData } = await supabase.from("profiles").select("first_name, last_name, is_employer, is_admin").eq("user_id", signedInUserId).maybeSingle();
+        const nd = nameData as { first_name: string | null; last_name: string | null; is_employer: boolean | null; is_admin?: boolean | null } | null;
         setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
+        setViewerIsEmployer(!!nd?.is_employer);
+        setViewerIsAdmin(!!nd?.is_admin);
 
         const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
         const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);
@@ -1951,6 +2176,8 @@ export default function PublicProfilePage() {
       } else {
         setDesktopSavedEvents([]);
         setDesktopSavedJobs([]);
+        setViewerIsEmployer(false);
+        setViewerIsAdmin(false);
       }
       await loadPhotoInteractions((photoResults ?? []).map((p) => p.id), signedInUserId);
 
@@ -2085,6 +2312,47 @@ export default function PublicProfilePage() {
     : "";
 
   const isOwnWall = currentUserId === profile?.user_id;
+  const canViewEmployerBack = isOwnWall || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities);
+  const professionalTags = normalizeTagArray(profile?.professional_tags);
+  const unitHistoryTags = normalizeTagArray(profile?.unit_history_tags);
+
+  function handleAddWorkTag(kind: "professional" | "unit") {
+    if (kind === "professional") {
+      setEditProfessionalTags((prev) => addUniqueTag(prev, draftProfessionalTag));
+      setDraftProfessionalTag("");
+      return;
+    }
+    setEditUnitHistoryTags((prev) => addUniqueTag(prev, draftUnitHistoryTag));
+    setDraftUnitHistoryTag("");
+  }
+
+  function handleRemoveWorkTag(kind: "professional" | "unit", index: number) {
+    if (kind === "professional") {
+      setEditProfessionalTags((prev) => prev.filter((_, i) => i !== index));
+      return;
+    }
+    setEditUnitHistoryTags((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function handleAddSpecializedTrainingTag() {
+    setEditSpecializedTraining((prev) => addUniqueTag(prev, draftSpecializedTraining));
+    setDraftSpecializedTraining("");
+  }
+
+  function handleRemoveSpecializedTrainingTag(index: number) {
+    setEditSpecializedTraining((prev) => {
+      const removedTag = prev[index];
+      if (removedTag) {
+        setEditSpecializedTrainingDocs((docs) => {
+          if (!(removedTag in docs)) return docs;
+          const next = { ...docs };
+          delete next[removedTag];
+          return next;
+        });
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  }
 
   function isWallSidebarNudgeDismissed(postId: string, peerId: string) {
     void sidebarNudgeBump;
@@ -2092,12 +2360,12 @@ export default function PublicProfilePage() {
     return localStorage.getItem(sidebarNudgeDismissStorageKey(postId, currentUserId, peerId)) === "1";
   }
 
-  function getBadgeEmoji(count: number): string {
-    if (count >= 50) return "≡ƒÆÄ";
-    if (count >= 25) return "≡ƒÑç";
-    if (count >= 10) return "≡ƒÑê";
-    if (count >= 5)  return "≡ƒÑë";
-    return "";
+  function BadgeIcon({ count, size = 16 }: { count: number; size?: number }): React.ReactElement | null {
+    if (count >= 50) return <Gem size={size} color="#7c3aed" />;
+    if (count >= 25) return <Medal size={size} color="#FFD700" />;
+    if (count >= 10) return <Medal size={size} color="#C0C0C0" />;
+    if (count >= 5)  return <Medal size={size} color="#CD7F32" />;
+    return null;
   }
 
   function getReferralBadge(count: number): { label: string; color: string; bg: string } | null {
@@ -2141,6 +2409,99 @@ export default function PublicProfilePage() {
   };
   const mobilePhotoGridCols = "repeat(auto-fill, minmax(96px, 1fr))";
   const mobileGroupsGridCols = "repeat(auto-fill, minmax(110px, 1fr))";
+
+  const renderWorkUnitHistorySection = (compact: boolean) => {
+    const visibleProfessional = showAllWorkHistoryTags ? professionalTags : professionalTags.slice(0, WORK_TAG_PREVIEW_LIMIT);
+    const visibleUnitHistory = showAllWorkHistoryTags ? unitHistoryTags : unitHistoryTags.slice(0, WORK_TAG_PREVIEW_LIMIT);
+    const hasMore = professionalTags.length > WORK_TAG_PREVIEW_LIMIT || unitHistoryTags.length > WORK_TAG_PREVIEW_LIMIT;
+
+    const chipStyle: React.CSSProperties = {
+      display: "inline-flex",
+      alignItems: "center",
+      borderRadius: 999,
+      border: `1px solid ${t.border}`,
+      background: t.bg,
+      color: t.text,
+      fontSize: compact ? 11 : 12,
+      fontWeight: 700,
+      padding: compact ? "3px 9px" : "4px 10px",
+      lineHeight: 1.2,
+      maxWidth: "100%",
+      whiteSpace: "normal",
+      overflowWrap: "anywhere",
+      wordBreak: "break-word",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    };
+
+    const categoryTitleStyle: React.CSSProperties = {
+      fontSize: compact ? 11 : 12,
+      fontWeight: 800,
+      color: t.textMuted,
+      marginBottom: 6,
+      textTransform: "uppercase",
+      letterSpacing: 0.4,
+    };
+
+    return (
+      <div style={{ width: "100%", marginTop: compact ? 10 : 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: compact ? 10 : 12 }}>
+        <div style={{ fontSize: compact ? 12 : 13, fontWeight: 800, color: t.text, marginBottom: 8 }}>
+          Work / Unit History
+        </div>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          <div>
+            <div style={categoryTitleStyle}>Professional Background</div>
+            {visibleProfessional.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: showAllWorkHistoryTags ? undefined : compact ? 54 : 60, overflow: "hidden" }}>
+                {visibleProfessional.map((tag) => (
+                  <span key={`prof-${tag}`} style={chipStyle} title={tag}>{tag}</span>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: compact ? 11 : 12, color: t.textFaint }}>No professional background tags yet.</div>
+            )}
+          </div>
+
+          <div>
+            <div style={categoryTitleStyle}>Unit History</div>
+            {visibleUnitHistory.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, maxHeight: showAllWorkHistoryTags ? undefined : compact ? 54 : 60, overflow: "hidden" }}>
+                {visibleUnitHistory.map((tag) => (
+                  <span key={`unit-${tag}`} style={chipStyle} title={tag}>{tag}</span>
+                ))}
+              </div>
+            ) : (
+              <div style={{ fontSize: compact ? 11 : 12, color: t.textFaint }}>No unit history tags yet.</div>
+            )}
+          </div>
+        </div>
+
+        {(hasMore || (isOwnWall && professionalTags.length === 0 && unitHistoryTags.length === 0)) && (
+          <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {hasMore && (
+              <button
+                type="button"
+                onClick={() => setShowAllWorkHistoryTags((prev) => !prev)}
+                style={{ background: "none", border: "none", color: "#2563eb", fontSize: compact ? 11 : 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
+              >
+                {showAllWorkHistoryTags ? "Show less" : "Show more"}
+              </button>
+            )}
+            {isOwnWall && professionalTags.length === 0 && unitHistoryTags.length === 0 && (
+              <button
+                type="button"
+                onClick={openWallEditProfile}
+                style={{ background: "none", border: "none", color: "#2563eb", fontSize: compact ? 11 : 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
+              >
+                Add tags
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderProfileCenter = () => {
     if (!profile) return null;
@@ -2343,7 +2704,12 @@ export default function PublicProfilePage() {
             }}
           >
             {isOwnWall && (
-              <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} aria-hidden />
+              <>
+                <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} aria-hidden />
+                <input ref={resumeFileInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.odt,image/*" onChange={handleResumeFilePick} style={{ display: "none" }} aria-hidden />
+                <input ref={educationFileInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.odt,image/*" onChange={handleEducationFilePick} style={{ display: "none" }} aria-hidden />
+                <input ref={trainingFileInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.odt,image/*" onChange={handleTrainingFilePick} style={{ display: "none" }} aria-hidden />
+              </>
             )}
             {isMobile ? (
               /* ΓöÇΓöÇ Mobile profile card layout ΓöÇΓöÇ */
@@ -2364,7 +2730,7 @@ export default function PublicProfilePage() {
                         onMouseEnter={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "1"; }}
                         onMouseLeave={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "0"; }}
                       >
-                        <span style={{ fontSize: 14 }}>≡ƒô╖</span>
+                        <Camera size={14} color="white" />
                         <span style={{ fontSize: 9, color: "white", fontWeight: 700 }}>{uploadingAvatar ? "..." : "Update"}</span>
                       </div>
                     )}
@@ -2375,7 +2741,7 @@ export default function PublicProfilePage() {
                       {isOwnWall ? "My Profile" : "Member Profile"}
                       {profile.is_employer && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
-                          {profile.employer_verified ? "Γ£ô Employer" : "Employer"}
+                          {profile.employer_verified ? "EOD Employer" : "Employer"}
                         </span>
                       )}
                     </div>
@@ -2434,8 +2800,9 @@ export default function PublicProfilePage() {
                       <div style={{ textAlign: "center" }}>
                         <button type="button" onClick={() => openConnList("recruited")}
                           style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                          <div style={{ fontWeight: 900, fontSize: 17 }}>
-                            {getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
+                          <div style={{ fontWeight: 900, fontSize: 17, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            <BadgeIcon count={referralCount} size={16} />
+                            <span>{referralCount}</span>
                           </div>
                           <div style={{ fontSize: 10, color: t.textMuted }}>Recruited</div>
                         </button>
@@ -2443,6 +2810,8 @@ export default function PublicProfilePage() {
                     </div>
                   </div>
                 </div>
+
+                {renderWorkUnitHistorySection(true)}
 
                 {/* Connection buttons */}
                 {!isOwnWall && currentUserId && (
@@ -2474,7 +2843,7 @@ export default function PublicProfilePage() {
                     {currentUserKnowStatus === "accepted" && (
                       <button type="button" onClick={toggleWorkedWith} disabled={togglingConnection === "worked_with"} style={{ flex: 1, background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
                         {togglingConnection === "worked_with" && <span className={currentUserWorkedWith ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
-                        {currentUserWorkedWith ? "Worked With Γ£ô" : "Mark Worked With"}
+                        {currentUserWorkedWith ? "Worked With" : "Mark Worked With"}
                       </button>
                     )}
                     <a href={`/sidebar?with=${userId}`} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -2486,26 +2855,26 @@ export default function PublicProfilePage() {
                 {/* Profile details ΓÇö full width below */}
                 <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
-                    <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "ΓÇö")}</div>
-                    <div><strong>Service:</strong> {profile.service || "ΓÇö"}</div>
-                    <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "ΓÇö"}</div>
-                    <div><strong>Experience:</strong> {profile.years_experience || "ΓÇö"}</div>
-                    <div><strong>Badge:</strong> {profile.skill_badge || "ΓÇö"}</div>
+                    <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
+                    <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
+                    <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
+                    <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
+                    <div><strong>Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
                     {profile.is_employer && (
                       <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
                         {profile.company_website
                           ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
-                          : <span style={{ color: "#9ca3af" }}>ΓÇö</span>}
+                          : <span style={{ color: "#9ca3af" }}>Not added yet</span>}
                       </div>
                     )}
                   </div>
                   {profile.bio?.trim() ? (
-                    <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, lineHeight: 1.6 }}>
+                    <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, paddingInline: 8, color: t.textMuted, lineHeight: 1.6 }}>
                       {profile.bio}
                     </div>
                   ) : isOwnWall ? (
                     <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, lineHeight: 1.6 }}>
-                      <div style={{ border: `1px dashed ${t.border}`, borderRadius: 10, padding: "12px 14px", background: t.bg }}>
+                      <div style={{ border: `1px dashed ${t.border}`, borderRadius: 10, padding: "12px 14px", background: t.bg, marginInline: 8 }}>
                         <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>
                           Add a short bio so other members can quickly understand your background.
                         </div>
@@ -2588,7 +2957,7 @@ export default function PublicProfilePage() {
                         onMouseEnter={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "1"; }}
                         onMouseLeave={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "0"; }}
                       >
-                        <span style={{ fontSize: 22 }}>≡ƒô╖</span>
+                        <Camera size={22} color="white" />
                         <span style={{ fontSize: 11, color: "white", fontWeight: 700 }}>{uploadingAvatar ? "Uploading..." : "Update"}</span>
                       </div>
                     )}
@@ -2600,7 +2969,7 @@ export default function PublicProfilePage() {
                       {isOwnWall ? "My Profile" : "Member Profile"}
                       {profile.is_employer && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
-                          {profile.employer_verified ? "Γ£ô Employer" : "Employer"}
+                          {profile.employer_verified ? "EOD Employer" : "Employer"}
                         </span>
                       )}
                     </div>
@@ -2661,13 +3030,17 @@ export default function PublicProfilePage() {
                     <div style={{ textAlign: "center" }}>
                       <button type="button" onClick={() => openConnList("recruited")}
                         style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                        <div style={{ fontWeight: 900, fontSize: 20 }}>
-                          {getBadgeEmoji(referralCount) ? `${getBadgeEmoji(referralCount)} ${referralCount}` : referralCount}
+                        <div style={{ fontWeight: 900, fontSize: 20, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <BadgeIcon count={referralCount} size={18} />
+                          <span>{referralCount}</span>
                         </div>
                         <div style={{ fontSize: 12, color: t.textMuted }}>Recruited</div>
                       </button>
                     </div>
                   </div>
+
+                {renderWorkUnitHistorySection(false)}
+
                   {!isOwnWall && currentUserId && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
                       {currentUserKnowStatus === "none" && (
@@ -2697,7 +3070,7 @@ export default function PublicProfilePage() {
                       {currentUserKnowStatus === "accepted" && (
                         <button type="button" onClick={toggleWorkedWith} disabled={togglingConnection === "worked_with"} style={{ background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                           {togglingConnection === "worked_with" && <span className={currentUserWorkedWith ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
-                          {currentUserWorkedWith ? "Worked With Γ£ô" : "Mark Worked With"}
+                        {currentUserWorkedWith ? "Worked With" : "Mark Worked With"}
                         </button>
                       )}
                       <a href={`/sidebar?with=${userId}`} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "block", width: "100%", boxSizing: "border-box" }}>
@@ -2707,93 +3080,247 @@ export default function PublicProfilePage() {
                   )}
                 </div>
 
-                {/* Divider */}
-                <div style={{ width: 1, alignSelf: "stretch", background: t.border, flexShrink: 0 }} />
-
                 {/* Profile details */}
-                <div style={{ flex: 1, color: t.textMuted, lineHeight: 1.8 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
-                    <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
-                    <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
-                    <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
-                    <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
-                    <div><strong>Skill Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
-                    {profile.is_employer && (
-                      <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
-                        {profile.company_website
-                          ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
-                          : <span style={{ color: "#9ca3af" }}>Not added yet</span>}
+                <div style={{ flex: 1, minWidth: 0, marginLeft: 20, color: t.textMuted, lineHeight: 1.8 }}>
+                  {!showDesktopProfileBack ? (
+                    <>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
+                        <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
+                        <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
+                        <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
+                        <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
+                        <div><strong>Skill Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
+                        {profile.is_employer && (
+                          <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
+                            {profile.company_website
+                              ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
+                              : <span style={{ color: "#9ca3af" }}>Not added yet</span>}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  {profile.bio?.trim() ? (
-                    <div style={{ marginTop: 14, color: t.textMuted, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14 }}>
-                      {profile.bio}
-                    </div>
-                  ) : isOwnWall ? (
-                    <div style={{ marginTop: 14, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14 }}>
-                      <div style={{ border: `1px dashed ${t.border}`, borderRadius: 10, padding: "12px 14px", background: t.bg, maxWidth: 520 }}>
-                        <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>
-                          Add a short bio so other members can quickly understand your background.
+                      {profile.bio?.trim() ? (
+                        <div style={{ marginTop: 14, color: t.textMuted, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14, paddingInline: 8 }}>
+                          {profile.bio}
                         </div>
-                        <button
-                          type="button"
-                          onClick={openWallEditProfile}
-                          style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-                        >
-                          Complete Bio
-                        </button>
+                      ) : isOwnWall ? (
+                        <div style={{ marginTop: 14, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14 }}>
+                          <div style={{ border: `1px dashed ${t.border}`, borderRadius: 10, padding: "12px 14px", background: t.bg, maxWidth: 520, marginInline: 8 }}>
+                            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>
+                              Add a short bio so other members can quickly understand your background.
+                            </div>
+                            <button
+                              type="button"
+                              onClick={openWallEditProfile}
+                              style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                            >
+                              Complete Bio
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div style={{ minHeight: 290, border: `1px solid ${t.border}`, borderRadius: 12, padding: 16, background: t.bg }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", flexWrap: "wrap", marginBottom: 12 }}>
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>Employer View</div>
+                          <div style={{ fontSize: 16, fontWeight: 900, color: t.text }}>Candidate Snapshot</div>
+                        </div>
+                        {!isOwnWall && (viewerIsEmployer || viewerIsAdmin) && (
+                          <a
+                            href={`/sidebar?with=${userId}`}
+                            style={{ background: "#111", color: "white", border: "none", borderRadius: 999, padding: "8px 14px", fontWeight: 800, fontSize: 12, textDecoration: "none" }}
+                          >
+                            Message Now
+                          </a>
+                        )}
                       </div>
-                    </div>
-                  ) : null}
-                  {isOwnWall && (profile.referral_code || !editingProfile) && (
-                    <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-                      {profile.referral_code && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
-                            setCopiedReferral(true);
-                            setTimeout(() => setCopiedReferral(false), 2000);
-                          }}
-                          style={{
-                            background: copiedReferral ? "#16a34a" : "#111",
-                            color: "white",
-                            border: "none",
-                            borderRadius: 999,
-                            padding: "6px 12px",
-                            minWidth: 112,
-                            fontWeight: 700,
-                            fontSize: 11,
-                            cursor: "pointer",
-                            transition: "background 0.2s",
-                          }}
-                        >
-                          {copiedReferral ? "Copied" : "Referral Link"}
-                        </button>
+
+                      <div style={{ border: `1px solid ${t.borderLight}`, borderRadius: 10, background: t.surface, padding: 12, marginBottom: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>
+                          Top-line summary
+                        </div>
+                        <div style={{ fontSize: 13, color: t.text, lineHeight: 1.5 }}>
+                          {profile.employer_summary?.trim() || "No summary added yet."}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginBottom: 10 }}>
+                        <a href={profile.resume_url || "#"} target={profile.resume_url ? "_blank" : undefined} rel="noreferrer"
+                          style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 10, textDecoration: "none", color: t.text, background: t.surface }}>
+                          <div style={{ fontSize: 12, fontWeight: 800 }}>My Resume</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{profile.resume_url ? "Added" : "Not added"}</div>
+                        </a>
+                        <a href={profile.education_url || "#"} target={profile.education_url ? "_blank" : undefined} rel="noreferrer"
+                          style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 10, textDecoration: "none", color: t.text, background: t.surface }}>
+                          <div style={{ fontSize: 12, fontWeight: 800 }}>My Education</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{profile.education_url ? "Added" : "Not added"}</div>
+                        </a>
+                        <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 10, background: t.surface }}>
+                          <div style={{ fontSize: 12, fontWeight: 800 }}>Specialized Training</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>
+                            {normalizeTagArray(profile.specialized_training).length > 0 ? `${normalizeTagArray(profile.specialized_training).length} added` : "Not added"}
+                          </div>
+                        </div>
+                      </div>
+
+                      {normalizeTagArray(profile.specialized_training).length > 0 && (
+                        <div style={{ marginBottom: 10, display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {normalizeTagArray(profile.specialized_training).map((tag) => {
+                            const docUrl = normalizeTrainingDocs(profile.specialized_training_docs)[tag];
+                            return (
+                              <a
+                                key={`back-training-${tag}`}
+                                href={docUrl || "#"}
+                                target={docUrl ? "_blank" : undefined}
+                                rel="noreferrer"
+                                style={{
+                                  border: `1px solid ${t.border}`,
+                                  borderRadius: 999,
+                                  padding: "4px 10px",
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: t.text,
+                                  textDecoration: "none",
+                                  background: docUrl ? "#dcfce7" : t.surface,
+                                  maxWidth: "100%",
+                                  overflowWrap: "anywhere",
+                                  wordBreak: "break-word",
+                                }}
+                              >
+                                {tag}{docUrl ? " (file)" : ""}
+                              </a>
+                            );
+                          })}
+                        </div>
                       )}
-                      {!editingProfile && (
-                        <button
-                          type="button"
-                          onClick={openWallEditProfile}
-                          style={{
-                            background: "#111",
-                            color: "white",
-                            border: "none",
-                            borderRadius: 999,
-                            padding: "6px 12px",
-                            minWidth: 112,
-                            fontWeight: 700,
-                            fontSize: 11,
-                            cursor: "pointer",
-                            transition: "background 0.2s",
-                          }}
-                        >
-                          Edit Profile
-                        </button>
-                      )}
+
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 10 }}>
+                        <div style={{ border: `1px solid ${t.borderLight}`, borderRadius: 10, padding: 10, background: t.surface }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>
+                            Availability
+                          </div>
+                          <div style={{ fontSize: 13, color: t.text }}>
+                            {(profile.availability_type || "Not set")} {profile.availability_date ? `- ${new Date(profile.availability_date).toLocaleDateString()}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ border: `1px solid ${t.borderLight}`, borderRadius: 10, padding: 10, background: t.surface }}>
+                          <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>
+                            Location + flexibility
+                          </div>
+                          <div style={{ fontSize: 13, color: t.text }}>
+                            {[profile.current_city, profile.current_state].filter(Boolean).join(", ") || "Location not set"}
+                            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
+                              Relocate: {profile.willing_to_relocate ? "Yes" : "No"} | Travel: {profile.willing_to_travel || "Not set"} | {profile.work_preference || "Preference not set"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ border: `1px solid ${t.borderLight}`, borderRadius: 10, padding: 10, background: t.surface, marginBottom: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>
+                          Security clearance
+                        </div>
+                        <div style={{ fontSize: 13, color: t.text }}>
+                          {profile.clearance_level || "Not set"} | {profile.clearance_status || "Not set"}
+                          {profile.clearance_expiration_date ? ` | Exp: ${new Date(profile.clearance_expiration_date).toLocaleDateString()}` : ""}
+                        </div>
+                      </div>
+
+                      <div style={{ border: `1px solid ${t.borderLight}`, borderRadius: 10, padding: 10, background: t.surface }}>
+                        <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
+                          Deployment / contract experience
+                        </div>
+                        {[
+                          profile.has_oconus_experience ? "OCONUS Experience" : null,
+                          profile.has_contract_experience ? "Contracting Experience" : null,
+                          profile.has_federal_le_military_crossover ? "Federal/LE/Military crossover" : null,
+                        ].filter(Boolean).length > 0 ? (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                            {[
+                              profile.has_oconus_experience ? "OCONUS Experience" : null,
+                              profile.has_contract_experience ? "Contracting Experience" : null,
+                              profile.has_federal_le_military_crossover ? "Federal/LE/Military crossover" : null,
+                            ].filter((label): label is string => Boolean(label)).map((label) => (
+                              <span
+                                key={`exp-chip-${label}`}
+                                style={{ border: `1px solid ${t.border}`, borderRadius: 999, padding: "3px 9px", fontSize: 11, fontWeight: 700, background: t.bg, color: t.text }}
+                              >
+                                {label}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: t.textMuted }}>No deployment/contract experience added yet.</div>
+                        )}
+                      </div>
                     </div>
                   )}
+                  <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+                    {isOwnWall && profile.referral_code && !showDesktopProfileBack && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
+                          setCopiedReferral(true);
+                          setTimeout(() => setCopiedReferral(false), 2000);
+                        }}
+                        style={{
+                          background: copiedReferral ? "#16a34a" : "#111",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 999,
+                          padding: "6px 12px",
+                          minWidth: 112,
+                          fontWeight: 700,
+                          fontSize: 11,
+                          cursor: "pointer",
+                          transition: "background 0.2s",
+                        }}
+                      >
+                        {copiedReferral ? "Copied" : "Referral Link"}
+                      </button>
+                    )}
+                    {isOwnWall && !editingProfile && !showDesktopProfileBack && (
+                      <button
+                        type="button"
+                        onClick={openWallEditProfile}
+                        style={{
+                          background: "#111",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 999,
+                          padding: "6px 12px",
+                          minWidth: 112,
+                          fontWeight: 700,
+                          fontSize: 11,
+                          cursor: "pointer",
+                          transition: "background 0.2s",
+                        }}
+                      >
+                        Edit Profile
+                      </button>
+                    )}
+                    {canViewEmployerBack && (
+                      <button
+                        type="button"
+                        onClick={() => setShowDesktopProfileBack(prev => !prev)}
+                        style={{
+                          background: t.surface,
+                          color: t.text,
+                          border: `1px solid ${t.border}`,
+                          borderRadius: 999,
+                          padding: "6px 12px",
+                          minWidth: 144,
+                          fontWeight: 700,
+                          fontSize: 11,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {showDesktopProfileBack ? "See front of profile" : "See back of profile"}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -2835,6 +3362,295 @@ export default function PublicProfilePage() {
                     <option value="">Select years...</option>
                     {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
+                </div>
+                <div style={{ gridColumn: "1 / -1", border: `1px solid ${t.border}`, borderRadius: 12, padding: 12, background: t.bg }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+                    <div style={{ fontWeight: 900, color: t.text }}>Employer Side Visibility</div>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, color: t.text, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={editOpenToOpportunities}
+                        onChange={(e) => setEditOpenToOpportunities(e.target.checked)}
+                      />
+                      Open to opportunities
+                    </label>
+                  </div>
+                  <div style={{ fontSize: 12, color: t.textMuted }}>
+                    When enabled, employer accounts can view your employer-side back card.
+                  </div>
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Top-line Summary (Employer Side)</label>
+                  <textarea
+                    value={editEmployerSummary}
+                    onChange={(e) => setEditEmployerSummary(e.target.value)}
+                    placeholder="Example: 12 years EOD experience including team leadership, range ops, and UXO clearance."
+                    rows={3}
+                    style={{ ...wallEditInputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>My Resume</label>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => resumeFileInputRef.current?.click()}
+                      disabled={uploadingResumeDoc}
+                      style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 700, fontSize: 12, cursor: uploadingResumeDoc ? "not-allowed" : "pointer" }}
+                    >
+                      {uploadingResumeDoc ? "Uploading..." : (editResumeUrl ? "Replace Resume File" : "Upload Resume File")}
+                    </button>
+                    {editResumeUrl && (
+                      <>
+                        <a href={editResumeUrl} target="_blank" rel="noreferrer" style={{ ...wallEditInputStyle, width: "auto", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
+                          Open file
+                        </a>
+                        <button type="button" onClick={() => setEditResumeUrl("")} style={{ ...wallEditInputStyle, width: "auto", cursor: "pointer" }}>
+                          Clear
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>My Education</label>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => educationFileInputRef.current?.click()}
+                      disabled={uploadingEducationDoc}
+                      style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "8px 12px", fontWeight: 700, fontSize: 12, cursor: uploadingEducationDoc ? "not-allowed" : "pointer" }}
+                    >
+                      {uploadingEducationDoc ? "Uploading..." : (editEducationUrl ? "Replace Education File" : "Upload Education File")}
+                    </button>
+                    {editEducationUrl && (
+                      <>
+                        <a href={editEducationUrl} target="_blank" rel="noreferrer" style={{ ...wallEditInputStyle, width: "auto", textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
+                          Open file
+                        </a>
+                        <button type="button" onClick={() => setEditEducationUrl("")} style={{ ...wallEditInputStyle, width: "auto", cursor: "pointer" }}>
+                          Clear
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Specialized Training</label>
+                  <div style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: 10 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                      {editSpecializedTraining.map((tag, idx) => (
+                        <span key={`edit-training-${tag}-${idx}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, borderRadius: 999, padding: "5px 10px", fontSize: 12, fontWeight: 700 }}>
+                          {tag}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTrainingUploadTargetTag(tag);
+                              trainingFileInputRef.current?.click();
+                            }}
+                            style={{ border: "none", background: "transparent", color: "#2563eb", cursor: "pointer", fontSize: 11, fontWeight: 800, padding: 0 }}
+                          >
+                            {uploadingTrainingTag === tag ? "..." : (editSpecializedTrainingDocs[tag] ? "file" : "Upload Certificate")}
+                          </button>
+                          {editSpecializedTrainingDocs[tag] && (
+                            <a
+                              href={editSpecializedTrainingDocs[tag]}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "#2563eb", textDecoration: "none", fontSize: 11, fontWeight: 800 }}
+                            >
+                              open
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveSpecializedTrainingTag(idx)}
+                            style={{ border: "none", background: "transparent", color: t.textMuted, cursor: "pointer", fontSize: 12, fontWeight: 800, padding: 0, lineHeight: 1 }}
+                          >
+                            x
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        value={draftSpecializedTraining}
+                        onChange={(e) => setDraftSpecializedTraining(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === ",") {
+                            e.preventDefault();
+                            handleAddSpecializedTrainingTag();
+                          }
+                        }}
+                        placeholder="Type cert/training and press Enter"
+                        style={{ ...wallEditInputStyle, flex: 1, minWidth: 0 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddSpecializedTrainingTag}
+                        style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "0 12px", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Availability Type</label>
+                  <select value={editAvailabilityType} onChange={(e) => setEditAvailabilityType(e.target.value)} style={wallEditSelectStyle}>
+                    <option value="">Select type...</option>
+                    {AVAILABILITY_TYPES.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Availability Date</label>
+                  <input type="date" value={editAvailabilityDate} onChange={(e) => setEditAvailabilityDate(e.target.value)} style={wallEditInputStyle} />
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Current City</label>
+                  <input value={editCurrentCity} onChange={(e) => setEditCurrentCity(e.target.value)} placeholder="City" style={wallEditInputStyle} />
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Current State</label>
+                  <input value={editCurrentState} onChange={(e) => setEditCurrentState(e.target.value)} placeholder="State" style={wallEditInputStyle} />
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Willing to Relocate</label>
+                  <select value={editWillingToRelocate ? "yes" : "no"} onChange={(e) => setEditWillingToRelocate(e.target.value === "yes")} style={wallEditSelectStyle}>
+                    <option value="yes">Yes</option>
+                    <option value="no">No</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Willing to Travel</label>
+                  <input value={editWillingToTravel} onChange={(e) => setEditWillingToTravel(e.target.value)} placeholder="Yes/No or %" style={wallEditInputStyle} />
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Work Preference</label>
+                  <select value={editWorkPreference} onChange={(e) => setEditWorkPreference(e.target.value)} style={wallEditSelectStyle}>
+                    <option value="">Select preference...</option>
+                    {WORK_PREFERENCES.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Clearance Level</label>
+                  <select value={editClearanceLevel} onChange={(e) => setEditClearanceLevel(e.target.value)} style={wallEditSelectStyle}>
+                    <option value="">Select level...</option>
+                    {CLEARANCE_LEVELS.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Clearance Status</label>
+                  <select value={editClearanceStatus} onChange={(e) => setEditClearanceStatus(e.target.value)} style={wallEditSelectStyle}>
+                    <option value="">Select status...</option>
+                    {CLEARANCE_STATUSES.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Clearance Expiration Date</label>
+                  <input type="date" value={editClearanceExpirationDate} onChange={(e) => setEditClearanceExpirationDate(e.target.value)} style={wallEditInputStyle} />
+                </div>
+                <div style={{ gridColumn: "1 / -1", display: "flex", flexWrap: "wrap", gap: 12 }}>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, color: t.text, cursor: "pointer" }}>
+                    <input type="checkbox" checked={editHasOconusExperience} onChange={(e) => setEditHasOconusExperience(e.target.checked)} />
+                    OCONUS Experience
+                  </label>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, color: t.text, cursor: "pointer" }}>
+                    <input type="checkbox" checked={editHasContractExperience} onChange={(e) => setEditHasContractExperience(e.target.checked)} />
+                    Contracting Experience
+                  </label>
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontWeight: 700, color: t.text, cursor: "pointer" }}>
+                    <input type="checkbox" checked={editHasFederalLeMilitaryCrossover} onChange={(e) => setEditHasFederalLeMilitaryCrossover(e.target.checked)} />
+                    Federal / LE / Military crossover
+                  </label>
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Professional Background</label>
+                  <div style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: 10 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                      {editProfessionalTags.map((tag, idx) => (
+                        <span key={`edit-prof-${tag}-${idx}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, borderRadius: 999, padding: "5px 10px", fontSize: 12, fontWeight: 700 }}>
+                          {tag}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveWorkTag("professional", idx)}
+                            style={{ border: "none", background: "transparent", color: t.textMuted, cursor: "pointer", fontSize: 12, fontWeight: 800, padding: 0, lineHeight: 1 }}
+                            aria-label={`Remove ${tag}`}
+                          >
+                            x
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        value={draftProfessionalTag}
+                        onChange={(e) => setDraftProfessionalTag(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === ",") {
+                            e.preventDefault();
+                            handleAddWorkTag("professional");
+                          }
+                        }}
+                        placeholder="Type tag and press Enter"
+                        style={{ ...wallEditInputStyle, flex: 1, minWidth: 0 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddWorkTag("professional")}
+                        style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "0 12px", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 11, color: t.textFaint }}>
+                      Example: ATF HME Instructor, UXO Contractor, Range Control
+                    </div>
+                  </div>
+                </div>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Unit History</label>
+                  <div style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, background: t.input, padding: 10 }}>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 10 }}>
+                      {editUnitHistoryTags.map((tag, idx) => (
+                        <span key={`edit-unit-${tag}-${idx}`} style={{ display: "inline-flex", alignItems: "center", gap: 6, border: `1px solid ${t.border}`, background: t.bg, color: t.text, borderRadius: 999, padding: "5px 10px", fontSize: 12, fontWeight: 700 }}>
+                          {tag}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveWorkTag("unit", idx)}
+                            style={{ border: "none", background: "transparent", color: t.textMuted, cursor: "pointer", fontSize: 12, fontWeight: 800, padding: 0, lineHeight: 1 }}
+                            aria-label={`Remove ${tag}`}
+                          >
+                            x
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input
+                        value={draftUnitHistoryTag}
+                        onChange={(e) => setDraftUnitHistoryTag(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === ",") {
+                            e.preventDefault();
+                            handleAddWorkTag("unit");
+                          }
+                        }}
+                        placeholder="Type tag and press Enter"
+                        style={{ ...wallEditInputStyle, flex: 1, minWidth: 0 }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleAddWorkTag("unit")}
+                        style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "0 12px", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 11, color: t.textFaint }}>
+                      Example: 789th EOD Company, 28th EOD Company
+                    </div>
+                  </div>
                 </div>
                 {profile.is_employer && (
                   <div style={{ gridColumn: "1 / -1" }}>
@@ -3067,7 +3883,7 @@ export default function PublicProfilePage() {
                                 opacity: unsavingWallEvent === ev.id ? 0.6 : 1,
                               }}
                             >
-                              {unsavingWallEvent === ev.id ? "ΓÇª" : "Remove"}
+                              {unsavingWallEvent === ev.id ? "..." : "Remove"}
                             </button>
                           ) : null}
                         </div>
@@ -3225,7 +4041,7 @@ export default function PublicProfilePage() {
                           <video src={item.previewUrl} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         ) : item.file.type === "application/pdf" ? (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: t.textMuted }}>
-                            <span style={{ fontSize: 28 }}>≡ƒôä</span>
+                            <FileText size={28} color={t.textMuted} />
                             <span style={{ textAlign: "center", padding: "0 4px", wordBreak: "break-all" }}>{item.file.name}</span>
                           </div>
                         ) : (
@@ -3358,7 +4174,7 @@ export default function PublicProfilePage() {
                                   {!(i === 2 && remaining > 0) && (
                                     <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
                                       <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                        <span style={{ color: "white", fontSize: 16, paddingLeft: 2 }}>Γû╢</span>
+                                        <Play size={16} color="white" fill="white" />
                                       </div>
                                     </div>
                                   )}
@@ -3614,7 +4430,7 @@ export default function PublicProfilePage() {
       />
 
       {!isDesktopShell ? (
-    <div style={{ padding: "24px 16px", background: t.bg, minHeight: "100vh", color: t.text }}>
+    <div style={{ padding: "24px 16px", background: t.bg, minHeight: "100vh", color: t.text, width: "100%", maxWidth: "100%", boxSizing: "border-box", overflowX: "clip" }}>
       <NavBar />
 
       {/* Mobile unread messages banner ΓÇö own wall only */}
@@ -4075,7 +4891,7 @@ export default function PublicProfilePage() {
                     </div>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 14 }}>{name}</div>
-                      {u.worked_with && <div style={{ fontSize: 11, color: "#16a34a", fontWeight: 700 }}>Γ£ö Worked With</div>}
+                      {u.worked_with && <div style={{ fontSize: 11, color: "#16a34a", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 3 }}><Check size={12} color="#16a34a" /> Worked With</div>}
                       {u.service && <div style={{ fontSize: 12, color: t.textMuted }}>{u.service}</div>}
                     </div>
                   </a>
