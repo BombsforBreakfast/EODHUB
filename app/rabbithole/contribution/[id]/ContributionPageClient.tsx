@@ -173,13 +173,14 @@ export default function ContributionPageClient() {
       setViewerError(result.error ?? "Could not update like.");
       return;
     }
+    const nextLiked: boolean = result.liked;
     setViewerError(null);
     setContribution((prev) =>
       prev
         ? {
             ...prev,
-            viewerLiked: result.liked,
-            likeCount: Math.max(0, prev.likeCount + (result.liked ? 1 : -1)),
+            viewerLiked: nextLiked,
+            likeCount: Math.max(0, prev.likeCount + (nextLiked ? 1 : -1)),
           }
         : prev
     );
