@@ -19,7 +19,7 @@ import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib
 import { postNotifyJson } from "../../../lib/postNotifyClient";
 import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
 import { KangarooCourtVerdictBanner } from "../../../components/KangarooCourtVerdictBanner";
-import { Gem, Medal, Camera, FileText, Play, Check } from "lucide-react";
+import { Gem, Medal, Camera, FileText, Play, Check, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import type {
   FeedKangarooBundle,
   KangarooCourtOptionRow,
@@ -162,6 +162,7 @@ type Post = {
   author_name: string | null;
   authorPhotoUrl: string | null;
   authorService: string | null;
+  rabbithole_contribution_id: string | null;
   /** Same feed bundles as home ΓÇö courts attach via `feed_post_id` */
   kangaroo?: FeedKangarooBundle | null;
 };
@@ -207,6 +208,17 @@ type KnowStatus = "none" | "pending_outgoing" | "pending_incoming" | "accepted";
 
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
+}
+
+function getYouTubeId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "youtu.be") return parsed.pathname.slice(1).split("?")[0];
+    if (parsed.hostname.includes("youtube.com")) return parsed.searchParams.get("v");
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 const BARE_DOMAIN_RE = /\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/;
@@ -824,7 +836,7 @@ export default function PublicProfilePage() {
 
     const { data: rawData, error } = await supabase
       .from("posts")
-      .select("id, user_id, wall_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name")
+      .select("id, user_id, wall_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
       .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
       .order("created_at", { ascending: false });
 
@@ -833,7 +845,19 @@ export default function PublicProfilePage() {
       return;
     }
 
-    const allMatchedPosts = (rawData ?? []) as { id: string; user_id: string; wall_user_id?: string | null; content: string; created_at: string; og_url?: string | null; og_title?: string | null; og_description?: string | null; og_image?: string | null; og_site_name?: string | null }[];
+    const allMatchedPosts = (rawData ?? []) as {
+      id: string;
+      user_id: string;
+      wall_user_id?: string | null;
+      content: string;
+      created_at: string;
+      og_url?: string | null;
+      og_title?: string | null;
+      og_description?: string | null;
+      og_image?: string | null;
+      og_site_name?: string | null;
+      rabbithole_contribution_id?: string | null;
+    }[];
     const rawPosts = allMatchedPosts.filter((p) => {
       // Keep posts that are explicitly addressed to this wall.
       if ((p.wall_user_id ?? null) === targetUserId) return true;
@@ -1086,6 +1110,7 @@ export default function PublicProfilePage() {
         og_image: p.og_image ?? null,
         og_site_name: p.og_site_name ?? null,
         wall_user_id: p.wall_user_id ?? null,
+        rabbithole_contribution_id: p.rabbithole_contribution_id ?? null,
         author_name: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorNameMap.get(p.user_id) ?? null) : null,
         authorPhotoUrl: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorPhotoMap.get(p.user_id) ?? null) : null,
         authorService: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorServiceMap.get(p.user_id) ?? null) : null,
@@ -3859,9 +3884,9 @@ export default function PublicProfilePage() {
                               href={ev.signup_url}
                               target="_blank"
                               rel="noreferrer"
-                              style={{ fontWeight: 700, fontSize: 13, color: "#2563eb", textDecoration: "none" }}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 700, fontSize: 13, color: "#2563eb", textDecoration: "none" }}
                             >
-                              Sign up ΓåÆ
+                              Sign up <ArrowRight size={13} strokeWidth={2.5} aria-hidden />
                             </a>
                           ) : (
                             <span />
@@ -4148,6 +4173,17 @@ export default function PublicProfilePage() {
                     )}
 
                     {/* Post content */}
+                    {post.rabbithole_contribution_id && (
+                      <div style={{ marginTop: 8, fontSize: 11, color: t.textFaint }}>
+                        Shared from{" "}
+                        <Link
+                          href={`/rabbithole/contribution/${encodeURIComponent(post.rabbithole_contribution_id)}`}
+                          style={{ color: t.textMuted, textDecoration: "underline" }}
+                        >
+                          RabbitHole
+                        </Link>
+                      </div>
+                    )}
                     {post.content && <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>}
 
                     {post.gif_url && (
@@ -4156,9 +4192,27 @@ export default function PublicProfilePage() {
                       </div>
                     )}
 
-                    {post.og_url && (post.og_title || post.og_image) && (
-                      <OgCard og={{ url: post.og_url, title: post.og_title, description: post.og_description, image: post.og_image, siteName: post.og_site_name }} />
-                    )}
+                    {post.og_url && (() => {
+                      const ytId = getYouTubeId(post.og_url);
+                      if (ytId) {
+                        return (
+                          <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", aspectRatio: "16/9", maxWidth: 520 }}>
+                            <iframe
+                              src={`https://www.youtube.com/embed/${ytId}`}
+                              style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          </div>
+                        );
+                      }
+                      if (post.og_title || post.og_image) {
+                        return (
+                          <OgCard og={{ url: post.og_url, title: post.og_title, description: post.og_description, image: post.og_image, siteName: post.og_site_name }} />
+                        );
+                      }
+                      return null;
+                    })()}
 
                     {/* Post images */}
                     {post.image_urls.length > 0 && (() => {
@@ -4534,8 +4588,8 @@ export default function PublicProfilePage() {
                 </a>
               </div>
               <div style={{ marginBottom: 10 }}>
-                <a href="/events" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
-                  See full events ΓåÆ
+                <a href="/events" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
+                  See full events <ArrowRight size={13} strokeWidth={2.5} aria-hidden />
                 </a>
               </div>
 
@@ -4543,20 +4597,22 @@ export default function PublicProfilePage() {
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                   <button
                     type="button"
+                    aria-label="Previous day"
                     onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() - 1))}
-                    style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+                    style={{ display: "inline-flex", alignItems: "center", border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
                   >
-                    ΓåÉ
+                    <ChevronLeft size={14} strokeWidth={2.5} aria-hidden />
                   </button>
                   <div style={{ fontSize: 12, fontWeight: 800, color: t.text }}>
                     {formatShortDate(desktopCalendarDate)}
                   </div>
                   <button
                     type="button"
+                    aria-label="Next day"
                     onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1))}
-                    style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+                    style={{ display: "inline-flex", alignItems: "center", border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
                   >
-                    ΓåÆ
+                    <ChevronRight size={14} strokeWidth={2.5} aria-hidden />
                   </button>
                 </div>
                 {(() => {
@@ -4599,8 +4655,8 @@ export default function PublicProfilePage() {
                     <div key={item.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>{item.title}</div>
                       <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{item.sub}</div>
-                      <a href={item.link} target={item.link.startsWith("http") ? "_blank" : undefined} rel="noreferrer" style={{ marginTop: 4, display: "inline-block", fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                        {item.link.startsWith("http") ? "Open ΓåÆ" : "Sign up ΓåÆ"}
+                      <a href={item.link} target={item.link.startsWith("http") ? "_blank" : undefined} rel="noreferrer" style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                        {item.link.startsWith("http") ? "Open" : "Sign up"} <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
                       </a>
                     </div>
                   ))}
@@ -4619,8 +4675,8 @@ export default function PublicProfilePage() {
                       <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
                       <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                         {ev.signup_url ? (
-                          <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                            Sign up ΓåÆ
+                          <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                            Sign up <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
                           </a>
                         ) : <span />}
                         <button
@@ -4652,8 +4708,8 @@ export default function PublicProfilePage() {
                       <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{job.company_name || "Saved listing"}</div>
                       <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                         {job.apply_url ? (
-                          <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                            View job ΓåÆ
+                          <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                            View job <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
                           </a>
                         ) : <span />}
                         <button
@@ -4684,8 +4740,8 @@ export default function PublicProfilePage() {
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 14 }}>
               <div style={{ fontSize: 15, fontWeight: 900, color: t.text, marginBottom: 10 }}>Messages</div>
               <div style={{ marginBottom: 10 }}>
-                <a href="/sidebar" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
-                  See full messages ΓåÆ
+                <a href="/sidebar" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
+                  See full messages <ArrowRight size={13} strokeWidth={2.5} aria-hidden />
                 </a>
               </div>
               <div style={{ display: "grid", gap: 8, maxHeight: 270, overflowY: "auto", paddingRight: 2 }}>

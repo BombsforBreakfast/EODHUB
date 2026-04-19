@@ -35,6 +35,8 @@ interface UnitPost {
   gif_url: string | null;
   created_at: string;
   meta: Record<string, unknown> | null;
+  rabbithole_thread_id: string | null;
+  rabbithole_contribution_id: string | null;
 }
 
 export async function GET(
@@ -237,10 +239,12 @@ export async function POST(
   }
 
   const body = await req.json();
-  const { content, photo_url, gif_url } = body as {
+  const { content, photo_url, gif_url, rabbithole_contribution_id, meta } = body as {
     content?: string;
     photo_url?: string;
     gif_url?: string | null;
+    rabbithole_contribution_id?: string | null;
+    meta?: Record<string, unknown> | null;
   };
 
   if (!content?.trim() && !photo_url?.trim() && !gif_url) {
@@ -259,6 +263,8 @@ export async function POST(
       photo_url: photo_url?.trim() ?? null,
       gif_url: gif_url ?? null,
       post_type: "post",
+      rabbithole_contribution_id: rabbithole_contribution_id ?? null,
+      meta: meta ?? null,
     })
     .select()
     .single();

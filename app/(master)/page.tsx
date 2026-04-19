@@ -20,6 +20,8 @@ import UpgradePromptModal from "../components/UpgradePromptModal";
 import EventFeedActions from "../components/EventFeedActions";
 import FeedPostHeader from "../components/FeedPostHeader";
 import KangarooCourtFeedSection from "../components/KangarooCourtFeedSection";
+import AddToRabbitholeModal from "../rabbithole/components/AddToRabbitholeModal";
+import { MurphyRabbitholeBanner } from "../components/MurphyRabbitholeBanner";
 import { KangarooCourtVerdictBanner } from "../components/KangarooCourtVerdictBanner";
 import DesktopLayout from "../components/DesktopLayout";
 import { useMasterShell } from "../components/master/masterShellContext";
@@ -311,6 +313,8 @@ type FeedPost = RankedPostRow & {
   event_saved: boolean;
   kangaroo?: FeedKangarooBundle | null;
   court_verdict_at?: string | null;
+  rabbithole_thread_id?: string | null;
+  rabbithole_contribution_id?: string | null;
 };
 
 type UnitFeedHighlight = {
@@ -672,6 +676,10 @@ export default function HomePage() {
   const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
   const [flaggingId, setFlaggingId] = useState<string | null>(null);
   const [flagModal, setFlagModal] = useState<{ contentType: "post" | "comment"; contentId: string } | null>(null);
+
+  // TODO: set to false before launch — bypasses engagement threshold so button shows on every post for testing
+  const RABBITHOLE_THRESHOLD_BYPASS = true;
+  const [rabbitholeModalPost, setRabbitholeModalPost] = useState<{ id: string; content: string; og_title: string | null } | null>(null);
   const [flagCategoryChoice, setFlagCategoryChoice] = useState<FlagCategory>("general");
 
   const [galleryImages, setGalleryImages] = useState<string[]>([]);
@@ -1851,14 +1859,43 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const kcBundleByPostId = new Map<string, FeedKangarooBundle>();
     const verdictAtByPostId = new Map<string, string | null>();
 
+    const rabbitholeThreadIdByPostId = new Map<string, string | null>();
+    const rabbitholeContributionIdByPostId = new Map<string, string | null>();
+
     if (postIds.length > 0) {
-      const bumpRes = await supabase.from("posts").select("id, court_verdict_at").in("id", postIds);
+      const bumpRes = await supabase
+        .from("posts")
+        .select("id, court_verdict_at, rabbithole_thread_id, rabbithole_contribution_id")
+        .in("id", postIds);
       if (!bumpRes.error && bumpRes.data) {
-        for (const row of bumpRes.data as { id: string; court_verdict_at: string | null }[]) {
+        for (const row of bumpRes.data as {
+          id: string;
+          court_verdict_at: string | null;
+          rabbithole_thread_id?: string | null;
+          rabbithole_contribution_id?: string | null;
+        }[]) {
           verdictAtByPostId.set(row.id, row.court_verdict_at ?? null);
+          rabbitholeThreadIdByPostId.set(row.id, row.rabbithole_thread_id ?? null);
+          rabbitholeContributionIdByPostId.set(row.id, row.rabbithole_contribution_id ?? null);
         }
-      } else if (bumpRes.error && !isMissingColumnError(bumpRes.error, "court_verdict_at")) {
-        console.error("[KC] court_verdict_at posts query:", bumpRes.error.message, bumpRes.error);
+      } else if (bumpRes.error) {
+        // Fallback: rabbithole_thread_id column may not exist yet on older DBs.
+        const bumpFallback = await supabase
+          .from("posts")
+          .select("id, court_verdict_at, rabbithole_contribution_id")
+          .in("id", postIds);
+        if (!bumpFallback.error && bumpFallback.data) {
+          for (const row of bumpFallback.data as {
+            id: string;
+            court_verdict_at: string | null;
+            rabbithole_contribution_id?: string | null;
+          }[]) {
+            verdictAtByPostId.set(row.id, row.court_verdict_at ?? null);
+            rabbitholeContributionIdByPostId.set(row.id, row.rabbithole_contribution_id ?? null);
+          }
+        } else if (bumpFallback.error && !isMissingColumnError(bumpFallback.error, "court_verdict_at")) {
+          console.error("[KC] court_verdict_at posts query:", bumpFallback.error.message, bumpFallback.error);
+        }
       }
     }
 
@@ -2055,6 +2092,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         event_saved: evSaved,
         kangaroo: kcBundleByPostId.get(post.id) ?? null,
         court_verdict_at: verdictAtByPostId.get(post.id) ?? null,
+        rabbithole_thread_id: rabbitholeThreadIdByPostId.get(post.id) ?? null,
+        rabbithole_contribution_id: rabbitholeContributionIdByPostId.get(post.id) ?? null,
       };
     });
 
@@ -4378,6 +4417,17 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     </div>
                   ) : (
                     <>
+                      {post.rabbithole_contribution_id && (
+                        <div style={{ marginTop: 8, fontSize: 11, color: t.textFaint }}>
+                          Shared from{" "}
+                          <Link
+                            href={`/rabbithole/contribution/${encodeURIComponent(post.rabbithole_contribution_id)}`}
+                            style={{ color: t.textMuted, textDecoration: "underline" }}
+                          >
+                            RabbitHole
+                          </Link>
+                        </div>
+                      )}
                       {post.content && (
                         <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>
                       )}
@@ -4566,7 +4616,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       <KangarooCourtVerdictBanner verdict={post.kangaroo.verdict} />
                     )}
 
-                  {/* KC poll card: order is original post ΓåÆ verdict ΓåÆ poll ΓåÆ toolbar ΓåÆ comments */}
+                  {!isEditingPost && post.rabbithole_thread_id && (
+                    <MurphyRabbitholeBanner />
+                  )}
+
+                  {/* KC poll card: order is original post → verdict → poll → toolbar → comments */}
                   <KangarooCourtFeedSection
                     postId={post.id}
                     userId={userId}
@@ -4590,14 +4644,75 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       boxSizing: "border-box",
                     }}
                   >
-                    {/* KC trigger: left of Like/Comment so it reads as a distinct action, not another avatar */}
-                    <KangarooCourtFeedSection
-                      postId={post.id}
-                      userId={userId}
-                      bundle={post.kangaroo ?? null}
-                      onAfterChange={() => void loadPosts()}
-                      mode="trigger-inline"
-                    />
+                    {/* Feature icon cluster — KC + Rabbithole grouped tightly, distinct from user avatars */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                      <KangarooCourtFeedSection
+                        postId={post.id}
+                        userId={userId}
+                        bundle={post.kangaroo ?? null}
+                        onAfterChange={() => void loadPosts()}
+                        mode="trigger-inline"
+                      />
+
+                      {userId && (RABBITHOLE_THRESHOLD_BYPASS || post.likeCount >= 3 || post.commentCount >= 2) && (
+                        post.rabbithole_thread_id ? (
+                          <div
+                            title="Filed to Rabbithole — locked"
+                            style={{ position: "relative", flexShrink: 0 }}
+                          >
+                            <div
+                              aria-hidden
+                              style={{
+                                width: 48,
+                                height: 48,
+                                borderRadius: "50%",
+                                overflow: "hidden",
+                                border: "2px solid #7c3aed",
+                                opacity: 0.45,
+                                filter: "grayscale(50%)",
+                                boxSizing: "border-box",
+                                cursor: "not-allowed",
+                              }}
+                            >
+                              <img
+                                src="/rabbithole-btn.png"
+                                alt=""
+                                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div
+                            title="Add to Rabbithole"
+                            style={{ position: "relative", flexShrink: 0 }}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => setRabbitholeModalPost({ id: post.id, content: post.content, og_title: post.og_title })}
+                              style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", display: "block" }}
+                            >
+                              <div
+                                style={{
+                                  width: 48,
+                                  height: 48,
+                                  borderRadius: "50%",
+                                  overflow: "hidden",
+                                  border: `2px solid ${t.border}`,
+                                  opacity: 0.88,
+                                  boxSizing: "border-box",
+                                }}
+                              >
+                                <img
+                                  src="/rabbithole-btn.png"
+                                  alt="Add to Rabbithole"
+                                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                />
+                              </div>
+                            </button>
+                          </div>
+                        )
+                      )}
+                    </div>
 
                     <button
                       type="button"
@@ -6046,6 +6161,22 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
       <UpgradePromptModal open={showJobsUpgradePrompt} onClose={() => setShowJobsUpgradePrompt(false)} />
       <MemberPaywallModal open={memberPaywallOpen} onClose={() => setMemberPaywallOpen(false)} />
+
+      {rabbitholeModalPost && (
+        <AddToRabbitholeModal
+          open={true}
+          post={rabbitholeModalPost}
+          onClose={() => setRabbitholeModalPost(null)}
+          onSuccess={(threadId) => {
+            setPosts((prev) =>
+              prev.map((p) =>
+                p.id === rabbitholeModalPost.id ? { ...p, rabbithole_thread_id: threadId } : p
+              )
+            );
+            setRabbitholeModalPost(null);
+          }}
+        />
+      )}
       {userId && !isDesktopShell && (
         <SidebarThreadDrawer
           open={sidebarDrawer.open}

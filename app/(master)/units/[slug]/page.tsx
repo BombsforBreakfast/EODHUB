@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
 import { postNotifyJson } from "../../../lib/postNotifyClient";
@@ -10,6 +11,10 @@ import NavBar from "../../../components/NavBar";
 import GifPickerButton from "../../../components/GifPickerButton";
 import EmojiPickerButton from "../../../components/EmojiPickerButton";
 import { useMasterShell } from "../../../components/master/masterShellContext";
+import AddToRabbitholeModal from "../../../rabbithole/components/AddToRabbitholeModal";
+import { MurphyRabbitholeBanner } from "../../../components/MurphyRabbitholeBanner";
+
+const RABBITHOLE_THRESHOLD_BYPASS = true;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -36,7 +41,18 @@ type UnitPost = {
   photo_url: string | null;
   gif_url: string | null;
   post_type: "post" | "join_request";
-  meta: { requester_id: string; requester_name: string; avatar_url: string | null } | null;
+  meta: {
+    requester_id?: string;
+    requester_name?: string;
+    avatar_url?: string | null;
+    rabbithole_contribution_id?: string;
+    og?: {
+      url?: string | null;
+      title?: string | null;
+      description?: string | null;
+      site_name?: string | null;
+    };
+  } | null;
   created_at: string;
   author_name: string;
   author_photo: string | null;
@@ -45,6 +61,8 @@ type UnitPost = {
   user_liked: boolean;
   approval_count?: number;
   user_voted?: boolean;
+  rabbithole_thread_id?: string | null;
+  rabbithole_contribution_id?: string | null;
 };
 
 type Comment = {
@@ -78,6 +96,17 @@ type InviteUser = {
 };
 
 const BRANCHES = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal"];
+
+function getYouTubeId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === "youtu.be") return parsed.pathname.slice(1).split("?")[0];
+    if (parsed.hostname.includes("youtube.com")) return parsed.searchParams.get("v");
+  } catch {
+    return null;
+  }
+  return null;
+}
 
 function timeAgo(dateString: string) {
   const diff = Date.now() - new Date(dateString).getTime();
@@ -127,6 +156,9 @@ export default function UnitPage() {
 
   // Join
   const [joining, setJoining] = useState(false);
+
+  // Rabbithole modal
+  const [rabbitholeModalPost, setRabbitholeModalPost] = useState<{ id: string; content: string } | null>(null);
 
   // Admin modal (join requests inline)
   const [showAdminModal, setShowAdminModal] = useState(false);
@@ -866,6 +898,15 @@ export default function UnitPage() {
                       onToggleLike={() => toggleLike(post.id)}
                       onToggleComments={() => toggleComments(post.id)}
                       onSubmitComment={(imageFile, gifUrl) => submitComment(post.id, imageFile, gifUrl)}
+                      currentUserId={currentUserId}
+                      onAddToRabbithole={
+                        currentUserId &&
+                        (RABBITHOLE_THRESHOLD_BYPASS || post.like_count >= 3 || post.comment_count >= 2) &&
+                        !post.rabbithole_thread_id
+                          ? () => setRabbitholeModalPost({ id: post.id, content: post.content ?? "" })
+                          : undefined
+                      }
+                      rabbitholeThreadId={post.rabbithole_thread_id ?? null}
                     />
                   );
                 })}
@@ -1102,6 +1143,24 @@ export default function UnitPage() {
           </div>
         </div>
       )}
+
+      {/* Add to Rabbithole modal — unit post source */}
+      {rabbitholeModalPost && (
+        <AddToRabbitholeModal
+          open={true}
+          post={rabbitholeModalPost}
+          sourceType="unit"
+          onClose={() => setRabbitholeModalPost(null)}
+          onSuccess={(threadId) => {
+            setPosts((prev) =>
+              prev.map((p) =>
+                p.id === rabbitholeModalPost.id ? { ...p, rabbithole_thread_id: threadId } : p
+              )
+            );
+            setRabbitholeModalPost(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1192,7 +1251,7 @@ function JoinRequestCard({ post, isGod, currentUserId, onVote, onApprove, onDeny
   );
 }
 
-function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChange, expanded, onToggleLike, onToggleComments, onSubmitComment }: {
+function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChange, expanded, onToggleLike, onToggleComments, onSubmitComment, currentUserId, onAddToRabbithole, rabbitholeThreadId }: {
   post: UnitPost; t: ThemeTokens; isDark: boolean;
   comments: Comment[] | undefined;
   commentInput: string;
@@ -1201,6 +1260,9 @@ function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChang
   onToggleLike: () => void;
   onToggleComments: () => void;
   onSubmitComment: (imageFile?: File | null, gifUrl?: string | null) => Promise<void>;
+  currentUserId: string | null;
+  onAddToRabbithole?: (() => void) | undefined;
+  rabbitholeThreadId?: string | null;
 }) {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [commentGif, setCommentGif] = useState<string | null>(null);
@@ -1237,9 +1299,63 @@ function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChang
       </div>
 
       {/* Content */}
+      {post.rabbithole_contribution_id && (
+        <div style={{ marginBottom: 6, fontSize: 11, color: t.textFaint }}>
+          Shared from{" "}
+          <Link
+            href={`/rabbithole/contribution/${encodeURIComponent(post.rabbithole_contribution_id)}`}
+            style={{ color: t.textMuted, textDecoration: "underline" }}
+          >
+            RabbitHole
+          </Link>
+        </div>
+      )}
       {post.content && (
         <div style={{ fontSize: 15, lineHeight: 1.6, marginBottom: post.photo_url ? 12 : 0, color: t.text }}>{post.content}</div>
       )}
+
+      {post.rabbithole_contribution_id && post.meta?.og?.url && (() => {
+        const og = post.meta?.og;
+        if (!og?.url) return null;
+        const ytId = getYouTubeId(og.url);
+        if (ytId) {
+          return (
+            <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", aspectRatio: "16/9", maxWidth: 520 }}>
+              <iframe
+                src={`https://www.youtube.com/embed/${ytId}`}
+                style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            </div>
+          );
+        }
+        return (
+          <a
+            href={og.url}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              marginTop: 10,
+              display: "block",
+              textDecoration: "none",
+              border: `1px solid ${t.border}`,
+              borderRadius: 12,
+              padding: 10,
+              background: t.badgeBg,
+              color: t.text,
+            }}
+          >
+            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 2 }}>
+              {og.site_name || "External source"}
+            </div>
+            <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 4 }}>
+              {og.title || "Open shared RabbitHole source"}
+            </div>
+            {og.description && <div style={{ fontSize: 13, color: t.textMuted }}>{og.description}</div>}
+          </a>
+        );
+      })()}
 
       {/* Photo — square aspect ratio matching feed */}
       {post.photo_url && (
@@ -1255,7 +1371,7 @@ function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChang
         </div>
       )}
 
-      {/* Like / Comment / counts */}
+      {/* Like / Comment / Rabbithole toolbar */}
       <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
         <button
           type="button"
@@ -1273,7 +1389,62 @@ function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChang
         </button>
         <div style={{ fontSize: 14, color: t.textMuted }}>{post.like_count} {post.like_count === 1 ? "like" : "likes"}</div>
         <div style={{ fontSize: 14, color: t.textMuted }}>{post.comment_count} {post.comment_count === 1 ? "comment" : "comments"}</div>
+
+        {/* Rabbithole button — grouped at right edge */}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
+          {rabbitholeThreadId ? (
+            <div
+              title="Filed to Rabbithole — locked"
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: "50%",
+                overflow: "hidden",
+                border: "2px solid #7c3aed",
+                opacity: 0.45,
+                filter: "grayscale(50%)",
+                boxSizing: "border-box",
+                cursor: "not-allowed",
+                flexShrink: 0,
+              }}
+            >
+              <img
+                src="/rabbithole-btn.png"
+                alt=""
+                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+              />
+            </div>
+          ) : onAddToRabbithole ? (
+            <button
+              type="button"
+              title="Add to Rabbithole"
+              onClick={onAddToRabbithole}
+              style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", display: "block", flexShrink: 0 }}
+            >
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: "50%",
+                  overflow: "hidden",
+                  border: `2px solid ${t.border}`,
+                  opacity: 0.88,
+                  boxSizing: "border-box",
+                }}
+              >
+                <img
+                  src="/rabbithole-btn.png"
+                  alt="Add to Rabbithole"
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                />
+              </div>
+            </button>
+          ) : null}
+        </div>
       </div>
+
+      {/* Murphy banner — shown when post has been filed to Rabbithole */}
+      {rabbitholeThreadId && <MurphyRabbitholeBanner />}
 
       {/* Comments section */}
       {expanded && (

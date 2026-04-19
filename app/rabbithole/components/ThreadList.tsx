@@ -27,16 +27,14 @@ export default function ThreadList({
             >
               {thread.title}
             </Link>
-            <p style={{ margin: "8px 0", color: "#cbd5e1" }}>{thread.body}</p>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-              {thread.tags.map((tag) => (
-                <span key={tag} style={{ border: "1px solid #334155", borderRadius: 999, fontSize: 12, padding: "2px 8px", color: "#e2e8f0" }}>
-                  {tag}
-                </span>
-              ))}
-            </div>
-            <div style={{ color: "#94a3b8", fontSize: 12 }}>
+            {thread.curatorNote && (
+              <p style={{ margin: "8px 0", color: "#94a3b8", fontStyle: "italic", fontSize: 13 }}>{thread.curatorNote}</p>
+            )}
+            <div style={{ color: "#94a3b8", fontSize: 12, display: "flex", alignItems: "center", gap: 10 }}>
               {thread.replyCount} replies · updated {new Date(thread.lastActivityAt).toLocaleDateString()}
+              {thread.tags.length > 0 && (
+                <span style={{ fontSize: 11, color: "#475569" }}>+{thread.tags.length} tag{thread.tags.length !== 1 ? "s" : ""}</span>
+              )}
             </div>
           </article>
         );

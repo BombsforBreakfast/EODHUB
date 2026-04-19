@@ -18,7 +18,30 @@ function getAdminClient() {
   );
 }
 
-function contentLabel(contentType: string): string {
+type FlaggableContentType =
+  | "post"
+  | "comment"
+  | "message"
+  | "rabbithole_contribution"
+  | "rabbithole_contribution_comment"
+  | "rabbithole_thread"
+  | "rabbithole_reply";
+
+const FLAGGABLE_CONTENT_TYPES: FlaggableContentType[] = [
+  "post",
+  "comment",
+  "message",
+  "rabbithole_contribution",
+  "rabbithole_contribution_comment",
+  "rabbithole_thread",
+  "rabbithole_reply",
+];
+
+function isFlaggableContentType(v: string): v is FlaggableContentType {
+  return (FLAGGABLE_CONTENT_TYPES as string[]).includes(v);
+}
+
+function contentLabel(contentType: FlaggableContentType): string {
   switch (contentType) {
     case "post":
       return "post";
@@ -26,10 +49,51 @@ function contentLabel(contentType: string): string {
       return "comment";
     case "message":
       return "message";
+    case "rabbithole_contribution":
+      return "RabbitHole contribution";
+    case "rabbithole_contribution_comment":
+      return "RabbitHole comment";
+    case "rabbithole_thread":
+      return "RabbitHole thread";
+    case "rabbithole_reply":
+      return "RabbitHole reply";
     default:
       return "content";
   }
 }
+
+type ContentLookup = {
+  table: string;
+  authorColumn: string;
+  /** Some tables don't have a hidden_for_review column yet; skip the hide step if so. */
+  hidable: boolean;
+};
+
+const CONTENT_LOOKUP: Record<FlaggableContentType, ContentLookup> = {
+  post: { table: "posts", authorColumn: "user_id", hidable: true },
+  comment: { table: "post_comments", authorColumn: "user_id", hidable: true },
+  message: { table: "messages", authorColumn: "sender_id", hidable: true },
+  rabbithole_contribution: {
+    table: "rabbithole_contributions",
+    authorColumn: "created_by",
+    hidable: true,
+  },
+  rabbithole_contribution_comment: {
+    table: "rabbithole_contribution_comments",
+    authorColumn: "user_id",
+    hidable: true,
+  },
+  rabbithole_thread: {
+    table: "rabbithole_threads",
+    authorColumn: "author_id",
+    hidable: false,
+  },
+  rabbithole_reply: {
+    table: "rabbithole_replies",
+    authorColumn: "author_id",
+    hidable: false,
+  },
+};
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization");
@@ -56,7 +120,7 @@ export async function POST(req: NextRequest) {
   if (!contentType || !contentId || typeof contentId !== "string") {
     return NextResponse.json({ error: "Missing contentType or contentId" }, { status: 400 });
   }
-  if (contentType !== "post" && contentType !== "comment" && contentType !== "message") {
+  if (typeof contentType !== "string" || !isFlaggableContentType(contentType)) {
     return NextResponse.json({ error: "Invalid contentType" }, { status: 400 });
   }
   if (!category || typeof category !== "string" || !isFlagCategory(category)) {
@@ -64,36 +128,18 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = getAdminClient();
+  const lookup = CONTENT_LOOKUP[contentType];
 
-  let authorId: string | null = null;
-
-  if (contentType === "post") {
-    const { data: row, error } = await admin.from("posts").select("user_id").eq("id", contentId).maybeSingle();
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    authorId = row?.user_id ?? null;
-  } else if (contentType === "comment") {
-    const { data: row, error } = await admin
-      .from("post_comments")
-      .select("user_id")
-      .eq("id", contentId)
-      .maybeSingle();
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    authorId = row?.user_id ?? null;
-  } else {
-    const { data: row, error } = await admin
-      .from("messages")
-      .select("sender_id")
-      .eq("id", contentId)
-      .maybeSingle();
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-    authorId = row?.sender_id ?? null;
+  const { data: row, error: lookupErr } = await admin
+    .from(lookup.table)
+    .select(lookup.authorColumn)
+    .eq("id", contentId)
+    .maybeSingle();
+  if (lookupErr) {
+    return NextResponse.json({ error: lookupErr.message }, { status: 500 });
   }
+  const authorId =
+    (row as Record<string, string | null> | null)?.[lookup.authorColumn] ?? null;
 
   if (!authorId) {
     return NextResponse.json({ error: "Content not found" }, { status: 404 });
@@ -116,10 +162,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: insertErr.message }, { status: 500 });
   }
 
-  const table = contentType === "post" ? "posts" : contentType === "comment" ? "post_comments" : "messages";
-  const { error: hideErr } = await admin.from(table).update({ hidden_for_review: true }).eq("id", contentId);
-  if (hideErr) {
-    return NextResponse.json({ error: hideErr.message }, { status: 500 });
+  if (lookup.hidable) {
+    const { error: hideErr } = await admin
+      .from(lookup.table)
+      .update({ hidden_for_review: true })
+      .eq("id", contentId);
+    if (hideErr) {
+      return NextResponse.json({ error: hideErr.message }, { status: 500 });
+    }
   }
 
   const { data: profileRow } = await admin

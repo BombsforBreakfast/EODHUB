@@ -31,11 +31,12 @@ export const rabbitholeTopics: RabbitholeTopic[] = [
   },
 ];
 
+/** Legacy mock data — kept for reference only. All live data comes from promoted feed/unit posts. */
 export const rabbitholeThreads: RabbitholeThread[] = [
   {
     id: "rh-001",
     title: "Garmin GPS spoofing indicators in low-altitude CUAS events",
-    body: "This thread documents repeat indicators seen during spoofing attempts. Include packet-level signs, platform behavior, and field-safe verification methods.",
+    curatorNote: "Documents repeat indicators seen during spoofing attempts.",
     topicSlug: "cuas",
     topicName: "CUAS",
     subtopic: "GPSNAV",
@@ -45,11 +46,12 @@ export const rabbitholeThreads: RabbitholeThread[] = [
     lastActivityAt: "2026-04-05T18:20:00.000Z",
     replyCount: 3,
     isHighValue: true,
+    sourceType: "feed",
   },
   {
     id: "rh-002",
     title: "UAS payload recovery chain of custody checklist",
-    body: "Working draft for preserving evidentiary value from first touch to lab handoff. Add practical edge cases from deployed environments.",
+    curatorNote: "Working draft for preserving evidentiary value from first touch to lab handoff.",
     topicSlug: "uas",
     topicName: "UAS",
     subtopic: "Payloads",
@@ -58,11 +60,12 @@ export const rabbitholeThreads: RabbitholeThread[] = [
     createdAt: "2026-03-28T12:10:00.000Z",
     lastActivityAt: "2026-04-04T16:45:00.000Z",
     replyCount: 2,
+    sourceType: "feed",
   },
   {
     id: "rh-003",
     title: "Counter-IED lane validation: common training misses",
-    body: "Collect recurring misses seen during lane validations and how teams corrected them in follow-on cycles.",
+    curatorNote: "Recurring misses seen during lane validations.",
     topicSlug: "counter-ied",
     topicName: "Counter IED",
     subtopic: "Route Clearance",
@@ -71,6 +74,7 @@ export const rabbitholeThreads: RabbitholeThread[] = [
     createdAt: "2026-03-29T06:35:00.000Z",
     lastActivityAt: "2026-04-03T11:25:00.000Z",
     replyCount: 1,
+    sourceType: "feed",
   },
 ];
 

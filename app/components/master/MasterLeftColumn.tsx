@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import { getFeatureAccess } from "../../lib/featureAccess";
@@ -495,8 +496,8 @@ export default function MasterLeftColumn({
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
             <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Events</div>
-            <a href="/events" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
-              See all →
+            <a href="/events" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
+              See all <ArrowRight size={13} strokeWidth={2.5} aria-hidden />
             </a>
           </div>
           <button
@@ -543,18 +544,20 @@ export default function MasterLeftColumn({
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
             <button
               type="button"
+              aria-label="Previous day"
               onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() - 1))}
-              style={{ border: `1px solid ${t.border}`, background: "#111", color: "white", borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+              style={{ display: "inline-flex", alignItems: "center", border: `1px solid ${t.border}`, background: "#111", color: "white", borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
             >
-              ←
+              <ChevronLeft size={14} strokeWidth={2.5} aria-hidden />
             </button>
             <div style={{ fontSize: 12, fontWeight: 800, color: t.text }}>{formatShortDate(desktopCalendarDate)}</div>
             <button
               type="button"
+              aria-label="Next day"
               onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1))}
-              style={{ border: `1px solid ${t.border}`, background: "#111", color: "white", borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+              style={{ display: "inline-flex", alignItems: "center", border: `1px solid ${t.border}`, background: "#111", color: "white", borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
             >
-              →
+              <ChevronRight size={14} strokeWidth={2.5} aria-hidden />
             </button>
           </div>
           {(() => {
@@ -605,9 +608,9 @@ export default function MasterLeftColumn({
                     href={item.link}
                     target={item.link.startsWith("http") ? "_blank" : undefined}
                     rel="noreferrer"
-                    style={{ marginTop: 4, display: "inline-block", fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}
+                    style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}
                   >
-                    {item.link.startsWith("http") ? "Open →" : "Sign up →"}
+                    {item.link.startsWith("http") ? "Open" : "Sign up"} <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
                   </a>
                 </div>
               ))}
@@ -624,8 +627,8 @@ export default function MasterLeftColumn({
                 <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
                 <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                   {ev.signup_url ? (
-                    <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                      Sign up →
+                    <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                      Sign up <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
                     </a>
                   ) : (
                     <span />
@@ -661,8 +664,8 @@ export default function MasterLeftColumn({
           <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 14, marginBottom: 8 }}>
               <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Jobs</div>
-              <a href="/jobs" style={{ fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none", whiteSpace: "nowrap" }}>
-                See all →
+              <a href="/jobs" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none", whiteSpace: "nowrap" }}>
+                See all <ArrowRight size={13} strokeWidth={2.5} aria-hidden />
               </a>
             </div>
             <div>
@@ -683,8 +686,8 @@ export default function MasterLeftColumn({
                     <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{job.company_name || "Saved listing"}</div>
                     <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                       {job.apply_url ? (
-                        <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                          View job →
+                        <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                          View job <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
                         </a>
                       ) : (
                         <span />
@@ -727,9 +730,9 @@ export default function MasterLeftColumn({
             onClick={(e) => {
               if (blockMemberInteraction()) e.preventDefault();
             }}
-            style={{ border: "none", background: "none", color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 4, border: "none", background: "none", color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}
           >
-            Post Job →
+            Post Job <ArrowRight size={13} strokeWidth={2.5} aria-hidden />
           </Link>
         </div>
 

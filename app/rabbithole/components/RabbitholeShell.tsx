@@ -55,8 +55,8 @@ export default function RabbitholeShell({
             />
             <span style={{ fontSize: 28, fontWeight: 800, letterSpacing: -0.5 }}>Rabbithole</span>
           </Link>
-          <Link href="/rabbithole/new" style={actionLink(true)}>
-            New Thread
+          <Link href="/rabbithole?contribute=1" style={actionLink(true)}>
+            Contribute
           </Link>
         </div>
         {showPageHeading && <h1 style={{ margin: "10px 0 8px", fontSize: 34, fontWeight: 800 }}>{title}</h1>}

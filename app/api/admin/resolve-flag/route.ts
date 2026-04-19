@@ -32,7 +32,22 @@ async function assertAdmin(token: string) {
   return { admin };
 }
 
+type ContentTypeMeta = { table: string; hidable: boolean };
+
+const CONTENT_TYPE_META: Record<string, ContentTypeMeta> = {
+  post: { table: "posts", hidable: true },
+  comment: { table: "post_comments", hidable: true },
+  message: { table: "messages", hidable: true },
+  rabbithole_contribution: { table: "rabbithole_contributions", hidable: true },
+  rabbithole_contribution_comment: { table: "rabbithole_contribution_comments", hidable: true },
+  rabbithole_thread: { table: "rabbithole_threads", hidable: false },
+  rabbithole_reply: { table: "rabbithole_replies", hidable: false },
+};
+
 async function maybeUnhide(admin: ReturnType<typeof getAdminClient>, contentType: string, contentId: string) {
+  const meta = CONTENT_TYPE_META[contentType];
+  if (!meta?.hidable) return;
+
   const { count, error } = await admin
     .from("flags")
     .select("*", { count: "exact", head: true })
@@ -42,11 +57,7 @@ async function maybeUnhide(admin: ReturnType<typeof getAdminClient>, contentType
   if (error) return;
   if (count !== null && count > 0) return;
 
-  const table =
-    contentType === "post" ? "posts" : contentType === "comment" ? "post_comments" : contentType === "message" ? "messages" : null;
-  if (!table) return;
-
-  await admin.from(table).update({ hidden_for_review: false }).eq("id", contentId);
+  await admin.from(meta.table).update({ hidden_for_review: false }).eq("id", contentId);
 }
 
 export async function POST(req: NextRequest) {
@@ -85,16 +96,37 @@ export async function POST(req: NextRequest) {
   const contentId = flag.content_id as string;
 
   if (action === "remove") {
-    const table =
-      contentType === "post" ? "posts" : contentType === "comment" ? "post_comments" : contentType === "message" ? "messages" : null;
-    if (!table) {
+    const meta = CONTENT_TYPE_META[contentType];
+    if (!meta) {
       return NextResponse.json({ error: "Unsupported content type" }, { status: 400 });
     }
-    const { error: delErr } = await auth.admin.from(table).delete().eq("id", contentId);
-    if (delErr) {
-      return NextResponse.json({ error: delErr.message }, { status: 500 });
+
+    // RabbitHole comments/replies have a deleted_at column and are soft-deleted
+    // so threads render placeholders cleanly. Everything else is hard-deleted
+    // (FK cascades clean up children).
+    if (
+      contentType === "rabbithole_contribution_comment" ||
+      contentType === "rabbithole_reply"
+    ) {
+      const { error: softErr } = await auth.admin
+        .from(meta.table)
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", contentId);
+      if (softErr) {
+        return NextResponse.json({ error: softErr.message }, { status: 500 });
+      }
+    } else {
+      const { error: delErr } = await auth.admin.from(meta.table).delete().eq("id", contentId);
+      if (delErr) {
+        return NextResponse.json({ error: delErr.message }, { status: 500 });
+      }
     }
-    await auth.admin.from("flags").update({ reviewed: true }).eq("content_type", contentType).eq("content_id", contentId);
+
+    await auth.admin
+      .from("flags")
+      .update({ reviewed: true })
+      .eq("content_type", contentType)
+      .eq("content_id", contentId);
     return NextResponse.json({ ok: true });
   }
 
