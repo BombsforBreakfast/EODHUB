@@ -5,6 +5,7 @@ import { supabase } from "../../lib/lib/supabaseClient";
 import NavBar from "../../components/NavBar";
 import { useTheme } from "../../lib/ThemeContext";
 import ReportProblemButton from "../../components/ReportProblemButton";
+import PrivacySettingsCard from "../../components/account/PrivacySettingsCard";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
 import { useMasterShell } from "../../components/master/masterShellContext";
 
@@ -391,6 +392,9 @@ export default function MyAccountPage() {
               </div>
             </div>
           </div>
+
+          {/* Privacy */}
+          {currentUserId && <PrivacySettingsCard userId={currentUserId} />}
 
           {/* Report Issue */}
           <div style={{ ...card, padding: "18px 24px" }}>

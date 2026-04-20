@@ -186,6 +186,8 @@ type PhotoComment = {
   authorPhotoUrl: string | null;
 };
 
+const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
+
 type GroupTile = {
   id: string;
   name: string;
@@ -1897,6 +1899,31 @@ export default function PublicProfilePage() {
     if (!userId || currentUserId === userId) return;
     try {
       setTogglingConnection("know");
+
+      // Preflight: check the target's privacy_who_can_request so we can show
+      // a friendly message instead of a raw RLS rejection. RLS is the
+      // authoritative gate; this is just UX.
+      const { data: targetPrivacy } = await supabase
+        .from("profiles")
+        .select("privacy_who_can_request")
+        .eq("user_id", userId)
+        .maybeSingle();
+      const policy = targetPrivacy?.privacy_who_can_request ?? "everyone";
+      if (policy === "nobody") {
+        alert("This member isn't accepting new connection requests.");
+        return;
+      }
+      if (policy === "connections") {
+        const { data: shared } = await supabase.rpc(
+          "users_share_accepted_connection",
+          { a: currentUserId, b: userId }
+        );
+        if (shared !== true) {
+          alert("This member only accepts requests from people they know in common with you.");
+          return;
+        }
+      }
+
       const { error } = await supabase.from("profile_connections").insert([{
         requester_user_id: currentUserId,
         target_user_id: userId,
@@ -1912,6 +1939,13 @@ export default function PublicProfilePage() {
           }]);
           if (legacyErr) { alert(legacyErr.message); return; }
         } else {
+          // Catch the case where privacy flipped to 'nobody' between preflight
+          // and insert — RLS will reject and we surface a clean message.
+          const msg = (error.message || "").toLowerCase();
+          if (msg.includes("row-level security") || msg.includes("violates")) {
+            alert("This member isn't accepting new connection requests.");
+            return;
+          }
           alert(error.message);
           return;
         }
@@ -2318,6 +2352,32 @@ export default function PublicProfilePage() {
       <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
         {!isDesktopShell && <NavBar />}
         <div style={{ marginTop: 20 }}>Profile not found.</div>
+      </div>
+    );
+  }
+
+  if (!loading && profile?.user_id === RUMINT_USER_ID) {
+    return (
+      <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
+        {!isDesktopShell && <NavBar />}
+        <div
+          style={{
+            marginTop: 20,
+            border: `1px solid ${t.border}`,
+            borderRadius: 16,
+            padding: 22,
+            background: t.surface,
+          }}
+        >
+          <div style={{ fontSize: 22, fontWeight: 900, color: t.text }}>RUMINT</div>
+          <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>Newswire System Profile</div>
+          <div style={{ marginTop: 14, fontSize: 14, color: t.text }}>
+            This is a non-interactive system account used to publish approved external news.
+          </div>
+          <div style={{ marginTop: 8, fontSize: 13, color: t.textFaint }}>
+            Member interactions are disabled for this profile.
+          </div>
+        </div>
       </div>
     );
   }

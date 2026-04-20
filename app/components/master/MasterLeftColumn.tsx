@@ -27,10 +27,12 @@ function formatShortDate(date: Date) {
 
 type SavedEventRow = {
   id: string;
+  event_id: string;
   title: string | null;
   organization: string | null;
   date: string | null;
   signup_url: string | null;
+  my_attendance: "interested" | "going" | null;
 };
 
 type SavedJobRow = {
@@ -118,6 +120,7 @@ export default function MasterLeftColumn({
     }
     type RawRow = {
       id: string;
+      event_id: string;
       events:
         | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }
         | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }[]
@@ -127,12 +130,31 @@ export default function MasterLeftColumn({
       const ev = Array.isArray(r.events) ? r.events[0] ?? null : r.events;
       return {
         id: r.id,
+        event_id: r.event_id,
         title: ev?.title ?? null,
         organization: ev?.organization ?? null,
         date: ev?.date ?? null,
         signup_url: ev?.signup_url ?? null,
+        my_attendance: null as "interested" | "going" | null,
       };
     });
+    const eventIds = rows.map((r) => r.event_id).filter(Boolean);
+    if (eventIds.length > 0) {
+      const { data: attRows, error: attErr } = await supabase
+        .from("event_attendance")
+        .select("event_id, status")
+        .eq("user_id", uid)
+        .in("event_id", eventIds);
+      if (!attErr) {
+        const attByEventId = new Map<string, "interested" | "going">();
+        ((attRows ?? []) as Array<{ event_id: string; status: "interested" | "going" }>).forEach((r) => {
+          attByEventId.set(r.event_id, r.status);
+        });
+        rows.forEach((row) => {
+          row.my_attendance = attByEventId.get(row.event_id) ?? null;
+        });
+      }
+    }
     setDesktopSavedEvents(rows);
   }, []);
 
@@ -191,6 +213,7 @@ export default function MasterLeftColumn({
   }, []);
 
   async function unsaveWallEvent(rowId: string) {
+    if (!window.confirm("Remove this from Saved Events?")) return;
     try {
       setUnsavingWallEvent(rowId);
       await supabase.from("saved_events").delete().eq("id", rowId);
@@ -293,6 +316,48 @@ export default function MasterLeftColumn({
       cancelled = true;
     };
   }, [sideRailsReady, loadJobs, loadSavedJobIds, loadDesktopSavedEvents, loadDesktopSavedJobs]);
+
+  useEffect(() => {
+    if (!sideRailsReady || !userId) return;
+
+    const savedEventsChannel = supabase
+      .channel(`left-rail-saved-events-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "saved_events", filter: `user_id=eq.${userId}` },
+        () => {
+          void loadDesktopSavedEvents(userId);
+        }
+      )
+      .subscribe();
+
+    const attendanceChannel = supabase
+      .channel(`left-rail-event-attendance-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "event_attendance", filter: `user_id=eq.${userId}` },
+        () => {
+          void loadDesktopSavedEvents(userId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(savedEventsChannel);
+      supabase.removeChannel(attendanceChannel);
+    };
+  }, [sideRailsReady, userId, loadDesktopSavedEvents]);
+
+  useEffect(() => {
+    if (!sideRailsReady || !userId) return;
+    const onSavedEventsChanged = () => {
+      void loadDesktopSavedEvents(userId);
+    };
+    window.addEventListener("eod:saved-events-changed", onSavedEventsChanged as EventListener);
+    return () => {
+      window.removeEventListener("eod:saved-events-changed", onSavedEventsChanged as EventListener);
+    };
+  }, [sideRailsReady, userId, loadDesktopSavedEvents]);
 
   useEffect(() => {
     if (!sideRailsReady) return;
@@ -412,7 +477,7 @@ export default function MasterLeftColumn({
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "12px 8px",
+          padding: "10px 4px",
           boxSizing: "border-box",
           overflow: "hidden",
           transition: "border-color 140ms ease, background-color 140ms ease",
@@ -420,7 +485,7 @@ export default function MasterLeftColumn({
       >
         <span
           style={{
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: 800,
             letterSpacing: 0.4,
             writingMode: "vertical-rl",
@@ -445,9 +510,9 @@ export default function MasterLeftColumn({
             e.currentTarget.style.borderColor = t.borderLight;
           }}
           style={{
-            width: 34,
-            height: 34,
-            borderRadius: 10,
+            width: 26,
+            height: 26,
+            borderRadius: 8,
             border: `1px solid ${t.borderLight}`,
             background: "transparent",
             color: t.text,
@@ -463,7 +528,7 @@ export default function MasterLeftColumn({
         </button>
         <span
           style={{
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: 800,
             letterSpacing: 0.4,
             writingMode: "vertical-rl",
@@ -622,34 +687,63 @@ export default function MasterLeftColumn({
           <div style={{ display: "grid", gap: 8 }}>
             {desktopSavedEvents.length === 0 && <div style={{ color: t.textFaint, fontSize: 12 }}>No saved events.</div>}
             {desktopSavedEvents.slice(0, 4).map((ev) => (
-              <div key={ev.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px" }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{ev.title || "Event"}</div>
+              <div key={ev.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px", position: "relative" }}>
+                <button
+                  type="button"
+                  aria-label="Remove saved event"
+                  title="Remove from Saved Events"
+                  onClick={() => unsaveWallEvent(ev.id)}
+                  disabled={unsavingWallEvent === ev.id}
+                  style={{
+                    position: "absolute",
+                    top: 6,
+                    right: 6,
+                    width: 22,
+                    height: 22,
+                    borderRadius: 999,
+                    border: `1px solid ${t.border}`,
+                    background: t.surface,
+                    color: t.textMuted,
+                    fontSize: 14,
+                    fontWeight: 800,
+                    lineHeight: 1,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: unsavingWallEvent === ev.id ? "not-allowed" : "pointer",
+                    opacity: unsavingWallEvent === ev.id ? 0.7 : 1,
+                  }}
+                >
+                  {unsavingWallEvent === ev.id ? "…" : "×"}
+                </button>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingRight: 26 }}>
+                  <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{ev.title || "Event"}</div>
+                  {ev.my_attendance === "going" && (
+                    <span
+                      style={{
+                        borderRadius: 999,
+                        border: `1px solid ${t.border}`,
+                        background: t.text,
+                        color: t.surface,
+                        fontSize: 10,
+                        fontWeight: 800,
+                        letterSpacing: 0.3,
+                        padding: "2px 7px",
+                        lineHeight: 1.1,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      GOING
+                    </span>
+                  )}
+                </div>
                 <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
-                <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
                   {ev.signup_url ? (
                     <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
                       Sign up <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
                     </a>
-                  ) : (
-                    <span />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => unsaveWallEvent(ev.id)}
-                    disabled={unsavingWallEvent === ev.id}
-                    style={{
-                      border: `1px solid ${t.border}`,
-                      background: "#111",
-                      color: "white",
-                      borderRadius: 8,
-                      padding: "3px 8px",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      cursor: unsavingWallEvent === ev.id ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    {unsavingWallEvent === ev.id ? "..." : "Remove"}
-                  </button>
+                  ) : null}
                 </div>
               </div>
             ))}

@@ -192,6 +192,18 @@ export default function EventsPage() {
   async function toggleAttendance(eventId: string, status: "interested" | "going") {
     if (!userId) { window.location.href = "/login"; return; }
     const current = myAttendance[eventId] ?? null;
+    async function ensureSavedEventForGoing() {
+      if (!userId) return;
+      const { data: existing } = await supabase
+        .from("saved_events")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("event_id", eventId)
+        .maybeSingle();
+      if (existing?.id) return;
+      await supabase.from("saved_events").insert([{ user_id: userId, event_id: eventId }]);
+      setSavedEventIds((prev) => new Set(prev).add(eventId));
+    }
 
     if (current === status) {
       await supabase.from("event_attendance").delete().eq("event_id", eventId).eq("user_id", userId);
@@ -207,10 +219,16 @@ export default function EventsPage() {
           going: status === "going" ? (prev[eventId]?.going ?? 0) + 1 : Math.max(0, (prev[eventId]?.going ?? 0) - 1),
         },
       }));
+      if (status === "going") {
+        await ensureSavedEventForGoing();
+      }
     } else {
       await supabase.from("event_attendance").insert([{ event_id: eventId, user_id: userId, status }]);
       setMyAttendance((prev) => ({ ...prev, [eventId]: status }));
       setAttendance((prev) => ({ ...prev, [eventId]: { interested: prev[eventId]?.interested ?? 0, going: prev[eventId]?.going ?? 0, [status]: (prev[eventId]?.[status] ?? 0) + 1 } }));
+      if (status === "going") {
+        await ensureSavedEventForGoing();
+      }
     }
   }
 

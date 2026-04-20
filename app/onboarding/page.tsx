@@ -42,6 +42,28 @@ export default function OnboardingPage() {
   const [agreedTerms, setAgreedTerms] = useState(false);
   const [agreedPrivacy, setAgreedPrivacy] = useState(false);
   const [agreedGuidelines, setAgreedGuidelines] = useState(false);
+  const [missingFieldId, setMissingFieldId] = useState<string | null>(null);
+  const [showRequiredHelper, setShowRequiredHelper] = useState(false);
+
+  function markMissingField(fieldId: string) {
+    setMissingFieldId(fieldId);
+    setShowRequiredHelper(true);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        const el = document.getElementById(fieldId);
+        if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      });
+    }
+  }
+
+  function clearMissingFieldIfMatch(fieldId: string) {
+    if (missingFieldId === fieldId) {
+      setMissingFieldId(null);
+      setShowRequiredHelper(false);
+    }
+  }
+
+  const isMissing = (fieldId: string) => missingFieldId === fieldId;
 
   useEffect(() => {
     async function check() {
@@ -130,21 +152,22 @@ export default function OnboardingPage() {
     if (!userId || !accountType) return;
 
     if (accountType === "member") {
-      if (!firstName || !lastName || !service || !status) {
-        alert("Please fill in all required fields.");
-        return;
-      }
+      if (!firstName.trim()) return markMissingField("field-member-first-name");
+      if (!lastName.trim()) return markMissingField("field-member-last-name");
+      if (!service) return markMissingField("field-member-service");
+      if (!status) return markMissingField("field-member-status");
     } else {
-      if (!empFirstName || !empLastName || !companyName) {
-        alert("Please fill in all required fields.");
-        return;
-      }
+      if (!empFirstName.trim()) return markMissingField("field-employer-first-name");
+      if (!empLastName.trim()) return markMissingField("field-employer-last-name");
+      if (!companyName.trim()) return markMissingField("field-employer-company");
     }
 
-    if (!agreedTerms || !agreedPrivacy || !agreedGuidelines) {
-      alert("Please review and agree to the Terms of Service, Privacy Policy, and Community Guidelines.");
-      return;
-    }
+    if (!agreedTerms) return markMissingField("field-legal-terms");
+    if (!agreedPrivacy) return markMissingField("field-legal-privacy");
+    if (!agreedGuidelines) return markMissingField("field-legal-guidelines");
+
+    setMissingFieldId(null);
+    setShowRequiredHelper(false);
 
     setSubmitting(true);
     try {
@@ -242,7 +265,7 @@ export default function OnboardingPage() {
         <div style={{ maxWidth: 420, width: "100%", textAlign: "center" }}>
           <div style={{ fontSize: 40, marginBottom: 16 }}>👤</div>
           <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 10 }}>Account already exists</div>
-          <div style={{ fontSize: 15, color: "#555", lineHeight: 1.6, marginBottom: 24 }}>
+          <div style={{ fontSize: 15, color: "#1f2937", lineHeight: 1.6, marginBottom: 24 }}>
             This email is already used for EOD Hub with <strong>{existingMethod}</strong>. That can happen if the same address was registered twice before sign-in methods were linked.<br /><br />
             If you&apos;re already signed in on the main site, open the <strong>avatar menu</strong> (top-left) to switch to your other login. Otherwise sign out below and sign in the way you used originally. After you&apos;re in, use <strong>My Account → Sign-In Methods</strong> to add Google (or email &amp; password) so one account works everywhere.
           </div>
@@ -260,7 +283,7 @@ export default function OnboardingPage() {
   if (checking) {
     return (
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ color: "#888" }}>Loading...</div>
+        <div style={{ color: "#374151" }}>Loading...</div>
       </div>
     );
   }
@@ -280,7 +303,7 @@ export default function OnboardingPage() {
         >
           <div style={{ textAlign: "center", maxWidth: 420 }}>
             <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>EOD HUB</div>
-            <p style={{ margin: "18px 0 0", fontSize: 16, color: "#555", lineHeight: 1.55 }}>
+            <p style={{ margin: "18px 0 0", fontSize: 16, color: "#1f2937", lineHeight: 1.55 }}>
               Finish member signup: review subscription details, then continue to verification.
             </p>
           </div>
@@ -300,14 +323,14 @@ export default function OnboardingPage() {
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>EOD HUB</div>
-          <div style={{ fontSize: 13, color: "#888", marginTop: 6, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>
+          <div style={{ fontSize: 13, color: "#374151", marginTop: 6, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>
             Built for EOD Techs, by an EOD Tech.
           </div>
         </div>
 
         <div style={{ background: "white", borderRadius: 16, padding: "32px 28px", boxShadow: "0 2px 16px rgba(0,0,0,0.06)" }}>
           <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 6px" }}>Set up your account</h2>
-          <p style={{ fontSize: 14, color: "#666", margin: "0 0 28px", lineHeight: 1.6 }}>
+          <p style={{ fontSize: 14, color: "#1f2937", margin: "0 0 28px", lineHeight: 1.6 }}>
             Tell us who you are. Your account will be reviewed before access is granted.
           </p>
 
@@ -324,7 +347,7 @@ export default function OnboardingPage() {
                 onMouseLeave={(e) => e.currentTarget.style.borderColor = "#e5e7eb"}
               >
                 <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4 }}>EOD Community Member</div>
-                <div style={{ fontSize: 13, color: "#666", lineHeight: 1.5 }}>
+                <div style={{ fontSize: 13, color: "#1f2937", lineHeight: 1.5 }}>
                   Active, former, or retired EOD tech. Join the community, access the job board, and connect with fellow techs.
                 </div>
               </button>
@@ -342,7 +365,7 @@ export default function OnboardingPage() {
                   <span style={{ fontWeight: 900, fontSize: 16 }}>Employer Account</span>
                   <span style={{ background: "#dbeafe", color: "#1d4ed8", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>FREE</span>
                 </div>
-                <div style={{ fontSize: 13, color: "#666", lineHeight: 1.5 }}>
+                <div style={{ fontSize: 13, color: "#1f2937", lineHeight: 1.5 }}>
                   Hiring organization or recruiter. Post jobs on the EOD job board and search candidates open to new opportunities.
                 </div>
               </button>
@@ -354,44 +377,105 @@ export default function OnboardingPage() {
               <button
                 type="button"
                 onClick={() => setAccountType(null)}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "#666", fontSize: 13, fontWeight: 700, textAlign: "left", padding: 0, marginBottom: 4 }}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#1f2937", fontSize: 13, fontWeight: 700, textAlign: "left", padding: 0, marginBottom: 4 }}
               >
                 ← Back
               </button>
 
               {/* Account type badge */}
-              <div style={{ padding: "10px 14px", borderRadius: 10, background: accountType === "employer" ? "#dbeafe" : "#f3f4f6", fontSize: 13, fontWeight: 800, color: accountType === "employer" ? "#1d4ed8" : "#374151" }}>
+              <div style={{ padding: "10px 14px", borderRadius: 10, background: accountType === "employer" ? "#dbeafe" : "#f3f4f6", fontSize: 13, fontWeight: 800, color: accountType === "employer" ? "#1d4ed8" : "#111827" }}>
                 {accountType === "employer" ? "Employer Account" : "EOD Community Member"}
               </div>
+              {showRequiredHelper && (
+                <div
+                  style={{
+                    borderRadius: 10,
+                    border: "1px solid #10b981",
+                    background: "#ecfdf5",
+                    color: "#065f46",
+                    padding: "10px 12px",
+                    fontSize: 13,
+                    fontWeight: 700,
+                  }}
+                >
+                  Please fill out all required fields.
+                </div>
+              )}
 
               {/* MEMBER FORM */}
               {accountType === "member" && (
                 <>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <div>
+                    <div
+                      id="field-member-first-name"
+                      style={isMissing("field-member-first-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                    >
                       <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>First Name *</label>
-                      <input value={firstName} onChange={(e) => setFirstName(e.target.value)} style={inputStyle} placeholder="First name" />
+                      <input
+                        value={firstName}
+                        onChange={(e) => {
+                          setFirstName(e.target.value);
+                          if (e.target.value.trim()) clearMissingFieldIfMatch("field-member-first-name");
+                        }}
+                        style={inputStyle}
+                        placeholder="First name"
+                      />
+                      {isMissing("field-member-first-name") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                     </div>
-                    <div>
+                    <div
+                      id="field-member-last-name"
+                      style={isMissing("field-member-last-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                    >
                       <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Last Name *</label>
-                      <input value={lastName} onChange={(e) => setLastName(e.target.value)} style={inputStyle} placeholder="Last name" />
+                      <input
+                        value={lastName}
+                        onChange={(e) => {
+                          setLastName(e.target.value);
+                          if (e.target.value.trim()) clearMissingFieldIfMatch("field-member-last-name");
+                        }}
+                        style={inputStyle}
+                        placeholder="Last name"
+                      />
+                      {isMissing("field-member-last-name") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                     </div>
                   </div>
 
-                  <div>
+                  <div
+                    id="field-member-service"
+                    style={isMissing("field-member-service") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                  >
                     <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Service Branch *</label>
-                    <select value={service} onChange={(e) => setService(e.target.value)} style={selectStyle}>
+                    <select
+                      value={service}
+                      onChange={(e) => {
+                        setService(e.target.value);
+                        if (e.target.value) clearMissingFieldIfMatch("field-member-service");
+                      }}
+                      style={selectStyle}
+                    >
                       <option value="">Select service...</option>
                       {SERVICE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
+                    {isMissing("field-member-service") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
 
-                  <div>
+                  <div
+                    id="field-member-status"
+                    style={isMissing("field-member-status") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                  >
                     <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Status *</label>
-                    <select value={status} onChange={(e) => setStatus(e.target.value)} style={selectStyle}>
+                    <select
+                      value={status}
+                      onChange={(e) => {
+                        setStatus(e.target.value);
+                        if (e.target.value) clearMissingFieldIfMatch("field-member-status");
+                      }}
+                      style={selectStyle}
+                    >
                       <option value="">Select status...</option>
                       {STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
+                    {isMissing("field-member-status") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -418,22 +502,58 @@ export default function OnboardingPage() {
               {accountType === "employer" && (
                 <>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <div>
+                    <div
+                      id="field-employer-first-name"
+                      style={isMissing("field-employer-first-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                    >
                       <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>First Name *</label>
-                      <input value={empFirstName} onChange={(e) => setEmpFirstName(e.target.value)} style={inputStyle} placeholder="First name" />
+                      <input
+                        value={empFirstName}
+                        onChange={(e) => {
+                          setEmpFirstName(e.target.value);
+                          if (e.target.value.trim()) clearMissingFieldIfMatch("field-employer-first-name");
+                        }}
+                        style={inputStyle}
+                        placeholder="First name"
+                      />
+                      {isMissing("field-employer-first-name") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                     </div>
-                    <div>
+                    <div
+                      id="field-employer-last-name"
+                      style={isMissing("field-employer-last-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                    >
                       <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Last Name *</label>
-                      <input value={empLastName} onChange={(e) => setEmpLastName(e.target.value)} style={inputStyle} placeholder="Last name" />
+                      <input
+                        value={empLastName}
+                        onChange={(e) => {
+                          setEmpLastName(e.target.value);
+                          if (e.target.value.trim()) clearMissingFieldIfMatch("field-employer-last-name");
+                        }}
+                        style={inputStyle}
+                        placeholder="Last name"
+                      />
+                      {isMissing("field-employer-last-name") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                     </div>
                   </div>
 
-                  <div>
+                  <div
+                    id="field-employer-company"
+                    style={isMissing("field-employer-company") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                  >
                     <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Company / Organization Name *</label>
-                    <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} style={inputStyle} placeholder="e.g. Acme Defense Group" />
+                    <input
+                      value={companyName}
+                      onChange={(e) => {
+                        setCompanyName(e.target.value);
+                        if (e.target.value.trim()) clearMissingFieldIfMatch("field-employer-company");
+                      }}
+                      style={inputStyle}
+                      placeholder="e.g. Acme Defense Group"
+                    />
+                    {isMissing("field-employer-company") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
 
-                  <div style={{ padding: "12px 14px", borderRadius: 10, background: "#fef9c3", fontSize: 13, color: "#92400e", lineHeight: 1.5 }}>
+                  <div style={{ padding: "12px 14px", borderRadius: 10, background: "#fef9c3", fontSize: 13, color: "#78350f", lineHeight: 1.5 }}>
                     Employer accounts are manually reviewed. Once approved, you can post jobs and search candidates who are open to new opportunities.
                   </div>
                 </>
@@ -442,7 +562,7 @@ export default function OnboardingPage() {
               {/* Referral code — optional, shown for both account types */}
               <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, marginTop: 4 }}>
                 <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>
-                  Referral Code <span style={{ fontWeight: 400, color: "#9ca3af" }}>(optional)</span>
+                  Referral Code <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
                 </label>
                 <input
                   value={referralInput}
@@ -451,58 +571,91 @@ export default function OnboardingPage() {
                   placeholder="e.g. EOD7X2K9"
                   maxLength={8}
                 />
-                <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 4 }}>
+                <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>
                   If a community member invited you, enter their code here.
                 </div>
               </div>
 
               <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, marginTop: 4 }}>
-                <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 10 }}>Legal Agreements</div>
-                <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
+                <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 10 }}>Legal Agreements *</div>
+                <div style={{ fontSize: 12, color: "#374151", marginBottom: 10 }}>
                   Review each document below. These are required to create your account.
                 </div>
 
                 <div style={{ display: "grid", gap: 12 }}>
-                  <div>
+                  <div
+                    id="field-legal-terms"
+                    style={isMissing("field-legal-terms") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                  >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13 }}>Terms of Service</span>
+                      <span style={{ fontWeight: 800, fontSize: 13 }}>Terms of Service *</span>
                       <Link href="/terms" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
                     </div>
                     <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
                       {TERMS_OF_SERVICE_TEXT}
                     </div>
                     <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                      <input type="checkbox" checked={agreedTerms} onChange={(e) => setAgreedTerms(e.target.checked)} />
+                      <input
+                        type="checkbox"
+                        checked={agreedTerms}
+                        onChange={(e) => {
+                          setAgreedTerms(e.target.checked);
+                          if (e.target.checked) clearMissingFieldIfMatch("field-legal-terms");
+                        }}
+                      />
                       I agree to the Terms of Service
                     </label>
+                    {isMissing("field-legal-terms") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
 
-                  <div>
+                  <div
+                    id="field-legal-privacy"
+                    style={isMissing("field-legal-privacy") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                  >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13 }}>Privacy Policy</span>
+                      <span style={{ fontWeight: 800, fontSize: 13 }}>Privacy Policy *</span>
                       <Link href="/privacy" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
                     </div>
                     <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
                       {PRIVACY_POLICY_TEXT}
                     </div>
                     <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                      <input type="checkbox" checked={agreedPrivacy} onChange={(e) => setAgreedPrivacy(e.target.checked)} />
+                      <input
+                        type="checkbox"
+                        checked={agreedPrivacy}
+                        onChange={(e) => {
+                          setAgreedPrivacy(e.target.checked);
+                          if (e.target.checked) clearMissingFieldIfMatch("field-legal-privacy");
+                        }}
+                      />
                       I agree to the Privacy Policy
                     </label>
+                    {isMissing("field-legal-privacy") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
 
-                  <div>
+                  <div
+                    id="field-legal-guidelines"
+                    style={isMissing("field-legal-guidelines") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                  >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13 }}>Community Guidelines</span>
+                      <span style={{ fontWeight: 800, fontSize: 13 }}>Community Guidelines *</span>
                       <Link href="/guidelines" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
                     </div>
                     <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
                       {COMMUNITY_GUIDELINES_TEXT}
                     </div>
                     <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                      <input type="checkbox" checked={agreedGuidelines} onChange={(e) => setAgreedGuidelines(e.target.checked)} />
+                      <input
+                        type="checkbox"
+                        checked={agreedGuidelines}
+                        onChange={(e) => {
+                          setAgreedGuidelines(e.target.checked);
+                          if (e.target.checked) clearMissingFieldIfMatch("field-legal-guidelines");
+                        }}
+                      />
                       I agree to the Community Guidelines
                     </label>
+                    {isMissing("field-legal-guidelines") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
                 </div>
               </div>

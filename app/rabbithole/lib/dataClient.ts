@@ -598,20 +598,64 @@ export async function promotePostToRabbithole(
     .maybeSingle();
   if (topicErr || !topicRow?.id) return { ok: false, error: "Topic not found." };
 
-  const { data: insertData, error: insertErr } = await supabase
+  // If the promoted post carries a linked article (og_url) — either a
+  // user-shared link or a RUMINT news shadow post — capture it on the thread
+  // so the article URL is first-class, not just implicit via the promoted
+  // post.
+  const { data: postRow } = await supabase
+    .from("posts")
+    .select("og_url")
+    .eq("id", input.postId)
+    .maybeSingle();
+  let sourceUrl: string | null = null;
+  let sourceDomain: string | null = null;
+  const ogUrl = (postRow as { og_url?: string | null } | null)?.og_url?.trim();
+  if (ogUrl) {
+    try {
+      const parsed = new URL(ogUrl);
+      sourceUrl = ogUrl;
+      sourceDomain = parsed.hostname.toLowerCase();
+    } catch {
+      // og_url is malformed on the post; skip source attribution.
+      sourceUrl = null;
+    }
+  }
+
+  const insertPayload: Record<string, unknown> = {
+    title: input.title.trim(),
+    body: input.curatorNote.trim() || null,
+    topic_id: topicRow.id,
+    author_id: userId,
+    source_type: "feed",
+    promoted_from_post_id: input.postId,
+    status: "active",
+    last_activity_at: new Date().toISOString(),
+  };
+  if (sourceUrl) {
+    insertPayload.source_url = sourceUrl;
+    insertPayload.source_domain = sourceDomain;
+  }
+
+  let insertResult = await supabase
     .from("rabbithole_threads")
-    .insert({
-      title: input.title.trim(),
-      body: input.curatorNote.trim() || null,
-      topic_id: topicRow.id,
-      author_id: userId,
-      source_type: "feed",
-      promoted_from_post_id: input.postId,
-      status: "active",
-      last_activity_at: new Date().toISOString(),
-    })
+    .insert(insertPayload)
     .select("id")
     .maybeSingle();
+  // Fallback if source_url/source_domain columns haven't been migrated yet.
+  if (
+    insertResult.error &&
+    sourceUrl &&
+    /source_url|source_domain/.test(insertResult.error.message ?? "")
+  ) {
+    delete insertPayload.source_url;
+    delete insertPayload.source_domain;
+    insertResult = await supabase
+      .from("rabbithole_threads")
+      .insert(insertPayload)
+      .select("id")
+      .maybeSingle();
+  }
+  const { data: insertData, error: insertErr } = insertResult;
   if (insertErr || !insertData?.id) return { ok: false, error: "Could not create Rabbithole thread." };
 
   if (input.tags.length > 0) {

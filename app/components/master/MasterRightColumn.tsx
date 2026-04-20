@@ -405,7 +405,7 @@ export default function MasterRightColumn({
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "space-between",
-          padding: "12px 8px",
+          padding: "10px 4px",
           boxSizing: "border-box",
           overflow: "hidden",
           transition: "border-color 140ms ease, background-color 140ms ease",
@@ -413,7 +413,7 @@ export default function MasterRightColumn({
       >
         <span
           style={{
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: 800,
             letterSpacing: 0.4,
             writingMode: "vertical-rl",
@@ -438,9 +438,9 @@ export default function MasterRightColumn({
             e.currentTarget.style.borderColor = t.borderLight;
           }}
           style={{
-            width: 34,
-            height: 34,
-            borderRadius: 10,
+            width: 26,
+            height: 26,
+            borderRadius: 8,
             border: `1px solid ${t.borderLight}`,
             background: "transparent",
             color: t.text,
@@ -456,7 +456,7 @@ export default function MasterRightColumn({
         </button>
         <span
           style={{
-            fontSize: 11,
+            fontSize: 10,
             fontWeight: 800,
             letterSpacing: 0.4,
             writingMode: "vertical-rl",

@@ -15,8 +15,12 @@ type FeedPostHeaderProps = {
   authorName: string;
   createdAtLabel: string;
   t: ThemeLike;
+  disableProfileLink?: boolean;
+  hideAvatar?: boolean;
 
   isOwnPost: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
   isEditingPost: boolean;
   isMobile: boolean;
 
@@ -34,7 +38,11 @@ export default function FeedPostHeader({
   authorName,
   createdAtLabel,
   t,
+  disableProfileLink = false,
+  hideAvatar = false,
   isOwnPost,
+  canEdit,
+  canDelete,
   isEditingPost,
   isMobile,
   isDeleting,
@@ -44,7 +52,8 @@ export default function FeedPostHeader({
   onFlag,
 }: FeedPostHeaderProps) {
   const [mobileOwnerMenuOpen, setMobileOwnerMenuOpen] = useState(false);
-  const showCollapsedOwnerMenu = isMobile && isOwnPost;
+  const hasOwnerActions = canEdit || canDelete;
+  const showCollapsedOwnerMenu = isMobile && hasOwnerActions;
   const ownerMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -81,25 +90,46 @@ export default function FeedPostHeader({
           flex: "1 1 auto",
         }}
       >
-        <Link href={profileHref} style={{ textDecoration: "none" }}>
-          {avatar}
-        </Link>
+        {!hideAvatar && (
+          disableProfileLink ? (
+            <div>{avatar}</div>
+          ) : (
+            <Link href={profileHref} style={{ textDecoration: "none" }}>
+              {avatar}
+            </Link>
+          )
+        )}
 
         <div style={{ minWidth: 0, flex: "1 1 0%" }}>
-          <Link
-            href={profileHref}
-            style={{
-              fontWeight: 800,
-              color: t.text,
-              textDecoration: "none",
-              display: "block",
-              wordBreak: "break-word",
-              overflowWrap: "anywhere",
-              maxWidth: "100%",
-            }}
-          >
-            {authorName}
-          </Link>
+          {disableProfileLink ? (
+            <div
+              style={{
+                fontWeight: 800,
+                color: t.text,
+                display: "block",
+                wordBreak: "break-word",
+                overflowWrap: "anywhere",
+                maxWidth: "100%",
+              }}
+            >
+              {authorName}
+            </div>
+          ) : (
+            <Link
+              href={profileHref}
+              style={{
+                fontWeight: 800,
+                color: t.text,
+                textDecoration: "none",
+                display: "block",
+                wordBreak: "break-word",
+                overflowWrap: "anywhere",
+                maxWidth: "100%",
+              }}
+            >
+              {authorName}
+            </Link>
+          )}
 
           <div
             style={{
@@ -166,7 +196,7 @@ export default function FeedPostHeader({
                   maxWidth: "min(220px, 85vw)",
                 }}
               >
-                {!isEditingPost && (
+                {canEdit && !isEditingPost && (
                   <button
                     type="button"
                     onClick={() => {
@@ -186,32 +216,34 @@ export default function FeedPostHeader({
                     Edit
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMobileOwnerMenuOpen(false);
-                    onDelete();
-                  }}
-                  disabled={isDeleting}
-                  style={{
-                    background: "transparent",
-                    border: "none",
-                    padding: "4px 0",
-                    textAlign: "left",
-                    cursor: isDeleting ? "not-allowed" : "pointer",
-                    color: t.textMuted,
-                    fontWeight: 700,
-                    opacity: isDeleting ? 0.6 : 1,
-                  }}
-                >
-                  {isDeleting ? "Deleting..." : "Delete"}
-                </button>
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMobileOwnerMenuOpen(false);
+                      onDelete();
+                    }}
+                    disabled={isDeleting}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      padding: "4px 0",
+                      textAlign: "left",
+                      cursor: isDeleting ? "not-allowed" : "pointer",
+                      color: t.textMuted,
+                      fontWeight: 700,
+                      opacity: isDeleting ? 0.6 : 1,
+                    }}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete"}
+                  </button>
+                )}
               </div>
             )}
           </>
         ) : (
           <>
-            {isOwnPost && !isEditingPost && (
+            {canEdit && !isEditingPost && (
               <button
                 type="button"
                 onClick={onEdit}
@@ -228,7 +260,7 @@ export default function FeedPostHeader({
               </button>
             )}
 
-            {isOwnPost && (
+            {canDelete && (
               <button
                 type="button"
                 onClick={onDelete}
@@ -249,7 +281,7 @@ export default function FeedPostHeader({
           </>
         )}
 
-        {!isOwnPost && (
+        {!isOwnPost && !canDelete && (
           <button
             type="button"
             onClick={onFlag}

@@ -21,6 +21,7 @@ type ProfileRow = {
   photo_url: string | null;
   service: string | null;
   is_employer: boolean | null;
+  privacy_show_online: boolean | null;
 };
 
 function displayName(p: ProfileRow): string {
@@ -62,24 +63,16 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     if (!currentUserId) return [];
     const others = onlineIds.filter((id) => id !== currentUserId);
     if (others.length === 0) return [];
+    // Defense-in-depth: even if a user with privacy_show_online=false leaks
+    // a presence broadcast (stale tab from before they toggled, etc), drop
+    // them from the strip on the client side.
     const ordered = others
       .map((id) => profiles.get(id))
-      .filter((p): p is ProfileRow => !!p)
+      .filter((p): p is ProfileRow => !!p && p.privacy_show_online !== false)
       .sort((a, b) => displayName(a).localeCompare(displayName(b)));
-    const idsMissingProfile = others.filter((id) => !profiles.has(id));
-    const placeholders = idsMissingProfile.map(
-      (id) =>
-        ({
-          user_id: id,
-          first_name: null,
-          last_name: null,
-          display_name: null,
-          photo_url: null,
-          service: null,
-          is_employer: null,
-        }) as ProfileRow,
-    );
-    return [...ordered, ...placeholders];
+    // Don't show placeholder dots for ids whose profiles haven't loaded yet —
+    // we don't yet know if they've opted out. They'll appear on the next sync.
+    return ordered;
   }, [currentUserId, onlineIds, profiles]);
 
   const syncProfiles = useCallback(async (ids: string[]) => {
@@ -89,7 +82,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     }
     const { data, error } = await supabase
       .from("profiles")
-      .select("user_id, first_name, last_name, display_name, photo_url, service, is_employer")
+      .select("user_id, first_name, last_name, display_name, photo_url, service, is_employer, privacy_show_online")
       .in("user_id", ids);
     if (error) return;
     const map = new Map<string, ProfileRow>();
@@ -104,35 +97,57 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
       return;
     }
 
-    const channel = supabase.channel(PRESENCE_CHANNEL, {
-      config: { presence: { key: currentUserId } },
-    });
+    let cancelled = false;
+    let cleanup: (() => void) | null = null;
 
-    channel
-      .on("presence", { event: "sync" }, () => {
-        const ids = [...presenceUserIds(channel.presenceState())];
-        ids.sort();
-        setOnlineIds(ids);
-      })
-      .on("presence", { event: "join" }, () => {
-        const ids = [...presenceUserIds(channel.presenceState())];
-        ids.sort();
-        setOnlineIds(ids);
-      })
-      .on("presence", { event: "leave" }, () => {
-        const ids = [...presenceUserIds(channel.presenceState())];
-        ids.sort();
-        setOnlineIds(ids);
+    (async () => {
+      // Read the user's own privacy_show_online before subscribing. If they
+      // opted out we still subscribe (so they can see who else is online),
+      // but we don't broadcast our own presence.
+      const { data: meRow } = await supabase
+        .from("profiles")
+        .select("privacy_show_online")
+        .eq("user_id", currentUserId)
+        .maybeSingle();
+      if (cancelled) return;
+      const broadcastSelf = meRow?.privacy_show_online !== false;
+
+      const channel = supabase.channel(PRESENCE_CHANNEL, {
+        config: { presence: { key: currentUserId } },
       });
 
-    channel.subscribe(async (status) => {
-      if (status !== "SUBSCRIBED") return;
-      await channel.track({ user_id: currentUserId, online_at: new Date().toISOString() });
-    });
+      channel
+        .on("presence", { event: "sync" }, () => {
+          const ids = [...presenceUserIds(channel.presenceState())];
+          ids.sort();
+          setOnlineIds(ids);
+        })
+        .on("presence", { event: "join" }, () => {
+          const ids = [...presenceUserIds(channel.presenceState())];
+          ids.sort();
+          setOnlineIds(ids);
+        })
+        .on("presence", { event: "leave" }, () => {
+          const ids = [...presenceUserIds(channel.presenceState())];
+          ids.sort();
+          setOnlineIds(ids);
+        });
+
+      channel.subscribe(async (status) => {
+        if (status !== "SUBSCRIBED") return;
+        if (!broadcastSelf) return;
+        await channel.track({ user_id: currentUserId, online_at: new Date().toISOString() });
+      });
+
+      cleanup = () => {
+        if (broadcastSelf) void channel.untrack();
+        supabase.removeChannel(channel);
+      };
+    })();
 
     return () => {
-      void channel.untrack();
-      supabase.removeChannel(channel);
+      cancelled = true;
+      if (cleanup) cleanup();
     };
   }, [currentUserId]);
 

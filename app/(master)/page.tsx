@@ -48,7 +48,6 @@ import {
   FEED_POST_EMBED_MAX_WIDTH,
   FEED_POST_IMAGES_MAX_WIDTH,
 } from "../lib/feedLayout";
-
 type Job = {
   id: string;
   created_at: string | null;
@@ -147,6 +146,8 @@ type DiscoverAffinitySource = {
   professional_tags: string[] | null;
   unit_history_tags: string[] | null;
 };
+
+const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
 
 function isConnV2MissingColumnError(error: unknown): boolean {
   const msg = (error as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
@@ -280,6 +281,7 @@ type OgPreview = {
 
 type FeedEventSnapshot = {
   id: string;
+  user_id: string;
   title: string;
   date: string;
   organization: string | null;
@@ -291,6 +293,9 @@ type FeedPost = RankedPostRow & {
   image_url: string | null;
   image_urls: string[];
   gif_url: string | null;
+  content_type?: string | null;
+  system_generated?: boolean | null;
+  news_item_id?: string | null;
   authorName: string;
   authorPhotoUrl: string | null;
   authorService: string | null;
@@ -348,6 +353,17 @@ function getYouTubeId(url: string): string | null {
     if (u.hostname.includes("youtube.com")) return u.searchParams.get("v");
   } catch { /* ignore */ }
   return null;
+}
+
+function extractLegacyEventTitle(content: string | null | undefined): string | null {
+  if (!content) return null;
+  const m = content.match(/^📅\s*New Event:\s*(.+)$/m);
+  const title = m?.[1]?.trim();
+  return title ? title : null;
+}
+
+function normalizeEventTitle(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 function normalizeUrl(url: string): string {
@@ -1110,6 +1126,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       .eq("verification_status", "verified")
       .neq("user_id", currentUserId)
       .not("first_name", "is", null)
+      // Respect "Show me in suggestions" privacy toggle. neq null-tolerant so
+      // existing rows (default true) still appear.
+      .not("privacy_discoverable", "is", false)
       .limit(40);
 
     if (!data || data.length === 0) return;
@@ -1648,20 +1667,37 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       og_image?: string | null;
       og_site_name?: string | null;
       event_id?: string | null;
+      content_type?: string | null;
+      system_generated?: boolean | null;
+      news_item_id?: string | null;
     };
 
     const legacyWithEvent = await supabase
       .from("posts")
-      .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id")
+      .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id")
       .in("id", postIds);
 
     let legacyPostImagesData: LegacyPostRow[] | null = legacyWithEvent.data as LegacyPostRow[] | null;
-    if (legacyWithEvent.error && isMissingColumnError(legacyWithEvent.error, "event_id")) {
+    if (
+      legacyWithEvent.error &&
+      (
+        isMissingColumnError(legacyWithEvent.error, "event_id") ||
+        isMissingColumnError(legacyWithEvent.error, "content_type") ||
+        isMissingColumnError(legacyWithEvent.error, "system_generated") ||
+        isMissingColumnError(legacyWithEvent.error, "news_item_id")
+      )
+    ) {
       const fb = await supabase
         .from("posts")
         .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name")
         .in("id", postIds);
-      legacyPostImagesData = (fb.data as LegacyPostRow[] | null)?.map((row) => ({ ...row, event_id: null })) ?? null;
+      legacyPostImagesData = (fb.data as LegacyPostRow[] | null)?.map((row) => ({
+        ...row,
+        event_id: null,
+        content_type: null,
+        system_generated: null,
+        news_item_id: null,
+      })) ?? null;
       if (fb.error) {
         console.error("Legacy post image load error:", fb.error);
       }
@@ -1684,12 +1720,71 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const postGifMap = new Map<string, string | null>();
     const postOgMap = new Map<string, { og_url: string | null; og_title: string | null; og_description: string | null; og_image: string | null; og_site_name: string | null }>();
     const eventIdByPostId = new Map<string, string | null>();
+    const postMetaMap = new Map<string, { content_type: string | null; system_generated: boolean | null; news_item_id: string | null }>();
     ((legacyPostImagesData ?? []) as LegacyPostRow[]).forEach((row) => {
       legacyPostImageMap.set(row.id, row.image_url ?? null);
       postGifMap.set(row.id, row.gif_url ?? null);
       postOgMap.set(row.id, { og_url: row.og_url ?? null, og_title: row.og_title ?? null, og_description: row.og_description ?? null, og_image: row.og_image ?? null, og_site_name: row.og_site_name ?? null });
       eventIdByPostId.set(row.id, row.event_id ?? null);
+      postMetaMap.set(row.id, {
+        content_type: row.content_type ?? null,
+        system_generated: row.system_generated ?? null,
+        news_item_id: row.news_item_id ?? null,
+      });
     });
+
+    // Legacy resilience: older event feed posts can exist without posts.event_id.
+    // Infer linkage by matching "📅 New Event: <title>" + same author.
+    const missingEventCandidates = rawPosts
+      .filter((post) => !eventIdByPostId.get(post.id))
+      .map((post) => ({
+        postId: post.id,
+        userId: post.user_id,
+        postCreatedAt: post.created_at,
+        eventTitle: extractLegacyEventTitle(post.content),
+      }))
+      .filter(
+        (
+          p
+        ): p is {
+          postId: string;
+          userId: string;
+          postCreatedAt: string;
+          eventTitle: string;
+        } => Boolean(p.eventTitle)
+      );
+
+    if (missingEventCandidates.length > 0) {
+      const candidateUserIds = [...new Set(missingEventCandidates.map((c) => c.userId))];
+      const { data: candidateEvents, error: candidateEventsErr } = await supabase
+        .from("events")
+        .select("id, user_id, title, date")
+        .in("user_id", candidateUserIds);
+      if (candidateEventsErr) {
+        console.error("Legacy event inference load error:", candidateEventsErr);
+      } else {
+        const grouped = new Map<string, Array<{ id: string; user_id: string; title: string; date: string }>>();
+        ((candidateEvents ?? []) as Array<{ id: string; user_id: string; title: string; date: string }>).forEach((ev) => {
+          const key = `${ev.user_id}::${normalizeEventTitle(ev.title)}`;
+          const arr = grouped.get(key) ?? [];
+          arr.push(ev);
+          grouped.set(key, arr);
+        });
+
+        missingEventCandidates.forEach((candidate) => {
+          const key = `${candidate.userId}::${normalizeEventTitle(candidate.eventTitle)}`;
+          const matches = grouped.get(key) ?? [];
+          if (matches.length === 0) return;
+          const postTs = new Date(candidate.postCreatedAt).getTime();
+          const best = [...matches].sort((a, b) => {
+            const da = Math.abs(new Date(a.date).getTime() - postTs);
+            const db = Math.abs(new Date(b.date).getTime() - postTs);
+            return da - db;
+          })[0];
+          if (best?.id) eventIdByPostId.set(candidate.postId, best.id);
+        });
+      }
+    }
 
     const multiPostImageMap = new Map<string, string[]>();
     ((postImagesData ?? []) as PostImageRow[]).forEach((row) => {
@@ -1813,14 +1908,39 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const savedFeedEventIds = new Set<string>();
 
     if (uniqueFeedEventIds.length > 0) {
-      const { data: evRows, error: evErr } = await supabase
+      let eventsResult = await supabase
         .from("events")
-        .select("id, title, date, organization, signup_url, image_url")
+        .select("id, user_id, title, date, organization, signup_url, image_url")
         .in("id", uniqueFeedEventIds);
-      if (evErr) {
-        console.error("Feed events load error:", evErr);
+      // Backward compatibility if image_url hasn't been migrated yet.
+      if (eventsResult.error && isMissingColumnError(eventsResult.error, "image_url")) {
+        const fallback = await supabase
+          .from("events")
+          .select("id, user_id, title, date, organization, signup_url")
+          .in("id", uniqueFeedEventIds);
+        if (fallback.error) {
+          console.error("Feed events load error:", fallback.error);
+        } else {
+          eventsResult = {
+            data: ((fallback.data ?? []) as Array<{
+              id: string;
+              user_id: string;
+              title: string;
+              date: string;
+              organization: string | null;
+              signup_url: string | null;
+            }>).map((row) => ({
+              ...row,
+              image_url: null as string | null,
+            })),
+            error: null,
+          } as typeof eventsResult;
+        }
+      }
+      if (eventsResult.error) {
+        console.error("Feed events load error:", eventsResult.error);
       } else {
-        ((evRows ?? []) as FeedEventSnapshot[]).forEach((e) => {
+        ((eventsResult.data ?? []) as FeedEventSnapshot[]).forEach((e) => {
           eventSnapshotById.set(e.id, e);
         });
       }
@@ -2055,6 +2175,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       const legacyImage = legacyPostImageMap.get(post.id) ?? null;
       const gifUrl = postGifMap.get(post.id) ?? null;
       const ogData = postOgMap.get(post.id);
+      const postMeta = postMetaMap.get(post.id);
 
       const eid = eventIdByPostId.get(post.id) ?? null;
       const feedEvent = eid ? eventSnapshotById.get(eid) ?? null : null;
@@ -2068,6 +2189,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         image_urls:
           multiImages.length > 0 ? multiImages : legacyImage ? [legacyImage] : [],
         gif_url: gifUrl,
+        content_type: postMeta?.content_type ?? "user_post",
+        system_generated: postMeta?.system_generated ?? false,
+        news_item_id: postMeta?.news_item_id ?? null,
         authorName: profileNameMap.get(post.user_id) || "User",
         authorPhotoUrl: profilePhotoMap.get(post.user_id) || null,
         authorService: profileServiceMap.get(post.user_id) ?? null,
@@ -2894,15 +3018,40 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
   async function deletePost(postId: string) {
     if (!userId) return;
     if (blockMemberInteraction()) return;
-    if (!window.confirm("Delete this post?")) return;
+    const target = posts.find((p) => p.id === postId);
+    const isOwn = target?.user_id === userId;
+    const isNewsPost = target?.content_type === "news";
+    const confirmMessage =
+      isAdmin && !isOwn
+        ? isNewsPost
+          ? "Delete this news post from the feed? It will move back to rejected status."
+          : "Delete this post from the feed as admin?"
+        : "Delete this post?";
+    if (!window.confirm(confirmMessage)) return;
 
     try {
       setDeletingPostId(postId);
 
-      const { error } = await supabase.from("posts").delete().eq("id", postId);
+      let errorMessage: string | null = null;
+      if (isAdmin && !isOwn) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`/api/admin/feed-posts/${encodeURIComponent(postId)}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({} as { error?: string }));
+          errorMessage = body.error ?? "Failed to delete post.";
+        }
+      } else {
+        const { error } = await supabase.from("posts").delete().eq("id", postId);
+        if (error) errorMessage = error.message;
+      }
 
-      if (error) {
-        alert(error.message);
+      if (errorMessage) {
+        alert(errorMessage);
         return;
       }
 
@@ -4312,13 +4461,16 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             {posts.map((post) => {
               const commentsOpen = expandedComments[post.id] || false;
               const isOwnPost = userId === post.user_id;
+              const isRumintPost = post.user_id === RUMINT_USER_ID;
+              const canEditPost = isOwnPost;
+              const canDeletePost = isOwnPost || isAdmin;
               const isEditingPost = editingPostId === post.id;
               const selectedCommentImage = selectedCommentImages[post.id] || null;
 
               return (
+                <React.Fragment key={post.id}>
                 <div
                   id={`feed-post-${post.id}`}
-                  key={post.id}
                   style={{
                     border: `1px solid ${t.border}`,
                     borderRadius: 14,
@@ -4343,7 +4495,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     authorName={post.authorName}
                     createdAtLabel={formatDate(post.created_at)}
                     t={t}
+                    disableProfileLink={isRumintPost}
+                    hideAvatar={isRumintPost}
                     isOwnPost={isOwnPost}
+                    canEdit={canEditPost}
+                    canDelete={canDeletePost}
                     isEditingPost={isEditingPost}
                     isMobile={isMobile}
                     isDeleting={deletingPostId === post.id}
@@ -4426,6 +4582,28 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           >
                             RabbitHole
                           </Link>
+                        </div>
+                      )}
+                      {post.content_type === "news" && (
+                        <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                          <span
+                            style={{
+                              border: `1px solid ${t.border}`,
+                              borderRadius: 999,
+                              padding: "2px 8px",
+                              background: t.bgSubtle,
+                              color: t.textMuted,
+                              fontWeight: 700,
+                              letterSpacing: 0.2,
+                            }}
+                          >
+                            RUMINT NEWS
+                          </span>
+                          {post.og_site_name && (
+                            <span style={{ color: t.textFaint }}>
+                              Source: {post.og_site_name}
+                            </span>
+                          )}
                         </div>
                       )}
                       {post.content && (
@@ -4576,9 +4754,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     </div>
                   )}
 
-                  {post.feed_event && post.event_id && (
+                  {post.event_id && (
                     <>
-                      {post.feed_event.image_url ? (
+                      {post.feed_event?.image_url ? (
                         <div
                           style={{
                             marginTop: 12,
@@ -4592,7 +4770,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           }}
                         >
                           <img
-                            src={httpsAssetUrl(post.feed_event.image_url)}
+                            src={httpsAssetUrl(post.feed_event?.image_url)}
                             alt=""
                             style={{ width: "100%", height: "auto", maxHeight: 220, objectFit: "cover", display: "block" }}
                           />
@@ -4600,7 +4778,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       ) : null}
                       <EventFeedActions
                         eventId={post.event_id}
-                        signupUrl={post.feed_event.signup_url}
+                        signupUrl={post.feed_event?.signup_url ?? null}
                         initialInterested={post.event_interested_count}
                         initialGoing={post.event_going_count}
                         initialMyAttendance={post.event_my_attendance}
@@ -5303,6 +5481,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     </div>
                   )}
                 </div>
+                </React.Fragment>
               );
             })}
           </div>

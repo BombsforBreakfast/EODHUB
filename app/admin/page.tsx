@@ -13,11 +13,6 @@ import {
   sumAdminPending,
 } from "../lib/adminPendingCounts";
 import { FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
-import { isFounderUser } from "../lib/rabbitholeAccess";
-import {
-  FOUNDER_NOTIFICATIONS_V2_OVERRIDE_KEY,
-  getNotificationsV2Default,
-} from "../lib/notificationFlags";
 
 type BusinessListing = {
   id: string;
@@ -63,7 +58,99 @@ type UserProfile = {
   access_tier?: "basic" | "senior" | "master" | null;
 };
 
-type Tab = "businesses" | "jobs" | "users" | "flags" | "events" | "reports" | "directory";
+type Tab = "businesses" | "jobs" | "users" | "flags" | "events" | "reports" | "directory" | "engagement" | "news";
+
+type AdminNewsItem = {
+  id: string;
+  headline: string;
+  source_name: string | null;
+  source_url: string;
+  canonical_url: string | null;
+  summary: string | null;
+  thumbnail_url: string | null;
+  published_at: string | null;
+  ingested_at: string;
+  tags: string[];
+  relevance_score: number | null;
+  is_satire: boolean;
+  status: "pending" | "published" | "rejected";
+  created_at: string;
+  reviewed_at: string | null;
+};
+
+type NewsTabFilter = "pending" | "published" | "rejected";
+
+type PreviewStatus =
+  | "would_insert"
+  | "below_threshold"
+  | "no_positive_hits"
+  | "negative_in_title"
+  | "duplicate_in_db"
+  | "duplicate_in_batch";
+
+type PreviewBreakdown = {
+  score: number;
+  rawScore: number;
+  titleHits: number;
+  bodyHits: number;
+  hasContext: boolean;
+  freshnessBonus: number;
+  sourceWeight: number;
+  negativeIn: "title" | "body" | null;
+  dropReason: "no_positive_hits" | "below_threshold" | "negative_in_title" | null;
+};
+
+type PreviewCandidate = {
+  headline: string;
+  source_name: string | null;
+  source_url: string;
+  canonical_url: string | null;
+  summary: string | null;
+  thumbnail_url: string | null;
+  published_at: string | null;
+  is_satire: boolean;
+  source_weight: number;
+  dedupe_key: string;
+  breakdown: PreviewBreakdown;
+  enriched_from_body: boolean;
+  score_before_body: number | null;
+  alreadyInDb: boolean;
+  status: PreviewStatus;
+};
+
+type PreviewResult = {
+  totalFetched: number;
+  blockedCount: number;
+  byStatus: Record<PreviewStatus, number>;
+  candidates: PreviewCandidate[];
+};
+
+type EngagementRange = "today" | "7d" | "30d";
+
+type EngagementSummary = {
+  range: EngagementRange;
+  generated_at: string;
+  kpis: {
+    total_users: number;
+    new_signups: number;
+    new_signups_prev: number;
+    visits: number;
+    visits_prev: number;
+    unique_visitors_in_range: number;
+    avg_session_ms: number;
+    total_active_ms: number;
+    dau: number;
+    wau: number;
+    mau: number;
+  };
+  top_pages: Array<{ path: string; total_ms: number; visits: number; avg_ms: number }>;
+  most_engaged_users: Array<{
+    user_id: string;
+    display_name: string | null;
+    total_ms: number;
+    sessions: number;
+  }>;
+};
 
 type DirectoryEntry = {
   id: string;
@@ -159,11 +246,99 @@ type EventEdit = {
   signup_url: string;
 };
 
+function formatDuration(ms: number): string {
+  if (!ms || ms < 1000) return "0s";
+  const totalSec = Math.round(ms / 1000);
+  if (totalSec < 60) return `${totalSec}s`;
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  if (min < 60) return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
+  const hr = Math.floor(min / 60);
+  const remMin = min % 60;
+  return remMin > 0 ? `${hr}h ${remMin}m` : `${hr}h`;
+}
+
+function formatDurationLong(ms: number): string {
+  if (!ms || ms < 1000) return "0 min";
+  const totalMin = Math.round(ms / 60000);
+  if (totalMin < 60) return `${totalMin} min`;
+  const hr = totalMin / 60;
+  if (hr < 24) return `${hr.toFixed(1)} hr`;
+  const days = hr / 24;
+  return `${days.toFixed(1)} days`;
+}
+
+function pctDelta(current: number, previous: number): { sign: 1 | -1 | 0; pct: number } | null {
+  if (previous <= 0) {
+    if (current > 0) return { sign: 1, pct: 100 };
+    return null;
+  }
+  const raw = ((current - previous) / previous) * 100;
+  if (Math.abs(raw) < 0.5) return { sign: 0, pct: 0 };
+  return { sign: raw > 0 ? 1 : -1, pct: Math.round(Math.abs(raw)) };
+}
+
+function KpiCard({
+  t,
+  label,
+  value,
+  sub,
+  delta,
+  subtle,
+}: {
+  t: ReturnType<typeof useTheme>["t"];
+  label: string;
+  value: string;
+  sub?: string;
+  delta?: { sign: 1 | -1 | 0; pct: number } | null;
+  subtle?: boolean;
+}) {
+  const deltaColor =
+    !delta || delta.sign === 0 ? "#737373" : delta.sign === 1 ? "#16a34a" : "#dc2626";
+  const deltaPrefix = !delta || delta.sign === 0 ? "" : delta.sign === 1 ? "+" : "−";
+  return (
+    <div
+      style={{
+        border: `1px solid ${t.border}`,
+        borderRadius: 14,
+        background: t.surface,
+        padding: subtle ? 12 : 16,
+        minWidth: 0,
+      }}
+    >
+      <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>
+        {label}
+      </div>
+      <div
+        style={{
+          fontSize: subtle ? 22 : 28,
+          fontWeight: 900,
+          color: t.text,
+          marginTop: 6,
+          fontVariantNumeric: "tabular-nums",
+          wordBreak: "break-word",
+        }}
+      >
+        {value}
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4, minHeight: 16 }}>
+        {delta && (
+          <span style={{ fontSize: 12, fontWeight: 700, color: deltaColor }}>
+            {deltaPrefix}
+            {delta.pct}%
+          </span>
+        )}
+        {sub && (
+          <span style={{ fontSize: 12, color: t.textFaint }}>{sub}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
-  const [isFounder, setIsFounder] = useState(false);
-  const [notificationsV2Enabled, setNotificationsV2Enabled] = useState(getNotificationsV2Default());
   const [activeTab, setActiveTab] = useState<Tab>("businesses");
 
   const [businesses, setBusinesses] = useState<BusinessListing[]>([]);
@@ -209,6 +384,31 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const [editingDirectory, setEditingDirectory] = useState<DirectoryEntry | null>(null);
   const [dirEditSaving, setDirEditSaving] = useState(false);
   const [locationRequests, setLocationRequests] = useState<LocationRequest[]>([]);
+  const [engagement, setEngagement] = useState<EngagementSummary | null>(null);
+  const [engagementLoading, setEngagementLoading] = useState(false);
+  const [engagementRange, setEngagementRange] = useState<EngagementRange>("7d");
+
+  const [newsItems, setNewsItems] = useState<AdminNewsItem[]>([]);
+  const [newsFilter, setNewsFilter] = useState<NewsTabFilter>("pending");
+  const [newsLoading, setNewsLoading] = useState(false);
+  const [newsActingId, setNewsActingId] = useState<string | null>(null);
+  const [newsPendingCount, setNewsPendingCount] = useState(0);
+  const [newsRunStats, setNewsRunStats] = useState<string | null>(null);
+  const [newsRunning, setNewsRunning] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewResult, setPreviewResult] = useState<PreviewResult | null>(null);
+  const [previewStatusFilter, setPreviewStatusFilter] = useState<PreviewStatus | "all">("all");
+  const [previewSearch, setPreviewSearch] = useState("");
+  const [previewInsertingKey, setPreviewInsertingKey] = useState<string | null>(null);
+  const [previewInsertedKeys, setPreviewInsertedKeys] = useState<Set<string>>(new Set());
+  const [previewDismissingKey, setPreviewDismissingKey] = useState<string | null>(null);
+  const [previewDismissedKeys, setPreviewDismissedKeys] = useState<Set<string>>(new Set());
+  const [previewBulkDismissing, setPreviewBulkDismissing] = useState(false);
+  const [previewSelected, setPreviewSelected] = useState<Set<string>>(new Set());
+  const [previewBulkSending, setPreviewBulkSending] = useState(false);
+  const [newsSelected, setNewsSelected] = useState<Set<string>>(new Set());
+  const [newsBulkBusy, setNewsBulkBusy] = useState(false);
+
   const [pendingCounts, setPendingCounts] = useState({
     biz: 0,
     jobs: 0,
@@ -233,6 +433,395 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function loadPendingCounts() {
     const next = await fetchAdminPendingBreakdown(supabase);
     setPendingCounts(next);
+  }
+
+  async function loadEngagement(range: EngagementRange = engagementRange) {
+    setEngagementLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/engagement?range=${range}`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (!res.ok) {
+        console.error("loadEngagement error", res.status);
+        return;
+      }
+      const json = (await res.json()) as EngagementSummary;
+      setEngagement(json);
+    } catch (err) {
+      console.error("loadEngagement failed", err);
+    } finally {
+      setEngagementLoading(false);
+    }
+  }
+
+  async function loadNews(filter: NewsTabFilter = newsFilter) {
+    setNewsLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/news?status=${filter}`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (!res.ok) {
+        console.error("loadNews error", res.status);
+        setNewsItems([]);
+        return;
+      }
+      const json = await res.json();
+      setNewsItems((json.items ?? []) as AdminNewsItem[]);
+    } catch (err) {
+      console.error("loadNews failed", err);
+    } finally {
+      setNewsLoading(false);
+    }
+  }
+
+  async function loadNewsPendingCount() {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/news?status=pending`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (!res.ok) return;
+      const json = await res.json();
+      setNewsPendingCount((json.items ?? []).length);
+    } catch { /* noop */ }
+  }
+
+  async function actOnNewsItem(id: string, action: "approve" | "reject") {
+    setNewsActingId(id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/news`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ id, action }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        showToast(`Action failed: ${j.error || res.status}`);
+        return;
+      }
+      setNewsItems((prev) => prev.filter((n) => n.id !== id));
+      setNewsSelected((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+      showToast(action === "approve" ? "Published to feed" : "Rejected");
+      void loadNewsPendingCount();
+    } finally {
+      setNewsActingId(null);
+    }
+  }
+
+  function toggleNewsSelected(id: string) {
+    setNewsSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleNewsSelectAll() {
+    setNewsSelected((prev) => {
+      if (prev.size === newsItems.length && newsItems.length > 0) return new Set();
+      return new Set(newsItems.map((n) => n.id));
+    });
+  }
+
+  async function bulkNewsAction(payload: Record<string, unknown>, label: string) {
+    setNewsBulkBusy(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/news`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(`${label} failed: ${j.error || res.status}`);
+        return;
+      }
+      const n = (j.deleted ?? j.updated ?? 0) as number;
+      showToast(`${label}: ${n} item${n === 1 ? "" : "s"}`);
+      setNewsSelected(new Set());
+      await loadNews(newsFilter);
+      void loadNewsPendingCount();
+    } finally {
+      setNewsBulkBusy(false);
+    }
+  }
+
+  function bulkRejectSelected() {
+    const ids = Array.from(newsSelected);
+    if (ids.length === 0) return;
+    askConfirm(`Reject ${ids.length} item${ids.length === 1 ? "" : "s"}?`, () =>
+      void bulkNewsAction({ ids, action: "reject" }, "Rejected")
+    );
+  }
+
+  function bulkApproveSelected() {
+    const ids = Array.from(newsSelected);
+    if (ids.length === 0) return;
+    askConfirm(`Approve ${ids.length} item${ids.length === 1 ? "" : "s"} to the feed?`, () =>
+      void bulkNewsAction({ ids, action: "approve" }, "Published")
+    );
+  }
+
+  function bulkDeleteSelected() {
+    const ids = Array.from(newsSelected);
+    if (ids.length === 0) return;
+    askConfirm(
+      `Permanently delete ${ids.length} item${ids.length === 1 ? "" : "s"}? This cannot be undone.`,
+      () => void bulkNewsAction({ ids, action: "delete" }, "Deleted")
+    );
+  }
+
+  function bulkRejectAllPending() {
+    askConfirm(
+      `Reject ALL ${newsPendingCount} pending news items? They'll move to the Rejected tab.`,
+      () =>
+        void bulkNewsAction(
+          { scope: "all", status: "pending", action: "reject" },
+          "Rejected all pending"
+        )
+    );
+  }
+
+  function bulkDeleteAllRejected() {
+    askConfirm(
+      `Permanently delete every item in the Rejected tab? This cannot be undone.`,
+      () =>
+        void bulkNewsAction(
+          { scope: "all", status: "rejected", action: "delete" },
+          "Cleared rejected"
+        )
+    );
+  }
+
+  async function triggerNewsIngestion() {
+    setNewsRunning(true);
+    setNewsRunStats(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/news/run-ingestion`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setNewsRunStats(`Error: ${j.error || res.status}`);
+      } else {
+        const s = j.stats || {};
+        const bodyBit = s.bodyFetched ? `, body-fetched ${s.bodyFetched} (rescued ${s.bodyEnrichedPasses ?? 0})` : "";
+        setNewsRunStats(
+          `fetched ${s.fetched ?? 0}, scored ${s.scored ?? 0}, dropped ${s.belowThreshold ?? 0} (low score), ${s.duplicates ?? 0} dup, inserted ${s.inserted ?? 0}, capped ${s.capped ?? 0}${bodyBit}`
+        );
+        await loadNews(newsFilter);
+        await loadNewsPendingCount();
+      }
+    } finally {
+      setNewsRunning(false);
+    }
+  }
+
+  async function loadPreview() {
+    setPreviewLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/news/preview`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(`Preview failed: ${j.error || res.status}`);
+        return;
+      }
+      setPreviewResult(j as PreviewResult);
+      setPreviewInsertedKeys(new Set());
+    } finally {
+      setPreviewLoading(false);
+    }
+  }
+
+  async function dismissPreviewCandidates(items: PreviewCandidate[], reason = "preview_dismiss"): Promise<boolean> {
+    if (items.length === 0) return false;
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`/api/admin/news/preview`, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token ?? ""}`,
+      },
+      body: JSON.stringify({
+        items: items.map((c) => ({
+          dedupe_key: c.dedupe_key,
+          headline: c.headline,
+          source_url: c.source_url,
+          source_name: c.source_name,
+        })),
+        reason,
+      }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast(`Dismiss failed: ${j.error || res.status}`);
+      return false;
+    }
+    return true;
+  }
+
+  async function dismissOnePreview(c: PreviewCandidate) {
+    setPreviewDismissingKey(c.dedupe_key);
+    try {
+      const ok = await dismissPreviewCandidates([c]);
+      if (!ok) return;
+      setPreviewDismissedKeys((prev) => {
+        const next = new Set(prev);
+        next.add(c.dedupe_key);
+        return next;
+      });
+    } finally {
+      setPreviewDismissingKey(null);
+    }
+  }
+
+  function togglePreviewSelected(key: string) {
+    setPreviewSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function clearPreviewSelected() {
+    setPreviewSelected(new Set());
+  }
+
+  async function bulkSendSelectedToPending(selected: PreviewCandidate[]) {
+    if (selected.length === 0) return;
+    askConfirm(
+      `Send ${selected.length} selected candidate${selected.length === 1 ? "" : "s"} to the pending queue?`,
+      async () => {
+        setPreviewBulkSending(true);
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`/api/admin/news/preview`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session?.access_token ?? ""}`,
+            },
+            body: JSON.stringify({ candidates: selected }),
+          });
+          const j = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            showToast(`Bulk send failed: ${j.error || res.status}`);
+            return;
+          }
+          setPreviewInsertedKeys((prev) => {
+            const next = new Set(prev);
+            for (const c of selected) next.add(c.dedupe_key);
+            return next;
+          });
+          setPreviewSelected(new Set());
+          showToast(`Sent ${j.inserted ?? 0} of ${j.requested ?? selected.length} to pending`);
+          void loadNewsPendingCount();
+        } finally {
+          setPreviewBulkSending(false);
+        }
+      }
+    );
+  }
+
+  async function bulkDismissSelected(selected: PreviewCandidate[]) {
+    if (selected.length === 0) return;
+    askConfirm(
+      `Permanently dismiss ${selected.length} selected candidate${selected.length === 1 ? "" : "s"}? They'll never reappear in the pipeline.`,
+      async () => {
+        setPreviewBulkDismissing(true);
+        try {
+          const ok = await dismissPreviewCandidates(selected, "preview_dismiss_selected");
+          if (!ok) return;
+          setPreviewDismissedKeys((prev) => {
+            const next = new Set(prev);
+            for (const c of selected) next.add(c.dedupe_key);
+            return next;
+          });
+          setPreviewSelected(new Set());
+          showToast(`Blocked ${selected.length} dedupe key${selected.length === 1 ? "" : "s"}`);
+        } finally {
+          setPreviewBulkDismissing(false);
+        }
+      }
+    );
+  }
+
+  async function dismissVisiblePreview(visible: PreviewCandidate[]) {
+    if (visible.length === 0) return;
+    const targets = visible.filter((c) => !previewDismissedKeys.has(c.dedupe_key));
+    if (targets.length === 0) {
+      showToast("Nothing to dismiss");
+      return;
+    }
+    askConfirm(
+      `Permanently dismiss ${targets.length} candidate${targets.length === 1 ? "" : "s"}? They'll never reappear in the pipeline (reversible via SQL).`,
+      async () => {
+        setPreviewBulkDismissing(true);
+        try {
+          const ok = await dismissPreviewCandidates(targets, "preview_dismiss_bulk");
+          if (!ok) return;
+          setPreviewDismissedKeys((prev) => {
+            const next = new Set(prev);
+            for (const c of targets) next.add(c.dedupe_key);
+            return next;
+          });
+          showToast(`Blocked ${targets.length} dedupe key${targets.length === 1 ? "" : "s"}`);
+        } finally {
+          setPreviewBulkDismissing(false);
+        }
+      }
+    );
+  }
+
+  async function insertPreviewCandidate(c: PreviewCandidate) {
+    setPreviewInsertingKey(c.dedupe_key);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/news/preview`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ candidate: c }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(`Insert failed: ${j.error || res.status}`);
+        return;
+      }
+      setPreviewInsertedKeys((prev) => {
+        const next = new Set(prev);
+        next.add(c.dedupe_key);
+        return next;
+      });
+      showToast("Sent to pending queue");
+      void loadNewsPendingCount();
+    } finally {
+      setPreviewInsertingKey(null);
+    }
   }
 
   async function loadBusinesses() {
@@ -365,7 +954,6 @@ const [memWizUrl, setMemWizUrl] = useState("");
     async function init() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.href = "/login"; return; }
-      setIsFounder(isFounderUser(user.id));
 
       const { data: profile } = await supabase
         .from("profiles")
@@ -387,38 +975,6 @@ const [memWizUrl, setMemWizUrl] = useState("");
   }, []);
 
   useEffect(() => {
-    const envDefault = getNotificationsV2Default();
-    if (typeof window === "undefined") {
-      setNotificationsV2Enabled(envDefault);
-      return;
-    }
-    const override = window.localStorage.getItem(FOUNDER_NOTIFICATIONS_V2_OVERRIDE_KEY);
-    if (override === "true") {
-      setNotificationsV2Enabled(true);
-      return;
-    }
-    if (override === "false") {
-      setNotificationsV2Enabled(false);
-      return;
-    }
-    setNotificationsV2Enabled(envDefault);
-  }, [isFounder]);
-
-  function setNotificationsOverride(mode: "v2" | "legacy" | "env") {
-    if (typeof window === "undefined") return;
-    if (mode === "env") {
-      window.localStorage.removeItem(FOUNDER_NOTIFICATIONS_V2_OVERRIDE_KEY);
-      setNotificationsV2Enabled(getNotificationsV2Default());
-      showToast("Notifications mode reset to env default.");
-      return;
-    }
-    const next = mode === "v2";
-    window.localStorage.setItem(FOUNDER_NOTIFICATIONS_V2_OVERRIDE_KEY, next ? "true" : "false");
-    setNotificationsV2Enabled(next);
-    showToast(next ? "Notifications V2 enabled for this browser." : "Notifications legacy mode enabled for this browser.");
-  }
-
-  useEffect(() => {
     if (!authorized) return;
     if (activeTab === "businesses") loadBusinesses();
     if (activeTab === "jobs") loadJobs();
@@ -430,7 +986,14 @@ const [memWizUrl, setMemWizUrl] = useState("");
     }
     if (activeTab === "reports") loadBugReports();
     if (activeTab === "directory") loadDirectory();
-  }, [pendingOnly, activeTab, authorized]);
+    if (activeTab === "engagement") void loadEngagement(engagementRange);
+    if (activeTab === "news") void loadNews(newsFilter);
+  }, [pendingOnly, activeTab, authorized, engagementRange, newsFilter]);
+
+  useEffect(() => {
+    if (!authorized) return;
+    void loadNewsPendingCount();
+  }, [authorized]);
 
   useEffect(() => {
     function check() {
@@ -1302,40 +1865,6 @@ const [memWizUrl, setMemWizUrl] = useState("");
           </h1>
           <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5 }}>Admin Only</span>
         </div>
-        {isFounder && (
-          <div
-            style={{
-              marginTop: 12,
-              padding: "12px 14px",
-              borderRadius: 12,
-              border: `1px solid ${t.border}`,
-              background: t.surface,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ minWidth: 220 }}>
-              <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>Founder Controls · Notifications Mode</div>
-              <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
-                Current: <strong>{notificationsV2Enabled ? "V2 centralized" : "Legacy fallback"}</strong> (env default: {getNotificationsV2Default() ? "V2" : "Legacy"})
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" onClick={() => setNotificationsOverride("v2")} style={actionBtn("#16a34a")}>
-                Use V2
-              </button>
-              <button type="button" onClick={() => setNotificationsOverride("legacy")} style={actionBtn("#92400e")}>
-                Use Legacy
-              </button>
-              <button type="button" onClick={() => setNotificationsOverride("env")} style={actionBtn("#374151")}>
-                Use Env Default
-              </button>
-            </div>
-          </div>
-        )}
 
         {/* Tabs */}
         <div style={{ display: "flex", gap: 8, marginTop: 24, flexWrap: "wrap" }}>
@@ -1365,6 +1894,13 @@ const [memWizUrl, setMemWizUrl] = useState("");
           <button type="button" style={tabStyle("directory")} onClick={() => setActiveTab("directory")}>
             Directory
             {tabNotifyBadge(directoryPendingTotal)}
+          </button>
+          <button type="button" style={tabStyle("engagement")} onClick={() => setActiveTab("engagement")}>
+            Engagement
+          </button>
+          <button type="button" style={tabStyle("news")} onClick={() => setActiveTab("news")}>
+            News
+            {tabNotifyBadge(newsPendingCount)}
           </button>
 
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: t.textMuted }}>
@@ -1966,6 +2502,775 @@ const [memWizUrl, setMemWizUrl] = useState("");
               ))}
             </div>
             </div>{/* end unit submissions */}
+          </div>
+        )}
+
+        {/* ── ENGAGEMENT TAB ── */}
+        {activeTab === "engagement" && (
+          <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+            {/* Header: range selector + refresh */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                flexWrap: "wrap",
+                justifyContent: "space-between",
+              }}
+            >
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {(["today", "7d", "30d"] as const).map((r) => {
+                  const active = engagementRange === r;
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setEngagementRange(r)}
+                      style={{
+                        padding: "7px 14px",
+                        borderRadius: 8,
+                        border: "none",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        background: active ? "#111" : t.badgeBg,
+                        color: active ? "white" : t.text,
+                      }}
+                    >
+                      {r === "today" ? "Today" : r === "7d" ? "Last 7 days" : "Last 30 days"}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: t.textMuted }}>
+                {engagement?.generated_at && (
+                  <span>Updated {new Date(engagement.generated_at).toLocaleTimeString()}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void loadEngagement(engagementRange)}
+                  disabled={engagementLoading}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: `1px solid ${t.border}`,
+                    background: t.surface,
+                    color: t.text,
+                    fontWeight: 600,
+                    fontSize: 12,
+                    cursor: engagementLoading ? "default" : "pointer",
+                    opacity: engagementLoading ? 0.6 : 1,
+                  }}
+                >
+                  {engagementLoading ? "Refreshing…" : "Refresh"}
+                </button>
+              </div>
+            </div>
+
+            {!engagement && engagementLoading && (
+              <div style={{ padding: 24, textAlign: "center", color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
+                Loading engagement data…
+              </div>
+            )}
+
+            {!engagement && !engagementLoading && (
+              <div style={{ padding: 24, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
+                No data yet. Once visitors start hitting the site, metrics will appear here.
+              </div>
+            )}
+
+            {engagement && (
+              <>
+                {/* KPI ROW */}
+                <div
+                  style={{
+                    display: "grid",
+                    gap: 12,
+                    gridTemplateColumns: isMobile ? "1fr 1fr" : "repeat(4, 1fr)",
+                  }}
+                >
+                  <KpiCard
+                    t={t}
+                    label="New signups"
+                    value={engagement.kpis.new_signups.toLocaleString()}
+                    delta={pctDelta(engagement.kpis.new_signups, engagement.kpis.new_signups_prev)}
+                    sub={`Total users: ${engagement.kpis.total_users.toLocaleString()}`}
+                  />
+                  <KpiCard
+                    t={t}
+                    label="Visits"
+                    value={engagement.kpis.visits.toLocaleString()}
+                    delta={pctDelta(engagement.kpis.visits, engagement.kpis.visits_prev)}
+                    sub={`Unique: ${engagement.kpis.unique_visitors_in_range.toLocaleString()}`}
+                  />
+                  <KpiCard
+                    t={t}
+                    label="Avg session"
+                    value={formatDuration(engagement.kpis.avg_session_ms)}
+                    sub="Active time per session"
+                  />
+                  <KpiCard
+                    t={t}
+                    label="Total time on platform"
+                    value={formatDurationLong(engagement.kpis.total_active_ms)}
+                    sub="Sum across all users"
+                  />
+                </div>
+
+                {/* DAU / WAU / MAU strip */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)",
+                    gap: 12,
+                  }}
+                >
+                  <KpiCard t={t} label="Unique visitors today" value={engagement.kpis.dau.toLocaleString()} sub="DAU" subtle />
+                  <KpiCard t={t} label="Unique visitors (7d)" value={engagement.kpis.wau.toLocaleString()} sub="WAU" subtle />
+                  <KpiCard t={t} label="Unique visitors (30d)" value={engagement.kpis.mau.toLocaleString()} sub="MAU" subtle />
+                </div>
+
+                {/* Top pages by time + Most engaged users */}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+                    gap: 12,
+                  }}
+                >
+                  <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface, padding: 16, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12, color: t.text }}>
+                      Top pages by time spent
+                    </div>
+                    {engagement.top_pages.length === 0 ? (
+                      <div style={{ fontSize: 13, color: t.textFaint }}>No page data yet.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px 70px", fontSize: 11, fontWeight: 700, color: t.textMuted, paddingBottom: 6, borderBottom: `1px solid ${t.borderLight}` }}>
+                          <div>Path</div>
+                          <div style={{ textAlign: "right" }}>Time</div>
+                          <div style={{ textAlign: "right" }}>Visits</div>
+                          <div style={{ textAlign: "right" }}>Avg</div>
+                        </div>
+                        {engagement.top_pages.map((p) => (
+                          <div
+                            key={p.path}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1fr 70px 70px 70px",
+                              fontSize: 13,
+                              alignItems: "center",
+                              color: t.text,
+                              padding: "4px 0",
+                            }}
+                          >
+                            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 6 }} title={p.path}>
+                              {p.path}
+                            </div>
+                            <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatDuration(p.total_ms)}</div>
+                            <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: t.textMuted }}>{p.visits}</div>
+                            <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: t.textMuted }}>{formatDuration(p.avg_ms)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface, padding: 16, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 12, color: t.text }}>
+                      Most engaged users
+                    </div>
+                    {engagement.most_engaged_users.length === 0 ? (
+                      <div style={{ fontSize: 13, color: t.textFaint }}>No authenticated activity yet.</div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 70px 70px", fontSize: 11, fontWeight: 700, color: t.textMuted, paddingBottom: 6, borderBottom: `1px solid ${t.borderLight}` }}>
+                          <div>User</div>
+                          <div style={{ textAlign: "right" }}>Time</div>
+                          <div style={{ textAlign: "right" }}>Sessions</div>
+                        </div>
+                        {engagement.most_engaged_users.map((u) => (
+                          <div
+                            key={u.user_id}
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1fr 70px 70px",
+                              fontSize: 13,
+                              alignItems: "center",
+                              color: t.text,
+                              padding: "4px 0",
+                            }}
+                          >
+                            <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 6 }} title={u.user_id}>
+                              {u.display_name || <span style={{ color: t.textFaint }}>unnamed</span>}
+                            </div>
+                            <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{formatDuration(u.total_ms)}</div>
+                            <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: t.textMuted }}>{u.sessions}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Deep-link footer */}
+                <div
+                  style={{
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 14,
+                    background: t.surface,
+                    padding: 14,
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: 8,
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: t.textMuted, maxWidth: 540 }}>
+                    For raw pageviews, top referrers, devices, and Core Web Vitals, open the native dashboards.
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <a
+                      href="https://vercel.com/dashboard"
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.bg, color: t.text, fontWeight: 700, fontSize: 12, textDecoration: "none" }}
+                    >
+                      Vercel Analytics ↗
+                    </a>
+                    <a
+                      href="https://supabase.com/dashboard"
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.bg, color: t.text, fontWeight: 700, fontSize: 12, textDecoration: "none" }}
+                    >
+                      Supabase Logs ↗
+                    </a>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── NEWS TAB ── */}
+        {activeTab === "news" && (
+          <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {(["pending", "published", "rejected"] as const).map((f) => {
+                  const active = newsFilter === f;
+                  return (
+                    <button
+                      key={f}
+                      type="button"
+                      onClick={() => { setNewsFilter(f); setNewsSelected(new Set()); }}
+                      style={{
+                        padding: "7px 14px",
+                        borderRadius: 8,
+                        border: "none",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: "pointer",
+                        background: active ? "#111" : t.badgeBg,
+                        color: active ? "white" : t.text,
+                      }}
+                    >
+                      {f === "pending" ? "Pending review" : f === "published" ? "In feed" : "Rejected"}
+                      {f === "pending" && newsPendingCount > 0 && (
+                        <span style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 999, background: active ? "white" : "#ef4444", color: active ? "#111" : "white", fontSize: 11 }}>{newsPendingCount}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                {newsRunStats && (
+                  <span style={{ fontSize: 12, color: t.textMuted, maxWidth: 360 }}>{newsRunStats}</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void loadPreview()}
+                  disabled={previewLoading}
+                  style={{
+                    padding: "7px 14px",
+                    borderRadius: 8,
+                    border: `1px solid ${t.border}`,
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: previewLoading ? "default" : "pointer",
+                    background: t.surface,
+                    color: t.text,
+                    opacity: previewLoading ? 0.7 : 1,
+                  }}
+                  title="Run the pipeline read-only and show every candidate (passed AND dropped)"
+                >
+                  {previewLoading ? "Scanning…" : "Preview pipeline"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void triggerNewsIngestion()}
+                  disabled={newsRunning}
+                  style={{
+                    padding: "7px 14px",
+                    borderRadius: 8,
+                    border: "none",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: newsRunning ? "default" : "pointer",
+                    background: newsRunning ? t.badgeBg : "#1d4ed8",
+                    color: newsRunning ? t.text : "white",
+                    opacity: newsRunning ? 0.7 : 1,
+                  }}
+                >
+                  {newsRunning ? "Running…" : "Run ingestion now"}
+                </button>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>
+              External stories ingest hourly via Supabase cron. Nothing reaches the public feed until you approve it here. Items below the relevance threshold are dropped before they ever land in this queue. Use <strong>Preview pipeline</strong> to inspect every candidate the scorer saw and surface false negatives.
+            </div>
+
+            {newsItems.length > 0 && (
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "8px 12px", border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: t.text, cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={newsSelected.size === newsItems.length && newsItems.length > 0}
+                    ref={(el) => {
+                      if (el) el.indeterminate = newsSelected.size > 0 && newsSelected.size < newsItems.length;
+                    }}
+                    onChange={toggleNewsSelectAll}
+                  />
+                  {newsSelected.size > 0 ? `${newsSelected.size} selected` : "Select all"}
+                </label>
+                {newsSelected.size > 0 && (
+                  <>
+                    {newsFilter === "pending" && (
+                      <button
+                        type="button"
+                        onClick={bulkApproveSelected}
+                        disabled={newsBulkBusy}
+                        style={{ padding: "5px 11px", borderRadius: 8, border: "none", background: "#16a34a", color: "white", fontWeight: 700, fontSize: 12, cursor: newsBulkBusy ? "default" : "pointer", opacity: newsBulkBusy ? 0.7 : 1 }}
+                      >
+                        Approve selected
+                      </button>
+                    )}
+                    {newsFilter !== "rejected" && (
+                      <button
+                        type="button"
+                        onClick={bulkRejectSelected}
+                        disabled={newsBulkBusy}
+                        style={{ padding: "5px 11px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.bg, color: t.text, fontWeight: 700, fontSize: 12, cursor: newsBulkBusy ? "default" : "pointer", opacity: newsBulkBusy ? 0.7 : 1 }}
+                      >
+                        Reject selected
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={bulkDeleteSelected}
+                      disabled={newsBulkBusy}
+                      style={{ padding: "5px 11px", borderRadius: 8, border: "none", background: "#ef4444", color: "white", fontWeight: 700, fontSize: 12, cursor: newsBulkBusy ? "default" : "pointer", opacity: newsBulkBusy ? 0.7 : 1 }}
+                    >
+                      Delete selected
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewsSelected(new Set())}
+                      disabled={newsBulkBusy}
+                      style={{ padding: "5px 11px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.bg, color: t.textMuted, fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                    >
+                      Clear
+                    </button>
+                  </>
+                )}
+                <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {newsFilter === "pending" && newsPendingCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={bulkRejectAllPending}
+                      disabled={newsBulkBusy}
+                      style={{ padding: "5px 11px", borderRadius: 8, border: `1px dashed ${t.border}`, background: t.bg, color: t.text, fontWeight: 700, fontSize: 12, cursor: newsBulkBusy ? "default" : "pointer", opacity: newsBulkBusy ? 0.7 : 1 }}
+                      title="Reject every pending item — useful for clearing junk batches"
+                    >
+                      Reject all pending ({newsPendingCount})
+                    </button>
+                  )}
+                  {newsFilter === "rejected" && (
+                    <button
+                      type="button"
+                      onClick={bulkDeleteAllRejected}
+                      disabled={newsBulkBusy}
+                      style={{ padding: "5px 11px", borderRadius: 8, border: "none", background: "#ef4444", color: "white", fontWeight: 700, fontSize: 12, cursor: newsBulkBusy ? "default" : "pointer", opacity: newsBulkBusy ? 0.7 : 1 }}
+                      title="Permanently delete every rejected item from the database"
+                    >
+                      Empty rejected
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {previewResult && (() => {
+              // Hide anything we've already acted on (dismissed → blocklist, or
+              // sent → pending). Keeps the working queue shrinking as we triage.
+              const visibleCandidates = previewResult.candidates
+                .filter((c) => !previewDismissedKeys.has(c.dedupe_key) && !previewInsertedKeys.has(c.dedupe_key))
+                .filter((c) => previewStatusFilter === "all" || c.status === previewStatusFilter)
+                .filter((c) => {
+                  const q = previewSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    c.headline.toLowerCase().includes(q) ||
+                    (c.summary ?? "").toLowerCase().includes(q) ||
+                    (c.source_name ?? "").toLowerCase().includes(q)
+                  );
+                });
+              const dismissableVisible = visibleCandidates;
+              const actionableVisible = visibleCandidates;
+              const selectedActionable = actionableVisible.filter((c) => previewSelected.has(c.dedupe_key));
+              const allActionableSelected = actionableVisible.length > 0 && selectedActionable.length === actionableVisible.length;
+              const someActionableSelected = selectedActionable.length > 0 && !allActionableSelected;
+              return (
+              <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface, padding: 14, display: "grid", gap: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 2 }}>
+                      Pipeline preview · {previewResult.totalFetched} candidates fetched
+                      {previewResult.blockedCount > 0 && (
+                        <span style={{ fontWeight: 600, color: t.textMuted, marginLeft: 6 }}>
+                          ({previewResult.blockedCount} hidden by blocklist)
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>
+                      Read-only scan. <strong>Send to pending</strong> for items the scorer dropped that should have been kept. <strong>Dismiss</strong> for junk you never want to see again — that dedupe key is permanently blocked from future runs.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { setPreviewResult(null); setPreviewSearch(""); setPreviewStatusFilter("all"); setPreviewDismissedKeys(new Set()); setPreviewSelected(new Set()); }}
+                    style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.bg, color: t.text, fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {(["all", "would_insert", "below_threshold", "no_positive_hits", "negative_in_title", "duplicate_in_db", "duplicate_in_batch"] as const).map((s) => {
+                    const active = previewStatusFilter === s;
+                    const count = s === "all" ? previewResult.candidates.length : (previewResult.byStatus[s] ?? 0);
+                    const label =
+                      s === "all" ? "All"
+                      : s === "would_insert" ? "Would insert"
+                      : s === "below_threshold" ? "Below threshold"
+                      : s === "no_positive_hits" ? "No EOD keyword"
+                      : s === "negative_in_title" ? "Negative phrase"
+                      : s === "duplicate_in_db" ? "Already in DB"
+                      : "Dup in batch";
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => { setPreviewStatusFilter(s); setPreviewSelected(new Set()); }}
+                        style={{
+                          padding: "5px 10px",
+                          borderRadius: 999,
+                          border: "none",
+                          background: active ? "#111" : t.badgeBg,
+                          color: active ? "white" : t.text,
+                          fontSize: 12,
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        {label} · {count}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <input
+                    type="text"
+                    value={previewSearch}
+                    onChange={(e) => setPreviewSearch(e.target.value)}
+                    placeholder="Filter by headline / source / summary…"
+                    style={{ flex: 1, minWidth: 220, border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "7px 11px", fontSize: 13, background: t.input, color: t.text }}
+                  />
+                  {(() => {
+                    const remaining = previewResult.candidates.filter(
+                      (c) => !previewDismissedKeys.has(c.dedupe_key) && !previewInsertedKeys.has(c.dedupe_key)
+                    ).length;
+                    const acted = previewResult.candidates.length - remaining;
+                    return (
+                      <span style={{ fontSize: 11, color: t.textMuted }}>
+                        showing {visibleCandidates.length} of {remaining} left{acted > 0 ? ` · ${acted} done` : ""}
+                      </span>
+                    );
+                  })()}
+                  {dismissableVisible.length > 0 && previewStatusFilter !== "would_insert" && (
+                    <button
+                      type="button"
+                      onClick={() => void dismissVisiblePreview(visibleCandidates)}
+                      disabled={previewBulkDismissing}
+                      style={{ padding: "5px 11px", borderRadius: 8, border: "none", background: "#ef4444", color: "white", fontSize: 12, fontWeight: 700, cursor: previewBulkDismissing ? "default" : "pointer", opacity: previewBulkDismissing ? 0.7 : 1 }}
+                      title="Add every visible dedupe key to the permanent blocklist"
+                    >
+                      {previewBulkDismissing ? "Dismissing…" : `Dismiss all visible (${dismissableVisible.length})`}
+                    </button>
+                  )}
+                </div>
+
+                {actionableVisible.length > 0 && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "6px 10px", border: `1px solid ${t.border}`, borderRadius: 8, background: t.bg }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: t.text, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={allActionableSelected}
+                        ref={(el) => { if (el) el.indeterminate = someActionableSelected; }}
+                        onChange={() => {
+                          if (allActionableSelected) clearPreviewSelected();
+                          else setPreviewSelected(new Set(actionableVisible.map((c) => c.dedupe_key)));
+                        }}
+                      />
+                      {selectedActionable.length > 0 ? `${selectedActionable.length} selected` : `Select all (${actionableVisible.length})`}
+                    </label>
+                    {selectedActionable.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void bulkSendSelectedToPending(selectedActionable)}
+                          disabled={previewBulkSending || previewBulkDismissing}
+                          style={{ padding: "5px 11px", borderRadius: 8, border: "none", background: "#16a34a", color: "white", fontSize: 12, fontWeight: 700, cursor: previewBulkSending ? "default" : "pointer", opacity: previewBulkSending ? 0.7 : 1 }}
+                          title="Force-insert selected candidates into the pending queue"
+                        >
+                          {previewBulkSending ? "Sending…" : `Send ${selectedActionable.length} to pending`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void bulkDismissSelected(selectedActionable)}
+                          disabled={previewBulkDismissing || previewBulkSending}
+                          style={{ padding: "5px 11px", borderRadius: 8, border: "none", background: "#ef4444", color: "white", fontSize: 12, fontWeight: 700, cursor: previewBulkDismissing ? "default" : "pointer", opacity: previewBulkDismissing ? 0.7 : 1 }}
+                          title="Add selected dedupe keys to the permanent blocklist"
+                        >
+                          {previewBulkDismissing ? "Dismissing…" : `Dismiss ${selectedActionable.length}`}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={clearPreviewSelected}
+                          style={{ padding: "5px 11px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.textMuted, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Clear
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gap: 8, maxHeight: 600, overflowY: "auto" }}>
+                  {visibleCandidates.map((c, i) => {
+                      const inserted = previewInsertedKeys.has(c.dedupe_key);
+                      const isInserting = previewInsertingKey === c.dedupe_key;
+                      const dismissed = previewDismissedKeys.has(c.dedupe_key);
+                      const isDismissing = previewDismissingKey === c.dedupe_key;
+                      const statusColor: Record<PreviewStatus, { bg: string; fg: string }> = {
+                        would_insert: { bg: isDark ? "#0c3a1f" : "#dcfce7", fg: isDark ? "#86efac" : "#166534" },
+                        below_threshold: { bg: isDark ? "#3a2a00" : "#fef9c3", fg: isDark ? "#fde68a" : "#854d0e" },
+                        no_positive_hits: { bg: isDark ? "#3a0c0c" : "#fee2e2", fg: isDark ? "#fca5a5" : "#991b1b" },
+                        negative_in_title: { bg: isDark ? "#3a0c0c" : "#fee2e2", fg: isDark ? "#fca5a5" : "#991b1b" },
+                        duplicate_in_db: { bg: t.badgeBg, fg: t.textMuted },
+                        duplicate_in_batch: { bg: t.badgeBg, fg: t.textMuted },
+                      };
+                      const sc = statusColor[c.status];
+                      const statusLabel: Record<PreviewStatus, string> = {
+                        would_insert: "would insert",
+                        below_threshold: "below threshold",
+                        no_positive_hits: "no EOD keyword",
+                        negative_in_title: "negative phrase",
+                        duplicate_in_db: "already in db",
+                        duplicate_in_batch: "dup in batch",
+                      };
+                      const b = c.breakdown;
+                      const selectable = !dismissed && !inserted;
+                      const selected = previewSelected.has(c.dedupe_key);
+                      return (
+                        <div key={`${c.dedupe_key}-${i}`} style={{ border: `1px solid ${selected ? "#1d4ed8" : t.border}`, borderRadius: 10, padding: 10, background: t.bg, display: "grid", gap: 6, opacity: dismissed ? 0.45 : 1, filter: dismissed ? "saturate(0.4)" : "none" }}>
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            {selectable && (
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => togglePreviewSelected(c.dedupe_key)}
+                                style={{ cursor: "pointer" }}
+                                aria-label="Select candidate"
+                              />
+                            )}
+                            <span style={{ fontSize: 10, fontWeight: 800, letterSpacing: 0.4, textTransform: "uppercase", padding: "2px 7px", borderRadius: 999, background: sc.bg, color: sc.fg }}>
+                              {statusLabel[c.status]}
+                            </span>
+                            <span style={{ fontSize: 11, color: t.textMuted, background: t.badgeBg, padding: "2px 7px", borderRadius: 999, fontVariantNumeric: "tabular-nums" }}>
+                              score {b.score} <span style={{ opacity: 0.6 }}>(raw {b.rawScore})</span>
+                            </span>
+                            {c.enriched_from_body && (
+                              <span
+                                style={{ fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 999, background: isDark ? "#0c2a4a" : "#dbeafe", color: isDark ? "#93c5fd" : "#1e40af" }}
+                                title={c.score_before_body !== null ? `Snippet score was ${c.score_before_body}; body fetch raised it to ${b.score}` : "Body fetched"}
+                              >
+                                BODY
+                                {c.score_before_body !== null && b.score > c.score_before_body
+                                  ? ` +${b.score - c.score_before_body}`
+                                  : ""}
+                              </span>
+                            )}
+                            <span style={{ fontSize: 11, color: t.textMuted }}>
+                              T:{b.titleHits} B:{b.bodyHits} {b.hasContext ? "· ctx" : ""} {b.freshnessBonus ? `· fresh+${b.freshnessBonus}` : ""} {b.sourceWeight ? `· src+${b.sourceWeight}` : ""} {b.negativeIn ? `· neg(${b.negativeIn})` : ""}
+                            </span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: t.text, marginLeft: "auto" }}>{c.source_name || "external"}</span>
+                            {c.is_satire && (
+                              <span style={{ fontSize: 10, fontWeight: 800, padding: "1px 6px", borderRadius: 999, background: isDark ? "#3a2a00" : "#fef3c7", color: isDark ? "#fde68a" : "#92400e" }}>SATIRE</span>
+                            )}
+                          </div>
+                          <a href={c.source_url} target="_blank" rel="noreferrer noopener" style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.3, color: t.text, textDecoration: "none" }}>
+                            {c.headline}
+                          </a>
+                          {c.summary && (
+                            <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
+                              {c.summary.length > 240 ? `${c.summary.slice(0, 240)}…` : c.summary}
+                            </div>
+                          )}
+                          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                            <a href={c.source_url} target="_blank" rel="noreferrer noopener" style={{ fontSize: 10, color: "#1d4ed8", wordBreak: "break-all", flex: 1 }}>
+                              {c.source_url}
+                            </a>
+                            {c.status !== "would_insert" && c.status !== "duplicate_in_db" && !inserted && !dismissed && (
+                              <button
+                                type="button"
+                                onClick={() => void insertPreviewCandidate(c)}
+                                disabled={isInserting}
+                                style={{ padding: "5px 11px", borderRadius: 8, border: "none", background: "#16a34a", color: "white", fontSize: 12, fontWeight: 700, cursor: isInserting ? "default" : "pointer", opacity: isInserting ? 0.7 : 1 }}
+                                title="Force-insert this candidate into the pending queue"
+                              >
+                                {isInserting ? "Sending…" : "Send to pending"}
+                              </button>
+                            )}
+                            {!inserted && !dismissed && (
+                              <button
+                                type="button"
+                                onClick={() => void dismissOnePreview(c)}
+                                disabled={isDismissing}
+                                style={{ padding: "5px 11px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontSize: 12, fontWeight: 700, cursor: isDismissing ? "default" : "pointer", opacity: isDismissing ? 0.7 : 1 }}
+                                title="Permanently block this dedupe key from future ingestion runs"
+                              >
+                                {isDismissing ? "Dismissing…" : "Dismiss"}
+                              </button>
+                            )}
+                            {inserted && (
+                              <span style={{ fontSize: 11, fontWeight: 700, color: "#16a34a" }}>✓ Sent</span>
+                            )}
+                            {dismissed && (
+                              <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>✓ Blocked</span>
+                            )}
+                            {c.status === "duplicate_in_db" && (
+                              <span style={{ fontSize: 11, color: t.textFaint }}>already in db</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+              );
+            })()}
+
+            {newsLoading && (
+              <div style={{ padding: 24, textAlign: "center", color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
+                Loading…
+              </div>
+            )}
+
+            {!newsLoading && newsItems.length === 0 && (
+              <div style={{ padding: 24, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
+                {newsFilter === "pending" ? "No items waiting for review." : newsFilter === "published" ? "Nothing has been approved into the feed yet." : "No items have been rejected."}
+              </div>
+            )}
+
+            <div style={{ display: "grid", gap: 12 }}>
+              {newsItems.map((n) => (
+                <div key={n.id} style={{ border: `1px solid ${newsSelected.has(n.id) ? "#1d4ed8" : t.border}`, borderRadius: 14, background: t.surface, padding: 14, display: "grid", gap: 10 }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                    <input
+                      type="checkbox"
+                      checked={newsSelected.has(n.id)}
+                      onChange={() => toggleNewsSelected(n.id)}
+                      style={{ marginTop: 4, cursor: "pointer" }}
+                      aria-label="Select item"
+                    />
+                    {n.thumbnail_url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={n.thumbnail_url} alt="" style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                    )}
+                    <div style={{ flex: 1, minWidth: 240 }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{
+                          fontSize: 10, fontWeight: 800, letterSpacing: 0.5, textTransform: "uppercase",
+                          padding: "2px 7px", borderRadius: 999,
+                          background: n.is_satire ? (isDark ? "#3a2a00" : "#fef3c7") : (isDark ? "#0c2a4a" : "#dbeafe"),
+                          color: n.is_satire ? (isDark ? "#fde68a" : "#92400e") : (isDark ? "#93c5fd" : "#1e40af"),
+                        }}>
+                          {n.is_satire ? "Satire" : "Newswire"}
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: t.text }}>{n.source_name || "external"}</span>
+                        {typeof n.relevance_score === "number" && (
+                          <span style={{ fontSize: 11, color: t.textMuted, background: t.badgeBg, padding: "2px 7px", borderRadius: 999 }}>
+                            score {n.relevance_score.toFixed(0)}
+                          </span>
+                        )}
+                        <span style={{ fontSize: 11, color: t.textFaint, marginLeft: "auto" }}>
+                          {n.published_at ? new Date(n.published_at).toLocaleString() : new Date(n.ingested_at).toLocaleString()}
+                        </span>
+                      </div>
+                      <a href={n.source_url} target="_blank" rel="noreferrer noopener" style={{ display: "block", marginTop: 6, fontWeight: 800, fontSize: 16, lineHeight: 1.3, color: t.text, textDecoration: "none" }}>
+                        {n.headline}
+                      </a>
+                      {n.summary && (
+                        <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>{n.summary}</div>
+                      )}
+                      <a href={n.source_url} target="_blank" rel="noreferrer noopener" style={{ display: "inline-block", marginTop: 6, fontSize: 11, color: "#1d4ed8", wordBreak: "break-all" }}>
+                        {n.source_url}
+                      </a>
+                    </div>
+                  </div>
+                  {newsFilter === "pending" && (
+                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        onClick={() => void actOnNewsItem(n.id, "reject")}
+                        disabled={newsActingId === n.id}
+                        style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 13, cursor: newsActingId === n.id ? "default" : "pointer", opacity: newsActingId === n.id ? 0.7 : 1 }}
+                      >
+                        Reject
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void actOnNewsItem(n.id, "approve")}
+                        disabled={newsActingId === n.id}
+                        style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#16a34a", color: "white", fontWeight: 700, fontSize: 13, cursor: newsActingId === n.id ? "default" : "pointer", opacity: newsActingId === n.id ? 0.7 : 1 }}
+                      >
+                        {newsActingId === n.id ? "Saving…" : "Approve to feed"}
+                      </button>
+                    </div>
+                  )}
+                  {newsFilter !== "pending" && n.reviewed_at && (
+                    <div style={{ fontSize: 11, color: t.textFaint, textAlign: "right" }}>
+                      Reviewed {new Date(n.reviewed_at).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

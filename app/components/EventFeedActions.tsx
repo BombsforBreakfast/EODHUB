@@ -21,6 +21,17 @@ function httpsAssetUrl(url: string | null | undefined): string {
   return u;
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  if (error && typeof error === "object") {
+    const obj = error as Record<string, unknown>;
+    const message = obj.message ?? obj.error ?? obj.details;
+    if (typeof message === "string" && message.trim()) return message;
+  }
+  return "Action failed.";
+}
+
 export default function EventFeedActions({
   eventId,
   signupUrl,
@@ -51,39 +62,41 @@ export default function EventFeedActions({
         return;
       }
       setBusy("att");
-      const current = myAttendance;
       try {
-        if (current === status) {
-          const { error } = await supabase.from("event_attendance").delete().eq("event_id", eventId).eq("user_id", userId);
-          if (error) throw error;
-          setMyAttendance(null);
-          if (status === "interested") setInterested((n) => Math.max(0, n - 1));
-          else setGoing((n) => Math.max(0, n - 1));
-        } else if (current) {
-          const { error } = await supabase.from("event_attendance").update({ status }).eq("event_id", eventId).eq("user_id", userId);
-          if (error) throw error;
-          setMyAttendance(status);
-          if (current === "interested") {
-            setInterested((n) => Math.max(0, n - 1));
-            setGoing((n) => n + 1);
-          } else {
-            setGoing((n) => Math.max(0, n - 1));
-            setInterested((n) => n + 1);
-          }
-        } else {
-          const { error } = await supabase.from("event_attendance").insert([{ event_id: eventId, user_id: userId, status }]);
-          if (error) throw error;
-          setMyAttendance(status);
-          if (status === "interested") setInterested((n) => n + 1);
-          else setGoing((n) => n + 1);
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch("/api/events/feed-actions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+          body: JSON.stringify({ action: "toggle_attendance", eventId, status }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          interested?: number;
+          going?: number;
+          myAttendance?: "interested" | "going" | null;
+          saved?: boolean;
+        };
+        if (!res.ok) {
+          throw new Error(json.error ?? "Could not update attendance.");
+        }
+        setInterested(json.interested ?? 0);
+        setGoing(json.going ?? 0);
+        setMyAttendance(json.myAttendance ?? null);
+        setSaved(Boolean(json.saved));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("eod:saved-events-changed", { detail: { eventId } }));
         }
       } catch (e) {
         console.error("event_attendance toggle:", e);
+        alert(getErrorMessage(e));
       } finally {
         setBusy(null);
       }
     },
-    [eventId, userId, myAttendance]
+    [eventId, userId]
   );
 
   const toggleSave = useCallback(async () => {
@@ -93,24 +106,39 @@ export default function EventFeedActions({
     }
     setBusy("save");
     try {
-      if (saved) {
-        const { error } = await supabase.from("saved_events").delete().eq("user_id", userId).eq("event_id", eventId);
-        if (error) throw error;
-        setSaved(false);
-      } else {
-        const { error } = await supabase.from("saved_events").insert([{ user_id: userId, event_id: eventId }]);
-        if (error && error.code !== "23505") {
-          console.error("saved_events insert:", error);
-          return;
-        }
-        setSaved(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/events/feed-actions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ action: "toggle_save", eventId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        interested?: number;
+        going?: number;
+        myAttendance?: "interested" | "going" | null;
+        saved?: boolean;
+      };
+      if (!res.ok) {
+        throw new Error(json.error ?? "Could not update save state.");
+      }
+      setInterested(json.interested ?? 0);
+      setGoing(json.going ?? 0);
+      setMyAttendance(json.myAttendance ?? null);
+      setSaved(Boolean(json.saved));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("eod:saved-events-changed", { detail: { eventId } }));
       }
     } catch (e) {
       console.error("saved_events toggle:", e);
+      alert(getErrorMessage(e));
     } finally {
       setBusy(null);
     }
-  }, [eventId, userId, saved]);
+  }, [eventId, userId]);
 
   const signupHref = signupUrl ? httpsAssetUrl(signupUrl) : "";
 
@@ -162,18 +190,12 @@ export default function EventFeedActions({
       >
         Going {going > 0 ? `· ${going}` : ""}
       </button>
-      {signupHref ? (
-        <a href={signupHref} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: isDark ? "#60a5fa" : "#1d4ed8", textDecoration: "none" }}>
-          Sign Up ↗
-        </a>
-      ) : null}
       {userId ? (
         <button
           type="button"
           onClick={toggleSave}
           disabled={busy === "save"}
           style={{
-            marginLeft: "auto",
             background: saved ? t.text : t.surface,
             color: saved ? t.surface : t.textMuted,
             border: `1px solid ${t.border}`,
@@ -187,6 +209,11 @@ export default function EventFeedActions({
         >
           {busy === "save" ? "..." : saved ? "Saved ✓" : "Save"}
         </button>
+      ) : null}
+      {signupHref ? (
+        <a href={signupHref} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: isDark ? "#60a5fa" : "#1d4ed8", textDecoration: "none" }}>
+          Sign Up ↗
+        </a>
       ) : null}
     </div>
   );

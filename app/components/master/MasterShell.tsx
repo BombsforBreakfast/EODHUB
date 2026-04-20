@@ -134,7 +134,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       >
         <DesktopLayout
           isMobile={false}
-          desktopColumns={`${leftRailState === "collapsed" ? "54px" : "320px"} minmax(0, 1fr) ${rightRailState === "collapsed" ? "54px" : "360px"}`}
+          desktopColumns={`${leftRailState === "collapsed" ? "38px" : "320px"} minmax(0, 1fr) ${rightRailState === "collapsed" ? "38px" : "360px"}`}
           desktopGap={24}
           desktopMarginTop={0}
           left={
