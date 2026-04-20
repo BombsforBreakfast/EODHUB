@@ -1125,6 +1125,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     .select("user_id, first_name, last_name, photo_url, service, status, professional_tags, unit_history_tags")
       .eq("verification_status", "verified")
       .neq("user_id", currentUserId)
+      .neq("user_id", RUMINT_USER_ID)
       .not("first_name", "is", null)
       // Respect "Show me in suggestions" privacy toggle. neq null-tolerant so
       // existing rows (default true) still appear.
