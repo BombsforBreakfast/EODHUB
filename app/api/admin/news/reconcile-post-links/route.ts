@@ -66,8 +66,8 @@ function buildNewsPostContent(item: Pick<NewsItemRow, "headline" | "summary">): 
 type ReconcilePlan = {
   publishedMissingPost: NewsItemRow[];
   publishedShadowMismatch: Array<{ newsItemId: string; currentShadowPostId: string | null; shouldBePostId: string }>;
-  nonPublishedWithPost: Array<{ newsItemId: string; status: string; postId: string }>;
-  nonPublishedWithShadowPointer: Array<{ newsItemId: string; status: string; shadowPostId: string }>;
+  nonPublishedWithPost: Array<{ newsItemId: string; status: NewsItemRow["status"]; postId: string }>;
+  nonPublishedWithShadowPointer: Array<{ newsItemId: string; status: NewsItemRow["status"]; shadowPostId: string }>;
   linkedPostsWrongShape: Array<{ postId: string; newsItemId: string; contentType: string | null; systemGenerated: boolean | null }>;
 };
 
@@ -100,7 +100,7 @@ function buildPlan(newsItems: NewsItemRow[], linkedPosts: LinkedPostRow[]): Reco
       if (!linked) return null;
       return { newsItemId: n.id, status: n.status, postId: linked.id };
     })
-    .filter((v): v is { newsItemId: string; status: string; postId: string } => Boolean(v));
+    .filter((v): v is { newsItemId: string; status: NewsItemRow["status"]; postId: string } => Boolean(v));
 
   const nonPublishedWithShadowPointer = nonPublished
     .filter((n) => Boolean(n.shadow_post_id))

@@ -1909,10 +1909,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const savedFeedEventIds = new Set<string>();
 
     if (uniqueFeedEventIds.length > 0) {
-      let eventsResult = await supabase
+      const eventsResult = await supabase
         .from("events")
         .select("id, user_id, title, date, organization, signup_url, image_url")
         .in("id", uniqueFeedEventIds);
+      let eventRows: FeedEventSnapshot[] = [];
       // Backward compatibility if image_url hasn't been migrated yet.
       if (eventsResult.error && isMissingColumnError(eventsResult.error, "image_url")) {
         const fallback = await supabase
@@ -1922,29 +1923,26 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         if (fallback.error) {
           console.error("Feed events load error:", fallback.error);
         } else {
-          eventsResult = {
-            data: ((fallback.data ?? []) as Array<{
-              id: string;
-              user_id: string;
-              title: string;
-              date: string;
-              organization: string | null;
-              signup_url: string | null;
-            }>).map((row) => ({
-              ...row,
-              image_url: null as string | null,
-            })),
-            error: null,
-          } as typeof eventsResult;
+          eventRows = ((fallback.data ?? []) as Array<{
+            id: string;
+            user_id: string;
+            title: string;
+            date: string;
+            organization: string | null;
+            signup_url: string | null;
+          }>).map((row) => ({
+            ...row,
+            image_url: null as string | null,
+          }));
         }
-      }
-      if (eventsResult.error) {
+      } else if (eventsResult.error) {
         console.error("Feed events load error:", eventsResult.error);
       } else {
-        ((eventsResult.data ?? []) as FeedEventSnapshot[]).forEach((e) => {
-          eventSnapshotById.set(e.id, e);
-        });
+        eventRows = (eventsResult.data ?? []) as FeedEventSnapshot[];
       }
+      eventRows.forEach((e) => {
+        eventSnapshotById.set(e.id, e);
+      });
 
       const { data: attRows, error: attErr } = await supabase
         .from("event_attendance")
@@ -4592,7 +4590,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                               border: `1px solid ${t.border}`,
                               borderRadius: 999,
                               padding: "2px 8px",
-                              background: t.bgSubtle,
+                              background: t.surface,
                               color: t.textMuted,
                               fontWeight: 700,
                               letterSpacing: 0.2,

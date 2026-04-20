@@ -32,7 +32,7 @@ function previousRangeStart(range: Range): Date {
 }
 
 async function countDistinct(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   table: string,
   column: string,
   sinceCol: string,
