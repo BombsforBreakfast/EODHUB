@@ -58,6 +58,7 @@ export default function NavBar() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isEmployer, setIsEmployer] = useState(false);
   const [adminPendingTotal, setAdminPendingTotal] = useState(0);
   const [groupPendingTotal, setGroupPendingTotal] = useState(0);
 
@@ -156,7 +157,7 @@ export default function NavBar() {
     async function loadNavProfile(uid: string) {
       const { data } = await supabase
         .from("profiles")
-        .select("first_name, display_name, photo_url, is_admin")
+        .select("first_name, display_name, photo_url, is_admin, account_type")
         .eq("user_id", uid)
         .maybeSingle();
       if (!mounted) return;
@@ -165,9 +166,11 @@ export default function NavBar() {
         display_name: string | null;
         photo_url: string | null;
         is_admin: boolean | null;
+        account_type: string | null;
       } | null;
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
       setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
+      setIsEmployer(row?.account_type === "employer");
       if (row?.is_admin) {
         setIsAdmin(true);
         await refreshAdminPendingBadge();
@@ -206,6 +209,7 @@ export default function NavBar() {
       } else {
         setAvatarPhotoUrl(null);
         setIsAdmin(false);
+        setIsEmployer(false);
         setAdminPendingTotal(0);
         setGroupPendingTotal(0);
       }
@@ -224,6 +228,7 @@ export default function NavBar() {
       } else {
         setAvatarPhotoUrl(null);
         setIsAdmin(false);
+        setIsEmployer(false);
         setAdminPendingTotal(0);
         setUserInitial("?");
       }
@@ -814,6 +819,9 @@ export default function NavBar() {
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
                     ...(canAccessRabbithole
                       ? [{ label: "Rabbithole", href: "/rabbithole", emoji: "🐇", badge: 0, onNav: null as (() => Promise<void>) | null }]
+                      : []),
+                    ...(isEmployer
+                      ? [{ label: "Employer Dashboard", href: "/employer", emoji: "🎯", badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
                     ...(isAdmin
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]

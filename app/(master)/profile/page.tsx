@@ -435,7 +435,10 @@ export default function MyAccountPage() {
         <div style={{ marginTop: 24, ...card }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
             <div style={{ fontSize: 20, fontWeight: 900, color: t.text }}>Your Job Postings</div>
-            <a href="/post-job" style={{ background: "#7c3aed", color: "white", borderRadius: 10, padding: "7px 16px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>+ Post Job</a>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <a href="/employer" style={{ background: t.text, color: t.surface, borderRadius: 10, padding: "7px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>Employer Dashboard →</a>
+              <a href="/post-job" style={{ background: "#7c3aed", color: "white", borderRadius: 10, padding: "7px 16px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>+ Post Job</a>
+            </div>
           </div>
           {employerJobs.length === 0 ? (
             <div style={{ color: t.textMuted }}>No jobs posted yet. <a href="/post-job" style={{ color: "#1d4ed8" }}>Post your first listing →</a></div>
