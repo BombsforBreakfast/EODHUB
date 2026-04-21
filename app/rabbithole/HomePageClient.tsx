@@ -58,6 +58,7 @@ export default function RabbitholeHomePageClient() {
     contentType: queryType || "",
   }));
   const [contributeOpen, setContributeOpen] = useState(queryContribute === "1");
+  const [isMobile, setIsMobile] = useState(false);
 
   // Tag filter from URL (?tag=)
   const activeTag = searchParams.get("tag") ?? null;
@@ -82,6 +83,14 @@ export default function RabbitholeHomePageClient() {
     }
     void load();
     return () => { mounted = false; };
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 768px)");
+    const apply = () => setIsMobile(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
   }, []);
 
   const visibleItems = useMemo(() => {
@@ -244,7 +253,9 @@ export default function RabbitholeHomePageClient() {
           padding: 12,
           marginBottom: 14,
           display: "grid",
-          gridTemplateColumns: "1fr minmax(160px, 220px) minmax(150px, 180px) minmax(130px, 160px)",
+          gridTemplateColumns: isMobile
+            ? "1fr"
+            : "1fr minmax(160px, 220px) minmax(150px, 180px) minmax(130px, 160px)",
           gap: 10,
         }}
       >

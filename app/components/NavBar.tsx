@@ -813,7 +813,7 @@ export default function NavBar() {
                     { label: "Groups", href: "/units", emoji: "🪖", badge: groupPendingTotal, onNav: null },
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
                     ...(canAccessRabbithole
-                      ? [{ label: "Rabbithole", href: "/rabbithole", emoji: "🕳️", badge: 0, onNav: null as (() => Promise<void>) | null }]
+                      ? [{ label: "Rabbithole", href: "/rabbithole", emoji: "🐇", badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
                     ...(isAdmin
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]

@@ -2939,43 +2939,66 @@ export default function PublicProfilePage() {
 
                 {/* Profile details ΓÇö full width below */}
                 <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
-                    <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
-                    <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
-                    <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
-                    <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
-                    <div><strong>Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
-                    {profile.is_employer && (
-                      <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
-                        {profile.company_website
-                          ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
-                          : <span style={{ color: "#9ca3af" }}>Not added yet</span>}
+                  {!showDesktopProfileBack ? (
+                    <>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
+                        <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
+                        <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
+                        <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
+                        <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
+                        <div><strong>Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
+                        {profile.is_employer && (
+                          <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
+                            {profile.company_website
+                              ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
+                              : <span style={{ color: "#9ca3af" }}>Not added yet</span>}
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  {profile.bio?.trim() ? (
-                    <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, paddingInline: 8, color: t.textMuted, lineHeight: 1.6 }}>
-                      {profile.bio}
-                    </div>
-                  ) : isOwnWall ? (
-                    <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, lineHeight: 1.6 }}>
-                      <div style={{ border: `1px dashed ${t.border}`, borderRadius: 10, padding: "12px 14px", background: t.bg, marginInline: 8 }}>
-                        <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>
-                          Add a short bio so other members can quickly understand your background.
+                      {profile.bio?.trim() ? (
+                        <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, paddingInline: 8, color: t.textMuted, lineHeight: 1.6 }}>
+                          {profile.bio}
                         </div>
-                        <button
-                          type="button"
-                          onClick={openWallEditProfile}
-                          style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
-                        >
-                          Complete Bio
-                        </button>
+                      ) : isOwnWall ? (
+                        <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, lineHeight: 1.6 }}>
+                          <div style={{ border: `1px dashed ${t.border}`, borderRadius: 10, padding: "12px 14px", background: t.bg, marginInline: 8 }}>
+                            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>
+                              Add a short bio so other members can quickly understand your background.
+                            </div>
+                            <button
+                              type="button"
+                              onClick={openWallEditProfile}
+                              style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                            >
+                              Complete Bio
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 12, background: t.bg }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Employer View</div>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: t.text, marginTop: 2 }}>Candidate Snapshot</div>
+                      <div style={{ marginTop: 8, fontSize: 13, color: t.text, lineHeight: 1.5 }}>
+                        {profile.employer_summary?.trim() || "No summary added yet."}
+                      </div>
+                      <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+                        <a href={profile.resume_url || "#"} target={profile.resume_url ? "_blank" : undefined} rel="noreferrer" style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 10px", textDecoration: "none", color: t.text, background: t.surface }}>
+                          My Resume: <span style={{ color: t.textMuted }}>{profile.resume_url ? "Added" : "Not added"}</span>
+                        </a>
+                        <a href={profile.education_url || "#"} target={profile.education_url ? "_blank" : undefined} rel="noreferrer" style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 10px", textDecoration: "none", color: t.text, background: t.surface }}>
+                          My Education: <span style={{ color: t.textMuted }}>{profile.education_url ? "Added" : "Not added"}</span>
+                        </a>
+                        <div style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 10px", background: t.surface }}>
+                          Specialized Training: <span style={{ color: t.textMuted }}>{normalizeTagArray(profile.specialized_training).length > 0 ? `${normalizeTagArray(profile.specialized_training).length} added` : "Not added"}</span>
+                        </div>
                       </div>
                     </div>
-                  ) : null}
+                  )}
                   {isOwnWall && (profile.referral_code || !editingProfile) && (
                     <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-                      {profile.referral_code && (
+                      {profile.referral_code && !showDesktopProfileBack && (
                         <button
                           type="button"
                           onClick={() => {
@@ -2999,7 +3022,7 @@ export default function PublicProfilePage() {
                           {copiedReferral ? "Copied" : "Referral Link"}
                         </button>
                       )}
-                      {!editingProfile && (
+                      {!editingProfile && !showDesktopProfileBack && (
                         <button
                           type="button"
                           onClick={openWallEditProfile}
@@ -3017,6 +3040,25 @@ export default function PublicProfilePage() {
                           }}
                         >
                           Edit Profile
+                        </button>
+                      )}
+                      {canViewEmployerBack && (
+                        <button
+                          type="button"
+                          onClick={() => setShowDesktopProfileBack((prev) => !prev)}
+                          style={{
+                            background: t.surface,
+                            color: t.text,
+                            border: `1px solid ${t.border}`,
+                            borderRadius: 999,
+                            padding: "6px 12px",
+                            minWidth: 144,
+                            fontWeight: 700,
+                            fontSize: 11,
+                            cursor: "pointer",
+                          }}
+                        >
+                          {showDesktopProfileBack ? "See front of profile" : "See back of profile"}
                         </button>
                       )}
                     </div>
