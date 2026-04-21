@@ -39,7 +39,7 @@ function clampPath(raw: unknown): string {
 }
 
 async function resolveUserId(req: NextRequest): Promise<string | null> {
-  const authHeader = req.headers.get("authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7);
   if (!token || token === "null" || token === "undefined") return null;

@@ -820,7 +820,7 @@ export default function NavBar() {
                     ...(canAccessRabbithole
                       ? [{ label: "Rabbithole", href: "/rabbithole", emoji: "🐇", badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
-                    ...(isEmployer
+                    ...(isEmployer || isAdmin
                       ? [{ label: "Employer Dashboard", href: "/employer", emoji: "🎯", badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
                     ...(isAdmin

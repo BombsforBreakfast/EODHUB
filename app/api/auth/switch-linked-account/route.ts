@@ -9,7 +9,7 @@ import { createSupabaseServiceRoleClient } from "../../../lib/auth/adminAuthLook
  * only the hash is consumed in-app.
  */
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

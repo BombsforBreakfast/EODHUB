@@ -43,6 +43,11 @@ type AttendeeProfile = {
   photo_url: string | null;
 };
 
+const EVENT_COLUMNS =
+  "id, user_id, title, description, date, organization, signup_url, image_url, created_at";
+const MEMORIAL_COLUMNS =
+  "id, user_id, name, bio, photo_url, death_date, created_at, source_url";
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -157,7 +162,7 @@ export default function EventsPage() {
 
     const { data, error } = await supabase
       .from("events")
-      .select("*")
+      .select(EVENT_COLUMNS)
       .gte("date", monthStart)
       .lte("date", monthEnd)
       .order("date", { ascending: true });
@@ -267,7 +272,7 @@ export default function EventsPage() {
     const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate());
     const { data, error } = await supabase
       .from("events")
-      .select("*")
+      .select(EVENT_COLUMNS)
       .gte("date", todayStr)
       .order("date", { ascending: true });
     if (error) { console.error("Upcoming events load error:", error); return; }
@@ -281,7 +286,7 @@ export default function EventsPage() {
   async function loadMemorials() {
     const { data, error } = await supabase
       .from("memorials")
-      .select("*")
+      .select(MEMORIAL_COLUMNS)
       .order("death_date", { ascending: true });
 
     if (error) {

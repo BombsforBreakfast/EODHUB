@@ -5,7 +5,7 @@ const ALLOWED_FLAGS = ["is_employer", "employer_verified", "is_admin"] as const;
 type AllowedFlag = (typeof ALLOWED_FLAGS)[number];
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

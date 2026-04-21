@@ -50,7 +50,7 @@ async function maybeUnhide(admin: ReturnType<typeof getAdminClient>, contentType
 
   const { count, error } = await admin
     .from("flags")
-    .select("*", { count: "exact", head: true })
+    .select("id", { count: "exact", head: true })
     .eq("content_type", contentType)
     .eq("content_id", contentId)
     .eq("reviewed", false);
@@ -61,7 +61,7 @@ async function maybeUnhide(admin: ReturnType<typeof getAdminClient>, contentType
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -84,7 +84,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });
   }
 
-  const { data: flag, error: flagErr } = await auth.admin.from("flags").select("*").eq("id", flagId).maybeSingle();
+  const { data: flag, error: flagErr } = await auth.admin
+    .from("flags")
+    .select("id, content_type, content_id, reviewed")
+    .eq("id", flagId)
+    .maybeSingle();
   if (flagErr) {
     return NextResponse.json({ error: flagErr.message }, { status: 500 });
   }

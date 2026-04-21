@@ -7,7 +7,7 @@ import { createNotification } from "../../lib/notificationsServer";
 const VOUCHES_NEEDED = 3;
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
   // Count total vouches
   const { count } = await adminClient
     .from("profile_vouches")
-    .select("*", { count: "exact", head: true })
+    .select("voucher_user_id", { count: "exact", head: true })
     .eq("vouchee_user_id", vouchee_user_id);
 
   const totalVouches = count ?? 0;

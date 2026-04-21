@@ -22,7 +22,7 @@ export type PendingGroupSummary = {
  * Used to populate the admin inbox on the Groups page and NavBar badge.
  */
 export async function GET(req: NextRequest) {
-  const token = req.headers.get("authorization")?.replace("Bearer ", "");
+  const token = (req.headers.get("Authorization") ?? req.headers.get("authorization"))?.replace("Bearer ", "");
   if (!token) return NextResponse.json({ groups: [] });
 
   const userClient = createClient(

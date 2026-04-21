@@ -38,7 +38,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = req.headers.get("Authorization");
+  const auth = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const token = auth?.replace("Bearer ", "");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -80,7 +80,7 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = req.headers.get("Authorization");
+  const auth = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const token = auth?.replace("Bearer ", "");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

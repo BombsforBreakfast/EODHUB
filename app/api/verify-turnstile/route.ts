@@ -9,8 +9,8 @@ export async function POST(req: NextRequest) {
 
   const secret = process.env.TURNSTILE_SECRET_KEY;
   if (!secret) {
-    // If not configured, allow through (dev/staging fallback)
-    return NextResponse.json({ success: true });
+    // Fail closed when misconfigured so bot protection is never silently bypassed.
+    return NextResponse.json({ success: false, error: "Turnstile is not configured" }, { status: 503 });
   }
 
   const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {

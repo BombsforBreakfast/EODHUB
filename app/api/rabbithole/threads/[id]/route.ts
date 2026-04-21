@@ -20,7 +20,7 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

@@ -322,14 +322,19 @@ export default function MyAccountPage() {
             View my profile
           </a>
           {profile?.is_admin && (
-            <a href="/admin" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer", textDecoration: "none", fontSize: 14 }}>
-              Admin Panel
-              {adminPendingCount > 0 && (
-                <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
-                  {formatNavBadgeCount(adminPendingCount)}
-                </span>
-              )}
-            </a>
+            <>
+              <a href="/admin" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer", textDecoration: "none", fontSize: 14 }}>
+                Admin Panel
+                {adminPendingCount > 0 && (
+                  <span style={{ background: "#fbbf24", color: "black", borderRadius: 20, minWidth: 18, height: 18, fontSize: 10, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", lineHeight: 1 }}>
+                    {formatNavBadgeCount(adminPendingCount)}
+                  </span>
+                )}
+              </a>
+              <a href="/employer" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer", textDecoration: "none", fontSize: 14 }}>
+                Employer Dashboard (QA)
+              </a>
+            </>
           )}
         </div>
       )}

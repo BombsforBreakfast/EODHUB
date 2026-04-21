@@ -32,6 +32,8 @@ function contentTypeLabel(type: RabbitholeContentType): string {
   switch (type) {
     case "archived_post":
       return "Archived Post";
+    case "video":
+      return "Media";
     case "article_news":
       return "Article / News";
     case "external_link":
@@ -286,7 +288,7 @@ export default function RabbitholeHomePageClient() {
           <option value="">All content types</option>
           <option value="archived_post">Archived Post</option>
           <option value="document">Document</option>
-          <option value="video">Video</option>
+          <option value="video">Media</option>
           <option value="article_news">Article / News</option>
           <option value="external_link">External Link</option>
           <option value="resource">Resource</option>

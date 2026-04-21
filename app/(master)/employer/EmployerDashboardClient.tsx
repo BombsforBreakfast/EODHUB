@@ -22,7 +22,7 @@ import {
   type CandidateFilters,
 } from "./lib/candidateUtils";
 
-type AccessState = "loading" | "not_logged_in" | "not_employer" | "ok";
+type AccessState = "loading" | "not_logged_in" | "not_permitted" | "ok";
 
 type ActionPatch = Partial<Pick<EmployerAction, "is_saved" | "is_interested" | "is_hidden" | "notes">>;
 
@@ -36,6 +36,7 @@ export default function EmployerDashboardClient() {
   const [actions, setActions] = useState<Record<string, EmployerAction>>({});
   const [loadingData, setLoadingData] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionsWarning, setActionsWarning] = useState<string | null>(null);
 
   const [tab, setTab] = useState<EmployerTab>("all");
   const [filters, setFilters] = useState<CandidateFilters>(EMPTY_FILTERS);
@@ -44,7 +45,7 @@ export default function EmployerDashboardClient() {
   const [busyAction, setBusyAction] = useState<string | null>(null);
 
   /* ────────────────────────────────────────────────────────────────────────
-   * Access check: only account_type = 'employer' may see this page.
+   * Access check: employer accounts + admins (QA override) may see this page.
    * Members and non-authed users get a friendly redirect/message.
    * ──────────────────────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -59,14 +60,14 @@ export default function EmployerDashboardClient() {
       setCurrentUserId(user.id);
       const { data: profile } = await supabase
         .from("profiles")
-        .select("account_type")
+        .select("account_type, is_admin")
         .eq("user_id", user.id)
         .maybeSingle();
       if (cancelled) return;
-      if (profile?.account_type === "employer") {
+      if (profile?.account_type === "employer" || profile?.is_admin) {
         setAccess("ok");
       } else {
-        setAccess("not_employer");
+        setAccess("not_permitted");
       }
     })();
     return () => {
@@ -82,6 +83,7 @@ export default function EmployerDashboardClient() {
   const loadData = useCallback(async (employerId: string) => {
     setLoadingData(true);
     setLoadError(null);
+    setActionsWarning(null);
     const [{ data: candRows, error: candErr }, { data: actRows, error: actErr }] = await Promise.all([
       supabase
         .from("profiles")
@@ -103,7 +105,16 @@ export default function EmployerDashboardClient() {
     }
     if (actErr) {
       // non-fatal — we can still show candidates without annotation state
-      console.error("employer_user_actions load error:", actErr);
+      const isMissingTable =
+        actErr.code === "42P01" ||
+        (actErr.message ?? "").toLowerCase().includes("employer_user_actions");
+      if (isMissingTable) {
+        setActionsWarning("Employer actions table is not available yet. Run latest Supabase migrations to enable save/interested/hide/notes.");
+      } else {
+        setActionsWarning("Candidate list loaded, but private employer actions failed to load.");
+      }
+      // Keep this as a warning so local dev does not throw the red error overlay.
+      console.warn("employer_user_actions load warning:", actErr);
     }
 
     setCandidates((candRows ?? []) as unknown as PublicCandidate[]);
@@ -162,7 +173,15 @@ export default function EmployerDashboardClient() {
         .single();
 
       if (error) {
-        console.error("employer_user_actions upsert error:", error);
+        const isMissingTable =
+          error.code === "42P01" ||
+          (error.message ?? "").toLowerCase().includes("employer_user_actions");
+        setActionsWarning(
+          isMissingTable
+            ? "Employer actions table is missing. Run latest Supabase migrations, then refresh."
+            : "Could not save employer action. Please retry.",
+        );
+        console.warn("employer_user_actions upsert warning:", error);
         // Roll back to previous state on failure
         setActions((prev) => {
           const next = { ...prev };
@@ -257,7 +276,7 @@ export default function EmployerDashboardClient() {
   const activeFilterCount = Object.entries(filters).filter(([k, v]) => k !== "search" && v).length;
 
   /* ────────────────────────────────────────────────────────────────────────
-   * Non-employer gate
+   * Access gate
    * ──────────────────────────────────────────────────────────────────────── */
   if (access === "loading") {
     return (
@@ -268,12 +287,12 @@ export default function EmployerDashboardClient() {
     if (typeof window !== "undefined") window.location.href = "/login";
     return null;
   }
-  if (access === "not_employer") {
+  if (access === "not_permitted") {
     return (
       <div style={{ maxWidth: 640, margin: "40px auto", padding: "24px", textAlign: "center", color: t.text }}>
-        <h1 style={{ fontSize: 22, fontWeight: 900, marginBottom: 10 }}>Employer access required</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 900, marginBottom: 10 }}>Employer or admin access required</h1>
         <p style={{ color: t.textMuted, fontSize: 14, lineHeight: 1.5 }}>
-          The Employer Dashboard is available to verified employer accounts.
+          The Employer Dashboard is available to verified employer accounts and designated admins for QA.
           If you think this is a mistake, contact support from your account page.
         </p>
         <a
@@ -297,7 +316,7 @@ export default function EmployerDashboardClient() {
   ];
 
   return (
-    <div style={{ maxWidth: 1200, margin: "0 auto", padding: "12px 4px 40px", color: t.text }}>
+    <div style={{ width: "100%", maxWidth: "100%", margin: 0, padding: "12px 4px 40px", color: t.text }}>
       <header style={{ padding: "4px 4px 14px" }}>
         <h1 style={{ fontSize: 26, fontWeight: 900, margin: 0 }}>Employer Dashboard</h1>
         <p style={{ color: t.textMuted, fontSize: 13, marginTop: 6, lineHeight: 1.5, maxWidth: 640 }}>
@@ -504,6 +523,11 @@ export default function EmployerDashboardClient() {
       )}
       {loadError && (
         <div style={{ color: "#dc2626", padding: "10px 4px" }}>Failed to load: {loadError}</div>
+      )}
+      {actionsWarning && (
+        <div style={{ color: "#92400e", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 10, padding: "10px 12px", marginBottom: 10, fontSize: 13 }}>
+          {actionsWarning}
+        </div>
       )}
       {!loadingData && !loadError && filtered.length === 0 && (
         <div

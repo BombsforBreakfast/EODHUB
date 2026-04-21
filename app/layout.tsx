@@ -31,6 +31,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const showVercelAnalytics = process.env.NODE_ENV === "production";
   return (
     <html lang="en" data-theme="dark">
       <body
@@ -93,7 +94,7 @@ export default function RootLayout({
           >
             © EOD Hub — A professional network for the Explosive Ordnance Disposal community
           </footer>
-          <Analytics />
+          {showVercelAnalytics ? <Analytics /> : null}
         </ThemeProvider>
       </body>
     </html>

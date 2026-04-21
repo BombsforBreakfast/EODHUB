@@ -43,7 +43,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -60,7 +60,7 @@ export async function GET(
 
   const { data: unit, error: unitError } = await adminClient
     .from("units")
-    .select("*")
+    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at")
     .eq("slug", slug)
     .single();
 
@@ -81,7 +81,7 @@ export async function GET(
 
   const { data: posts, error: postsError } = await adminClient
     .from("unit_posts")
-    .select("*")
+    .select("id, unit_id, user_id, post_type, content, photo_url, gif_url, created_at, meta, rabbithole_thread_id, rabbithole_contribution_id")
     .eq("unit_id", unit.id)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -197,7 +197,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -214,7 +214,7 @@ export async function POST(
 
   const { data: unit, error: unitError } = await adminClient
     .from("units")
-    .select("*")
+    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at")
     .eq("slug", slug)
     .single();
 
@@ -266,7 +266,7 @@ export async function POST(
       rabbithole_contribution_id: rabbithole_contribution_id ?? null,
       meta: meta ?? null,
     })
-    .select()
+    .select("id, unit_id, user_id, post_type, content, photo_url, gif_url, created_at, meta, rabbithole_thread_id, rabbithole_contribution_id")
     .single();
 
   if (insertError || !post) {

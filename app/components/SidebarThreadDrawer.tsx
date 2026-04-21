@@ -93,7 +93,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
 
       const { data: msgs } = await supabase
         .from("messages")
-        .select("*")
+        .select("id, conversation_id, sender_id, content, created_at, gif_url, is_read")
         .eq("conversation_id", cid)
         .order("created_at", { ascending: true });
       if (!cancelled) setMessages((msgs ?? []) as MessageRow[]);
@@ -163,9 +163,13 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
     if (!url || previewFetchesRef.current.has(url) || Object.prototype.hasOwnProperty.call(urlPreviews, url)) return;
     previewFetchesRef.current.add(url);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/preview-url", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
         body: JSON.stringify({ url }),
       });
       if (!res.ok) {

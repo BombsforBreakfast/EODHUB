@@ -41,12 +41,22 @@ type UnitMemberRow = {
 };
 
 export async function GET(req: NextRequest) {
-  const adminClient = getAdminClient();
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
+  const token = authHeader?.replace("Bearer ", "");
+  if (!token) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  const userClient = getUserClient(token);
+  const { data: { user }, error: authError } = await userClient.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const q = req.nextUrl.searchParams.get("q") ?? "";
 
-  let dbQuery = adminClient
+  let dbQuery = userClient
     .from("units")
-    .select("*")
+    .select("id, name, slug, description, cover_photo_url, type, created_at")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -68,7 +78,7 @@ export async function GET(req: NextRequest) {
 
   const unitIds = filteredUnits.map((u: { id: string }) => u.id);
 
-  const { data: memberRows, error: membersFetchError } = await adminClient
+  const { data: memberRows, error: membersFetchError } = await userClient
     .from("unit_members")
     .select("unit_id, user_id, role, created_at")
     .in("unit_id", unitIds)
@@ -120,7 +130,7 @@ export async function GET(req: NextRequest) {
 
   const profileMap: Record<string, ProfileMini> = {};
   if (previewUserIds.size > 0) {
-    const { data: profiles, error: profErr } = await adminClient
+    const { data: profiles, error: profErr } = await userClient
       .from("profiles")
       .select("user_id, first_name, last_name, display_name, photo_url")
       .in("user_id", [...previewUserIds]);
@@ -163,7 +173,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -216,7 +226,7 @@ export async function POST(req: NextRequest) {
       slug,
       created_by: user.id,
     })
-    .select()
+    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at")
     .single();
 
   if (insertError || !unit) {

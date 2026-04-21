@@ -21,7 +21,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -44,7 +44,7 @@ export async function POST(
 
   const { data: unit, error: unitError } = await adminClient
     .from("units")
-    .select("*")
+    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at")
     .eq("slug", slug)
     .single();
 
@@ -139,7 +139,7 @@ export async function POST(
 
   const { count } = await adminClient
     .from("unit_join_approvals")
-    .select("*", { count: "exact", head: true })
+    .select("approver_user_id", { count: "exact", head: true })
     .eq("unit_id", unit.id)
     .eq("requester_user_id", requester_user_id);
 

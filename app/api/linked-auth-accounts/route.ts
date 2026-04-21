@@ -8,7 +8,7 @@ import {
 import { buildLinkedAccountSummary, type ProfileRow } from "../../lib/auth/linkedAccountLabels";
 
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get("authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

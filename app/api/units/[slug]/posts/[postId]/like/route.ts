@@ -22,7 +22,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string; postId: string }> }
 ) {
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -127,7 +127,7 @@ export async function POST(
 
   const { count } = await adminClient
     .from("unit_post_likes")
-    .select("*", { count: "exact", head: true })
+    .select("id", { count: "exact", head: true })
     .eq("unit_post_id", postId);
 
   return NextResponse.json({ liked, like_count: count ?? 0, pending_like_notify });

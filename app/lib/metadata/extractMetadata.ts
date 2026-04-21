@@ -1,3 +1,6 @@
+import { lookup } from "node:dns/promises";
+import net from "node:net";
+
 export type ExtractedMetadata = {
   title: string | null;
   description: string | null;
@@ -5,6 +8,75 @@ export type ExtractedMetadata = {
   siteName: string | null;
   url: string;
 };
+
+function isPrivateIpv4(ip: string): boolean {
+  const parts = ip.split(".").map((part) => Number.parseInt(part, 10));
+  if (parts.length !== 4 || parts.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return true;
+  const [a, b] = parts;
+  if (a === 10) return true;
+  if (a === 127) return true;
+  if (a === 0) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a >= 224) return true; // multicast / reserved
+  return false;
+}
+
+function isPrivateIp(ip: string): boolean {
+  const ipVersion = net.isIP(ip);
+  if (ipVersion === 4) return isPrivateIpv4(ip);
+  if (ipVersion === 6) {
+    const normalized = ip.toLowerCase();
+    if (normalized === "::1") return true;
+    if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true; // unique local
+    if (normalized.startsWith("fe80")) return true; // link-local
+    return false;
+  }
+  return true;
+}
+
+async function assertSafePublicHttpUrl(websiteUrl: string): Promise<URL> {
+  let parsed: URL;
+  try {
+    parsed = new URL(websiteUrl);
+  } catch {
+    throw new Error("Invalid URL");
+  }
+
+  if (!["http:", "https:"].includes(parsed.protocol)) {
+    throw new Error("URL protocol must be http or https");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("URL credentials are not allowed");
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (
+    host === "localhost" ||
+    host.endsWith(".localhost") ||
+    host.endsWith(".local") ||
+    host.endsWith(".internal")
+  ) {
+    throw new Error("Local/internal hosts are not allowed");
+  }
+
+  if (net.isIP(host)) {
+    if (isPrivateIp(host)) throw new Error("Private network hosts are not allowed");
+    return parsed;
+  }
+
+  const resolved = await lookup(host, { all: true, verbatim: true });
+  if (!resolved.length) {
+    throw new Error("Host could not be resolved");
+  }
+  for (const addr of resolved) {
+    if (isPrivateIp(addr.address)) {
+      throw new Error("Private network hosts are not allowed");
+    }
+  }
+  return parsed;
+}
 
 function decodeHtmlEntities(value: string): string {
   return value
@@ -71,7 +143,10 @@ function normalizeImageUrl(imageUrl: string | null): string | null {
 }
 
 export async function extractMetadata(websiteUrl: string): Promise<ExtractedMetadata> {
-  const response = await fetch(websiteUrl, {
+  const parsedUrl = await assertSafePublicHttpUrl(websiteUrl);
+  const safeUrl = parsedUrl.toString();
+
+  const response = await fetch(safeUrl, {
     headers: {
       "User-Agent": "Mozilla/5.0 (compatible; EODZoneBot/1.0)",
       Accept: "text/html,application/xhtml+xml",
@@ -100,7 +175,7 @@ export async function extractMetadata(websiteUrl: string): Promise<ExtractedMeta
     extractMetaTag(html, "og:image") ||
     extractMetaTag(html, "twitter:image");
 
-  const image = normalizeImageUrl(absolutizeUrl(rawImage, websiteUrl));
+  const image = normalizeImageUrl(absolutizeUrl(rawImage, safeUrl));
 
   const siteName =
     extractMetaTag(html, "og:site_name") ||
@@ -111,6 +186,6 @@ export async function extractMetadata(websiteUrl: string): Promise<ExtractedMeta
     description,
     image,
     siteName,
-    url: websiteUrl,
+    url: safeUrl,
   };
 }

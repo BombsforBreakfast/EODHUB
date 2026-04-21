@@ -28,6 +28,9 @@ type BusinessListing = {
   listing_type?: "business" | "organization" | "resource" | null;
 };
 
+const BUSINESS_LISTING_COLUMNS =
+  "id, created_at, business_name, website_url, custom_blurb, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type";
+
 function httpsAssetUrl(url: string | null | undefined): string {
   if (!url?.trim()) return "";
   const u = url.trim();
@@ -110,7 +113,7 @@ export default function BusinessesPage() {
     async function init() {
       const { data, error } = await supabase
         .from("business_listings")
-        .select("*")
+        .select(BUSINESS_LISTING_COLUMNS)
         .eq("is_approved", true)
         .order("is_featured", { ascending: false })
         .order("business_name", { ascending: true, nullsFirst: false })
@@ -121,7 +124,7 @@ export default function BusinessesPage() {
       // Ensure known nonprofit resource entries always appear even if approval data is out of sync.
       const { data: resourceFallback } = await supabase
         .from("business_listings")
-        .select("*")
+        .select(BUSINESS_LISTING_COLUMNS)
         .or("website_url.ilike.*thelongwalkhome.org*,website_url.ilike.*eod-wf.org*,website_url.ilike.*eodwarriorfoundation.org*,business_name.ilike.*long walk*,business_name.ilike.*eod warrior foundation*")
         .limit(10);
 
@@ -163,9 +166,13 @@ export default function BusinessesPage() {
     bizOgDebounceRef.current = setTimeout(async () => {
       try {
         setFetchingBizOg(true);
+        const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch("/api/preview-url", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
           body: JSON.stringify({ url }),
         });
         if (res.ok) {

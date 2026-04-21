@@ -5,7 +5,7 @@ import { Resend } from "resend";
 export async function POST(req: NextRequest) {
   try {
   // Verify caller is admin
-  const authHeader = req.headers.get("authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

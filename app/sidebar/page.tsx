@@ -123,65 +123,18 @@ export default function SidebarPage() {
     if (withUserId) openOrCreateConversation(withUserId);
   }, [userId]);
 
-  async function loadConversations(uid: string): Promise<Conversation[]> {
-    const { data, error } = await supabase
-      .from("conversations")
-      .select("id, participant_1, participant_2, last_message_at, status, initiated_by")
-      .or(`participant_1.eq.${uid},participant_2.eq.${uid}`)
-      .neq("status", "declined")
-      .order("last_message_at", { ascending: false });
+  async function loadConversations(_uid: string): Promise<Conversation[]> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) return [];
 
-    if (error || !data) return [];
-
-    const otherIds = data.map((c) => c.participant_1 === uid ? c.participant_2 : c.participant_1);
-
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("user_id, first_name, last_name, display_name, photo_url, account_type")
-      .in("user_id", otherIds);
-
-    const profileMap = new Map((profiles ?? []).map((p: {
-      user_id: string; first_name: string | null; last_name: string | null;
-      display_name: string | null; photo_url: string | null; account_type: string | null;
-    }) => [p.user_id, p]));
-
-    const acceptedIds = new Set(data.filter((c) => c.status === "accepted").map((c) => c.id));
-    const allIds = data.map((c) => c.id);
-    const unreadMap = new Map<string, number>();
-    const previewMap = new Map<string, string>();
-
-    if (allIds.length > 0) {
-      const { data: msgData } = await supabase
-        .from("messages")
-        .select("conversation_id, content, is_read, sender_id, created_at")
-        .in("conversation_id", allIds)
-        .order("created_at", { ascending: false });
-
-      (msgData ?? []).forEach((m: { conversation_id: string; content: string; is_read: boolean; sender_id: string }) => {
-        if (!previewMap.has(m.conversation_id)) {
-          previewMap.set(m.conversation_id, m.content);
-        }
-        if (acceptedIds.has(m.conversation_id) && m.sender_id !== uid && !m.is_read) {
-          unreadMap.set(m.conversation_id, (unreadMap.get(m.conversation_id) ?? 0) + 1);
-        }
-      });
-    }
-
-    const convs: Conversation[] = data.map((c) => {
-      const otherId = c.participant_1 === uid ? c.participant_2 : c.participant_1;
-      const profile = profileMap.get(otherId);
-      const name = profile?.display_name ||
-        `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "EOD Member";
-      return {
-        ...c,
-        other_user_id: otherId,
-        other_user_name: name,
-        other_user_photo: profile?.photo_url ?? null,
-        other_user_account_type: profile?.account_type ?? null,
-        unread_count: unreadMap.get(c.id) ?? 0,
-        last_message_preview: previewMap.get(c.id) ?? null,
-      };
+    const res = await fetch("/api/sidebar/conversations", {
+      headers: { Authorization: `Bearer ${token}` },
     });
+    if (!res.ok) return [];
+
+    const json = await res.json() as { conversations?: Conversation[] };
+    const convs = json.conversations ?? [];
     const sorted = [...convs].sort((a, b) => {
       const unreadDelta = (b.unread_count > 0 ? 1 : 0) - (a.unread_count > 0 ? 1 : 0);
       if (unreadDelta !== 0) return unreadDelta;
@@ -310,7 +263,7 @@ export default function SidebarPage() {
   async function loadMessages(convId: string) {
     const { data } = await supabase
       .from("messages")
-      .select("*")
+      .select("id, conversation_id, sender_id, content, is_read, created_at, gif_url")
       .eq("conversation_id", convId)
       .order("created_at", { ascending: true });
     setMessages((data ?? []) as Message[]);
@@ -384,9 +337,13 @@ export default function SidebarPage() {
     if (!url || previewFetchesRef.current.has(url) || Object.prototype.hasOwnProperty.call(urlPreviews, url)) return;
     previewFetchesRef.current.add(url);
     try {
+      const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/preview-url", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
         body: JSON.stringify({ url }),
       });
       if (!res.ok) {

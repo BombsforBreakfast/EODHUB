@@ -24,6 +24,8 @@ type ShareUnitResult = { id: string; name: string; slug: string };
 
 function formatContentType(type: RabbitholeContribution["contentType"]): string {
   switch (type) {
+    case "video":
+      return "Media";
     case "article_news":
       return "Article / News";
     case "external_link":

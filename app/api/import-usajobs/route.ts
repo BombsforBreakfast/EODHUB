@@ -140,7 +140,7 @@ async function fetchUSAJobsPage(
 
 export async function GET(req: NextRequest) {
   // Allow Vercel cron (Authorization: Bearer <CRON_SECRET>) or manual ?secret= param
-  const authHeader = req.headers.get("authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const querySecret = req.nextUrl.searchParams.get("secret");
   const cronSecret = process.env.CRON_SECRET;
 

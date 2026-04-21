@@ -31,7 +31,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string; postId: string }> }
 ) {
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -69,7 +69,7 @@ export async function GET(
 
   const { data: commentRows, error: commentsError } = await adminClient
     .from("unit_post_comments")
-    .select("*")
+    .select("id, unit_post_id, user_id, content, image_url, gif_url, created_at")
     .eq("unit_post_id", postId)
     .order("created_at", { ascending: true });
 
@@ -115,7 +115,7 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string; postId: string }> }
 ) {
-  const authHeader = req.headers.get("Authorization");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const token = authHeader?.replace("Bearer ", "");
   if (!token) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -180,7 +180,7 @@ export async function POST(
       image_url: image_url ?? null,
       gif_url: gif_url ?? null,
     })
-    .select()
+    .select("id, unit_post_id, user_id, content, image_url, gif_url, created_at")
     .single();
 
   if (insertError || !comment) {

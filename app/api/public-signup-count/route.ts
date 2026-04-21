@@ -23,7 +23,7 @@ export async function GET() {
   const admin = createClient(url, key);
   const { count, error } = await admin
     .from("profiles")
-    .select("*", { count: "exact", head: true });
+    .select("user_id", { count: "exact", head: true });
 
   if (error) {
     console.error("public-signup-count:", error.message);

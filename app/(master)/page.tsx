@@ -117,6 +117,29 @@ type BusinessListing = {
   listing_type?: "business" | "organization" | "resource" | null;
 };
 
+const JOB_COLUMNS =
+  "id, created_at, title, category, location, pay_min, pay_max, clearance, description, apply_url, company_name, is_approved, source_type, user_id, og_title, og_description, og_image, og_site_name, anonymous";
+const BUSINESS_LISTING_COLUMNS =
+  "id, created_at, business_name, website_url, custom_blurb, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type";
+const PERF_DEBUG = process.env.NODE_ENV !== "production";
+
+function perfNowMs(): number {
+  if (typeof performance !== "undefined" && typeof performance.now === "function") {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+function logPerf(label: string, startedAtMs: number, extra?: Record<string, unknown>) {
+  if (!PERF_DEBUG) return;
+  const elapsedMs = Math.round(perfNowMs() - startedAtMs);
+  if (extra) {
+    console.info(`[perf] ${label}`, { elapsedMs, ...extra });
+  } else {
+    console.info(`[perf] ${label}`, { elapsedMs });
+  }
+}
+
 type ProfileName = {
   user_id: string;
   first_name: string | null;
@@ -806,9 +829,10 @@ export default function HomePage() {
   }
 
   async function loadBusinessListings() {
+    const perfStart = perfNowMs();
     const { data, error } = await supabase
       .from("business_listings")
-      .select("*")
+      .select(BUSINESS_LISTING_COLUMNS)
       .eq("is_approved", true)
       .order("is_featured", { ascending: false })
       .order("business_name", { ascending: true, nullsFirst: false })
@@ -821,6 +845,7 @@ export default function HomePage() {
 
     setBusinessListings((data ?? []) as BusinessListing[]);
     setBizLoaded(true);
+    logPerf("home.loadBusinessListings", perfStart, { count: (data ?? []).length });
   }
 
   async function loadBizLikes(uid: string) {
@@ -849,24 +874,25 @@ export default function HomePage() {
       setBusinessListings((prev) => prev.map((b) => b.id === bizId ? { ...b, like_count: (b.like_count ?? 0) + 1 } : b));
     }
     // Sync accurate count back to DB
-    const { count } = await supabase.from("business_likes").select("*", { count: "exact", head: true }).eq("business_id", bizId);
+    const { count } = await supabase.from("business_likes").select("id", { count: "exact", head: true }).eq("business_id", bizId);
     await supabase.from("business_listings").update({ like_count: count ?? 0 }).eq("id", bizId);
 
     setTogglingBizLikeFor(null);
   }
 
   async function loadJobs(limit = 500) {
+    const perfStart = perfNowMs();
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfNextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 
     const [jobsRes, lastSeenRes, totalRes, todayRes] = await Promise.all([
-      supabase.from("jobs").select("*").eq("is_approved", true).order("created_at", { ascending: false }).limit(limit),
+      supabase.from("jobs").select(JOB_COLUMNS).eq("is_approved", true).order("created_at", { ascending: false }).limit(limit),
       supabase.from("jobs").select("last_seen_at").eq("source_type", "usajobs").order("last_seen_at", { ascending: false }).limit(1).maybeSingle(),
-      supabase.from("jobs").select("*", { count: "exact", head: true }).eq("is_approved", true),
+      supabase.from("jobs").select("id", { count: "exact", head: true }).eq("is_approved", true),
       supabase
         .from("jobs")
-        .select("*", { count: "exact", head: true })
+        .select("id", { count: "exact", head: true })
         .eq("is_approved", true)
         .gte("created_at", startOfDay.toISOString())
         .lt("created_at", startOfNextDay.toISOString()),
@@ -874,6 +900,7 @@ export default function HomePage() {
 
     if (jobsRes.error) {
       console.error("Jobs load error:", jobsRes.error);
+      logPerf("home.loadJobs.error", perfStart, { limit });
       return;
     }
 
@@ -931,6 +958,12 @@ export default function HomePage() {
         .slice(0, 5);
       setJobLeaderboard(board);
     }
+    logPerf("home.loadJobs", perfStart, {
+      limit,
+      loaded: loadedJobs.length,
+      totalApproved: totalRes.count ?? null,
+      newToday: todayRes.count ?? null,
+    });
   }
 
   async function loadTodayMemorials() {
@@ -1434,7 +1467,158 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     };
   }
 
+  async function loadUnitFeedHighlightsForUser(effectiveUserId: string | null): Promise<void> {
+    if (!effectiveUserId) {
+      setUnitFeedHighlights([]);
+      return;
+    }
+    const { data: memberships } = await supabase
+      .from("unit_members")
+      .select("unit_id")
+      .eq("user_id", effectiveUserId)
+      .eq("status", "approved");
+
+    const unitIds = ((memberships ?? []) as { unit_id: string }[]).map((m) => m.unit_id);
+    if (unitIds.length === 0) {
+      setUnitFeedHighlights([]);
+      return;
+    }
+    const sinceIso = new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString();
+    const { data: unitPosts } = await supabase
+      .from("unit_posts")
+      .select("id, unit_id, user_id, content, photo_url, created_at, post_type")
+      .in("unit_id", unitIds)
+      .eq("post_type", "post")
+      .gte("created_at", sinceIso)
+      .order("created_at", { ascending: false })
+      .limit(120);
+
+    const candidatePosts = (unitPosts ?? []) as {
+      id: string;
+      unit_id: string;
+      user_id: string;
+      content: string | null;
+      photo_url: string | null;
+      created_at: string;
+    }[];
+
+    if (candidatePosts.length === 0) {
+      setUnitFeedHighlights([]);
+      return;
+    }
+
+    const candidatePostIds = candidatePosts.map((p) => p.id);
+    const candidateAuthorIds = [...new Set(candidatePosts.map((p) => p.user_id))];
+
+    const [{ data: unitLikes }, { data: unitComments }, unitsData, { data: unitAuthors }] =
+      await Promise.all([
+        supabase.from("unit_post_likes").select("unit_post_id").in("unit_post_id", candidatePostIds),
+        supabase.from("unit_post_comments").select("unit_post_id").in("unit_post_id", candidatePostIds),
+        (async () => {
+          const unitsRes = await supabase
+            .from("units")
+            .select("id, name, slug, cover_photo_url")
+            .in("id", unitIds);
+          if (!unitsRes.error) {
+            return (unitsRes.data ?? []) as {
+              id: string;
+              name: string;
+              slug: string;
+              cover_photo_url: string | null;
+            }[];
+          }
+          if (!isMissingColumnError(unitsRes.error, "cover_photo_url")) {
+            console.warn("Unit highlight units load warning:", unitsRes.error.message);
+            return [];
+          }
+          const unitsFallback = await supabase
+            .from("units")
+            .select("id, name, slug, cover_image_url")
+            .in("id", unitIds);
+          if (unitsFallback.error) {
+            console.warn("Unit highlight units fallback warning:", unitsFallback.error.message);
+            return [];
+          }
+          return ((unitsFallback.data ?? []) as {
+            id: string;
+            name: string;
+            slug: string;
+            cover_image_url: string | null;
+          }[]).map((u) => ({
+            id: u.id,
+            name: u.name,
+            slug: u.slug,
+            cover_photo_url: u.cover_image_url ?? null,
+          }));
+        })(),
+        supabase.from("profiles").select("user_id, first_name, last_name, display_name, photo_url").in("user_id", candidateAuthorIds),
+      ]);
+
+    const likeMap = new Map<string, number>();
+    ((unitLikes ?? []) as { unit_post_id: string }[]).forEach((row) => {
+      likeMap.set(row.unit_post_id, (likeMap.get(row.unit_post_id) ?? 0) + 1);
+    });
+    const commentMap = new Map<string, number>();
+    ((unitComments ?? []) as { unit_post_id: string }[]).forEach((row) => {
+      commentMap.set(row.unit_post_id, (commentMap.get(row.unit_post_id) ?? 0) + 1);
+    });
+
+    const unitMap = new Map<string, { name: string; slug: string; cover_photo_url: string | null }>();
+    ((unitsData ?? []) as { id: string; name: string; slug: string; cover_photo_url: string | null }[]).forEach((u) => {
+      unitMap.set(u.id, { name: u.name, slug: u.slug, cover_photo_url: u.cover_photo_url ?? null });
+    });
+    const authorMap = new Map<string, { name: string; photo_url: string | null }>();
+    ((unitAuthors ?? []) as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null }[])
+      .forEach((a) => {
+        const name =
+          a.display_name?.trim() ||
+          `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim() ||
+          "Member";
+        authorMap.set(a.user_id, { name, photo_url: a.photo_url ?? null });
+      });
+
+    const scored = candidatePosts
+      .map((p) => {
+        const likes = likeMap.get(p.id) ?? 0;
+        const comments = commentMap.get(p.id) ?? 0;
+        const engagement = likes + comments * 2;
+        return { ...p, likes, comments, engagement };
+      })
+      // Keep this high-signal so one-off low engagement posts do not spill into global feed.
+      .filter((p) => p.engagement >= 4 && (p.likes + p.comments) >= 2)
+      .sort((a, b) => {
+        if (b.engagement !== a.engagement) return b.engagement - a.engagement;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      })
+      .slice(0, 3)
+      .map((p) => {
+        const unit = unitMap.get(p.unit_id);
+        if (!unit?.slug) return null;
+        const author = authorMap.get(p.user_id);
+        return {
+          id: p.id,
+          unit_id: p.unit_id,
+          unit_name: unit.name,
+          unit_slug: unit.slug,
+          unit_cover_image_url: unit.cover_photo_url ?? null,
+          user_id: p.user_id,
+          author_name: author?.name ?? "Member",
+          author_photo: author?.photo_url ?? null,
+          content: p.content ?? null,
+          photo_url: p.photo_url ?? null,
+          created_at: p.created_at,
+          like_count: p.likes,
+          comment_count: p.comments,
+        } as UnitFeedHighlight;
+      })
+      .filter((p): p is UnitFeedHighlight => Boolean(p));
+
+    setUnitFeedHighlights(scored);
+  }
+
   async function loadPosts(currentUserId?: string | null) {
+    const perfStart = perfNowMs();
+    const isInitialProgressiveLoad = !postsLoaded;
     // Resolve user id from the live session first. Google OAuth often hydrates the Supabase session
     // before React `userId` updates; realtime loadPosts() can also close over a stale null userId.
     // Kangaroo Court (and other RLS paths) need a consistent id that matches the JWT.
@@ -1442,115 +1626,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const effectiveUserId =
       session?.user?.id ?? currentUserId ?? userId ?? null;
 
-    if (effectiveUserId) {
-      const { data: memberships } = await supabase
-        .from("unit_members")
-        .select("unit_id")
-        .eq("user_id", effectiveUserId)
-        .eq("status", "approved");
-
-      const unitIds = ((memberships ?? []) as { unit_id: string }[]).map((m) => m.unit_id);
-      if (unitIds.length > 0) {
-        const sinceIso = new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString();
-        const { data: unitPosts } = await supabase
-          .from("unit_posts")
-          .select("id, unit_id, user_id, content, photo_url, created_at, post_type")
-          .in("unit_id", unitIds)
-          .eq("post_type", "post")
-          .gte("created_at", sinceIso)
-          .order("created_at", { ascending: false })
-          .limit(120);
-
-        const candidatePosts = (unitPosts ?? []) as {
-          id: string;
-          unit_id: string;
-          user_id: string;
-          content: string | null;
-          photo_url: string | null;
-          created_at: string;
-        }[];
-
-        if (candidatePosts.length > 0) {
-          const candidatePostIds = candidatePosts.map((p) => p.id);
-          const candidateAuthorIds = [...new Set(candidatePosts.map((p) => p.user_id))];
-
-          const [{ data: unitLikes }, { data: unitComments }, { data: unitsData }, { data: unitAuthors }] =
-            await Promise.all([
-              supabase.from("unit_post_likes").select("unit_post_id").in("unit_post_id", candidatePostIds),
-              supabase.from("unit_post_comments").select("unit_post_id").in("unit_post_id", candidatePostIds),
-              supabase.from("units").select("id, name, slug, cover_image_url").in("id", unitIds),
-              supabase.from("profiles").select("user_id, first_name, last_name, display_name, photo_url").in("user_id", candidateAuthorIds),
-            ]);
-
-          const likeMap = new Map<string, number>();
-          ((unitLikes ?? []) as { unit_post_id: string }[]).forEach((row) => {
-            likeMap.set(row.unit_post_id, (likeMap.get(row.unit_post_id) ?? 0) + 1);
-          });
-          const commentMap = new Map<string, number>();
-          ((unitComments ?? []) as { unit_post_id: string }[]).forEach((row) => {
-            commentMap.set(row.unit_post_id, (commentMap.get(row.unit_post_id) ?? 0) + 1);
-          });
-
-          const unitMap = new Map<string, { name: string; slug: string; cover_image_url: string | null }>();
-          ((unitsData ?? []) as { id: string; name: string; slug: string; cover_image_url: string | null }[]).forEach((u) => {
-            unitMap.set(u.id, { name: u.name, slug: u.slug, cover_image_url: u.cover_image_url ?? null });
-          });
-          const authorMap = new Map<string, { name: string; photo_url: string | null }>();
-          ((unitAuthors ?? []) as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null }[])
-            .forEach((a) => {
-              const name =
-                a.display_name?.trim() ||
-                `${a.first_name ?? ""} ${a.last_name ?? ""}`.trim() ||
-                "Member";
-              authorMap.set(a.user_id, { name, photo_url: a.photo_url ?? null });
-            });
-
-          const scored = candidatePosts
-            .map((p) => {
-              const likes = likeMap.get(p.id) ?? 0;
-              const comments = commentMap.get(p.id) ?? 0;
-              const engagement = likes + comments * 2;
-              return { ...p, likes, comments, engagement };
-            })
-            // Keep this high-signal so one-off low engagement posts do not spill into global feed.
-            .filter((p) => p.engagement >= 4 && (p.likes + p.comments) >= 2)
-            .sort((a, b) => {
-              if (b.engagement !== a.engagement) return b.engagement - a.engagement;
-              return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-            })
-            .slice(0, 3)
-            .map((p) => {
-              const unit = unitMap.get(p.unit_id);
-              if (!unit?.slug) return null;
-              const author = authorMap.get(p.user_id);
-              return {
-                id: p.id,
-                unit_id: p.unit_id,
-                unit_name: unit.name,
-                unit_slug: unit.slug,
-                unit_cover_image_url: unit.cover_image_url ?? null,
-                user_id: p.user_id,
-                author_name: author?.name ?? "Member",
-                author_photo: author?.photo_url ?? null,
-                content: p.content ?? null,
-                photo_url: p.photo_url ?? null,
-                created_at: p.created_at,
-                like_count: p.likes,
-                comment_count: p.comments,
-              } as UnitFeedHighlight;
-            })
-            .filter((p): p is UnitFeedHighlight => Boolean(p));
-
-          setUnitFeedHighlights(scored);
-        } else {
-          setUnitFeedHighlights([]);
-        }
-      } else {
-        setUnitFeedHighlights([]);
-      }
-    } else {
+    // Feed readiness should not wait on sidebar/highlight enrichment.
+    void loadUnitFeedHighlightsForUser(effectiveUserId).catch((err) => {
+      console.error("Unit feed highlights load error:", err);
       setUnitFeedHighlights([]);
-    }
+    });
 
     const { data: rankedPostsData, error: postsError } = await supabase
       .from("ranked_posts")
@@ -1559,6 +1639,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
     if (postsError) {
       console.error("Feed load error:", postsError);
+      logPerf("home.loadPosts.error", perfStart);
       return;
     }
 
@@ -1612,53 +1693,94 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     if (rawPosts.length > 0) {
       const rankedIds = rawPosts.map((p) => p.id);
       // Always strip wall-targeted posts from the public feed.
-      const { data: wallRows, error: wallErr } = await supabase
-        .from("posts")
-        .select("id, wall_user_id")
-        .in("id", rankedIds);
-      if (!wallErr) {
+      const [wallQuery, visQuery] = await Promise.all([
+        supabase
+          .from("posts")
+          .select("id, wall_user_id")
+          .in("id", rankedIds),
+        supabase
+          .from("posts")
+          .select("id, hidden_for_review")
+          .in("id", rankedIds),
+      ]);
+
+      if (!wallQuery.error) {
         const publicFeedIds = new Set(
-          (wallRows ?? [])
+          (wallQuery.data ?? [])
             .filter((r: { wall_user_id?: string | null }) => !r.wall_user_id)
             .map((r: { id: string }) => r.id)
         );
         rawPosts = rawPosts.filter((p) => publicFeedIds.has(p.id));
       } else {
-        console.warn("Wall visibility filter unavailable; loading feed without wall-target filter.", wallErr.message);
+        console.warn("Wall visibility filter unavailable; loading feed without wall-target filter.", wallQuery.error.message);
       }
 
-      const candidateIds = rawPosts.map((p) => p.id);
-      if (candidateIds.length === 0) {
-        setPosts([]);
-        setPostsLoaded(true);
-        return;
-      }
-
-      const { data: visRows, error: visErr } = await supabase
-        .from("posts")
-        .select("id, hidden_for_review")
-        .in("id", candidateIds);
-      if (!visErr) {
+      if (!visQuery.error) {
         const visibleIds = new Set(
-          (visRows ?? [])
+          (visQuery.data ?? [])
             .filter((r: { hidden_for_review?: boolean | null }) => !r.hidden_for_review)
             .map((r: { id: string }) => r.id)
         );
         rawPosts = rawPosts.filter((p) => visibleIds.has(p.id));
       } else {
         // Backward compatibility if hidden_for_review is not migrated yet.
-        console.warn("Post visibility filter unavailable; loading feed without moderation hide filter.", visErr.message);
+        console.warn("Post visibility filter unavailable; loading feed without moderation hide filter.", visQuery.error.message);
       }
     }
 
     if (rawPosts.length === 0) {
       setPosts([]);
       setPostsLoaded(true);
+      logPerf("home.loadPosts.empty", perfStart);
       return;
     }
 
     const postIds = rawPosts.map((post) => post.id);
     const uniqueUserIds = [...new Set(rawPosts.map((post) => post.user_id))];
+
+    // First-load perceived performance: paint a lightweight feed shell immediately,
+    // then hydrate likes/comments/media metadata in the background of this same call.
+    if (isInitialProgressiveLoad) {
+      const basePosts: FeedPost[] = rawPosts.map((post) => ({
+        ...post,
+        image_url: null,
+        image_urls: [],
+        gif_url: null,
+        content_type: "user_post",
+        system_generated: false,
+        news_item_id: null,
+        authorName: "User",
+        authorPhotoUrl: null,
+        authorService: null,
+        authorIsEmployer: null,
+        likeCount: 0,
+        commentCount: 0,
+        likedByCurrentUser: false,
+        likers: [],
+        comments: [],
+        og_url: null,
+        og_title: null,
+        og_description: null,
+        og_image: null,
+        og_site_name: null,
+        event_id: null,
+        feed_event: null,
+        event_interested_count: 0,
+        event_going_count: 0,
+        event_my_attendance: null,
+        event_saved: false,
+        kangaroo: null,
+        court_verdict_at: null,
+        rabbithole_thread_id: null,
+        rabbithole_contribution_id: null,
+      }));
+      setPosts(basePosts);
+      setPostsLoaded(true);
+      logPerf("home.loadPosts.base", perfStart, {
+        rankedCount: rawPosts.length,
+        renderedCount: basePosts.length,
+      });
+    }
 
     type LegacyPostRow = LegacyPostImageRow & {
       gif_url?: string | null;
@@ -2254,18 +2376,29 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       return 1 + 0.2 * (1 - hours / 48);
     }
 
-    mergedPosts.sort((a, b) => {
-      const ageA = (now - new Date(a.created_at).getTime()) / 3_600_000;
-      const ageB = (now - new Date(b.created_at).getTime()) / 3_600_000;
-      const baseA = (a.likeCount + a.commentCount * 2 + 1) / Math.pow(ageA + 2, 1.5);
-      const baseB = (b.likeCount + b.commentCount * 2 + 1) / Math.pow(ageB + 2, 1.5);
-      const scoreA = baseA * (authorAffinityBoost.get(a.user_id) ?? 1) * verdictBoost(a.court_verdict_at);
-      const scoreB = baseB * (authorAffinityBoost.get(b.user_id) ?? 1) * verdictBoost(b.court_verdict_at);
-      return scoreB - scoreA;
-    });
+    if (isInitialProgressiveLoad) {
+      const initialOrder = new Map(rawPosts.map((post, idx) => [post.id, idx]));
+      mergedPosts.sort((a, b) => (initialOrder.get(a.id) ?? 9_999) - (initialOrder.get(b.id) ?? 9_999));
+    } else {
+      mergedPosts.sort((a, b) => {
+        const ageA = (now - new Date(a.created_at).getTime()) / 3_600_000;
+        const ageB = (now - new Date(b.created_at).getTime()) / 3_600_000;
+        const baseA = (a.likeCount + a.commentCount * 2 + 1) / Math.pow(ageA + 2, 1.5);
+        const baseB = (b.likeCount + b.commentCount * 2 + 1) / Math.pow(ageB + 2, 1.5);
+        const scoreA = baseA * (authorAffinityBoost.get(a.user_id) ?? 1) * verdictBoost(a.court_verdict_at);
+        const scoreB = baseB * (authorAffinityBoost.get(b.user_id) ?? 1) * verdictBoost(b.court_verdict_at);
+        return scoreB - scoreA;
+      });
+    }
 
     setPosts(mergedPosts);
     setPostsLoaded(true);
+    logPerf("home.loadPosts", perfStart, {
+      rankedCount: rawPosts.length,
+      renderedCount: mergedPosts.length,
+      postIdsCount: postIds.length,
+      uniqueAuthors: uniqueUserIds.length,
+    });
   }
 
   function openPostImagePicker() {
@@ -2365,7 +2498,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     ogDebounceRef.current = setTimeout(async () => {
       try {
         setFetchingOg(true);
-        const res = await fetch("/api/preview-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch("/api/preview-url", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+          body: JSON.stringify({ url }),
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.title || data.image) setOgPreview({ url, title: data.title ?? null, description: data.description ?? null, image: data.image ?? null, siteName: data.siteName ?? null });
@@ -2664,7 +2805,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     bizOgDebounceRef.current = setTimeout(async () => {
       try {
         setFetchingBizOg(true);
-        const res = await fetch("/api/preview-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch("/api/preview-url", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+          body: JSON.stringify({ url }),
+        });
         if (res.ok) {
           const data = await res.json();
           setBizOgPreview({ url, title: data.title ?? null, description: data.description ?? null, image: data.image ?? null, siteName: data.siteName ?? null });

@@ -18,7 +18,8 @@ function getUserClient(token: string) {
 }
 
 async function resolveUnitAndCheckAdmin(req: NextRequest, slug: string) {
-  const token = req.headers.get("Authorization")?.replace("Bearer ", "");
+  const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
+  const token = authHeader?.replace("Bearer ", "");
   if (!token) return { error: "Unauthorized", status: 401 } as const;
 
   const userClient = getUserClient(token);
@@ -29,7 +30,7 @@ async function resolveUnitAndCheckAdmin(req: NextRequest, slug: string) {
 
   const { data: unit, error: unitError } = await db
     .from("units")
-    .select("*")
+    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at")
     .eq("slug", slug)
     .single();
 

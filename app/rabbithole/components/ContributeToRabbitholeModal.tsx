@@ -20,7 +20,7 @@ type Props = {
 
 const CONTENT_TYPES: Array<{ type: RabbitholeContentType; label: string; helper: string }> = [
   { type: "document", label: "Document", helper: "White papers, PDFs, docs links." },
-  { type: "video", label: "Video", helper: "YouTube and recorded explainers." },
+  { type: "video", label: "Media", helper: "Podcasts, YouTube, and uploaded videos." },
   { type: "article_news", label: "Article / News", helper: "Industry updates and analysis." },
   { type: "external_link", label: "External Link", helper: "Useful external pages and references." },
   { type: "resource", label: "Resource", helper: "Templates, tools, and reusable references." },
@@ -200,7 +200,7 @@ export default function ContributeToRabbitholeModal({ onClose, onCreated }: Prop
     const trimmedUrl = sourceUrl.trim();
     if (contentType === "video") {
       if (!trimmedUrl || !parseYoutubeId(trimmedUrl)) {
-        setError("Video must be a valid YouTube URL.");
+        setError("Media must be a valid YouTube URL.");
         return;
       }
     } else if (contentType === "article_news" || contentType === "external_link" || contentType === "document") {

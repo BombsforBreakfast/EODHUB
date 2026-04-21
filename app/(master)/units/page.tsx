@@ -212,7 +212,10 @@ export default function UnitsPage() {
   async function loadUnits() {
     setLoading(true);
     try {
-      const res = await fetch("/api/units");
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/units", {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
       const json = await res.json();
       setUnits(json.units ?? []);
     } finally {

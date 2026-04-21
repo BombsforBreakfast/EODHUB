@@ -234,7 +234,10 @@ export default function UnitPage() {
   async function loadUnit(uid: string | null, token: string | null) {
     setLoading(true);
     try {
-      const res = await fetch(`/api/units/${slug}`);
+      const t = token ?? (await getToken());
+      const res = await fetch(`/api/units/${slug}`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
       if (!res.ok) { setNotFound(true); setLoading(false); return; }
       const json = await res.json();
       setUnit(json.unit);

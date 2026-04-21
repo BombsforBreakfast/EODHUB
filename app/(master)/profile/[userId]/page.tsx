@@ -1772,7 +1772,15 @@ export default function PublicProfilePage() {
     ogDebounceRef.current = setTimeout(async () => {
       try {
         setFetchingOg(true);
-        const res = await fetch("/api/preview-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch("/api/preview-url", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+          body: JSON.stringify({ url }),
+        });
         if (res.ok) {
           const data = await res.json();
           if (data.title || data.image) setOgPreview({ url, title: data.title ?? null, description: data.description ?? null, image: data.image ?? null, siteName: data.siteName ?? null });

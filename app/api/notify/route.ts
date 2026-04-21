@@ -10,7 +10,7 @@ import { createNotification } from "../../lib/notificationsServer";
  * The actor_id is always derived from the caller's JWT — never trusted from body.
  */
 export async function POST(req: NextRequest) {
-  const token = req.headers.get("authorization")?.replace("Bearer ", "");
+  const token = (req.headers.get("Authorization") ?? req.headers.get("authorization"))?.replace("Bearer ", "");
   if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const userClient = createClient(
