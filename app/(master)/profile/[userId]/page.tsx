@@ -547,6 +547,20 @@ export default function PublicProfilePage() {
     setShowAllWorkHistoryTags(false);
   }, [userId]);
 
+  useEffect(() => {
+    if (!editingProfile) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setEditingProfile(false);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [editingProfile]);
+
   function closeWallAvatarCrop() {
     if (wallAvatarCropSrc) URL.revokeObjectURL(wallAvatarCropSrc);
     setWallAvatarCropSrc(null);
@@ -3463,9 +3477,29 @@ export default function PublicProfilePage() {
 
           {/* Edit profile (own wall) ΓÇö same fields as My Account */}
           {isOwnWall && editingProfile && (
-            <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
-              <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 16, color: t.text }}>Edit Profile</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div
+              onClick={(e) => { if (e.target === e.currentTarget) setEditingProfile(false); }}
+              style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1200, display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "center", padding: isMobile ? 0 : 20 }}
+            >
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Edit Profile"
+                style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: isMobile ? 0 : 16, width: "100%", maxWidth: 920, maxHeight: isMobile ? "100vh" : "90vh", display: "flex", flexDirection: "column", boxShadow: "0 8px 40px rgba(0,0,0,0.35)" }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: isMobile ? "14px 16px" : "18px 24px", borderBottom: `1px solid ${t.border}`, flexShrink: 0 }}>
+                  <div style={{ fontSize: 18, fontWeight: 900, color: t.text }}>Edit Profile</div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingProfile(false)}
+                    aria-label="Close"
+                    style={{ background: "none", border: "none", fontSize: 24, lineHeight: 1, cursor: "pointer", color: t.textMuted, padding: 4 }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div style={{ overflowY: "auto", flex: 1, padding: isMobile ? 16 : 24 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
                 <div>
                   <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Current Position</label>
                   <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="e.g. EOD Tech" style={wallEditInputStyle} />
@@ -3798,14 +3832,16 @@ export default function PublicProfilePage() {
                   <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell people about yourself..." rows={4} style={{ ...wallEditInputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }} />
                 </div>
               </div>
-              <div style={{ marginTop: 16, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                <button type="button" onClick={handleSaveWallProfile} disabled={savingProfile} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: savingProfile ? "not-allowed" : "pointer", opacity: savingProfile ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
-                  {savingProfile && <span className="btn-spinner" />}
-                  Save Changes
-                </button>
-                <button type="button" onClick={() => setEditingProfile(false)} style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: "pointer" }}>
-                  Cancel
-                </button>
+                </div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: isMobile ? "12px 16px" : "16px 24px", borderTop: `1px solid ${t.border}`, flexShrink: 0 }}>
+                  <button type="button" onClick={handleSaveWallProfile} disabled={savingProfile} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: savingProfile ? "not-allowed" : "pointer", opacity: savingProfile ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
+                    {savingProfile && <span className="btn-spinner" />}
+                    Save Changes
+                  </button>
+                  <button type="button" onClick={() => setEditingProfile(false)} style={{ background: t.surface, border: `1px solid ${t.inputBorder}`, color: t.text, borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: "pointer" }}>
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
           )}
