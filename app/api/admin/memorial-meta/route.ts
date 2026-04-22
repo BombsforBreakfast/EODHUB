@@ -31,6 +31,9 @@ function extractBio(html: string): string | null {
 }
 
 export async function POST(req: NextRequest) {
+  // Any signed-in user may fetch memorial metadata — the endpoint only parses
+  // OG tags from a public eod-wf.org URL. The auth check is here to prevent
+  // anonymous bots from using us as a scraping proxy.
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -43,11 +46,23 @@ export async function POST(req: NextRequest) {
   );
   const { data: { user } } = await userClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { data: profile } = await userClient.from("profiles").select("is_admin").eq("user_id", user.id).maybeSingle();
-  if (!profile?.is_admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { url } = await req.json();
   if (!url) return NextResponse.json({ error: "Missing url" }, { status: 400 });
+
+  // Defense-in-depth: only allow the EOD Warrior Foundation virtual-memorial domain
+  // so this endpoint can't be turned into a general-purpose SSRF proxy.
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    const okHost = host === "eod-wf.org" || host.endsWith(".eod-wf.org");
+    const okProto = parsed.protocol === "https:" || parsed.protocol === "http:";
+    if (!okHost || !okProto) {
+      return NextResponse.json({ error: "URL must be an eod-wf.org memorial page" }, { status: 400 });
+    }
+  } catch {
+    return NextResponse.json({ error: "Invalid URL" }, { status: 400 });
+  }
 
   try {
     const res = await fetch(url, {
