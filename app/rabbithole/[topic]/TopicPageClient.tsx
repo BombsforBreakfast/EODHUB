@@ -82,6 +82,8 @@ export default function TopicPageClient() {
         />
       )}
 
+      <h1 style={{ margin: "10px 0 8px", fontSize: 26, fontWeight: 900 }}>{topic.name}</h1>
+
       <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
         {topic.subtopics.map((subtopic) => (
           <span key={subtopic} style={{ border: "1px solid #334155", borderRadius: 999, padding: "4px 10px", fontSize: 12, color: "#e2e8f0" }}>

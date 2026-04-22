@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
-import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 import EmojiPickerButton from "../components/EmojiPickerButton";
 import GifPickerButton from "../components/GifPickerButton";
@@ -443,7 +442,7 @@ export default function SidebarPage() {
     overflow: "hidden",
   });
 
-  if (loading) return <div style={{ padding: 40, background: t.bg, minHeight: "100vh" }}><NavBar /></div>;
+  if (loading) return <div style={{ padding: 40, color: t.text }}>Loading…</div>;
 
   const InboxPane = (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, borderRight: isMobile ? "none" : `1px solid ${t.border}` }}>
@@ -1027,34 +1026,22 @@ export default function SidebarPage() {
   );
 
   return (
-    <div style={{ background: t.bg, height: "100dvh", overflow: "hidden", color: t.text }}>
-      <div
-        className="sidebar-page-shell"
-        style={{
-          width: "100%",
-          maxWidth: "100%",
-          margin: 0,
-          boxSizing: "border-box",
-          padding: "20px max(20px, env(safe-area-inset-right)) 20px max(20px, env(safe-area-inset-left))",
-        }}
-      >
-        <NavBar />
-        <div style={{
-          border: `1px solid ${t.border}`, borderRadius: 16, overflow: "hidden", background: t.surface,
-          display: "grid",
-          gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
-          gridTemplateRows: "1fr",
-          height: isMobile ? "calc(100dvh - 120px)" : "calc(100dvh - 140px)",
-        }}>
-          {isMobile ? (
-            mobileView === "list" ? InboxPane : ThreadPane
-          ) : (
-            <>
-              {InboxPane}
-              {ThreadPane}
-            </>
-          )}
-        </div>
+    <div style={{ color: t.text }}>
+      <div style={{
+        border: `1px solid ${t.border}`, borderRadius: 16, overflow: "hidden", background: t.surface,
+        display: "grid",
+        gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
+        gridTemplateRows: "1fr",
+        height: isMobile ? "calc(100dvh - 120px)" : "calc(100dvh - 120px)",
+      }}>
+        {isMobile ? (
+          mobileView === "list" ? InboxPane : ThreadPane
+        ) : (
+          <>
+            {InboxPane}
+            {ThreadPane}
+          </>
+        )}
       </div>
       <MemberPaywallModal open={paywallOpen} onClose={() => setPaywallOpen(false)} />
     </div>

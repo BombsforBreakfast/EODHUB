@@ -202,51 +202,36 @@ export default function RabbitholeHomePageClient() {
     <div
       style={{
         width: "100%",
-        maxWidth: 1800,
-        margin: "0 auto",
-        padding: "24px 20px",
         boxSizing: "border-box",
-        background: t.bg,
-        minHeight: "100vh",
         color: t.text,
       }}
     >
       {/* Header */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <img
-              src="/rabbithole-mascot.png"
-              alt=""
-              width={44}
-              height={44}
-              style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: `1px solid ${t.border}` }}
-            />
-            <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>Rabbithole</h1>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-            <span
-              style={{
-                fontSize: 12,
-                color: "#475569",
-                fontWeight: 600,
-                fontStyle: "italic",
-                padding: "6px 0",
-              }}
-            >
-              Archive — filed from feed/groups plus curated contributions
-            </span>
-            <button type="button" onClick={openContributeModal} style={contributeButtonStyle}>
-              Contribute to RabbitHole
-            </button>
-          </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <img
+            src="/rabbithole-mascot.png"
+            alt=""
+            width={44}
+            height={44}
+            style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: `1px solid ${t.border}` }}
+          />
+          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>Rabbithole</h1>
+          <button type="button" onClick={openContributeModal} style={contributeButtonStyle}>
+            Contribute
+          </button>
         </div>
-        <div style={{ marginTop: 6, fontSize: 14, color: t.textMuted, maxWidth: 700 }}>
-          Long-term knowledge archive — filed platform content and structured external resources in one retrievable layer.
+        <div style={{ marginTop: 8, maxWidth: 700 }}>
+          <div style={{ fontSize: 14, color: t.text, fontStyle: "italic" }}>
+            &ldquo;Capture, contribute, and organize high-value content—then bring it back into the feed when it matters.&rdquo;
+          </div>
+          <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>
+            Think of this as your place to store what&rsquo;s worth finding again.
+          </div>
         </div>
       </div>
 
-      {/* Filter bar */}
+      {/* Filter bar — search stacked above selects */}
       <div
         style={{
           border: `1px solid ${t.border}`,
@@ -254,10 +239,8 @@ export default function RabbitholeHomePageClient() {
           background: t.surface,
           padding: 12,
           marginBottom: 14,
-          display: "grid",
-          gridTemplateColumns: isMobile
-            ? "1fr"
-            : "1fr minmax(160px, 220px) minmax(150px, 180px) minmax(130px, 160px)",
+          display: "flex",
+          flexDirection: "column",
           gap: 10,
         }}
       >
@@ -268,39 +251,47 @@ export default function RabbitholeHomePageClient() {
           placeholder="Search title, body, or tag…"
           style={inputStyle}
         />
-        <select
-          value={filters.topicSlug}
-          onChange={(e) => setFilters((prev) => ({ ...prev, topicSlug: e.target.value }))}
-          style={inputStyle}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr",
+            gap: 10,
+          }}
         >
-          <option value="">All topics</option>
-          {topics.map((topic) => (
-            <option key={topic.slug} value={topic.slug}>
-              {topic.name}
-            </option>
-          ))}
-        </select>
-        <select
-          value={filters.contentType}
-          onChange={(e) => setFilters((prev) => ({ ...prev, contentType: e.target.value as FilterState["contentType"] }))}
-          style={inputStyle}
-        >
-          <option value="">All content types</option>
-          <option value="archived_post">Archived Post</option>
-          <option value="document">Document</option>
-          <option value="video">Media</option>
-          <option value="article_news">Article / News</option>
-          <option value="external_link">External Link</option>
-          <option value="resource">Resource</option>
-        </select>
-        <select
-          value={filters.sort}
-          onChange={(e) => setFilters((prev) => ({ ...prev, sort: e.target.value as FilterState["sort"] }))}
-          style={inputStyle}
-        >
-          <option value="newest">Sort: newest</option>
-          <option value="most_relevant">Sort: most relevant</option>
-        </select>
+          <select
+            value={filters.topicSlug}
+            onChange={(e) => setFilters((prev) => ({ ...prev, topicSlug: e.target.value }))}
+            style={inputStyle}
+          >
+            <option value="">All topics</option>
+            {topics.map((topic) => (
+              <option key={topic.slug} value={topic.slug}>
+                {topic.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={filters.contentType}
+            onChange={(e) => setFilters((prev) => ({ ...prev, contentType: e.target.value as FilterState["contentType"] }))}
+            style={inputStyle}
+          >
+            <option value="">All content types</option>
+            <option value="archived_post">Archived Post</option>
+            <option value="document">Document</option>
+            <option value="video">Media</option>
+            <option value="article_news">Article / News</option>
+            <option value="external_link">External Link</option>
+            <option value="resource">Resource</option>
+          </select>
+          <select
+            value={filters.sort}
+            onChange={(e) => setFilters((prev) => ({ ...prev, sort: e.target.value as FilterState["sort"] }))}
+            style={inputStyle}
+          >
+            <option value="newest">Sort: newest</option>
+            <option value="most_relevant">Sort: most relevant</option>
+          </select>
+        </div>
       </div>
 
       {/* Active tag chip */}

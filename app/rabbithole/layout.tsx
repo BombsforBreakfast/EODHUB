@@ -1,7 +1,7 @@
  "use client";
 
 import { useEffect, useState } from "react";
-import NavBar from "../components/NavBar";
+import MasterShell from "../components/master/MasterShell";
 import { supabase } from "../lib/lib/supabaseClient";
 import { hasRabbitholeFounderConfig, isFounderUser } from "../lib/rabbitholeAccess";
 
@@ -37,10 +37,5 @@ export default function RabbitholeLayout({ children }: { children: React.ReactNo
 
   if (checking || !allowed) return null;
 
-  return (
-    <>
-      <NavBar />
-      {children}
-    </>
-  );
+  return <MasterShell>{children}</MasterShell>;
 }

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import NavBar from "../components/NavBar";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
@@ -96,17 +95,10 @@ export default function JobsPage() {
     <div
       style={{
         width: "100%",
-        maxWidth: 1800,
-        margin: "0 auto",
-        padding: "24px 20px",
         boxSizing: "border-box",
-        background: t.bg,
-        minHeight: "100vh",
         color: t.text,
       }}
     >
-      <NavBar />
-
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>Jobs</h1>
@@ -136,6 +128,14 @@ export default function JobsPage() {
               gap: 10,
             }}
           >
+            <input
+              type="text"
+              value={filters.keyword}
+              onChange={(e) => setFilters((prev) => ({ ...prev, keyword: e.target.value }))}
+              placeholder="Keyword/tag (e.g. UXO, TSS-E, Safety)"
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
+            />
+
             <select
               value={filters.location}
               onChange={(e) => setFilters((prev) => ({ ...prev, location: e.target.value }))}
@@ -148,14 +148,6 @@ export default function JobsPage() {
                 </option>
               ))}
             </select>
-
-            <input
-              type="text"
-              value={filters.keyword}
-              onChange={(e) => setFilters((prev) => ({ ...prev, keyword: e.target.value }))}
-              placeholder="Keyword/tag (e.g. UXO, TSS-E, Safety)"
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
-            />
           </div>
         </div>
       )}

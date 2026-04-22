@@ -1,14 +1,13 @@
 /* eslint-disable react-hooks/exhaustive-deps */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Flag, Heart, MessageCircle, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
+import { Flag, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
 import BreadcrumbTrail from "../../components/BreadcrumbTrail";
 import RabbitholeShell from "../../components/RabbitholeShell";
-import { parseTrail } from "../../lib/helpers";
 import {
   createRabbitholeContributionComment,
   fetchRabbitholeContributionDetail,
@@ -58,8 +57,6 @@ function youtubeEmbedUrl(sourceUrl?: string | null, metadata?: Record<string, un
 export default function ContributionPageClient() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const tunnelTrail = useMemo(() => parseTrail(searchParams.get("trail") ?? ""), [searchParams]);
 
   const contributionId = params.id;
   const [viewerUserId, setViewerUserId] = useState<string | null>(null);
@@ -563,21 +560,8 @@ export default function ContributionPageClient() {
   return (
     <RabbitholeShell title={contribution.title}>
       <BreadcrumbTrail label="Library Path" steps={librarySteps} />
-      {tunnelTrail.length > 0 && (
-        <BreadcrumbTrail label="Your Tunnel" steps={tunnelTrail.map((step) => ({ label: step }))} />
-      )}
 
-      <h1 style={{ margin: "0 0 8px", fontSize: 26, fontWeight: 900 }}>{contribution.title}</h1>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-        <span style={badgeStyle("#0f172a", "#facc15", "#facc15")}>{contribution.categoryName}</span>
-        <span style={badgeStyle("rgba(71,85,105,0.2)", "#cbd5e1", "#475569")}>
-          {formatContentType(contribution.contentType)}
-        </span>
-        {contribution.sourceDomain && (
-          <span style={badgeStyle("rgba(30,41,59,0.7)", "#94a3b8", "#334155")}>{contribution.sourceDomain}</span>
-        )}
-      </div>
-      <p style={{ marginTop: 0, color: "#cbd5e1", lineHeight: 1.55 }}>{contribution.summary}</p>
+      <p style={{ margin: "8px 0 12px", color: "#cbd5e1", lineHeight: 1.55 }}>{contribution.summary}</p>
       <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <button
           type="button"
@@ -622,43 +606,7 @@ export default function ContributionPageClient() {
       </div>
       {shareSuccessMessage && <div style={{ color: "#22c55e", marginBottom: 12, fontSize: 13 }}>{shareSuccessMessage}</div>}
 
-      <div
-        style={{
-          border: "1px solid #334155",
-          borderRadius: 12,
-          padding: 12,
-          marginBottom: 14,
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
-          alignItems: "center",
-        }}
-      >
-        <button
-          type="button"
-          onClick={handleToggleLike}
-          disabled={likeBusy}
-          style={{
-            border: "1px solid #334155",
-            borderRadius: 8,
-            background: contribution.viewerLiked ? "rgba(244,63,94,0.15)" : "transparent",
-            color: contribution.viewerLiked ? "#fb7185" : "#cbd5e1",
-            padding: "6px 10px",
-            fontWeight: 700,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            cursor: likeBusy ? "default" : "pointer",
-          }}
-        >
-          <Heart size={15} />
-          {contribution.likeCount}
-        </button>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, color: "#94a3b8", fontSize: 13 }}>
-          <MessageCircle size={15} />
-          {comments.length} comments
-        </span>
-      </div>
+      <h1 style={{ margin: "4px 0 10px", fontSize: 26, fontWeight: 900, textAlign: "center" }}>{contribution.title}</h1>
 
       {canIframe && embedUrl && !embedBlocked ? (
         <div style={{ marginBottom: 14 }}>
@@ -712,20 +660,6 @@ export default function ContributionPageClient() {
         </div>
       ) : null}
 
-      {contribution.tags.length > 0 && (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-          {contribution.tags.map((tag) => (
-            <Link
-              key={tag}
-              href={`/rabbithole?tag=${encodeURIComponent(tag)}`}
-              style={{ border: "1px solid #334155", borderRadius: 999, padding: "3px 10px", color: "#cbd5e1", textDecoration: "none", fontSize: 12 }}
-            >
-              #{tag}
-            </Link>
-          ))}
-        </div>
-      )}
-
       {assets.length > 0 && (
         <section style={{ border: "1px solid #334155", borderRadius: 12, padding: 12, marginBottom: 14 }}>
           <h2 style={{ margin: "0 0 10px", fontSize: 16 }}>Attached Assets</h2>
@@ -774,13 +708,91 @@ export default function ContributionPageClient() {
         </section>
       )}
 
+      {contribution.tags.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+          {contribution.tags.map((tag) => (
+            <Link
+              key={tag}
+              href={`/rabbithole?tag=${encodeURIComponent(tag)}`}
+              style={{
+                border: "1px solid #334155",
+                borderRadius: 999,
+                padding: "3px 10px",
+                color: "#cbd5e1",
+                textDecoration: "none",
+                fontSize: 12,
+              }}
+            >
+              #{tag}
+            </Link>
+          ))}
+        </div>
+      )}
+
       <section style={{ border: "1px solid #334155", borderRadius: 12, padding: 12 }}>
-        <h2 style={{ margin: "0 0 10px", fontSize: 16 }}>Discussion</h2>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 16,
+            padding: "6px 2px 10px",
+            borderBottom: "1px solid #1e293b",
+            marginBottom: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            onClick={handleToggleLike}
+            disabled={likeBusy}
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: likeBusy ? "not-allowed" : "pointer",
+              fontWeight: 700,
+              color: contribution.viewerLiked ? "#f8fafc" : "#94a3b8",
+              opacity: likeBusy ? 0.6 : 1,
+              fontSize: 14,
+            }}
+          >
+            {contribution.viewerLiked ? "Unlike" : "Like"}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              const el = document.getElementById("rabbithole-comment-input");
+              el?.focus();
+            }}
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              fontWeight: 700,
+              color: "#94a3b8",
+              fontSize: 14,
+            }}
+          >
+            Comment
+          </button>
+
+          <div style={{ fontSize: 14, color: "#94a3b8" }}>
+            {contribution.likeCount} {contribution.likeCount === 1 ? "like" : "likes"}
+          </div>
+
+          <div style={{ fontSize: 14, color: "#94a3b8" }}>
+            {comments.length} {comments.length === 1 ? "comment" : "comments"}
+          </div>
+        </div>
+
         <form onSubmit={handleCommentSubmit} style={{ display: "grid", gap: 8, marginBottom: 12 }}>
           <textarea
+            id="rabbithole-comment-input"
             value={commentBody}
             onChange={(e) => setCommentBody(e.target.value)}
-            placeholder="Add a text comment (no GIF/emoji in RabbitHole)."
+            placeholder="Write a comment..."
             rows={3}
             maxLength={1200}
             style={{
@@ -798,15 +810,15 @@ export default function ContributionPageClient() {
             <span style={{ color: "#64748b", fontSize: 12 }}>{commentBody.length}/1200</span>
             <button
               type="submit"
-              disabled={postingComment}
+              disabled={postingComment || !commentBody.trim()}
               style={{
                 border: "none",
                 borderRadius: 8,
-                background: postingComment ? "#475569" : "#facc15",
-                color: postingComment ? "#e2e8f0" : "#0f172a",
+                background: postingComment || !commentBody.trim() ? "#475569" : "#facc15",
+                color: postingComment || !commentBody.trim() ? "#e2e8f0" : "#0f172a",
                 fontWeight: 800,
                 padding: "7px 12px",
-                cursor: postingComment ? "default" : "pointer",
+                cursor: postingComment || !commentBody.trim() ? "default" : "pointer",
               }}
             >
               {postingComment ? "Posting..." : "Comment"}
@@ -1228,20 +1240,6 @@ export default function ContributionPageClient() {
       )}
     </RabbitholeShell>
   );
-}
-
-function badgeStyle(bg: string, color: string, borderColor: string): React.CSSProperties {
-  return {
-    fontSize: 11,
-    borderRadius: 999,
-    padding: "2px 9px",
-    fontWeight: 700,
-    border: `1px solid ${borderColor}`,
-    background: bg,
-    color,
-    letterSpacing: "0.04em",
-    textTransform: "uppercase",
-  };
 }
 
 const shareLabelStyle: React.CSSProperties = {

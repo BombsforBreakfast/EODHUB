@@ -9,20 +9,14 @@ export default function RabbitholeShell({
   description?: string;
   children: React.ReactNode;
 }) {
-  const showPageHeading = title !== "Rabbithole";
 
   return (
-    <main style={{ maxWidth: 1024, margin: "0 auto", padding: "24px 16px 48px" }}>
+    <main style={{ width: "100%", padding: "0 0 48px", boxSizing: "border-box" }}>
       <header style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 12, letterSpacing: 1.2, textTransform: "uppercase", color: "#94a3b8", fontWeight: 700 }}>
-          EOD Hub Library Layer
-        </div>
         <div
           style={{
-            marginTop: 6,
             display: "flex",
             alignItems: "center",
-            justifyContent: "space-between",
             gap: 12,
             flexWrap: "wrap",
           }}
@@ -33,9 +27,9 @@ export default function RabbitholeShell({
               display: "flex",
               alignItems: "center",
               gap: 12,
-            textDecoration: "none",
-            color: "inherit",
-            minWidth: 0,
+              textDecoration: "none",
+              color: "inherit",
+              minWidth: 0,
             }}
           >
             {/* eslint-disable-next-line @next/next/no-img-element -- static mascot asset */}
@@ -59,9 +53,8 @@ export default function RabbitholeShell({
             Contribute
           </Link>
         </div>
-        {showPageHeading && <h1 style={{ margin: "10px 0 8px", fontSize: 34, fontWeight: 800 }}>{title}</h1>}
         {description && (
-          <p style={{ margin: 0, marginTop: showPageHeading ? 0 : 10, color: "#94a3b8", maxWidth: 760 }}>{description}</p>
+          <p style={{ margin: 0, marginTop: 10, color: "#94a3b8", maxWidth: 760 }}>{description}</p>
         )}
       </header>
       {children}

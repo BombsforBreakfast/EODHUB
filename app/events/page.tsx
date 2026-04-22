@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
-import NavBar from "../components/NavBar";
 import ImageCropDialog from "../components/ImageCropDialog";
 import { ASPECT_EVENT_COVER } from "../lib/imageCropTargets";
 import { useTheme } from "../lib/ThemeContext";
@@ -98,6 +97,13 @@ export default function EventsPage() {
 
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
+  const [calendarView, setCalendarView] = useState<"month" | "week">("month");
+  const [weekStart, setWeekStart] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - d.getDay());
+    return d;
+  });
 
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [memorials, setMemorials] = useState<Memorial[]>([]);
@@ -149,22 +155,43 @@ export default function EventsPage() {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayOfMonth = new Date(year, month, 1).getDay();
 
-  const calendarCells: (number | null)[] = [
-    ...Array(firstDayOfMonth).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
+  const weekEnd = useMemo(() => {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + 6);
+    return d;
+  }, [weekStart]);
+
+  const calendarCells: (Date | null)[] = useMemo(() => {
+    if (calendarView === "week") {
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(weekStart);
+        d.setDate(d.getDate() + i);
+        return d;
+      });
+    }
+    const cells: (Date | null)[] = Array(firstDayOfMonth).fill(null);
+    for (let i = 1; i <= daysInMonth; i++) cells.push(new Date(year, month, i));
+    return cells;
+  }, [calendarView, weekStart, year, month, daysInMonth, firstDayOfMonth]);
 
   const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate());
 
-  async function loadEvents(): Promise<CalendarEvent[]> {
-    const monthStart = `${year}-${String(month + 1).padStart(2, "0")}-01`;
-    const monthEnd = `${year}-${String(month + 1).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+  const rangeStartStr = useMemo(() => {
+    const d = calendarView === "week" ? weekStart : new Date(year, month, 1);
+    return toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
+  }, [calendarView, weekStart, year, month]);
 
+  const rangeEndStr = useMemo(() => {
+    const d = calendarView === "week" ? weekEnd : new Date(year, month, daysInMonth);
+    return toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
+  }, [calendarView, weekEnd, year, month, daysInMonth]);
+
+  async function loadEvents(): Promise<CalendarEvent[]> {
     const { data, error } = await supabase
       .from("events")
       .select(EVENT_COLUMNS)
-      .gte("date", monthStart)
-      .lte("date", monthEnd)
+      .gte("date", rangeStartStr)
+      .lte("date", rangeEndStr)
       .order("date", { ascending: true });
 
     if (error) { console.error("Events load error:", error); return []; }
@@ -538,6 +565,61 @@ export default function EventsPage() {
     setSelectedEvent(null);
   }
 
+  function prevWeek() {
+    setWeekStart((prev) => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() - 7);
+      return d;
+    });
+    setSelectedDay(null);
+    setSelectedEvent(null);
+  }
+
+  function nextWeek() {
+    setWeekStart((prev) => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() + 7);
+      return d;
+    });
+    setSelectedDay(null);
+    setSelectedEvent(null);
+  }
+
+  function prevRange() {
+    if (calendarView === "week") prevWeek();
+    else prevMonth();
+  }
+
+  function nextRange() {
+    if (calendarView === "week") nextWeek();
+    else nextMonth();
+  }
+
+  function switchToWeekView() {
+    const base = new Date(year, month, 1);
+    if (base.getMonth() === today.getMonth() && base.getFullYear() === today.getFullYear()) {
+      const d = new Date(today);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - d.getDay());
+      setWeekStart(d);
+    } else {
+      const d = new Date(year, month, 1);
+      d.setDate(d.getDate() - d.getDay());
+      setWeekStart(d);
+    }
+    setCalendarView("week");
+    setSelectedDay(null);
+    setSelectedEvent(null);
+  }
+
+  function switchToMonthView() {
+    setYear(weekStart.getFullYear());
+    setMonth(weekStart.getMonth());
+    setCalendarView("month");
+    setSelectedDay(null);
+    setSelectedEvent(null);
+  }
+
   useEffect(() => {
     async function init() {
       const { data } = await supabase.auth.getUser();
@@ -579,12 +661,11 @@ export default function EventsPage() {
         if (eventsResult.length > 0) loadAttendance(eventsResult.map((e) => e.id), userId);
       });
     }
-  }, [year, month]);
+  }, [year, month, calendarView, weekStart]);
 
   if (loading) {
     return (
-      <div style={{ padding: "24px 16px", background: t.bg, color: t.text, minHeight: "100vh" }}>
-        <NavBar />
+      <div style={{ color: t.text }}>
         <div style={{ marginTop: 20 }}>Loading events...</div>
       </div>
     );
@@ -630,7 +711,7 @@ export default function EventsPage() {
   }
 
   return (
-    <div style={{ padding: "24px 16px", background: t.bg, color: t.text, minHeight: "100vh" }}>
+    <div style={{ color: t.text }}>
       <ImageCropDialog
         open={eventCoverCropOpen}
         imageSrc={eventCoverCropSrc}
@@ -643,7 +724,6 @@ export default function EventsPage() {
           closeEventCoverCrop();
         }}
       />
-      <NavBar />
 
       <div
         style={{
@@ -1063,7 +1143,7 @@ export default function EventsPage() {
         >
           <button
             type="button"
-            onClick={prevMonth}
+            onClick={prevRange}
             style={{
               border: `1px solid ${t.border}`,
               borderRadius: 8,
@@ -1078,26 +1158,76 @@ export default function EventsPage() {
             ‹
           </button>
 
-          <div style={{ fontSize: 20, fontWeight: 900 }}>
-            {MONTH_NAMES[month]} {year}
+          <div style={{ fontSize: 20, fontWeight: 900, textAlign: "center" }}>
+            {calendarView === "week"
+              ? `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${weekEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+              : `${MONTH_NAMES[month]} ${year}`}
           </div>
 
-          <button
-            type="button"
-            onClick={nextMonth}
-            style={{
-              border: `1px solid ${t.border}`,
-              borderRadius: 8,
-              padding: "6px 14px",
-              fontWeight: 700,
-              background: t.surface,
-              color: t.text,
-              cursor: "pointer",
-              fontSize: 18,
-            }}
-          >
-            ›
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div
+              role="tablist"
+              aria-label="Calendar view"
+              style={{
+                display: "inline-flex",
+                border: `1px solid ${t.border}`,
+                borderRadius: 999,
+                overflow: "hidden",
+                background: t.surface,
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={calendarView === "month"}
+                onClick={switchToMonthView}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  border: "none",
+                  background: calendarView === "month" ? t.text : "transparent",
+                  color: calendarView === "month" ? t.surface : t.textMuted,
+                  cursor: "pointer",
+                }}
+              >
+                Month
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={calendarView === "week"}
+                onClick={switchToWeekView}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  border: "none",
+                  background: calendarView === "week" ? t.text : "transparent",
+                  color: calendarView === "week" ? t.surface : t.textMuted,
+                  cursor: "pointer",
+                }}
+              >
+                Week
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={nextRange}
+              style={{
+                border: `1px solid ${t.border}`,
+                borderRadius: 8,
+                padding: "6px 14px",
+                fontWeight: 700,
+                background: t.surface,
+                color: t.text,
+                cursor: "pointer",
+                fontSize: 18,
+              }}
+            >
+              ›
+            </button>
+          </div>
         </div>
 
         <div
@@ -1124,13 +1254,13 @@ export default function EventsPage() {
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
-          {calendarCells.map((day, idx) => {
-            if (day === null) {
+          {calendarCells.map((cellDate, idx) => {
+            if (cellDate === null) {
               return (
                 <div
                   key={`empty-${idx}`}
                   style={{
-                    minHeight: 80,
+                    minHeight: calendarView === "week" ? 160 : 80,
                     borderRight: `1px solid ${t.borderLight}`,
                     borderBottom: `1px solid ${t.borderLight}`,
                     background: t.bg,
@@ -1139,21 +1269,22 @@ export default function EventsPage() {
               );
             }
 
-            const dateStr = toDateStr(year, month, day);
+            const dateStr = toDateStr(cellDate.getFullYear(), cellDate.getMonth(), cellDate.getDate());
             const isToday = dateStr === todayStr;
             const isSelected = dateStr === selectedDay;
             const dayEvents = events.filter((e) => e.date === dateStr);
             const dayMemorials = memorials.filter(
-              (m) => anniversaryDate(m.death_date, year) === dateStr
+              (m) => anniversaryDate(m.death_date, cellDate.getFullYear()) === dateStr
             );
             const hasContent = dayEvents.length > 0 || dayMemorials.length > 0;
+            const maxVisibleEvents = calendarView === "week" ? 6 : 2;
 
             return (
               <div
                 key={dateStr}
                 onClick={() => setSelectedDay(isSelected ? null : dateStr)}
                 style={{
-                  minHeight: 80,
+                  minHeight: calendarView === "week" ? 160 : 80,
                   borderRight: `1px solid ${t.borderLight}`,
                   borderBottom: `1px solid ${t.borderLight}`,
                   padding: "6px 8px",
@@ -1164,22 +1295,36 @@ export default function EventsPage() {
               >
                 <div
                   style={{
-                    fontSize: 13,
-                    fontWeight: isToday ? 900 : 600,
-                    width: 24,
-                    height: 24,
-                    borderRadius: "50%",
-                    background: isToday ? t.text : "transparent",
-                    color: isToday ? t.surface : t.text,
                     display: "flex",
                     alignItems: "center",
-                    justifyContent: "center",
+                    gap: 6,
                   }}
                 >
-                  {day}
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: isToday ? 900 : 600,
+                      width: 24,
+                      height: 24,
+                      borderRadius: "50%",
+                      background: isToday ? t.text : "transparent",
+                      color: isToday ? t.surface : t.text,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      flexShrink: 0,
+                    }}
+                  >
+                    {cellDate.getDate()}
+                  </div>
+                  {calendarView === "week" && (
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      {cellDate.toLocaleDateString("en-US", { month: "short" })}
+                    </div>
+                  )}
                 </div>
 
-                {dayEvents.slice(0, 2).map((ev) => (
+                {dayEvents.slice(0, maxVisibleEvents).map((ev) => (
                   <button
                     key={ev.id}
                     type="button"
@@ -1210,9 +1355,9 @@ export default function EventsPage() {
                   </button>
                 ))}
 
-                {dayEvents.length > 2 && (
+                {dayEvents.length > maxVisibleEvents && (
                   <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>
-                    +{dayEvents.length - 2} more
+                    +{dayEvents.length - maxVisibleEvents} more
                   </div>
                 )}
 

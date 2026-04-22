@@ -1,7 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
-import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 import ImageCropDialog from "../components/ImageCropDialog";
 import { ASPECT_AVATAR } from "../lib/imageCropTargets";
@@ -228,7 +227,7 @@ export default function DirectoryPage() {
   };
 
   return (
-    <div style={{ background: t.bg, minHeight: "100vh" }}>
+    <div style={{ color: t.text }}>
       <ImageCropDialog
         open={dirCropOpen}
         imageSrc={dirCropSrc}
@@ -279,8 +278,7 @@ export default function DirectoryPage() {
           </div>
         </>
       )}
-      <NavBar />
-      <div style={{ maxWidth: 860, margin: "0 auto", padding: "24px 16px" }}>
+      <div style={{ width: "100%", boxSizing: "border-box" }}>
 
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
