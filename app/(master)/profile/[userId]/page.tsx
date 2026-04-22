@@ -67,6 +67,7 @@ type Profile = {
   has_oconus_experience: boolean | null;
   has_contract_experience: boolean | null;
   has_federal_le_military_crossover: boolean | null;
+  is_pure_admin: boolean | null;
 };
 
 type RawComment = {
@@ -560,6 +561,17 @@ export default function PublicProfilePage() {
       window.removeEventListener("keydown", onKey);
     };
   }, [editingProfile]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    const onSavedJobsChanged = () => {
+      void loadDesktopSavedJobs(currentUserId);
+    };
+    window.addEventListener("eod:saved-jobs-changed", onSavedJobsChanged as EventListener);
+    return () => {
+      window.removeEventListener("eod:saved-jobs-changed", onSavedJobsChanged as EventListener);
+    };
+  }, [currentUserId]);
 
   function closeWallAvatarCrop() {
     if (wallAvatarCropSrc) URL.revokeObjectURL(wallAvatarCropSrc);
@@ -1513,8 +1525,14 @@ export default function PublicProfilePage() {
   async function unsaveDesktopSavedJob(savedJobRowId: string) {
     try {
       setUnsavingDesktopJobId(savedJobRowId);
+      const removed = desktopSavedJobs.find((j) => j.id === savedJobRowId);
       await supabase.from("saved_jobs").delete().eq("id", savedJobRowId);
       setDesktopSavedJobs((prev) => prev.filter((j) => j.id !== savedJobRowId));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("eod:saved-jobs-changed", { detail: { jobId: removed?.job_id ?? null } })
+        );
+      }
     } finally {
       setUnsavingDesktopJobId(null);
     }
@@ -2398,6 +2416,32 @@ export default function PublicProfilePage() {
           </div>
           <div style={{ marginTop: 8, fontSize: 13, color: t.textFaint }}>
             Member interactions are disabled for this profile.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!loading && profile?.is_pure_admin) {
+    return (
+      <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
+        {!isDesktopShell && <NavBar />}
+        <div
+          style={{
+            marginTop: 20,
+            border: `1px solid ${t.border}`,
+            borderRadius: 16,
+            padding: 22,
+            background: t.surface,
+          }}
+        >
+          <div style={{ fontSize: 22, fontWeight: 900, color: t.text }}>EOD HUB</div>
+          <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>Staff Account</div>
+          <div style={{ marginTop: 14, fontSize: 14, color: t.text }}>
+            This is an internal EOD HUB staff account used for moderation and site administration.
+          </div>
+          <div style={{ marginTop: 8, fontSize: 13, color: t.textFaint }}>
+            It has no public profile and cannot be messaged, followed, or connected with.
           </div>
         </div>
       </div>

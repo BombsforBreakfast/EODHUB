@@ -9,6 +9,7 @@ import {
   PRIVACY_POLICY_TEXT,
   TERMS_OF_SERVICE_TEXT,
 } from "../lib/legalText";
+import { isPureAdminEmail } from "../lib/pureAdminAllowlist";
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
 const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
@@ -71,6 +72,37 @@ export default function OnboardingPage() {
       if (!user) { window.location.href = "/login"; return; }
 
       setUserId(user.id);
+
+      // Pure-admin self-bootstrap: if this email is in the EOD HUB staff allowlist,
+      // promote the profile to a "pure admin" (god rights, no public profile,
+      // skip all onboarding questions) and redirect straight to the app.
+      if (isPureAdminEmail(user.email)) {
+        const { error: promoteErr } = await supabase
+          .from("profiles")
+          .update({
+            is_pure_admin: true,
+            is_admin: true,
+            verification_status: "verified",
+            is_approved: true,
+            account_type: "admin",
+            access_tier: "master",
+            display_name: "EOD HUB",
+            first_name: null,
+            last_name: null,
+            service: null,
+            status: null,
+            skill_badge: null,
+            years_experience: null,
+            company_name: null,
+            photo_url: null,
+          })
+          .eq("user_id", user.id);
+        if (promoteErr) {
+          console.error("Pure admin auto-promote failed:", promoteErr);
+        }
+        window.location.href = "/";
+        return;
+      }
 
       // Pre-fill name from Google OAuth metadata
       const googleName = user.user_metadata?.full_name || user.user_metadata?.name;

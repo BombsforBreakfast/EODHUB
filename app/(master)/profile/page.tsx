@@ -88,17 +88,6 @@ function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null
   );
 }
 
-type SavedJob = {
-  id: string;
-  job_id: string;
-  title: string | null;
-  company_name: string | null;
-  location: string | null;
-  category: string | null;
-  apply_url: string | null;
-  created_at: string | null;
-};
-
 type Profile = {
   user_id: string;
   display_name: string | null;
@@ -117,6 +106,7 @@ type Profile = {
   is_employer: boolean | null;
   employer_verified: boolean | null;
   company_website: string | null;
+  is_pure_admin: boolean | null;
 };
 
 export default function MyAccountPage() {
@@ -129,58 +119,6 @@ export default function MyAccountPage() {
   const [linkedSuccess, setLinkedSuccess] = useState(false);
 
   const [employerJobs, setEmployerJobs] = useState<{ id: string; title: string | null; company_name: string | null; is_approved: boolean | null; created_at: string | null; saveCount: number }[]>([]);
-
-  const [savedJobs, setSavedJobs] = useState<SavedJob[]>([]);
-  const [unsavingJobId, setUnsavingJobId] = useState<string | null>(null);
-
-  async function loadSavedJobs(userId: string) {
-    const { data, error } = await supabase
-      .from("saved_jobs")
-      .select("id, job_id, jobs(title, company_name, location, category, apply_url, created_at)")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Saved jobs load error:", error);
-      return;
-    }
-
-    type RawRow = {
-      id: string;
-      job_id: string;
-      jobs: { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null } | { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null }[] | null;
-    };
-
-    const rows = (data ?? []) as unknown as RawRow[];
-
-    setSavedJobs(
-      rows.map((r) => {
-        const job = Array.isArray(r.jobs) ? r.jobs[0] ?? null : r.jobs;
-        return {
-          id: r.id,
-          job_id: r.job_id,
-          title: job?.title ?? null,
-          company_name: job?.company_name ?? null,
-          location: job?.location ?? null,
-          category: job?.category ?? null,
-          apply_url: job?.apply_url ?? null,
-          created_at: job?.created_at ?? null,
-        };
-      })
-    );
-  }
-
-  async function unsaveJob(savedJobRowId: string) {
-    try {
-      setUnsavingJobId(savedJobRowId);
-      await supabase.from("saved_jobs").delete().eq("id", savedJobRowId);
-      setSavedJobs((prev) => prev.filter((j) => j.id !== savedJobRowId));
-    } catch (err) {
-      console.error("Unsave job error:", err);
-    } finally {
-      setUnsavingJobId(null);
-    }
-  }
 
   async function loadAdminPendingCount() {
     const b = await fetchAdminPendingBreakdown(supabase);
@@ -243,7 +181,6 @@ export default function MyAccountPage() {
       setCurrentUserId(userId);
       setAuthProviders((data.user?.identities ?? []).map((i: { provider: string }) => i.provider));
       const p = await loadProfile(userId);
-      if (p && !p.is_employer) await loadSavedJobs(userId);
       if (p?.is_admin) loadAdminPendingCount();
       // Show success toast if returning from a Google link
       const params = new URLSearchParams(window.location.search);
@@ -286,7 +223,7 @@ export default function MyAccountPage() {
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
       <h1 style={{ fontSize: 32, fontWeight: 900, marginTop: 6, color: t.text }}>My Account</h1>
       <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.55, marginTop: 10, marginBottom: 0 }}>
-        Account settings, sign-in, billing, and saved jobs. Your profile, photo, saved events, and groups are on your profile page.
+        Account settings, sign-in, and billing. Your profile, photo, saved events, saved jobs, and groups are on your profile page and the jobs page.
       </p>
       <nav aria-label="Legal" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <a
@@ -305,22 +242,24 @@ export default function MyAccountPage() {
       </nav>
       {!loading && currentUserId && (
         <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-          <a
-            href={`/profile/${currentUserId}`}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              background: t.text,
-              color: t.surface,
-              borderRadius: 10,
-              padding: "8px 16px",
-              fontWeight: 700,
-              fontSize: 14,
-              textDecoration: "none",
-            }}
-          >
-            View my profile
-          </a>
+          {!profile?.is_pure_admin && (
+            <a
+              href={`/profile/${currentUserId}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                background: t.text,
+                color: t.surface,
+                borderRadius: 10,
+                padding: "8px 16px",
+                fontWeight: 700,
+                fontSize: 14,
+                textDecoration: "none",
+              }}
+            >
+              View my profile
+            </a>
+          )}
           {profile?.is_admin && (
             <>
               <a href="/admin" style={{ display: "inline-flex", alignItems: "center", gap: 8, background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: "pointer", textDecoration: "none", fontSize: 14 }}>
@@ -468,73 +407,6 @@ export default function MyAccountPage() {
                   </div>
                 </div>
               ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Saved Jobs — members only; one line per job */}
-      {!loading && !profile?.is_employer && (
-        <div style={{ marginTop: 24, ...card }}>
-          <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 16, color: t.text }}>Saved Jobs</div>
-          {savedJobs.length === 0 ? (
-            <div style={{ color: t.textMuted, fontSize: 14 }}>No saved jobs yet. Save listings from the jobs feed.</div>
-          ) : (
-            <div style={{ display: "grid", gap: 10 }}>
-              {savedJobs.map((job) => {
-                const meta = [job.company_name, job.location, job.category].filter(Boolean).join(" · ");
-                return (
-                  <div
-                    key={job.id}
-                    style={{
-                      border: `1px solid ${t.border}`,
-                      borderRadius: 12,
-                      padding: "12px 14px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      flexWrap: "wrap",
-                      background: t.bg,
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0, fontSize: 14, color: t.text, lineHeight: 1.4 }}>
-                      <span style={{ fontWeight: 800 }}>{job.title || "Untitled Job"}</span>
-                      {meta ? <span style={{ color: t.textMuted, fontWeight: 500 }}> · {meta}</span> : null}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                      {job.apply_url && (
-                        <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ fontWeight: 700, fontSize: 13, color: "#2563eb", textDecoration: "none", whiteSpace: "nowrap" }}>
-                          View
-                        </a>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => unsaveJob(job.id)}
-                        disabled={unsavingJobId === job.id}
-                        style={{
-                          background: "transparent",
-                          border: `1px solid ${t.border}`,
-                          color: t.textMuted,
-                          borderRadius: 8,
-                          padding: "6px 12px",
-                          fontSize: 13,
-                          fontWeight: 700,
-                          cursor: unsavingJobId === job.id ? "not-allowed" : "pointer",
-                          opacity: unsavingJobId === job.id ? 0.6 : 1,
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 5,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {unsavingJobId === job.id && <span className="btn-spinner btn-spinner-dark" />}
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
             </div>
           )}
         </div>

@@ -23,12 +23,20 @@ export default function PendingPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("verification_status, first_name, referral_code")
+        .select("verification_status, first_name, referral_code, is_pure_admin")
         .eq("user_id", user.id)
         .maybeSingle();
 
-      setStatus(profile?.verification_status ?? null);
-      setReferralCode((profile as { verification_status: string | null; first_name: string | null; referral_code: string | null } | null)?.referral_code ?? null);
+      const profileRow = profile as { verification_status: string | null; first_name: string | null; referral_code: string | null; is_pure_admin?: boolean | null } | null;
+
+      setStatus(profileRow?.verification_status ?? null);
+      setReferralCode(profileRow?.referral_code ?? null);
+
+      // Pure admins should never land here — send straight to home.
+      if (profileRow?.is_pure_admin) {
+        window.location.href = "/";
+        return;
+      }
 
       // Sync Google OAuth name to profile if missing
       const googleName = user.user_metadata?.full_name || user.user_metadata?.name;

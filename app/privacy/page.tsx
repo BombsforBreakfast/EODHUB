@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 import {
   LEGAL_CONTACT_EMAIL,
@@ -13,8 +14,9 @@ export default function PrivacyPage() {
   const { t } = useTheme();
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, color: t.text, padding: "32px 20px" }}>
-      <div style={{ maxWidth: 960, margin: "0 auto" }}>
+    <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
+      <NavBar />
+      <div style={{ maxWidth: 960, margin: "0 auto", padding: "32px 20px" }}>
         <h1 style={{ margin: 0, fontSize: 32, fontWeight: 900 }}>Privacy Policy</h1>
         <div style={{ marginTop: 8, color: t.textMuted, fontSize: 14 }}>
           Effective Date: {LEGAL_EFFECTIVE_DATE} | Last Updated: {LEGAL_LAST_UPDATED}

@@ -226,8 +226,21 @@ export default function MasterLeftColumn({
   async function unsaveDesktopSavedJob(savedJobRowId: string) {
     try {
       setUnsavingDesktopJobId(savedJobRowId);
+      const removed = desktopSavedJobs.find((j) => j.id === savedJobRowId);
       await supabase.from("saved_jobs").delete().eq("id", savedJobRowId);
       setDesktopSavedJobs((prev) => prev.filter((j) => j.id !== savedJobRowId));
+      if (removed?.job_id) {
+        setSavedJobIds((prev) => {
+          const next = new Set(prev);
+          next.delete(removed.job_id);
+          return next;
+        });
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("eod:saved-jobs-changed", { detail: { jobId: removed?.job_id ?? null } })
+        );
+      }
     } finally {
       setUnsavingDesktopJobId(null);
     }
@@ -353,11 +366,17 @@ export default function MasterLeftColumn({
     const onSavedEventsChanged = () => {
       void loadDesktopSavedEvents(userId);
     };
+    const onSavedJobsChanged = () => {
+      void loadDesktopSavedJobs(userId);
+      void loadSavedJobIds(userId);
+    };
     window.addEventListener("eod:saved-events-changed", onSavedEventsChanged as EventListener);
+    window.addEventListener("eod:saved-jobs-changed", onSavedJobsChanged as EventListener);
     return () => {
       window.removeEventListener("eod:saved-events-changed", onSavedEventsChanged as EventListener);
+      window.removeEventListener("eod:saved-jobs-changed", onSavedJobsChanged as EventListener);
     };
-  }, [sideRailsReady, userId, loadDesktopSavedEvents]);
+  }, [sideRailsReady, userId, loadDesktopSavedEvents, loadDesktopSavedJobs, loadSavedJobIds]);
 
   useEffect(() => {
     if (!sideRailsReady) return;
@@ -418,9 +437,11 @@ export default function MasterLeftColumn({
           next.delete(jobId);
           return next;
         });
+        setDesktopSavedJobs((prev) => prev.filter((j) => j.job_id !== jobId));
       } else {
         await supabase.from("saved_jobs").insert([{ user_id: userId, job_id: jobId }]);
         setSavedJobIds((prev) => new Set(prev).add(jobId));
+        void loadDesktopSavedJobs(userId);
         const job = jobs.find((j) => j.id === jobId);
         if (job?.source_type === "community" && job.user_id && job.user_id !== userId) {
           void postNotifyJson(supabase, {
@@ -434,6 +455,9 @@ export default function MasterLeftColumn({
             metadata: { job_id: jobId },
           });
         }
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("eod:saved-jobs-changed", { detail: { jobId } }));
       }
     } catch (err) {
       console.error("Toggle save job error:", err);

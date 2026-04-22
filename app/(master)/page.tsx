@@ -1360,9 +1360,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       if (isSaved) {
         await supabase.from("saved_jobs").delete().eq("user_id", userId).eq("job_id", jobId);
         setSavedJobIds((prev) => { const next = new Set(prev); next.delete(jobId); return next; });
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("eod:saved-jobs-changed", { detail: { jobId } }));
+        }
       } else {
         await supabase.from("saved_jobs").insert([{ user_id: userId, job_id: jobId }]);
         setSavedJobIds((prev) => new Set(prev).add(jobId));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("eod:saved-jobs-changed", { detail: { jobId } }));
+        }
         // Notify job poster (fire and forget ΓÇö no actor name for privacy)
         const job = jobs.find((j) => j.id === jobId);
         if (job?.source_type === "community" && job.user_id && job.user_id !== userId) {
@@ -3404,13 +3410,16 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         // Check verification status ΓÇö unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
-          .select("verification_status, first_name, last_name, photo_url, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, access_tier")
+          .select("verification_status, first_name, last_name, photo_url, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, access_tier, is_pure_admin")
           .eq("user_id", currentUserId)
           .maybeSingle();
 
+        const isPureAdminProfile = !!(profileCheck as { is_pure_admin?: boolean | null } | null)?.is_pure_admin;
+
         // Sync Google OAuth name to profile if first_name is missing
+        // (skip for pure admins — they intentionally have no public name)
         const googleName = data.user?.user_metadata?.full_name || data.user?.user_metadata?.name;
-        if (profileCheck && !profileCheck.first_name && googleName) {
+        if (!isPureAdminProfile && profileCheck && !profileCheck.first_name && googleName) {
           const parts = (googleName as string).trim().split(/\s+/);
           const fn = parts[0] || "";
           const ln = parts.slice(1).join(" ") || "";
@@ -3418,7 +3427,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         }
 
         // If profile not yet set up, send to onboarding
-        if (profileCheck && !profileCheck.service && !profileCheck.company_name) {
+        // (pure admins have neither service nor company_name by design — skip)
+        if (!isPureAdminProfile && profileCheck && !profileCheck.service && !profileCheck.company_name) {
           window.location.href = "/onboarding";
           return;
         }
