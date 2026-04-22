@@ -17,6 +17,8 @@ import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/comme
 import { memberHasInteractionAccess } from "../lib/subscriptionAccess";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import UpgradePromptModal from "../components/UpgradePromptModal";
+import JobCardActions from "../components/jobs/JobCardActions";
+import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
 import EventFeedActions from "../components/EventFeedActions";
 import FeedPostHeader from "../components/FeedPostHeader";
 import KangarooCourtFeedSection from "../components/KangarooCourtFeedSection";
@@ -684,6 +686,7 @@ export default function HomePage() {
 
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [togglingJobSaveFor, setTogglingJobSaveFor] = useState<string | null>(null);
+  const [jobDetailsModal, setJobDetailsModal] = useState<JobModalData | null>(null);
 
   const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
   const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
@@ -5877,38 +5880,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     </div>
                   )}
 
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, flexWrap: "wrap", gap: 8 }}>
-                    {job.apply_url && (
-                      <a
-                        href={job.apply_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{ fontSize: 14, fontWeight: 700 }}
-                      >
-                        View Job
-                      </a>
-                    )}
-
-                    {userId && (
-                      <button
-                        type="button"
-                        onClick={() => toggleSaveJob(job.id)}
-                        disabled={togglingJobSaveFor === job.id}
-                        style={{
-                          background: savedJobIds.has(job.id) ? "#111" : t.surface,
-                          color: savedJobIds.has(job.id) ? "white" : t.textMuted,
-                          border: `1px solid ${t.border}`,
-                          borderRadius: 8,
-                          padding: "5px 10px",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: togglingJobSaveFor === job.id ? "not-allowed" : "pointer",
-                          opacity: togglingJobSaveFor === job.id ? 0.6 : 1,
-                        }}
-                      >
-                        {togglingJobSaveFor === job.id ? "..." : savedJobIds.has(job.id) ? "Saved" : "Save"}
-                      </button>
-                    )}
+                  <div style={{ marginTop: 10 }}>
+                    <JobCardActions
+                      job={job as JobModalData}
+                      onOpenDetails={setJobDetailsModal}
+                      saved={savedJobIds.has(job.id)}
+                      canSave={!!userId}
+                      isTogglingSave={togglingJobSaveFor === job.id}
+                      onToggleSave={(j) => toggleSaveJob(j.id)}
+                    />
                   </div>
                 </div>
               </div>
@@ -6498,6 +6478,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
       <UpgradePromptModal open={showJobsUpgradePrompt} onClose={() => setShowJobsUpgradePrompt(false)} />
       <MemberPaywallModal open={memberPaywallOpen} onClose={() => setMemberPaywallOpen(false)} />
+      <JobDetailsModal
+        job={jobDetailsModal}
+        open={!!jobDetailsModal}
+        onClose={() => setJobDetailsModal(null)}
+        saved={jobDetailsModal ? savedJobIds.has(jobDetailsModal.id) : false}
+        canSave={!!userId}
+        isTogglingSave={jobDetailsModal ? togglingJobSaveFor === jobDetailsModal.id : false}
+        onToggleSave={(j) => toggleSaveJob(j.id)}
+      />
 
       {rabbitholeModalPost && (
         <AddToRabbitholeModal

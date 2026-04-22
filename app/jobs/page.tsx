@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import UpgradePromptModal from "../components/UpgradePromptModal";
+import JobCardActions from "../components/jobs/JobCardActions";
+import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 import { getFeatureAccess } from "../lib/featureAccess";
@@ -19,8 +21,17 @@ type SavedJobRow = {
   company_name: string | null;
   location: string | null;
   category: string | null;
+  description: string | null;
   apply_url: string | null;
+  pay_min: number | null;
+  pay_max: number | null;
+  clearance: string | null;
+  source_type: string | null;
   created_at: string | null;
+  og_title: string | null;
+  og_description: string | null;
+  og_image: string | null;
+  og_site_name: string | null;
 };
 
 const DEFAULT_FILTERS: JobFilterState = {
@@ -39,8 +50,10 @@ export default function JobsPage() {
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [savedJobs, setSavedJobs] = useState<SavedJobRow[]>([]);
-  const [unsavingJobId, setUnsavingJobId] = useState<string | null>(null);
+  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
+  const [togglingJobId, setTogglingJobId] = useState<string | null>(null);
   const [savedExpanded, setSavedExpanded] = useState(false);
+  const [detailsJob, setDetailsJob] = useState<JobModalData | null>(null);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 900);
@@ -52,26 +65,43 @@ export default function JobsPage() {
   const loadSavedJobs = useCallback(async (uid: string) => {
     const { data, error } = await supabase
       .from("saved_jobs")
-      .select("id, job_id, jobs(title, company_name, location, category, apply_url, created_at)")
+      .select(
+        "id, job_id, jobs(title, company_name, location, category, description, apply_url, pay_min, pay_max, clearance, source_type, created_at, og_title, og_description, og_image, og_site_name)"
+      )
       .eq("user_id", uid)
       .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Saved jobs load error:", error);
       setSavedJobs([]);
+      setSavedJobIds(new Set());
       return;
     }
 
+    type RawJob = {
+      title: string | null;
+      company_name: string | null;
+      location: string | null;
+      category: string | null;
+      description: string | null;
+      apply_url: string | null;
+      pay_min: number | null;
+      pay_max: number | null;
+      clearance: string | null;
+      source_type: string | null;
+      created_at: string | null;
+      og_title: string | null;
+      og_description: string | null;
+      og_image: string | null;
+      og_site_name: string | null;
+    };
     type RawRow = {
       id: string;
       job_id: string;
-      jobs:
-        | { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null }
-        | { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null }[]
-        | null;
+      jobs: RawJob | RawJob[] | null;
     };
 
-    const rows = ((data ?? []) as unknown as RawRow[]).map((r) => {
+    const rows: SavedJobRow[] = ((data ?? []) as unknown as RawRow[]).map((r) => {
       const job = Array.isArray(r.jobs) ? r.jobs[0] ?? null : r.jobs;
       return {
         id: r.id,
@@ -80,30 +110,54 @@ export default function JobsPage() {
         company_name: job?.company_name ?? null,
         location: job?.location ?? null,
         category: job?.category ?? null,
+        description: job?.description ?? null,
         apply_url: job?.apply_url ?? null,
+        pay_min: job?.pay_min ?? null,
+        pay_max: job?.pay_max ?? null,
+        clearance: job?.clearance ?? null,
+        source_type: job?.source_type ?? null,
         created_at: job?.created_at ?? null,
+        og_title: job?.og_title ?? null,
+        og_description: job?.og_description ?? null,
+        og_image: job?.og_image ?? null,
+        og_site_name: job?.og_site_name ?? null,
       };
     });
     setSavedJobs(rows);
+    setSavedJobIds(new Set(rows.map((r) => r.job_id)));
   }, []);
 
-  async function unsaveJob(savedJobRowId: string) {
-    try {
-      setUnsavingJobId(savedJobRowId);
-      const removed = savedJobs.find((j) => j.id === savedJobRowId);
-      await supabase.from("saved_jobs").delete().eq("id", savedJobRowId);
-      setSavedJobs((prev) => prev.filter((j) => j.id !== savedJobRowId));
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("eod:saved-jobs-changed", { detail: { jobId: removed?.job_id ?? null } })
-        );
+  const toggleSaveJob = useCallback(
+    async (job: JobModalData) => {
+      if (!userId) return;
+      try {
+        setTogglingJobId(job.id);
+        const isSaved = savedJobIds.has(job.id);
+        if (isSaved) {
+          await supabase.from("saved_jobs").delete().eq("user_id", userId).eq("job_id", job.id);
+          setSavedJobIds((prev) => {
+            const next = new Set(prev);
+            next.delete(job.id);
+            return next;
+          });
+          setSavedJobs((prev) => prev.filter((j) => j.job_id !== job.id));
+        } else {
+          await supabase.from("saved_jobs").insert([{ user_id: userId, job_id: job.id }]);
+          setSavedJobIds((prev) => new Set(prev).add(job.id));
+        }
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("eod:saved-jobs-changed", { detail: { jobId: job.id } })
+          );
+        }
+      } catch (err) {
+        console.error("Toggle save job error:", err);
+      } finally {
+        setTogglingJobId(null);
       }
-    } catch (err) {
-      console.error("Unsave job error:", err);
-    } finally {
-      setUnsavingJobId(null);
-    }
-  }
+    },
+    [userId, savedJobIds]
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -276,10 +330,28 @@ export default function JobsPage() {
             >
               {(savedExpanded ? savedJobs : savedJobs.slice(0, isMobile ? 3 : 6)).map((job) => {
                 const meta = [job.company_name, job.location, job.category].filter(Boolean).join(" · ");
+                const modalJob: JobModalData = {
+                  id: job.job_id,
+                  title: job.title,
+                  company_name: job.company_name,
+                  location: job.location,
+                  category: job.category,
+                  description: job.description,
+                  apply_url: job.apply_url,
+                  pay_min: job.pay_min,
+                  pay_max: job.pay_max,
+                  clearance: job.clearance,
+                  source_type: job.source_type,
+                  created_at: job.created_at,
+                  og_title: job.og_title,
+                  og_description: job.og_description,
+                  og_image: job.og_image,
+                  og_site_name: job.og_site_name,
+                };
                 return (
                   <div
                     key={job.id}
-                    style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6 }}
+                    style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}
                   >
                     <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>
                       {job.title || "Untitled Job"}
@@ -287,36 +359,15 @@ export default function JobsPage() {
                     {meta && (
                       <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.35 }}>{meta}</div>
                     )}
-                    <div style={{ marginTop: 2, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                      <a href={`/job/${job.job_id}`} style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>
-                        Details
-                      </a>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        {job.apply_url && (
-                          <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>
-                            Apply
-                          </a>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => unsaveJob(job.id)}
-                          disabled={unsavingJobId === job.id}
-                          style={{
-                            background: "#111",
-                            color: "white",
-                            border: "none",
-                            borderRadius: 8,
-                            padding: "4px 10px",
-                            fontSize: 11,
-                            fontWeight: 700,
-                            cursor: unsavingJobId === job.id ? "not-allowed" : "pointer",
-                            opacity: unsavingJobId === job.id ? 0.6 : 1,
-                          }}
-                        >
-                          {unsavingJobId === job.id ? "..." : "Remove"}
-                        </button>
-                      </div>
-                    </div>
+                    <JobCardActions
+                      job={modalJob}
+                      onOpenDetails={setDetailsJob}
+                      saved={savedJobIds.has(job.job_id)}
+                      canSave={!!userId}
+                      isTogglingSave={togglingJobId === job.job_id}
+                      onToggleSave={toggleSaveJob}
+                      size="compact"
+                    />
                   </div>
                 );
               })}
@@ -338,15 +389,16 @@ export default function JobsPage() {
           }}
         >
           {visibleJobs.map((job) => (
-            <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface }}>
+            <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface, display: "flex", flexDirection: "column" }}>
               {job.og_image ? (
+                // eslint-disable-next-line @next/next/no-img-element
                 <img src={job.og_image} alt={job.title || "Job preview"} style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }} />
               ) : null}
-              <div style={{ padding: 12 }}>
+              <div style={{ padding: 12, display: "flex", flexDirection: "column", flex: 1 }}>
                 <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3 }}>{job.title || job.og_title || "Untitled Job"}</div>
                 <div style={{ marginTop: 5, color: t.textMuted, fontSize: 14 }}>{job.company_name || job.og_site_name || "Unknown Company"}</div>
                 <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
-                  {(job.location || "Location not listed") + " - " + (job.category || "General")}
+                  {(job.location || "Location not listed") + " · " + (job.category || "General")}
                 </div>
                 {(job.pay_min !== null || job.pay_max !== null) && (
                   <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
@@ -358,15 +410,16 @@ export default function JobsPage() {
                     {job.description}
                   </div>
                 )}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, gap: 8, flexWrap: "wrap" }}>
-                  <a href={`/job/${job.id}`} style={{ fontSize: 13, fontWeight: 700 }}>
-                    Details
-                  </a>
-                  {job.apply_url && (
-                    <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, fontWeight: 700 }}>
-                      Apply
-                    </a>
-                  )}
+                <div style={{ flex: 1 }} />
+                <div style={{ marginTop: 12 }}>
+                  <JobCardActions
+                    job={job as JobModalData}
+                    onOpenDetails={setDetailsJob}
+                    saved={savedJobIds.has(job.id)}
+                    canSave={!!userId}
+                    isTogglingSave={togglingJobId === job.id}
+                    onToggleSave={toggleSaveJob}
+                  />
                 </div>
               </div>
             </div>
@@ -375,6 +428,15 @@ export default function JobsPage() {
       )}
 
       <UpgradePromptModal open={showUpgradePrompt} onClose={() => setShowUpgradePrompt(false)} />
+      <JobDetailsModal
+        job={detailsJob}
+        open={!!detailsJob}
+        onClose={() => setDetailsJob(null)}
+        saved={detailsJob ? savedJobIds.has(detailsJob.id) : false}
+        canSave={!!userId}
+        isTogglingSave={detailsJob ? togglingJobId === detailsJob.id : false}
+        onToggleSave={toggleSaveJob}
+      />
     </div>
   );
 }

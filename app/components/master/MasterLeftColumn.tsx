@@ -8,6 +8,8 @@ import { useTheme } from "../../lib/ThemeContext";
 import { getFeatureAccess } from "../../lib/featureAccess";
 import { postNotifyJson } from "../../lib/postNotifyClient";
 import UpgradePromptModal from "../UpgradePromptModal";
+import JobCardActions from "../jobs/JobCardActions";
+import JobDetailsModal, { type JobModalData } from "../jobs/JobDetailsModal";
 import { httpsAssetUrl, type JobRow } from "./masterShared";
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -42,8 +44,17 @@ type SavedJobRow = {
   company_name: string | null;
   location: string | null;
   category: string | null;
+  description: string | null;
   apply_url: string | null;
+  pay_min: number | null;
+  pay_max: number | null;
+  clearance: string | null;
+  source_type: string | null;
   created_at: string | null;
+  og_title: string | null;
+  og_description: string | null;
+  og_image: string | null;
+  og_site_name: string | null;
 };
 
 type DesktopCalendarEvent = {
@@ -92,6 +103,7 @@ export default function MasterLeftColumn({
   const [showJobsUpgradePrompt, setShowJobsUpgradePrompt] = useState(false);
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [togglingJobSaveFor, setTogglingJobSaveFor] = useState<string | null>(null);
+  const [jobDetailsModal, setJobDetailsModal] = useState<JobModalData | null>(null);
 
   const [desktopSavedEvents, setDesktopSavedEvents] = useState<SavedEventRow[]>([]);
   const [desktopSavedJobs, setDesktopSavedJobs] = useState<SavedJobRow[]>([]);
@@ -161,22 +173,38 @@ export default function MasterLeftColumn({
   const loadDesktopSavedJobs = useCallback(async (uid: string) => {
     const { data, error } = await supabase
       .from("saved_jobs")
-      .select("id, job_id, jobs(title, company_name, location, category, apply_url, created_at)")
+      .select(
+        "id, job_id, jobs(title, company_name, location, category, description, apply_url, pay_min, pay_max, clearance, source_type, created_at, og_title, og_description, og_image, og_site_name)"
+      )
       .eq("user_id", uid)
       .order("created_at", { ascending: false });
     if (error) {
       setDesktopSavedJobs([]);
       return;
     }
+    type RawJob = {
+      title: string | null;
+      company_name: string | null;
+      location: string | null;
+      category: string | null;
+      description: string | null;
+      apply_url: string | null;
+      pay_min: number | null;
+      pay_max: number | null;
+      clearance: string | null;
+      source_type: string | null;
+      created_at: string | null;
+      og_title: string | null;
+      og_description: string | null;
+      og_image: string | null;
+      og_site_name: string | null;
+    };
     type RawRow = {
       id: string;
       job_id: string;
-      jobs:
-        | { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null }
-        | { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null }[]
-        | null;
+      jobs: RawJob | RawJob[] | null;
     };
-    const rows = ((data ?? []) as unknown as RawRow[]).map((r) => {
+    const rows: SavedJobRow[] = ((data ?? []) as unknown as RawRow[]).map((r) => {
       const job = Array.isArray(r.jobs) ? r.jobs[0] ?? null : r.jobs;
       return {
         id: r.id,
@@ -185,8 +213,17 @@ export default function MasterLeftColumn({
         company_name: job?.company_name ?? null,
         location: job?.location ?? null,
         category: job?.category ?? null,
+        description: job?.description ?? null,
         apply_url: job?.apply_url ?? null,
+        pay_min: job?.pay_min ?? null,
+        pay_max: job?.pay_max ?? null,
+        clearance: job?.clearance ?? null,
+        source_type: job?.source_type ?? null,
         created_at: job?.created_at ?? null,
+        og_title: job?.og_title ?? null,
+        og_description: job?.og_description ?? null,
+        og_image: job?.og_image ?? null,
+        og_site_name: job?.og_site_name ?? null,
       };
     });
     setDesktopSavedJobs(rows);
@@ -798,38 +835,41 @@ export default function MasterLeftColumn({
               <div style={{ marginTop: -4, marginBottom: 8, fontSize: 11, color: t.textFaint, fontWeight: 700 }}>*not visible to other users</div>
               <div style={{ display: "grid", gap: 8 }}>
                 {desktopSavedJobs.length === 0 && <div style={{ color: t.textFaint, fontSize: 12 }}>No saved jobs.</div>}
-                {desktopSavedJobs.slice(0, 4).map((job) => (
-                  <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px" }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{job.title || "Job"}</div>
-                    <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{job.company_name || "Saved listing"}</div>
-                    <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                      {job.apply_url ? (
-                        <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                          View job <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
-                        </a>
-                      ) : (
-                        <span />
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => unsaveDesktopSavedJob(job.id)}
-                        disabled={unsavingDesktopJobId === job.id}
-                        style={{
-                          border: `1px solid ${t.border}`,
-                          background: "#111",
-                          color: "white",
-                          borderRadius: 8,
-                          padding: "3px 8px",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          cursor: unsavingDesktopJobId === job.id ? "not-allowed" : "pointer",
-                        }}
-                      >
-                        {unsavingDesktopJobId === job.id ? "..." : "Remove"}
-                      </button>
+                {desktopSavedJobs.slice(0, 4).map((job) => {
+                  const modalJob: JobModalData = {
+                    id: job.job_id,
+                    title: job.title,
+                    company_name: job.company_name,
+                    location: job.location,
+                    category: job.category,
+                    description: job.description,
+                    apply_url: job.apply_url,
+                    pay_min: job.pay_min,
+                    pay_max: job.pay_max,
+                    clearance: job.clearance,
+                    source_type: job.source_type,
+                    created_at: job.created_at,
+                    og_title: job.og_title,
+                    og_description: job.og_description,
+                    og_image: job.og_image,
+                    og_site_name: job.og_site_name,
+                  };
+                  return (
+                    <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{job.title || "Job"}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted }}>{job.company_name || "Saved listing"}</div>
+                      <JobCardActions
+                        job={modalJob}
+                        onOpenDetails={setJobDetailsModal}
+                        saved
+                        canSave={!!userId}
+                        isTogglingSave={unsavingDesktopJobId === job.id}
+                        onToggleSave={() => unsaveDesktopSavedJob(job.id)}
+                        size="compact"
+                      />
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -919,33 +959,15 @@ export default function MasterLeftColumn({
                     </div>
                   )}
 
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, flexWrap: "wrap", gap: 8 }}>
-                    {job.apply_url && (
-                      <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ fontSize: 14, fontWeight: 700 }}>
-                        View Job
-                      </a>
-                    )}
-
-                    {userId && (
-                      <button
-                        type="button"
-                        onClick={() => toggleSaveJob(job.id)}
-                        disabled={togglingJobSaveFor === job.id}
-                        style={{
-                          background: savedJobIds.has(job.id) ? "#111" : t.surface,
-                          color: savedJobIds.has(job.id) ? "white" : t.textMuted,
-                          border: `1px solid ${t.border}`,
-                          borderRadius: 8,
-                          padding: "5px 10px",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          cursor: togglingJobSaveFor === job.id ? "not-allowed" : "pointer",
-                          opacity: togglingJobSaveFor === job.id ? 0.6 : 1,
-                        }}
-                      >
-                        {togglingJobSaveFor === job.id ? "..." : savedJobIds.has(job.id) ? "Saved ✓" : "Save"}
-                      </button>
-                    )}
+                  <div style={{ marginTop: 10 }}>
+                    <JobCardActions
+                      job={job as JobModalData}
+                      onOpenDetails={setJobDetailsModal}
+                      saved={savedJobIds.has(job.id)}
+                      canSave={!!userId}
+                      isTogglingSave={togglingJobSaveFor === job.id}
+                      onToggleSave={(j) => toggleSaveJob(j.id)}
+                    />
                   </div>
                 </div>
               </div>
@@ -973,6 +995,15 @@ export default function MasterLeftColumn({
       </div>
 
       <UpgradePromptModal open={showJobsUpgradePrompt} onClose={() => setShowJobsUpgradePrompt(false)} />
+      <JobDetailsModal
+        job={jobDetailsModal}
+        open={!!jobDetailsModal}
+        onClose={() => setJobDetailsModal(null)}
+        saved={jobDetailsModal ? savedJobIds.has(jobDetailsModal.id) : false}
+        canSave={!!userId}
+        isTogglingSave={jobDetailsModal ? togglingJobSaveFor === jobDetailsModal.id : false}
+        onToggleSave={(j) => toggleSaveJob(j.id)}
+      />
     </aside>
   );
 }
