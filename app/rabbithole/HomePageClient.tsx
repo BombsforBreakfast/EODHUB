@@ -216,7 +216,7 @@ export default function RabbitholeHomePageClient() {
             height={44}
             style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: `1px solid ${t.border}` }}
           />
-          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>Rabbithole</h1>
+          <h1 style={{ margin: 0, fontSize: 32, fontWeight: 900, letterSpacing: "-0.02em" }}>Rabbithole</h1>
           <button type="button" onClick={openContributeModal} style={contributeButtonStyle}>
             Contribute
           </button>
@@ -627,13 +627,13 @@ function ContributionCard({ contribution, theme: t }: { contribution: Rabbithole
 
 const contributeButtonStyle: React.CSSProperties = {
   border: "none",
-  borderRadius: 8,
+  borderRadius: 999,
   background: "#facc15",
   color: "#0f172a",
-  padding: "7px 12px",
+  padding: "6px 22px",
   fontWeight: 800,
   cursor: "pointer",
-  fontSize: 12,
+  fontSize: 14,
 };
 
 function typeBadgeStyle(type: RabbitholeContentType | "archived_post"): React.CSSProperties {
