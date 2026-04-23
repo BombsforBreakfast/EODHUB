@@ -383,11 +383,30 @@ export default function MasterLeftColumn({
   }
 
   async function unsaveWallEvent(rowId: string) {
-    if (!window.confirm("Remove this from Saved Events?")) return;
+    if (!window.confirm("Remove this from Saved Events? This also clears your RSVP status (Interested/Going).")) return;
     try {
       setUnsavingWallEvent(rowId);
+      const removed = desktopSavedEvents.find((e) => e.id === rowId);
       await supabase.from("saved_events").delete().eq("id", rowId);
+      if (removed?.event_id && userId) {
+        // Keep behavior aligned with "Not Going": removing from Saved Events
+        // also clears this user's RSVP status for that event.
+        await supabase
+          .from("event_attendance")
+          .delete()
+          .eq("event_id", removed.event_id)
+          .eq("user_id", userId);
+      }
       setDesktopSavedEvents((prev) => prev.filter((e) => e.id !== rowId));
+      if (removed?.event_id && selectedEvent?.id === removed.event_id) {
+        setSelectedEventMyStatus(null);
+        void refreshSelectedEventAttendance(removed.event_id);
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("eod:saved-events-changed", { detail: { eventId: removed?.event_id ?? null } })
+        );
+      }
     } finally {
       setUnsavingWallEvent(null);
     }
@@ -835,20 +854,20 @@ export default function MasterLeftColumn({
           </a>
         </div>
 
-        <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 10, background: t.surface }}>
+        <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "4px 10px 10px 10px", background: t.surface }}>
           {/* Header: prev / "Apr 15 Wed" / next. The weekday sits next to the
               date so we don't need a separate day cell below — if there are no
               items for the day, the empty card is itself the indicator. */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
             <button
               type="button"
               aria-label="Previous day"
               onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() - 1))}
-              style={{ display: "inline-flex", alignItems: "center", border: `1px solid ${t.border}`, background: "#111", color: "white", borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+              style={{ display: "inline-flex", alignItems: "center", border: `1px solid ${t.border}`, background: "#111", color: "white", borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "1px 7px", cursor: "pointer" }}
             >
               <ChevronLeft size={14} strokeWidth={2.5} aria-hidden />
             </button>
-            <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
+            <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, lineHeight: 1.15 }}>
               <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>{formatShortDate(desktopCalendarDate)}</span>
               <span style={{ fontSize: 11, fontWeight: 700, color: t.textFaint }}>{CALENDAR_DAY_LABELS[desktopCalendarDate.getDay()]}</span>
             </div>
@@ -856,7 +875,7 @@ export default function MasterLeftColumn({
               type="button"
               aria-label="Next day"
               onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1))}
-              style={{ display: "inline-flex", alignItems: "center", border: `1px solid ${t.border}`, background: "#111", color: "white", borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+              style={{ display: "inline-flex", alignItems: "center", border: `1px solid ${t.border}`, background: "#111", color: "white", borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "1px 7px", cursor: "pointer" }}
             >
               <ChevronRight size={14} strokeWidth={2.5} aria-hidden />
             </button>
@@ -865,7 +884,7 @@ export default function MasterLeftColumn({
           {/* Day items live INSIDE the calendar card so the date header and the
               events/memorials attached to it read as a single visual unit. */}
           {desktopSelectedDay && (
-          <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+          <div style={{ marginTop: 6, display: "grid", gap: 8 }}>
             {[
               // Events in the day card deep-link to the SAME /events modal as
               // the saved events below (clickable title + thumb). The button

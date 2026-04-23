@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
@@ -145,11 +146,13 @@ function logPerf(label: string, startedAtMs: number, extra?: Record<string, unkn
 
 type ProfileName = {
   user_id: string;
+  display_name: string | null;
   first_name: string | null;
   last_name: string | null;
   photo_url: string | null;
   service: string | null;
   is_employer: boolean | null;
+  is_pure_admin: boolean | null;
 };
 
 type DiscoverProfile = {
@@ -310,9 +313,14 @@ type FeedEventSnapshot = {
   user_id: string;
   title: string;
   date: string;
+  description: string | null;
   organization: string | null;
   signup_url: string | null;
   image_url: string | null;
+  location: string | null;
+  event_time: string | null;
+  poc_name: string | null;
+  poc_phone: string | null;
 };
 
 type FeedPost = RankedPostRow & {
@@ -326,6 +334,7 @@ type FeedPost = RankedPostRow & {
   authorPhotoUrl: string | null;
   authorService: string | null;
   authorIsEmployer: boolean | null;
+  authorIsPureAdmin: boolean | null;
   likeCount: number;
   commentCount: number;
   likedByCurrentUser: boolean;
@@ -348,6 +357,20 @@ type FeedPost = RankedPostRow & {
   rabbithole_contribution_id?: string | null;
 };
 
+type FeedSelectedEvent = {
+  id: string;
+  title: string | null;
+  description: string | null;
+  date: string | null;
+  organization: string | null;
+  signup_url: string | null;
+  image_url: string | null;
+  location: string | null;
+  event_time: string | null;
+  poc_name: string | null;
+  poc_phone: string | null;
+};
+
 type UnitFeedHighlight = {
   id: string;
   unit_id: string;
@@ -368,6 +391,18 @@ function formatDate(dateString: string) {
   return new Date(dateString).toLocaleString();
 }
 
+function formatEventDisplayDate(dateIso: string | null | undefined) {
+  if (!dateIso) return null;
+  const d = new Date(`${dateIso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return dateIso;
+  return d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
 }
@@ -383,13 +418,31 @@ function getYouTubeId(url: string): string | null {
 
 function extractLegacyEventTitle(content: string | null | undefined): string | null {
   if (!content) return null;
-  const m = content.match(/^📅\s*New Event:\s*(.+)$/m);
-  const title = m?.[1]?.trim();
-  return title ? title : null;
+  // Older auto-post formats often looked like:
+  // "📅 New Event: Title 🗓️ Wednesday... 🏢 Org"
+  // We only want the actual event title segment.
+  const line = content
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => /new event:/i.test(l));
+  if (!line) return null;
+
+  const afterLabel = line.replace(/^.*?\bnew event:\s*/i, "").trim();
+  if (!afterLabel) return null;
+
+  const titleOnly = afterLabel
+    // strip trailing date/location chunks often prefixed with emojis
+    .replace(/\s+[🗓📅🏢📍].*$/u, "")
+    .trim();
+  return titleOnly || null;
 }
 
 function normalizeEventTitle(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, " ").trim();
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeUrl(url: string): string {
@@ -542,18 +595,21 @@ function Avatar({
   size = 44,
   service,
   isEmployer,
+  isPureAdmin,
 }: {
   photoUrl: string | null;
   name: string;
   size?: number;
   service?: string | null;
   isEmployer?: boolean | null;
+  isPureAdmin?: boolean | null;
 }) {
   const { t } = useTheme();
-  const ringColor = isEmployer ? null : getServiceRingColor(service);
-  // Employers get a rounded-rect container so logos aren't squished into a circle
-  const borderRadius = isEmployer ? Math.max(4, size * 0.18) : "50%";
-  const bgColor = isEmployer ? "#f0f0f0" : t.badgeBg;
+  const useLogoTile = Boolean(isEmployer || isPureAdmin);
+  const ringColor = useLogoTile ? null : getServiceRingColor(service);
+  // Employers + pure-admin logos get a rounded-rect tile so logos aren't squished into a circle.
+  const borderRadius = useLogoTile ? Math.max(4, size * 0.18) : "50%";
+  const bgColor = useLogoTile ? "#f0f0f0" : t.badgeBg;
   return (
     <div
       style={{
@@ -580,9 +636,10 @@ function Avatar({
           style={{
             width: "100%",
             height: "100%",
-            objectFit: "cover",
+            objectFit: isPureAdmin ? "contain" : "cover",
             display: "block",
-            padding: 0,
+            padding: isPureAdmin ? 2 : 0,
+            background: isPureAdmin ? "#f0f0f0" : undefined,
           }}
         />
       ) : (
@@ -688,6 +745,10 @@ export default function HomePage() {
   const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [togglingJobSaveFor, setTogglingJobSaveFor] = useState<string | null>(null);
   const [jobDetailsModal, setJobDetailsModal] = useState<JobModalData | null>(null);
+  const [selectedFeedEvent, setSelectedFeedEvent] = useState<FeedSelectedEvent | null>(null);
+  const [selectedFeedEventCounts, setSelectedFeedEventCounts] = useState<{ interested: number; going: number }>({ interested: 0, going: 0 });
+  const [selectedFeedEventMyStatus, setSelectedFeedEventMyStatus] = useState<"interested" | "going" | null>(null);
+  const [selectedFeedEventBusy, setSelectedFeedEventBusy] = useState(false);
 
   const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
   const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
@@ -831,6 +892,172 @@ export default function HomePage() {
     setMemberPaywallOpen(true);
     return true;
   }
+
+  const refreshFeedEventAttendance = React.useCallback(
+    async (eventId: string) => {
+      const { data } = await supabase
+        .from("event_attendance")
+        .select("user_id, status")
+        .eq("event_id", eventId);
+
+      let interested = 0;
+      let going = 0;
+      let mine: "interested" | "going" | null = null;
+      for (const row of (data ?? []) as Array<{ user_id: string; status: "interested" | "going" }>) {
+        if (row.status === "interested") interested += 1;
+        else if (row.status === "going") going += 1;
+        if (userId && row.user_id === userId) mine = row.status;
+      }
+
+      let saved = false;
+      if (userId) {
+        const { data: savedRow } = await supabase
+          .from("saved_events")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("event_id", eventId)
+          .maybeSingle();
+        saved = Boolean(savedRow);
+      }
+
+      setSelectedFeedEventCounts({ interested, going });
+      setSelectedFeedEventMyStatus(mine);
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.event_id === eventId
+            ? {
+                ...p,
+                event_interested_count: interested,
+                event_going_count: going,
+                event_my_attendance: mine,
+                event_saved: saved,
+              }
+            : p
+        )
+      );
+    },
+    [userId]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleSavedEventsChanged = (event: Event) => {
+      const custom = event as CustomEvent<{ eventId?: string }>;
+      const eventId = custom.detail?.eventId;
+      if (!eventId) return;
+      void refreshFeedEventAttendance(eventId);
+    };
+    window.addEventListener("eod:saved-events-changed", handleSavedEventsChanged as EventListener);
+    return () => {
+      window.removeEventListener("eod:saved-events-changed", handleSavedEventsChanged as EventListener);
+    };
+  }, [refreshFeedEventAttendance]);
+
+  const openFeedEventModal = React.useCallback(
+    async (eventId: string) => {
+      setSelectedFeedEventBusy(true);
+      try {
+        const [eventRes, attRes] = await Promise.all([
+          supabase
+            .from("events")
+            .select("id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone")
+            .eq("id", eventId)
+            .maybeSingle(),
+          supabase
+            .from("event_attendance")
+            .select("user_id, status")
+            .eq("event_id", eventId),
+        ]);
+
+        if (eventRes.error || !eventRes.data) return;
+
+        let interested = 0;
+        let going = 0;
+        let mine: "interested" | "going" | null = null;
+        for (const row of (attRes.data ?? []) as Array<{ user_id: string; status: "interested" | "going" }>) {
+          if (row.status === "interested") interested += 1;
+          else if (row.status === "going") going += 1;
+          if (userId && row.user_id === userId) mine = row.status;
+        }
+
+        setSelectedFeedEvent(eventRes.data as FeedSelectedEvent);
+        setSelectedFeedEventCounts({ interested, going });
+        setSelectedFeedEventMyStatus(mine);
+      } finally {
+        setSelectedFeedEventBusy(false);
+      }
+    },
+    [userId]
+  );
+
+  const toggleSelectedFeedEventRsvp = React.useCallback(
+    async (status: "interested" | "going") => {
+      if (!selectedFeedEvent) return;
+      if (!userId) {
+        window.location.href = "/login";
+        return;
+      }
+      setSelectedFeedEventBusy(true);
+      try {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        const res = await fetch("/api/events/feed-actions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+          body: JSON.stringify({
+            action: "toggle_attendance",
+            eventId: selectedFeedEvent.id,
+            status,
+          }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          interested?: number;
+          going?: number;
+          myAttendance?: "interested" | "going" | null;
+          saved?: boolean;
+        };
+        if (!res.ok) {
+          throw new Error(json.error ?? "Could not update attendance.");
+        }
+
+        const interested = json.interested ?? 0;
+        const going = json.going ?? 0;
+        const mine = json.myAttendance ?? null;
+
+        setSelectedFeedEventCounts({ interested, going });
+        setSelectedFeedEventMyStatus(mine);
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.event_id === selectedFeedEvent.id
+              ? {
+                  ...p,
+                  event_interested_count: interested,
+                  event_going_count: going,
+                  event_my_attendance: mine,
+                  event_saved: Boolean(json.saved),
+                }
+              : p
+          )
+        );
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("eod:saved-events-changed", { detail: { eventId: selectedFeedEvent.id } }));
+        }
+      } catch (err) {
+        console.error("feed event RSVP failed:", err);
+        alert(err instanceof Error ? err.message : "Could not update your RSVP.");
+      } finally {
+        setSelectedFeedEventBusy(false);
+      }
+      await refreshFeedEventAttendance(selectedFeedEvent.id);
+    },
+    [refreshFeedEventAttendance, selectedFeedEvent, userId]
+  );
 
   async function loadBusinessListings() {
     const perfStart = perfNowMs();
@@ -1031,9 +1258,13 @@ export default function HomePage() {
     const authorIds = [...new Set((commentsRes.data ?? []).map((c: { user_id: string }) => c.user_id))];
     const profileMap: Record<string, { name: string; photo: string | null }> = {};
     if (authorIds.length > 0) {
-      const { data: profiles } = await supabase.from("profiles").select("user_id, first_name, last_name, photo_url").in("user_id", authorIds);
-      for (const p of (profiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null }[]) {
-        profileMap[p.user_id] = { name: `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() || "User", photo: p.photo_url ?? null };
+      const { data: profiles } = await supabase.from("profiles").select("user_id, display_name, first_name, last_name, photo_url").in("user_id", authorIds);
+      for (const p of (profiles ?? []) as { user_id: string; display_name: string | null; first_name: string | null; last_name: string | null; photo_url: string | null }[]) {
+        const name =
+          (p.display_name?.trim() || null) ||
+          `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() ||
+          "User";
+        profileMap[p.user_id] = { name, photo: p.photo_url ?? null };
       }
     }
 
@@ -1763,6 +1994,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         authorPhotoUrl: null,
         authorService: null,
         authorIsEmployer: null,
+        authorIsPureAdmin: null,
         likeCount: 0,
         commentCount: 0,
         likedByCurrentUser: false,
@@ -1971,7 +2203,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       allProfileUserIds.length > 0
         ? await supabase
             .from("profiles")
-            .select("user_id, first_name, last_name, photo_url, service, is_employer")
+            .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, is_pure_admin")
             .in("user_id", allProfileUserIds)
         : { data: [], error: null };
 
@@ -1983,9 +2215,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const profilePhotoMap = new Map<string, string | null>();
     const profileServiceMap = new Map<string, string | null>();
     const profileEmployerMap = new Map<string, boolean | null>();
+    const profilePureAdminMap = new Map<string, boolean | null>();
 
     (profileData as ProfileName[] | null)?.forEach((profile) => {
+      // System / pure-admin accounts (EOD-HUB, RUMINT, etc.) intentionally
+      // have no first_name/last_name — they carry a display_name instead.
+      // Prefer display_name so those accounts never surface as "User".
       const fullName =
+        (profile.display_name?.trim() || null) ||
         `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
         "User";
 
@@ -1993,6 +2230,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       profilePhotoMap.set(profile.user_id, profile.photo_url ?? null);
       profileServiceMap.set(profile.user_id, profile.service ?? null);
       profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
+      profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
     });
 
     const likesByPost = new Map<string, string[]>();
@@ -2043,11 +2281,21 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     if (uniqueFeedEventIds.length > 0) {
       const eventsResult = await supabase
         .from("events")
-        .select("id, user_id, title, date, organization, signup_url, image_url")
+        .select("id, user_id, title, date, description, organization, signup_url, image_url, location, event_time, poc_name, poc_phone")
         .in("id", uniqueFeedEventIds);
       let eventRows: FeedEventSnapshot[] = [];
       // Backward compatibility if image_url hasn't been migrated yet.
-      if (eventsResult.error && isMissingColumnError(eventsResult.error, "image_url")) {
+      if (
+        eventsResult.error &&
+        (
+          isMissingColumnError(eventsResult.error, "image_url") ||
+          isMissingColumnError(eventsResult.error, "description") ||
+          isMissingColumnError(eventsResult.error, "location") ||
+          isMissingColumnError(eventsResult.error, "event_time") ||
+          isMissingColumnError(eventsResult.error, "poc_name") ||
+          isMissingColumnError(eventsResult.error, "poc_phone")
+        )
+      ) {
         const fallback = await supabase
           .from("events")
           .select("id, user_id, title, date, organization, signup_url")
@@ -2064,7 +2312,12 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             signup_url: string | null;
           }>).map((row) => ({
             ...row,
+            description: null as string | null,
             image_url: null as string | null,
+            location: null as string | null,
+            event_time: null as string | null,
+            poc_name: null as string | null,
+            poc_phone: null as string | null,
           }));
         }
       } else if (eventsResult.error) {
@@ -2327,6 +2580,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         authorPhotoUrl: profilePhotoMap.get(post.user_id) || null,
         authorService: profileServiceMap.get(post.user_id) ?? null,
         authorIsEmployer: profileEmployerMap.get(post.user_id) ?? null,
+        authorIsPureAdmin: profilePureAdminMap.get(post.user_id) ?? null,
         likeCount: likesForPost.length,
         commentCount: commentsForPost.length,
         likedByCurrentUser: effectiveUserId
@@ -4640,6 +4894,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               const commentsOpen = expandedComments[post.id] || false;
               const isOwnPost = userId === post.user_id;
               const isRumintPost = post.user_id === RUMINT_USER_ID;
+              const isPureAdminPost = Boolean(post.authorIsPureAdmin);
               const canEditPost = isOwnPost;
               const canDeletePost = isOwnPost || isAdmin;
               const isEditingPost = editingPostId === post.id;
@@ -4668,12 +4923,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         size={46}
                         service={post.authorService}
                         isEmployer={post.authorIsEmployer}
+                        isPureAdmin={post.authorIsPureAdmin}
                       />
                     }
                     authorName={post.authorName}
                     createdAtLabel={formatDate(post.created_at)}
                     t={t}
-                    disableProfileLink={isRumintPost}
+                    disableProfileLink={isRumintPost || isPureAdminPost}
                     hideAvatar={isRumintPost}
                     isOwnPost={isOwnPost}
                     canEdit={canEditPost}
@@ -4784,7 +5040,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           )}
                         </div>
                       )}
-                      {post.content && (
+                      {post.content && !(post.event_id && post.feed_event) && (
                         <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>
                       )}
 
@@ -4934,26 +5190,76 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
                   {post.event_id && (
                     <>
-                      {post.feed_event?.image_url ? (
-                        <div
+                      {post.feed_event && (
+                        <button
+                          type="button"
+                          onClick={() => void openFeedEventModal(post.feed_event!.id)}
                           style={{
                             marginTop: 12,
-                            borderRadius: 12,
-                            overflow: "hidden",
-                            border: `1px solid ${t.border}`,
                             width: "100%",
                             maxWidth: FEED_POST_EMBED_MAX_WIDTH,
-                            boxSizing: "border-box",
+                            marginLeft: "auto",
+                            marginRight: "auto",
+                            borderRadius: 12,
+                            border: `1px solid ${t.border}`,
                             background: t.bg,
+                            color: "inherit",
+                            textAlign: "center",
+                            cursor: "pointer",
+                            padding: "14px 14px 12px",
+                            boxSizing: "border-box",
+                            transition: "transform 140ms ease, box-shadow 140ms ease",
+                            boxShadow: "0 1px 0 rgba(0,0,0,0.12)",
                           }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.transform = "translateY(-1px)";
+                            e.currentTarget.style.boxShadow = "0 6px 18px rgba(0,0,0,0.18)";
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.transform = "translateY(0)";
+                            e.currentTarget.style.boxShadow = "0 1px 0 rgba(0,0,0,0.12)";
+                          }}
+                          aria-label={`Open event details for ${post.feed_event.title}`}
                         >
-                          <img
-                            src={httpsAssetUrl(post.feed_event?.image_url)}
-                            alt=""
-                            style={{ width: "100%", height: "auto", maxHeight: 220, objectFit: "cover", display: "block" }}
-                          />
-                        </div>
-                      ) : null}
+                          <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.15, marginBottom: 8, color: t.text }}>
+                            New Event: {post.feed_event.title}
+                          </div>
+                          <div style={{ fontWeight: 800, fontSize: 17, color: t.text, marginBottom: 10 }}>
+                            {formatEventDisplayDate(post.feed_event.date) ?? post.feed_event.date}
+                            {post.feed_event.event_time ? `  ${post.feed_event.event_time}` : ""}
+                          </div>
+
+                          {post.feed_event.image_url ? (
+                            <div
+                              style={{
+                                width: "100%",
+                                borderRadius: 12,
+                                overflow: "hidden",
+                                border: `1px solid ${t.border}`,
+                                background: t.surface,
+                                marginBottom: 10,
+                              }}
+                            >
+                              <img
+                                src={httpsAssetUrl(post.feed_event.image_url)}
+                                alt={post.feed_event.title}
+                                style={{ width: "100%", height: "auto", maxHeight: 420, objectFit: "cover", display: "block" }}
+                              />
+                            </div>
+                          ) : null}
+
+                          {(post.feed_event.location || post.feed_event.organization) && (
+                            <div style={{ fontSize: 19, fontWeight: 700, color: t.text, marginBottom: 8 }}>
+                              {post.feed_event.location ?? post.feed_event.organization}
+                            </div>
+                          )}
+                          {post.feed_event.description && (
+                            <div style={{ fontSize: 15, lineHeight: 1.45, color: t.textMuted }}>
+                              {post.feed_event.description}
+                            </div>
+                          )}
+                        </button>
+                      )}
                       <EventFeedActions
                         eventId={post.event_id}
                         signupUrl={post.feed_event?.signup_url ?? null}
@@ -6546,6 +6852,164 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         isTogglingSave={jobDetailsModal ? togglingJobSaveFor === jobDetailsModal.id : false}
         onToggleSave={(j) => toggleSaveJob(j.id)}
       />
+      {selectedFeedEvent && typeof document !== "undefined" &&
+        createPortal(
+          <div
+            onClick={() => setSelectedFeedEvent(null)}
+            style={{
+              position: "fixed",
+              inset: 0,
+              background: "rgba(0,0,0,0.55)",
+              zIndex: 2000,
+              display: "grid",
+              placeItems: "center",
+              padding: 16,
+            }}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "min(720px, 94vw)",
+                maxHeight: "86vh",
+                overflow: "auto",
+                borderRadius: 14,
+                border: `1px solid ${t.border}`,
+                background: t.bg,
+                color: t.text,
+                boxShadow: "0 18px 46px rgba(0,0,0,0.34)",
+                padding: 16,
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <div style={{ fontWeight: 800, fontSize: 18 }}>Event Details</div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedFeedEvent(null)}
+                  style={{
+                    border: `1px solid ${t.border}`,
+                    background: t.surface,
+                    color: t.text,
+                    borderRadius: 8,
+                    padding: "4px 8px",
+                    cursor: "pointer",
+                    fontWeight: 700,
+                  }}
+                >
+                  Close
+                </button>
+              </div>
+
+              <div style={{ fontWeight: 800, fontSize: 20, lineHeight: 1.3 }}>
+                {selectedFeedEvent.title || "Untitled event"}
+              </div>
+              {selectedFeedEvent.organization && (
+                <div style={{ marginTop: 4, color: t.textMuted, fontSize: 13 }}>
+                  {selectedFeedEvent.organization}
+                </div>
+              )}
+
+              {selectedFeedEvent.image_url && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    border: `1px solid ${t.border}`,
+                  }}
+                >
+                  <img
+                    src={httpsAssetUrl(selectedFeedEvent.image_url)}
+                    alt={selectedFeedEvent.title ?? ""}
+                    style={{ width: "100%", maxHeight: 320, objectFit: "cover", display: "block" }}
+                  />
+                </div>
+              )}
+
+              {selectedFeedEvent.date && (
+                <div style={{ marginTop: 12, fontSize: 14 }}>
+                  <strong>Date:</strong> {formatEventDisplayDate(selectedFeedEvent.date) ?? selectedFeedEvent.date}
+                </div>
+              )}
+              {selectedFeedEvent.event_time && (
+                <div style={{ marginTop: 6, fontSize: 14 }}>
+                  <strong>Time:</strong> {selectedFeedEvent.event_time}
+                </div>
+              )}
+              {selectedFeedEvent.location && (
+                <div style={{ marginTop: 6, fontSize: 14 }}>
+                  <strong>Location:</strong> {selectedFeedEvent.location}
+                </div>
+              )}
+              {(selectedFeedEvent.poc_name || selectedFeedEvent.poc_phone) && (
+                <div style={{ marginTop: 6, fontSize: 14 }}>
+                  <strong>POC:</strong> {selectedFeedEvent.poc_name ?? ""}
+                  {selectedFeedEvent.poc_name && selectedFeedEvent.poc_phone ? " — " : ""}
+                  {selectedFeedEvent.poc_phone ?? ""}
+                </div>
+              )}
+              {selectedFeedEvent.description && (
+                <div style={{ marginTop: 10, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>
+                  {selectedFeedEvent.description}
+                </div>
+              )}
+
+              <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={() => void toggleSelectedFeedEventRsvp("interested")}
+                  disabled={selectedFeedEventBusy}
+                  style={{
+                    background: selectedFeedEventMyStatus === "interested" ? t.text : t.surface,
+                    color: selectedFeedEventMyStatus === "interested" ? t.surface : t.textMuted,
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 8,
+                    padding: "6px 12px",
+                    fontWeight: 700,
+                    cursor: selectedFeedEventBusy ? "wait" : "pointer",
+                  }}
+                >
+                  {selectedFeedEventMyStatus === "interested" ? "Interested ✓" : "Interested"}
+                  {selectedFeedEventCounts.interested > 0 ? ` · ${selectedFeedEventCounts.interested}` : ""}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void toggleSelectedFeedEventRsvp("going")}
+                  disabled={selectedFeedEventBusy}
+                  style={{
+                    background: selectedFeedEventMyStatus === "going" ? t.text : t.surface,
+                    color: selectedFeedEventMyStatus === "going" ? t.surface : t.textMuted,
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 8,
+                    padding: "6px 12px",
+                    fontWeight: 700,
+                    cursor: selectedFeedEventBusy ? "wait" : "pointer",
+                  }}
+                >
+                  {selectedFeedEventMyStatus === "going" ? "Going ✓" : "Going"}
+                  {selectedFeedEventCounts.going > 0 ? ` · ${selectedFeedEventCounts.going}` : ""}
+                </button>
+                {selectedFeedEvent.signup_url && (
+                  <a
+                    href={httpsAssetUrl(selectedFeedEvent.signup_url)}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      marginLeft: "auto",
+                      alignSelf: "center",
+                      fontSize: 13,
+                      fontWeight: 800,
+                      color: t.textMuted,
+                      textDecoration: "none",
+                    }}
+                  >
+                    Open Event Link
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {rabbitholeModalPost && (
         <AddToRabbitholeModal
