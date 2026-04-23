@@ -151,8 +151,35 @@ async function fetchState(supabase: ReturnType<typeof adminClient>) {
 
 async function applyPlan(supabase: ReturnType<typeof adminClient>, plan: ReconcilePlan) {
   // 1) Create missing posts for published items.
+  //
+  // Stagger any batch of recovered posts on the same 90-minute release cadence
+  // the approval flow uses, starting from "now" (or behind any already-queued
+  // future news posts) so reconciliation never backfills posts with a 3-day-
+  // old created_at that would bury them at the bottom of the feed.
   if (plan.publishedMissingPost.length > 0) {
-    const inserts = plan.publishedMissingPost.map((item) => ({
+    const releaseIntervalMinutes = Math.max(
+      15,
+      Number(process.env.NEWS_RELEASE_INTERVAL_MINUTES ?? 90) || 90
+    );
+    const releaseIntervalMs = releaseIntervalMinutes * 60 * 1000;
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const { data: futureNewsPost } = await supabase
+      .from("posts")
+      .select("created_at")
+      .eq("content_type", "news")
+      .gt("created_at", nowIso)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const latestFutureMs = Date.parse(
+      ((futureNewsPost as { created_at?: string | null } | null)?.created_at ?? "")
+    );
+    const startMs = Number.isFinite(latestFutureMs)
+      ? latestFutureMs + releaseIntervalMs
+      : nowMs;
+
+    const inserts = plan.publishedMissingPost.map((item, idx) => ({
       user_id: RUMINT_USER_ID,
       content: buildNewsPostContent(item),
       og_url: item.canonical_url ?? item.source_url,
@@ -163,7 +190,7 @@ async function applyPlan(supabase: ReturnType<typeof adminClient>, plan: Reconci
       news_item_id: item.id,
       content_type: "news",
       system_generated: true,
-      created_at: item.published_at ?? item.ingested_at ?? new Date().toISOString(),
+      created_at: new Date(startMs + idx * releaseIntervalMs).toISOString(),
     }));
     const { error } = await supabase.from("posts").insert(inserts);
     if (error) throw new Error(`insert missing posts failed: ${error.message}`);

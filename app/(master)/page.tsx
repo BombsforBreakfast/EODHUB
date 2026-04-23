@@ -4448,7 +4448,10 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "white", fontWeight: 900, fontSize: 16, lineHeight: 1, cursor: "pointer", padding: "2px 7px", flexShrink: 0 }}
                     >x</button>
                   </div>
-                  {/* Card body: compact by default, full memorial view on expand */}
+                  {/* Card body: compact by default, full memorial view on expand.
+                      A thin attribution footer sits below this body (always
+                      visible, both states) so it's clear the content originates
+                      from the EOD Warrior Foundation Digital Wall. */}
                   <div style={{ padding: 20, background: isDark ? "#2a1409" : "#fdf3ed", display: "flex", gap: 16, alignItems: "flex-start" }}>
                     {m.photo_url && (
                       <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "3px solid #d9582b" }}>
@@ -4615,6 +4618,19 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         </>
                       )}
                     </div>
+                  </div>
+                  <div
+                    style={{
+                      padding: "8px 20px 12px",
+                      background: isDark ? "#2a1409" : "#fdf3ed",
+                      borderTop: `1px solid ${isDark ? "#5c2e12" : "#fbe2cf"}`,
+                      fontSize: 11,
+                      lineHeight: 1.5,
+                      color: t.textFaint,
+                      fontStyle: "italic",
+                    }}
+                  >
+                    * This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.
                   </div>
                 </div>
               );

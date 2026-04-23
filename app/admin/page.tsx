@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
@@ -381,6 +381,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const memorialPhotoInputRef = useRef<HTMLInputElement | null>(null);
   /** Admin memorial list: expand/collapse long bios (Manage Memorials cards). */
   const [memorialBioExpandedIds, setMemorialBioExpandedIds] = useState<Record<string, boolean>>({});
+  /** Client-side filter for the Manage Memorials list (matches name / bio). */
+  const [memorialSearch, setMemorialSearch] = useState("");
   const [isMobile, setIsMobile] = useState(false);
 
   const [adminEvents, setAdminEvents] = useState<AdminCalendarEvent[]>([]);
@@ -388,6 +390,36 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const [eventEditSaving, setEventEditSaving] = useState(false);
   const [eventPhotoUploading, setEventPhotoUploading] = useState(false);
   const eventPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  /** Client-side filter for the Manage Events list (matches title / org / location / POC). */
+  const [eventSearch, setEventSearch] = useState("");
+
+  /** Filtered lists for the Manage {Events,Memorials} admin tables. */
+  const filteredAdminEvents = useMemo(() => {
+    const q = eventSearch.trim().toLowerCase();
+    if (!q) return adminEvents;
+    return adminEvents.filter((ev) => {
+      const haystack = [
+        ev.title,
+        ev.organization,
+        ev.location,
+        ev.poc_name,
+        ev.event_time,
+        ev.description,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [adminEvents, eventSearch]);
+  const filteredMemorials = useMemo(() => {
+    const q = memorialSearch.trim().toLowerCase();
+    if (!q) return memorials;
+    return memorials.filter((m) => {
+      const haystack = [m.name, m.bio, m.death_date].filter(Boolean).join(" ").toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [memorials, memorialSearch]);
 
   const [bugReports, setBugReports] = useState<BugReport[]>([]);
   const [reportsFilter, setReportsFilter] = useState<"unreviewed" | "all">("unreviewed");
@@ -3344,12 +3376,41 @@ const [memWizUrl, setMemWizUrl] = useState("");
                 Review, edit, or delete calendar events (same data as the Events page).
               </div>
 
+              {adminEvents.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                  <input
+                    type="search"
+                    value={eventSearch}
+                    onChange={(e) => setEventSearch(e.target.value)}
+                    placeholder="Search by title, organization, location, POC..."
+                    style={{
+                      flex: 1,
+                      border: `1px solid ${t.inputBorder}`,
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      fontSize: 14,
+                      background: t.input,
+                      color: t.text,
+                      outline: "none",
+                    }}
+                  />
+                  {eventSearch.trim() && (
+                    <span style={{ fontSize: 12, color: t.textMuted, whiteSpace: "nowrap" }}>
+                      {filteredAdminEvents.length} / {adminEvents.length}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {adminEvents.length === 0 && (
                 <div style={{ color: t.textFaint, fontSize: 14 }}>No events yet.</div>
               )}
+              {adminEvents.length > 0 && filteredAdminEvents.length === 0 && (
+                <div style={{ color: t.textFaint, fontSize: 14 }}>No events match “{eventSearch}”.</div>
+              )}
 
               <div style={{ display: "grid", gap: 12, minWidth: 0, width: "100%" }}>
-                {adminEvents.map((ev) => (
+                {filteredAdminEvents.map((ev) => (
                   <div key={ev.id}>
                     {editingEvent?.id === ev.id ? (
                       <div style={{ border: "2px solid #1e3a5f", borderRadius: 12, padding: 16, display: "grid", gap: 10 }}>
@@ -3636,12 +3697,41 @@ const [memWizUrl, setMemWizUrl] = useState("");
                 Edit or delete memorial entries (same data as the Events page). New memorials should be added from the Events page.
               </div>
 
+              {memorials.length > 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                  <input
+                    type="search"
+                    value={memorialSearch}
+                    onChange={(e) => setMemorialSearch(e.target.value)}
+                    placeholder="Search by name or bio..."
+                    style={{
+                      flex: 1,
+                      border: `1px solid ${t.inputBorder}`,
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      fontSize: 14,
+                      background: t.input,
+                      color: t.text,
+                      outline: "none",
+                    }}
+                  />
+                  {memorialSearch.trim() && (
+                    <span style={{ fontSize: 12, color: t.textMuted, whiteSpace: "nowrap" }}>
+                      {filteredMemorials.length} / {memorials.length}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {memorials.length === 0 && (
                 <div style={{ color: t.textFaint, fontSize: 14 }}>No memorials yet.</div>
               )}
+              {memorials.length > 0 && filteredMemorials.length === 0 && (
+                <div style={{ color: t.textFaint, fontSize: 14 }}>No memorials match “{memorialSearch}”.</div>
+              )}
 
               <div style={{ display: "grid", gap: 12, minWidth: 0, width: "100%" }}>
-                {memorials.map((mem) => (
+                {filteredMemorials.map((mem) => (
                   <div key={mem.id}>
                     {editingMemorial?.id === mem.id ? (
                       /* ── Inline edit form ── */

@@ -710,7 +710,10 @@ export default function MasterLeftColumn({
         </div>
 
         <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 10, background: t.surface }}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          {/* Header: prev / "Apr 15 Wed" / next. The weekday sits next to the
+              date so we don't need a separate day cell below — if there are no
+              items for the day, the empty card is itself the indicator. */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
             <button
               type="button"
               aria-label="Previous day"
@@ -719,7 +722,10 @@ export default function MasterLeftColumn({
             >
               <ChevronLeft size={14} strokeWidth={2.5} aria-hidden />
             </button>
-            <div style={{ fontSize: 12, fontWeight: 800, color: t.text }}>{formatShortDate(desktopCalendarDate)}</div>
+            <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>{formatShortDate(desktopCalendarDate)}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: t.textFaint }}>{CALENDAR_DAY_LABELS[desktopCalendarDate.getDay()]}</span>
+            </div>
             <button
               type="button"
               aria-label="Next day"
@@ -729,36 +735,10 @@ export default function MasterLeftColumn({
               <ChevronRight size={14} strokeWidth={2.5} aria-hidden />
             </button>
           </div>
-          {(() => {
-            const d = desktopCalendarDate;
-            const iso = toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
-            const eventCount = desktopCalendarEvents.filter((ev) => ev.date === iso).length;
-            const memorialCount = desktopMemorials.filter((m) => anniversaryDate(m.death_date, d.getFullYear()) === iso).length;
-            const hasItems = eventCount + memorialCount > 0;
-            return (
-              <div
-                style={{
-                  border: `1px solid ${t.border}`,
-                  borderRadius: 8,
-                  minHeight: 50,
-                  padding: "8px 10px",
-                  background: t.surface,
-                  position: "relative",
-                }}
-              >
-                <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 700 }}>{CALENDAR_DAY_LABELS[d.getDay()]}</div>
-                <div style={{ fontSize: 18, fontWeight: 900, color: t.text, lineHeight: 1.1 }}>{d.getDate()}</div>
-                {hasItems && (
-                  <span style={{ position: "absolute", top: 8, right: 10, fontSize: 11, color: "#2563eb", fontWeight: 800 }}>
-                    {eventCount + memorialCount} item{eventCount + memorialCount === 1 ? "" : "s"}
-                  </span>
-                )}
-              </div>
-            );
-          })()}
-        </div>
 
-        {desktopSelectedDay && (
+          {/* Day items live INSIDE the calendar card so the date header and the
+              events/memorials attached to it read as a single visual unit. */}
+          {desktopSelectedDay && (
           <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
             {[
               ...desktopCalendarEvents
@@ -894,7 +874,8 @@ export default function MasterLeftColumn({
                 );
               })}
           </div>
-        )}
+          )}
+        </div>
 
         <div style={{ marginTop: 6 }}>
           <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 8 }}>Saved events</div>
@@ -1332,6 +1313,9 @@ export default function MasterLeftColumn({
                   No biography on file.{selectedMemorial.source_url ? " Use “View Full Memorial” for the full tribute." : ""}
                 </div>
               )}
+              <div style={{ marginTop: 16, fontSize: 11, lineHeight: 1.5, color: t.textFaint, fontStyle: "italic" }}>
+                * This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.
+              </div>
             </div>
 
             <div

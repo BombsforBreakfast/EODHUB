@@ -82,20 +82,28 @@ async function allocateReleaseSlots(
 ): Promise<string[]> {
   if (count <= 0) return [];
 
-  const { data: latestNewsPost } = await supabase
+  // We only care about FUTURE-scheduled news posts here. If the latest news
+  // post is already in the past, we should start scheduling from "now" so a
+  // freshly approved batch surfaces at the top of the feed immediately rather
+  // than inheriting some ancient created_at. If there are future-scheduled
+  // items already in the queue, we stack the new batch behind them so the
+  // 90-minute cadence is preserved.
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const { data: futureNewsPost } = await supabase
     .from("posts")
     .select("created_at")
     .eq("content_type", "news")
+    .gt("created_at", nowIso)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const nowMs = Date.now();
-  const latestMs = Date.parse(
-    ((latestNewsPost as { created_at?: string | null } | null)?.created_at ?? "")
+  const latestFutureMs = Date.parse(
+    ((futureNewsPost as { created_at?: string | null } | null)?.created_at ?? "")
   );
-  const startMs = Number.isFinite(latestMs)
-    ? Math.max(nowMs, latestMs + NEWS_RELEASE_INTERVAL_MS)
+  const startMs = Number.isFinite(latestFutureMs)
+    ? latestFutureMs + NEWS_RELEASE_INTERVAL_MS
     : nowMs;
 
   return Array.from({ length: count }, (_, i) =>
@@ -136,20 +144,30 @@ async function ensurePublishedNewsPosts(supabase: ReturnType<typeof adminClient>
   });
 
   const missing = items.filter((item) => !existingByNewsId.has(item.id));
-  const missingWithoutRelease = missing.filter((item) => !item.release_at);
-  const slots = await allocateReleaseSlots(supabase, missingWithoutRelease.length);
+  // Freshly approved items get a future release slot regardless of whatever
+  // stale `release_at` may be on the row. We only preserve an existing
+  // `release_at` if it is still in the future — otherwise we treat it as
+  // expired and allocate a new slot so the post actually lands at the top of
+  // the feed and the 90-minute cadence is respected. This prevents shadow
+  // posts from being created with a `created_at` 1-3 days in the past
+  // (inherited from the article's original published_at), which was burying
+  // newly approved articles at the bottom of the feed.
+  const nowIso = new Date().toISOString();
+  const missingNeedingSlot = missing.filter(
+    (item) => !item.release_at || item.release_at <= nowIso
+  );
+  const slots = await allocateReleaseSlots(supabase, missingNeedingSlot.length);
   const slotByNewsId = new Map<string, string>();
-  missingWithoutRelease.forEach((item, idx) => {
+  missingNeedingSlot.forEach((item, idx) => {
     slotByNewsId.set(item.id, slots[idx]);
   });
 
   const inserts = missing.map((item) => {
+    const futureExistingRelease =
+      item.release_at && item.release_at > nowIso ? item.release_at : null;
     const scheduledReleaseAt =
-      item.release_at ??
+      futureExistingRelease ??
       slotByNewsId.get(item.id) ??
-      item.published_at ??
-      item.approved_at ??
-      item.ingested_at ??
       new Date().toISOString();
     return {
       user_id: RUMINT_USER_ID,
@@ -185,7 +203,10 @@ async function ensurePublishedNewsPosts(supabase: ReturnType<typeof adminClient>
   for (const item of items) {
     const linkedPost = postByNewsId.get(item.id);
     if (!linkedPost) continue;
-    const releaseAt = item.release_at ?? linkedPost.created_at;
+    // Mirror whatever the linked post landed on (a future slot for new/rescheduled
+    // items, the existing future release for items we left alone). This keeps
+    // news_items.release_at in sync with the feed-visible post.created_at.
+    const releaseAt = linkedPost.created_at;
     const { error: updateErr } = await supabase
       .from("news_items")
       .update({ shadow_post_id: linkedPost.id, release_at: releaseAt })

@@ -2316,6 +2316,9 @@ function EventsPageInner() {
                   No biography on file.{selectedMemorial.source_url ? " Use “View Full Memorial” for the full tribute." : ""}
                 </div>
               )}
+              <div style={{ marginTop: 16, fontSize: 11, lineHeight: 1.5, color: t.textFaint, fontStyle: "italic" }}>
+                * This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.
+              </div>
             </div>
 
             <div
