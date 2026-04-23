@@ -34,6 +34,7 @@ type SavedEventRow = {
   organization: string | null;
   date: string | null;
   signup_url: string | null;
+  image_url: string | null;
   my_attendance: "interested" | "going" | null;
 };
 
@@ -70,6 +71,8 @@ type DesktopMemorial = {
   name: string;
   death_date: string;
   source_url: string | null;
+  photo_url: string | null;
+  bio: string | null;
 };
 
 type Props = {
@@ -113,6 +116,9 @@ export default function MasterLeftColumn({
   const [desktopCalendarEvents, setDesktopCalendarEvents] = useState<DesktopCalendarEvent[]>([]);
   const [desktopMemorials, setDesktopMemorials] = useState<DesktopMemorial[]>([]);
   const [desktopSelectedDay, setDesktopSelectedDay] = useState<string | null>(null);
+  /** Memorial detail modal — mirrors the experience on /events so a memorial
+   * card never feels different depending on where it's surfaced. */
+  const [selectedMemorial, setSelectedMemorial] = useState<DesktopMemorial | null>(null);
 
   function blockMemberInteraction(): boolean {
     if (memberInteractionAllowedRef.current) return false;
@@ -123,7 +129,7 @@ export default function MasterLeftColumn({
   const loadDesktopSavedEvents = useCallback(async (uid: string) => {
     const { data, error } = await supabase
       .from("saved_events")
-      .select("id, event_id, events(title, organization, date, signup_url)")
+      .select("id, event_id, events(title, organization, date, signup_url, image_url)")
       .eq("user_id", uid)
       .order("created_at", { ascending: false });
     if (error) {
@@ -134,8 +140,8 @@ export default function MasterLeftColumn({
       id: string;
       event_id: string;
       events:
-        | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }
-        | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }[]
+        | { title: string | null; organization: string | null; date: string | null; signup_url: string | null; image_url: string | null }
+        | { title: string | null; organization: string | null; date: string | null; signup_url: string | null; image_url: string | null }[]
         | null;
     };
     const rows = ((data ?? []) as unknown as RawRow[]).map((r) => {
@@ -147,6 +153,7 @@ export default function MasterLeftColumn({
         organization: ev?.organization ?? null,
         date: ev?.date ?? null,
         signup_url: ev?.signup_url ?? null,
+        image_url: ev?.image_url ?? null,
         my_attendance: null as "interested" | "going" | null,
       };
     });
@@ -242,7 +249,7 @@ export default function MasterLeftColumn({
         .gte("date", startIso)
         .lte("date", endIso)
         .order("date", { ascending: true }),
-      supabase.from("memorials").select("id, name, death_date, source_url"),
+      supabase.from("memorials").select("id, name, death_date, source_url, photo_url, bio"),
     ]);
 
     setDesktopCalendarEvents((eventsData ?? []) as DesktopCalendarEvent[]);
@@ -756,26 +763,136 @@ export default function MasterLeftColumn({
             {[
               ...desktopCalendarEvents
                 .filter((ev) => ev.date === desktopSelectedDay)
-                .map((ev) => ({ id: `ev-${ev.id}`, title: ev.title, sub: ev.organization || "Event", link: ev.signup_url || "/events" })),
+                .map((ev) => ({
+                  kind: "event" as const,
+                  id: `ev-${ev.id}`,
+                  title: ev.title,
+                  sub: ev.organization || "Event",
+                  link: ev.signup_url || "/events",
+                  thumb: null as string | null,
+                  memorial: null as DesktopMemorial | null,
+                })),
               ...desktopMemorials
                 .filter((m) => anniversaryDate(m.death_date, new Date(desktopSelectedDay + "T12:00:00").getFullYear()) === desktopSelectedDay)
-                .map((m) => ({ id: `mem-${m.id}`, title: m.name, sub: "EOD Memorial Foundation", link: m.source_url || "/events" })),
+                .map((m) => ({
+                  kind: "memorial" as const,
+                  id: `mem-${m.id}`,
+                  title: m.name,
+                  sub: "EOD Memorial Foundation",
+                  link: m.source_url || "/events",
+                  thumb: m.photo_url?.trim() ? m.photo_url : null,
+                  memorial: m,
+                })),
             ]
               .slice(0, 4)
-              .map((item) => (
-                <div key={item.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px" }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>{item.title}</div>
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{item.sub}</div>
-                  <a
-                    href={item.link}
-                    target={item.link.startsWith("http") ? "_blank" : undefined}
-                    rel="noreferrer"
-                    style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}
-                  >
-                    {item.link.startsWith("http") ? "Open" : "Sign up"} <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
-                  </a>
-                </div>
-              ))}
+              .map((item) => {
+                const openMemorial =
+                  item.kind === "memorial" && item.memorial
+                    ? () => setSelectedMemorial(item.memorial)
+                    : null;
+                return (
+                  <div key={item.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        {openMemorial ? (
+                          <button
+                            type="button"
+                            onClick={openMemorial}
+                            style={{
+                              border: "none",
+                              background: "transparent",
+                              padding: 0,
+                              margin: 0,
+                              textAlign: "left",
+                              cursor: "pointer",
+                              color: t.text,
+                              fontSize: 13,
+                              fontWeight: 800,
+                              lineHeight: 1.3,
+                            }}
+                          >
+                            {item.title}
+                          </button>
+                        ) : (
+                          <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>{item.title}</div>
+                        )}
+                        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{item.sub}</div>
+                        {openMemorial ? (
+                          <button
+                            type="button"
+                            onClick={openMemorial}
+                            style={{
+                              border: "none",
+                              background: "transparent",
+                              padding: 0,
+                              margin: "4px 0 0 0",
+                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                              fontSize: 12,
+                              color: "#2563eb",
+                              fontWeight: 700,
+                            }}
+                          >
+                            Open <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
+                          </button>
+                        ) : (
+                          <a
+                            href={item.link}
+                            target={item.link.startsWith("http") ? "_blank" : undefined}
+                            rel="noreferrer"
+                            style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}
+                          >
+                            {item.link.startsWith("http") ? "Open" : "Sign up"} <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
+                          </a>
+                        )}
+                      </div>
+                      {item.thumb && (
+                        openMemorial ? (
+                          <button
+                            type="button"
+                            onClick={openMemorial}
+                            aria-label={`Open memorial for ${item.title}`}
+                            style={{
+                              border: "2px solid #d9582b",
+                              borderRadius: 6,
+                              padding: 0,
+                              background: "transparent",
+                              cursor: "pointer",
+                              flexShrink: 0,
+                              width: 44,
+                              height: 56,
+                              overflow: "hidden",
+                            }}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={item.thumb}
+                              alt=""
+                              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                            />
+                          </button>
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.thumb}
+                            alt=""
+                            style={{
+                              width: 44,
+                              height: 56,
+                              objectFit: "cover",
+                              borderRadius: 6,
+                              border: "2px solid #d9582b",
+                              flexShrink: 0,
+                            }}
+                          />
+                        )
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
           </div>
         )}
 
@@ -783,67 +900,112 @@ export default function MasterLeftColumn({
           <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 8 }}>Saved events</div>
           <div style={{ display: "grid", gap: 8 }}>
             {desktopSavedEvents.length === 0 && <div style={{ color: t.textFaint, fontSize: 12 }}>No saved events.</div>}
-            {desktopSavedEvents.slice(0, 4).map((ev) => (
-              <div key={ev.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px", position: "relative" }}>
-                <button
-                  type="button"
-                  aria-label="Remove saved event"
-                  title="Remove from Saved Events"
-                  onClick={() => unsaveWallEvent(ev.id)}
-                  disabled={unsavingWallEvent === ev.id}
-                  style={{
-                    position: "absolute",
-                    top: 6,
-                    right: 6,
-                    width: 22,
-                    height: 22,
-                    borderRadius: 999,
-                    border: `1px solid ${t.border}`,
-                    background: t.surface,
-                    color: t.textMuted,
-                    fontSize: 14,
-                    fontWeight: 800,
-                    lineHeight: 1,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: unsavingWallEvent === ev.id ? "not-allowed" : "pointer",
-                    opacity: unsavingWallEvent === ev.id ? 0.7 : 1,
-                  }}
-                >
-                  {unsavingWallEvent === ev.id ? "…" : "×"}
-                </button>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, paddingRight: 26 }}>
-                  <div style={{ fontSize: 12, fontWeight: 800, color: t.text, lineHeight: 1.25 }}>{ev.title || "Event"}</div>
-                  {ev.my_attendance === "going" && (
-                    <span
-                      style={{
-                        borderRadius: 999,
-                        border: `1px solid ${t.border}`,
-                        background: t.text,
-                        color: t.surface,
-                        fontSize: 10,
-                        fontWeight: 800,
-                        letterSpacing: 0.3,
-                        padding: "2px 7px",
-                        lineHeight: 1.1,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      GOING
-                    </span>
-                  )}
+            {desktopSavedEvents.slice(0, 4).map((ev) => {
+              // Saved-event cards open the SAME modal as the /events calendar
+              // by deep-linking via `?event=<id>` (the events page reads that
+              // param and pops the modal). Avoids duplicating the RSVP +
+              // attendees + description logic in two places.
+              const modalHref = `/events?event=${encodeURIComponent(ev.event_id)}`;
+              const thumb = ev.image_url?.trim() ? ev.image_url : null;
+              return (
+                <div key={ev.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px", position: "relative" }}>
+                  <button
+                    type="button"
+                    aria-label="Remove saved event"
+                    title="Remove from Saved Events"
+                    onClick={() => unsaveWallEvent(ev.id)}
+                    disabled={unsavingWallEvent === ev.id}
+                    style={{
+                      position: "absolute",
+                      top: 6,
+                      right: 6,
+                      width: 22,
+                      height: 22,
+                      borderRadius: 999,
+                      border: `1px solid ${t.border}`,
+                      background: t.surface,
+                      color: t.textMuted,
+                      fontSize: 14,
+                      fontWeight: 800,
+                      lineHeight: 1,
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: unsavingWallEvent === ev.id ? "not-allowed" : "pointer",
+                      opacity: unsavingWallEvent === ev.id ? 0.7 : 1,
+                    }}
+                  >
+                    {unsavingWallEvent === ev.id ? "…" : "×"}
+                  </button>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10, paddingRight: 26 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <Link
+                          href={modalHref}
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 800,
+                            color: t.text,
+                            lineHeight: 1.25,
+                            textDecoration: "none",
+                          }}
+                        >
+                          {ev.title || "Event"}
+                        </Link>
+                        {ev.my_attendance === "going" && (
+                          <span
+                            style={{
+                              borderRadius: 999,
+                              border: `1px solid ${t.border}`,
+                              background: t.text,
+                              color: t.surface,
+                              fontSize: 10,
+                              fontWeight: 800,
+                              letterSpacing: 0.3,
+                              padding: "2px 7px",
+                              lineHeight: 1.1,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            GOING
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
+                      <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                        {ev.signup_url ? (
+                          <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                            Website <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
+                          </a>
+                        ) : null}
+                      </div>
+                    </div>
+                    {thumb && (
+                      <Link
+                        href={modalHref}
+                        aria-label={`Open details for ${ev.title || "event"}`}
+                        style={{
+                          width: 44,
+                          height: 56,
+                          borderRadius: 6,
+                          border: `1px solid ${t.border}`,
+                          overflow: "hidden",
+                          flexShrink: 0,
+                          display: "block",
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={thumb}
+                          alt=""
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        />
+                      </Link>
+                    )}
+                  </div>
                 </div>
-                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
-                <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
-                  {ev.signup_url ? (
-                    <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                      Sign up <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
-                    </a>
-                  ) : null}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -1071,6 +1233,139 @@ export default function MasterLeftColumn({
         isTogglingSave={jobDetailsModal ? togglingJobSaveFor === jobDetailsModal.id : false}
         onToggleSave={(j) => toggleSaveJob(j.id)}
       />
+
+      {/* Memorial detail modal — visual parity with the modal on /events. */}
+      {selectedMemorial && (
+        <div
+          onClick={() => setSelectedMemorial(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 560,
+              maxHeight: "calc(100vh - 40px)",
+              background: t.surface,
+              color: t.text,
+              borderRadius: 18,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "22px 24px 10px" }}>
+              <div style={{ display: "flex", gap: 14, alignItems: "flex-start", minWidth: 0 }}>
+                {selectedMemorial.photo_url && (
+                  <div
+                    style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: "50%",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                      border: "3px solid #d9582b",
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={selectedMemorial.photo_url}
+                      alt={selectedMemorial.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  </div>
+                )}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: "#d9582b", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+                    We Remember
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 900, marginTop: 2, lineHeight: 1.2 }}>
+                    {selectedMemorial.name}
+                  </div>
+                  <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
+                    {new Date(`${selectedMemorial.death_date}T12:00:00`).toLocaleDateString("en-US", {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                    {" · "}
+                    {new Date().getFullYear() - parseInt(selectedMemorial.death_date.split("-")[0], 10)} years ago
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedMemorial(null)}
+                aria-label="Close"
+                style={{
+                  border: `1px solid ${t.border}`,
+                  background: t.surface,
+                  color: t.text,
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  flexShrink: 0,
+                }}
+              >
+                X
+              </button>
+            </div>
+
+            <div style={{ padding: "6px 24px 4px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+              {selectedMemorial.bio ? (
+                <div style={{ lineHeight: 1.65, color: t.text, fontSize: 14, whiteSpace: "pre-wrap" }}>
+                  {selectedMemorial.bio}
+                </div>
+              ) : (
+                <div style={{ color: t.textFaint, fontSize: 14 }}>
+                  No biography on file.{selectedMemorial.source_url ? " Use “View Full Memorial” for the full tribute." : ""}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                padding: "14px 24px 20px",
+                borderTop: `1px solid ${t.border}`,
+                display: "flex",
+                justifyContent: "flex-end",
+              }}
+            >
+              {selectedMemorial.source_url && (
+                <a
+                  href={selectedMemorial.source_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: "inline-block",
+                    textDecoration: "none",
+                    background: "#d9582b",
+                    color: "white",
+                    padding: "10px 16px",
+                    borderRadius: 10,
+                    fontWeight: 800,
+                    fontSize: 14,
+                  }}
+                >
+                  View Full Memorial →
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

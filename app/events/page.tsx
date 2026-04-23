@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "../lib/lib/supabaseClient";
 import ImageCropDialog from "../components/ImageCropDialog";
 import { ASPECT_EVENT_COVER } from "../lib/imageCropTargets";
@@ -102,6 +103,18 @@ function isMissingDbColumn(err: unknown, column: string): boolean {
 }
 
 export default function EventsPage() {
+  // useSearchParams must be inside a Suspense boundary so Next.js doesn't
+  // bail the whole route out of static rendering at build time.
+  return (
+    <Suspense fallback={null}>
+      <EventsPageInner />
+    </Suspense>
+  );
+}
+
+function EventsPageInner() {
+  const searchParams = useSearchParams();
+  const deepLinkEventId = searchParams?.get("event") ?? null;
   const today = new Date();
 
   const [year, setYear] = useState(today.getFullYear());
@@ -717,6 +730,48 @@ export default function EventsPage() {
       });
     }
   }, [year, month, calendarView, weekStart]);
+
+  // Deep-link handler: `/events?event=<id>` (used by saved-event cards in
+  // MasterLeftColumn so a saved event opens the SAME modal as the calendar).
+  // We try the in-memory caches first, then fall back to a direct Supabase
+  // lookup so events that aren't in the current calendar window still work.
+  // The URL is scrubbed once opened so a refresh doesn't re-pop the modal
+  // unexpectedly.
+  // Deep-link handler: `/events?event=<id>` (used by saved-event cards in
+  // MasterLeftColumn so a saved event opens the SAME modal as the calendar).
+  // We use `useSearchParams` rather than reading `window.location.search`
+  // directly so this also works when the user is ALREADY on /events and the
+  // URL changes via client-side soft-navigation (no remount). We fetch
+  // straight from Supabase so it works even if the event is outside the
+  // currently-loaded calendar window. The URL is scrubbed once opened so a
+  // refresh won't re-pop the modal.
+  useEffect(() => {
+    if (!deepLinkEventId) return;
+    if (typeof window === "undefined") return;
+
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("events")
+        .select(EVENT_COLUMNS)
+        .eq("id", deepLinkEventId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (!error && data) {
+        const ev = data as CalendarEvent;
+        setSelectedEvent(ev);
+        void loadAttendance([ev.id], userId);
+      }
+      // Scrub the param so refresh / back doesn't re-trigger the modal.
+      const url = new URL(window.location.href);
+      url.searchParams.delete("event");
+      window.history.replaceState({}, "", url.toString());
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deepLinkEventId, userId]);
 
   // NOTE: keep ALL hook calls above the early `return` below — React requires a
   // stable hook order across renders, so any useMemo/useCallback declared after
@@ -1779,14 +1834,56 @@ export default function EventsPage() {
                   </div>
 
                   {ev.image_url ? (
-                    <div style={{ flexShrink: 0, width: 88, height: 88, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.bg }}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEvent(ev)}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.04)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+                      aria-label={`Open details for ${ev.title}`}
+                      style={{
+                        flexShrink: 0,
+                        width: 88,
+                        height: 88,
+                        borderRadius: 10,
+                        overflow: "hidden",
+                        border: `1px solid ${t.border}`,
+                        background: t.bg,
+                        padding: 0,
+                        cursor: "pointer",
+                        transition: "transform 120ms ease",
+                        transformOrigin: "center",
+                      }}
+                    >
                       <img src={httpsAssetUrl(ev.image_url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                    </div>
+                    </button>
                   ) : null}
 
                   {/* Event details */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.2 }}>{ev.title}</div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedEvent(ev)}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.04)"; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        margin: 0,
+                        cursor: "pointer",
+                        textAlign: "left",
+                        font: "inherit",
+                        color: t.text,
+                        fontWeight: 800,
+                        fontSize: 16,
+                        lineHeight: 1.2,
+                        transition: "transform 120ms ease",
+                        transformOrigin: "left center",
+                        display: "inline-block",
+                      }}
+                    >
+                      {ev.title}
+                    </button>
                     {ev.organization && (
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>{ev.organization}</div>
                     )}
@@ -1813,7 +1910,7 @@ export default function EventsPage() {
                       </button>
                       {ev.signup_url && (
                         <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: isDark ? "#60a5fa" : "#1d4ed8", textDecoration: "none" }}>
-                          Sign Up ↗
+                          Website ↗
                         </a>
                       )}
                     </div>
@@ -1960,19 +2057,6 @@ export default function EventsPage() {
                 </div>
               )}
 
-              {selectedEvent.signup_url && (
-                <div style={{ color: t.textMuted, fontSize: 14 }}>
-                  <strong>Outside URL:</strong>{" "}
-                  <a
-                    href={selectedEvent.signup_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ fontWeight: 700 }}
-                  >
-                    View / Sign Up
-                  </a>
-                </div>
-              )}
             </div>
 
             <div

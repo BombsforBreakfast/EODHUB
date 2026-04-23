@@ -234,6 +234,7 @@ type AdminCalendarEvent = {
   date: string;
   organization: string | null;
   signup_url: string | null;
+  image_url: string | null;
   location: string | null;
   event_time: string | null;
   poc_name: string | null;
@@ -248,6 +249,7 @@ type EventEdit = {
   date: string;
   organization: string;
   signup_url: string;
+  image_url: string;
   location: string;
   event_time: string;
   poc_name: string;
@@ -384,6 +386,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const [adminEvents, setAdminEvents] = useState<AdminCalendarEvent[]>([]);
   const [editingEvent, setEditingEvent] = useState<EventEdit | null>(null);
   const [eventEditSaving, setEventEditSaving] = useState(false);
+  const [eventPhotoUploading, setEventPhotoUploading] = useState(false);
+  const eventPhotoInputRef = useRef<HTMLInputElement | null>(null);
 
   const [bugReports, setBugReports] = useState<BugReport[]>([]);
   const [reportsFilter, setReportsFilter] = useState<"unreviewed" | "all">("unreviewed");
@@ -1449,7 +1453,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function loadAdminEvents() {
     const { data, error } = await supabase
       .from("events")
-      .select("id, user_id, title, description, date, organization, signup_url, location, event_time, poc_name, poc_phone, created_at")
+      .select("id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at")
       .order("date", { ascending: false })
       .limit(500);
     if (error) {
@@ -1463,7 +1467,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
     if (!editingEvent || !editingEvent.title.trim() || !editingEvent.date) return;
     setEventEditSaving(true);
     try {
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("events")
         .update({
           title: editingEvent.title.trim(),
@@ -1471,13 +1475,24 @@ const [memWizUrl, setMemWizUrl] = useState("");
           date: editingEvent.date,
           organization: editingEvent.organization.trim() || null,
           signup_url: editingEvent.signup_url.trim() || null,
+          image_url: editingEvent.image_url.trim() || null,
           location: editingEvent.location.trim() || null,
           event_time: editingEvent.event_time.trim() || null,
           poc_name: editingEvent.poc_name.trim() || null,
           poc_phone: editingEvent.poc_phone.trim() || null,
         })
-        .eq("id", editingEvent.id);
+        .eq("id", editingEvent.id)
+        .select("id");
       if (error) throw new Error(error.message);
+      // Defense-in-depth: Supabase returns success with 0 rows when an RLS
+      // policy silently blocks an update — see the memorials reversion fix
+      // in updateMemorial. If a future RLS regression comes back, this will
+      // surface it instead of silently snapping the date back to the old value.
+      if (!data || data.length === 0) {
+        throw new Error(
+          "No rows were updated. You may not have permission to edit this event, or the row was removed."
+        );
+      }
       showToast("Event updated.");
       setEditingEvent(null);
       await loadAdminEvents();
@@ -1550,6 +1565,32 @@ const [memWizUrl, setMemWizUrl] = useState("");
       alert(msg);
     } finally {
       setMemPhotoUploading(false);
+    }
+  }
+
+  async function uploadEventImage(file: File): Promise<string> {
+    // Mirrors uploadMemorialPhoto + the events page's `event-covers/` prefix so
+    // every event cover (whether created from /events or edited from /admin)
+    // lands in the same bucket/folder.
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const path = `event-covers/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
+    if (error) throw error;
+    return supabase.storage.from("feed-images").getPublicUrl(path).data.publicUrl;
+  }
+
+  async function handleEventPhotoPick(file: File | null) {
+    if (!file) return;
+    if (!editingEvent) return;
+    try {
+      setEventPhotoUploading(true);
+      const publicUrl = await uploadEventImage(file);
+      setEditingEvent((prev) => (prev ? { ...prev, image_url: publicUrl } : prev));
+    } catch (err) {
+      const msg = (err as { message?: string } | null)?.message || "Failed to upload photo.";
+      alert(msg);
+    } finally {
+      setEventPhotoUploading(false);
     }
   }
 
@@ -3361,6 +3402,93 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           type="tel"
                           style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
                         />
+                        <input
+                          value={editingEvent.image_url}
+                          onChange={(e) => setEditingEvent((p) => p && ({ ...p, image_url: e.target.value }))}
+                          placeholder="Cover image URL (optional)"
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
+                        <input
+                          ref={eventPhotoInputRef}
+                          type="file"
+                          accept="image/*"
+                          style={{ display: "none" }}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0] ?? null;
+                            void handleEventPhotoPick(file);
+                            e.currentTarget.value = "";
+                          }}
+                        />
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            onClick={() => eventPhotoInputRef.current?.click()}
+                            disabled={eventPhotoUploading}
+                            style={{
+                              background: "#1e3a5f",
+                              color: "white",
+                              border: "none",
+                              borderRadius: 8,
+                              padding: "7px 12px",
+                              fontWeight: 700,
+                              fontSize: 13,
+                              cursor: eventPhotoUploading ? "not-allowed" : "pointer",
+                              opacity: eventPhotoUploading ? 0.6 : 1,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {eventPhotoUploading ? "Uploading..." : editingEvent.image_url?.trim() ? "Change Photo" : "Add Photo"}
+                          </button>
+                          {editingEvent.image_url?.trim() && (
+                            <button
+                              type="button"
+                              onClick={() => setEditingEvent((p) => (p ? { ...p, image_url: "" } : p))}
+                              disabled={eventPhotoUploading}
+                              style={{
+                                background: t.badgeBg,
+                                color: t.text,
+                                border: `1px solid ${t.border}`,
+                                borderRadius: 8,
+                                padding: "7px 12px",
+                                fontWeight: 700,
+                                fontSize: 13,
+                                cursor: eventPhotoUploading ? "not-allowed" : "pointer",
+                                opacity: eventPhotoUploading ? 0.6 : 1,
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              Clear Photo
+                            </button>
+                          )}
+                        </div>
+                        {editingEvent.image_url?.trim() && (
+                          <div style={{ position: "relative", width: 160, height: 100 }}>
+                            <img
+                              src={editingEvent.image_url}
+                              alt=""
+                              style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: `2px solid ${t.border}` }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => eventPhotoInputRef.current?.click()}
+                              disabled={eventPhotoUploading}
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                border: "none",
+                                borderRadius: 8,
+                                background: "rgba(0,0,0,0.38)",
+                                color: "white",
+                                fontSize: 11,
+                                fontWeight: 800,
+                                cursor: eventPhotoUploading ? "not-allowed" : "pointer",
+                              }}
+                              title="Change event photo"
+                            >
+                              {eventPhotoUploading ? "Uploading..." : "Change Photo"}
+                            </button>
+                          </div>
+                        )}
                         <textarea
                           value={editingEvent.description}
                           onChange={(e) => setEditingEvent((p) => p && ({ ...p, description: e.target.value }))}
@@ -3430,6 +3558,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 date: ev.date,
                                 organization: ev.organization ?? "",
                                 signup_url: ev.signup_url ?? "",
+                                image_url: ev.image_url ?? "",
                                 location: ev.location ?? "",
                                 event_time: ev.event_time ?? "",
                                 poc_name: ev.poc_name ?? "",
@@ -3474,6 +3603,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 date: ev.date,
                                 organization: ev.organization ?? "",
                                 signup_url: ev.signup_url ?? "",
+                                image_url: ev.image_url ?? "",
                                 location: ev.location ?? "",
                                 event_time: ev.event_time ?? "",
                                 poc_name: ev.poc_name ?? "",

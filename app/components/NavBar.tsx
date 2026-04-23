@@ -8,7 +8,7 @@ import EodCrabLogo from "./EodCrabLogo";
 import PureAdminAvatar from "./PureAdminAvatar";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
-import { isFounderUser } from "../lib/rabbitholeAccess";
+import { isVerifiedRabbitholeViewer } from "../lib/rabbitholeAccess";
 import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import NotificationCenter from "./NotificationCenter";
@@ -61,6 +61,7 @@ export default function NavBar() {
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [isEmployer, setIsEmployer] = useState(false);
+  const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
   const [adminPendingTotal, setAdminPendingTotal] = useState(0);
   const [groupPendingTotal, setGroupPendingTotal] = useState(0);
 
@@ -78,7 +79,7 @@ export default function NavBar() {
   const unreadNotifCount = notificationsV2Enabled
     ? notifications.filter((n) => !n.read_at && !n.archived_at).length
     : notifications.length;
-  const canAccessRabbithole = isFounderUser(currentUserId);
+  const canAccessRabbithole = isVerifiedRabbitholeViewer(verificationStatus);
 
   const NOTIFICATION_SELECT =
     "id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key, type, actor_id, post_id, unit_id, unit_post_id, metadata";
@@ -159,7 +160,7 @@ export default function NavBar() {
     async function loadNavProfile(uid: string) {
       const { data } = await supabase
         .from("profiles")
-        .select("first_name, display_name, photo_url, is_admin, account_type, is_pure_admin")
+        .select("first_name, display_name, photo_url, is_admin, account_type, is_pure_admin, verification_status")
         .eq("user_id", uid)
         .maybeSingle();
       if (!mounted) return;
@@ -170,11 +171,13 @@ export default function NavBar() {
         is_admin: boolean | null;
         account_type: string | null;
         is_pure_admin: boolean | null;
+        verification_status: string | null;
       } | null;
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
       setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
       setIsEmployer(row?.account_type === "employer");
       setIsPureAdmin(!!row?.is_pure_admin);
+      setVerificationStatus(row?.verification_status ?? null);
       if (row?.is_admin) {
         setIsAdmin(true);
         await refreshAdminPendingBadge();
@@ -214,6 +217,7 @@ export default function NavBar() {
         setAvatarPhotoUrl(null);
         setIsAdmin(false);
         setIsEmployer(false);
+        setVerificationStatus(null);
         setAdminPendingTotal(0);
         setGroupPendingTotal(0);
       }
@@ -233,6 +237,7 @@ export default function NavBar() {
         setAvatarPhotoUrl(null);
         setIsAdmin(false);
         setIsEmployer(false);
+        setVerificationStatus(null);
         setAdminPendingTotal(0);
         setUserInitial("?");
       }

@@ -13,3 +13,16 @@ export function isFounderUser(userId: string | null | undefined): boolean {
 export function hasRabbitholeFounderConfig(): boolean {
   return founderUserId.length > 0;
 }
+
+/**
+ * Rabbithole is now open to every verified EOD HUB member (not just the
+ * founder). The founder gate is still kept around — `isFounderUser` /
+ * `hasRabbitholeFounderConfig` are used for founder-only operator toggles
+ * (e.g. notification-flag localStorage overrides) that are unrelated to
+ * read access.
+ */
+export function isVerifiedRabbitholeViewer(
+  verificationStatus: string | null | undefined
+): boolean {
+  return verificationStatus === "verified";
+}
