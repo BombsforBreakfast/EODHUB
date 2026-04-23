@@ -76,6 +76,20 @@ type DesktopMemorial = {
   bio: string | null;
 };
 
+type DesktopSelectedEvent = {
+  id: string;
+  title: string | null;
+  description: string | null;
+  date: string | null;
+  organization: string | null;
+  signup_url: string | null;
+  image_url: string | null;
+  location: string | null;
+  event_time: string | null;
+  poc_name: string | null;
+  poc_phone: string | null;
+};
+
 type Props = {
   userId: string | null;
   memberInteractionAllowedRef: React.MutableRefObject<boolean>;
@@ -120,6 +134,15 @@ export default function MasterLeftColumn({
   /** Memorial detail modal — mirrors the experience on /events so a memorial
    * card never feels different depending on where it's surfaced. */
   const [selectedMemorial, setSelectedMemorial] = useState<DesktopMemorial | null>(null);
+
+  /** Event detail modal — lets users open full event details (RSVP + counts +
+   * description + website link) without force-navigating to /events. This
+   * keeps the dashboard feed (or any other page where the rail is rendered)
+   * in place while still giving the same information the /events modal does. */
+  const [selectedEvent, setSelectedEvent] = useState<DesktopSelectedEvent | null>(null);
+  const [selectedEventCounts, setSelectedEventCounts] = useState<{ interested: number; going: number }>({ interested: 0, going: 0 });
+  const [selectedEventMyStatus, setSelectedEventMyStatus] = useState<"interested" | "going" | null>(null);
+  const [selectedEventBusy, setSelectedEventBusy] = useState(false);
 
   function blockMemberInteraction(): boolean {
     if (memberInteractionAllowedRef.current) return false;
@@ -256,6 +279,107 @@ export default function MasterLeftColumn({
     setDesktopCalendarEvents((eventsData ?? []) as DesktopCalendarEvent[]);
     setDesktopMemorials((memorialData ?? []) as DesktopMemorial[]);
   }, []);
+
+  /**
+   * Open the in-place event modal. Fetches full event columns + live
+   * attendance in parallel so the user sees real counts + their own RSVP
+   * state without being navigated out of the current page (feed, jobs,
+   * rabbithole, wherever the left rail is rendered).
+   */
+  const openEventModal = useCallback(async (eventId: string) => {
+    setSelectedEventBusy(true);
+    try {
+      const [eventRes, attRes] = await Promise.all([
+        supabase
+          .from("events")
+          .select("id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone")
+          .eq("id", eventId)
+          .maybeSingle(),
+        supabase
+          .from("event_attendance")
+          .select("user_id, status")
+          .eq("event_id", eventId),
+      ]);
+      if (eventRes.error || !eventRes.data) return;
+      let interested = 0;
+      let going = 0;
+      let mine: "interested" | "going" | null = null;
+      for (const r of (attRes.data ?? []) as Array<{ user_id: string; status: "interested" | "going" }>) {
+        if (r.status === "interested") interested += 1;
+        else if (r.status === "going") going += 1;
+        if (userId && r.user_id === userId) mine = r.status;
+      }
+      setSelectedEvent(eventRes.data as DesktopSelectedEvent);
+      setSelectedEventCounts({ interested, going });
+      setSelectedEventMyStatus(mine);
+    } finally {
+      setSelectedEventBusy(false);
+    }
+  }, [userId]);
+
+  const refreshSelectedEventAttendance = useCallback(async (eventId: string) => {
+    const { data } = await supabase
+      .from("event_attendance")
+      .select("user_id, status")
+      .eq("event_id", eventId);
+    let interested = 0;
+    let going = 0;
+    let mine: "interested" | "going" | null = null;
+    for (const r of (data ?? []) as Array<{ user_id: string; status: "interested" | "going" }>) {
+      if (r.status === "interested") interested += 1;
+      else if (r.status === "going") going += 1;
+      if (userId && r.user_id === userId) mine = r.status;
+    }
+    setSelectedEventCounts({ interested, going });
+    setSelectedEventMyStatus(mine);
+  }, [userId]);
+
+  async function toggleSelectedEventRsvp(status: "interested" | "going") {
+    if (!selectedEvent) return;
+    if (!userId) { window.location.href = "/login"; return; }
+    const eventId = selectedEvent.id;
+    const current = selectedEventMyStatus;
+    setSelectedEventBusy(true);
+    try {
+      if (current === status) {
+        const { error } = await supabase
+          .from("event_attendance")
+          .delete()
+          .eq("event_id", eventId)
+          .eq("user_id", userId);
+        if (error) throw error;
+        // Mirror /events behaviour: RSVP off also removes auto-saved row.
+        await supabase
+          .from("saved_events")
+          .delete()
+          .eq("user_id", userId)
+          .eq("event_id", eventId);
+      } else {
+        const { error } = await supabase
+          .from("event_attendance")
+          .upsert(
+            [{ event_id: eventId, user_id: userId, status }],
+            { onConflict: "event_id,user_id" }
+          );
+        if (error) throw error;
+        // Mirror /events: Interested OR Going auto-saves the event.
+        const { error: saveErr } = await supabase
+          .from("saved_events")
+          .insert([{ user_id: userId, event_id: eventId }]);
+        if (saveErr && saveErr.code !== "23505") {
+          console.error("Auto-save event error:", saveErr);
+        }
+      }
+    } catch (err) {
+      console.error("rsvp failed:", err);
+      alert(err instanceof Error ? err.message : "Could not update your RSVP.");
+    } finally {
+      setSelectedEventBusy(false);
+    }
+    await refreshSelectedEventAttendance(eventId);
+    // Keep the saved-events rail in sync with the new GOING/INTERESTED state.
+    if (userId) await loadDesktopSavedEvents(userId);
+  }
 
   async function unsaveWallEvent(rowId: string) {
     if (!window.confirm("Remove this from Saved Events?")) return;
@@ -754,7 +878,7 @@ export default function MasterLeftColumn({
                   title: ev.title,
                   sub: ev.organization || "Event",
                   websiteUrl: ev.signup_url?.trim() ? ev.signup_url : null,
-                  modalHref: `/events?event=${encodeURIComponent(ev.id)}` as string | null,
+                  eventId: ev.id as string | null,
                   thumbAlt: `Open event ${ev.title}`,
                   thumb: ev.image_url?.trim() ? ev.image_url : null,
                   thumbBorder: `1px solid ${t.border}`,
@@ -768,7 +892,7 @@ export default function MasterLeftColumn({
                   title: m.name,
                   sub: "EOD Memorial Foundation",
                   websiteUrl: m.source_url?.trim() ? m.source_url : null,
-                  modalHref: null as string | null,
+                  eventId: null as string | null,
                   thumbAlt: `Open memorial for ${m.name}`,
                   thumb: m.photo_url?.trim() ? m.photo_url : null,
                   thumbBorder: "2px solid #d9582b",
@@ -778,13 +902,15 @@ export default function MasterLeftColumn({
               .slice(0, 4)
               .map((item) => {
                 // openModal = the EOD-Hub in-app modal (memorial modal for
-                // memorials, /events deep link for events). Title + thumb
-                // trigger this. "Website" is a separate external link.
+                // memorials, in-place event modal for events). Title + thumb
+                // both trigger this so the user can stay on the current page
+                // (feed, jobs, rabbithole) instead of being force-navigated
+                // to /events. "Website" is a separate external link.
                 const openModal: (() => void) | null =
                   item.kind === "memorial" && item.memorial
                     ? () => setSelectedMemorial(item.memorial)
-                    : item.modalHref
-                      ? () => { window.location.href = item.modalHref!; }
+                    : item.eventId
+                      ? () => { void openEventModal(item.eventId!); }
                       : null;
                 return (
                   <div key={item.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px" }}>
@@ -878,11 +1004,12 @@ export default function MasterLeftColumn({
           <div style={{ display: "grid", gap: 8 }}>
             {desktopSavedEvents.length === 0 && <div style={{ color: t.textFaint, fontSize: 12 }}>No saved events.</div>}
             {desktopSavedEvents.slice(0, 4).map((ev) => {
-              // Saved-event cards open the SAME modal as the /events calendar
-              // by deep-linking via `?event=<id>` (the events page reads that
-              // param and pops the modal). Avoids duplicating the RSVP +
-              // attendees + description logic in two places.
-              const modalHref = `/events?event=${encodeURIComponent(ev.event_id)}`;
+              // Saved-event cards open the same in-place event modal as the
+              // date-card above. Clicking the title/thumb used to
+              // soft-navigate to /events?event=<id> which yanked the user out
+              // of the feed/jobs/rabbithole page they were currently on — the
+              // modal now opens in place and the page stays put.
+              const openThisEvent = () => { void openEventModal(ev.event_id); };
               const thumb = ev.image_url?.trim() ? ev.image_url : null;
               return (
                 <div key={ev.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px", position: "relative" }}>
@@ -917,18 +1044,25 @@ export default function MasterLeftColumn({
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 10, paddingRight: 26 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        <Link
-                          href={modalHref}
+                        <button
+                          type="button"
+                          onClick={openThisEvent}
                           style={{
                             fontSize: 12,
                             fontWeight: 800,
                             color: t.text,
                             lineHeight: 1.25,
-                            textDecoration: "none",
+                            background: "transparent",
+                            border: "none",
+                            padding: 0,
+                            margin: 0,
+                            textAlign: "left",
+                            cursor: "pointer",
+                            minWidth: 0,
                           }}
                         >
                           {ev.title || "Event"}
-                        </Link>
+                        </button>
                         {ev.my_attendance === "going" && (
                           <span
                             style={{
@@ -958,8 +1092,9 @@ export default function MasterLeftColumn({
                       </div>
                     </div>
                     {thumb && (
-                      <Link
-                        href={modalHref}
+                      <button
+                        type="button"
+                        onClick={openThisEvent}
                         aria-label={`Open details for ${ev.title || "event"}`}
                         style={{
                           width: 44,
@@ -969,6 +1104,9 @@ export default function MasterLeftColumn({
                           overflow: "hidden",
                           flexShrink: 0,
                           display: "block",
+                          padding: 0,
+                          background: "transparent",
+                          cursor: "pointer",
                         }}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -977,7 +1115,7 @@ export default function MasterLeftColumn({
                           alt=""
                           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                         />
-                      </Link>
+                      </button>
                     )}
                   </div>
                 </div>
@@ -1340,6 +1478,188 @@ export default function MasterLeftColumn({
                   }}
                 >
                   View Full Memorial →
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Event detail modal — opened from the calendar date card AND the saved
+          events list, so both entry points give the same experience and
+          neither one force-navigates the user out of their current page. */}
+      {selectedEvent && (
+        <div
+          onClick={() => setSelectedEvent(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 560,
+              maxHeight: "calc(100vh - 40px)",
+              background: t.surface,
+              color: t.text,
+              borderRadius: 18,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, padding: "22px 24px 10px" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {selectedEvent.image_url ? (
+                  <div style={{ marginBottom: 14, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "16 / 9", maxHeight: 220, background: t.bg }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={httpsAssetUrl(selectedEvent.image_url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  </div>
+                ) : null}
+                <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>
+                  {selectedEvent.title || "Untitled Event"}
+                </div>
+                {selectedEvent.organization && (
+                  <div style={{ marginTop: 6, color: t.textMuted, fontSize: 14 }}>
+                    {selectedEvent.organization}
+                  </div>
+                )}
+                {selectedEvent.date && (
+                  <div style={{ marginTop: 4, color: t.textMuted, fontSize: 13 }}>
+                    {new Date(`${selectedEvent.date}T12:00:00`).toLocaleDateString("en-US", {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedEvent(null)}
+                aria-label="Close"
+                style={{
+                  border: `1px solid ${t.border}`,
+                  background: t.surface,
+                  color: t.text,
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  flexShrink: 0,
+                }}
+              >
+                X
+              </button>
+            </div>
+
+            <div style={{ padding: "6px 24px 4px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+              {selectedEvent.description && (
+                <div style={{ color: t.textMuted, lineHeight: 1.6, fontSize: 14, whiteSpace: "pre-wrap" }}>
+                  {selectedEvent.description}
+                </div>
+              )}
+
+              <div style={{ marginTop: 18, borderTop: `1px solid ${t.border}`, paddingTop: 14, display: "grid", gap: 8 }}>
+                <div style={{ fontWeight: 800, fontSize: 14 }}>Event Details</div>
+                {selectedEvent.event_time && (
+                  <div style={{ color: t.textMuted, fontSize: 14 }}>
+                    <strong>Time:</strong> {selectedEvent.event_time}
+                  </div>
+                )}
+                {selectedEvent.location && (
+                  <div style={{ color: t.textMuted, fontSize: 14 }}>
+                    <strong>Location:</strong> {selectedEvent.location}
+                  </div>
+                )}
+                {(selectedEvent.poc_name || selectedEvent.poc_phone) && (
+                  <div style={{ color: t.textMuted, fontSize: 14 }}>
+                    <strong>Point of Contact:</strong>{" "}
+                    {selectedEvent.poc_name ?? ""}
+                    {selectedEvent.poc_name && selectedEvent.poc_phone ? " — " : ""}
+                    {selectedEvent.poc_phone ? (
+                      <a href={`tel:${selectedEvent.poc_phone.replace(/\s+/g, "")}`} style={{ fontWeight: 700 }}>
+                        {selectedEvent.poc_phone}
+                      </a>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div style={{ padding: "14px 24px 20px", borderTop: `1px solid ${t.border}`, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={() => toggleSelectedEventRsvp("interested")}
+                disabled={selectedEventBusy}
+                style={{
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 10,
+                  padding: "8px 14px",
+                  fontWeight: 800,
+                  cursor: selectedEventBusy ? "not-allowed" : "pointer",
+                  background: selectedEventMyStatus === "interested" ? t.text : t.surface,
+                  color: selectedEventMyStatus === "interested" ? t.surface : t.text,
+                  fontSize: 13,
+                }}
+              >
+                {selectedEventMyStatus === "interested" ? "Interested ✓" : "Interested"}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleSelectedEventRsvp("going")}
+                disabled={selectedEventBusy}
+                style={{
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 10,
+                  padding: "8px 14px",
+                  fontWeight: 800,
+                  cursor: selectedEventBusy ? "not-allowed" : "pointer",
+                  background: selectedEventMyStatus === "going" ? t.text : t.surface,
+                  color: selectedEventMyStatus === "going" ? t.surface : t.text,
+                  fontSize: 13,
+                }}
+              >
+                {selectedEventMyStatus === "going" ? "Going ✓" : "Going"}
+              </button>
+              {selectedEventCounts.interested > 0 && (
+                <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 700 }}>
+                  {selectedEventCounts.interested} interested
+                </span>
+              )}
+              {selectedEventCounts.going > 0 && (
+                <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 700 }}>
+                  {selectedEventCounts.going} going
+                </span>
+              )}
+              {selectedEvent.signup_url && (
+                <a
+                  href={selectedEvent.signup_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    marginLeft: "auto",
+                    display: "inline-block",
+                    textDecoration: "none",
+                    background: "black",
+                    color: "white",
+                    padding: "8px 14px",
+                    borderRadius: 10,
+                    fontWeight: 800,
+                    fontSize: 13,
+                  }}
+                >
+                  Open Event Link
                 </a>
               )}
             </div>
