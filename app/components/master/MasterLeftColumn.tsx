@@ -64,6 +64,7 @@ type DesktopCalendarEvent = {
   organization: string | null;
   date: string;
   signup_url: string | null;
+  image_url: string | null;
 };
 
 type DesktopMemorial = {
@@ -245,7 +246,7 @@ export default function MasterLeftColumn({
     const [{ data: eventsData }, { data: memorialData }] = await Promise.all([
       supabase
         .from("events")
-        .select("id, title, organization, date, signup_url")
+        .select("id, title, organization, date, signup_url, image_url")
         .gte("date", startIso)
         .lte("date", endIso)
         .order("date", { ascending: true }),
@@ -741,6 +742,10 @@ export default function MasterLeftColumn({
           {desktopSelectedDay && (
           <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
             {[
+              // Events in the day card deep-link to the SAME /events modal as
+              // the saved events below (clickable title + thumb). The button
+              // below is a plain external "Website" link when the event has
+              // one, matching the saved-event card UX.
               ...desktopCalendarEvents
                 .filter((ev) => ev.date === desktopSelectedDay)
                 .map((ev) => ({
@@ -748,8 +753,11 @@ export default function MasterLeftColumn({
                   id: `ev-${ev.id}`,
                   title: ev.title,
                   sub: ev.organization || "Event",
-                  link: ev.signup_url || "/events",
-                  thumb: null as string | null,
+                  websiteUrl: ev.signup_url?.trim() ? ev.signup_url : null,
+                  modalHref: `/events?event=${encodeURIComponent(ev.id)}` as string | null,
+                  thumbAlt: `Open event ${ev.title}`,
+                  thumb: ev.image_url?.trim() ? ev.image_url : null,
+                  thumbBorder: `1px solid ${t.border}`,
                   memorial: null as DesktopMemorial | null,
                 })),
               ...desktopMemorials
@@ -759,25 +767,33 @@ export default function MasterLeftColumn({
                   id: `mem-${m.id}`,
                   title: m.name,
                   sub: "EOD Memorial Foundation",
-                  link: m.source_url || "/events",
+                  websiteUrl: m.source_url?.trim() ? m.source_url : null,
+                  modalHref: null as string | null,
+                  thumbAlt: `Open memorial for ${m.name}`,
                   thumb: m.photo_url?.trim() ? m.photo_url : null,
+                  thumbBorder: "2px solid #d9582b",
                   memorial: m,
                 })),
             ]
               .slice(0, 4)
               .map((item) => {
-                const openMemorial =
+                // openModal = the EOD-Hub in-app modal (memorial modal for
+                // memorials, /events deep link for events). Title + thumb
+                // trigger this. "Website" is a separate external link.
+                const openModal: (() => void) | null =
                   item.kind === "memorial" && item.memorial
                     ? () => setSelectedMemorial(item.memorial)
-                    : null;
+                    : item.modalHref
+                      ? () => { window.location.href = item.modalHref!; }
+                      : null;
                 return (
                   <div key={item.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px" }}>
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        {openMemorial ? (
+                        {openModal ? (
                           <button
                             type="button"
-                            onClick={openMemorial}
+                            onClick={openModal}
                             style={{
                               border: "none",
                               background: "transparent",
@@ -797,45 +813,25 @@ export default function MasterLeftColumn({
                           <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>{item.title}</div>
                         )}
                         <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{item.sub}</div>
-                        {openMemorial ? (
-                          <button
-                            type="button"
-                            onClick={openMemorial}
-                            style={{
-                              border: "none",
-                              background: "transparent",
-                              padding: 0,
-                              margin: "4px 0 0 0",
-                              cursor: "pointer",
-                              display: "inline-flex",
-                              alignItems: "center",
-                              gap: 4,
-                              fontSize: 12,
-                              color: "#2563eb",
-                              fontWeight: 700,
-                            }}
-                          >
-                            Open <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
-                          </button>
-                        ) : (
+                        {item.websiteUrl && (
                           <a
-                            href={item.link}
-                            target={item.link.startsWith("http") ? "_blank" : undefined}
+                            href={item.websiteUrl}
+                            target="_blank"
                             rel="noreferrer"
                             style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}
                           >
-                            {item.link.startsWith("http") ? "Open" : "Sign up"} <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
+                            Website <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
                           </a>
                         )}
                       </div>
                       {item.thumb && (
-                        openMemorial ? (
+                        openModal ? (
                           <button
                             type="button"
-                            onClick={openMemorial}
-                            aria-label={`Open memorial for ${item.title}`}
+                            onClick={openModal}
+                            aria-label={item.thumbAlt}
                             style={{
-                              border: "2px solid #d9582b",
+                              border: item.thumbBorder,
                               borderRadius: 6,
                               padding: 0,
                               background: "transparent",
@@ -863,7 +859,7 @@ export default function MasterLeftColumn({
                               height: 56,
                               objectFit: "cover",
                               borderRadius: 6,
-                              border: "2px solid #d9582b",
+                              border: item.thumbBorder,
                               flexShrink: 0,
                             }}
                           />
