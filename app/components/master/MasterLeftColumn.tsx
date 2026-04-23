@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
@@ -1349,14 +1350,17 @@ export default function MasterLeftColumn({
         onToggleSave={(j) => toggleSaveJob(j.id)}
       />
 
-      {/* Memorial detail modal — visual parity with the modal on /events. */}
-      {selectedMemorial && (
+      {/* Memorial detail modal — visual parity with the modal on /events.
+          Rendered via a portal into document.body so parent stacking contexts
+          (the aside + the main app grid) can't pin it below the feed
+          composer or other high-z page chrome. */}
+      {selectedMemorial && typeof document !== "undefined" && createPortal(
         <div
           onClick={() => setSelectedMemorial(null)}
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.35)",
+            background: "rgba(0,0,0,0.55)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -1482,19 +1486,22 @@ export default function MasterLeftColumn({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Event detail modal — opened from the calendar date card AND the saved
           events list, so both entry points give the same experience and
-          neither one force-navigates the user out of their current page. */}
-      {selectedEvent && (
+          neither one force-navigates the user out of their current page.
+          Portalled to document.body for the same stacking-context reason as
+          the memorial modal above. */}
+      {selectedEvent && typeof document !== "undefined" && createPortal(
         <div
           onClick={() => setSelectedEvent(null)}
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(0,0,0,0.35)",
+            background: "rgba(0,0,0,0.55)",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -1664,7 +1671,8 @@ export default function MasterLeftColumn({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </aside>
   );
