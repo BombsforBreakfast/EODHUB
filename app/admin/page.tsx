@@ -234,6 +234,10 @@ type AdminCalendarEvent = {
   date: string;
   organization: string | null;
   signup_url: string | null;
+  location: string | null;
+  event_time: string | null;
+  poc_name: string | null;
+  poc_phone: string | null;
   created_at: string;
 };
 
@@ -244,6 +248,10 @@ type EventEdit = {
   date: string;
   organization: string;
   signup_url: string;
+  location: string;
+  event_time: string;
+  poc_name: string;
+  poc_phone: string;
 };
 
 function formatDuration(ms: number): string {
@@ -1441,7 +1449,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function loadAdminEvents() {
     const { data, error } = await supabase
       .from("events")
-      .select("id, user_id, title, description, date, organization, signup_url, created_at")
+      .select("id, user_id, title, description, date, organization, signup_url, location, event_time, poc_name, poc_phone, created_at")
       .order("date", { ascending: false })
       .limit(500);
     if (error) {
@@ -1463,6 +1471,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
           date: editingEvent.date,
           organization: editingEvent.organization.trim() || null,
           signup_url: editingEvent.signup_url.trim() || null,
+          location: editingEvent.location.trim() || null,
+          event_time: editingEvent.event_time.trim() || null,
+          poc_name: editingEvent.poc_name.trim() || null,
+          poc_phone: editingEvent.poc_phone.trim() || null,
         })
         .eq("id", editingEvent.id);
       if (error) throw new Error(error.message);
@@ -1492,14 +1504,22 @@ const [memWizUrl, setMemWizUrl] = useState("");
     if (!editingMemorial || !editingMemorial.name.trim() || !editingMemorial.death_date) return;
     setMemEditSaving(true);
     try {
-      const { error } = await supabase.from("memorials").update({
+      const { data, error } = await supabase.from("memorials").update({
         name: editingMemorial.name.trim(),
         death_date: editingMemorial.death_date,
         photo_url: editingMemorial.photo_url.trim() || null,
         bio: editingMemorial.bio.trim() || null,
         source_url: editingMemorial.source_url.trim() || null,
-      }).eq("id", editingMemorial.id);
+      }).eq("id", editingMemorial.id).select("id");
       if (error) throw new Error(error.message);
+      // Defense-in-depth: Supabase returns success with 0 rows when an RLS
+      // policy silently blocks an update. Catch that explicitly so a future
+      // policy regression can never look like a successful save.
+      if (!data || data.length === 0) {
+        throw new Error(
+          "No rows were updated. You may not have permission to edit this memorial, or the row was removed."
+        );
+      }
       showToast("Memorial updated.");
       setEditingMemorial(null);
       await loadMemorials();
@@ -1704,7 +1724,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
               padding: 0,
               border: "none",
               background: "none",
-              color: "#7c3aed",
+              color: "#d9582b",
               fontWeight: 700,
               fontSize: 12,
               cursor: "pointer",
@@ -3316,6 +3336,31 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           placeholder="Sign-up URL (optional)"
                           style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
                         />
+                        <input
+                          value={editingEvent.event_time}
+                          onChange={(e) => setEditingEvent((p) => p && ({ ...p, event_time: e.target.value }))}
+                          placeholder='Time (e.g. "6:00 PM EST")'
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
+                        <input
+                          value={editingEvent.location}
+                          onChange={(e) => setEditingEvent((p) => p && ({ ...p, location: e.target.value }))}
+                          placeholder="Location / address (optional)"
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
+                        <input
+                          value={editingEvent.poc_name}
+                          onChange={(e) => setEditingEvent((p) => p && ({ ...p, poc_name: e.target.value }))}
+                          placeholder="POC name (optional)"
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
+                        <input
+                          value={editingEvent.poc_phone}
+                          onChange={(e) => setEditingEvent((p) => p && ({ ...p, poc_phone: e.target.value }))}
+                          placeholder="POC phone (optional)"
+                          type="tel"
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                        />
                         <textarea
                           value={editingEvent.description}
                           onChange={(e) => setEditingEvent((p) => p && ({ ...p, description: e.target.value }))}
@@ -3385,6 +3430,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 date: ev.date,
                                 organization: ev.organization ?? "",
                                 signup_url: ev.signup_url ?? "",
+                                location: ev.location ?? "",
+                                event_time: ev.event_time ?? "",
+                                poc_name: ev.poc_name ?? "",
+                                poc_phone: ev.poc_phone ?? "",
                               })
                             }
                             style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
@@ -3425,6 +3474,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 date: ev.date,
                                 organization: ev.organization ?? "",
                                 signup_url: ev.signup_url ?? "",
+                                location: ev.location ?? "",
+                                event_time: ev.event_time ?? "",
+                                poc_name: ev.poc_name ?? "",
+                                poc_phone: ev.poc_phone ?? "",
                               })
                             }
                             style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
@@ -3462,7 +3515,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                   <div key={mem.id}>
                     {editingMemorial?.id === mem.id ? (
                       /* ── Inline edit form ── */
-                      <div style={{ border: `2px solid #7c3aed`, borderRadius: 12, padding: 16, display: "grid", gap: 10 }}>
+                      <div style={{ border: `2px solid #d9582b`, borderRadius: 12, padding: 16, display: "grid", gap: 10 }}>
                         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 180px", gap: 8 }}>
                           <input
                             value={editingMemorial.name}
@@ -3500,7 +3553,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             onClick={() => memorialPhotoInputRef.current?.click()}
                             disabled={memPhotoUploading}
                             style={{
-                              background: "#7c3aed",
+                              background: "#d9582b",
                               color: "white",
                               border: "none",
                               borderRadius: 8,
@@ -3551,7 +3604,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                         />
                         {editingMemorial.photo_url && (
                           <div style={{ position: "relative", width: 72, height: 90 }}>
-                            <img src={editingMemorial.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: "2px solid #7c3aed" }} />
+                            <img src={editingMemorial.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: "2px solid #d9582b" }} />
                             <button
                               type="button"
                               onClick={() => memorialPhotoInputRef.current?.click()}
@@ -3577,7 +3630,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           <button
                             onClick={updateMemorial}
                             disabled={memEditSaving || !editingMemorial.name.trim() || !editingMemorial.death_date}
-                            style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: memEditSaving ? 0.6 : 1 }}
+                            style={{ background: "#d9582b", color: "white", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: memEditSaving ? 0.6 : 1 }}
                           >
                             {memEditSaving ? "Saving..." : "Save Changes"}
                           </button>
@@ -3593,10 +3646,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
                       /* ── Mobile: same card pattern as events page day-detail memorials ── */
                       <div
                         style={{
-                          border: "2px solid #7c3aed",
+                          border: "2px solid #d9582b",
                           borderRadius: 14,
                           padding: 20,
-                          background: isDark ? "#1a0d2e" : "#faf5ff",
+                          background: isDark ? "#2a1409" : "#fdf3ed",
                           display: "flex",
                           flexDirection: "column",
                           gap: 14,
@@ -3614,7 +3667,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 borderRadius: "50%",
                                 overflow: "hidden",
                                 flexShrink: 0,
-                                border: "3px solid #7c3aed",
+                                border: "3px solid #d9582b",
                               }}
                             >
                               <img src={mem.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -3631,7 +3684,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 alignItems: "center",
                                 justifyContent: "center",
                                 fontSize: 28,
-                                border: "3px solid #7c3aed",
+                                border: "3px solid #d9582b",
                               }}
                             >
                               🪖
@@ -3681,7 +3734,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                       /* ── Desktop: row view ── */
                       <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap", minWidth: 0, width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.bg, overflow: "hidden" }}>
                         {mem.photo_url
-                          ? <img src={mem.photo_url} alt="" style={{ width: 44, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "2px solid #7c3aed" }} />
+                          ? <img src={mem.photo_url} alt="" style={{ width: 44, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "2px solid #d9582b" }} />
                           : <div style={{ width: 44, height: 56, borderRadius: 6, background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🪖</div>
                         }
                         <div style={{ flex: 1, minWidth: 0 }}>

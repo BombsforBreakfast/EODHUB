@@ -155,3 +155,23 @@ export function OgCard({ og }: { og: OgPreview }) {
     </a>
   );
 }
+
+/** Slight zoom on hover for dashboard section title links (e.g. Jobs, Events). */
+export const sectionTitleLinkZoom = {
+  onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+    e.currentTarget.style.transform = "scale(1.04)";
+  },
+  onMouseLeave: (e: React.MouseEvent<HTMLElement>) => {
+    e.currentTarget.style.transform = "scale(1)";
+  },
+};
+
+/** Collapsed side-rail vertical labels: preserve rotate(180deg) with scale. */
+export const collapsedRailTitleLinkZoom = {
+  onMouseEnter: (e: React.MouseEvent<HTMLElement>) => {
+    e.currentTarget.style.transform = "rotate(180deg) scale(1.04)";
+  },
+  onMouseLeave: (e: React.MouseEvent<HTMLElement>) => {
+    e.currentTarget.style.transform = "rotate(180deg) scale(1)";
+  },
+};

@@ -27,6 +27,7 @@ import { MurphyRabbitholeBanner } from "../components/MurphyRabbitholeBanner";
 import { KangarooCourtVerdictBanner } from "../components/KangarooCourtVerdictBanner";
 import DesktopLayout from "../components/DesktopLayout";
 import { useMasterShell } from "../components/master/masterShellContext";
+import { sectionTitleLinkZoom } from "../components/master/masterShared";
 import { Award, UserCircle2, Play, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
 import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "../lib/jobFilters";
@@ -4432,9 +4433,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               const memorialCommentList = memorialComments[m.id] ?? [];
               const compactPreviewComments = memorialCommentList.slice(0, 2);
               return (
-                <div key={`memorial-${m.id}`} style={{ border: "2px solid #7c3aed", borderRadius: 14, overflow: "hidden" }}>
+                <div key={`memorial-${m.id}`} style={{ border: "2px solid #d9582b", borderRadius: 14, overflow: "hidden" }}>
                   {/* Header banner */}
-                  <div style={{ background: "#7c3aed", padding: "11px 20px", display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ background: "#d9582b", padding: "11px 20px", display: "flex", alignItems: "center", gap: 10 }}>
                     <span style={{ color: "white", fontSize: 15, fontWeight: 800 }}>In Memoriam</span>
                     <span style={{ color: "white", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" }}>We Remember</span>
                     <span style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, fontWeight: 600, marginLeft: "auto", marginRight: 12 }}>
@@ -4448,15 +4449,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     >x</button>
                   </div>
                   {/* Card body: compact by default, full memorial view on expand */}
-                  <div style={{ padding: 20, background: isDark ? "#1a0d2e" : "#faf5ff", display: "flex", gap: 16, alignItems: "flex-start" }}>
+                  <div style={{ padding: 20, background: isDark ? "#2a1409" : "#fdf3ed", display: "flex", gap: 16, alignItems: "flex-start" }}>
                     {m.photo_url && (
-                      <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "3px solid #7c3aed" }}>
+                      <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "3px solid #d9582b" }}>
                         <img src={m.photo_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       </div>
                     )}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: isDark ? "#f3e8ff" : "#1a1a1a" }}>{m.name}</div>
-                      <div style={{ fontSize: 13, color: "#7c3aed", marginTop: 2 }}>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: isDark ? "#fce8d9" : "#1a1a1a" }}>{m.name}</div>
+                      <div style={{ fontSize: 13, color: "#d9582b", marginTop: 2 }}>
                         {new Date(m.death_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
                         {" - "}
                         {new Date().getFullYear() - parseInt(m.death_date.split("-")[0])} years ago
@@ -4466,7 +4467,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           <button
                             type="button"
                             onClick={() => setExpandedMemorialCards((prev) => ({ ...prev, [m.id]: true }))}
-                            style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#7c3aed", fontSize: 13, fontWeight: 700 }}
+                            style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#d9582b", fontSize: 13, fontWeight: 700 }}
                           >
                             Show full bio
                           </button>
@@ -4480,8 +4481,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                   <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.text }}>
                                     {c.authorPhotoUrl ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : c.authorName[0]?.toUpperCase()}
                                   </div>
-                                  <div style={{ background: isDark ? "#2a1050" : "#f3e8ff", borderRadius: 10, padding: "6px 10px", flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 700, fontSize: 12, color: "#7c3aed", marginBottom: 2 }}>{c.authorName}</div>
+                                  <div style={{ background: isDark ? "#3d1810" : "#fce8d9", borderRadius: 10, padding: "6px 10px", flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 700, fontSize: 12, color: "#d9582b", marginBottom: 2 }}>{c.authorName}</div>
                                     <div style={{ fontSize: 13, lineHeight: 1.45, color: t.text }}>{renderContent(c.content)}</div>
                                   </div>
                                 </div>
@@ -4494,7 +4495,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                               setExpandedMemorialCards((prev) => ({ ...prev, [m.id]: true }));
                               setMemorialCommentsOpen((prev) => ({ ...prev, [m.id]: true }));
                             }}
-                            style={{ marginTop: 8, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#7c3aed", fontSize: 13, fontWeight: 700 }}
+                            style={{ marginTop: 8, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#d9582b", fontSize: 13, fontWeight: 700 }}
                           >
                             See all comments
                           </button>
@@ -4510,7 +4511,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           <button
                             type="button"
                             onClick={() => setExpandedMemorialCards((prev) => ({ ...prev, [m.id]: false }))}
-                            style={{ marginTop: 6, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#7c3aed", fontSize: 13, fontWeight: 700 }}
+                            style={{ marginTop: 6, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#d9582b", fontSize: 13, fontWeight: 700 }}
                           >
                             Back to compact card
                           </button>
@@ -4519,13 +4520,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                             const commentsOpen = !!memorialCommentsOpen[m.id];
                             return (
                               <>
-                                <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${isDark ? "#3b1f6b" : "#e9d5ff"}` }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${isDark ? "#5c2e12" : "#fbe2cf"}` }}>
                                   <button type="button" onClick={() => setMemorialCommentsOpen(p => ({ ...p, [m.id]: !commentsOpen }))} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: t.textMuted, fontSize: 14, padding: 0 }}>
                                     Comments{comments.length > 0 && <span style={{ fontSize: 13 }}>{comments.length}</span>}
                                   </button>
                                 </div>
-                                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? "#3b1f6b" : "#e9d5ff"}` }}>
-                                  <button type="button" onClick={() => setDonateModalOpen(true)} style={{ background: "#7c3aed", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
+                                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? "#5c2e12" : "#fbe2cf"}` }}>
+                                  <button type="button" onClick={() => setDonateModalOpen(true)} style={{ background: "#d9582b", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
                                     Donate as Tribute to the EOD Warrior Foundation
                                   </button>
                                 </div>
@@ -4536,15 +4537,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                         <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.text }}>
                                           {c.authorPhotoUrl ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : c.authorName[0]?.toUpperCase()}
                                         </div>
-                                        <div style={{ background: isDark ? "#2a1050" : "#f3e8ff", borderRadius: 10, padding: "6px 10px", flex: 1 }}>
-                                          <div style={{ fontWeight: 700, fontSize: 12, color: "#7c3aed", marginBottom: 2 }}>{c.authorName}</div>
+                                        <div style={{ background: isDark ? "#3d1810" : "#fce8d9", borderRadius: 10, padding: "6px 10px", flex: 1 }}>
+                                          <div style={{ fontWeight: 700, fontSize: 12, color: "#d9582b", marginBottom: 2 }}>{c.authorName}</div>
                                           {editingMemorialCommentId === c.id ? (
                                             <div>
                                               <textarea
                                                 value={editingMemorialCommentContent}
                                                 onChange={(e) => setEditingMemorialCommentContent(e.target.value)}
                                                 rows={3}
-                                                style={{ width: "100%", border: `1px solid ${isDark ? "#3b1f6b" : "#c4b5fd"}`, borderRadius: 8, padding: 8, fontSize: 13, boxSizing: "border-box", background: isDark ? "#1a0d2e" : "#faf5ff", color: t.text, resize: "vertical" }}
+                                                style={{ width: "100%", border: `1px solid ${isDark ? "#5c2e12" : "#f5c6a8"}`, borderRadius: 8, padding: 8, fontSize: 13, boxSizing: "border-box", background: isDark ? "#2a1409" : "#fdf3ed", color: t.text, resize: "vertical" }}
                                               />
                                               <div style={{ marginTop: 6, display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
                                                 <button
@@ -4558,7 +4559,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                                   type="button"
                                                   onClick={() => saveMemorialCommentEdit(m.id, c.id)}
                                                   disabled={savingMemorialCommentId === c.id || !editingMemorialCommentContent.trim()}
-                                                  style={{ background: "#7c3aed", border: "none", borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, color: "white", cursor: savingMemorialCommentId === c.id ? "not-allowed" : "pointer", opacity: savingMemorialCommentId === c.id ? 0.7 : 1 }}
+                                                  style={{ background: "#d9582b", border: "none", borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, color: "white", cursor: savingMemorialCommentId === c.id ? "not-allowed" : "pointer", opacity: savingMemorialCommentId === c.id ? 0.7 : 1 }}
                                                 >
                                                   {savingMemorialCommentId === c.id ? "Saving..." : "Save"}
                                                 </button>
@@ -4575,7 +4576,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                                       setEditingMemorialCommentId(c.id);
                                                       setEditingMemorialCommentContent(c.content);
                                                     }}
-                                                    style={{ background: "transparent", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: "#7c3aed", cursor: "pointer" }}
+                                                    style={{ background: "transparent", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: "#d9582b", cursor: "pointer" }}
                                                   >
                                                     Edit
                                                   </button>
@@ -4600,9 +4601,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                         onChange={val => setMemorialCommentInputs(p => ({ ...p, [m.id]: val }))}
                                         onChangeRaw={raw => { memorialCommentRawsRef.current[m.id] = raw; }}
                                         placeholder="Leave a tribute..."
-                                        style={{ width: "100%", minHeight: 70, border: `1px solid ${isDark ? "#3b1f6b" : "#c4b5fd"}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: isDark ? "#1a0d2e" : "#faf5ff", color: t.text, outline: "none" }}
+                                        style={{ width: "100%", minHeight: 70, border: `1px solid ${isDark ? "#5c2e12" : "#f5c6a8"}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: isDark ? "#2a1409" : "#fdf3ed", color: t.text, outline: "none" }}
                                       />
-                                      <button type="button" onClick={() => submitMemorialComment(m.id)} disabled={submittingMemorialComment === m.id} style={{ alignSelf: "flex-end", background: "#7c3aed", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: submittingMemorialComment === m.id ? "not-allowed" : "pointer", opacity: submittingMemorialComment === m.id ? 0.7 : 1, fontSize: 13 }}>
+                                      <button type="button" onClick={() => submitMemorialComment(m.id)} disabled={submittingMemorialComment === m.id} style={{ alignSelf: "flex-end", background: "#d9582b", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: submittingMemorialComment === m.id ? "not-allowed" : "pointer", opacity: submittingMemorialComment === m.id ? 0.7 : 1, fontSize: 13 }}>
                                         {submittingMemorialComment === m.id ? "..." : "Reply"}
                                       </button>
                                     </div>
@@ -5686,6 +5687,30 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             scrollbarGutter: isMobile ? undefined : "stable",
           }}
         >
+          <div style={{ marginBottom: 10 }}>
+            <Link
+              href="/jobs"
+              onClick={(e) => {
+                if (!canViewFullJobs) {
+                  e.preventDefault();
+                  setShowJobsUpgradePrompt(true);
+                }
+              }}
+              {...sectionTitleLinkZoom}
+              style={{
+                fontSize: 16,
+                fontWeight: 900,
+                color: t.text,
+                textDecoration: "none",
+                display: "inline-block",
+                transform: "scale(1)",
+                transition: "transform 0.15s ease",
+                cursor: "pointer",
+              }}
+            >
+              Jobs
+            </Link>
+          </div>
           {jobsLoaded && (
             <>
               <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
@@ -5925,8 +5950,26 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-            <div style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>
-              {isMobile ? "Approved listings" : "Featured listings"}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, minWidth: 0 }}>
+              <Link
+                href="/businesses"
+                {...sectionTitleLinkZoom}
+                style={{
+                  fontSize: 16,
+                  fontWeight: 900,
+                  color: t.text,
+                  textDecoration: "none",
+                  display: "inline-block",
+                  transform: "scale(1)",
+                  transition: "transform 0.15s ease",
+                  cursor: "pointer",
+                }}
+              >
+                Businesses / Orgs
+              </Link>
+              <div style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>
+                {isMobile ? "Approved listings" : "Featured listings"}
+              </div>
             </div>
             <button
               type="button"
@@ -6222,7 +6265,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             style={{ width: "100%", maxWidth: 640, height: "88vh", background: "#fff", borderRadius: "18px 18px 0 0", display: "flex", flexDirection: "column", overflow: "hidden" }}
           >
             {/* Modal header */}
-            <div style={{ background: "#7c3aed", padding: "12px 18px", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+            <div style={{ background: "#d9582b", padding: "12px 18px", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
               <span style={{ color: "white", fontSize: 15, fontWeight: 800, flex: 1 }}>Donate as Tribute to the EOD Warrior Foundation</span>
               <button
                 type="button"

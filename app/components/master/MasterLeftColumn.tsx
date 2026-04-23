@@ -10,7 +10,7 @@ import { postNotifyJson } from "../../lib/postNotifyClient";
 import UpgradePromptModal from "../UpgradePromptModal";
 import JobCardActions from "../jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../jobs/JobDetailsModal";
-import { httpsAssetUrl, type JobRow } from "./masterShared";
+import { collapsedRailTitleLinkZoom, httpsAssetUrl, sectionTitleLinkZoom, type JobRow } from "./masterShared";
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -544,19 +544,32 @@ export default function MasterLeftColumn({
           transition: "border-color 140ms ease, background-color 140ms ease",
         }}
       >
-        <span
+        <a
+          href="/jobs"
+          onClick={(e) => {
+            if (!canViewFullJobs) {
+              e.preventDefault();
+              setShowJobsUpgradePrompt(true);
+            }
+          }}
+          {...collapsedRailTitleLinkZoom}
           style={{
             fontSize: 10,
             fontWeight: 800,
             letterSpacing: 0.4,
             writingMode: "vertical-rl",
-            transform: "rotate(180deg)",
+            transform: "rotate(180deg) scale(1)",
             textTransform: "uppercase",
             userSelect: "none",
+            color: t.text,
+            textDecoration: "none",
+            cursor: "pointer",
+            display: "block",
+            transition: "transform 0.15s ease",
           }}
         >
           Jobs
-        </span>
+        </a>
         <button
           type="button"
           onClick={onToggleRail}
@@ -587,19 +600,26 @@ export default function MasterLeftColumn({
         >
           »
         </button>
-        <span
+        <Link
+          href="/events"
+          {...collapsedRailTitleLinkZoom}
           style={{
             fontSize: 10,
             fontWeight: 800,
             letterSpacing: 0.4,
             writingMode: "vertical-rl",
-            transform: "rotate(180deg)",
+            transform: "rotate(180deg) scale(1)",
             textTransform: "uppercase",
             userSelect: "none",
+            color: t.text,
+            textDecoration: "none",
+            display: "block",
+            transition: "transform 0.15s ease",
+            cursor: "pointer",
           }}
         >
           Events
-        </span>
+        </Link>
       </aside>
     );
   }
@@ -621,7 +641,23 @@ export default function MasterLeftColumn({
       <div style={{ border: "1px solid transparent", borderRadius: 16, background: "transparent", padding: 0, marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Events</div>
+            <Link
+              href="/events"
+              {...sectionTitleLinkZoom}
+              style={{
+                fontSize: 15,
+                fontWeight: 900,
+                color: t.text,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+                display: "inline-block",
+                transform: "scale(1)",
+                transition: "transform 0.15s ease",
+                cursor: "pointer",
+              }}
+            >
+              Events
+            </Link>
             <a href="/events" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
               See all <ArrowRight size={13} strokeWidth={2.5} aria-hidden />
             </a>
@@ -818,8 +854,39 @@ export default function MasterLeftColumn({
         {jobsLoaded && (
           <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 14, marginBottom: 8 }}>
-              <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Jobs</div>
-              <a href="/jobs" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none", whiteSpace: "nowrap" }}>
+              <Link
+                href="/jobs"
+                onClick={(e) => {
+                  if (!canViewFullJobs) {
+                    e.preventDefault();
+                    setShowJobsUpgradePrompt(true);
+                  }
+                }}
+                {...sectionTitleLinkZoom}
+                style={{
+                  fontSize: 15,
+                  fontWeight: 900,
+                  color: t.text,
+                  textDecoration: "none",
+                  whiteSpace: "nowrap",
+                  display: "inline-block",
+                  transform: "scale(1)",
+                  transition: "transform 0.15s ease",
+                  cursor: "pointer",
+                }}
+              >
+                Jobs
+              </Link>
+              <a
+                href="/jobs"
+                onClick={(e) => {
+                  if (!canViewFullJobs) {
+                    e.preventDefault();
+                    setShowJobsUpgradePrompt(true);
+                  }
+                }}
+                style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#2563eb", textDecoration: "none", whiteSpace: "nowrap" }}
+              >
                 See all <ArrowRight size={13} strokeWidth={2.5} aria-hidden />
               </a>
             </div>

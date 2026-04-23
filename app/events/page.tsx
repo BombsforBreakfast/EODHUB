@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import ImageCropDialog from "../components/ImageCropDialog";
 import { ASPECT_EVENT_COVER } from "../lib/imageCropTargets";
@@ -15,6 +15,10 @@ type CalendarEvent = {
   organization: string | null;
   signup_url: string | null;
   image_url: string | null;
+  location: string | null;
+  event_time: string | null;
+  poc_name: string | null;
+  poc_phone: string | null;
   created_at: string;
 };
 
@@ -43,7 +47,7 @@ type AttendeeProfile = {
 };
 
 const EVENT_COLUMNS =
-  "id, user_id, title, description, date, organization, signup_url, image_url, created_at";
+  "id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at";
 const MEMORIAL_COLUMNS =
   "id, user_id, name, bio, photo_url, death_date, created_at, source_url";
 
@@ -53,6 +57,11 @@ const MONTH_NAMES = [
 ];
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** Fixed row height for month + week grid so cells never grow with long titles or many items */
+const CALENDAR_FIXED_CELL_HEIGHT = 120;
+
+const MAX_VISIBLE_EVENT_PILLS = 2;
 
 function toDateStr(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -113,10 +122,12 @@ export default function EventsPage() {
   const [allUpcomingEvents, setAllUpcomingEvents] = useState<CalendarEvent[]>([]);
 
   const [savedEventIds, setSavedEventIds] = useState<Set<string>>(new Set());
-  const [togglingEventSaveFor, setTogglingEventSaveFor] = useState<string | null>(null);
 
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [selectedMemorial, setSelectedMemorial] = useState<Memorial | null>(null);
+  /** YYYY-MM-DD: month grid “+N more” opens a scrollable list of all events for that day */
+  const [dayEventsListModal, setDayEventsListModal] = useState<string | null>(null);
 
   const [attendance, setAttendance] = useState<Record<string, { interested: number; going: number }>>({});
   const [myAttendance, setMyAttendance] = useState<Record<string, "interested" | "going" | null>>({});
@@ -131,6 +142,10 @@ export default function EventsPage() {
     date: "",
     organization: "",
     signup_url: "",
+    location: "",
+    event_time: "",
+    poc_name: "",
+    poc_phone: "",
   });
   const [submittingEvent, setSubmittingEvent] = useState(false);
   const eventPhotoInputRef = useRef<HTMLInputElement>(null);
@@ -221,47 +236,113 @@ export default function EventsPage() {
     setMyAttendance((prev) => ({ ...prev, ...mine }));
   }
 
+  /**
+   * Re-fetch RSVP truth for a single event from the DB, so the counts &
+   * "my status" buttons can never drift from Postgres. Called after every
+   * toggle — makes us robust against:
+   *   - optimistic +1/-1 math starting from a stale baseline
+   *   - silent insert failures (RLS block, unique-constraint collision)
+   *   - multi-device races (you RSVP on one tab, wife RSVPs on another)
+   */
+  async function refreshAttendanceFor(eventId: string) {
+    const { data, error } = await supabase
+      .from("event_attendance")
+      .select("user_id, status")
+      .eq("event_id", eventId);
+    if (error) {
+      console.error("refreshAttendanceFor error:", error);
+      return;
+    }
+    const rows = (data ?? []) as { user_id: string; status: "interested" | "going" }[];
+    let interested = 0;
+    let going = 0;
+    let mine: "interested" | "going" | null = null;
+    for (const r of rows) {
+      if (r.status === "interested") interested++;
+      else if (r.status === "going") going++;
+      if (userId && r.user_id === userId) mine = r.status;
+    }
+    setAttendance((prev) => ({ ...prev, [eventId]: { interested, going } }));
+    setMyAttendance((prev) => ({ ...prev, [eventId]: mine }));
+  }
+
+  /**
+   * Saved Events follows RSVP automatically — there's no separate "Save"
+   * button on the events page anymore.
+   *   hasRsvp=true  → ensure a saved_events row exists (idempotent)
+   *   hasRsvp=false → delete the saved_events row if present
+   * This lets us treat Interested / Going as the single user signal.
+   */
+  async function syncSavedEventForRsvp(eventId: string, hasRsvp: boolean) {
+    if (!userId) return;
+    if (hasRsvp) {
+      const { error } = await supabase
+        .from("saved_events")
+        .insert([{ user_id: userId, event_id: eventId }]);
+      // 23505 = unique_violation — already saved, that's fine.
+      if (error && error.code !== "23505") {
+        console.error("Auto-save event error:", error);
+        return;
+      }
+      setSavedEventIds((prev) => new Set(prev).add(eventId));
+    } else {
+      const { error } = await supabase
+        .from("saved_events")
+        .delete()
+        .eq("user_id", userId)
+        .eq("event_id", eventId);
+      if (error) {
+        console.error("Auto-unsave event error:", error);
+        return;
+      }
+      setSavedEventIds((prev) => {
+        const next = new Set(prev);
+        next.delete(eventId);
+        return next;
+      });
+    }
+  }
+
   async function toggleAttendance(eventId: string, status: "interested" | "going") {
     if (!userId) { window.location.href = "/login"; return; }
     const current = myAttendance[eventId] ?? null;
-    async function ensureSavedEventForGoing() {
-      if (!userId) return;
-      const { data: existing } = await supabase
-        .from("saved_events")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("event_id", eventId)
-        .maybeSingle();
-      if (existing?.id) return;
-      await supabase.from("saved_events").insert([{ user_id: userId, event_id: eventId }]);
-      setSavedEventIds((prev) => new Set(prev).add(eventId));
+
+    try {
+      if (current === status) {
+        // Toggle off — remove my RSVP row entirely. Saved Events auto-syncs
+        // off below, so the user doesn't end up with phantom saves they
+        // never explicitly created.
+        const { error } = await supabase
+          .from("event_attendance")
+          .delete()
+          .eq("event_id", eventId)
+          .eq("user_id", userId);
+        if (error) throw error;
+        await syncSavedEventForRsvp(eventId, false);
+      } else {
+        // Upsert lets us go from "no row" → going, or interested → going,
+        // in one call without ever colliding with the
+        // UNIQUE(event_id, user_id) constraint (which was silently breaking
+        // the old insert-on-switch branch).
+        const { error } = await supabase
+          .from("event_attendance")
+          .upsert(
+            [{ event_id: eventId, user_id: userId, status }],
+            { onConflict: "event_id,user_id" }
+          );
+        if (error) throw error;
+        // Auto-save on either Interested OR Going — the user is showing
+        // intent, so the event belongs in their saved list.
+        await syncSavedEventForRsvp(eventId, true);
+      }
+    } catch (err) {
+      console.error("toggleAttendance failed:", err);
+      alert(err instanceof Error ? err.message : "Could not update your RSVP. Please try again.");
     }
 
-    if (current === status) {
-      await supabase.from("event_attendance").delete().eq("event_id", eventId).eq("user_id", userId);
-      setMyAttendance((prev) => ({ ...prev, [eventId]: null }));
-      setAttendance((prev) => ({ ...prev, [eventId]: { ...prev[eventId], [status]: Math.max(0, (prev[eventId]?.[status] ?? 0) - 1) } }));
-    } else if (current) {
-      await supabase.from("event_attendance").update({ status }).eq("event_id", eventId).eq("user_id", userId);
-      setMyAttendance((prev) => ({ ...prev, [eventId]: status }));
-      setAttendance((prev) => ({
-        ...prev,
-        [eventId]: {
-          interested: status === "interested" ? (prev[eventId]?.interested ?? 0) + 1 : Math.max(0, (prev[eventId]?.interested ?? 0) - 1),
-          going: status === "going" ? (prev[eventId]?.going ?? 0) + 1 : Math.max(0, (prev[eventId]?.going ?? 0) - 1),
-        },
-      }));
-      if (status === "going") {
-        await ensureSavedEventForGoing();
-      }
-    } else {
-      await supabase.from("event_attendance").insert([{ event_id: eventId, user_id: userId, status }]);
-      setMyAttendance((prev) => ({ ...prev, [eventId]: status }));
-      setAttendance((prev) => ({ ...prev, [eventId]: { interested: prev[eventId]?.interested ?? 0, going: prev[eventId]?.going ?? 0, [status]: (prev[eventId]?.[status] ?? 0) + 1 } }));
-      if (status === "going") {
-        await ensureSavedEventForGoing();
-      }
-    }
+    // Always pull fresh truth from the DB so the counts shown on screen
+    // reflect what Postgres actually has — never local +1/-1 math.
+    await refreshAttendanceFor(eventId);
   }
 
   async function openAttendeesPopup(eventId: string, status: "interested" | "going") {
@@ -369,51 +450,9 @@ export default function EventsPage() {
     setEventCoverCropOpen(true);
   }
 
-  async function toggleSaveEvent(eventId: string) {
-    if (!userId) {
-      window.location.href = "/login";
-      return;
-    }
-
-    try {
-      setTogglingEventSaveFor(eventId);
-
-      const isSaved = savedEventIds.has(eventId);
-
-      if (isSaved) {
-        const { error } = await supabase
-          .from("saved_events")
-          .delete()
-          .eq("user_id", userId)
-          .eq("event_id", eventId);
-
-        if (error) {
-          console.error("Unsave event error:", error);
-          return;
-        }
-
-        setSavedEventIds((prev) => {
-          const next = new Set(prev);
-          next.delete(eventId);
-          return next;
-        });
-      } else {
-        const { error } = await supabase
-          .from("saved_events")
-          .insert([{ user_id: userId, event_id: eventId }]);
-
-        if (error && error.code !== "23505") {
-          console.error("Save event error:", error);
-          alert("Could not save event.");
-          return;
-        }
-
-        setSavedEventIds((prev) => new Set(prev).add(eventId));
-      }
-    } finally {
-      setTogglingEventSaveFor(null);
-    }
-  }
+  // Saved Events auto-sync from RSVP state via syncSavedEventForRsvp().
+  // To unsave an event a user can clear their Interested / Going status,
+  // or remove it from the Saved Events list in My Account.
 
   async function submitEvent() {
     if (!userId) {
@@ -434,14 +473,23 @@ export default function EventsPage() {
         organization: eventForm.organization.trim() || null,
         signup_url: eventForm.signup_url.trim() || null,
         image_url: eventCoverUrl?.trim() || null,
+        location: eventForm.location.trim() || null,
+        event_time: eventForm.event_time.trim() || null,
+        poc_name: eventForm.poc_name.trim() || null,
+        poc_phone: eventForm.poc_phone.trim() || null,
       };
 
       let { data: insertedEvent, error } = await supabase.from("events").insert([insertRow]).select("id").single();
 
-      if (error && isMissingDbColumn(error, "image_url")) {
-        const { image_url: _i, ...rest } = insertRow;
-        insertRow = rest;
-        ({ data: insertedEvent, error } = await supabase.from("events").insert([insertRow]).select("id").single());
+      // Strip optional columns if the DB hasn't been migrated yet — keeps Add Event
+      // working in environments that haven't run the location/time/POC migration.
+      const optionalCols = ["image_url", "location", "event_time", "poc_name", "poc_phone"] as const;
+      for (const col of optionalCols) {
+        if (error && isMissingDbColumn(error, col)) {
+          const { [col]: _drop, ...rest } = insertRow;
+          insertRow = rest;
+          ({ data: insertedEvent, error } = await supabase.from("events").insert([insertRow]).select("id").single());
+        }
       }
 
       if (error) {
@@ -453,10 +501,17 @@ export default function EventsPage() {
 
       // Create a feed post scheduled for next 5pm
       const formattedDate = formatEventDate(eventForm.date);
+      const pocLine =
+        eventForm.poc_name.trim() && eventForm.poc_phone.trim()
+          ? `${eventForm.poc_name.trim()} — ${eventForm.poc_phone.trim()}`
+          : eventForm.poc_name.trim() || eventForm.poc_phone.trim() || "";
       const lines = [
         `📅 New Event: ${eventForm.title.trim()}`,
         `📆 ${formattedDate}`,
+        eventForm.event_time.trim() ? `🕒 ${eventForm.event_time.trim()}` : null,
+        eventForm.location.trim() ? `📍 ${eventForm.location.trim()}` : null,
         eventForm.organization.trim() ? `🏢 ${eventForm.organization.trim()}` : null,
+        pocLine ? `📞 POC: ${pocLine}` : null,
         eventForm.description.trim() ? `\n${eventForm.description.trim()}` : null,
         eventForm.signup_url.trim() ? `\nSign up: ${eventForm.signup_url.trim()}` : null,
       ].filter(Boolean);
@@ -477,7 +532,7 @@ export default function EventsPage() {
         console.error("Event feed post error:", postErr);
       }
 
-      setEventForm({ title: "", description: "", date: "", organization: "", signup_url: "" });
+      setEventForm({ title: "", description: "", date: "", organization: "", signup_url: "", location: "", event_time: "", poc_name: "", poc_phone: "" });
       setEventCoverUrl(null);
       setShowEventForm(false);
       await Promise.all([loadEvents(), loadAllUpcomingEvents()]);
@@ -663,6 +718,15 @@ export default function EventsPage() {
     }
   }, [year, month, calendarView, weekStart]);
 
+  // NOTE: keep ALL hook calls above the early `return` below — React requires a
+  // stable hook order across renders, so any useMemo/useCallback declared after
+  // the loading branch would trip "Rendered more hooks than during the previous
+  // render." once `loading` flips to false.
+  const dayEventsListModalRows = useMemo(() => {
+    if (!dayEventsListModal) return [];
+    return events.filter((e) => e.date === dayEventsListModal);
+  }, [dayEventsListModal, events]);
+
   if (loading) {
     return (
       <div style={{ color: t.text }}>
@@ -679,7 +743,7 @@ export default function EventsPage() {
     ? memorials.filter((m) => anniversaryDate(m.death_date, year) === selectedDay)
     : [];
 
-  const inputStyle: React.CSSProperties = {
+  const inputStyle: CSSProperties = {
     width: "100%",
     border: `1px solid ${t.inputBorder}`,
     borderRadius: 8,
@@ -690,7 +754,7 @@ export default function EventsPage() {
     color: t.text,
   };
 
-  const labelStyle: React.CSSProperties = {
+  const labelStyle: CSSProperties = {
     display: "block",
     fontWeight: 700,
     fontSize: 13,
@@ -915,6 +979,22 @@ export default function EventsPage() {
             />
           </div>
 
+          <label style={labelStyle}>Time</label>
+          <input
+            style={inputStyle}
+            value={eventForm.event_time}
+            onChange={(e) => setEventForm((p) => ({ ...p, event_time: e.target.value }))}
+            placeholder='e.g. "6:00 PM EST" or "0900 - 1100"'
+          />
+
+          <label style={labelStyle}>Location / Address</label>
+          <input
+            style={inputStyle}
+            value={eventForm.location}
+            onChange={(e) => setEventForm((p) => ({ ...p, location: e.target.value }))}
+            placeholder="Venue or street address (or 'Online — Zoom')"
+          />
+
           <label style={labelStyle}>Organization</label>
           <input
             style={inputStyle}
@@ -929,6 +1009,23 @@ export default function EventsPage() {
             value={eventForm.description}
             onChange={(e) => setEventForm((p) => ({ ...p, description: e.target.value }))}
             placeholder="Event details..."
+          />
+
+          <label style={labelStyle}>Point of Contact (POC) name</label>
+          <input
+            style={inputStyle}
+            value={eventForm.poc_name}
+            onChange={(e) => setEventForm((p) => ({ ...p, poc_name: e.target.value }))}
+            placeholder="Name of organizer / point of contact"
+          />
+
+          <label style={labelStyle}>POC phone number</label>
+          <input
+            style={inputStyle}
+            type="tel"
+            value={eventForm.poc_phone}
+            onChange={(e) => setEventForm((p) => ({ ...p, poc_phone: e.target.value }))}
+            placeholder="(555) 555-1234"
           />
 
           <label style={labelStyle}>Event image</label>
@@ -1081,9 +1178,9 @@ export default function EventsPage() {
 
             {/* Preview card */}
             {(memWizImage || memWizBio) && (
-              <div style={{ display: "flex", gap: 14, padding: 14, borderRadius: 10, border: `2px solid #7c3aed`, background: isDark ? "#1a0d2e" : "#faf5ff" }}>
+              <div style={{ display: "flex", gap: 14, padding: 14, borderRadius: 10, border: `2px solid #d9582b`, background: isDark ? "#2a1409" : "#fdf3ed" }}>
                 {memWizImage && (
-                  <img src={memWizImage} alt="" style={{ width: 72, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "2px solid #7c3aed" }} />
+                  <img src={memWizImage} alt="" style={{ width: 72, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "2px solid #d9582b" }} />
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {memWizName && <div style={{ fontWeight: 800, fontSize: 15 }}>{memWizName}</div>}
@@ -1102,7 +1199,7 @@ export default function EventsPage() {
                 type="button"
                 onClick={saveMemorial}
                 disabled={memWizSaving || !memWizName.trim() || !memWizDate}
-                style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
+                style={{ background: "#d9582b", color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
               >
                 {memWizSaving ? "Saving..." : "Add Memorial"}
               </button>
@@ -1253,17 +1350,24 @@ export default function EventsPage() {
           ))}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(7, 1fr)",
+            gridAutoRows: `${CALENDAR_FIXED_CELL_HEIGHT}px`,
+          }}
+        >
           {calendarCells.map((cellDate, idx) => {
             if (cellDate === null) {
               return (
                 <div
                   key={`empty-${idx}`}
                   style={{
-                    minHeight: calendarView === "week" ? 160 : 80,
+                    height: CALENDAR_FIXED_CELL_HEIGHT,
                     borderRight: `1px solid ${t.borderLight}`,
                     borderBottom: `1px solid ${t.borderLight}`,
                     background: t.bg,
+                    boxSizing: "border-box",
                   }}
                 />
               );
@@ -1277,17 +1381,44 @@ export default function EventsPage() {
               (m) => anniversaryDate(m.death_date, cellDate.getFullYear()) === dateStr
             );
             const hasContent = dayEvents.length > 0 || dayMemorials.length > 0;
-            const maxVisibleEvents = calendarView === "week" ? 6 : 2;
+            const visibleEvents = dayEvents.slice(0, MAX_VISIBLE_EVENT_PILLS);
+            const eventOverflow = Math.max(0, dayEvents.length - MAX_VISIBLE_EVENT_PILLS);
+            const visibleMemorials = dayMemorials.slice(0, 1);
+            const memorialOverflow = Math.max(0, dayMemorials.length - 1);
+
+            const eventPillStyle: CSSProperties = {
+              width: "100%",
+              minWidth: 0,
+              textAlign: "left" as const,
+              fontSize: 11,
+              fontWeight: 700,
+              background: "#1a1a1a",
+              color: "white",
+              borderRadius: 4,
+              padding: "2px 5px",
+              overflow: "hidden",
+              whiteSpace: "nowrap" as const,
+              textOverflow: "ellipsis" as const,
+              border: "none",
+              cursor: "pointer",
+              flexShrink: 0,
+            };
 
             return (
               <div
                 key={dateStr}
                 onClick={() => setSelectedDay(isSelected ? null : dateStr)}
                 style={{
-                  minHeight: calendarView === "week" ? 160 : 80,
+                  height: CALENDAR_FIXED_CELL_HEIGHT,
+                  minHeight: CALENDAR_FIXED_CELL_HEIGHT,
+                  maxHeight: CALENDAR_FIXED_CELL_HEIGHT,
+                  boxSizing: "border-box",
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
                   borderRight: `1px solid ${t.borderLight}`,
                   borderBottom: `1px solid ${t.borderLight}`,
-                  padding: "6px 8px",
+                  padding: "4px 6px",
                   cursor: hasContent ? "pointer" : "default",
                   background: isSelected ? t.surfaceHover : isToday ? (isDark ? "#2a1800" : "#fffbeb") : t.surface,
                   transition: "background 0.1s",
@@ -1298,6 +1429,7 @@ export default function EventsPage() {
                     display: "flex",
                     alignItems: "center",
                     gap: 6,
+                    flexShrink: 0,
                   }}
                 >
                   <div
@@ -1324,62 +1456,113 @@ export default function EventsPage() {
                   )}
                 </div>
 
-                {dayEvents.slice(0, maxVisibleEvents).map((ev) => (
-                  <button
-                    key={ev.id}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedDay(dateStr);
-                      setSelectedEvent(ev);
-                    }}
-                    style={{
-                      marginTop: 3,
-                      width: "100%",
-                      textAlign: "left",
-                      fontSize: 11,
-                      fontWeight: 700,
-                      background: "#1a1a1a",
-                      color: "white",
-                      borderRadius: 4,
-                      padding: "2px 5px",
-                      overflow: "hidden",
-                      whiteSpace: "nowrap",
-                      textOverflow: "ellipsis",
-                      border: "none",
-                      cursor: "pointer",
-                    }}
-                    title={ev.title}
-                  >
-                    {ev.title}
-                  </button>
-                ))}
+                <div
+                  style={{
+                    flex: 1,
+                    minHeight: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                    overflow: "hidden",
+                    marginTop: 4,
+                  }}
+                >
+                  {visibleEvents.map((ev) => (
+                    <button
+                      key={ev.id}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedEvent(ev);
+                      }}
+                      style={eventPillStyle}
+                      title={ev.title}
+                    >
+                      {ev.title}
+                    </button>
+                  ))}
 
-                {dayEvents.length > maxVisibleEvents && (
-                  <div style={{ fontSize: 10, color: t.textMuted, marginTop: 2 }}>
-                    +{dayEvents.length - maxVisibleEvents} more
-                  </div>
-                )}
+                  {eventOverflow > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDayEventsListModal(dateStr);
+                      }}
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        textAlign: "left" as const,
+                        fontSize: 10,
+                        fontWeight: 800,
+                        color: isDark ? "#93c5fd" : "#1d4ed8",
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: "1px 0",
+                        flexShrink: 0,
+                      }}
+                    >
+                      +{eventOverflow} more
+                    </button>
+                  )}
 
-                {dayMemorials.map((m) => (
-                  <div
-                    key={m.id}
-                    style={{
-                      marginTop: 3,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      background: "#7c3aed",
-                      color: "white",
-                      borderRadius: 4,
-                      padding: "2px 5px",
-                      overflow: "hidden",
-                      whiteSpace: "nowrap",
-                      textOverflow: "ellipsis",
-                    }}
-                  >
-                    ✦ {m.name}
-                  </div>
-                ))}
+                  {visibleMemorials.map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedMemorial(m);
+                      }}
+                      title={m.name}
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        textAlign: "left" as const,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        background: "#d9582b",
+                        color: "white",
+                        borderRadius: 4,
+                        padding: "2px 5px",
+                        overflow: "hidden",
+                        whiteSpace: "nowrap" as const,
+                        textOverflow: "ellipsis" as const,
+                        border: "none",
+                        cursor: "pointer",
+                        flexShrink: 0,
+                      }}
+                    >
+                      ✦ {m.name}
+                    </button>
+                  ))}
+
+                  {memorialOverflow > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedDay(dateStr);
+                      }}
+                      style={{
+                        width: "100%",
+                        minWidth: 0,
+                        textAlign: "left" as const,
+                        fontSize: 10,
+                        fontWeight: 800,
+                        color: t.textMuted,
+                        background: "transparent",
+                        border: "none",
+                        cursor: "pointer",
+                        padding: "1px 0",
+                        flexShrink: 0,
+                      }}
+                    >
+                      +{memorialOverflow} memorials
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -1388,198 +1571,158 @@ export default function EventsPage() {
 
       {selectedDay && (eventsOnSelectedDay.length > 0 || memorialOnSelectedDay.length > 0) && (
         <div
+          onClick={() => setSelectedDay(null)}
           style={{
-            marginTop: 20,
-            border: `1px solid ${t.border}`,
-            borderRadius: 16,
-            padding: 24,
-            background: t.surface,
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
           }}
         >
-          <div style={{ fontSize: 16, fontWeight: 900, marginBottom: 16 }}>
-            {new Date(`${selectedDay}T12:00:00`).toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "long",
-              day: "numeric",
-            })}
-          </div>
-
-          {memorialOnSelectedDay.map((m) => (
-            <div
-              key={m.id}
-              style={{
-                border: "2px solid #7c3aed",
-                borderRadius: 14,
-                padding: 20,
-                marginBottom: 16,
-                background: isDark ? "#1a0d2e" : "#faf5ff",
-              }}
-            >
-              <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
-                {m.photo_url && (
-                  <div
-                    style={{
-                      width: 72,
-                      height: 72,
-                      borderRadius: "50%",
-                      overflow: "hidden",
-                      flexShrink: 0,
-                      border: "3px solid #7c3aed",
-                    }}
-                  >
-                    <img
-                      src={m.photo_url}
-                      alt={m.name}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  </div>
-                )}
-
-                <div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: "#7c3aed",
-                      fontWeight: 700,
-                      textTransform: "uppercase",
-                      letterSpacing: 1,
-                    }}
-                  >
-                    We Remember
-                  </div>
-
-                  <div style={{ fontSize: 20, fontWeight: 900, marginTop: 2 }}>
-                    {m.name}
-                  </div>
-
-                  <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
-                    {new Date(`${m.death_date}T12:00:00`).toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                    {" · "}
-                    {year - parseInt(m.death_date.split("-")[0], 10)} years ago
-                  </div>
-
-                  {m.bio && (
-                    <div style={{ marginTop: 10, lineHeight: 1.6, color: t.textMuted }}>
-                      {m.bio}
-                    </div>
-                  )}
-
-                  {m.source_url && (
-                    <a
-                      href={m.source_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{ display: "inline-block", marginTop: 12, fontSize: 13, fontWeight: 700, color: "#7c3aed", textDecoration: "none" }}
-                    >
-                      View Full Memorial →
-                    </a>
-                  )}
-                </div>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 640,
+              maxHeight: "calc(100vh - 40px)",
+              background: t.surface,
+              color: t.text,
+              borderRadius: 18,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "20px 24px 12px" }}>
+              <div style={{ fontSize: 18, fontWeight: 900 }}>
+                {new Date(`${selectedDay}T12:00:00`).toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })}
               </div>
-            </div>
-          ))}
-
-          {eventsOnSelectedDay.map((ev) => (
-            <div
-              key={ev.id}
-              style={{
-                border: `1px solid ${t.border}`,
-                borderRadius: 14,
-                padding: 20,
-                marginBottom: 12,
-              }}
-            >
-              <div
+              <button
+                type="button"
+                onClick={() => setSelectedDay(null)}
+                aria-label="Close"
                 style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                  gap: 12,
-                  flexWrap: "wrap",
+                  border: `1px solid ${t.border}`,
+                  background: t.surface,
+                  color: t.text,
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontWeight: 700,
                 }}
               >
-                <div>
-                  <div style={{ fontSize: 18, fontWeight: 900 }}>{ev.title}</div>
+                X
+              </button>
+            </div>
 
+            <div style={{ padding: "4px 24px 24px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+              {memorialOnSelectedDay.map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedDay(null);
+                    setSelectedMemorial(m);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    border: "2px solid #d9582b",
+                    borderRadius: 14,
+                    padding: 20,
+                    marginBottom: 12,
+                    background: isDark ? "#2a1409" : "#fdf3ed",
+                    color: t.text,
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                    {m.photo_url && (
+                      <div
+                        style={{
+                          width: 64,
+                          height: 64,
+                          borderRadius: "50%",
+                          overflow: "hidden",
+                          flexShrink: 0,
+                          border: "3px solid #d9582b",
+                        }}
+                      >
+                        <img
+                          src={m.photo_url}
+                          alt={m.name}
+                          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                        />
+                      </div>
+                    )}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontSize: 12, color: "#d9582b", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+                        We Remember
+                      </div>
+                      <div style={{ fontSize: 18, fontWeight: 900, marginTop: 2 }}>
+                        {m.name}
+                      </div>
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
+                        {new Date(`${m.death_date}T12:00:00`).toLocaleDateString("en-US", {
+                          month: "long",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                        {" · "}
+                        {year - parseInt(m.death_date.split("-")[0], 10)} years ago
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+
+              {eventsOnSelectedDay.map((ev) => (
+                <button
+                  key={ev.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedDay(null);
+                    setSelectedEvent(ev);
+                  }}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    textAlign: "left",
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 14,
+                    padding: 18,
+                    marginBottom: 12,
+                    background: t.surface,
+                    color: t.text,
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontSize: 17, fontWeight: 900 }}>{ev.title}</div>
                   {ev.organization && (
                     <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>
                       {ev.organization}
                     </div>
                   )}
-
                   {ev.description && (
-                    <div style={{ marginTop: 8, lineHeight: 1.6, color: t.textMuted }}>
+                    <div style={{ marginTop: 8, lineHeight: 1.5, color: t.textMuted, fontSize: 14, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
                       {ev.description}
                     </div>
                   )}
-
-                  {ev.signup_url && (
-                    <a
-                      href={ev.signup_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{
-                        display: "inline-block",
-                        marginTop: 10,
-                        fontWeight: 700,
-                        fontSize: 14,
-                      }}
-                    >
-                      Sign Up / View →
-                    </a>
-                  )}
-                </div>
-
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedEvent(ev)}
-                    style={{
-                      background: t.surface,
-                      color: t.text,
-                      border: `1px solid ${t.border}`,
-                      borderRadius: 10,
-                      padding: "8px 14px",
-                      fontWeight: 700,
-                      fontSize: 13,
-                      cursor: "pointer",
-                    }}
-                  >
-                    View Details
-                  </button>
-
-                  {userId && (
-                    <button
-                      type="button"
-                      onClick={() => toggleSaveEvent(ev.id)}
-                      disabled={togglingEventSaveFor === ev.id}
-                      style={{
-                        background: savedEventIds.has(ev.id) ? t.text : t.surface,
-                        color: savedEventIds.has(ev.id) ? t.surface : t.textMuted,
-                        border: `1px solid ${t.border}`,
-                        borderRadius: 10,
-                        padding: "8px 14px",
-                        fontWeight: 700,
-                        fontSize: 13,
-                        cursor: togglingEventSaveFor === ev.id ? "not-allowed" : "pointer",
-                        opacity: togglingEventSaveFor === ev.id ? 0.6 : 1,
-                      }}
-                    >
-                      {togglingEventSaveFor === ev.id
-                        ? "..."
-                        : savedEventIds.has(ev.id)
-                        ? "Saved ✓"
-                        : "Save Event"}
-                    </button>
-                  )}
-                </div>
-              </div>
+                </button>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       )}
 
@@ -1672,16 +1815,6 @@ export default function EventsPage() {
                         <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: isDark ? "#60a5fa" : "#1d4ed8", textDecoration: "none" }}>
                           Sign Up ↗
                         </a>
-                      )}
-                      {userId && (
-                        <button
-                          type="button"
-                          onClick={() => toggleSaveEvent(ev.id)}
-                          disabled={togglingEventSaveFor === ev.id}
-                          style={{ marginLeft: "auto", background: savedEventIds.has(ev.id) ? t.text : t.surface, color: savedEventIds.has(ev.id) ? t.surface : t.textMuted, border: `1px solid ${t.border}`, borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: togglingEventSaveFor === ev.id ? "not-allowed" : "pointer", opacity: togglingEventSaveFor === ev.id ? 0.6 : 1 }}
-                        >
-                          {togglingEventSaveFor === ev.id ? "..." : savedEventIds.has(ev.id) ? "Saved ✓" : "Save"}
-                        </button>
                       )}
                     </div>
                   </div>
@@ -1802,6 +1935,31 @@ export default function EventsPage() {
                 <strong>Date:</strong> {formatEventDate(selectedEvent.date)}
               </div>
 
+              {selectedEvent.event_time && (
+                <div style={{ color: t.textMuted, fontSize: 14 }}>
+                  <strong>Time:</strong> {selectedEvent.event_time}
+                </div>
+              )}
+
+              {selectedEvent.location && (
+                <div style={{ color: t.textMuted, fontSize: 14 }}>
+                  <strong>Location:</strong> {selectedEvent.location}
+                </div>
+              )}
+
+              {(selectedEvent.poc_name || selectedEvent.poc_phone) && (
+                <div style={{ color: t.textMuted, fontSize: 14 }}>
+                  <strong>Point of Contact:</strong>{" "}
+                  {selectedEvent.poc_name ?? ""}
+                  {selectedEvent.poc_name && selectedEvent.poc_phone ? " — " : ""}
+                  {selectedEvent.poc_phone ? (
+                    <a href={`tel:${selectedEvent.poc_phone.replace(/\s+/g, "")}`} style={{ fontWeight: 700 }}>
+                      {selectedEvent.poc_phone}
+                    </a>
+                  ) : null}
+                </div>
+              )}
+
               {selectedEvent.signup_url && (
                 <div style={{ color: t.textMuted, fontSize: 14 }}>
                   <strong>Outside URL:</strong>{" "}
@@ -1872,29 +2030,237 @@ export default function EventsPage() {
                 </a>
               )}
 
-              {userId && (
-                <button
-                  type="button"
-                  onClick={() => toggleSaveEvent(selectedEvent.id)}
-                  disabled={togglingEventSaveFor === selectedEvent.id}
+            </div>
+          </div>
+        </div>
+      )}
+      {dayEventsListModal && (
+        <div
+          onClick={() => setDayEventsListModal(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1010,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="day-events-modal-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 480,
+              maxHeight: "min(85vh, 520px)",
+              background: t.surface,
+              color: t.text,
+              borderRadius: 18,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              border: `1px solid ${t.border}`,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "18px 20px 10px" }}>
+              <h2 id="day-events-modal-title" style={{ margin: 0, fontSize: 18, fontWeight: 900, lineHeight: 1.3 }}>
+                {new Date(`${dayEventsListModal}T12:00:00`).toLocaleDateString("en-US", {
+                  weekday: "long",
+                  month: "long",
+                  day: "numeric",
+                  year: "numeric",
+                })}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setDayEventsListModal(null)}
+                aria-label="Close"
+                style={{
+                  border: `1px solid ${t.border}`,
+                  background: t.surface,
+                  color: t.text,
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  flexShrink: 0,
+                }}
+              >
+                X
+              </button>
+            </div>
+            <p style={{ margin: "0 20px 8px", fontSize: 13, color: t.textMuted, fontWeight: 600 }}>
+              {dayEventsListModalRows.length} event{dayEventsListModalRows.length === 1 ? "" : "s"} on this day
+            </p>
+            <div
+              style={{
+                padding: "4px 20px 20px",
+                overflowY: "auto",
+                flex: 1,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+              }}
+            >
+              {dayEventsListModalRows.map((ev) => (
+                  <button
+                    key={ev.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedEvent(ev);
+                      setDayEventsListModal(null);
+                    }}
+                    style={{
+                      width: "100%",
+                      textAlign: "left" as const,
+                      fontSize: 14,
+                      fontWeight: 700,
+                      background: "#1a1a1a",
+                      color: "white",
+                      borderRadius: 8,
+                      padding: "10px 12px",
+                      border: "none",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {ev.title}
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+      {selectedMemorial && (
+        <div
+          onClick={() => setSelectedMemorial(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "100%",
+              maxWidth: 560,
+              maxHeight: "calc(100vh - 40px)",
+              background: t.surface,
+              color: t.text,
+              borderRadius: 18,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "22px 24px 10px" }}>
+              <div style={{ display: "flex", gap: 14, alignItems: "flex-start", minWidth: 0 }}>
+                {selectedMemorial.photo_url && (
+                  <div
+                    style={{
+                      width: 72,
+                      height: 72,
+                      borderRadius: "50%",
+                      overflow: "hidden",
+                      flexShrink: 0,
+                      border: "3px solid #d9582b",
+                    }}
+                  >
+                    <img
+                      src={selectedMemorial.photo_url}
+                      alt={selectedMemorial.name}
+                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                    />
+                  </div>
+                )}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 12, color: "#d9582b", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+                    We Remember
+                  </div>
+                  <div style={{ fontSize: 22, fontWeight: 900, marginTop: 2, lineHeight: 1.2 }}>
+                    {selectedMemorial.name}
+                  </div>
+                  <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
+                    {new Date(`${selectedMemorial.death_date}T12:00:00`).toLocaleDateString("en-US", {
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                    {" · "}
+                    {year - parseInt(selectedMemorial.death_date.split("-")[0], 10)} years ago
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedMemorial(null)}
+                aria-label="Close"
+                style={{
+                  border: `1px solid ${t.border}`,
+                  background: t.surface,
+                  color: t.text,
+                  borderRadius: 10,
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  flexShrink: 0,
+                }}
+              >
+                X
+              </button>
+            </div>
+
+            <div style={{ padding: "6px 24px 4px", overflowY: "auto", flex: 1, minHeight: 0 }}>
+              {selectedMemorial.bio ? (
+                <div style={{ lineHeight: 1.65, color: t.text, fontSize: 14, whiteSpace: "pre-wrap" }}>
+                  {selectedMemorial.bio}
+                </div>
+              ) : (
+                <div style={{ color: t.textFaint, fontSize: 14 }}>
+                  No biography on file.{selectedMemorial.source_url ? " Use “View Full Memorial” for the full tribute." : ""}
+                </div>
+              )}
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                padding: "14px 24px 20px",
+                borderTop: `1px solid ${t.border}`,
+                display: "flex",
+                justifyContent: "flex-end",
+              }}
+            >
+              {selectedMemorial.source_url && (
+                <a
+                  href={selectedMemorial.source_url}
+                  target="_blank"
+                  rel="noreferrer"
                   style={{
-                    border: `1px solid ${t.border}`,
-                    background: savedEventIds.has(selectedEvent.id) ? t.text : t.surface,
-                    color: savedEventIds.has(selectedEvent.id) ? t.surface : t.text,
+                    display: "inline-block",
+                    textDecoration: "none",
+                    background: "#d9582b",
+                    color: "white",
                     padding: "10px 16px",
                     borderRadius: 10,
                     fontWeight: 800,
-                    cursor:
-                      togglingEventSaveFor === selectedEvent.id ? "not-allowed" : "pointer",
-                    opacity: togglingEventSaveFor === selectedEvent.id ? 0.7 : 1,
+                    fontSize: 14,
                   }}
                 >
-                  {savedEventIds.has(selectedEvent.id)
-                    ? "Saved to My Account"
-                    : togglingEventSaveFor === selectedEvent.id
-                    ? "Saving..."
-                    : "Save Event"}
-                </button>
+                  View Full Memorial →
+                </a>
               )}
             </div>
           </div>

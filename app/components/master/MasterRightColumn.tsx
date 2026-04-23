@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
@@ -12,6 +13,8 @@ import {
   normalizeBizListingTypeForListing,
   normalizeUrl,
   OgCard,
+  collapsedRailTitleLinkZoom,
+  sectionTitleLinkZoom,
   type BizListingType,
 } from "./masterShared";
 
@@ -415,19 +418,26 @@ export default function MasterRightColumn({
           transition: "border-color 140ms ease, background-color 140ms ease",
         }}
       >
-        <span
+        <Link
+          href="/sidebar"
+          {...collapsedRailTitleLinkZoom}
           style={{
             fontSize: 10,
             fontWeight: 800,
             letterSpacing: 0.4,
             writingMode: "vertical-rl",
-            transform: "rotate(180deg)",
+            transform: "rotate(180deg) scale(1)",
             textTransform: "uppercase",
             userSelect: "none",
+            color: t.text,
+            textDecoration: "none",
+            display: "block",
+            transition: "transform 0.15s ease",
+            cursor: "pointer",
           }}
         >
           Sidebars
-        </span>
+        </Link>
         <button
           type="button"
           onClick={onToggleRail}
@@ -458,19 +468,26 @@ export default function MasterRightColumn({
         >
           «
         </button>
-        <span
+        <Link
+          href="/businesses"
+          {...collapsedRailTitleLinkZoom}
           style={{
             fontSize: 10,
             fontWeight: 800,
             letterSpacing: 0.4,
             writingMode: "vertical-rl",
-            transform: "rotate(180deg)",
+            transform: "rotate(180deg) scale(1)",
             textTransform: "uppercase",
             userSelect: "none",
+            color: t.text,
+            textDecoration: "none",
+            display: "block",
+            transition: "transform 0.15s ease",
+            cursor: "pointer",
           }}
         >
           Businesses
-        </span>
+        </Link>
       </aside>
     );
   }
@@ -493,7 +510,23 @@ export default function MasterRightColumn({
       <div style={{ border: "1px solid transparent", borderRadius: 16, background: "transparent", padding: 0, marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14, minWidth: 0 }}>
-            <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Sidebars</div>
+            <Link
+              href="/sidebar"
+              {...sectionTitleLinkZoom}
+              style={{
+                fontSize: 15,
+                fontWeight: 900,
+                color: t.text,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+                display: "inline-block",
+                transform: "scale(1)",
+                transition: "transform 0.15s ease",
+                cursor: "pointer",
+              }}
+            >
+              Sidebars
+            </Link>
             <a href="/sidebar" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
               See all →
             </a>
@@ -576,7 +609,23 @@ export default function MasterRightColumn({
       {/* Featured / business */}
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 14, marginBottom: 10 }}>
-          <div style={{ fontSize: 15, fontWeight: 900, color: t.text }}>Businesses/Orgs</div>
+          <Link
+            href="/businesses"
+            {...sectionTitleLinkZoom}
+            style={{
+              fontSize: 15,
+              fontWeight: 900,
+              color: t.text,
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+              display: "inline-block",
+              transform: "scale(1)",
+              transition: "transform 0.15s ease",
+              cursor: "pointer",
+            }}
+          >
+            Businesses/Orgs
+          </Link>
           <a href="/businesses" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
             See all →
           </a>
