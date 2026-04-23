@@ -1176,8 +1176,10 @@ export default function MasterLeftColumn({
               ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "—"}) new jobs today!
             </div>
             <div style={{ marginTop: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 8 }}>Saved jobs</div>
-              <div style={{ marginTop: -4, marginBottom: 8, fontSize: 11, color: t.textFaint, fontWeight: 700 }}>*not visible to other users</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Saved jobs</span>
+                <span style={{ fontSize: 11, color: t.textFaint, fontWeight: 700 }}>*not visible to other users</span>
+              </div>
               <div style={{ display: "grid", gap: 8 }}>
                 {desktopSavedJobs.length === 0 && <div style={{ color: t.textFaint, fontSize: 12 }}>No saved jobs.</div>}
                 {desktopSavedJobs.slice(0, 4).map((job) => {
