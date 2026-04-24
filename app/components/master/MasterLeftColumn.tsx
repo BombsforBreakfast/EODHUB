@@ -578,6 +578,14 @@ export default function MasterLeftColumn({
       .catch((err) => console.error("Desktop calendar load failed:", err));
   }, [sideRailsReady, desktopCalendarDate, loadDesktopCalendarData]);
 
+  /** The selected day is always a date string after load, but the list is often empty — we must not reserve margin/padding for an empty “day list” or the date bar looks top-heavy. */
+  const hasDesktopDayCards = useMemo(() => {
+    if (!desktopSelectedDay) return false;
+    if (desktopCalendarEvents.some((ev) => ev.date === desktopSelectedDay)) return true;
+    const y = new Date(`${desktopSelectedDay}T12:00:00`).getFullYear();
+    return desktopMemorials.some((m) => anniversaryDate(m.death_date, y) === desktopSelectedDay);
+  }, [desktopSelectedDay, desktopCalendarEvents, desktopMemorials]);
+
   const sortedJobs = useMemo(() => {
     if (jobs.length === 0) return jobs;
     const copy = [...jobs];
@@ -854,36 +862,86 @@ export default function MasterLeftColumn({
           </a>
         </div>
 
-        <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "4px 10px 10px 10px", background: t.surface }}>
+        <div
+          style={{
+            border: `1px solid ${t.border}`,
+            borderRadius: 10,
+            padding: hasDesktopDayCards ? "8px 10px 10px 10px" : "8px 10px 8px 10px",
+            background: t.surface,
+            boxSizing: "border-box",
+          }}
+        >
           {/* Header: prev / "Apr 15 Wed" / next. The weekday sits next to the
               date so we don't need a separate day cell below — if there are no
               items for the day, the empty card is itself the indicator. */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "min-content 1fr min-content",
+              alignItems: "center",
+              columnGap: 6,
+            }}
+          >
             <button
               type="button"
               aria-label="Previous day"
               onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() - 1))}
-              style={{ display: "inline-flex", alignItems: "center", border: `1px solid ${t.border}`, background: "#111", color: "white", borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "1px 7px", cursor: "pointer" }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                lineHeight: 0,
+                border: `1px solid ${t.border}`,
+                background: "#111",
+                color: "white",
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 700,
+                padding: "2px 7px",
+                cursor: "pointer",
+              }}
             >
-              <ChevronLeft size={14} strokeWidth={2.5} aria-hidden />
+              <ChevronLeft size={14} strokeWidth={2.5} aria-hidden style={{ display: "block" }} />
             </button>
-            <div style={{ display: "inline-flex", alignItems: "baseline", gap: 6, lineHeight: 1.15 }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>{formatShortDate(desktopCalendarDate)}</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: t.textFaint }}>{CALENDAR_DAY_LABELS[desktopCalendarDate.getDay()]}</span>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 6,
+                minWidth: 0,
+                lineHeight: 1.15,
+              }}
+            >
+              <span style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.15 }}>{formatShortDate(desktopCalendarDate)}</span>
+              <span style={{ fontSize: 11, fontWeight: 700, color: t.textFaint, lineHeight: 1.15 }}>{CALENDAR_DAY_LABELS[desktopCalendarDate.getDay()]}</span>
             </div>
             <button
               type="button"
               aria-label="Next day"
               onClick={() => setDesktopCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth(), prev.getDate() + 1))}
-              style={{ display: "inline-flex", alignItems: "center", border: `1px solid ${t.border}`, background: "#111", color: "white", borderRadius: 6, fontSize: 12, fontWeight: 700, padding: "1px 7px", cursor: "pointer" }}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                lineHeight: 0,
+                border: `1px solid ${t.border}`,
+                background: "#111",
+                color: "white",
+                borderRadius: 6,
+                fontSize: 12,
+                fontWeight: 700,
+                padding: "2px 7px",
+                cursor: "pointer",
+              }}
             >
-              <ChevronRight size={14} strokeWidth={2.5} aria-hidden />
+              <ChevronRight size={14} strokeWidth={2.5} aria-hidden style={{ display: "block" }} />
             </button>
           </div>
 
           {/* Day items live INSIDE the calendar card so the date header and the
               events/memorials attached to it read as a single visual unit. */}
-          {desktopSelectedDay && (
+          {desktopSelectedDay && hasDesktopDayCards && (
           <div style={{ marginTop: 6, display: "grid", gap: 8 }}>
             {[
               // Events in the day card deep-link to the SAME /events modal as

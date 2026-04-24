@@ -152,6 +152,9 @@ export default function EventFeedActions({
         flexWrap: "wrap",
         gap: 8,
         alignItems: "center",
+        justifyContent: "center",
+        width: "100%",
+        boxSizing: "border-box",
       }}
     >
       <button
