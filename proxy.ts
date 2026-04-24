@@ -33,9 +33,14 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch {
+    // If the auth check itself throws, fail open on public paths and
+    // redirect to login for protected paths rather than crashing the request.
+  }
 
   const path = request.nextUrl.pathname;
   if (!isPublicPath(path) && !user) {
