@@ -371,8 +371,8 @@ export default function LoginPage() {
           ) : forgotSent ? (
             <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12, padding: 20, textAlign: "center" }}>
               <div style={{ fontSize: 28, marginBottom: 8 }}>📬</div>
-              <div style={{ fontWeight: 700, marginBottom: 6 }}>Check your email</div>
-              <div style={{ fontSize: 14, color: t.textMuted }}>
+              <div style={{ fontWeight: 700, marginBottom: 6, color: "#14532d" }}>Check your email</div>
+              <div style={{ fontSize: 14, color: "#166534" }}>
                 We sent a password reset link to <strong>{forgotEmail}</strong>. Click the link in the email to set a new password.
               </div>
             </div>
