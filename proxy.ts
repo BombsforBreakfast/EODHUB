@@ -9,7 +9,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
  * Everything else redirects to /login when the user is not authenticated.
  */
 function isPublicPath(pathname: string) {
-  const publicRoutes = ["/login", "/reset-password", "/terms", "/privacy", "/guidelines"];
+  const publicRoutes = ["/login", "/reset-password", "/terms", "/privacy", "/guidelines", "/auth/callback"];
   return publicRoutes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 

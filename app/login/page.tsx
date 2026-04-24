@@ -93,7 +93,7 @@ export default function LoginPage() {
   }, []);
 
   function signInWithGoogleOAuth() {
-    const redirectTo = `${window.location.origin}/onboarding`;
+    const redirectTo = `${window.location.origin}/auth/callback?next=/onboarding`;
     const hint = email.trim();
     const options =
       hint.includes("@")
