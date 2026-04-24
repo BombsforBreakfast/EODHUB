@@ -4,11 +4,13 @@ import { NextResponse, type NextRequest } from "next/server";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-/** URL paths that render the signed-in master dashboard shell (layouts that wrap `MasterShell`). */
-function isMasterShellPath(pathname: string) {
-  if (pathname === "/") return true;
-  const roots = ["/jobs", "/events", "/directory", "/sidebar", "/rabbithole", "/employer", "/profile", "/units"] as const;
-  return roots.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+/**
+ * Paths that are accessible without a session.
+ * Everything else redirects to /login when the user is not authenticated.
+ */
+function isPublicPath(pathname: string) {
+  const publicRoutes = ["/login", "/reset-password", "/terms", "/privacy", "/guidelines"];
+  return publicRoutes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 export async function proxy(request: NextRequest) {
@@ -36,7 +38,7 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  if (isMasterShellPath(path) && !user) {
+  if (!isPublicPath(path) && !user) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
