@@ -19,9 +19,15 @@ export type JobListItem = {
   og_site_name: string | null;
 };
 
+export type SalaryMin = 25000 | 50000 | 75000 | 100000 | 125000 | 150000;
+export type LocationRadius = 25 | 50 | 100;
+
 export type JobFilterState = {
   location: string;
   keyword: string;
+  salaryMin: SalaryMin | "";
+  locationZip: string;
+  locationRadius: LocationRadius | "";
 };
 
 function toLower(v: string | null | undefined): string {
@@ -31,6 +37,7 @@ function toLower(v: string | null | undefined): string {
 export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState): JobListItem[] {
   const keyword = filters.keyword.trim().toLowerCase();
   const location = filters.location.trim().toLowerCase();
+  const salaryMin = filters.salaryMin;
 
   return jobs.filter((job) => {
     if (location && !toLower(job.location).includes(location)) return false;
@@ -49,6 +56,14 @@ export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState): J
         .join(" ")
         .toLowerCase();
       if (!haystack.includes(keyword)) return false;
+    }
+
+    if (salaryMin !== "") {
+      // Show job if either end of the salary range reaches the minimum threshold
+      const qualifies =
+        (job.pay_max !== null && job.pay_max >= salaryMin) ||
+        (job.pay_min !== null && job.pay_min >= salaryMin);
+      if (!qualifies) return false;
     }
 
     return true;

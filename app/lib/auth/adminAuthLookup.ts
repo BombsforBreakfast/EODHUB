@@ -46,6 +46,11 @@ export async function findAuthUsersByEmail(
     for (const u of batch) {
       if (u.email?.toLowerCase() === normalizedEmail) matches.push(u);
     }
+    // One matching row is enough for provider checks; continuing would mean
+    // paginating through the entire project (very slow) on every hint lookup.
+    if (matches.length > 0) {
+      return { users: matches, listError: null };
+    }
     if (batch.length < perPage) break;
   }
 
@@ -65,3 +70,4 @@ export async function getProvidersForEmail(
   }
   return { providers: [...set].sort(), listError: null };
 }
+

@@ -1,13 +1,21 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 import { getFeatureAccess } from "../lib/featureAccess";
-import { applyJobFilters, uniqueJobLocations, type JobFilterState, type JobListItem } from "../lib/jobFilters";
+import {
+  applyJobFilters,
+  uniqueJobLocations,
+  type JobFilterState,
+  type JobListItem,
+  type LocationRadius,
+  type SalaryMin,
+} from "../lib/jobFilters";
+import { geocodeZip, geocodeLocation, distanceMiles } from "../lib/geocode";
 
 type ProfileRow = {
   access_tier: string | null;
@@ -34,10 +42,60 @@ type SavedJobRow = {
   og_site_name: string | null;
 };
 
+const SALARY_OPTIONS: Array<{ label: string; value: SalaryMin | "" }> = [
+  { label: "Any salary", value: "" },
+  { label: "$25k+", value: 25000 },
+  { label: "$50k+", value: 50000 },
+  { label: "$75k+", value: 75000 },
+  { label: "$100k+", value: 100000 },
+  { label: "$125k+", value: 125000 },
+  { label: "$150k+", value: 150000 },
+];
+
+const RADIUS_OPTIONS: Array<{ label: string; value: LocationRadius | "" }> = [
+  { label: "Any distance", value: "" },
+  { label: "25 miles", value: 25 },
+  { label: "50 miles", value: 50 },
+  { label: "100 miles", value: 100 },
+];
+
 const DEFAULT_FILTERS: JobFilterState = {
   location: "",
   keyword: "",
+  salaryMin: "",
+  locationZip: "",
+  locationRadius: "",
 };
+
+function formatPayValue(n: number): string {
+  if (n >= 10000) return `$${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
+  return `$${n}`;
+}
+
+function formatPay(min: number | null, max: number | null): string {
+  const ref = max ?? min!;
+  const suffix = ref >= 1000 ? "/yr" : "/hr";
+  if (min !== null && max !== null) {
+    return `${formatPayValue(min)} – ${formatPayValue(max)}${suffix}`;
+  }
+  if (min !== null) return `From ${formatPayValue(min)}${suffix}`;
+  if (max !== null) return `Up to ${formatPayValue(max)}${suffix}`;
+  return "";
+}
+
+function formatSource(sourceType: string | null): string {
+  if (!sourceType) return "Unknown";
+  switch (sourceType.toLowerCase()) {
+    case "usajobs": return "USAJOBS";
+    case "adzuna": return "Adzuna";
+    case "indeed": return "Indeed";
+    case "linkedin": return "LinkedIn";
+    case "ziprecruiter": return "ZipRecruiter";
+    case "community": return "EOD Hub";
+    default: return sourceType.charAt(0).toUpperCase() + sourceType.slice(1);
+  }
+}
 
 export default function JobsPage() {
   const { t } = useTheme();
@@ -54,6 +112,12 @@ export default function JobsPage() {
   const [togglingJobId, setTogglingJobId] = useState<string | null>(null);
   const [savedExpanded, setSavedExpanded] = useState(false);
   const [detailsJob, setDetailsJob] = useState<JobModalData | null>(null);
+
+  // Geo-filter state
+  const [geoCenter, setGeoCenter] = useState<[number, number] | null>(null);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const [geoFilteredJobs, setGeoFilteredJobs] = useState<JobListItem[] | null>(null);
+  const geoRunRef = useRef(0); // generation counter to cancel stale runs
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 900);
@@ -225,11 +289,93 @@ export default function JobsPage() {
     };
   }, [userId, loadSavedJobs]);
 
+  // Geocode user's zip whenever it changes to a valid 5-digit ZIP
+  useEffect(() => {
+    const zip = filters.locationZip.trim();
+    if (!/^\d{5}$/.test(zip)) {
+      setGeoCenter(null);
+      setGeoFilteredJobs(null);
+      return;
+    }
+    let cancelled = false;
+    geocodeZip(zip).then((coords) => {
+      if (!cancelled) setGeoCenter(coords);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.locationZip]);
+
   const locationOptions = useMemo(() => uniqueJobLocations(jobs), [jobs]);
-  const visibleJobs = useMemo(() => {
+
+  // Synchronous filters (keyword, location text, salary)
+  const syncFilteredJobs = useMemo(() => {
     if (!canUseJobFilters) return jobs;
     return applyJobFilters(jobs, filters);
   }, [jobs, filters, canUseJobFilters]);
+
+  // Async geo filter — runs whenever syncFilteredJobs, geoCenter, or radius changes
+  useEffect(() => {
+    if (!geoCenter || !filters.locationRadius) {
+      setGeoFilteredJobs(null);
+      setGeoLoading(false);
+      return;
+    }
+
+    const gen = ++geoRunRef.current;
+    const [cLat, cLng] = geoCenter;
+    const radius = filters.locationRadius as number;
+
+    async function run() {
+      setGeoLoading(true);
+      const result: JobListItem[] = [];
+      const BATCH = 6;
+
+      for (let i = 0; i < syncFilteredJobs.length; i += BATCH) {
+        if (geoRunRef.current !== gen) return; // superseded
+        const batch = syncFilteredJobs.slice(i, i + BATCH);
+        const resolved = await Promise.all(
+          batch.map(async (job): Promise<JobListItem | null> => {
+            const loc = job.location?.trim() ?? "";
+            // No location or explicitly remote → always include
+            if (!loc || /remote/i.test(loc)) return job;
+            const coords = await geocodeLocation(loc);
+            // Can't geocode → include (benefit of the doubt)
+            if (!coords) return job;
+            return distanceMiles(cLat, cLng, coords[0], coords[1]) <= radius ? job : null;
+          })
+        );
+        result.push(...(resolved.filter(Boolean) as JobListItem[]));
+      }
+
+      if (geoRunRef.current === gen) {
+        setGeoFilteredJobs(result);
+        setGeoLoading(false);
+      }
+    }
+
+    void run();
+  }, [geoCenter, filters.locationRadius, syncFilteredJobs]);
+
+  const visibleJobs = geoFilteredJobs ?? syncFilteredJobs;
+
+  const hasActiveFilters =
+    filters.keyword !== "" ||
+    filters.location !== "" ||
+    filters.salaryMin !== "" ||
+    filters.locationZip !== "" ||
+    filters.locationRadius !== "";
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "8px 10px",
+    borderRadius: 8,
+    border: `1px solid ${t.inputBorder}`,
+    background: t.input,
+    color: t.text,
+    boxSizing: "border-box",
+    fontSize: 14,
+  };
 
   return (
     <div
@@ -261,10 +407,11 @@ export default function JobsPage() {
 
       {canUseJobFilters && (
         <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: 12, marginBottom: 14 }}>
+          {/* Row 1: keyword, location dropdown, salary */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))",
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))",
               gap: 10,
             }}
           >
@@ -272,14 +419,14 @@ export default function JobsPage() {
               type="text"
               value={filters.keyword}
               onChange={(e) => setFilters((prev) => ({ ...prev, keyword: e.target.value }))}
-              placeholder="Keyword/tag (e.g. UXO, TSS-E, Safety)"
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
+              placeholder="Keyword (e.g. UXO, TSS-E, Safety)"
+              style={inputStyle}
             />
 
             <select
               value={filters.location}
               onChange={(e) => setFilters((prev) => ({ ...prev, location: e.target.value }))}
-              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text }}
+              style={inputStyle}
             >
               <option value="">All locations</option>
               {locationOptions.map((loc) => (
@@ -288,7 +435,106 @@ export default function JobsPage() {
                 </option>
               ))}
             </select>
+
+            <select
+              value={filters.salaryMin}
+              onChange={(e) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  salaryMin: e.target.value === "" ? "" : (Number(e.target.value) as SalaryMin),
+                }))
+              }
+              style={inputStyle}
+            >
+              {SALARY_OPTIONS.map((o) => (
+                <option key={String(o.value)} value={String(o.value)}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </div>
+
+          {/* Row 2: zip + radius */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr auto",
+              gap: 10,
+              marginTop: 10,
+              alignItems: "center",
+            }}
+          >
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={5}
+              value={filters.locationZip}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, "").slice(0, 5);
+                setFilters((prev) => ({ ...prev, locationZip: val }));
+              }}
+              placeholder="ZIP code (for radius search)"
+              style={inputStyle}
+            />
+
+            <select
+              value={filters.locationRadius}
+              onChange={(e) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  locationRadius: e.target.value === "" ? "" : (Number(e.target.value) as LocationRadius),
+                }))
+              }
+              style={inputStyle}
+            >
+              {RADIUS_OPTIONS.map((o) => (
+                <option key={String(o.value)} value={String(o.value)}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilters(DEFAULT_FILTERS);
+                  setGeoCenter(null);
+                  setGeoFilteredJobs(null);
+                }}
+                style={{
+                  padding: "8px 14px",
+                  borderRadius: 8,
+                  border: `1px solid ${t.border}`,
+                  background: "transparent",
+                  color: t.textMuted,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+
+          {/* ZIP without radius (or vice versa) hint */}
+          {filters.locationZip.length === 5 && !filters.locationRadius && (
+            <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted }}>
+              Select a distance above to filter by location radius.
+            </div>
+          )}
+          {filters.locationRadius && !filters.locationZip && (
+            <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted }}>
+              Enter a ZIP code above to filter by distance.
+            </div>
+          )}
+          {filters.locationZip.length === 5 && filters.locationRadius && !geoCenter && !geoLoading && (
+            <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted }}>
+              ZIP code not found — try a different ZIP.
+            </div>
+          )}
         </div>
       )}
 
@@ -378,53 +624,90 @@ export default function JobsPage() {
 
       {loading ? (
         <div style={{ fontSize: 14, color: t.textMuted }}>Loading jobs...</div>
-      ) : visibleJobs.length === 0 ? (
-        <div style={{ fontSize: 14, color: t.textMuted }}>No approved jobs found.</div>
-      ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))",
-            gap: 12,
-          }}
-        >
-          {visibleJobs.map((job) => (
-            <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface, display: "flex", flexDirection: "column" }}>
-              {job.og_image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={job.og_image} alt={job.title || "Job preview"} style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }} />
-              ) : null}
-              <div style={{ padding: 12, display: "flex", flexDirection: "column", flex: 1 }}>
-                <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3 }}>{job.title || job.og_title || "Untitled Job"}</div>
-                <div style={{ marginTop: 5, color: t.textMuted, fontSize: 14 }}>{job.company_name || job.og_site_name || "Unknown Company"}</div>
-                <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
-                  {(job.location || "Location not listed") + " · " + (job.category || "General")}
-                </div>
-                {(job.pay_min !== null || job.pay_max !== null) && (
-                  <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
-                    Salary: {job.pay_min ?? "?"} - {job.pay_max ?? "?"}
-                  </div>
-                )}
-                {job.description && (
-                  <div style={{ marginTop: 8, color: t.textMuted, fontSize: 13, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                    {job.description}
-                  </div>
-                )}
-                <div style={{ flex: 1 }} />
-                <div style={{ marginTop: 12 }}>
-                  <JobCardActions
-                    job={job as JobModalData}
-                    onOpenDetails={setDetailsJob}
-                    saved={savedJobIds.has(job.id)}
-                    canSave={!!userId}
-                    isTogglingSave={togglingJobId === job.id}
-                    onToggleSave={toggleSaveJob}
-                  />
-                </div>
-              </div>
-            </div>
-          ))}
+      ) : geoLoading ? (
+        <div style={{ fontSize: 14, color: t.textMuted }}>
+          Locating jobs near {filters.locationZip}…
         </div>
+      ) : visibleJobs.length === 0 ? (
+        <div style={{ fontSize: 14, color: t.textMuted }}>No approved jobs found{hasActiveFilters ? " matching your filters" : ""}.</div>
+      ) : (
+        <>
+          {canUseJobFilters && hasActiveFilters && (
+            <div style={{ marginBottom: 10, fontSize: 13, color: t.textMuted, fontWeight: 600 }}>
+              {visibleJobs.length} job{visibleJobs.length !== 1 ? "s" : ""} found
+            </div>
+          )}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(300px, 1fr))",
+              gap: 12,
+            }}
+          >
+            {visibleJobs.map((job) => {
+              const hasSalary = job.pay_min !== null || job.pay_max !== null;
+              return (
+                <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface, display: "flex", flexDirection: "column" }}>
+                  {job.og_image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={job.og_image} alt={job.title || "Job preview"} style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }} />
+                  ) : null}
+                  <div style={{ padding: 12, display: "flex", flexDirection: "column", flex: 1 }}>
+                    <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3 }}>{job.title || job.og_title || "Untitled Job"}</div>
+                    <div style={{ marginTop: 5, color: t.textMuted, fontSize: 14 }}>{job.company_name || job.og_site_name || "Unknown Company"}</div>
+                    <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
+                      {(job.location || "Location not listed") + " · " + (job.category || "General")}
+                    </div>
+
+                    {hasSalary ? (
+                      <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
+                        {formatPay(job.pay_min, job.pay_max)}
+                      </div>
+                    ) : (
+                      <div style={{ marginTop: 6, color: t.textFaint, fontSize: 12, fontStyle: "italic" }}>
+                        * Salary information not listed
+                      </div>
+                    )}
+
+                    {job.description && (
+                      <div style={{ marginTop: 8, color: t.textMuted, fontSize: 13, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                        {job.description}
+                      </div>
+                    )}
+
+                    <div style={{ flex: 1 }} />
+
+                    <div style={{ marginTop: 12 }}>
+                      <JobCardActions
+                        job={job as JobModalData}
+                        onOpenDetails={setDetailsJob}
+                        saved={savedJobIds.has(job.id)}
+                        canSave={!!userId}
+                        isTogglingSave={togglingJobId === job.id}
+                        onToggleSave={toggleSaveJob}
+                      />
+                    </div>
+
+                    {/* Source label */}
+                    <div
+                      style={{
+                        marginTop: 10,
+                        paddingTop: 8,
+                        borderTop: `1px solid ${t.border}`,
+                        fontSize: 11,
+                        color: t.textFaint,
+                        fontWeight: 600,
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      Via {formatSource(job.source_type)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
       <UpgradePromptModal open={showUpgradePrompt} onClose={() => setShowUpgradePrompt(false)} />

@@ -674,7 +674,7 @@ export default function HomePage() {
   const [jobsTotalApprovedCount, setJobsTotalApprovedCount] = useState<number | null>(null);
   const [jobsNewTodayCount, setJobsNewTodayCount] = useState<number | null>(null);
   const [jobSort, setJobSort] = useState<"recent" | "az" | "za">("recent");
-  const [jobFilters, setJobFilters] = useState<JobFilterState>({ location: "", keyword: "" });
+  const [jobFilters, setJobFilters] = useState<JobFilterState>({ location: "", keyword: "", salaryMin: "", locationZip: "", locationRadius: "" });
   const [canViewFullJobs, setCanViewFullJobs] = useState(true);
   const [canUseJobFilters, setCanUseJobFilters] = useState(true);
   const [showJobsUpgradePrompt, setShowJobsUpgradePrompt] = useState(false);
@@ -5200,13 +5200,16 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                             maxWidth: FEED_POST_EMBED_MAX_WIDTH,
                             marginLeft: "auto",
                             marginRight: "auto",
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "center",
                             borderRadius: 12,
                             border: `1px solid ${t.border}`,
                             background: t.bg,
                             color: "inherit",
                             textAlign: "center",
                             cursor: "pointer",
-                            padding: "14px 14px 12px",
+                            padding: "16px 16px 16px",
                             boxSizing: "border-box",
                             transition: "transform 140ms ease, box-shadow 140ms ease",
                             boxShadow: "0 1px 0 rgba(0,0,0,0.12)",
@@ -5221,10 +5224,29 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           }}
                           aria-label={`Open event details for ${post.feed_event.title}`}
                         >
-                          <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.15, marginBottom: 8, color: t.text }}>
+                          <div
+                            style={{
+                              fontSize: 21,
+                              fontWeight: 800,
+                              lineHeight: 1.15,
+                              marginBottom: 8,
+                              color: t.text,
+                              width: "100%",
+                              textAlign: "center",
+                            }}
+                          >
                             New Event: {post.feed_event.title}
                           </div>
-                          <div style={{ fontWeight: 800, fontSize: 17, color: t.text, marginBottom: 10 }}>
+                          <div
+                            style={{
+                              fontWeight: 800,
+                              fontSize: 17,
+                              color: t.text,
+                              marginBottom: 10,
+                              width: "100%",
+                              textAlign: "center",
+                            }}
+                          >
                             {formatEventDisplayDate(post.feed_event.date) ?? post.feed_event.date}
                             {post.feed_event.event_time ? `  ${post.feed_event.event_time}` : ""}
                           </div>
@@ -5233,28 +5255,59 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                             <div
                               style={{
                                 width: "100%",
+                                maxWidth: "100%",
+                                display: "flex",
+                                justifyContent: "center",
+                                alignItems: "center",
                                 borderRadius: 12,
                                 overflow: "hidden",
                                 border: `1px solid ${t.border}`,
                                 background: t.surface,
                                 marginBottom: 10,
+                                minHeight: 0,
+                                boxSizing: "border-box",
                               }}
                             >
                               <img
                                 src={httpsAssetUrl(post.feed_event.image_url)}
                                 alt={post.feed_event.title}
-                                style={{ width: "100%", height: "auto", maxHeight: 420, objectFit: "cover", display: "block" }}
+                                style={{
+                                  width: "100%",
+                                  height: "auto",
+                                  maxHeight: 420,
+                                  objectFit: "contain",
+                                  objectPosition: "center",
+                                  display: "block",
+                                  margin: "0 auto",
+                                }}
                               />
                             </div>
                           ) : null}
 
                           {(post.feed_event.location || post.feed_event.organization) && (
-                            <div style={{ fontSize: 19, fontWeight: 700, color: t.text, marginBottom: 8 }}>
+                            <div
+                              style={{
+                                fontSize: 19,
+                                fontWeight: 700,
+                                color: t.text,
+                                marginBottom: 8,
+                                width: "100%",
+                                textAlign: "center",
+                              }}
+                            >
                               {post.feed_event.location ?? post.feed_event.organization}
                             </div>
                           )}
                           {post.feed_event.description && (
-                            <div style={{ fontSize: 15, lineHeight: 1.45, color: t.textMuted }}>
+                            <div
+                              style={{
+                                fontSize: 15,
+                                lineHeight: 1.45,
+                                color: t.textMuted,
+                                width: "100%",
+                                textAlign: "center",
+                              }}
+                            >
                               {post.feed_event.description}
                             </div>
                           )}
@@ -5297,6 +5350,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   <div
                     style={{
                       display: "flex",
+                      justifyContent: post.event_id ? "center" : "flex-start",
                       gap: "clamp(10px, 2.8vw, 16px)",
                       alignItems: "center",
                       marginTop: 14,
