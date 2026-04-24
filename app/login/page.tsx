@@ -23,7 +23,13 @@ export default function LoginPage() {
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileError, setTurnstileError] = useState(false);
   const turnstileRef = useRef<TurnstileInstance>(null);
-  const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+  // Skip Turnstile entirely in local dev — the production site key is only
+  // allow-listed for the real domains, so on localhost the widget errors out
+  // with 400020 and never returns a token, which would lock the Login button.
+  const siteKey =
+    process.env.NODE_ENV === "production"
+      ? (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "")
+      : "";
   const [signupCount, setSignupCount] = useState<number | null>(null);
   const [countFlash, setCountFlash] = useState(false);
 
