@@ -271,6 +271,12 @@ button:active, a.nav-btn:active {
   width: 100%;
 }
 
+/* Rabbithole — header brand (mascot + title) */
+a.rabbithole-brand-link:focus-visible {
+  outline: 2px solid #facc15;
+  outline-offset: 3px;
+}
+
 /* Admin in trailing cluster — right column, clear of centered crab logo (desktop + mobile via display:contents). */
 .nav-admin-bar {
   flex-shrink: 0;

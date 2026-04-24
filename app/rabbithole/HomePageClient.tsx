@@ -209,14 +209,43 @@ export default function RabbitholeHomePageClient() {
       {/* Header */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <img
-            src="/rabbithole-mascot.png"
-            alt=""
-            width={44}
-            height={44}
-            style={{ width: 44, height: 44, borderRadius: "50%", objectFit: "cover", border: `1px solid ${t.border}` }}
-          />
-          <h1 style={{ margin: 0, fontSize: 32, fontWeight: 900, letterSpacing: "-0.02em" }}>Rabbithole</h1>
+          <Link
+            href="/rabbithole"
+            aria-label="Rabbithole home"
+            title="Rabbithole home"
+            className="rabbithole-brand-link"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 12,
+              textDecoration: "none",
+              color: "inherit",
+              borderRadius: 10,
+              cursor: "pointer",
+              position: "relative",
+              zIndex: 1,
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- static mascot asset */}
+            <img
+              src="/rabbithole-mascot.png"
+              alt=""
+              width={44}
+              height={44}
+              draggable={false}
+              style={{
+                width: 44,
+                height: 44,
+                borderRadius: "50%",
+                objectFit: "cover",
+                border: `1px solid ${t.border}`,
+                userSelect: "none",
+              }}
+            />
+            <h1 style={{ margin: 0, fontSize: 32, fontWeight: 900, letterSpacing: "-0.02em", color: t.text }}>
+              Rabbithole
+            </h1>
+          </Link>
           <button type="button" onClick={openContributeModal} style={contributeButtonStyle}>
             Contribute
           </button>
