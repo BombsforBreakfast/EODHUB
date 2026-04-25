@@ -102,11 +102,11 @@ export function extractRegion(location: string | null): string | null {
 
 /**
  * Build the sorted list of unique regions for the location dropdown.
- * Always includes the hardcoded OCONUS list; dynamically adds any new
- * region extracted from the live job data (so new postings auto-appear).
+ * Purely data-driven — only regions that appear in the current job list
+ * are shown, so the dropdown always reflects what's actually available.
  */
 export function uniqueJobRegions(jobs: JobListItem[]): string[] {
-  const regions = new Set<string>(OCONUS_REGIONS);
+  const regions = new Set<string>();
   for (const job of jobs) {
     const region = extractRegion(job.location);
     if (region && region !== "Remote") regions.add(region);

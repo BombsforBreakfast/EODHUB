@@ -390,6 +390,9 @@ export default function JobsPage() {
               </button>
             )}
           </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: t.textFaint }}>
+            Location dropdown reflects states &amp; countries with active job postings — unlisted regions currently have no open positions.
+          </div>
         </div>
       )}
 
