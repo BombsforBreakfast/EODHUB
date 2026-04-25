@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
@@ -9,13 +9,11 @@ import { supabase } from "../lib/lib/supabaseClient";
 import { getFeatureAccess } from "../lib/featureAccess";
 import {
   applyJobFilters,
-  uniqueJobLocations,
+  uniqueJobRegions,
   type JobFilterState,
   type JobListItem,
-  type LocationRadius,
   type SalaryMin,
 } from "../lib/jobFilters";
-import { geocodeZip, geocodeLocation, distanceMiles } from "../lib/geocode";
 
 type ProfileRow = {
   access_tier: string | null;
@@ -52,19 +50,10 @@ const SALARY_OPTIONS: Array<{ label: string; value: SalaryMin | "" }> = [
   { label: "$150k+", value: 150000 },
 ];
 
-const RADIUS_OPTIONS: Array<{ label: string; value: LocationRadius | "" }> = [
-  { label: "Any distance", value: "" },
-  { label: "25 miles", value: 25 },
-  { label: "50 miles", value: 50 },
-  { label: "100 miles", value: 100 },
-];
-
 const DEFAULT_FILTERS: JobFilterState = {
-  location: "",
   keyword: "",
+  locationRegion: "",
   salaryMin: "",
-  locationZip: "",
-  locationRadius: "",
 };
 
 function formatPayValue(n: number): string {
@@ -113,11 +102,6 @@ export default function JobsPage() {
   const [savedExpanded, setSavedExpanded] = useState(false);
   const [detailsJob, setDetailsJob] = useState<JobModalData | null>(null);
 
-  // Geo-filter state
-  const [geoCenter, setGeoCenter] = useState<[number, number] | null>(null);
-  const [geoLoading, setGeoLoading] = useState(false);
-  const [geoFilteredJobs, setGeoFilteredJobs] = useState<JobListItem[] | null>(null);
-  const geoRunRef = useRef(0); // generation counter to cancel stale runs
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 900);
@@ -289,82 +273,17 @@ export default function JobsPage() {
     };
   }, [userId, loadSavedJobs]);
 
-  // Geocode user's zip whenever it changes to a valid 5-digit ZIP
-  useEffect(() => {
-    const zip = filters.locationZip.trim();
-    if (!/^\d{5}$/.test(zip)) {
-      setGeoCenter(null);
-      setGeoFilteredJobs(null);
-      return;
-    }
-    let cancelled = false;
-    geocodeZip(zip).then((coords) => {
-      if (!cancelled) setGeoCenter(coords);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [filters.locationZip]);
+  const regionOptions = useMemo(() => uniqueJobRegions(jobs), [jobs]);
 
-  const locationOptions = useMemo(() => uniqueJobLocations(jobs), [jobs]);
-
-  // Synchronous filters (keyword, location text, salary)
-  const syncFilteredJobs = useMemo(() => {
+  const visibleJobs = useMemo(() => {
     if (!canUseJobFilters) return jobs;
     return applyJobFilters(jobs, filters);
   }, [jobs, filters, canUseJobFilters]);
 
-  // Async geo filter — runs whenever syncFilteredJobs, geoCenter, or radius changes
-  useEffect(() => {
-    if (!geoCenter || !filters.locationRadius) {
-      setGeoFilteredJobs(null);
-      setGeoLoading(false);
-      return;
-    }
-
-    const gen = ++geoRunRef.current;
-    const [cLat, cLng] = geoCenter;
-    const radius = filters.locationRadius as number;
-
-    async function run() {
-      setGeoLoading(true);
-      const result: JobListItem[] = [];
-      const BATCH = 6;
-
-      for (let i = 0; i < syncFilteredJobs.length; i += BATCH) {
-        if (geoRunRef.current !== gen) return; // superseded
-        const batch = syncFilteredJobs.slice(i, i + BATCH);
-        const resolved = await Promise.all(
-          batch.map(async (job): Promise<JobListItem | null> => {
-            const loc = job.location?.trim() ?? "";
-            // No location or explicitly remote → always include
-            if (!loc || /remote/i.test(loc)) return job;
-            const coords = await geocodeLocation(loc);
-            // Can't geocode → include (benefit of the doubt)
-            if (!coords) return job;
-            return distanceMiles(cLat, cLng, coords[0], coords[1]) <= radius ? job : null;
-          })
-        );
-        result.push(...(resolved.filter(Boolean) as JobListItem[]));
-      }
-
-      if (geoRunRef.current === gen) {
-        setGeoFilteredJobs(result);
-        setGeoLoading(false);
-      }
-    }
-
-    void run();
-  }, [geoCenter, filters.locationRadius, syncFilteredJobs]);
-
-  const visibleJobs = geoFilteredJobs ?? syncFilteredJobs;
-
   const hasActiveFilters =
     filters.keyword !== "" ||
-    filters.location !== "" ||
-    filters.salaryMin !== "" ||
-    filters.locationZip !== "" ||
-    filters.locationRadius !== "";
+    filters.locationRegion !== "" ||
+    filters.salaryMin !== "";
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -407,12 +326,12 @@ export default function JobsPage() {
 
       {canUseJobFilters && (
         <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: 12, marginBottom: 14 }}>
-          {/* Row 1: keyword, location dropdown, salary */}
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))",
+              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr auto",
               gap: 10,
+              alignItems: "center",
             }}
           >
             <input
@@ -424,15 +343,13 @@ export default function JobsPage() {
             />
 
             <select
-              value={filters.location}
-              onChange={(e) => setFilters((prev) => ({ ...prev, location: e.target.value }))}
+              value={filters.locationRegion}
+              onChange={(e) => setFilters((prev) => ({ ...prev, locationRegion: e.target.value }))}
               style={inputStyle}
             >
               <option value="">All locations</option>
-              {locationOptions.map((loc) => (
-                <option key={loc} value={loc}>
-                  {loc}
-                </option>
+              {regionOptions.map((r) => (
+                <option key={r} value={r}>{r}</option>
               ))}
             </select>
 
@@ -452,56 +369,11 @@ export default function JobsPage() {
                 </option>
               ))}
             </select>
-          </div>
-
-          {/* Row 2: zip + radius */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr auto",
-              gap: 10,
-              marginTop: 10,
-              alignItems: "center",
-            }}
-          >
-            <input
-              type="text"
-              inputMode="numeric"
-              maxLength={5}
-              value={filters.locationZip}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, "").slice(0, 5);
-                setFilters((prev) => ({ ...prev, locationZip: val }));
-              }}
-              placeholder="ZIP code (for radius search)"
-              style={inputStyle}
-            />
-
-            <select
-              value={filters.locationRadius}
-              onChange={(e) =>
-                setFilters((prev) => ({
-                  ...prev,
-                  locationRadius: e.target.value === "" ? "" : (Number(e.target.value) as LocationRadius),
-                }))
-              }
-              style={inputStyle}
-            >
-              {RADIUS_OPTIONS.map((o) => (
-                <option key={String(o.value)} value={String(o.value)}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
 
             {hasActiveFilters && (
               <button
                 type="button"
-                onClick={() => {
-                  setFilters(DEFAULT_FILTERS);
-                  setGeoCenter(null);
-                  setGeoFilteredJobs(null);
-                }}
+                onClick={() => setFilters(DEFAULT_FILTERS)}
                 style={{
                   padding: "8px 14px",
                   borderRadius: 8,
@@ -518,23 +390,6 @@ export default function JobsPage() {
               </button>
             )}
           </div>
-
-          {/* ZIP without radius (or vice versa) hint */}
-          {filters.locationZip.length === 5 && !filters.locationRadius && (
-            <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted }}>
-              Select a distance above to filter by location radius.
-            </div>
-          )}
-          {filters.locationRadius && !filters.locationZip && (
-            <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted }}>
-              Enter a ZIP code above to filter by distance.
-            </div>
-          )}
-          {filters.locationZip.length === 5 && filters.locationRadius && !geoCenter && !geoLoading && (
-            <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted }}>
-              ZIP code not found — try a different ZIP.
-            </div>
-          )}
         </div>
       )}
 
@@ -624,10 +479,6 @@ export default function JobsPage() {
 
       {loading ? (
         <div style={{ fontSize: 14, color: t.textMuted }}>Loading jobs...</div>
-      ) : geoLoading ? (
-        <div style={{ fontSize: 14, color: t.textMuted }}>
-          Locating jobs near {filters.locationZip}…
-        </div>
       ) : visibleJobs.length === 0 ? (
         <div style={{ fontSize: 14, color: t.textMuted }}>No approved jobs found{hasActiveFilters ? " matching your filters" : ""}.</div>
       ) : (

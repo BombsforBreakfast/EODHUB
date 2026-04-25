@@ -674,7 +674,7 @@ export default function HomePage() {
   const [jobsTotalApprovedCount, setJobsTotalApprovedCount] = useState<number | null>(null);
   const [jobsNewTodayCount, setJobsNewTodayCount] = useState<number | null>(null);
   const [jobSort, setJobSort] = useState<"recent" | "az" | "za">("recent");
-  const [jobFilters, setJobFilters] = useState<JobFilterState>({ location: "", keyword: "", salaryMin: "", locationZip: "", locationRadius: "" });
+  const [jobFilters, setJobFilters] = useState<JobFilterState>({ keyword: "", locationRegion: "", salaryMin: "" });
   const [canViewFullJobs, setCanViewFullJobs] = useState(true);
   const [canUseJobFilters, setCanUseJobFilters] = useState(true);
   const [showJobsUpgradePrompt, setShowJobsUpgradePrompt] = useState(false);
