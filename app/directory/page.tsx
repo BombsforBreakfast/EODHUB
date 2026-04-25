@@ -281,22 +281,14 @@ export default function DirectoryPage() {
       <div style={{ width: "100%", boxSizing: "border-box" }}>
 
         {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
-          <div>
-            <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0, color: t.text }}>Unit Directory</h1>
-            <p style={{ margin: "4px 0 0", color: t.textMuted, fontSize: 14 }}>
-              EOD teams, bomb squads, and related units — stateside and overseas.
-            </p>
-          </div>
-          <button
-            onClick={openSubmitModal}
-            style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: "pointer", whiteSpace: "nowrap" }}
-          >
-            + Submit a Unit
-          </button>
+        <div style={{ marginBottom: 16 }}>
+          <h1 style={{ fontSize: 28, fontWeight: 900, margin: 0, color: t.text }}>Unit Directory</h1>
+          <p style={{ margin: "4px 0 0", color: t.textMuted, fontSize: 14 }}>
+            Making it easy to contact your EOD units and Civilian / Federal Bomb Squads — stateside and overseas.
+          </p>
         </div>
 
-        {/* Filters */}
+        {/* Filters + Submit inline */}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
           <select
             value={stateFilter}
@@ -319,6 +311,12 @@ export default function DirectoryPage() {
             <option value="all">All Types</option>
             {ORG_TYPES.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
+          <button
+            onClick={openSubmitModal}
+            style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", whiteSpace: "nowrap" }}
+          >
+            + Submit a Unit
+          </button>
         </div>
 
         {/* Don't see your location */}

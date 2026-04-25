@@ -395,7 +395,7 @@ export default function UnitsPage() {
                   type="text"
                   value={groupFilter}
                   onChange={(e) => setGroupFilter(e.target.value)}
-                  placeholder="Find a unit…"
+                  placeholder="Find a group…"
                   aria-label="Filter groups on this page"
                   style={{ border: "none", outline: "none", fontSize: 14, flex: "1 1 120px", minWidth: 0, background: "transparent", color: t.text }}
                 />

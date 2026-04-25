@@ -8,6 +8,7 @@ import {
   BusinessListingRow,
   getBizTypePriority,
   httpsAssetUrl,
+  isBizListingTagsMissingColumnError,
   isBizListingTypeMissingColumnError,
   isPermanentlyFeaturedListing,
   normalizeBizListingTypeForListing,
@@ -17,6 +18,9 @@ import {
   sectionTitleLinkZoom,
   type BizListingType,
 } from "./masterShared";
+import { BizListingTagsField } from "../biz/BizListingTagsField";
+import { BizListingTagChips } from "../biz/BizListingTagChips";
+import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../../lib/bizListingTags";
 
 type DesktopConversation = {
   id: string;
@@ -86,6 +90,7 @@ export default function MasterRightColumn({
   const [fetchingBizOg, setFetchingBizOg] = useState(false);
   const [submittingBiz, setSubmittingBiz] = useState(false);
   const [bizSubmitSuccess, setBizSubmitSuccess] = useState(false);
+  const [bizTags, setBizTags] = useState<string[]>([]);
   const bizOgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [likedBizIds, setLikedBizIds] = useState<Set<string>>(new Set());
@@ -333,6 +338,8 @@ export default function MasterRightColumn({
     if (!url || !bizName.trim()) return;
     try {
       setSubmittingBiz(true);
+      const tagList = normalizeBizTagsInput(bizTags);
+      for (const x of tagList) rememberCustomBizTag(x);
       const basePayload = {
         website_url: url,
         business_name: bizName.trim(),
@@ -343,15 +350,30 @@ export default function MasterRightColumn({
         og_site_name: bizOgPreview?.siteName ?? null,
         is_approved: false,
         is_featured: false,
+        tags: tagList,
       };
-      const { error } = await supabase.from("business_listings").insert([{ ...basePayload, listing_type: bizType }]);
-      if (error && isBizListingTypeMissingColumnError(error)) {
-        const legacy = await supabase.from("business_listings").insert([basePayload]);
-        if (legacy.error) {
-          alert(legacy.error.message);
-          return;
+      let { error } = await supabase.from("business_listings").insert([{ ...basePayload, listing_type: bizType }]);
+      if (error && isBizListingTagsMissingColumnError(error)) {
+        const { tags: _drop, ...noTags } = basePayload;
+        const r2 = await supabase.from("business_listings").insert([{ ...noTags, listing_type: bizType }]);
+        error = r2.error;
+        if (error && isBizListingTypeMissingColumnError(error)) {
+          const r3 = await supabase.from("business_listings").insert([noTags]);
+          error = r3.error;
+        }
+      } else if (error && isBizListingTypeMissingColumnError(error)) {
+        const r2 = await supabase.from("business_listings").insert([basePayload]);
+        error = r2.error;
+        if (error && isBizListingTagsMissingColumnError(error)) {
+          const { tags: _drop, ...noTags } = basePayload;
+          const r3 = await supabase.from("business_listings").insert([noTags]);
+          error = r3.error;
         }
       } else if (error) {
+        alert(error.message);
+        return;
+      }
+      if (error) {
         alert(error.message);
         return;
       }
@@ -360,6 +382,7 @@ export default function MasterRightColumn({
       setBizName("");
       setBizBlurb("");
       setBizType("business");
+      setBizTags([]);
       setBizOgPreview(null);
       setTimeout(() => {
         setBizSubmitSuccess(false);
@@ -486,7 +509,7 @@ export default function MasterRightColumn({
             cursor: "pointer",
           }}
         >
-          Businesses
+          Biz/Orgs/Resources
         </Link>
       </aside>
     );
@@ -624,7 +647,7 @@ export default function MasterRightColumn({
               cursor: "pointer",
             }}
           >
-            Businesses/Orgs
+            Biz/Orgs/Resources
           </Link>
           <a href="/businesses" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
             See all →
@@ -706,6 +729,8 @@ export default function MasterRightColumn({
                     />
                   </div>
 
+                  <BizListingTagsField value={bizTags} onChange={setBizTags} />
+
                   <div style={{ fontSize: 11, color: t.textFaint, marginBottom: 10 }}>Submissions are reviewed by our team before going live.</div>
 
                   <button
@@ -774,6 +799,9 @@ export default function MasterRightColumn({
                       <div style={{ marginTop: 8, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>{displayDescription}</div>
                     </div>
                   </a>
+                  <div style={{ padding: "0 14px 8px" }}>
+                    <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} />
+                  </div>
                   <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Business</span>
                     <button
@@ -833,6 +861,9 @@ export default function MasterRightColumn({
                       <div style={{ marginTop: 8, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>{displayDescription}</div>
                     </div>
                   </a>
+                  <div style={{ padding: "0 14px 8px" }}>
+                    <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} />
+                  </div>
 
                   <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>

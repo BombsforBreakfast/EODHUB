@@ -26,6 +26,7 @@ import type {
   KangarooCourtRow,
   KangarooCourtVerdictRow,
 } from "../../../lib/kangarooCourt";
+import { sanitizeRumintOgDescription } from "../../../lib/sanitizeRumintOgDescription";
 
 type Profile = {
   user_id: string;
@@ -3060,6 +3061,9 @@ export default function PublicProfilePage() {
                           Specialized Training: <span style={{ color: t.textMuted }}>{normalizeTagArray(profile.specialized_training).length > 0 ? `${normalizeTagArray(profile.specialized_training).length} added` : "Not added"}</span>
                         </div>
                       </div>
+                      <p style={{ margin: "10px 0 0", fontSize: 11, lineHeight: 1.4, color: t.textFaint, textAlign: "center" }}>
+                        use desktop for full view
+                      </p>
                     </div>
                   )}
                   {isOwnWall && (profile.referral_code || !editingProfile) && (
@@ -3124,7 +3128,7 @@ export default function PublicProfilePage() {
                             cursor: "pointer",
                           }}
                         >
-                          {showDesktopProfileBack ? "See front of profile" : "See back of profile"}
+                          {showDesktopProfileBack ? "See front of profile" : "Employment information"}
                         </button>
                       )}
                     </div>
@@ -3510,7 +3514,7 @@ export default function PublicProfilePage() {
                           cursor: "pointer",
                         }}
                       >
-                        {showDesktopProfileBack ? "See front of profile" : "See back of profile"}
+                        {showDesktopProfileBack ? "See front of profile" : "Employment information"}
                       </button>
                     )}
                   </div>
@@ -4374,7 +4378,14 @@ export default function PublicProfilePage() {
                         </Link>
                       </div>
                     )}
-                    {post.content && <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>}
+                    {post.content &&
+                      !(
+                        post.user_id === RUMINT_USER_ID &&
+                        post.og_url &&
+                        (post.og_title || post.og_image)
+                      ) && (
+                      <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>
+                    )}
 
                     {post.gif_url && (
                       <div style={{ marginTop: 10 }}>
@@ -4397,8 +4408,19 @@ export default function PublicProfilePage() {
                         );
                       }
                       if (post.og_title || post.og_image) {
+                        const rumintStyle = post.user_id === RUMINT_USER_ID;
                         return (
-                          <OgCard og={{ url: post.og_url, title: post.og_title, description: post.og_description, image: post.og_image, siteName: post.og_site_name }} />
+                          <OgCard
+                            og={{
+                              url: post.og_url,
+                              title: post.og_title,
+                              description: rumintStyle
+                                ? sanitizeRumintOgDescription(post.og_description)
+                                : post.og_description,
+                              image: post.og_image,
+                              siteName: post.og_site_name,
+                            }}
+                          />
                         );
                       }
                       return null;
@@ -4763,19 +4785,19 @@ export default function PublicProfilePage() {
                 <span style={{ fontSize: 12, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>
                   Add
                 </span>
-                <a
-                  href="/events"
+                <Link
+                  href="/events?add=memorial"
                   style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
                 >
                   Memorial
-                </a>
+                </Link>
                 <span style={{ fontSize: 11, color: t.textFaint }}>|</span>
-                <a
-                  href="/events"
+                <Link
+                  href="/events?add=event"
                   style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
                 >
                   Event
-                </a>
+                </Link>
               </div>
               <div style={{ marginBottom: 10 }}>
                 <a href="/events" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>

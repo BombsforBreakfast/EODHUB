@@ -4,7 +4,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
-import { isBizListingTypeMissingColumnError, normalizeUrl, OgCard, type BizListingType } from "../components/master/masterShared";
+import {
+  isBizListingTagsMissingColumnError,
+  isBizListingTypeMissingColumnError,
+  normalizeUrl,
+  OgCard,
+  type BizListingType,
+} from "../components/master/masterShared";
+import { BizListingTagsField } from "../components/biz/BizListingTagsField";
+import { BizListingTagChips } from "../components/biz/BizListingTagChips";
+import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 
 type BizPageFilter = "all" | BizListingType;
 type BizFilterState = {
@@ -26,10 +35,11 @@ type BusinessListing = {
   is_featured: boolean;
   like_count: number;
   listing_type?: "business" | "organization" | "resource" | null;
+  tags?: string[] | null;
 };
 
 const BUSINESS_LISTING_COLUMNS =
-  "id, created_at, business_name, website_url, custom_blurb, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type";
+  "id, created_at, business_name, website_url, custom_blurb, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags";
 
 function httpsAssetUrl(url: string | null | undefined): string {
   if (!url?.trim()) return "";
@@ -87,6 +97,7 @@ export default function BusinessesPage() {
   const [fetchingBizOg, setFetchingBizOg] = useState(false);
   const [submittingBiz, setSubmittingBiz] = useState(false);
   const [bizSubmitSuccess, setBizSubmitSuccess] = useState(false);
+  const [bizTags, setBizTags] = useState<string[]>([]);
   const bizOgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -198,6 +209,9 @@ export default function BusinessesPage() {
     if (!url || !bizName.trim()) return;
     try {
       setSubmittingBiz(true);
+      const tagList = normalizeBizTagsInput(bizTags);
+      for (const x of tagList) rememberCustomBizTag(x);
+
       const basePayload = {
         website_url: url,
         business_name: bizName.trim(),
@@ -208,15 +222,32 @@ export default function BusinessesPage() {
         og_site_name: bizOgPreview?.siteName ?? null,
         is_approved: false,
         is_featured: false,
+        tags: tagList,
       };
-      const { error } = await supabase.from("business_listings").insert([{ ...basePayload, listing_type: bizType }]);
-      if (error && isBizListingTypeMissingColumnError(error)) {
-        const legacy = await supabase.from("business_listings").insert([basePayload]);
-        if (legacy.error) {
-          alert(legacy.error.message);
-          return;
+      let { error } = await supabase
+        .from("business_listings")
+        .insert([{ ...basePayload, listing_type: bizType }]);
+      if (error && isBizListingTagsMissingColumnError(error)) {
+        const { tags: _drop, ...noTags } = basePayload;
+        const r2 = await supabase.from("business_listings").insert([{ ...noTags, listing_type: bizType }]);
+        error = r2.error;
+        if (error && isBizListingTypeMissingColumnError(error)) {
+          const r3 = await supabase.from("business_listings").insert([noTags]);
+          error = r3.error;
+        }
+      } else if (error && isBizListingTypeMissingColumnError(error)) {
+        const r2 = await supabase.from("business_listings").insert([basePayload]);
+        error = r2.error;
+        if (error && isBizListingTagsMissingColumnError(error)) {
+          const { tags: _drop, ...noTags } = basePayload;
+          const r3 = await supabase.from("business_listings").insert([noTags]);
+          error = r3.error;
         }
       } else if (error) {
+        alert(error.message);
+        return;
+      }
+      if (error) {
         alert(error.message);
         return;
       }
@@ -225,6 +256,7 @@ export default function BusinessesPage() {
       setBizName("");
       setBizBlurb("");
       setBizType("business");
+      setBizTags([]);
       setBizOgPreview(null);
       setTimeout(() => {
         setBizSubmitSuccess(false);
@@ -250,6 +282,7 @@ export default function BusinessesPage() {
         l.custom_blurb ?? "",
         l.website_url ?? "",
         normalizeBizListingTypeForListing(l),
+        ...(Array.isArray(l.tags) ? l.tags : []).join(" "),
       ]
         .join(" ")
         .toLowerCase();
@@ -367,6 +400,8 @@ export default function BusinessesPage() {
                 />
               </div>
 
+              <BizListingTagsField value={bizTags} onChange={setBizTags} />
+
               <button
                 type="button"
                 onClick={submitBizListing}
@@ -454,6 +489,9 @@ export default function BusinessesPage() {
                     </div>
                   </div>
                 </a>
+                <div style={{ padding: "0 14px 8px" }}>
+                  <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} />
+                </div>
                 <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", gap: 6 }}>
                   {(listing.is_featured || isPermanentlyFeaturedListing(listing)) ? (
                     <span style={{ fontSize: 11, fontWeight: 800, color: "#111", background: "#fef9c3", padding: "2px 8px", borderRadius: 20 }}>

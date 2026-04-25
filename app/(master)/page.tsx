@@ -32,6 +32,9 @@ import { KangarooCourtVerdictBanner } from "../components/KangarooCourtVerdictBa
 import DesktopLayout from "../components/DesktopLayout";
 import { useMasterShell } from "../components/master/masterShellContext";
 import { sectionTitleLinkZoom } from "../components/master/masterShared";
+import { BizListingTagsField } from "../components/biz/BizListingTagsField";
+import { BizListingTagChips } from "../components/biz/BizListingTagChips";
+import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 import { Award, UserCircle2, Play, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
 import { applyJobFilters, uniqueJobRegions, type JobFilterState } from "../lib/jobFilters";
@@ -55,6 +58,7 @@ import {
   FEED_POST_EMBED_MAX_WIDTH,
   FEED_POST_IMAGES_MAX_WIDTH,
 } from "../lib/feedLayout";
+import { sanitizeRumintOgDescription } from "../lib/sanitizeRumintOgDescription";
 type Job = {
   id: string;
   created_at: string | null;
@@ -122,12 +126,13 @@ type BusinessListing = {
   is_featured: boolean;
   like_count: number;
   listing_type?: "business" | "organization" | "resource" | null;
+  tags?: string[] | null;
 };
 
 const JOB_COLUMNS =
   "id, created_at, title, category, location, pay_min, pay_max, clearance, description, apply_url, company_name, is_approved, source_type, user_id, og_title, og_description, og_image, og_site_name, anonymous";
 const BUSINESS_LISTING_COLUMNS =
-  "id, created_at, business_name, website_url, custom_blurb, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type";
+  "id, created_at, business_name, website_url, custom_blurb, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags";
 const PERF_DEBUG = process.env.NODE_ENV !== "production";
 
 function perfNowMs(): number {
@@ -497,6 +502,11 @@ function isBizListingTypeMissingColumnError(error: unknown): boolean {
   return msg.includes("column") && msg.includes("listing_type");
 }
 
+function isBizListingTagsMissingColumnError(error: unknown): boolean {
+  const msg = (error as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
+  return msg.includes("column") && msg.includes("tags");
+}
+
 const BARE_DOMAIN_RE = /\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/;
 const URL_PATTERN_G = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -715,6 +725,7 @@ export default function HomePage() {
   const [fetchingBizOg, setFetchingBizOg] = useState(false);
   const [submittingBiz, setSubmittingBiz] = useState(false);
   const [bizSubmitSuccess, setBizSubmitSuccess] = useState(false);
+  const [bizTags, setBizTags] = useState<string[]>([]);
   const bizOgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [submittingPost, setSubmittingPost] = useState(false);
@@ -3144,6 +3155,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     if (!url || !bizName.trim()) return;
     try {
       setSubmittingBiz(true);
+      const tagList = normalizeBizTagsInput(bizTags);
+      for (const x of tagList) rememberCustomBizTag(x);
       const basePayload = {
         website_url: url,
         business_name: bizName.trim(),
@@ -3154,15 +3167,29 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         og_site_name: bizOgPreview?.siteName ?? null,
         is_approved: false,
         is_featured: false,
+        tags: tagList,
       };
-      const { error } = await supabase.from("business_listings").insert([{ ...basePayload, listing_type: bizType }]);
-      if (error && isBizListingTypeMissingColumnError(error)) {
-        // Backward compatibility for instances not yet migrated.
-        const legacy = await supabase.from("business_listings").insert([basePayload]);
-        if (legacy.error) { alert(legacy.error.message); return; }
+      let { error } = await supabase.from("business_listings").insert([{ ...basePayload, listing_type: bizType }]);
+      if (error && isBizListingTagsMissingColumnError(error)) {
+        const { tags: _drop, ...noTags } = basePayload;
+        const r2 = await supabase.from("business_listings").insert([{ ...noTags, listing_type: bizType }]);
+        error = r2.error;
+        if (error && isBizListingTypeMissingColumnError(error)) {
+          const r3 = await supabase.from("business_listings").insert([noTags]);
+          error = r3.error;
+        }
+      } else if (error && isBizListingTypeMissingColumnError(error)) {
+        const r2 = await supabase.from("business_listings").insert([basePayload]);
+        error = r2.error;
+        if (error && isBizListingTagsMissingColumnError(error)) {
+          const { tags: _drop, ...noTags } = basePayload;
+          const r3 = await supabase.from("business_listings").insert([noTags]);
+          error = r3.error;
+        }
       } else if (error) { alert(error.message); return; }
+      if (error) { alert(error.message); return; }
       setBizSubmitSuccess(true);
-      setBizUrl(""); setBizName(""); setBizBlurb(""); setBizType("business"); setBizOgPreview(null);
+      setBizUrl(""); setBizName(""); setBizBlurb(""); setBizType("business"); setBizTags([]); setBizOgPreview(null);
       setTimeout(() => { setBizSubmitSuccess(false); setShowBizForm(false); }, 3000);
     } finally { setSubmittingBiz(false); }
   }
@@ -5067,7 +5094,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           </Link>
                         </div>
                       )}
-                      {post.content_type === "news" && (
+                      {(post.content_type === "news" || post.user_id === RUMINT_USER_ID) && (
                         <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11 }}>
                           <span
                             style={{
@@ -5092,7 +5119,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       {post.content &&
                         !(post.event_id && post.feed_event) &&
                         !(
-                          post.content_type === "news" &&
+                          (post.content_type === "news" || post.user_id === RUMINT_USER_ID) &&
                           post.og_url &&
                           (post.og_title || post.og_image)
                         ) && (
@@ -5121,9 +5148,22 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                             />
                           </div>
                         );
-                        if (post.og_title || post.og_image) return (
-                          <OgCard og={{ url: post.og_url, title: post.og_title, description: post.og_description, image: post.og_image, siteName: post.og_site_name }} />
-                        );
+                        if (post.og_title || post.og_image) {
+                          const rumintStyle = post.content_type === "news" || post.user_id === RUMINT_USER_ID;
+                          return (
+                            <OgCard
+                              og={{
+                                url: post.og_url,
+                                title: post.og_title,
+                                description: rumintStyle
+                                  ? sanitizeRumintOgDescription(post.og_description)
+                                  : post.og_description,
+                                image: post.og_image,
+                                siteName: post.og_site_name,
+                              }}
+                            />
+                          );
+                        }
                         return null;
                       })()}
 
@@ -6396,7 +6436,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   cursor: "pointer",
                 }}
               >
-                Businesses / Orgs
+                Biz/Orgs/Resources
               </Link>
               <div style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>
                 {isMobile ? "Approved listings" : "Featured listings"}
@@ -6510,6 +6550,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     />
                   </div>
 
+                  <BizListingTagsField value={bizTags} onChange={setBizTags} />
+
                   <div style={{ fontSize: 11, color: t.textFaint, marginBottom: 10 }}>
                     Submissions are reviewed by our team before going live.
                   </div>
@@ -6580,6 +6622,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         </div>
                       </div>
                     </a>
+                    <div style={{ padding: "0 14px 8px" }}>
+                      <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} />
+                    </div>
                     <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
                         Business
@@ -6650,6 +6695,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       </div>
                     </div>
                   </a>
+                  <div style={{ padding: "0 14px 8px" }}>
+                    <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} />
+                  </div>
 
                   <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>

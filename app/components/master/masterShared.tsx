@@ -39,6 +39,7 @@ export type BusinessListingRow = {
   is_featured: boolean;
   like_count: number;
   listing_type?: "business" | "organization" | "resource" | null;
+  tags?: string[] | null;
 };
 
 export type BizListingType = "business" | "organization" | "resource";
@@ -95,6 +96,11 @@ export function getBizTypePriority(
 export function isBizListingTypeMissingColumnError(error: unknown): boolean {
   const msg = (error as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
   return msg.includes("column") && msg.includes("listing_type");
+}
+
+export function isBizListingTagsMissingColumnError(error: unknown): boolean {
+  const msg = (error as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
+  return msg.includes("column") && msg.includes("tags");
 }
 
 type OgPreview = {

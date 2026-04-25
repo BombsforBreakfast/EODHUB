@@ -13,6 +13,9 @@ import {
   sumAdminPending,
 } from "../lib/adminPendingCounts";
 import { FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
+import { BizListingTagsField } from "../components/biz/BizListingTagsField";
+import { BizListingTagChips } from "../components/biz/BizListingTagChips";
+import { coerceTagsFromDb, normalizeBizTagsInput } from "../lib/bizListingTags";
 
 type BusinessListing = {
   id: string;
@@ -26,6 +29,7 @@ type BusinessListing = {
   og_site_name: string | null;
   is_approved: boolean;
   is_featured: boolean;
+  tags?: string[] | null;
 };
 
 type Job = {
@@ -206,6 +210,7 @@ type BizEdit = {
   og_description: string;
   og_image: string;
   custom_blurb: string;
+  tags: string[];
 };
 
 type Memorial = {
@@ -1322,6 +1327,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       og_description: biz.og_description || "",
       og_image: biz.og_image || "",
       custom_blurb: biz.custom_blurb || "",
+      tags: coerceTagsFromDb(biz.tags),
     });
   }
 
@@ -1339,7 +1345,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function saveBizEdit() {
     if (!editingBiz) return;
     setActionLoading(editingBiz.id + "-edit");
-    const { error } = await supabase
+    const tagList = normalizeBizTagsInput(editingBiz.tags);
+    let { error } = await supabase
       .from("business_listings")
       .update({
         business_name: editingBiz.business_name || null,
@@ -1347,8 +1354,25 @@ const [memWizUrl, setMemWizUrl] = useState("");
         og_description: editingBiz.og_description || null,
         og_image: editingBiz.og_image || null,
         custom_blurb: editingBiz.custom_blurb || null,
+        tags: tagList,
       })
       .eq("id", editingBiz.id);
+    if (error) {
+      const msg = (error as { message?: string }).message?.toLowerCase() ?? "";
+      if (msg.includes("tags") && msg.includes("column")) {
+        const r2 = await supabase
+          .from("business_listings")
+          .update({
+            business_name: editingBiz.business_name || null,
+            og_title: editingBiz.og_title || null,
+            og_description: editingBiz.og_description || null,
+            og_image: editingBiz.og_image || null,
+            custom_blurb: editingBiz.custom_blurb || null,
+          })
+          .eq("id", editingBiz.id);
+        error = r2.error;
+      }
+    }
     if (error) { alert(error.message); } else { showToast("Listing updated!"); setEditingBiz(null); await loadBusinesses(); }
     setActionLoading(null);
   }
@@ -2024,6 +2048,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           <a href={biz.website_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "#1d4ed8", wordBreak: "break-all" }}>{biz.website_url}</a>
                           {biz.custom_blurb && <div style={{ marginTop: 6, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>{biz.custom_blurb}</div>}
                           {biz.og_description && !biz.custom_blurb && <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>{biz.og_description}</div>}
+                          <BizListingTagChips tags={coerceTagsFromDb(biz.tags)} />
                           <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint }}>{new Date(biz.created_at).toLocaleDateString()}</div>
                         </div>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
@@ -2106,6 +2131,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           placeholder="Custom description shown on the listing"
                         />
                       </div>
+                      <BizListingTagsField
+                        value={editingBiz.tags}
+                        onChange={(next) => setEditingBiz({ ...editingBiz, tags: next })}
+                      />
                       <div>
                         <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 4 }}>Photo</label>
                         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

@@ -909,13 +909,19 @@ export default function MasterLeftColumn({
         </div>
         <div style={{ display: "flex", gap: 6, marginBottom: 10, alignItems: "center" }}>
           <span style={{ fontSize: 12, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.3 }}>Add</span>
-          <a href="/events" style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}>
+          <Link
+            href="/events?add=memorial"
+            style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
+          >
             Memorial
-          </a>
+          </Link>
           <span style={{ fontSize: 11, color: t.textFaint }}>|</span>
-          <a href="/events" style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}>
+          <Link
+            href="/events?add=event"
+            style={{ color: "#2563eb", fontWeight: 700, fontSize: 12, textDecoration: "none", lineHeight: 1.2 }}
+          >
             Event
-          </a>
+          </Link>
         </div>
 
         <div

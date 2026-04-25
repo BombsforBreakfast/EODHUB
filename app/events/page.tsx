@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../lib/lib/supabaseClient";
 import ImageCropDialog from "../components/ImageCropDialog";
 import { ASPECT_EVENT_COVER } from "../lib/imageCropTargets";
@@ -110,8 +110,11 @@ export default function EventsPage() {
 }
 
 function EventsPageInner() {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const deepLinkEventId = searchParams?.get("event") ?? null;
+  const deepLinkAdd = searchParams?.get("add")?.toLowerCase() ?? null;
   const today = new Date();
 
   const [year, setYear] = useState(today.getFullYear());
@@ -751,6 +754,25 @@ function EventsPageInner() {
       cancelled = true;
     };
   }, [deepLinkEventId, userId]);
+
+  // Deep-link: `/events?add=event` or `?add=memorial` opens the create form (e.g. from
+  // master left column or profile). Scrub `add` after opening so refresh doesn’t re-open.
+  useEffect(() => {
+    if (!deepLinkAdd) return;
+    if (deepLinkAdd === "event") {
+      setShowEventForm(true);
+      setShowMemorialForm(false);
+    } else if (deepLinkAdd === "memorial") {
+      setShowMemorialForm(true);
+      setShowEventForm(false);
+    } else {
+      return;
+    }
+    const p = new URLSearchParams(searchParams?.toString() ?? "");
+    p.delete("add");
+    const q = p.toString();
+    router.replace(q ? `${pathname}?${q}` : (pathname || "/events"), { scroll: false });
+  }, [deepLinkAdd, pathname, router, searchParams]);
 
   useEffect(() => {
     if (!selectedEvent?.id) return;
