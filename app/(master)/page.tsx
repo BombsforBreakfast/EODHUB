@@ -5,7 +5,6 @@ import Image from "next/image";
 import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/lib/supabaseClient";
-import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 import EmojiPickerButton from "../components/EmojiPickerButton";
 import GifPickerButton from "../components/GifPickerButton";
@@ -6137,8 +6136,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         color: t.text,
       }}
     >
-      <NavBar />
-
 
       <DesktopLayout
         isMobile={isMobile}

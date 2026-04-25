@@ -4,7 +4,6 @@ import React, { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/lib/supabaseClient";
-import NavBar from "../../../components/NavBar";
 import DesktopLayout from "../../../components/DesktopLayout";
 import ImageCropDialog from "../../../components/ImageCropDialog";
 import { useTheme } from "../../../lib/ThemeContext";
@@ -2391,7 +2390,6 @@ export default function PublicProfilePage() {
   if (!loading && !profile) {
     return (
       <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
-        {!isDesktopShell && <NavBar />}
         <div style={{ marginTop: 20 }}>Profile not found.</div>
       </div>
     );
@@ -2400,7 +2398,6 @@ export default function PublicProfilePage() {
   if (!loading && profile?.user_id === RUMINT_USER_ID) {
     return (
       <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
-        {!isDesktopShell && <NavBar />}
         <div
           style={{
             marginTop: 20,
@@ -2426,7 +2423,6 @@ export default function PublicProfilePage() {
   if (!loading && profile?.is_pure_admin) {
     return (
       <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
-        {!isDesktopShell && <NavBar />}
         <div
           style={{
             marginTop: 20,
@@ -4697,7 +4693,6 @@ export default function PublicProfilePage() {
 
       {!isDesktopShell ? (
     <div style={{ padding: "24px 16px", background: t.bg, minHeight: "100vh", color: t.text, width: "100%", maxWidth: "100%", boxSizing: "border-box", overflowX: "clip" }}>
-      <NavBar />
 
       {/* Mobile unread messages banner ΓÇö own wall only */}
       {isMobile && isOwnWall && (

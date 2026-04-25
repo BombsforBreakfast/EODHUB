@@ -114,7 +114,23 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   );
 
   if (!isDesktop) {
-    return <MasterShellProvider value={ctxValue}>{children}</MasterShellProvider>;
+    return (
+      <MasterShellProvider value={ctxValue}>
+        <div
+          className="master-shell-mobile"
+          style={{
+            minHeight: "100vh",
+            width: "100%",
+            boxSizing: "border-box",
+            background: t.bg,
+            color: t.text,
+          }}
+        >
+          <NavBar />
+          {children}
+        </div>
+      </MasterShellProvider>
+    );
   }
 
   return (

@@ -2,12 +2,10 @@
 
 import React, { useEffect, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
-import NavBar from "../../components/NavBar";
 import { useTheme } from "../../lib/ThemeContext";
 import ReportProblemButton from "../../components/ReportProblemButton";
 import PrivacySettingsCard from "../../components/account/PrivacySettingsCard";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
-import { useMasterShell } from "../../components/master/masterShellContext";
 
 function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null }) {
   const { t } = useTheme();
@@ -212,14 +210,10 @@ export default function MyAccountPage() {
   }, [profile?.is_admin]);
 
   const { t, isDark, toggleDark } = useTheme();
-  const { isDesktopShell } = useMasterShell();
-
   const card: React.CSSProperties = { border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface };
 
   return (
     <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "12px 20px 24px", boxSizing: "border-box" as const, background: t.bg, minHeight: "100vh", color: t.text }}>
-      {!isDesktopShell && <NavBar />}
-
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
       <h1 style={{ fontSize: 32, fontWeight: 900, marginTop: 6, color: t.text }}>My Account</h1>
       <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.55, marginTop: 10, marginBottom: 0 }}>

@@ -7,7 +7,6 @@ import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib
 import { postNotifyJson } from "../../../lib/postNotifyClient";
 import { supabase } from "../../../lib/lib/supabaseClient";
 import { useTheme } from "../../../lib/ThemeContext";
-import NavBar from "../../../components/NavBar";
 import GifPickerButton from "../../../components/GifPickerButton";
 import EmojiPickerButton from "../../../components/EmojiPickerButton";
 import { useMasterShell } from "../../../components/master/masterShellContext";
@@ -605,7 +604,6 @@ export default function UnitPage() {
   };
 
   const padX = { paddingLeft: "max(20px, env(safe-area-inset-left))", paddingRight: "max(20px, env(safe-area-inset-right))" } as const;
-  const navShell: CSSProperties = { width: "100%", boxSizing: "border-box", paddingTop: 24, background: t.bg, ...padX };
   const bodyShell: CSSProperties = {
     maxWidth: 860,
     margin: "0 auto",
@@ -618,11 +616,6 @@ export default function UnitPage() {
   if (loading) {
     return (
       <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-        {!isDesktopShell && (
-          <div style={navShell}>
-            <NavBar />
-          </div>
-        )}
         <div style={bodyShell}>
           <div style={{ color: t.textMuted, textAlign: "center", padding: 60 }}>Loading...</div>
         </div>
@@ -633,11 +626,6 @@ export default function UnitPage() {
   if (notFound || !unit) {
     return (
       <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-        {!isDesktopShell && (
-          <div style={navShell}>
-            <NavBar />
-          </div>
-        )}
         <div style={bodyShell}>
           <div style={{ textAlign: "center", padding: 60 }}>
             <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 8 }}>Unit not found</div>
@@ -652,11 +640,6 @@ export default function UnitPage() {
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
-      {!isDesktopShell && (
-        <div style={navShell}>
-          <NavBar />
-        </div>
-      )}
       <div style={bodyShell}>
         {/* Back */}
         <a href="/units" style={{ color: t.textMuted, fontSize: 13, fontWeight: 700, textDecoration: "none", display: "inline-block", marginBottom: 16 }}>

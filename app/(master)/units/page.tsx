@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
-import NavBar from "../../components/NavBar";
 import { useMasterShell } from "../../components/master/masterShellContext";
 import ImageCropDialog from "../../components/ImageCropDialog";
 import { ASPECT_UNIT_COVER } from "../../lib/imageCropTargets";
@@ -325,20 +324,6 @@ export default function UnitsPage() {
           closeCoverCrop();
         }}
       />
-      {/* Full-width nav (not constrained by content max-width); MasterShell provides nav on desktop */}
-      {!isDesktopShell && (
-      <div
-        style={{
-          width: "100%",
-          boxSizing: "border-box",
-          paddingTop: 24,
-          background: t.bg,
-          ...padX,
-        }}
-      >
-        <NavBar />
-      </div>
-      )}
       <div
         style={{
           width: "100%",
