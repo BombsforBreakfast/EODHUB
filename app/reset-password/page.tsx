@@ -14,26 +14,37 @@ export default function ResetPasswordPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Exchange the ?code= from the reset email for a live session.
+  // The reset email routes through /auth/callback, which exchanges the PKCE
+  // code server-side and sets the session cookie before redirecting here.
+  // All we need to do is confirm a session exists.
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get("code");
-    if (!code) {
-      setStage("invalid");
-      return;
+    let resolved = false;
+
+    function resolve(hasSession: boolean) {
+      if (resolved) return;
+      resolved = true;
+      setStage(hasSession ? "form" : "invalid");
     }
 
-    supabase.auth
-      .exchangeCodeForSession(code)
-      .then(({ error }) => {
-        if (error) {
-          setStage("invalid");
-        } else {
-          // Remove the code from the URL so a refresh doesn't re-submit it.
-          window.history.replaceState({}, "", "/reset-password");
-          setStage("form");
-        }
-      })
-      .catch(() => setStage("invalid"));
+    // Primary check: session cookie already set by /auth/callback.
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      resolve(!!session);
+    });
+
+    // Fallback: catch any async auth state change (e.g. slight cookie delay).
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
+        resolve(!!session);
+      }
+    });
+
+    // If nothing arrives within 6 s, give up.
+    const timer = setTimeout(() => resolve(false), 6000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timer);
+    };
   }, []);
 
   async function handleReset() {
