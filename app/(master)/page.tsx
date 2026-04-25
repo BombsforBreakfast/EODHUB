@@ -5089,7 +5089,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           )}
                         </div>
                       )}
-                      {post.content && !(post.event_id && post.feed_event) && (
+                      {post.content &&
+                        !(post.event_id && post.feed_event) &&
+                        !(
+                          post.content_type === "news" &&
+                          post.og_url &&
+                          (post.og_title || post.og_image)
+                        ) && (
                         <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>
                       )}
 
