@@ -11,6 +11,10 @@ import { postNotifyJson } from "../../lib/postNotifyClient";
 import UpgradePromptModal from "../UpgradePromptModal";
 import JobCardActions from "../jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../jobs/JobDetailsModal";
+import EventAttendeeAvatarRows from "../events/EventAttendeeAvatarRows";
+import { EventAttendeesListModal } from "../events/EventAttendeesListModal";
+import { fetchEventAttendeePreviews } from "../../lib/fetchEventAttendeePreviews";
+import type { PostLikerBrief } from "../PostLikersStack";
 import { collapsedRailTitleLinkZoom, httpsAssetUrl, sectionTitleLinkZoom, type JobRow } from "./masterShared";
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -144,6 +148,11 @@ export default function MasterLeftColumn({
   const [selectedEventCounts, setSelectedEventCounts] = useState<{ interested: number; going: number }>({ interested: 0, going: 0 });
   const [selectedEventMyStatus, setSelectedEventMyStatus] = useState<"interested" | "going" | null>(null);
   const [selectedEventBusy, setSelectedEventBusy] = useState(false);
+  const [selectedEventAttendeePreviews, setSelectedEventAttendeePreviews] = useState<{
+    going: PostLikerBrief[];
+    interested: PostLikerBrief[];
+  }>({ going: [], interested: [] });
+  const [leftColAttendeesListModal, setLeftColAttendeesListModal] = useState<"interested" | "going" | null>(null);
 
   function blockMemberInteraction(): boolean {
     if (memberInteractionAllowedRef.current) return false;
@@ -281,59 +290,72 @@ export default function MasterLeftColumn({
     setDesktopMemorials((memorialData ?? []) as DesktopMemorial[]);
   }, []);
 
+  const loadSelectedEventAttendeePreviews = useCallback(async (eventId: string) => {
+    const p = await fetchEventAttendeePreviews(supabase, eventId);
+    setSelectedEventAttendeePreviews(p);
+  }, []);
+
   /**
    * Open the in-place event modal. Fetches full event columns + live
    * attendance in parallel so the user sees real counts + their own RSVP
    * state without being navigated out of the current page (feed, jobs,
    * rabbithole, wherever the left rail is rendered).
    */
-  const openEventModal = useCallback(async (eventId: string) => {
-    setSelectedEventBusy(true);
-    try {
-      const [eventRes, attRes] = await Promise.all([
-        supabase
-          .from("events")
-          .select("id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone")
-          .eq("id", eventId)
-          .maybeSingle(),
-        supabase
-          .from("event_attendance")
-          .select("user_id, status")
-          .eq("event_id", eventId),
-      ]);
-      if (eventRes.error || !eventRes.data) return;
+  const openEventModal = useCallback(
+    async (eventId: string) => {
+      setSelectedEventBusy(true);
+      try {
+        const [eventRes, attRes] = await Promise.all([
+          supabase
+            .from("events")
+            .select("id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone")
+            .eq("id", eventId)
+            .maybeSingle(),
+          supabase
+            .from("event_attendance")
+            .select("user_id, status")
+            .eq("event_id", eventId),
+        ]);
+        if (eventRes.error || !eventRes.data) return;
+        let interested = 0;
+        let going = 0;
+        let mine: "interested" | "going" | null = null;
+        for (const r of (attRes.data ?? []) as Array<{ user_id: string; status: "interested" | "going" }>) {
+          if (r.status === "interested") interested += 1;
+          else if (r.status === "going") going += 1;
+          if (userId && r.user_id === userId) mine = r.status;
+        }
+        setSelectedEvent(eventRes.data as DesktopSelectedEvent);
+        setSelectedEventCounts({ interested, going });
+        setSelectedEventMyStatus(mine);
+        void loadSelectedEventAttendeePreviews(eventId);
+      } finally {
+        setSelectedEventBusy(false);
+      }
+    },
+    [userId, loadSelectedEventAttendeePreviews]
+  );
+
+  const refreshSelectedEventAttendance = useCallback(
+    async (eventId: string) => {
+      const { data } = await supabase
+        .from("event_attendance")
+        .select("user_id, status")
+        .eq("event_id", eventId);
       let interested = 0;
       let going = 0;
       let mine: "interested" | "going" | null = null;
-      for (const r of (attRes.data ?? []) as Array<{ user_id: string; status: "interested" | "going" }>) {
+      for (const r of (data ?? []) as Array<{ user_id: string; status: "interested" | "going" }>) {
         if (r.status === "interested") interested += 1;
         else if (r.status === "going") going += 1;
         if (userId && r.user_id === userId) mine = r.status;
       }
-      setSelectedEvent(eventRes.data as DesktopSelectedEvent);
       setSelectedEventCounts({ interested, going });
       setSelectedEventMyStatus(mine);
-    } finally {
-      setSelectedEventBusy(false);
-    }
-  }, [userId]);
-
-  const refreshSelectedEventAttendance = useCallback(async (eventId: string) => {
-    const { data } = await supabase
-      .from("event_attendance")
-      .select("user_id, status")
-      .eq("event_id", eventId);
-    let interested = 0;
-    let going = 0;
-    let mine: "interested" | "going" | null = null;
-    for (const r of (data ?? []) as Array<{ user_id: string; status: "interested" | "going" }>) {
-      if (r.status === "interested") interested += 1;
-      else if (r.status === "going") going += 1;
-      if (userId && r.user_id === userId) mine = r.status;
-    }
-    setSelectedEventCounts({ interested, going });
-    setSelectedEventMyStatus(mine);
-  }, [userId]);
+      void loadSelectedEventAttendeePreviews(eventId);
+    },
+    [userId, loadSelectedEventAttendeePreviews]
+  );
 
   async function toggleSelectedEventRsvp(status: "interested" | "going") {
     if (!selectedEvent) return;
@@ -577,6 +599,40 @@ export default function MasterLeftColumn({
       })
       .catch((err) => console.error("Desktop calendar load failed:", err));
   }, [sideRailsReady, desktopCalendarDate, loadDesktopCalendarData]);
+
+  useEffect(() => {
+    if (!selectedEvent) {
+      setLeftColAttendeesListModal(null);
+    }
+  }, [selectedEvent]);
+
+  useEffect(() => {
+    if (!selectedEvent?.id) return;
+    void loadSelectedEventAttendeePreviews(selectedEvent.id);
+  }, [selectedEvent?.id, loadSelectedEventAttendeePreviews]);
+
+  useEffect(() => {
+    if (!selectedEvent?.id) return;
+    const id = selectedEvent.id;
+    const ch = supabase
+      .channel(`leftcol-event-attendance-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "event_attendance",
+          filter: `event_id=eq.${id}`,
+        },
+        () => {
+          void refreshSelectedEventAttendance(id);
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [selectedEvent?.id, refreshSelectedEventAttendance]);
 
   /** The selected day is always a date string after load, but the list is often empty — we must not reserve margin/padding for an empty “day list” or the date bar looks top-heavy. */
   const hasDesktopDayCards = useMemo(() => {
@@ -1683,76 +1739,90 @@ export default function MasterLeftColumn({
               </div>
             </div>
 
-            <div style={{ padding: "14px 24px 20px", borderTop: `1px solid ${t.border}`, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-              <button
-                type="button"
-                onClick={() => toggleSelectedEventRsvp("interested")}
-                disabled={selectedEventBusy}
-                style={{
-                  border: `1px solid ${t.border}`,
-                  borderRadius: 10,
-                  padding: "8px 14px",
-                  fontWeight: 800,
-                  cursor: selectedEventBusy ? "not-allowed" : "pointer",
-                  background: selectedEventMyStatus === "interested" ? t.text : t.surface,
-                  color: selectedEventMyStatus === "interested" ? t.surface : t.text,
-                  fontSize: 13,
-                }}
-              >
-                {selectedEventMyStatus === "interested" ? "Interested ✓" : "Interested"}
-              </button>
-              <button
-                type="button"
-                onClick={() => toggleSelectedEventRsvp("going")}
-                disabled={selectedEventBusy}
-                style={{
-                  border: `1px solid ${t.border}`,
-                  borderRadius: 10,
-                  padding: "8px 14px",
-                  fontWeight: 800,
-                  cursor: selectedEventBusy ? "not-allowed" : "pointer",
-                  background: selectedEventMyStatus === "going" ? t.text : t.surface,
-                  color: selectedEventMyStatus === "going" ? t.surface : t.text,
-                  fontSize: 13,
-                }}
-              >
-                {selectedEventMyStatus === "going" ? "Going ✓" : "Going"}
-              </button>
-              {selectedEventCounts.interested > 0 && (
-                <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 700 }}>
-                  {selectedEventCounts.interested} interested
-                </span>
-              )}
-              {selectedEventCounts.going > 0 && (
-                <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 700 }}>
-                  {selectedEventCounts.going} going
-                </span>
-              )}
-              {selectedEvent.signup_url && (
-                <a
-                  href={selectedEvent.signup_url}
-                  target="_blank"
-                  rel="noreferrer"
+            <div
+              style={{
+                padding: "14px 24px 20px",
+                borderTop: `1px solid ${t.border}`,
+                display: "flex",
+                flexDirection: "column",
+                gap: 0,
+                width: "100%",
+                boxSizing: "border-box",
+              }}
+            >
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
+                <button
+                  type="button"
+                  onClick={() => toggleSelectedEventRsvp("interested")}
+                  disabled={selectedEventBusy}
                   style={{
-                    marginLeft: "auto",
-                    display: "inline-block",
-                    textDecoration: "none",
-                    background: "black",
-                    color: "white",
-                    padding: "8px 14px",
+                    border: `1px solid ${t.border}`,
                     borderRadius: 10,
+                    padding: "8px 14px",
                     fontWeight: 800,
+                    cursor: selectedEventBusy ? "not-allowed" : "pointer",
+                    background: selectedEventMyStatus === "interested" ? t.text : t.surface,
+                    color: selectedEventMyStatus === "interested" ? t.surface : t.text,
                     fontSize: 13,
                   }}
                 >
-                  Open Event Link
-                </a>
-              )}
+                  {selectedEventMyStatus === "interested" ? "Interested ✓" : "Interested"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleSelectedEventRsvp("going")}
+                  disabled={selectedEventBusy}
+                  style={{
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 10,
+                    padding: "8px 14px",
+                    fontWeight: 800,
+                    cursor: selectedEventBusy ? "not-allowed" : "pointer",
+                    background: selectedEventMyStatus === "going" ? t.text : t.surface,
+                    color: selectedEventMyStatus === "going" ? t.surface : t.text,
+                    fontSize: 13,
+                  }}
+                >
+                  {selectedEventMyStatus === "going" ? "Going ✓" : "Going"}
+                </button>
+                {selectedEvent.signup_url && (
+                  <a
+                    href={selectedEvent.signup_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      marginLeft: "auto",
+                      display: "inline-block",
+                      textDecoration: "none",
+                      background: "black",
+                      color: "white",
+                      padding: "8px 14px",
+                      borderRadius: 10,
+                      fontWeight: 800,
+                      fontSize: 13,
+                    }}
+                  >
+                    Open Event Link
+                  </a>
+                )}
+              </div>
+              <EventAttendeeAvatarRows
+                interested={selectedEventAttendeePreviews.interested}
+                going={selectedEventAttendeePreviews.going}
+                onOpenInterested={() => setLeftColAttendeesListModal("interested")}
+                onOpenGoing={() => setLeftColAttendeesListModal("going")}
+              />
             </div>
           </div>
         </div>,
         document.body
       )}
+      <EventAttendeesListModal
+        open={leftColAttendeesListModal !== null}
+        eventId={selectedEvent?.id ?? null}
+        status={leftColAttendeesListModal}
+        onClose={() => setLeftColAttendeesListModal(null)}
+      />
     </aside>
   );
 }

@@ -21,6 +21,9 @@ import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
 import EventFeedActions from "../components/EventFeedActions";
+import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
+import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
+import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
 import FeedPostHeader from "../components/FeedPostHeader";
 import KangarooCourtFeedSection from "../components/KangarooCourtFeedSection";
 import AddToRabbitholeModal from "../rabbithole/components/AddToRabbitholeModal";
@@ -31,7 +34,7 @@ import { useMasterShell } from "../components/master/masterShellContext";
 import { sectionTitleLinkZoom } from "../components/master/masterShared";
 import { Award, UserCircle2, Play, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
-import { applyJobFilters, uniqueJobLocations, type JobFilterState } from "../lib/jobFilters";
+import { applyJobFilters, uniqueJobRegions, type JobFilterState } from "../lib/jobFilters";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
 import { postNotifyJson } from "../lib/postNotifyClient";
 import type {
@@ -749,6 +752,11 @@ export default function HomePage() {
   const [selectedFeedEventCounts, setSelectedFeedEventCounts] = useState<{ interested: number; going: number }>({ interested: 0, going: 0 });
   const [selectedFeedEventMyStatus, setSelectedFeedEventMyStatus] = useState<"interested" | "going" | null>(null);
   const [selectedFeedEventBusy, setSelectedFeedEventBusy] = useState(false);
+  const [selectedFeedEventAttendeePreviews, setSelectedFeedEventAttendeePreviews] = useState<{
+    going: PostLikerBrief[];
+    interested: PostLikerBrief[];
+  }>({ going: [], interested: [] });
+  const [feedEventAttendeesListModal, setFeedEventAttendeesListModal] = useState<"interested" | "going" | null>(null);
 
   const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
   const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
@@ -893,6 +901,11 @@ export default function HomePage() {
     return true;
   }
 
+  const loadFeedEventAttendeePreviews = React.useCallback(async (eventId: string) => {
+    const p = await fetchEventAttendeePreviews(supabase, eventId);
+    setSelectedFeedEventAttendeePreviews(p);
+  }, []);
+
   const refreshFeedEventAttendance = React.useCallback(
     async (eventId: string) => {
       const { data } = await supabase
@@ -935,8 +948,9 @@ export default function HomePage() {
             : p
         )
       );
+      void loadFeedEventAttendeePreviews(eventId);
     },
-    [userId]
+    [userId, loadFeedEventAttendeePreviews]
   );
 
   useEffect(() => {
@@ -952,6 +966,40 @@ export default function HomePage() {
       window.removeEventListener("eod:saved-events-changed", handleSavedEventsChanged as EventListener);
     };
   }, [refreshFeedEventAttendance]);
+
+  useEffect(() => {
+    if (!selectedFeedEvent) {
+      setFeedEventAttendeesListModal(null);
+    }
+  }, [selectedFeedEvent]);
+
+  useEffect(() => {
+    if (!selectedFeedEvent?.id) return;
+    void loadFeedEventAttendeePreviews(selectedFeedEvent.id);
+  }, [selectedFeedEvent?.id, loadFeedEventAttendeePreviews]);
+
+  useEffect(() => {
+    if (!selectedFeedEvent?.id) return;
+    const id = selectedFeedEvent.id;
+    const ch = supabase
+      .channel(`feed-event-attendance-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "event_attendance",
+          filter: `event_id=eq.${id}`,
+        },
+        () => {
+          void refreshFeedEventAttendance(id);
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [selectedFeedEvent?.id, refreshFeedEventAttendance]);
 
   const openFeedEventModal = React.useCallback(
     async (eventId: string) => {
@@ -983,11 +1031,12 @@ export default function HomePage() {
         setSelectedFeedEvent(eventRes.data as FeedSelectedEvent);
         setSelectedFeedEventCounts({ interested, going });
         setSelectedFeedEventMyStatus(mine);
+        void loadFeedEventAttendeePreviews(eventId);
       } finally {
         setSelectedFeedEventBusy(false);
       }
     },
-    [userId]
+    [userId, loadFeedEventAttendeePreviews]
   );
 
   const toggleSelectedFeedEventRsvp = React.useCallback(
@@ -3904,7 +3953,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     return copy;
   }, [jobs, jobSort]);
 
-  const jobLocationOptions = useMemo(() => uniqueJobLocations(sortedJobs), [sortedJobs]);
+  const jobLocationOptions = useMemo(() => uniqueJobRegions(sortedJobs), [sortedJobs]);
 
   const mobileVisibleJobs = useMemo(() => {
     if (!canViewFullJobs) return sortedJobs.slice(0, 5);
@@ -6134,8 +6183,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     </select>
                   </div>
                   <select
-                    value={jobFilters.location}
-                    onChange={(e) => setJobFilters((prev) => ({ ...prev, location: e.target.value }))}
+                    value={jobFilters.locationRegion}
+                    onChange={(e) => setJobFilters((prev) => ({ ...prev, locationRegion: e.target.value }))}
                     aria-label="Filter jobs by location"
                     style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text }}
                   >
@@ -7007,57 +7056,65 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 </div>
               )}
 
-              <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => void toggleSelectedFeedEventRsvp("interested")}
-                  disabled={selectedFeedEventBusy}
-                  style={{
-                    background: selectedFeedEventMyStatus === "interested" ? t.text : t.surface,
-                    color: selectedFeedEventMyStatus === "interested" ? t.surface : t.textMuted,
-                    border: `1px solid ${t.border}`,
-                    borderRadius: 8,
-                    padding: "6px 12px",
-                    fontWeight: 700,
-                    cursor: selectedFeedEventBusy ? "wait" : "pointer",
-                  }}
-                >
-                  {selectedFeedEventMyStatus === "interested" ? "Interested ✓" : "Interested"}
-                  {selectedFeedEventCounts.interested > 0 ? ` · ${selectedFeedEventCounts.interested}` : ""}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void toggleSelectedFeedEventRsvp("going")}
-                  disabled={selectedFeedEventBusy}
-                  style={{
-                    background: selectedFeedEventMyStatus === "going" ? t.text : t.surface,
-                    color: selectedFeedEventMyStatus === "going" ? t.surface : t.textMuted,
-                    border: `1px solid ${t.border}`,
-                    borderRadius: 8,
-                    padding: "6px 12px",
-                    fontWeight: 700,
-                    cursor: selectedFeedEventBusy ? "wait" : "pointer",
-                  }}
-                >
-                  {selectedFeedEventMyStatus === "going" ? "Going ✓" : "Going"}
-                  {selectedFeedEventCounts.going > 0 ? ` · ${selectedFeedEventCounts.going}` : ""}
-                </button>
-                {selectedFeedEvent.signup_url && (
-                  <a
-                    href={httpsAssetUrl(selectedFeedEvent.signup_url)}
-                    target="_blank"
-                    rel="noreferrer"
+              <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 0, width: "100%" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => void toggleSelectedFeedEventRsvp("interested")}
+                    disabled={selectedFeedEventBusy}
                     style={{
-                      marginLeft: "auto",
-                      alignSelf: "center",
-                      fontSize: 13,
-                      fontWeight: 800,
-                      color: t.textMuted,
-                      textDecoration: "none",
+                      background: selectedFeedEventMyStatus === "interested" ? t.text : t.surface,
+                      color: selectedFeedEventMyStatus === "interested" ? t.surface : t.textMuted,
+                      border: `1px solid ${t.border}`,
+                      borderRadius: 8,
+                      padding: "6px 12px",
+                      fontWeight: 700,
+                      cursor: selectedFeedEventBusy ? "wait" : "pointer",
                     }}
                   >
-                    Open Event Link
-                  </a>
+                    {selectedFeedEventMyStatus === "interested" ? "Interested ✓" : "Interested"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void toggleSelectedFeedEventRsvp("going")}
+                    disabled={selectedFeedEventBusy}
+                    style={{
+                      background: selectedFeedEventMyStatus === "going" ? t.text : t.surface,
+                      color: selectedFeedEventMyStatus === "going" ? t.surface : t.textMuted,
+                      border: `1px solid ${t.border}`,
+                      borderRadius: 8,
+                      padding: "6px 12px",
+                      fontWeight: 700,
+                      cursor: selectedFeedEventBusy ? "wait" : "pointer",
+                    }}
+                  >
+                    {selectedFeedEventMyStatus === "going" ? "Going ✓" : "Going"}
+                  </button>
+                  {selectedFeedEvent.signup_url && (
+                    <a
+                      href={httpsAssetUrl(selectedFeedEvent.signup_url)}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{
+                        marginLeft: "auto",
+                        alignSelf: "center",
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: t.textMuted,
+                        textDecoration: "none",
+                      }}
+                    >
+                      Open Event Link
+                    </a>
+                  )}
+                </div>
+                {selectedFeedEvent.id && (
+                  <EventAttendeeAvatarRows
+                    interested={selectedFeedEventAttendeePreviews.interested}
+                    going={selectedFeedEventAttendeePreviews.going}
+                    onOpenInterested={() => setFeedEventAttendeesListModal("interested")}
+                    onOpenGoing={() => setFeedEventAttendeesListModal("going")}
+                  />
                 )}
               </div>
             </div>
@@ -7065,6 +7122,12 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           document.body
         )}
 
+      <EventAttendeesListModal
+        open={feedEventAttendeesListModal !== null}
+        eventId={selectedFeedEvent?.id ?? null}
+        status={feedEventAttendeesListModal}
+        onClose={() => setFeedEventAttendeesListModal(null)}
+      />
       {rabbitholeModalPost && (
         <AddToRabbitholeModal
           open={true}

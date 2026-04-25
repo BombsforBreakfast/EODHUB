@@ -1,11 +1,15 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "../lib/lib/supabaseClient";
 import ImageCropDialog from "../components/ImageCropDialog";
 import { ASPECT_EVENT_COVER } from "../lib/imageCropTargets";
 import { useTheme } from "../lib/ThemeContext";
+import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
+import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
+import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
+import type { PostLikerBrief } from "../components/PostLikersStack";
 
 type CalendarEvent = {
   id: string;
@@ -38,13 +42,6 @@ type AttendanceRow = {
   event_id: string;
   user_id: string;
   status: "interested" | "going";
-};
-
-type AttendeeProfile = {
-  user_id: string;
-  first_name: string | null;
-  last_name: string | null;
-  photo_url: string | null;
 };
 
 const EVENT_COLUMNS =
@@ -144,9 +141,8 @@ function EventsPageInner() {
 
   const [attendance, setAttendance] = useState<Record<string, { interested: number; going: number }>>({});
   const [myAttendance, setMyAttendance] = useState<Record<string, "interested" | "going" | null>>({});
-  const [attendeesPopup, setAttendeesPopup] = useState<{ eventId: string; status: "interested" | "going" } | null>(null);
-  const [attendees, setAttendees] = useState<AttendeeProfile[]>([]);
-  const [loadingAttendees, setLoadingAttendees] = useState(false);
+  const [attendeesListModal, setAttendeesListModal] = useState<{ eventId: string; status: "interested" | "going" } | null>(null);
+  const [attendeePreviews, setAttendeePreviews] = useState<Record<string, { going: PostLikerBrief[]; interested: PostLikerBrief[] }>>({});
 
   const [showEventForm, setShowEventForm] = useState(false);
   const [eventForm, setEventForm] = useState({
@@ -249,6 +245,11 @@ function EventsPageInner() {
     setMyAttendance((prev) => ({ ...prev, ...mine }));
   }
 
+  const loadAttendeePreviewsFor = useCallback(async (eventId: string) => {
+    const { going, interested } = await fetchEventAttendeePreviews(supabase, eventId);
+    setAttendeePreviews((prev) => ({ ...prev, [eventId]: { going, interested } }));
+  }, []);
+
   /**
    * Re-fetch RSVP truth for a single event from the DB, so the counts &
    * "my status" buttons can never drift from Postgres. Called after every
@@ -277,6 +278,7 @@ function EventsPageInner() {
     }
     setAttendance((prev) => ({ ...prev, [eventId]: { interested, going } }));
     setMyAttendance((prev) => ({ ...prev, [eventId]: mine }));
+    void loadAttendeePreviewsFor(eventId);
   }
 
   /**
@@ -356,29 +358,6 @@ function EventsPageInner() {
     // Always pull fresh truth from the DB so the counts shown on screen
     // reflect what Postgres actually has — never local +1/-1 math.
     await refreshAttendanceFor(eventId);
-  }
-
-  async function openAttendeesPopup(eventId: string, status: "interested" | "going") {
-    setAttendeesPopup({ eventId, status });
-    setLoadingAttendees(true);
-    setAttendees([]);
-
-    const { data: attData } = await supabase
-      .from("event_attendance")
-      .select("user_id")
-      .eq("event_id", eventId)
-      .eq("status", status);
-
-    const userIds = ((attData ?? []) as { user_id: string }[]).map((r) => r.user_id);
-    if (userIds.length === 0) { setLoadingAttendees(false); return; }
-
-    const { data: profileData } = await supabase
-      .from("profiles")
-      .select("user_id, first_name, last_name, photo_url")
-      .in("user_id", userIds);
-
-    setAttendees((profileData ?? []) as AttendeeProfile[]);
-    setLoadingAttendees(false);
   }
 
   function getNext5pm(): string {
@@ -772,6 +751,34 @@ function EventsPageInner() {
       cancelled = true;
     };
   }, [deepLinkEventId, userId]);
+
+  useEffect(() => {
+    if (!selectedEvent?.id) return;
+    void loadAttendeePreviewsFor(selectedEvent.id);
+  }, [selectedEvent?.id, loadAttendeePreviewsFor]);
+
+  useEffect(() => {
+    if (!selectedEvent?.id) return;
+    const id = selectedEvent.id;
+    const ch = supabase
+      .channel(`events-page-attendance-${id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "event_attendance",
+          filter: `event_id=eq.${id}`,
+        },
+        () => {
+          void refreshAttendanceFor(id);
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [selectedEvent?.id]);
 
   // NOTE: keep ALL hook calls above the early `return` below — React requires a
   // stable hook order across renders, so any useMemo/useCallback declared after
@@ -2063,12 +2070,12 @@ function EventsPageInner() {
               style={{
                 marginTop: 24,
                 display: "flex",
-                gap: 12,
-                flexWrap: "wrap",
+                flexDirection: "column",
+                gap: 0,
+                width: "100%",
               }}
             >
-              {/* Interested / Going buttons + counts */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", marginBottom: 4 }}>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                 <button
                   type="button"
                   onClick={() => toggleAttendance(selectedEvent.id, "interested")}
@@ -2083,36 +2090,32 @@ function EventsPageInner() {
                 >
                   {myAttendance[selectedEvent.id] === "going" ? "Going ✓" : "Going"}
                 </button>
-                {(attendance[selectedEvent.id]?.interested ?? 0) > 0 && (
-                  <button type="button" onClick={() => openAttendeesPopup(selectedEvent.id, "interested")} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 13, color: t.textMuted, fontWeight: 700, padding: "4px 8px", borderRadius: 8 }}>
-                    {attendance[selectedEvent.id].interested} interested
-                  </button>
-                )}
-                {(attendance[selectedEvent.id]?.going ?? 0) > 0 && (
-                  <button type="button" onClick={() => openAttendeesPopup(selectedEvent.id, "going")} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: 13, color: t.textMuted, fontWeight: 700, padding: "4px 8px", borderRadius: 8 }}>
-                    {attendance[selectedEvent.id].going} going
-                  </button>
+                {selectedEvent.signup_url && (
+                  <a
+                    href={selectedEvent.signup_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{
+                      display: "inline-block",
+                      textDecoration: "none",
+                      background: "black",
+                      color: "white",
+                      padding: "10px 16px",
+                      borderRadius: 10,
+                      fontWeight: 800,
+                      marginLeft: "auto",
+                    }}
+                  >
+                    Open Event Link
+                  </a>
                 )}
               </div>
-
-              {selectedEvent.signup_url && (
-                <a
-                  href={selectedEvent.signup_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: "inline-block",
-                    textDecoration: "none",
-                    background: "black",
-                    color: "white",
-                    padding: "10px 16px",
-                    borderRadius: 10,
-                    fontWeight: 800,
-                  }}
-                >
-                  Open Event Link
-                </a>
-              )}
+              <EventAttendeeAvatarRows
+                interested={attendeePreviews[selectedEvent.id]?.interested ?? []}
+                going={attendeePreviews[selectedEvent.id]?.going ?? []}
+                onOpenInterested={() => setAttendeesListModal({ eventId: selectedEvent.id, status: "interested" })}
+                onOpenGoing={() => setAttendeesListModal({ eventId: selectedEvent.id, status: "going" })}
+              />
 
             </div>
           </div>
@@ -2353,43 +2356,12 @@ function EventsPageInner() {
           </div>
         </div>
       )}
-      {/* Attendees popup */}
-      {attendeesPopup && (
-        <div
-          onClick={() => setAttendeesPopup(null)}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: t.surface, color: t.text, borderRadius: 16, padding: 24, maxWidth: 340, width: "100%", maxHeight: "70vh", display: "flex", flexDirection: "column", gap: 16 }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontWeight: 900, fontSize: 18 }}>
-                {attendeesPopup.status === "going" ? "Going" : "Interested"}
-              </div>
-              <button onClick={() => setAttendeesPopup(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>×</button>
-            </div>
-
-            <div style={{ overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 }}>
-              {loadingAttendees && <div style={{ color: t.textMuted, fontSize: 14 }}>Loading...</div>}
-              {!loadingAttendees && attendees.length === 0 && <div style={{ color: t.textMuted, fontSize: 14 }}>No one yet.</div>}
-              {attendees.map((a) => {
-                const name = `${a.first_name || ""} ${a.last_name || ""}`.trim() || "User";
-                return (
-                  <a key={a.user_id} href={`/profile/${a.user_id}`} style={{ display: "flex", gap: 12, alignItems: "center", textDecoration: "none", color: t.text }}>
-                    <div style={{ width: 40, height: 40, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 15, color: t.textMuted }}>
-                      {a.photo_url
-                        ? <img src={a.photo_url} alt={name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                        : name[0]?.toUpperCase()}
-                    </div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>{name}</div>
-                  </a>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      <EventAttendeesListModal
+        open={attendeesListModal !== null}
+        eventId={attendeesListModal?.eventId ?? null}
+        status={attendeesListModal?.status ?? null}
+        onClose={() => setAttendeesListModal(null)}
+      />
     </div>
   );
 }
