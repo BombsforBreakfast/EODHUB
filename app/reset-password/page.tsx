@@ -14,9 +14,10 @@ export default function ResetPasswordPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // The reset email routes through /auth/callback, which exchanges the PKCE
-  // code server-side and sets the session cookie before redirecting here.
-  // All we need to do is confirm a session exists.
+  // createBrowserClient auto-exchanges the ?code= in the URL when the page
+  // loads and fires PASSWORD_RECOVERY (or SIGNED_IN) before React mounts.
+  // We catch both the early fire (via getSession) and any late fire (via the
+  // subscription), then fall back to "invalid" after 8 s if nothing arrives.
   useEffect(() => {
     let resolved = false;
 
@@ -26,20 +27,31 @@ export default function ResetPasswordPage() {
       setStage(hasSession ? "form" : "invalid");
     }
 
-    // Primary check: session cookie already set by /auth/callback.
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      resolve(!!session);
-    });
-
-    // Fallback: catch any async auth state change (e.g. slight cookie delay).
+    // Catch events that fire after mount (normal case).
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY" || event === "SIGNED_IN") {
         resolve(!!session);
       }
     });
 
-    // If nothing arrives within 6 s, give up.
-    const timer = setTimeout(() => resolve(false), 6000);
+    // Catch session that was already established before mount (race condition).
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) resolve(true);
+    });
+
+    // If no ?code= was in the URL (user navigated here directly), bail out.
+    const hasCode = new URLSearchParams(window.location.search).has("code");
+    if (!hasCode) {
+      // Small delay so getSession() above can still win if there's an active session.
+      const noCodeTimer = setTimeout(() => resolve(false), 500);
+      return () => {
+        subscription.unsubscribe();
+        clearTimeout(noCodeTimer);
+      };
+    }
+
+    // With a code present, give the exchange up to 8 s before giving up.
+    const timer = setTimeout(() => resolve(false), 8000);
 
     return () => {
       subscription.unsubscribe();
