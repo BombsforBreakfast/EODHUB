@@ -9,6 +9,7 @@ import { useTheme } from "../lib/ThemeContext";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
+import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import type { PostLikerBrief } from "../components/PostLikersStack";
 
 type CalendarEvent = {
@@ -294,12 +295,10 @@ function EventsPageInner() {
   async function syncSavedEventForRsvp(eventId: string, hasRsvp: boolean) {
     if (!userId) return;
     if (hasRsvp) {
-      const { error } = await supabase
-        .from("saved_events")
-        .insert([{ user_id: userId, event_id: eventId }]);
-      // 23505 = unique_violation — already saved, that's fine.
-      if (error && error.code !== "23505") {
-        console.error("Auto-save event error:", error);
+      try {
+        await ensureSavedEventForUser(supabase, userId, eventId);
+      } catch (err) {
+        console.error("Auto-save event error:", err);
         return;
       }
       setSavedEventIds((prev) => new Set(prev).add(eventId));
@@ -548,7 +547,7 @@ function EventsPageInner() {
         body: JSON.stringify({ url: memWizUrl.trim() }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Fetch failed");
+      if (!res.ok) throw new Error(json.error || "Could not load info");
       if (json.title) setMemWizName(json.title);
       if (json.description) {
         const m = json.description.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -557,7 +556,7 @@ function EventsPageInner() {
       if (json.image) setMemWizImage(json.image);
       if (json.bio) setMemWizBio(json.bio);
     } catch (err) {
-      setMemWizMsg({ type: "err", text: `Could not fetch metadata — fill in manually. (${err instanceof Error ? err.message : String(err)})` });
+      setMemWizMsg({ type: "err", text: `Could not get info from that page — fill in manually. (${err instanceof Error ? err.message : String(err)})` });
     } finally {
       setMemWizFetching(false);
     }
@@ -1213,11 +1212,11 @@ function EventsPageInner() {
             >×</button>
           </div>
           <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
-            Paste an EOD Warrior Foundation memorial URL and hit Fetch — name and date auto-fill. Or skip the URL and fill in manually.
+            Paste an EOD Warrior Foundation memorial URL, then click Get info — name and date auto-fill. Or skip the URL and fill in manually.
           </div>
 
           <div style={{ display: "grid", gap: 12 }}>
-            {/* URL + Fetch */}
+            {/* URL + get info */}
             <div style={{ display: "flex", gap: 8 }}>
               <input
                 value={memWizUrl}
@@ -1232,7 +1231,7 @@ function EventsPageInner() {
                 disabled={memWizFetching || !memWizUrl.trim()}
                 style={{ background: t.text, color: t.surface, border: "none", borderRadius: 8, padding: "8px 16px", fontWeight: 700, fontSize: 14, cursor: memWizFetching || !memWizUrl.trim() ? "not-allowed" : "pointer", opacity: memWizFetching || !memWizUrl.trim() ? 0.5 : 1, whiteSpace: "nowrap" }}
               >
-                {memWizFetching ? "Fetching..." : "Fetch"}
+                {memWizFetching ? "Getting info..." : "Get info"}
               </button>
             </div>
 
@@ -1285,7 +1284,7 @@ function EventsPageInner() {
                 disabled={memWizSaving || !memWizName.trim() || !memWizDate}
                 style={{ background: "#d9582b", color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
               >
-                {memWizSaving ? "Saving..." : "Add Memorial"}
+                {memWizSaving ? "Publishing..." : "Publish Memorial"}
               </button>
               <button
                 type="button"

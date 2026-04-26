@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "../../lib/lib/supabaseClient";
@@ -15,6 +15,7 @@ import EventAttendeeAvatarRows from "../events/EventAttendeeAvatarRows";
 import { EventAttendeesListModal } from "../events/EventAttendeesListModal";
 import { fetchEventAttendeePreviews } from "../../lib/fetchEventAttendeePreviews";
 import type { PostLikerBrief } from "../PostLikersStack";
+import { dedupeSavedEventRowsByEventId, ensureSavedEventForUser } from "../../lib/ensureSavedEventForUser";
 import { collapsedRailTitleLinkZoom, httpsAssetUrl, sectionTitleLinkZoom, type JobRow } from "./masterShared";
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -41,6 +42,8 @@ type SavedEventRow = {
   signup_url: string | null;
   image_url: string | null;
   my_attendance: "interested" | "going" | null;
+  interested_count: number;
+  going_count: number;
 };
 
 type SavedJobRow = {
@@ -154,6 +157,15 @@ export default function MasterLeftColumn({
   }>({ going: [], interested: [] });
   const [leftColAttendeesListModal, setLeftColAttendeesListModal] = useState<"interested" | "going" | null>(null);
 
+  const savedEventIdsForRealtimeRef = useRef<Set<string>>(new Set());
+  const selectedEventIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    savedEventIdsForRealtimeRef.current = new Set(desktopSavedEvents.map((e) => e.event_id));
+  }, [desktopSavedEvents]);
+  useEffect(() => {
+    selectedEventIdRef.current = selectedEvent?.id ?? null;
+  }, [selectedEvent?.id]);
+
   function blockMemberInteraction(): boolean {
     if (memberInteractionAllowedRef.current) return false;
     onMemberPaywall();
@@ -189,26 +201,51 @@ export default function MasterLeftColumn({
         signup_url: ev?.signup_url ?? null,
         image_url: ev?.image_url ?? null,
         my_attendance: null as "interested" | "going" | null,
+        interested_count: 0,
+        going_count: 0,
       };
     });
     const eventIds = rows.map((r) => r.event_id).filter(Boolean);
     if (eventIds.length > 0) {
-      const { data: attRows, error: attErr } = await supabase
+      const { data: allAttRows, error: allAttErr } = await supabase
         .from("event_attendance")
-        .select("event_id, status")
-        .eq("user_id", uid)
+        .select("event_id, user_id, status")
         .in("event_id", eventIds);
-      if (!attErr) {
-        const attByEventId = new Map<string, "interested" | "going">();
-        ((attRows ?? []) as Array<{ event_id: string; status: "interested" | "going" }>).forEach((r) => {
-          attByEventId.set(r.event_id, r.status);
-        });
+        if (!allAttErr && allAttRows) {
+        const counts = new Map<string, { interested: number; going: number }>();
+        for (const r of allAttRows as Array<{ event_id: string; user_id: string; status: "interested" | "going" }>) {
+          const cur = counts.get(r.event_id) ?? { interested: 0, going: 0 };
+          if (r.status === "interested") cur.interested += 1;
+          else if (r.status === "going") cur.going += 1;
+          counts.set(r.event_id, cur);
+        }
         rows.forEach((row) => {
-          row.my_attendance = attByEventId.get(row.event_id) ?? null;
+          const c = counts.get(row.event_id) ?? { interested: 0, going: 0 };
+          row.interested_count = c.interested;
+          row.going_count = c.going;
+          const mine = (allAttRows as Array<{ event_id: string; user_id: string; status: "interested" | "going" }>).find(
+            (a) => a.event_id === row.event_id && a.user_id === uid
+          );
+          row.my_attendance = mine?.status ?? null;
         });
+      } else {
+        const { data: attRows, error: attErr } = await supabase
+          .from("event_attendance")
+          .select("event_id, status")
+          .eq("user_id", uid)
+          .in("event_id", eventIds);
+        if (!attErr) {
+          const attByEventId = new Map<string, "interested" | "going">();
+          ((attRows ?? []) as Array<{ event_id: string; status: "interested" | "going" }>).forEach((r) => {
+            attByEventId.set(r.event_id, r.status);
+          });
+          rows.forEach((row) => {
+            row.my_attendance = attByEventId.get(row.event_id) ?? null;
+          });
+        }
       }
     }
-    setDesktopSavedEvents(rows);
+    setDesktopSavedEvents(dedupeSavedEventRowsByEventId(rows));
   }, []);
 
   const loadDesktopSavedJobs = useCallback(async (uid: string) => {
@@ -385,11 +422,10 @@ export default function MasterLeftColumn({
             { onConflict: "event_id,user_id" }
           );
         if (error) throw error;
-        // Mirror /events: Interested OR Going auto-saves the event.
-        const { error: saveErr } = await supabase
-          .from("saved_events")
-          .insert([{ user_id: userId, event_id: eventId }]);
-        if (saveErr && saveErr.code !== "23505") {
+        // Mirror /events: Interested OR Going auto-saves the event (idempotent).
+        try {
+          await ensureSavedEventForUser(supabase, userId, eventId);
+        } catch (saveErr) {
           console.error("Auto-save event error:", saveErr);
         }
       }
@@ -556,12 +592,18 @@ export default function MasterLeftColumn({
       .subscribe();
 
     const attendanceChannel = supabase
-      .channel(`left-rail-event-attendance-${userId}`)
+      .channel(`left-rail-event-attendance-any-${userId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "event_attendance", filter: `user_id=eq.${userId}` },
-        () => {
+        { event: "*", schema: "public", table: "event_attendance" },
+        (payload) => {
+          const row = (payload.new as { event_id?: string } | null) ?? (payload.old as { event_id?: string } | null);
+          const eid = row?.event_id;
+          if (!eid || !savedEventIdsForRealtimeRef.current.has(eid)) return;
           void loadDesktopSavedEvents(userId);
+          if (selectedEventIdRef.current === eid) {
+            void refreshSelectedEventAttendance(eid);
+          }
         }
       )
       .subscribe();
@@ -570,7 +612,7 @@ export default function MasterLeftColumn({
       supabase.removeChannel(savedEventsChannel);
       supabase.removeChannel(attendanceChannel);
     };
-  }, [sideRailsReady, userId, loadDesktopSavedEvents]);
+  }, [sideRailsReady, userId, loadDesktopSavedEvents, refreshSelectedEventAttendance]);
 
   useEffect(() => {
     if (!sideRailsReady || !userId) return;
@@ -1203,7 +1245,7 @@ export default function MasterLeftColumn({
                         >
                           {ev.title || "Event"}
                         </button>
-                        {ev.my_attendance === "going" && (
+                        {ev.my_attendance === "going" ? (
                           <span
                             style={{
                               borderRadius: 999,
@@ -1218,9 +1260,26 @@ export default function MasterLeftColumn({
                               whiteSpace: "nowrap",
                             }}
                           >
-                            GOING
+                            GOING{ev.going_count > 0 ? ` · ${ev.going_count}` : ""}
                           </span>
-                        )}
+                        ) : ev.my_attendance === "interested" ? (
+                          <span
+                            style={{
+                              borderRadius: 999,
+                              border: `1px solid ${t.border}`,
+                              background: t.surface,
+                              color: t.text,
+                              fontSize: 10,
+                              fontWeight: 800,
+                              letterSpacing: 0.3,
+                              padding: "2px 7px",
+                              lineHeight: 1.1,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            INTERESTED{ev.interested_count > 0 ? ` · ${ev.interested_count}` : ""}
+                          </span>
+                        ) : null}
                       </div>
                       <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
                       <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
@@ -1772,7 +1831,8 @@ export default function MasterLeftColumn({
                     fontSize: 13,
                   }}
                 >
-                  {selectedEventMyStatus === "interested" ? "Interested ✓" : "Interested"}
+                  Interested
+                  {selectedEventCounts.interested > 0 ? ` · ${selectedEventCounts.interested}` : ""}
                 </button>
                 <button
                   type="button"
@@ -1789,7 +1849,8 @@ export default function MasterLeftColumn({
                     fontSize: 13,
                   }}
                 >
-                  {selectedEventMyStatus === "going" ? "Going ✓" : "Going"}
+                  Going
+                  {selectedEventCounts.going > 0 ? ` · ${selectedEventCounts.going}` : ""}
                 </button>
                 {selectedEvent.signup_url && (
                   <a

@@ -1438,9 +1438,17 @@ export default function PublicProfilePage() {
     }
     type RawRow = {
       id: string;
+      event_id: string;
       events: { title: string | null; organization: string | null; date: string | null; signup_url: string | null } | null | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }[];
     };
-    const rows = ((data ?? []) as unknown as RawRow[]).map((r) => {
+    const raw = (data ?? []) as unknown as RawRow[];
+    const seenEid = new Set<string>();
+    const uniqueRaw = raw.filter((r) => {
+      if (seenEid.has(r.event_id)) return false;
+      seenEid.add(r.event_id);
+      return true;
+    });
+    const rows = uniqueRaw.map((r) => {
       const ev = Array.isArray(r.events) ? r.events[0] ?? null : r.events;
       return {
         id: r.id,
@@ -1465,9 +1473,17 @@ export default function PublicProfilePage() {
     }
     type RawRow = {
       id: string;
+      event_id: string;
       events: { title: string | null; organization: string | null; date: string | null; signup_url: string | null } | null | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }[];
     };
-    const rows = ((data ?? []) as unknown as RawRow[]).map((r) => {
+    const raw = (data ?? []) as unknown as RawRow[];
+    const seenEid = new Set<string>();
+    const uniqueRaw = raw.filter((r) => {
+      if (seenEid.has(r.event_id)) return false;
+      seenEid.add(r.event_id);
+      return true;
+    });
+    const rows = uniqueRaw.map((r) => {
       const ev = Array.isArray(r.events) ? r.events[0] ?? null : r.events;
       return {
         id: r.id,

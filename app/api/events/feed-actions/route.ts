@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { ensureSavedEventForUser } from "../../../lib/ensureSavedEventForUser";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,25 +44,6 @@ function normalizeDbError(message: string): string {
     return "Event RSVP table is missing. Run migration 20260420070000_event_attendance_table.sql and retry.";
   }
   return message;
-}
-
-async function ensureSavedEvent(
-  db: ReturnType<typeof adminClient>,
-  userId: string,
-  eventId: string
-) {
-  const { data: existing, error: existingErr } = await db
-    .from("saved_events")
-    .select("id")
-    .eq("event_id", eventId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (existingErr) throw new Error(existingErr.message);
-  if (existing?.id) return;
-  const { error: insertErr } = await db
-    .from("saved_events")
-    .insert([{ event_id: eventId, user_id: userId }]);
-  if (insertErr) throw new Error(insertErr.message);
 }
 
 export async function POST(req: NextRequest) {
@@ -119,7 +101,7 @@ export async function POST(req: NextRequest) {
       if (error) return NextResponse.json({ error: normalizeDbError(error.message) }, { status: 500 });
       if (targetStatus === "going") {
         try {
-          await ensureSavedEvent(db, auth.userId, eventId);
+          await ensureSavedEventForUser(db, auth.userId, eventId);
         } catch (e) {
           return NextResponse.json({ error: normalizeDbError(getErrorMessage(e)) }, { status: 500 });
         }
@@ -131,7 +113,7 @@ export async function POST(req: NextRequest) {
       if (error) return NextResponse.json({ error: normalizeDbError(error.message) }, { status: 500 });
       if (targetStatus === "going") {
         try {
-          await ensureSavedEvent(db, auth.userId, eventId);
+          await ensureSavedEventForUser(db, auth.userId, eventId);
         } catch (e) {
           return NextResponse.json({ error: normalizeDbError(getErrorMessage(e)) }, { status: 500 });
         }
@@ -150,8 +132,11 @@ export async function POST(req: NextRequest) {
       const { error } = await db.from("saved_events").delete().eq("id", existingSave.id);
       if (error) return NextResponse.json({ error: normalizeDbError(error.message) }, { status: 500 });
     } else {
-      const { error } = await db.from("saved_events").insert([{ event_id: eventId, user_id: auth.userId }]);
-      if (error) return NextResponse.json({ error: normalizeDbError(error.message) }, { status: 500 });
+      try {
+        await ensureSavedEventForUser(db, auth.userId, eventId);
+      } catch (e) {
+        return NextResponse.json({ error: normalizeDbError(getErrorMessage(e)) }, { status: 500 });
+      }
     }
   }
 
@@ -188,7 +173,7 @@ export async function POST(req: NextRequest) {
   // Hard guarantee: "Going" always implies "Saved".
   if (resolvedMyAttendance === "going" && !resolvedSaved) {
     try {
-      await ensureSavedEvent(db, auth.userId, eventId);
+      await ensureSavedEventForUser(db, auth.userId, eventId);
       resolvedSaved = true;
     } catch (e) {
       return NextResponse.json(

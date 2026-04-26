@@ -28,6 +28,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   });
   /** Defer heavy side-rail Supabase work until after first paint / idle so center feed wins on cold load. */
   const [sideRailsReady, setSideRailsReady] = useState(false);
+  const [showMemorialFeedCards, setShowMemorialFeedCards] = useState(true);
 
   useLayoutEffect(() => {
     const mq = window.matchMedia("(min-width: 901px)");
@@ -47,10 +48,12 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       if (!uid) return;
       const { data: profileCheck } = await supabase
         .from("profiles")
-        .select("account_type, subscription_status, is_admin")
+        .select("account_type, subscription_status, is_admin, show_memorial_feed_cards")
         .eq("user_id", uid)
         .maybeSingle();
       if (cancelled || !profileCheck) return;
+      const p = profileCheck as { show_memorial_feed_cards?: boolean | null };
+      setShowMemorialFeedCards(p.show_memorial_feed_cards !== false);
       memberInteractionAllowedRef.current = memberHasInteractionAccess({
         accountType: profileCheck.account_type,
         subscriptionStatus: profileCheck.subscription_status ?? null,
@@ -109,8 +112,10 @@ export default function MasterShell({ children }: { children: React.ReactNode })
     () => ({
       isDesktopShell: isDesktop,
       openSidebarPeer: isDesktop ? openSidebarPeer : () => {},
+      showMemorialFeedCards,
+      setShowMemorialFeedCards,
     }),
-    [isDesktop, openSidebarPeer]
+    [isDesktop, openSidebarPeer, showMemorialFeedCards]
   );
 
   if (!isDesktop) {

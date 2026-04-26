@@ -1401,7 +1401,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
         body: JSON.stringify({ url: memWizUrl.trim() }),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Fetch failed");
+      if (!res.ok) throw new Error(json.error || "Could not load info");
       // og:title is "Name | EOD Warrior Foundation", og:description is "M/D/YYYY"
       if (json.title) setMemWizName(json.title);
       if (json.description) {
@@ -1412,7 +1412,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       if (json.image) setMemWizImage(json.image);
       if (json.bio) setMemWizBio(json.bio);
     } catch (err) {
-      setMemWizMsg({ type: "err", text: `Could not fetch metadata — fill in manually. (${err instanceof Error ? err.message : String(err)})` });
+      setMemWizMsg({ type: "err", text: `Could not get info from that page — fill in manually. (${err instanceof Error ? err.message : String(err)})` });
     } finally {
       setMemWizFetching(false);
     }

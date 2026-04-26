@@ -667,6 +667,8 @@ export default function HomePage() {
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
   const [jobLeaderboard, setJobLeaderboard] = useState<{ user_id: string; name: string; photo_url: string | null; count: number }[]>([]);
   const [posts, setPosts] = useState<FeedPost[]>([]);
+  /** Event IDs currently rendered on the feed (for Realtime RSVP refresh). */
+  const feedEventIdsRef = React.useRef<Set<string>>(new Set());
   const [unitFeedHighlights, setUnitFeedHighlights] = useState<UnitFeedHighlight[]>([]);
   const [businessListings, setBusinessListings] = useState<BusinessListing[]>(
     []
@@ -693,7 +695,7 @@ export default function HomePage() {
   const [bizLoaded, setBizLoaded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
-  const { isDesktopShell, openSidebarPeer } = useMasterShell();
+  const { isDesktopShell, openSidebarPeer, showMemorialFeedCards, setShowMemorialFeedCards } = useMasterShell();
   const [mobileTab, setMobileTab] = useState<"feed" | "jobs" | "businesses">(() => {
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search).get("tab");
@@ -1011,6 +1013,34 @@ export default function HomePage() {
     };
   }, [selectedFeedEvent?.id, refreshFeedEventAttendance]);
 
+  useEffect(() => {
+    const s = new Set<string>();
+    for (const p of posts) {
+      if (p.event_id) s.add(p.event_id);
+    }
+    feedEventIdsRef.current = s;
+  }, [posts]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const ch = supabase
+      .channel(`feed-inline-event-attendance-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "event_attendance" },
+        (payload) => {
+          const row = (payload.new as { event_id?: string } | null) ?? (payload.old as { event_id?: string } | null);
+          const eid = row?.event_id;
+          if (!eid || !feedEventIdsRef.current.has(eid)) return;
+          void refreshFeedEventAttendance(eid);
+        }
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(ch);
+    };
+  }, [userId, refreshFeedEventAttendance]);
+
   const openFeedEventModal = React.useCallback(
     async (eventId: string) => {
       setSelectedFeedEventBusy(true);
@@ -1256,7 +1286,23 @@ export default function HomePage() {
     });
   }
 
-  async function loadTodayMemorials() {
+  async function loadTodayMemorials(forUserId: string) {
+    const { data: pref } = await supabase
+      .from("profiles")
+      .select("show_memorial_feed_cards")
+      .eq("user_id", forUserId)
+      .maybeSingle();
+    if (pref && (pref as { show_memorial_feed_cards?: boolean | null }).show_memorial_feed_cards === false) {
+      setTodayMemorials([]);
+      setMemorialLikes({});
+      setMemorialComments({});
+      setMemorialCommentInputs({});
+      setMemorialCommentsOpen({});
+      setExpandedMemorialCards({});
+      setDismissedMemorialIds(new Set());
+      return;
+    }
+
     const today = new Date();
     const mm = String(today.getMonth() + 1).padStart(2, "0");
     const dd = String(today.getDate()).padStart(2, "0");
@@ -1428,6 +1474,23 @@ export default function HomePage() {
     }
     setDeletingMemorialCommentId(null);
   }
+
+  useEffect(() => {
+    if (!userId) return;
+    if (!showMemorialFeedCards) {
+      setTodayMemorials([]);
+      setMemorialLikes({});
+      setMemorialComments({});
+      setMemorialCommentInputs({});
+      setMemorialCommentsOpen({});
+      setExpandedMemorialCards({});
+      setDismissedMemorialIds(new Set());
+      return;
+    }
+    void loadTodayMemorials(userId);
+    // loadTodayMemorials is re-created each render; this effect is intentionally keyed on userId + showMemorialFeedCards only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId, showMemorialFeedCards]);
 
   function pickDiscoverSlice(pool: DiscoverProfile[]): DiscoverProfile[] {
     if (pool.length === 0) return [];
@@ -3743,7 +3806,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         // Check verification status ΓÇö unverified users go to /pending
         const { data: profileCheck } = await supabase
           .from("profiles")
-          .select("verification_status, first_name, last_name, photo_url, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, access_tier, is_pure_admin")
+          .select("verification_status, first_name, last_name, photo_url, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, access_tier, is_pure_admin, show_memorial_feed_cards")
           .eq("user_id", currentUserId)
           .maybeSingle();
 
@@ -3790,6 +3853,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           setCurrentUserHasPhoto(!!nd?.photo_url);
           setCurrentUserReferralCode(nd?.referral_code ?? null);
           setIsAdmin(!!nd?.is_admin);
+          setShowMemorialFeedCards(
+            (profileCheck as { show_memorial_feed_cards?: boolean | null } | null)?.show_memorial_feed_cards !== false
+          );
         }
 
         // Prioritize feed readiness: render as soon as posts are loaded, then hydrate secondary data.
@@ -3801,7 +3867,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         const isDesktopViewport = typeof window !== "undefined" && window.innerWidth > 900;
         const inDesktopShell = isDesktopShell || isDesktopViewport;
         const deferredTasks: Promise<unknown>[] = [
-          loadTodayMemorials().catch((err) => console.error("loadTodayMemorials failed:", err)),
           loadDiscoverProfiles(currentUserId, {
             service: (profileCheck as { service?: string | null } | null)?.service ?? null,
             status: (profileCheck as { status?: string | null } | null)?.status ?? null,
@@ -4756,8 +4821,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
           <div style={{ marginTop: 20, display: "grid", gap: "clamp(12px, 3vw, 16px)", width: "100%", minWidth: 0, boxSizing: "border-box" }}>
             {!postsLoaded && [0,1,2,3].map((i) => <SkeletonPost key={i} />)}
-            {/* Memorial anniversary cards - auto-injected on anniversary date */}
-            {todayMemorials.filter(m => !dismissedMemorialIds.has(m.id)).map((m) => {
+            {/* Memorial anniversary cards - auto-injected on anniversary date (opt-out in My Account) */}
+            {showMemorialFeedCards &&
+              todayMemorials.filter(m => !dismissedMemorialIds.has(m.id)).map((m) => {
               const isExpanded = !!expandedMemorialCards[m.id];
               const memorialCommentList = memorialComments[m.id] ?? [];
               const compactPreviewComments = memorialCommentList.slice(0, 2);

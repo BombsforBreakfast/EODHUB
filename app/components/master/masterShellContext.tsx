@@ -7,11 +7,16 @@ export type MasterShellContextValue = {
   isDesktopShell: boolean;
   /** Opens the shell message drawer (desktop). No-op when not on desktop shell. */
   openSidebarPeer: (peerId: string) => void;
+  /** When false, home feed does not show large memorial anniversary post cards (default true). */
+  showMemorialFeedCards: boolean;
+  setShowMemorialFeedCards: (v: boolean) => void;
 };
 
 const MasterShellContext = createContext<MasterShellContextValue>({
   isDesktopShell: false,
   openSidebarPeer: () => {},
+  showMemorialFeedCards: true,
+  setShowMemorialFeedCards: () => {},
 });
 
 export function MasterShellProvider({

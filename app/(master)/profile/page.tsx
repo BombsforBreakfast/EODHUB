@@ -5,6 +5,7 @@ import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import ReportProblemButton from "../../components/ReportProblemButton";
 import PrivacySettingsCard from "../../components/account/PrivacySettingsCard";
+import MemorialFeedPreferencesCard from "../../components/account/MemorialFeedPreferencesCard";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
 
 function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null }) {
@@ -333,6 +334,9 @@ export default function MyAccountPage() {
 
           {/* Privacy */}
           {currentUserId && <PrivacySettingsCard userId={currentUserId} />}
+
+          {/* Home feed: memorial anniversary post cards (calendars unchanged) */}
+          {currentUserId && <MemorialFeedPreferencesCard userId={currentUserId} />}
 
           {/* Report Issue */}
           <div style={{ ...card, padding: "18px 24px" }}>
