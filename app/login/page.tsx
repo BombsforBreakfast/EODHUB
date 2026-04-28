@@ -23,14 +23,12 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileError, setTurnstileError] = useState(false);
+  const [turnstileSiteKey, setTurnstileSiteKey] = useState("");
   const turnstileRef = useRef<TurnstileInstance>(null);
   // Skip Turnstile entirely in local dev — the production site key is only
   // allow-listed for the real domains, so on localhost the widget errors out
   // with 400020 and never returns a token, which would lock the Login button.
-  const siteKey =
-    process.env.NODE_ENV === "production"
-      ? (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "")
-      : "";
+  const configuredTurnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
   const [signupCount, setSignupCount] = useState<number | null>(null);
   const [countFlash, setCountFlash] = useState(false);
 
@@ -40,6 +38,16 @@ export default function LoginPage() {
     const ref = params.get("ref");
     if (ref) localStorage.setItem("eod_ref", ref.toUpperCase());
   }, []);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") {
+      setTurnstileSiteKey("");
+      return;
+    }
+    const host = window.location.hostname.toLowerCase();
+    const allowlistedHosts = new Set(["eod-hub.com", "www.eod-hub.com"]);
+    setTurnstileSiteKey(allowlistedHosts.has(host) ? configuredTurnstileSiteKey : "");
+  }, [configuredTurnstileSiteKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,7 +112,7 @@ export default function LoginPage() {
   }
 
   async function verifyTurnstile(): Promise<boolean> {
-    if (!siteKey) return true; // not configured — allow through
+    if (!turnstileSiteKey) return true; // not configured/allowlisted — allow through
     if (turnstileError) return true; // widget failed to load — allow through
     if (!turnstileToken) return false;
     const res = await fetch("/api/verify-turnstile", {
@@ -476,8 +484,8 @@ export default function LoginPage() {
             <>
               <button
                 onClick={handleLogin}
-                disabled={submitting || (!!siteKey && !turnstileToken && !turnstileError)}
-                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
+                disabled={submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError)}
+                style={{ ...buttonPrimary, opacity: submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
                 Login
@@ -504,8 +512,8 @@ export default function LoginPage() {
             <>
               <button
                 onClick={handleSignup}
-                disabled={submitting || (!!siteKey && !turnstileToken && !turnstileError)}
-                style={{ ...buttonPrimary, opacity: submitting || (!!siteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
+                disabled={submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError)}
+                style={{ ...buttonPrimary, opacity: submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
                 Complete Signup
@@ -530,10 +538,10 @@ export default function LoginPage() {
             </>
           )}
 
-          {siteKey && (
+          {turnstileSiteKey && (
             <Turnstile
               ref={turnstileRef}
-              siteKey={siteKey}
+              siteKey={turnstileSiteKey}
               onSuccess={(token) => setTurnstileToken(token)}
               onExpire={() => setTurnstileToken(null)}
               onError={() => { setTurnstileToken(null); setTurnstileError(true); }}
