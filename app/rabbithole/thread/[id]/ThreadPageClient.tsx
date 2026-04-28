@@ -30,6 +30,7 @@ export default function ThreadPageClient() {
   const [loading, setLoading] = useState(true);
   const [actionError, setActionError] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
   const [flagOpen, setFlagOpen] = useState(false);
   const [flagCategory, setFlagCategory] = useState<FlagCategory>("general");
   const [flagBusy, setFlagBusy] = useState(false);
@@ -61,18 +62,14 @@ export default function ThreadPageClient() {
     return session?.access_token ?? null;
   }
 
-  async function handleDeleteThread() {
+  async function confirmDeleteThread() {
     if (!thread || deleteBusy) return;
-    const isAuthor = viewerUserId === thread.author;
-    const promptMsg = isAuthor
-      ? "Remove this thread from RabbitHole? The original post stays in the feed."
-      : "Remove this thread as a moderator? The original post stays in the feed.";
-    if (!window.confirm(promptMsg)) return;
     setDeleteBusy(true);
     setActionError(null);
     const token = await withAuthToken();
     if (!token) {
       setDeleteBusy(false);
+      setConfirmRemoveOpen(false);
       setActionError("You must be logged in.");
       return;
     }
@@ -82,6 +79,7 @@ export default function ThreadPageClient() {
     });
     const json = await res.json().catch(() => ({}));
     setDeleteBusy(false);
+    setConfirmRemoveOpen(false);
     if (!res.ok) {
       setActionError(json?.error ?? "Could not delete thread.");
       return;
@@ -224,7 +222,7 @@ export default function ThreadPageClient() {
             {canDelete && (
               <button
                 type="button"
-                onClick={handleDeleteThread}
+                onClick={() => setConfirmRemoveOpen(true)}
                 disabled={deleteBusy}
                 style={{
                   border: "1px solid #7f1d1d",
@@ -274,6 +272,43 @@ export default function ThreadPageClient() {
       })()}
       {actionError && (
         <div style={{ color: "#fca5a5", fontSize: 13, marginBottom: 12 }}>{actionError}</div>
+      )}
+
+      {confirmRemoveOpen && thread && (
+        <div
+          onClick={() => !deleteBusy && setConfirmRemoveOpen(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 1300, background: "rgba(2,6,23,0.72)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 460, borderRadius: 14, border: "1px solid #334155", background: "#0f172a", color: "#e2e8f0", padding: 16 }}
+          >
+            <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>
+              {viewerUserId === thread.author ? "Remove from RabbitHole?" : "Remove thread as moderator?"}
+            </div>
+            <div style={{ fontSize: 14, color: "#94a3b8", lineHeight: 1.5 }}>
+              The original post stays in the feed. This only removes the RabbitHole thread.
+            </div>
+            <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setConfirmRemoveOpen(false)}
+                disabled={deleteBusy}
+                style={{ border: "1px solid #334155", background: "transparent", color: "#cbd5e1", borderRadius: 10, padding: "8px 14px", fontWeight: 700, cursor: deleteBusy ? "default" : "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteThread}
+                disabled={deleteBusy}
+                style={{ border: "1px solid #7f1d1d", background: deleteBusy ? "#1f2937" : "rgba(239,68,68,0.12)", color: deleteBusy ? "#94a3b8" : "#fca5a5", borderRadius: 10, padding: "8px 14px", fontWeight: 800, cursor: deleteBusy ? "default" : "pointer" }}
+              >
+                {deleteBusy ? "Removing..." : "Remove from RabbitHole"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Tag pills */}
