@@ -81,12 +81,35 @@ export async function GET(
     .eq("status", "approved");
 
   // Photo posts
-  const { data: photoPosts } = await db
+  const photoSelect = "id, user_id, content, photo_url, created_at, hidden_for_review";
+  let photoPostsResult = await db
     .from("unit_posts")
-    .select("id, user_id, content, photo_url, created_at")
+    .select(photoSelect)
     .eq("unit_id", unit.id)
+    .eq("post_type", "photo_album")
     .not("photo_url", "is", null)
     .order("created_at", { ascending: false });
+  let photoPosts = photoPostsResult.data ?? [];
+  if (photoPostsResult.error && String(photoPostsResult.error.message ?? "").toLowerCase().includes("hidden_for_review")) {
+    const fallbackPhotoPostsResult = await db
+      .from("unit_posts")
+      .select("id, user_id, content, photo_url, created_at")
+      .eq("unit_id", unit.id)
+      .eq("post_type", "photo_album")
+      .not("photo_url", "is", null)
+      .order("created_at", { ascending: false });
+    photoPosts = (fallbackPhotoPostsResult.data ?? []).map((photo) => ({
+      ...photo,
+      hidden_for_review: false,
+    }));
+  }
+
+  // Group events
+  const { data: eventRows } = await db
+    .from("events")
+    .select("id, user_id, title, date, organization, event_time, location, created_at, visibility, unit_id")
+    .eq("unit_id", unit.id)
+    .order("date", { ascending: true });
 
   // Collect all user ids to fetch profiles for
   const allUserIds = [
@@ -94,6 +117,7 @@ export async function GET(
       ...(pendingRows ?? []).map((r: { user_id: string }) => r.user_id),
       ...(memberRows ?? []).map((r: { user_id: string }) => r.user_id),
       ...(photoPosts ?? []).map((r: { user_id: string }) => r.user_id),
+      ...((eventRows ?? []) as Array<{ user_id: string }>).map((r) => r.user_id),
     ]),
   ];
 
@@ -137,17 +161,40 @@ export async function GET(
     }))
     .sort((a: { role: string }, b: { role: string }) => (ROLE_ORDER[a.role] ?? 99) - (ROLE_ORDER[b.role] ?? 99));
 
-  const photos = (photoPosts ?? []).map((p: { id: string; user_id: string; content: string | null; photo_url: string | null; created_at: string }) => ({
+  const photos = (photoPosts ?? []).map((p: { id: string; user_id: string; content: string | null; photo_url: string | null; created_at: string; hidden_for_review?: boolean | null }) => ({
     id: p.id,
     user_id: p.user_id,
     content: p.content,
     photo_url: p.photo_url,
     created_at: p.created_at,
+    hidden_for_review: p.hidden_for_review ?? false,
     author_name: getName(p.user_id),
     author_photo: profileMap[p.user_id]?.photo_url ?? null,
   }));
 
-  return NextResponse.json({ unit, pending, members, photos });
+  const events = ((eventRows ?? []) as Array<{
+    id: string;
+    user_id: string;
+    title: string;
+    date: string;
+    organization: string | null;
+    event_time: string | null;
+    location: string | null;
+    created_at: string;
+  }>).map((event) => ({
+    id: event.id,
+    user_id: event.user_id,
+    title: event.title,
+    date: event.date,
+    organization: event.organization,
+    event_time: event.event_time,
+    location: event.location,
+    created_at: event.created_at,
+    author_name: getName(event.user_id),
+    author_photo: profileMap[event.user_id]?.photo_url ?? null,
+  }));
+
+  return NextResponse.json({ unit, pending, members, photos, pending_photos: photos.filter((photo) => photo.hidden_for_review), events });
 }
 
 // PATCH — admin actions
@@ -164,9 +211,10 @@ export async function PATCH(
   const isOwner = membership.role === "owner";
 
   const body = await req.json() as {
-    action: "approve_member" | "deny_member" | "remove_member" | "change_role" | "delete_post";
+    action: "approve_member" | "deny_member" | "remove_member" | "change_role" | "delete_post" | "approve_photo" | "delete_event";
     user_id?: string;
     post_id?: string;
+    event_id?: string;
     role?: string;
   };
 
@@ -237,6 +285,29 @@ export async function PATCH(
     await db.from("unit_posts").delete().eq("id", post_id).eq("unit_id", unit.id);
     await db.from("unit_post_likes").delete().eq("unit_post_id", post_id);
     await db.from("unit_post_comments").delete().eq("unit_post_id", post_id);
+    return NextResponse.json({ success: true });
+  }
+
+  if (action === "approve_photo") {
+    const { post_id } = body;
+    if (!post_id) return NextResponse.json({ error: "post_id required" }, { status: 400 });
+    const { error } = await db
+      .from("unit_posts")
+      .update({ hidden_for_review: false })
+      .eq("id", post_id)
+      .eq("unit_id", unit.id)
+      .not("photo_url", "is", null);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true });
+  }
+
+  if (action === "delete_event") {
+    const { event_id } = body;
+    if (!event_id) return NextResponse.json({ error: "event_id required" }, { status: 400 });
+    await db.from("event_attendance").delete().eq("event_id", event_id);
+    await db.from("saved_events").delete().eq("event_id", event_id);
+    const { error } = await db.from("events").delete().eq("id", event_id).eq("unit_id", unit.id);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ success: true });
   }
 

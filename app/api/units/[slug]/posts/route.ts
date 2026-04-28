@@ -39,6 +39,13 @@ interface UnitPost {
   rabbithole_contribution_id: string | null;
 }
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const maybe = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+  const haystack = `${String(maybe.message ?? "")} ${String(maybe.details ?? "")} ${String(maybe.hint ?? "")}`.toLowerCase();
+  return haystack.includes(columnName.toLowerCase()) && (haystack.includes("column") || maybe.code === "42703");
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
@@ -70,7 +77,7 @@ export async function GET(
 
   const { data: membership } = await adminClient
     .from("unit_members")
-    .select("status")
+    .select("role, status")
     .eq("unit_id", unit.id)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -79,12 +86,25 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data: posts, error: postsError } = await adminClient
+  const postSelect = "id, unit_id, user_id, post_type, content, photo_url, gif_url, created_at, meta, rabbithole_thread_id, rabbithole_contribution_id";
+  let postsResult = await adminClient
     .from("unit_posts")
-    .select("id, unit_id, user_id, post_type, content, photo_url, gif_url, created_at, meta, rabbithole_thread_id, rabbithole_contribution_id")
+    .select(postSelect)
     .eq("unit_id", unit.id)
+    .eq("hidden_for_review", false)
     .order("created_at", { ascending: false })
     .limit(50);
+
+  if (postsResult.error && isMissingColumnError(postsResult.error, "hidden_for_review")) {
+    postsResult = await adminClient
+      .from("unit_posts")
+      .select(postSelect)
+      .eq("unit_id", unit.id)
+      .order("created_at", { ascending: false })
+      .limit(50);
+  }
+
+  const { data: posts, error: postsError } = postsResult;
 
   if (postsError) {
     return NextResponse.json({ error: postsError.message }, { status: 500 });
@@ -224,7 +244,7 @@ export async function POST(
 
   const { data: membership } = await adminClient
     .from("unit_members")
-    .select("status")
+    .select("role, status")
     .eq("unit_id", unit.id)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -239,12 +259,14 @@ export async function POST(
   }
 
   const body = await req.json();
-  const { content, photo_url, gif_url, rabbithole_contribution_id, meta } = body as {
+  const { content, photo_url, gif_url, rabbithole_contribution_id, meta, photo_submission_only, post_type } = body as {
     content?: string;
     photo_url?: string;
     gif_url?: string | null;
     rabbithole_contribution_id?: string | null;
     meta?: Record<string, unknown> | null;
+    photo_submission_only?: boolean;
+    post_type?: "post" | "photo_album";
   };
 
   if (!content?.trim() && !photo_url?.trim() && !gif_url) {
@@ -254,20 +276,38 @@ export async function POST(
     );
   }
 
-  const { data: post, error: insertError } = await adminClient
+  const normalizedPostType = post_type === "photo_album" ? "photo_album" : "post";
+
+  const shouldHoldForApproval =
+    Boolean(photo_submission_only && photo_url?.trim()) &&
+    !["owner", "admin"].includes(String(membership.role ?? ""));
+
+  const insertPayload: Record<string, unknown> = {
+    unit_id: unit.id,
+    user_id: user.id,
+    content: content?.trim() ?? null,
+    photo_url: photo_url?.trim() ?? null,
+    gif_url: gif_url ?? null,
+    post_type: normalizedPostType,
+    rabbithole_contribution_id: rabbithole_contribution_id ?? null,
+    meta: meta ?? null,
+    hidden_for_review: shouldHoldForApproval,
+  };
+
+  let { data: post, error: insertError } = await adminClient
     .from("unit_posts")
-    .insert({
-      unit_id: unit.id,
-      user_id: user.id,
-      content: content?.trim() ?? null,
-      photo_url: photo_url?.trim() ?? null,
-      gif_url: gif_url ?? null,
-      post_type: "post",
-      rabbithole_contribution_id: rabbithole_contribution_id ?? null,
-      meta: meta ?? null,
-    })
-    .select("id, unit_id, user_id, post_type, content, photo_url, gif_url, created_at, meta, rabbithole_thread_id, rabbithole_contribution_id")
+    .insert(insertPayload)
+    .select("id, unit_id, user_id, post_type, content, photo_url, gif_url, created_at, meta, rabbithole_thread_id, rabbithole_contribution_id, hidden_for_review")
     .single();
+
+  if (insertError && isMissingColumnError(insertError, "hidden_for_review")) {
+    const { hidden_for_review: _drop, ...fallbackPayload } = insertPayload;
+    ({ data: post, error: insertError } = await adminClient
+      .from("unit_posts")
+      .insert(fallbackPayload)
+      .select("id, unit_id, user_id, post_type, content, photo_url, gif_url, created_at, meta, rabbithole_thread_id, rabbithole_contribution_id")
+      .single());
+  }
 
   if (insertError || !post) {
     return NextResponse.json(

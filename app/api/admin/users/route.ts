@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+type ProfilesQueryResult = {
+  data: Array<Record<string, unknown>> | null;
+  error: { message: string } | null;
+};
+
 export async function GET(req: NextRequest) {
   // Verify caller is admin
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
@@ -33,21 +38,44 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Fetch all profiles and all auth users in parallel
+  const profileSelectWithMirrorsAndTier =
+    "user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count, access_tier";
+  const profileSelectWithMirrors =
+    "user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count";
+  const profileSelectWithTier =
+    "user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count, access_tier";
+  const profileSelectBase =
+    "user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count";
+
+  // Fetch profiles and auth users. The mirrored name/email columns are deployed via
+  // migration, so keep this compatible with environments that have not run it yet.
   const [profilesWithTierRes, authUsersRes] = await Promise.all([
     adminClient
       .from("profiles")
-      .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count, access_tier")
+      .select(profileSelectWithMirrorsAndTier)
       .order("created_at", { ascending: false }),
     adminClient.auth.admin.listUsers({ perPage: 1000 }),
   ]);
 
-  const profilesRes = profilesWithTierRes.error
-    ? await adminClient
-        .from("profiles")
-        .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count")
-        .order("created_at", { ascending: false })
-    : profilesWithTierRes;
+  let profilesRes = profilesWithTierRes as ProfilesQueryResult;
+  if (profilesRes.error) {
+    profilesRes = (await adminClient
+      .from("profiles")
+      .select(profileSelectWithMirrors)
+      .order("created_at", { ascending: false })) as ProfilesQueryResult;
+  }
+  if (profilesRes.error) {
+    profilesRes = (await adminClient
+      .from("profiles")
+      .select(profileSelectWithTier)
+      .order("created_at", { ascending: false })) as ProfilesQueryResult;
+  }
+  if (profilesRes.error) {
+    profilesRes = (await adminClient
+      .from("profiles")
+      .select(profileSelectBase)
+      .order("created_at", { ascending: false })) as ProfilesQueryResult;
+  }
 
   if (profilesRes.error) {
     return NextResponse.json({ error: profilesRes.error.message }, { status: 500 });
@@ -64,9 +92,10 @@ export async function GET(req: NextRequest) {
 
   // Merge: supplement missing profile names from auth metadata
   const profiles = (profilesRes.data ?? []).map((p) => {
-    const authMeta = authUserMap.get(p.user_id);
-    let first_name = p.first_name;
-    let last_name = p.last_name;
+    const authMeta = authUserMap.get(String(p.user_id));
+    const row = p as Record<string, unknown> & { email?: string | null; name?: string | null };
+    let first_name = typeof p.first_name === "string" ? p.first_name : null;
+    let last_name = typeof p.last_name === "string" ? p.last_name : null;
 
     if (!first_name && authMeta?.full_name) {
       const parts = authMeta.full_name.trim().split(/\s+/);
@@ -74,7 +103,13 @@ export async function GET(req: NextRequest) {
       last_name = parts.slice(1).join(" ") || null;
     }
 
-    return { ...p, first_name, last_name, email: authMeta?.email ?? null };
+    return {
+      ...p,
+      first_name,
+      last_name,
+      email: row.email ?? authMeta?.email ?? null,
+      name: row.name ?? authMeta?.full_name ?? null,
+    };
   });
 
   return NextResponse.json({ users: profiles });

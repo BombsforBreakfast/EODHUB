@@ -10,6 +10,7 @@ import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
 import { postNotifyJson } from "../lib/postNotifyClient";
 import UrlPreviewCard from "../components/UrlPreviewCard";
 import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
+import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -37,6 +38,55 @@ type Message = {
   created_at: string;
   gif_url: string | null;
 };
+
+type EventInviteSnapshot = {
+  id: string;
+  title: string | null;
+  date: string | null;
+  organization: string | null;
+  signup_url: string | null;
+  image_url: string | null;
+  description: string | null;
+  location: string | null;
+  event_time: string | null;
+  poc_name: string | null;
+  poc_phone: string | null;
+  unit_id?: string | null;
+  visibility?: string | null;
+};
+
+type EventInviteMeta = {
+  event: EventInviteSnapshot;
+  interested: number;
+  going: number;
+  myStatus: "interested" | "going" | null;
+};
+
+const EVENT_INVITE_URL_RE = /https?:\/\/[^\s]+\/events\?event=([0-9a-fA-F-]{20,}|[^&\s]+)(?:&[^\s]*)?/;
+
+function parseEventInviteId(content: string): string | null {
+  const match = content.match(EVENT_INVITE_URL_RE);
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
+function stripEventInviteUrl(content: string): string {
+  return content.replace(EVENT_INVITE_URL_RE, "").trim();
+}
+
+function formatEventInviteDate(dateString: string | null) {
+  if (!dateString) return "Date TBD";
+  return new Date(`${dateString}T12:00:00`).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
 
 function timeAgo(dateString: string) {
   const diff = Date.now() - new Date(dateString).getTime();
@@ -74,6 +124,8 @@ export default function SidebarPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [flaggingId, setFlaggingId] = useState<string | null>(null);
   const [urlPreviews, setUrlPreviews] = useState<Record<string, UrlPreview | null>>({});
+  const [eventInviteMeta, setEventInviteMeta] = useState<Record<string, EventInviteMeta>>({});
+  const [selectedInviteEventId, setSelectedInviteEventId] = useState<string | null>(null);
   const previewFetchesRef = useRef<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -382,6 +434,92 @@ export default function SidebarPage() {
       void ensurePreview(u);
     });
   }, [messages, newMessage, editContent, requestDraft]);
+
+  useEffect(() => {
+    const eventIds = Array.from(new Set(messages.map((msg) => parseEventInviteId(msg.content || "")).filter((id): id is string => Boolean(id))));
+    if (eventIds.length === 0) return;
+
+    async function loadEventInvites() {
+      const [{ data: eventRows, error: eventError }, { data: attendanceRows, error: attendanceError }] = await Promise.all([
+        supabase
+          .from("events")
+          .select("id, title, date, organization, signup_url, image_url, description, location, event_time, poc_name, poc_phone, unit_id, visibility")
+          .in("id", eventIds),
+        supabase
+          .from("event_attendance")
+          .select("event_id, user_id, status")
+          .in("event_id", eventIds),
+      ]);
+
+      if (eventError) {
+        console.error("Event invite details load error:", eventError);
+        return;
+      }
+      if (attendanceError) {
+        console.error("Event invite attendance load error:", attendanceError);
+      }
+
+      const attendanceByEvent = new Map<string, { interested: number; going: number; myStatus: "interested" | "going" | null }>();
+      ((attendanceRows ?? []) as { event_id: string; user_id: string; status: "interested" | "going" }[]).forEach((row) => {
+        const current = attendanceByEvent.get(row.event_id) ?? { interested: 0, going: 0, myStatus: null };
+        if (row.status === "interested") current.interested += 1;
+        if (row.status === "going") current.going += 1;
+        if (userId && row.user_id === userId) current.myStatus = row.status;
+        attendanceByEvent.set(row.event_id, current);
+      });
+
+      setEventInviteMeta((prev) => {
+        const next = { ...prev };
+        ((eventRows ?? []) as EventInviteSnapshot[]).forEach((event) => {
+          const counts = attendanceByEvent.get(event.id) ?? { interested: 0, going: 0, myStatus: null };
+          next[event.id] = { event, ...counts };
+        });
+        return next;
+      });
+    }
+
+    void loadEventInvites();
+  }, [messages, userId]);
+
+  async function toggleInviteEventAttendance(eventId: string, status: "interested" | "going") {
+    if (!userId) return;
+    const current = eventInviteMeta[eventId]?.myStatus ?? null;
+
+    try {
+      if (current === status) {
+        const { error } = await supabase
+          .from("event_attendance")
+          .delete()
+          .eq("event_id", eventId)
+          .eq("user_id", userId);
+        if (error) throw error;
+        await supabase.from("saved_events").delete().eq("event_id", eventId).eq("user_id", userId);
+      } else {
+        const { error } = await supabase
+          .from("event_attendance")
+          .upsert([{ event_id: eventId, user_id: userId, status }], { onConflict: "event_id,user_id" });
+        if (error) throw error;
+        await ensureSavedEventForUser(supabase, userId, eventId);
+      }
+
+      const { data } = await supabase
+        .from("event_attendance")
+        .select("user_id, status")
+        .eq("event_id", eventId);
+      let interested = 0;
+      let going = 0;
+      let myStatus: "interested" | "going" | null = null;
+      ((data ?? []) as { user_id: string; status: "interested" | "going" }[]).forEach((row) => {
+        if (row.status === "interested") interested += 1;
+        if (row.status === "going") going += 1;
+        if (row.user_id === userId) myStatus = row.status;
+      });
+      setEventInviteMeta((prev) => prev[eventId] ? { ...prev, [eventId]: { ...prev[eventId], interested, going, myStatus } } : prev);
+    } catch (err) {
+      console.error("Event invite RSVP failed:", err);
+      alert(err instanceof Error ? err.message : "Could not update your RSVP.");
+    }
+  }
 
   async function sendMessage() {
     const gif = selectedGifUrl;
@@ -752,6 +890,9 @@ export default function SidebarPage() {
         const isHovered = hoveredMsgId === msg.id;
         const isEditing = editingMsgId === msg.id;
         const isConfirm = confirmDeleteId === msg.id;
+        const inviteEventId = parseEventInviteId(msg.content || "");
+        const inviteMeta = inviteEventId ? eventInviteMeta[inviteEventId] : null;
+        const visibleMessageContent = inviteEventId ? stripEventInviteUrl(msg.content || "") : msg.content;
         return (
           <div
             key={msg.id}
@@ -808,15 +949,40 @@ export default function SidebarPage() {
               </div>
             ) : !isConfirm && (
               <div style={{
-                maxWidth: extractFirstUrl(msg.content || "") ? "60%" : "72%",
+                maxWidth: inviteEventId ? "min(360px, 86%)" : extractFirstUrl(msg.content || "") ? "60%" : "72%",
                 padding: msg.gif_url && !msg.content ? "4px" : "10px 14px",
                 borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
                 background: isMe ? "#111" : t.badgeBg,
                 color: isMe ? "white" : t.text,
                 fontSize: 14, lineHeight: 1.5,
               }}>
-                {msg.content && <div>{renderMessageTextWithLinks(msg.content)}</div>}
-                {msg.content && (() => {
+                {visibleMessageContent && <div>{renderMessageTextWithLinks(visibleMessageContent)}</div>}
+                {inviteMeta && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedInviteEventId(inviteMeta.event.id)}
+                    style={{ marginTop: visibleMessageContent ? 8 : 0, width: "100%", textAlign: "left", border: `1px solid ${isMe ? "rgba(255,255,255,0.22)" : t.border}`, borderRadius: 14, padding: 0, overflow: "hidden", background: isMe ? "rgba(255,255,255,0.08)" : t.surface, color: isMe ? "#fff" : t.text, cursor: "pointer" }}
+                  >
+                    {inviteMeta.event.image_url ? (
+                      <img src={inviteMeta.event.image_url} alt="" style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover", display: "block" }} />
+                    ) : null}
+                    <div style={{ padding: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.8, textTransform: "uppercase", opacity: 0.75 }}>Event Invite</div>
+                      <div style={{ marginTop: 3, fontWeight: 900, lineHeight: 1.25 }}>{inviteMeta.event.title || "Untitled Event"}</div>
+                      {inviteMeta.event.organization ? <div style={{ marginTop: 3, fontSize: 12, opacity: 0.78 }}>{inviteMeta.event.organization}</div> : null}
+                      <div style={{ marginTop: 5, fontSize: 12, opacity: 0.78 }}>{formatEventInviteDate(inviteMeta.event.date)}</div>
+                      <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                        <span style={{ borderRadius: 999, padding: "3px 8px", fontSize: 11, fontWeight: 800, background: isMe ? "rgba(255,255,255,0.12)" : t.badgeBg }}>
+                          Interested · {inviteMeta.interested}
+                        </span>
+                        <span style={{ borderRadius: 999, padding: "3px 8px", fontSize: 11, fontWeight: 800, background: isMe ? "rgba(255,255,255,0.12)" : t.badgeBg }}>
+                          Going · {inviteMeta.going}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                )}
+                {msg.content && !inviteEventId && (() => {
                   const url = extractFirstUrl(msg.content);
                   const preview = url ? urlPreviews[url] : null;
                   return preview ? (
@@ -1025,6 +1191,8 @@ export default function SidebarPage() {
     </div>
   );
 
+  const selectedInviteMeta = selectedInviteEventId ? eventInviteMeta[selectedInviteEventId] : null;
+
   return (
     <div style={{ color: t.text }}>
       <div style={{
@@ -1043,6 +1211,72 @@ export default function SidebarPage() {
           </>
         )}
       </div>
+      {selectedInviteMeta && (
+        <div
+          onClick={() => setSelectedInviteEventId(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 560, maxHeight: "85vh", overflowY: "auto", background: t.surface, color: t.text, borderRadius: 18, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.4)" }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {selectedInviteMeta.event.image_url ? (
+                  <div style={{ marginBottom: 14, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "16 / 9", maxHeight: 220, background: t.bg }}>
+                    <img src={selectedInviteMeta.event.image_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  </div>
+                ) : null}
+                <div style={{ fontSize: 24, fontWeight: 900 }}>{selectedInviteMeta.event.title || "Untitled Event"}</div>
+                {selectedInviteMeta.event.organization ? <div style={{ marginTop: 6, color: t.textMuted, fontSize: 15 }}>{selectedInviteMeta.event.organization}</div> : null}
+                <div style={{ marginTop: 8, color: t.textMuted, fontSize: 14 }}>{formatEventInviteDate(selectedInviteMeta.event.date)}</div>
+              </div>
+              <button type="button" onClick={() => setSelectedInviteEventId(null)} style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontWeight: 800 }}>
+                X
+              </button>
+            </div>
+
+            {selectedInviteMeta.event.description ? (
+              <div style={{ marginTop: 18, color: t.textMuted, lineHeight: 1.6, fontSize: 14 }}>{selectedInviteMeta.event.description}</div>
+            ) : null}
+
+            <div style={{ marginTop: 20, borderTop: `1px solid ${t.border}`, paddingTop: 16, display: "grid", gap: 10 }}>
+              <div style={{ fontWeight: 800, fontSize: 14 }}>Event Details</div>
+              {selectedInviteMeta.event.event_time ? <div style={{ color: t.textMuted, fontSize: 14 }}><strong>Time:</strong> {selectedInviteMeta.event.event_time}</div> : null}
+              {selectedInviteMeta.event.location ? <div style={{ color: t.textMuted, fontSize: 14 }}><strong>Location:</strong> {selectedInviteMeta.event.location}</div> : null}
+              {(selectedInviteMeta.event.poc_name || selectedInviteMeta.event.poc_phone) ? (
+                <div style={{ color: t.textMuted, fontSize: 14 }}>
+                  <strong>Point of Contact:</strong> {selectedInviteMeta.event.poc_name ?? ""}
+                  {selectedInviteMeta.event.poc_name && selectedInviteMeta.event.poc_phone ? " — " : ""}
+                  {selectedInviteMeta.event.poc_phone ? <a href={`tel:${selectedInviteMeta.event.poc_phone.replace(/\s+/g, "")}`} style={{ fontWeight: 700 }}>{selectedInviteMeta.event.poc_phone}</a> : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div style={{ marginTop: 24, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              <button
+                type="button"
+                onClick={() => toggleInviteEventAttendance(selectedInviteMeta.event.id, "interested")}
+                style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer", background: selectedInviteMeta.myStatus === "interested" ? t.text : t.surface, color: selectedInviteMeta.myStatus === "interested" ? t.surface : t.text }}
+              >
+                {selectedInviteMeta.myStatus === "interested" ? "Interested ✓" : "Interested"} · {selectedInviteMeta.interested}
+              </button>
+              <button
+                type="button"
+                onClick={() => toggleInviteEventAttendance(selectedInviteMeta.event.id, "going")}
+                style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer", background: selectedInviteMeta.myStatus === "going" ? t.text : t.surface, color: selectedInviteMeta.myStatus === "going" ? t.surface : t.text }}
+              >
+                {selectedInviteMeta.myStatus === "going" ? "Going ✓" : "Going"} · {selectedInviteMeta.going}
+              </button>
+              {selectedInviteMeta.event.signup_url ? (
+                <a href={selectedInviteMeta.event.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", textDecoration: "none", background: "black", color: "white", padding: "10px 16px", borderRadius: 10, fontWeight: 800, marginLeft: "auto" }}>
+                  Open Event Link
+                </a>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
       <MemberPaywallModal open={paywallOpen} onClose={() => setPaywallOpen(false)} />
     </div>
   );

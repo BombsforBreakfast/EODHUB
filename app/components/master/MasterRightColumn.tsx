@@ -22,6 +22,8 @@ import { BizListingTagsField } from "../biz/BizListingTagsField";
 import { BizListingTagChips } from "../biz/BizListingTagChips";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../../lib/bizListingTags";
 
+type BusinessOrgListingType = Exclude<BizListingType, "resource">;
+
 type DesktopConversation = {
   id: string;
   participant_1: string;
@@ -84,7 +86,7 @@ export default function MasterRightColumn({
   const [bizUrl, setBizUrl] = useState("");
   const [bizName, setBizName] = useState("");
   const [bizBlurb, setBizBlurb] = useState("");
-  const [bizType, setBizType] = useState<BizListingType>("business");
+  const [bizType, setBizType] = useState<BusinessOrgListingType>("business");
   const [bizOgPreview, setBizOgPreview] = useState<OgPreview | null>(null);
   const [featuredBizBillboardIndex, setFeaturedBizBillboardIndex] = useState(0);
   const [fetchingBizOg, setFetchingBizOg] = useState(false);
@@ -257,6 +259,7 @@ export default function MasterRightColumn({
   const featuredBizPool = useMemo(
     () =>
       [...businessListings]
+        .filter((b) => normalizeBizListingTypeForListing(b) !== "resource")
         .filter((b) => b.is_featured || isPermanentlyFeaturedListing(b))
         .sort((a, b) => {
           const aPinned = isPermanentlyFeaturedListing(a) ? 1 : 0;
@@ -273,28 +276,37 @@ export default function MasterRightColumn({
         }),
     [businessListings]
   );
+  void featuredBizPool; // Keep the featured pool available for a future paid spotlight.
 
-  const rotatingFeaturedBusinesses = useMemo(
-    () => featuredBizPool.filter((b) => normalizeBizListingTypeForListing(b) === "business"),
-    [featuredBizPool]
+  const businessOrgListingsPool = useMemo(
+    () =>
+      [...businessListings]
+        .filter((b) => normalizeBizListingTypeForListing(b) !== "resource")
+        .sort((a, b) => {
+          const typeDiff = getBizTypePriority(a) - getBizTypePriority(b);
+          if (typeDiff !== 0) return typeDiff;
+          const aName = (a.business_name || a.og_title || a.og_site_name || "").trim();
+          const bName = (b.business_name || b.og_title || b.og_site_name || "").trim();
+          return aName.localeCompare(bName, undefined, { sensitivity: "base" });
+        }),
+    [businessListings]
   );
 
   const desktopBillboardListing =
-    rotatingFeaturedBusinesses.length > 0
-      ? rotatingFeaturedBusinesses[featuredBizBillboardIndex % rotatingFeaturedBusinesses.length]
+    businessOrgListingsPool.length > 0
+      ? businessOrgListingsPool[featuredBizBillboardIndex % businessOrgListingsPool.length]
       : null;
 
-  const businessListingsForPane = featuredBizPool
-    .filter((b) => !desktopBillboardListing || b.id !== desktopBillboardListing.id)
-    .slice(0, 5);
-
   useEffect(() => {
-    if (rotatingFeaturedBusinesses.length <= 1) return;
+    if (businessOrgListingsPool.length <= 1) return;
     const id = window.setInterval(() => {
-      setFeaturedBizBillboardIndex((prev) => (prev + 1) % rotatingFeaturedBusinesses.length);
+      setFeaturedBizBillboardIndex((prev) => {
+        const next = Math.floor(Math.random() * businessOrgListingsPool.length);
+        return next === prev ? (next + 1) % businessOrgListingsPool.length : next;
+      });
     }, 5000);
     return () => window.clearInterval(id);
-  }, [rotatingFeaturedBusinesses.length]);
+  }, [businessOrgListingsPool.length]);
 
   function handleBizUrlChange(value: string) {
     setBizUrl(value);
@@ -509,7 +521,7 @@ export default function MasterRightColumn({
             cursor: "pointer",
           }}
         >
-          Biz/Orgs/Resources
+          Businesses/Orgs
         </Link>
       </aside>
     );
@@ -647,7 +659,7 @@ export default function MasterRightColumn({
               cursor: "pointer",
             }}
           >
-            Biz/Orgs/Resources
+            Businesses/Orgs
           </Link>
           <a href="/businesses" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
             See all →
@@ -662,10 +674,10 @@ export default function MasterRightColumn({
             }}
             style={{ border: "none", background: "none", color: "#2563eb", fontWeight: 700, fontSize: 13, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
           >
-            {showBizForm ? "Cancel" : "Add Biz/Org/Resource \u2192"}
+            {showBizForm ? "Cancel" : "Add Business/Org \u2192"}
           </button>
         </div>
-        <div style={{ marginTop: 10, maxHeight: 430, overflowY: "auto", paddingRight: 2 }}>
+        <div style={{ marginTop: 10 }}>
           {showBizForm && (
             <div style={{ marginTop: 4, border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
               {bizSubmitSuccess ? (
@@ -698,12 +710,11 @@ export default function MasterRightColumn({
                     <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 4 }}>Type *</label>
                     <select
                       value={bizType}
-                      onChange={(e) => setBizType(e.target.value as BizListingType)}
+                      onChange={(e) => setBizType(e.target.value as BusinessOrgListingType)}
                       style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, boxSizing: "border-box", background: t.input, color: t.text }}
                     >
                       <option value="business">Business</option>
                       <option value="organization">Organization</option>
-                      <option value="resource">Resource</option>
                     </select>
                   </div>
 
@@ -775,9 +786,10 @@ export default function MasterRightColumn({
                   key={`billboard-${listing.id}`}
                   style={{
                     border: `2px solid ${t.border}`,
-                    borderRadius: 12,
+                    borderRadius: 16,
                     overflow: "hidden",
                     background: t.surface,
+                    boxSizing: "border-box",
                   }}
                 >
                   <a href={listing.website_url} target="_blank" rel="noreferrer" style={{ display: "block", textDecoration: "none", color: "inherit" }}>
@@ -785,25 +797,27 @@ export default function MasterRightColumn({
                       <img
                         src={httpsAssetUrl(listing.og_image)}
                         alt={displayTitle}
-                        style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
+                        style={{ width: "100%", height: 230, objectFit: "contain", display: "block", background: "#fff" }}
                       />
                     ) : null}
-                    <div style={{ padding: 14, paddingBottom: 10 }}>
+                    <div style={{ padding: 16, paddingBottom: 12 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                         <span style={{ fontSize: 11, fontWeight: 800, color: "#111", background: "#fef9c3", padding: "2px 8px", borderRadius: 20 }}>
-                          Featured Spotlight
+                          Business/Org Spotlight
                         </span>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Rotates every 5s</span>
+                        
                       </div>
-                      <div style={{ fontWeight: 800, lineHeight: 1.3, fontSize: 18 }}>{displayTitle}</div>
-                      <div style={{ marginTop: 8, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>{displayDescription}</div>
+                      <div style={{ fontWeight: 800, lineHeight: 1.25, fontSize: 20 }}>{displayTitle}</div>
+                      <div style={{ marginTop: 10, fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>{displayDescription}</div>
                     </div>
                   </a>
-                  <div style={{ padding: "0 14px 8px" }}>
+                  <div style={{ padding: "0 16px 8px" }}>
                     <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} />
                   </div>
-                  <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Business</span>
+                  <div style={{ padding: "0 16px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
+                      {normalizeBizListingTypeForListing(listing) === "organization" ? "Organization" : "Business"}
+                    </span>
                     <button
                       onClick={(e) => handleBizLike(e, listing.id)}
                       disabled={togglingBizLikeFor === listing.id || !userId}
@@ -827,78 +841,10 @@ export default function MasterRightColumn({
                 </div>
               );
             })()}
-          {!bizLoaded && [0, 1, 2].map((i) => <SkeletonCard key={i} />)}
-          {bizLoaded && businessListingsForPane.length === 0 && (
-            <div style={{ fontSize: 14, color: t.textMuted }}>No featured listings yet.</div>
+          {!bizLoaded && <SkeletonCard />}
+          {bizLoaded && !desktopBillboardListing && (
+            <div style={{ fontSize: 14, color: t.textMuted }}>No approved listings yet.</div>
           )}
-
-          {bizLoaded &&
-            businessListingsForPane.map((listing) => {
-              const displayTitle = listing.og_title || listing.business_name || listing.og_site_name || "Business Listing";
-              const displayDescription = listing.custom_blurb || listing.og_description || "Visit website";
-              const isLiked = likedBizIds.has(listing.id);
-              return (
-                <div
-                  key={listing.id}
-                  style={{
-                    border: `1px solid ${t.border}`,
-                    borderRadius: 12,
-                    overflow: "hidden",
-                    background: t.surface,
-                  }}
-                >
-                  <a href={listing.website_url} target="_blank" rel="noreferrer" style={{ display: "block", textDecoration: "none", color: "inherit" }}>
-                    {listing.og_image ? (
-                      <img
-                        src={httpsAssetUrl(listing.og_image)}
-                        alt={displayTitle}
-                        style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
-                      />
-                    ) : null}
-
-                    <div style={{ padding: 14, paddingBottom: 10 }}>
-                      <div style={{ fontWeight: 800, lineHeight: 1.3, fontSize: 18 }}>{displayTitle}</div>
-                      <div style={{ marginTop: 8, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>{displayDescription}</div>
-                    </div>
-                  </a>
-                  <div style={{ padding: "0 14px 8px" }}>
-                    <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} />
-                  </div>
-
-                  <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      {(listing.is_featured || isPermanentlyFeaturedListing(listing)) ? (
-                        <span style={{ fontSize: 11, fontWeight: 800, color: "#111", background: "#fef9c3", padding: "2px 8px", borderRadius: 20 }}>
-                          Featured
-                        </span>
-                      ) : null}
-                      <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "capitalize" }}>
-                        {normalizeBizListingTypeForListing(listing)}
-                      </span>
-                    </div>
-                    <button
-                      onClick={(e) => handleBizLike(e, listing.id)}
-                      disabled={togglingBizLikeFor === listing.id || !userId}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: userId ? "pointer" : "default",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 5,
-                        padding: "4px 0",
-                        opacity: togglingBizLikeFor === listing.id ? 0.5 : 1,
-                      }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill={isLiked ? t.text : "none"} stroke={t.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                      </svg>
-                      <span style={{ fontSize: 13, fontWeight: 700 }}>{listing.like_count ?? 0}</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
           </div>
         </div>
       </div>

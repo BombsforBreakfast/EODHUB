@@ -26,6 +26,8 @@ type CalendarEvent = {
   poc_name: string | null;
   poc_phone: string | null;
   created_at: string;
+  unit_id?: string | null;
+  visibility?: "public" | "group" | string | null;
 };
 
 type Memorial = {
@@ -37,6 +39,7 @@ type Memorial = {
   death_date: string;
   created_at: string;
   source_url: string | null;
+  category?: "military" | "leo_fed" | null;
 };
 
 type AttendanceRow = {
@@ -45,10 +48,55 @@ type AttendanceRow = {
   status: "interested" | "going";
 };
 
+type InviteUser = {
+  user_id: string;
+  display_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  photo_url: string | null;
+  service: string | null;
+};
+
+const INVITE_BRANCHES = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal"];
+const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
+
+function isHiddenInviteAccount(user: Pick<InviteUser, "user_id" | "display_name" | "first_name" | "last_name">) {
+  const name = `${user.display_name ?? ""} ${user.first_name ?? ""} ${user.last_name ?? ""}`
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const compactName = name.replace(/[^a-z0-9]/g, "");
+  return (
+    user.user_id === RUMINT_USER_ID ||
+    compactName === "rumint" ||
+    compactName === "eodhub" ||
+    compactName === "eodhubadmin"
+  );
+}
+
+type CalendarView = "day" | "week" | "month";
+
 const EVENT_COLUMNS =
-  "id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at";
+  "id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at, unit_id, visibility";
 const MEMORIAL_COLUMNS =
-  "id, user_id, name, bio, photo_url, death_date, created_at, source_url";
+  "id, user_id, name, bio, photo_url, death_date, created_at, source_url, category";
+
+const MEMORIAL_MILITARY_COLOR = "#d9582b";
+const MEMORIAL_LEO_COLOR = "#062b4f";
+
+function memorialTheme(category?: Memorial["category"]) {
+  const isLeoFed = category === "leo_fed";
+  return {
+    color: isLeoFed ? MEMORIAL_LEO_COLOR : MEMORIAL_MILITARY_COLOR,
+    label: isLeoFed ? "End of Watch" : "We Remember",
+  };
+}
+
+function memorialDisclaimer(category?: Memorial["category"]) {
+  return category === "leo_fed"
+    ? "* This information has been respectfully referenced from bombtechmemorial.org."
+    : "* This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.";
+}
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -64,6 +112,10 @@ const MAX_VISIBLE_EVENT_PILLS = 2;
 
 function toDateStr(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function dateFromDateStr(dateStr: string) {
+  return new Date(`${dateStr}T12:00:00`);
 }
 
 function anniversaryDate(deathDate: string, year: number) {
@@ -117,10 +169,12 @@ function EventsPageInner() {
   const deepLinkEventId = searchParams?.get("event") ?? null;
   const deepLinkAdd = searchParams?.get("add")?.toLowerCase() ?? null;
   const today = new Date();
+  const initialTodayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate());
 
   const [year, setYear] = useState(today.getFullYear());
   const [month, setMonth] = useState(today.getMonth());
-  const [calendarView, setCalendarView] = useState<"month" | "week">("month");
+  const [calendarView, setCalendarView] = useState<CalendarView>("month");
+  const [calendarDay, setCalendarDay] = useState(initialTodayStr);
   const [weekStart, setWeekStart] = useState<Date>(() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -163,10 +217,24 @@ function EventsPageInner() {
   const [submittingEvent, setSubmittingEvent] = useState(false);
   const eventPhotoInputRef = useRef<HTMLInputElement>(null);
   const eventDateInputRef = useRef<HTMLInputElement>(null);
+  const memorialPhotoInputRef = useRef<HTMLInputElement>(null);
+  const mobileDefaultAppliedRef = useRef(false);
   const [eventCoverCropOpen, setEventCoverCropOpen] = useState(false);
   const [eventCoverCropSrc, setEventCoverCropSrc] = useState<string | null>(null);
   const [eventCoverUrl, setEventCoverUrl] = useState<string | null>(null);
   const [uploadingEventCover, setUploadingEventCover] = useState(false);
+  const [isCalendarMobile, setIsCalendarMobile] = useState(false);
+  const [showEventInvite, setShowEventInvite] = useState(false);
+  const [eventInviteTarget, setEventInviteTarget] = useState<CalendarEvent | null>(null);
+  const [inviteUsers, setInviteUsers] = useState<InviteUser[]>([]);
+  const [inviteQuery, setInviteQuery] = useState("");
+  const [inviteBranches, setInviteBranches] = useState<Set<string>>(new Set());
+  const [selectedInvites, setSelectedInvites] = useState<Set<string>>(new Set());
+  const [pendingEventInvites, setPendingEventInvites] = useState<Set<string>>(new Set());
+  const [eventInviteDraftMode, setEventInviteDraftMode] = useState(false);
+  const [invitingEvent, setInvitingEvent] = useState(false);
+  const [inviteMsg, setInviteMsg] = useState<string | null>(null);
+  const inviteLoadedRef = useRef(false);
 
   const [showMemorialForm, setShowMemorialForm] = useState(false);
   const [memWizUrl, setMemWizUrl] = useState("");
@@ -174,6 +242,8 @@ function EventsPageInner() {
   const [memWizDate, setMemWizDate] = useState("");
   const [memWizBio, setMemWizBio] = useState("");
   const [memWizImage, setMemWizImage] = useState("");
+  const [memWizCategory, setMemWizCategory] = useState<"military" | "leo_fed">("military");
+  const [memWizPhotoUploading, setMemWizPhotoUploading] = useState(false);
   const [memWizFetching, setMemWizFetching] = useState(false);
   const [memWizSaving, setMemWizSaving] = useState(false);
   const [memWizMsg, setMemWizMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
@@ -189,7 +259,12 @@ function EventsPageInner() {
     return d;
   }, [weekStart]);
 
+  const calendarDayDate = useMemo(() => dateFromDateStr(calendarDay), [calendarDay]);
+
   const calendarCells: (Date | null)[] = useMemo(() => {
+    if (calendarView === "day") {
+      return [calendarDayDate];
+    }
     if (calendarView === "week") {
       return Array.from({ length: 7 }, (_, i) => {
         const d = new Date(weekStart);
@@ -200,19 +275,29 @@ function EventsPageInner() {
     const cells: (Date | null)[] = Array(firstDayOfMonth).fill(null);
     for (let i = 1; i <= daysInMonth; i++) cells.push(new Date(year, month, i));
     return cells;
-  }, [calendarView, weekStart, year, month, daysInMonth, firstDayOfMonth]);
+  }, [calendarView, calendarDayDate, weekStart, year, month, daysInMonth, firstDayOfMonth]);
 
-  const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayStr = initialTodayStr;
 
   const rangeStartStr = useMemo(() => {
-    const d = calendarView === "week" ? weekStart : new Date(year, month, 1);
+    const d =
+      calendarView === "day"
+        ? calendarDayDate
+        : calendarView === "week"
+          ? weekStart
+          : new Date(year, month, 1);
     return toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
-  }, [calendarView, weekStart, year, month]);
+  }, [calendarView, calendarDayDate, weekStart, year, month]);
 
   const rangeEndStr = useMemo(() => {
-    const d = calendarView === "week" ? weekEnd : new Date(year, month, daysInMonth);
+    const d =
+      calendarView === "day"
+        ? calendarDayDate
+        : calendarView === "week"
+          ? weekEnd
+          : new Date(year, month, daysInMonth);
     return toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
-  }, [calendarView, weekEnd, year, month, daysInMonth]);
+  }, [calendarView, calendarDayDate, weekEnd, year, month, daysInMonth]);
 
   async function loadEvents(): Promise<CalendarEvent[]> {
     const { data, error } = await supabase
@@ -220,6 +305,8 @@ function EventsPageInner() {
       .select(EVENT_COLUMNS)
       .gte("date", rangeStartStr)
       .lte("date", rangeEndStr)
+      .is("unit_id", null)
+      .eq("visibility", "public")
       .order("date", { ascending: true });
 
     if (error) { console.error("Events load error:", error); return []; }
@@ -376,6 +463,8 @@ function EventsPageInner() {
       .from("events")
       .select(EVENT_COLUMNS)
       .gte("date", todayStr)
+      .is("unit_id", null)
+      .eq("visibility", "public")
       .order("date", { ascending: true });
     if (error) { console.error("Upcoming events load error:", error); return; }
     const result = (data ?? []) as CalendarEvent[];
@@ -413,6 +502,115 @@ function EventsPageInner() {
     setSavedEventIds(new Set((data ?? []).map((r: { event_id: string }) => r.event_id)));
   }
 
+  async function loadInviteUsers() {
+    if (inviteLoadedRef.current) return;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("user_id, display_name, first_name, last_name, photo_url, service")
+      .order("display_name", { ascending: true });
+
+    if (error) {
+      console.error("Event invite users load error:", error);
+      return;
+    }
+
+    setInviteUsers((data ?? []) as InviteUser[]);
+    inviteLoadedRef.current = true;
+  }
+
+  function openEventInvite(event: CalendarEvent) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    setEventInviteTarget(event);
+    setSelectedInvites(new Set());
+    setInviteBranches(new Set());
+    setInviteQuery("");
+    setInviteMsg(null);
+    setEventInviteDraftMode(false);
+    setShowEventInvite(true);
+    void loadInviteUsers();
+  }
+
+  function openDraftEventInvite() {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    setEventInviteTarget(null);
+    setSelectedInvites(new Set(pendingEventInvites));
+    setInviteBranches(new Set());
+    setInviteQuery("");
+    setInviteMsg(null);
+    setEventInviteDraftMode(true);
+    setShowEventInvite(true);
+    void loadInviteUsers();
+  }
+
+  async function sendInviteMessagesForEvent(event: CalendarEvent, selectedUserIds: string[]) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) throw new Error("You must be signed in to invite members.");
+
+    const payload = encodeURIComponent(JSON.stringify({ type: "event_invite", eventId: event.id }));
+    const inviteUrl = `${window.location.origin}/events?event=${event.id}&invite=${payload}`;
+    const message = `You're invited to: ${event.title || "this event"}\n${inviteUrl}`;
+
+    for (const otherUserId of selectedUserIds) {
+      const res = await fetch("/api/sidebar/ensure-conversation", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ other_user_id: otherUserId }),
+      });
+      const json = (await res.json()) as { conversation_id?: string; error?: string };
+      if (!res.ok || !json.conversation_id) {
+        throw new Error(json.error ?? "Could not create conversation.");
+      }
+
+      const { error: msgError } = await supabase
+        .from("messages")
+        .insert({ conversation_id: json.conversation_id, sender_id: userId, content: message });
+      if (msgError) throw msgError;
+
+      await supabase
+        .from("conversations")
+        .update({ last_message_at: new Date().toISOString() })
+        .eq("id", json.conversation_id);
+    }
+  }
+
+  async function sendEventInvites() {
+    if (!userId || invitingEvent) return;
+
+    if (eventInviteDraftMode) {
+      setPendingEventInvites(new Set(selectedInvites));
+      setInviteMsg(selectedInvites.size > 0 ? `${selectedInvites.size} member${selectedInvites.size === 1 ? "" : "s"} queued for invite after publish.` : "Invite queue cleared.");
+      setShowEventInvite(false);
+      return;
+    }
+
+    if (!eventInviteTarget || selectedInvites.size === 0) return;
+    setInvitingEvent(true);
+    setInviteMsg(null);
+
+    try {
+      const selectedUserIds = Array.from(selectedInvites);
+      await sendInviteMessagesForEvent(eventInviteTarget, selectedUserIds);
+
+      setInviteMsg(`Invited ${selectedUserIds.length} member${selectedUserIds.length === 1 ? "" : "s"}.`);
+      setSelectedInvites(new Set());
+    } catch (err) {
+      console.error("sendEventInvites failed:", err);
+      setInviteMsg(err instanceof Error ? err.message : "Could not send invites.");
+    } finally {
+      setInvitingEvent(false);
+    }
+  }
+
   function closeEventCoverCrop() {
     if (eventCoverCropSrc) URL.revokeObjectURL(eventCoverCropSrc);
     setEventCoverCropSrc(null);
@@ -442,6 +640,34 @@ function EventsPageInner() {
     if (eventCoverCropSrc) URL.revokeObjectURL(eventCoverCropSrc);
     setEventCoverCropSrc(URL.createObjectURL(f));
     setEventCoverCropOpen(true);
+  }
+
+  async function uploadMemorialPhoto(file: File): Promise<string> {
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const path = `memorials/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
+    if (error) throw new Error(error.message);
+    return supabase.storage.from("feed-images").getPublicUrl(path).data.publicUrl;
+  }
+
+  async function handleMemorialPhotoPick(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please choose an image file.");
+      return;
+    }
+    setMemWizPhotoUploading(true);
+    try {
+      const publicUrl = await uploadMemorialPhoto(file);
+      setMemWizImage(publicUrl);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to upload photo.");
+    } finally {
+      setMemWizPhotoUploading(false);
+      if (memorialPhotoInputRef.current) {
+        memorialPhotoInputRef.current.value = "";
+      }
+    }
   }
 
   // Saved Events auto-sync from RSVP state via syncSavedEventForRsvp().
@@ -526,6 +752,30 @@ function EventsPageInner() {
         console.error("Event feed post error:", postErr);
       }
 
+      if (newEventId && pendingEventInvites.size > 0) {
+        try {
+          await sendInviteMessagesForEvent({
+            id: newEventId,
+            user_id: userId,
+            title: eventForm.title.trim(),
+            description: eventForm.description.trim() || null,
+            date: eventForm.date,
+            organization: eventForm.organization.trim() || null,
+            signup_url: eventForm.signup_url.trim() || null,
+            image_url: eventCoverUrl?.trim() || null,
+            location: eventForm.location.trim() || null,
+            event_time: eventForm.event_time.trim() || null,
+            poc_name: eventForm.poc_name.trim() || null,
+            poc_phone: eventForm.poc_phone.trim() || null,
+            created_at: new Date().toISOString(),
+          }, Array.from(pendingEventInvites));
+          setPendingEventInvites(new Set());
+        } catch (inviteErr) {
+          console.error("Event invite send after publish failed:", inviteErr);
+          alert(inviteErr instanceof Error ? inviteErr.message : "Event was published, but invites could not be sent.");
+        }
+      }
+
       setEventForm({ title: "", description: "", date: "", organization: "", signup_url: "", location: "", event_time: "", poc_name: "", poc_phone: "" });
       setEventCoverUrl(null);
       setShowEventForm(false);
@@ -580,10 +830,11 @@ function EventsPageInner() {
         source_url,
         bio: memWizBio.trim() || null,
         photo_url: memWizImage.trim() || null,
+        category: memWizCategory,
       }]);
       if (error) throw new Error(error.message);
       setMemWizMsg({ type: "ok", text: `${memWizName.trim()} added.` });
-      setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage("");
+      setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military");
       await loadMemorials();
     } catch (err) {
       setMemWizMsg({ type: "err", text: err instanceof Error ? err.message : String(err) });
@@ -634,25 +885,66 @@ function EventsPageInner() {
     setSelectedEvent(null);
   }
 
+  function prevDay() {
+    setCalendarDay((prev) => {
+      const d = dateFromDateStr(prev);
+      d.setDate(d.getDate() - 1);
+      setYear(d.getFullYear());
+      setMonth(d.getMonth());
+      return toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
+    });
+    setSelectedDay(null);
+    setSelectedEvent(null);
+  }
+
+  function nextDay() {
+    setCalendarDay((prev) => {
+      const d = dateFromDateStr(prev);
+      d.setDate(d.getDate() + 1);
+      setYear(d.getFullYear());
+      setMonth(d.getMonth());
+      return toDateStr(d.getFullYear(), d.getMonth(), d.getDate());
+    });
+    setSelectedDay(null);
+    setSelectedEvent(null);
+  }
+
   function prevRange() {
-    if (calendarView === "week") prevWeek();
+    if (calendarView === "day") prevDay();
+    else if (calendarView === "week") prevWeek();
     else prevMonth();
   }
 
   function nextRange() {
-    if (calendarView === "week") nextWeek();
+    if (calendarView === "day") nextDay();
+    else if (calendarView === "week") nextWeek();
     else nextMonth();
   }
 
+  function switchToDayView() {
+    const d =
+      calendarView === "week"
+        ? new Date(weekStart)
+        : calendarView === "month"
+          ? new Date(year, month, year === today.getFullYear() && month === today.getMonth() ? today.getDate() : 1)
+          : calendarDayDate;
+    setCalendarDay(toDateStr(d.getFullYear(), d.getMonth(), d.getDate()));
+    setYear(d.getFullYear());
+    setMonth(d.getMonth());
+    setCalendarView("day");
+    setSelectedDay(null);
+    setSelectedEvent(null);
+  }
+
   function switchToWeekView() {
-    const base = new Date(year, month, 1);
-    if (base.getMonth() === today.getMonth() && base.getFullYear() === today.getFullYear()) {
+    const base = calendarView === "day" ? calendarDayDate : new Date(year, month, 1);
+    if (calendarView !== "day" && base.getMonth() === today.getMonth() && base.getFullYear() === today.getFullYear()) {
       const d = new Date(today);
       d.setHours(0, 0, 0, 0);
       d.setDate(d.getDate() - d.getDay());
       setWeekStart(d);
     } else {
-      const d = new Date(year, month, 1);
+      const d = new Date(base);
       d.setDate(d.getDate() - d.getDay());
       setWeekStart(d);
     }
@@ -662,12 +954,31 @@ function EventsPageInner() {
   }
 
   function switchToMonthView() {
-    setYear(weekStart.getFullYear());
-    setMonth(weekStart.getMonth());
+    const base = calendarView === "day" ? calendarDayDate : weekStart;
+    setYear(base.getFullYear());
+    setMonth(base.getMonth());
     setCalendarView("month");
     setSelectedDay(null);
     setSelectedEvent(null);
   }
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(max-width: 720px)");
+    const syncMobileCalendar = () => {
+      setIsCalendarMobile(media.matches);
+    };
+
+    syncMobileCalendar();
+    if (media.matches && !mobileDefaultAppliedRef.current) {
+      mobileDefaultAppliedRef.current = true;
+      setCalendarView("day");
+      setCalendarDay(initialTodayStr);
+    }
+
+    media.addEventListener("change", syncMobileCalendar);
+    return () => media.removeEventListener("change", syncMobileCalendar);
+  }, [initialTodayStr]);
 
   useEffect(() => {
     async function init() {
@@ -710,7 +1021,7 @@ function EventsPageInner() {
         if (eventsResult.length > 0) loadAttendance(eventsResult.map((e) => e.id), userId);
       });
     }
-  }, [year, month, calendarView, weekStart]);
+  }, [year, month, calendarView, weekStart, calendarDay]);
 
   // Deep-link handler: `/events?event=<id>` (used by saved-event cards in
   // MasterLeftColumn so a saved event opens the SAME modal as the calendar).
@@ -736,6 +1047,8 @@ function EventsPageInner() {
         .from("events")
         .select(EVENT_COLUMNS)
         .eq("id", deepLinkEventId)
+        .is("unit_id", null)
+        .eq("visibility", "public")
         .maybeSingle();
       if (cancelled) return;
       if (!error && data) {
@@ -810,6 +1123,16 @@ function EventsPageInner() {
     return events.filter((e) => e.date === dayEventsListModal);
   }, [dayEventsListModal, events]);
 
+  const dayViewEvents = useMemo(
+    () => events.filter((e) => e.date === calendarDay),
+    [events, calendarDay]
+  );
+
+  const dayViewMemorials = useMemo(
+    () => memorials.filter((m) => anniversaryDate(m.death_date, calendarDayDate.getFullYear()) === calendarDay),
+    [memorials, calendarDay, calendarDayDate]
+  );
+
   if (loading) {
     return (
       <div style={{ color: t.text }}>
@@ -825,6 +1148,16 @@ function EventsPageInner() {
   const memorialOnSelectedDay = selectedDay
     ? memorials.filter((m) => anniversaryDate(m.death_date, year) === selectedDay)
     : [];
+
+  const filteredInviteUsers = inviteUsers.filter((u) => {
+    if (u.user_id === userId) return false;
+    if (isHiddenInviteAccount(u)) return false;
+    const name = u.display_name || `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || "EOD Member";
+    const q = inviteQuery.trim().toLowerCase();
+    const matchesQuery = !q || name.toLowerCase().includes(q) || (u.service ?? "").toLowerCase().includes(q);
+    const matchesBranch = inviteBranches.size === 0 || (u.service && inviteBranches.has(u.service));
+    return matchesQuery && matchesBranch;
+  });
 
   const inputStyle: CSSProperties = {
     width: "100%",
@@ -948,29 +1281,40 @@ function EventsPageInner() {
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
+              gap: 12,
               marginBottom: 4,
             }}
           >
             <div style={{ fontSize: 18, fontWeight: 900 }}>Add Event</div>
-            <button
-              type="button"
-              onClick={() => {
-                if (eventCoverCropSrc) URL.revokeObjectURL(eventCoverCropSrc);
-                setEventCoverCropSrc(null);
-                setEventCoverCropOpen(false);
-                setEventCoverUrl(null);
-                setShowEventForm(false);
-              }}
-              style={{
-                background: "transparent",
-                border: "none",
-                fontSize: 20,
-                cursor: "pointer",
-                color: t.textMuted,
-              }}
-            >
-              ×
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button
+                type="button"
+                onClick={openDraftEventInvite}
+                title="Choose members now. Invites send after you publish the event."
+                style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 14px", fontWeight: 800, background: pendingEventInvites.size > 0 ? t.text : t.badgeBg, color: pendingEventInvites.size > 0 ? t.surface : t.text, cursor: "pointer" }}
+              >
+                Invite Members{pendingEventInvites.size > 0 ? ` (${pendingEventInvites.size})` : ""}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (eventCoverCropSrc) URL.revokeObjectURL(eventCoverCropSrc);
+                  setEventCoverCropSrc(null);
+                  setEventCoverCropOpen(false);
+                  setEventCoverUrl(null);
+                  setShowEventForm(false);
+                }}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  fontSize: 20,
+                  cursor: "pointer",
+                  color: t.textMuted,
+                }}
+              >
+                ×
+              </button>
+            </div>
           </div>
 
           <label style={labelStyle}>Title *</label>
@@ -1207,7 +1551,7 @@ function EventsPageInner() {
             <div style={{ fontSize: 18, fontWeight: 900 }}>Add Memorial</div>
             <button
               type="button"
-              onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizMsg(null); }}
+              onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military"); setMemWizMsg(null); }}
               style={{ background: "transparent", border: "none", fontSize: 20, cursor: "pointer", color: t.textMuted }}
             >×</button>
           </div>
@@ -1216,6 +1560,36 @@ function EventsPageInner() {
           </div>
 
           <div style={{ display: "grid", gap: 12 }}>
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Memorial type</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                {([
+                  { value: "military", label: "Military", color: MEMORIAL_MILITARY_COLOR },
+                  { value: "leo_fed", label: "LEO/FED", color: MEMORIAL_LEO_COLOR },
+                ] as const).map((option) => {
+                  const selected = memWizCategory === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setMemWizCategory(option.value)}
+                      style={{
+                        border: `2px solid ${selected ? option.color : t.border}`,
+                        borderRadius: 12,
+                        padding: "10px 12px",
+                        background: selected ? option.color : t.surface,
+                        color: selected ? "white" : t.text,
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <div style={{ fontWeight: 900, fontSize: 14 }}>{option.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             {/* URL + get info */}
             <div style={{ display: "flex", gap: 8 }}>
               <input
@@ -1261,11 +1635,33 @@ function EventsPageInner() {
 
             {/* Preview card */}
             {(memWizImage || memWizBio) && (
-              <div style={{ display: "flex", gap: 14, padding: 14, borderRadius: 10, border: `2px solid #d9582b`, background: isDark ? "#2a1409" : "#fdf3ed" }}>
+              <div style={{ display: "flex", gap: 14, padding: 14, borderRadius: 10, border: `2px solid ${memorialTheme(memWizCategory).color}`, background: isDark ? (memWizCategory === "leo_fed" ? "#061a30" : "#2a1409") : (memWizCategory === "leo_fed" ? "#eef6ff" : "#fdf3ed") }}>
                 {memWizImage && (
-                  <img src={memWizImage} alt="" style={{ width: 72, height: 90, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "2px solid #d9582b" }} />
+                  <button
+                    type="button"
+                    onClick={() => memorialPhotoInputRef.current?.click()}
+                    disabled={memWizPhotoUploading}
+                    title="Change memorial photo"
+                    style={{
+                      width: 72,
+                      height: 90,
+                      border: `2px solid ${memorialTheme(memWizCategory).color}`,
+                      borderRadius: 8,
+                      padding: 0,
+                      overflow: "hidden",
+                      flexShrink: 0,
+                      background: "transparent",
+                      cursor: memWizPhotoUploading ? "not-allowed" : "pointer",
+                      opacity: memWizPhotoUploading ? 0.65 : 1,
+                    }}
+                  >
+                    <img src={memWizImage} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  </button>
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ color: memorialTheme(memWizCategory).color, fontSize: 11, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                    {memorialTheme(memWizCategory).label}
+                  </div>
                   {memWizName && <div style={{ fontWeight: 800, fontSize: 15 }}>{memWizName}</div>}
                   {memWizBio && (
                     <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
@@ -1278,17 +1674,44 @@ function EventsPageInner() {
 
             {/* Actions */}
             <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <input
+                ref={memorialPhotoInputRef}
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  void handleMemorialPhotoPick(e.target.files?.[0] ?? null);
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => memorialPhotoInputRef.current?.click()}
+                disabled={memWizPhotoUploading}
+                style={{
+                  border: `1px solid ${memorialTheme(memWizCategory).color}`,
+                  borderRadius: 8,
+                  padding: "9px 16px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  background: "transparent",
+                  color: memorialTheme(memWizCategory).color,
+                  cursor: memWizPhotoUploading ? "not-allowed" : "pointer",
+                  opacity: memWizPhotoUploading ? 0.6 : 1,
+                }}
+              >
+                {memWizPhotoUploading ? "Uploading..." : memWizImage ? "Change Photo" : "Add Photo"}
+              </button>
               <button
                 type="button"
                 onClick={saveMemorial}
-                disabled={memWizSaving || !memWizName.trim() || !memWizDate}
-                style={{ background: "#d9582b", color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
+                disabled={memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate}
+                style={{ background: memorialTheme(memWizCategory).color, color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
               >
                 {memWizSaving ? "Publishing..." : "Publish Memorial"}
               </button>
               <button
                 type="button"
-                onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizMsg(null); }}
+                onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military"); setMemWizMsg(null); }}
                 style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, background: "transparent", color: t.text, cursor: "pointer" }}
               >
                 Cancel
@@ -1317,6 +1740,8 @@ function EventsPageInner() {
             display: "flex",
             alignItems: "center",
             justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: isCalendarMobile ? 10 : 12,
             padding: "16px 20px",
             borderBottom: `1px solid ${t.border}`,
           }}
@@ -1338,10 +1763,20 @@ function EventsPageInner() {
             ‹
           </button>
 
-          <div style={{ fontSize: 20, fontWeight: 900, textAlign: "center" }}>
-            {calendarView === "week"
-              ? `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${weekEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
-              : `${MONTH_NAMES[month]} ${year}`}
+          <div
+            style={{
+              flex: isCalendarMobile ? "1 1 100%" : "0 1 auto",
+              order: isCalendarMobile ? -1 : 0,
+              fontSize: isCalendarMobile ? 18 : 20,
+              fontWeight: 900,
+              textAlign: "center",
+            }}
+          >
+            {calendarView === "day"
+              ? calendarDayDate.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+              : calendarView === "week"
+                ? `${weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${weekEnd.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`
+                : `${MONTH_NAMES[month]} ${year}`}
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -1356,6 +1791,23 @@ function EventsPageInner() {
                 background: t.surface,
               }}
             >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={calendarView === "day"}
+                onClick={switchToDayView}
+                style={{
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  border: "none",
+                  background: calendarView === "day" ? t.text : "transparent",
+                  color: calendarView === "day" ? t.surface : t.textMuted,
+                  cursor: "pointer",
+                }}
+              >
+                Day
+              </button>
               <button
                 type="button"
                 role="tab"
@@ -1410,14 +1862,117 @@ function EventsPageInner() {
           </div>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(7, 1fr)",
-            borderBottom: `1px solid ${t.border}`,
-          }}
-        >
-          {DAY_LABELS.map((d) => (
+        {calendarView === "day" ? (
+          <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+            {dayViewMemorials.length === 0 && dayViewEvents.length === 0 && (
+              <div
+                style={{
+                  border: `1px dashed ${t.border}`,
+                  borderRadius: 14,
+                  padding: 18,
+                  color: t.textMuted,
+                  textAlign: "center",
+                  fontWeight: 700,
+                }}
+              >
+                No events or memorials for this day.
+              </div>
+            )}
+
+            {dayViewMemorials.map((m) => (
+              (() => {
+                const theme = memorialTheme(m.category);
+                return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setSelectedMemorial(m)}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  border: `2px solid ${theme.color}`,
+                  borderRadius: 14,
+                  padding: 16,
+                  background: isDark ? (m.category === "leo_fed" ? "#061a30" : "#2a1409") : (m.category === "leo_fed" ? "#eef6ff" : "#fdf3ed"),
+                  color: t.text,
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+                  {m.photo_url && (
+                    <div
+                      style={{
+                        width: 54,
+                        height: 54,
+                        borderRadius: "50%",
+                        overflow: "hidden",
+                        border: `3px solid ${theme.color}`,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={m.photo_url}
+                        alt={m.name}
+                        style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                      />
+                    </div>
+                  )}
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ color: theme.color, fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                      {theme.label}
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 900, lineHeight: 1.25 }}>
+                      {m.name}
+                    </div>
+                    <div style={{ marginTop: 4, color: t.textMuted, fontSize: 13 }}>
+                      {formatEventDate(calendarDay)}
+                    </div>
+                  </div>
+                </div>
+              </button>
+                );
+              })()
+            ))}
+
+            {dayViewEvents.map((ev) => (
+              <button
+                key={ev.id}
+                type="button"
+                onClick={() => setSelectedEvent(ev)}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 14,
+                  padding: 16,
+                  background: t.surface,
+                  color: t.text,
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ fontSize: 17, fontWeight: 900, lineHeight: 1.25 }}>{ev.title}</div>
+                <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13, lineHeight: 1.5 }}>
+                  {[ev.event_time, ev.location, ev.organization].filter(Boolean).join(" • ") || formatEventDate(ev.date)}
+                </div>
+                {ev.description && (
+                  <div style={{ marginTop: 10, color: t.textMuted, fontSize: 13, lineHeight: 1.5 }}>
+                    {ev.description.length > 180 ? `${ev.description.slice(0, 180)}...` : ev.description}
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(7, 1fr)",
+                borderBottom: `1px solid ${t.border}`,
+              }}
+            >
+              {DAY_LABELS.map((d) => (
             <div
               key={d}
               style={{
@@ -1430,17 +1985,17 @@ function EventsPageInner() {
             >
               {d}
             </div>
-          ))}
-        </div>
+              ))}
+            </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(7, 1fr)",
-            gridAutoRows: `${CALENDAR_FIXED_CELL_HEIGHT}px`,
-          }}
-        >
-          {calendarCells.map((cellDate, idx) => {
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(7, 1fr)",
+                gridAutoRows: `${CALENDAR_FIXED_CELL_HEIGHT}px`,
+              }}
+            >
+              {calendarCells.map((cellDate, idx) => {
             if (cellDate === null) {
               return (
                 <div
@@ -1648,8 +2203,10 @@ function EventsPageInner() {
                 </div>
               </div>
             );
-          })}
-        </div>
+              })}
+            </div>
+          </>
+        )}
       </div>
 
       {selectedDay && (eventsOnSelectedDay.length > 0 || memorialOnSelectedDay.length > 0) && (
@@ -1709,7 +2266,9 @@ function EventsPageInner() {
             </div>
 
             <div style={{ padding: "4px 24px 24px", overflowY: "auto", flex: 1, minHeight: 0 }}>
-              {memorialOnSelectedDay.map((m) => (
+              {memorialOnSelectedDay.map((m) => {
+                const theme = memorialTheme(m.category);
+                return (
                 <button
                   key={m.id}
                   type="button"
@@ -1721,11 +2280,11 @@ function EventsPageInner() {
                     display: "block",
                     width: "100%",
                     textAlign: "left",
-                    border: "2px solid #d9582b",
+                    border: `2px solid ${theme.color}`,
                     borderRadius: 14,
                     padding: 20,
                     marginBottom: 12,
-                    background: isDark ? "#2a1409" : "#fdf3ed",
+                    background: isDark ? (m.category === "leo_fed" ? "#061a30" : "#2a1409") : (m.category === "leo_fed" ? "#eef6ff" : "#fdf3ed"),
                     color: t.text,
                     cursor: "pointer",
                   }}
@@ -1739,7 +2298,7 @@ function EventsPageInner() {
                           borderRadius: "50%",
                           overflow: "hidden",
                           flexShrink: 0,
-                          border: "3px solid #d9582b",
+                          border: `3px solid ${theme.color}`,
                         }}
                       >
                         <img
@@ -1750,8 +2309,8 @@ function EventsPageInner() {
                       </div>
                     )}
                     <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontSize: 12, color: "#d9582b", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
-                        We Remember
+                      <div style={{ fontSize: 12, color: theme.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+                        {theme.label}
                       </div>
                       <div style={{ fontSize: 18, fontWeight: 900, marginTop: 2 }}>
                         {m.name}
@@ -1768,7 +2327,8 @@ function EventsPageInner() {
                     </div>
                   </div>
                 </button>
-              ))}
+                );
+              })}
 
               {eventsOnSelectedDay.map((ev) => (
                 <button
@@ -1936,6 +2496,15 @@ function EventsPageInner() {
                       >
                         Going {(attendance[ev.id]?.going ?? 0) > 0 ? `· ${attendance[ev.id].going}` : ""}
                       </button>
+                      {userId && (
+                        <button
+                          type="button"
+                          onClick={() => openEventInvite(ev)}
+                          style={{ background: t.badgeBg, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+                        >
+                          Invite
+                        </button>
+                      )}
                       {ev.signup_url && (
                         <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: isDark ? "#60a5fa" : "#1d4ed8", textDecoration: "none" }}>
                           Website ↗
@@ -1949,6 +2518,110 @@ function EventsPageInner() {
           </div>
         )}
       </div>
+
+      {showEventInvite && (eventInviteTarget || eventInviteDraftMode) && (
+        <div
+          onClick={() => setShowEventInvite(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 620, maxHeight: "85vh", overflow: "hidden", background: t.surface, color: t.text, borderRadius: 18, boxShadow: "0 20px 60px rgba(0,0,0,0.4)", display: "flex", flexDirection: "column" }}
+          >
+            <div style={{ padding: "18px 20px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 19, fontWeight: 900 }}>Invite Members</div>
+                <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>
+                  {eventInviteTarget?.title || eventForm.title.trim() || "New event"}
+                  {eventInviteDraftMode ? " · sends after publish" : ""}
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowEventInvite(false)} style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontWeight: 800 }}>
+                X
+              </button>
+            </div>
+
+            <div style={{ padding: 16, borderBottom: `1px solid ${t.border}`, display: "grid", gap: 12 }}>
+              <input
+                value={inviteQuery}
+                onChange={(e) => setInviteQuery(e.target.value)}
+                placeholder="Search members..."
+                style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "10px 12px", background: t.input, color: t.text, outline: "none", fontSize: 14 }}
+              />
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {INVITE_BRANCHES.map((branch) => {
+                  const active = inviteBranches.has(branch);
+                  return (
+                    <button
+                      key={branch}
+                      type="button"
+                      onClick={() => {
+                        setInviteBranches((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(branch)) next.delete(branch);
+                          else next.add(branch);
+                          return next;
+                        });
+                      }}
+                      style={{ border: `1px solid ${active ? t.text : t.border}`, borderRadius: 999, padding: "5px 10px", background: active ? t.text : t.surface, color: active ? t.surface : t.textMuted, fontSize: 12, fontWeight: 800, cursor: "pointer" }}
+                    >
+                      {branch}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 12 }}>
+              {filteredInviteUsers.length === 0 ? (
+                <div style={{ padding: 24, textAlign: "center", color: t.textFaint, fontSize: 14 }}>No matching members found.</div>
+              ) : (
+                filteredInviteUsers.map((u) => {
+                  const name = u.display_name || `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || "EOD Member";
+                  const checked = selectedInvites.has(u.user_id);
+                  return (
+                    <label key={u.user_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 8px", borderRadius: 12, cursor: "pointer", background: checked ? t.surfaceHover : "transparent" }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setSelectedInvites((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(u.user_id);
+                            else next.delete(u.user_id);
+                            return next;
+                          });
+                        }}
+                      />
+                      <div style={{ width: 38, height: 38, borderRadius: "50%", overflow: "hidden", background: "#111", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, flexShrink: 0 }}>
+                        {u.photo_url ? <img src={u.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : name[0]?.toUpperCase()}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: 14 }}>{name}</div>
+                        {u.service ? <div style={{ fontSize: 12, color: t.textMuted }}>{u.service}</div> : null}
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ padding: "14px 16px", borderTop: `1px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13, color: inviteMsg?.startsWith("Invited") ? "#16a34a" : t.textMuted }}>
+                {inviteMsg ?? (selectedInvites.size > 0 ? `${selectedInvites.size} selected` : "Select members to invite")}
+              </div>
+              <button
+                type="button"
+                onClick={sendEventInvites}
+                disabled={(!eventInviteDraftMode && selectedInvites.size === 0) || invitingEvent}
+                style={{ border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 900, cursor: (!eventInviteDraftMode && selectedInvites.size === 0) || invitingEvent ? "not-allowed" : "pointer", background: !eventInviteDraftMode && selectedInvites.size === 0 ? t.badgeBg : "#111", color: !eventInviteDraftMode && selectedInvites.size === 0 ? t.textMuted : "#fff", opacity: invitingEvent ? 0.7 : 1 }}
+              >
+                {eventInviteDraftMode ? `Save Invites${selectedInvites.size > 0 ? ` (${selectedInvites.size})` : ""}` : invitingEvent ? "Inviting..." : `Invite${selectedInvites.size > 0 ? ` (${selectedInvites.size})` : ""}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {selectedEvent && (
         <div
@@ -2130,6 +2803,15 @@ function EventsPageInner() {
                     Open Event Link
                   </a>
                 )}
+                {userId && selectedEvent.user_id === userId && (
+                  <button
+                    type="button"
+                    onClick={() => openEventInvite(selectedEvent)}
+                    style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer", background: t.badgeBg, color: t.text, marginLeft: selectedEvent.signup_url ? 0 : "auto" }}
+                  >
+                    Invite Members
+                  </button>
+                )}
               </div>
               <EventAttendeeAvatarRows
                 interested={attendeePreviews[selectedEvent.id]?.interested ?? []}
@@ -2245,6 +2927,9 @@ function EventsPageInner() {
         </div>
       )}
       {selectedMemorial && (
+        (() => {
+          const theme = memorialTheme(selectedMemorial.category);
+          return (
         <div
           onClick={() => setSelectedMemorial(null)}
           style={{
@@ -2252,10 +2937,11 @@ function EventsPageInner() {
             inset: 0,
             background: "rgba(0,0,0,0.35)",
             display: "flex",
-            alignItems: "center",
+            alignItems: isCalendarMobile ? "flex-start" : "center",
             justifyContent: "center",
-            padding: 20,
+            padding: isCalendarMobile ? "92px 14px 18px" : 20,
             zIndex: 1000,
+            boxSizing: "border-box",
           }}
         >
           <div
@@ -2263,7 +2949,7 @@ function EventsPageInner() {
             style={{
               width: "100%",
               maxWidth: 560,
-              maxHeight: "calc(100vh - 40px)",
+              maxHeight: isCalendarMobile ? "calc(100dvh - 110px)" : "calc(100vh - 40px)",
               background: t.surface,
               color: t.text,
               borderRadius: 18,
@@ -2283,9 +2969,10 @@ function EventsPageInner() {
                       borderRadius: "50%",
                       overflow: "hidden",
                       flexShrink: 0,
-                      border: "3px solid #d9582b",
+                      border: `3px solid ${theme.color}`,
                     }}
                   >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={selectedMemorial.photo_url}
                       alt={selectedMemorial.name}
@@ -2294,8 +2981,8 @@ function EventsPageInner() {
                   </div>
                 )}
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: "#d9582b", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
-                    We Remember
+                  <div style={{ fontSize: 12, color: theme.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+                    {theme.label}
                   </div>
                   <div style={{ fontSize: 22, fontWeight: 900, marginTop: 2, lineHeight: 1.2 }}>
                     {selectedMemorial.name}
@@ -2337,45 +3024,17 @@ function EventsPageInner() {
                 </div>
               ) : (
                 <div style={{ color: t.textFaint, fontSize: 14 }}>
-                  No biography on file.{selectedMemorial.source_url ? " Use “View Full Memorial” for the full tribute." : ""}
+                  No biography on file.
                 </div>
               )}
               <div style={{ marginTop: 16, fontSize: 11, lineHeight: 1.5, color: t.textFaint, fontStyle: "italic" }}>
-                * This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.
+                {memorialDisclaimer(selectedMemorial.category)}
               </div>
-            </div>
-
-            <div
-              style={{
-                marginTop: 12,
-                padding: "14px 24px 20px",
-                borderTop: `1px solid ${t.border}`,
-                display: "flex",
-                justifyContent: "flex-end",
-              }}
-            >
-              {selectedMemorial.source_url && (
-                <a
-                  href={selectedMemorial.source_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: "inline-block",
-                    textDecoration: "none",
-                    background: "#d9582b",
-                    color: "white",
-                    padding: "10px 16px",
-                    borderRadius: 10,
-                    fontWeight: 800,
-                    fontSize: 14,
-                  }}
-                >
-                  View Full Memorial →
-                </a>
-              )}
             </div>
           </div>
         </div>
+          );
+        })()
       )}
       <EventAttendeesListModal
         open={attendeesListModal !== null}

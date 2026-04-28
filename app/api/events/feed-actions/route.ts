@@ -65,12 +65,25 @@ export async function POST(req: NextRequest) {
   // Ensure event exists so the client gets a clean message instead of generic FK errors.
   const { data: eventRow, error: eventErr } = await db
     .from("events")
-    .select("id")
+    .select("id, unit_id, visibility")
     .eq("id", eventId)
     .maybeSingle();
   if (eventErr) return NextResponse.json({ error: normalizeDbError(eventErr.message) }, { status: 500 });
   if (!eventRow?.id) {
     return NextResponse.json({ error: "This event no longer exists." }, { status: 404 });
+  }
+  const scopedEvent = eventRow as { id: string; unit_id?: string | null; visibility?: string | null };
+  if (scopedEvent.unit_id || scopedEvent.visibility === "group") {
+    const { data: membership, error: membershipErr } = await db
+      .from("unit_members")
+      .select("status")
+      .eq("unit_id", scopedEvent.unit_id)
+      .eq("user_id", auth.userId)
+      .maybeSingle();
+    if (membershipErr) return NextResponse.json({ error: normalizeDbError(membershipErr.message) }, { status: 500 });
+    if (!membership || membership.status !== "approved") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   if (body.action === "toggle_attendance") {

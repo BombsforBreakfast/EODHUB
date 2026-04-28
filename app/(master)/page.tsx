@@ -58,6 +58,45 @@ import {
   FEED_POST_IMAGES_MAX_WIDTH,
 } from "../lib/feedLayout";
 import { sanitizeRumintOgDescription } from "../lib/sanitizeRumintOgDescription";
+
+const MEMORIAL_MILITARY_COLOR = "#d9582b";
+const MEMORIAL_LEO_COLOR = "#062b4f";
+const EODWF_DONATION_URL = "https://eod-wf.org/?form=supportEODWF";
+const BTMF_DONATION_URL = "https://www.paypal.com/ncp/payment/SMU4NWRW55V6L";
+
+type MemorialCategory = "military" | "leo_fed" | null | undefined;
+
+function memorialTheme(category: MemorialCategory) {
+  const isLeoFed = category === "leo_fed";
+  return {
+    color: isLeoFed ? MEMORIAL_LEO_COLOR : MEMORIAL_MILITARY_COLOR,
+    label: isLeoFed ? "End of Watch" : "We Remember",
+    darkBg: isLeoFed ? "#061a30" : "#2a1409",
+    lightBg: isLeoFed ? "#eef6ff" : "#fdf3ed",
+    darkCommentBg: isLeoFed ? "#0a2542" : "#3d1810",
+    lightCommentBg: isLeoFed ? "#dceeff" : "#fce8d9",
+    darkBorder: isLeoFed ? "#17476f" : "#5c2e12",
+    lightBorder: isLeoFed ? "#b8d8f3" : "#fbe2cf",
+  };
+}
+
+function memorialDisclaimer(category: MemorialCategory) {
+  return category === "leo_fed"
+    ? "* This information has been respectfully referenced from bombtechmemorial.org."
+    : "* This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.";
+}
+
+function memorialDonationConfig(category: MemorialCategory) {
+  const isLeoFed = category === "leo_fed";
+  return {
+    url: isLeoFed ? BTMF_DONATION_URL : EODWF_DONATION_URL,
+    color: isLeoFed ? MEMORIAL_LEO_COLOR : MEMORIAL_MILITARY_COLOR,
+    title: isLeoFed
+      ? "Donate as Tribute to the Bomb Technician Memorial Fund"
+      : "Donate as Tribute to the EOD Warrior Foundation",
+  };
+}
+
 type Job = {
   id: string;
   created_at: string | null;
@@ -328,6 +367,8 @@ type FeedEventSnapshot = {
   event_time: string | null;
   poc_name: string | null;
   poc_phone: string | null;
+  unit_id?: string | null;
+  visibility?: string | null;
 };
 
 type FeedPost = RankedPostRow & {
@@ -460,7 +501,8 @@ function normalizeUrl(url: string): string {
 }
 
 type BizListingType = "business" | "organization" | "resource";
-type BizMobileFilter = "all" | BizListingType;
+type BusinessOrgListingType = Exclude<BizListingType, "resource">;
+type BizMobileFilter = "all" | BusinessOrgListingType;
 
 function normalizeBizListingType(value: string | null | undefined): BizListingType {
   if (value === "organization" || value === "resource") return value;
@@ -515,6 +557,23 @@ function extractFirstUrl(text: string): string | null {
   const bare = text.match(BARE_DOMAIN_RE);
   if (bare) return `https://${bare[0].replace(/[.,)>]+$/, "")}`;
   return null;
+}
+
+function normalizePreviewUrl(value: string | null | undefined): string {
+  if (!value?.trim()) return "";
+  const withScheme = /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
+  try {
+    const url = new URL(withScheme);
+    url.hash = "";
+    return `${url.hostname.replace(/^www\./i, "").toLowerCase()}${url.pathname.replace(/\/$/, "")}${url.search}`;
+  } catch {
+    return withScheme.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, "").toLowerCase();
+  }
+}
+
+function isOnlyPreviewUrl(content: string | null | undefined, previewUrl: string | null | undefined): boolean {
+  if (!content?.trim() || !previewUrl?.trim()) return false;
+  return normalizePreviewUrl(content.trim()) === normalizePreviewUrl(previewUrl);
 }
 
 const MENTION_RE = /@\[([^\]]+)\]\(([^)]+)\)/g;
@@ -719,7 +778,7 @@ export default function HomePage() {
   const [bizUrl, setBizUrl] = useState("");
   const [bizName, setBizName] = useState("");
   const [bizBlurb, setBizBlurb] = useState("");
-  const [bizType, setBizType] = useState<BizListingType>("business");
+  const [bizType, setBizType] = useState<BusinessOrgListingType>("business");
   const [bizMobileFilter, setBizMobileFilter] = useState<BizMobileFilter>("all");
   const [bizOgPreview, setBizOgPreview] = useState<OgPreview | null>(null);
   const [featuredBizBillboardIndex, setFeaturedBizBillboardIndex] = useState(0);
@@ -770,7 +829,7 @@ export default function HomePage() {
   }>({ going: [], interested: [] });
   const [feedEventAttendeesListModal, setFeedEventAttendeesListModal] = useState<"interested" | "going" | null>(null);
 
-  const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[]>([]);
+  const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string; category?: "military" | "leo_fed" | null }[]>([]);
   const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
   const [expandedMemorialCards, setExpandedMemorialCards] = useState<Record<string, boolean>>({});
   const [memorialLikes, setMemorialLikes] = useState<Record<string, string[]>>({});
@@ -782,7 +841,7 @@ export default function HomePage() {
   const [editingMemorialCommentContent, setEditingMemorialCommentContent] = useState("");
   const [savingMemorialCommentId, setSavingMemorialCommentId] = useState<string | null>(null);
   const [deletingMemorialCommentId, setDeletingMemorialCommentId] = useState<string | null>(null);
-  const [donateModalOpen, setDonateModalOpen] = useState(false);
+  const [donateModal, setDonateModal] = useState<ReturnType<typeof memorialDonationConfig> | null>(null);
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
   const [discoverVisible, setDiscoverVisible] = useState<DiscoverProfile[]>([]);
   const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -1048,8 +1107,10 @@ export default function HomePage() {
         const [eventRes, attRes] = await Promise.all([
           supabase
             .from("events")
-            .select("id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone")
+            .select("id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, unit_id, visibility")
             .eq("id", eventId)
+            .is("unit_id", null)
+            .eq("visibility", "public")
             .maybeSingle(),
           supabase
             .from("event_attendance")
@@ -1309,7 +1370,7 @@ export default function HomePage() {
 
     const { data, error } = await supabase
       .from("memorials")
-      .select("id, name, bio, photo_url, death_date");
+      .select("id, name, bio, photo_url, death_date, category");
 
     if (error) { console.error("Memorials load error:", error); return; }
 
@@ -1318,7 +1379,7 @@ export default function HomePage() {
       return parts[1] === mm && parts[2] === dd;
     });
 
-    const anniversaryList = todayAnniversaries as { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string }[];
+    const anniversaryList = todayAnniversaries as { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string; category?: "military" | "leo_fed" | null }[];
     setTodayMemorials(anniversaryList);
     void loadMemorialInteractions(anniversaryList.map(m => m.id));
 
@@ -2246,6 +2307,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       const { data: candidateEvents, error: candidateEventsErr } = await supabase
         .from("events")
         .select("id, user_id, title, date")
+        .is("unit_id", null)
+        .eq("visibility", "public")
         .in("user_id", candidateUserIds);
       if (candidateEventsErr) {
         console.error("Legacy event inference load error:", candidateEventsErr);
@@ -2403,7 +2466,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     if (uniqueFeedEventIds.length > 0) {
       const eventsResult = await supabase
         .from("events")
-        .select("id, user_id, title, date, description, organization, signup_url, image_url, location, event_time, poc_name, poc_phone")
+        .select("id, user_id, title, date, description, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, unit_id, visibility")
         .in("id", uniqueFeedEventIds);
       let eventRows: FeedEventSnapshot[] = [];
       // Backward compatibility if image_url hasn't been migrated yet.
@@ -2420,7 +2483,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       ) {
         const fallback = await supabase
           .from("events")
-          .select("id, user_id, title, date, organization, signup_url")
+          .select("id, user_id, title, date, organization, signup_url, unit_id, visibility")
           .in("id", uniqueFeedEventIds);
         if (fallback.error) {
           console.error("Feed events load error:", fallback.error);
@@ -2432,6 +2495,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             date: string;
             organization: string | null;
             signup_url: string | null;
+            unit_id?: string | null;
+            visibility?: string | null;
           }>).map((row) => ({
             ...row,
             description: null as string | null,
@@ -2447,7 +2512,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       } else {
         eventRows = (eventsResult.data ?? []) as FeedEventSnapshot[];
       }
-      eventRows.forEach((e) => {
+      eventRows.filter((event) => !event.unit_id).forEach((e) => {
         eventSnapshotById.set(e.id, e);
       });
 
@@ -4058,6 +4123,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
   const featuredBizPool = useMemo(
     () =>
       [...businessListings]
+        .filter((b) => normalizeBizListingTypeForListing(b) !== "resource")
         .filter((b) => b.is_featured || isPermanentlyFeaturedListing(b))
         .sort((a, b) => {
           const aPinned = isPermanentlyFeaturedListing(a) ? 1 : 0;
@@ -4074,32 +4140,43 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         }),
     [businessListings]
   );
+  void featuredBizPool; // Keep the featured pool available for a future paid spotlight.
 
-  const rotatingFeaturedBusinesses = useMemo(
-    () => featuredBizPool.filter((b) => normalizeBizListingTypeForListing(b) === "business"),
-    [featuredBizPool]
+  const businessOrgListingsPool = useMemo(
+    () =>
+      [...businessListings]
+        .filter((b) => normalizeBizListingTypeForListing(b) !== "resource")
+        .sort((a, b) => {
+          const typeDiff = getBizTypePriority(a) - getBizTypePriority(b);
+          if (typeDiff !== 0) return typeDiff;
+          const aName = (a.business_name || a.og_title || a.og_site_name || "").trim();
+          const bName = (b.business_name || b.og_title || b.og_site_name || "").trim();
+          return aName.localeCompare(bName, undefined, { sensitivity: "base" });
+        }),
+    [businessListings]
   );
 
-  const desktopBillboardListing = rotatingFeaturedBusinesses.length > 0
-    ? rotatingFeaturedBusinesses[featuredBizBillboardIndex % rotatingFeaturedBusinesses.length]
+  const desktopBillboardListing = businessOrgListingsPool.length > 0
+    ? businessOrgListingsPool[featuredBizBillboardIndex % businessOrgListingsPool.length]
     : null;
 
   const businessListingsForPane = isMobile
     ? (bizMobileFilter === "all"
-        ? businessListings
+        ? businessListings.filter((b) => normalizeBizListingTypeForListing(b) !== "resource")
         : businessListings.filter((b) => normalizeBizListingTypeForListing(b) === bizMobileFilter))
-    : featuredBizPool
-        .filter((b) => !desktopBillboardListing || b.id !== desktopBillboardListing.id)
-        .slice(0, 5);
+    : [];
 
   useEffect(() => {
     if (isMobile) return;
-    if (rotatingFeaturedBusinesses.length <= 1) return;
+    if (businessOrgListingsPool.length <= 1) return;
     const id = window.setInterval(() => {
-      setFeaturedBizBillboardIndex((prev) => (prev + 1) % rotatingFeaturedBusinesses.length);
+      setFeaturedBizBillboardIndex((prev) => {
+        const next = Math.floor(Math.random() * businessOrgListingsPool.length);
+        return next === prev ? (next + 1) % businessOrgListingsPool.length : next;
+      });
     }, 5000);
     return () => window.clearInterval(id);
-  }, [rotatingFeaturedBusinesses.length, isMobile]);
+  }, [businessOrgListingsPool.length, isMobile]);
 
   function openAllJobs() {
     if (canViewFullJobs) {
@@ -4827,35 +4904,62 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               const isExpanded = !!expandedMemorialCards[m.id];
               const memorialCommentList = memorialComments[m.id] ?? [];
               const compactPreviewComments = memorialCommentList.slice(0, 2);
+              const theme = memorialTheme(m.category);
               return (
-                <div key={`memorial-${m.id}`} style={{ border: "2px solid #d9582b", borderRadius: 14, overflow: "hidden" }}>
+                <div key={`memorial-${m.id}`} style={{ border: `2px solid ${theme.color}`, borderRadius: 14, overflow: "hidden" }}>
                   {/* Header banner */}
-                  <div style={{ background: "#d9582b", padding: "11px 20px", display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ color: "white", fontSize: 15, fontWeight: 800 }}>In Memoriam</span>
-                    <span style={{ color: "white", fontWeight: 900, fontSize: 15, letterSpacing: 1.5, textTransform: "uppercase" }}>We Remember</span>
-                    <span style={{ color: "rgba(255,255,255,0.75)", fontSize: 12, fontWeight: 600, marginLeft: "auto", marginRight: 12 }}>
-                      {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}
+                  <div
+                    style={{
+                      background: theme.color,
+                      padding: isMobile ? "18px 48px 16px" : "11px 20px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: isMobile ? "center" : "flex-start",
+                      flexDirection: isMobile ? "column" : "row",
+                      gap: isMobile ? 6 : 10,
+                      position: "relative",
+                      textAlign: "center",
+                    }}
+                  >
+                    <span style={{ color: "white", fontWeight: 900, fontSize: isMobile ? 20 : 15, letterSpacing: isMobile ? 3 : 1.5, textTransform: "uppercase" }}>{theme.label}</span>
+                    <span
+                      style={{
+                        color: "rgba(255,255,255,0.82)",
+                        fontSize: isMobile ? 14 : 12,
+                        fontWeight: 700,
+                        marginLeft: isMobile ? 0 : "auto",
+                        marginRight: isMobile ? 0 : 12,
+                        lineHeight: 1.15,
+                      }}
+                    >
+                      {isMobile ? (
+                        <>
+                          <span style={{ display: "block" }}>{new Date().toLocaleDateString("en-US", { month: "long" })}</span>
+                          <span style={{ display: "block" }}>{new Date().toLocaleDateString("en-US", { day: "numeric" })}</span>
+                        </>
+                      ) : (
+                        new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })
+                      )}
                     </span>
                     <button
                       type="button"
                       onClick={() => dismissMemorial(m.id)}
                       title="Dismiss"
-                      style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "white", fontWeight: 900, fontSize: 16, lineHeight: 1, cursor: "pointer", padding: "2px 7px", flexShrink: 0 }}
+                      style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "white", fontWeight: 900, fontSize: 16, lineHeight: 1, cursor: "pointer", padding: "2px 7px", flexShrink: 0, position: isMobile ? "absolute" : "static", top: isMobile ? 14 : undefined, right: isMobile ? 14 : undefined }}
                     >x</button>
                   </div>
                   {/* Card body: compact by default, full memorial view on expand.
-                      A thin attribution footer sits below this body (always
-                      visible, both states) so it's clear the content originates
-                      from the EOD Warrior Foundation Digital Wall. */}
-                  <div style={{ padding: 20, background: isDark ? "#2a1409" : "#fdf3ed", display: "flex", gap: 16, alignItems: "flex-start" }}>
+                      A thin attribution footer sits below this body in both
+                      states so source context is always visible. */}
+                  <div style={{ padding: isMobile ? 22 : 20, background: isDark ? theme.darkBg : theme.lightBg, display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 12 : 16, alignItems: isMobile ? "center" : "flex-start" }}>
                     {m.photo_url && (
-                      <div style={{ width: 72, height: 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: "3px solid #d9582b" }}>
+                      <div style={{ width: isMobile ? 112 : 72, height: isMobile ? 112 : 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: `3px solid ${theme.color}` }}>
                         <img src={m.photo_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       </div>
                     )}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 20, fontWeight: 900, color: isDark ? "#fce8d9" : "#1a1a1a" }}>{m.name}</div>
-                      <div style={{ fontSize: 13, color: "#d9582b", marginTop: 2 }}>
+                    <div style={{ flex: 1, minWidth: 0, width: "100%", textAlign: isMobile ? "center" : "left" }}>
+                      <div style={{ fontSize: isMobile ? 22 : 20, fontWeight: 900, color: isDark ? "#fce8d9" : "#1a1a1a", lineHeight: 1.2 }}>{m.name}</div>
+                      <div style={{ fontSize: 13, color: theme.color, marginTop: 2 }}>
                         {new Date(m.death_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
                         {" - "}
                         {new Date().getFullYear() - parseInt(m.death_date.split("-")[0])} years ago
@@ -4865,7 +4969,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           <button
                             type="button"
                             onClick={() => setExpandedMemorialCards((prev) => ({ ...prev, [m.id]: true }))}
-                            style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#d9582b", fontSize: 13, fontWeight: 700 }}
+                            style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: theme.color, fontSize: 13, fontWeight: 700 }}
                           >
                             Show full bio
                           </button>
@@ -4879,8 +4983,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                   <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.text }}>
                                     {c.authorPhotoUrl ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : c.authorName[0]?.toUpperCase()}
                                   </div>
-                                  <div style={{ background: isDark ? "#3d1810" : "#fce8d9", borderRadius: 10, padding: "6px 10px", flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 700, fontSize: 12, color: "#d9582b", marginBottom: 2 }}>{c.authorName}</div>
+                                  <div style={{ background: isDark ? theme.darkCommentBg : theme.lightCommentBg, borderRadius: 10, padding: "6px 10px", flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontWeight: 700, fontSize: 12, color: theme.color, marginBottom: 2 }}>{c.authorName}</div>
                                     <div style={{ fontSize: 13, lineHeight: 1.45, color: t.text }}>{renderContent(c.content)}</div>
                                   </div>
                                 </div>
@@ -4893,7 +4997,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                               setExpandedMemorialCards((prev) => ({ ...prev, [m.id]: true }));
                               setMemorialCommentsOpen((prev) => ({ ...prev, [m.id]: true }));
                             }}
-                            style={{ marginTop: 8, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#d9582b", fontSize: 13, fontWeight: 700 }}
+                            style={{ marginTop: 8, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: theme.color, fontSize: 13, fontWeight: 700 }}
                           >
                             See all comments
                           </button>
@@ -4902,30 +5006,30 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       {isExpanded && (
                         <>
                           {m.bio && (
-                            <div style={{ marginTop: 10, lineHeight: 1.6, color: t.textMuted }}>
+                            <div style={{ marginTop: isMobile ? 18 : 10, lineHeight: 1.65, color: t.textMuted, textAlign: "left", width: "100%", fontSize: isMobile ? 16 : undefined }}>
                               {m.bio}
                             </div>
                           )}
                           <button
                             type="button"
                             onClick={() => setExpandedMemorialCards((prev) => ({ ...prev, [m.id]: false }))}
-                            style={{ marginTop: 6, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "#d9582b", fontSize: 13, fontWeight: 700 }}
+                            style={{ marginTop: 6, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: theme.color, fontSize: 13, fontWeight: 700 }}
                           >
-                            Back to compact card
+                            See less
                           </button>
                           {(() => {
                             const comments = memorialComments[m.id] ?? [];
                             const commentsOpen = !!memorialCommentsOpen[m.id];
                             return (
                               <>
-                                <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${isDark ? "#5c2e12" : "#fbe2cf"}` }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}` }}>
                                   <button type="button" onClick={() => setMemorialCommentsOpen(p => ({ ...p, [m.id]: !commentsOpen }))} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: t.textMuted, fontSize: 14, padding: 0 }}>
                                     Comments{comments.length > 0 && <span style={{ fontSize: 13 }}>{comments.length}</span>}
                                   </button>
                                 </div>
-                                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? "#5c2e12" : "#fbe2cf"}` }}>
-                                  <button type="button" onClick={() => setDonateModalOpen(true)} style={{ background: "#d9582b", border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
-                                    Donate as Tribute to the EOD Warrior Foundation
+                                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}` }}>
+                                  <button type="button" onClick={() => setDonateModal(memorialDonationConfig(m.category))} style={{ background: theme.color, border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
+                                    {memorialDonationConfig(m.category).title}
                                   </button>
                                 </div>
                                 {commentsOpen && (
@@ -4935,15 +5039,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                         <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.text }}>
                                           {c.authorPhotoUrl ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : c.authorName[0]?.toUpperCase()}
                                         </div>
-                                        <div style={{ background: isDark ? "#3d1810" : "#fce8d9", borderRadius: 10, padding: "6px 10px", flex: 1 }}>
-                                          <div style={{ fontWeight: 700, fontSize: 12, color: "#d9582b", marginBottom: 2 }}>{c.authorName}</div>
+                                        <div style={{ background: isDark ? theme.darkCommentBg : theme.lightCommentBg, borderRadius: 10, padding: "6px 10px", flex: 1 }}>
+                                          <div style={{ fontWeight: 700, fontSize: 12, color: theme.color, marginBottom: 2 }}>{c.authorName}</div>
                                           {editingMemorialCommentId === c.id ? (
                                             <div>
                                               <textarea
                                                 value={editingMemorialCommentContent}
                                                 onChange={(e) => setEditingMemorialCommentContent(e.target.value)}
                                                 rows={3}
-                                                style={{ width: "100%", border: `1px solid ${isDark ? "#5c2e12" : "#f5c6a8"}`, borderRadius: 8, padding: 8, fontSize: 13, boxSizing: "border-box", background: isDark ? "#2a1409" : "#fdf3ed", color: t.text, resize: "vertical" }}
+                                                style={{ width: "100%", border: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}`, borderRadius: 8, padding: 8, fontSize: 13, boxSizing: "border-box", background: isDark ? theme.darkBg : theme.lightBg, color: t.text, resize: "vertical" }}
                                               />
                                               <div style={{ marginTop: 6, display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
                                                 <button
@@ -4957,7 +5061,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                                   type="button"
                                                   onClick={() => saveMemorialCommentEdit(m.id, c.id)}
                                                   disabled={savingMemorialCommentId === c.id || !editingMemorialCommentContent.trim()}
-                                                  style={{ background: "#d9582b", border: "none", borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, color: "white", cursor: savingMemorialCommentId === c.id ? "not-allowed" : "pointer", opacity: savingMemorialCommentId === c.id ? 0.7 : 1 }}
+                                                  style={{ background: theme.color, border: "none", borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, color: "white", cursor: savingMemorialCommentId === c.id ? "not-allowed" : "pointer", opacity: savingMemorialCommentId === c.id ? 0.7 : 1 }}
                                                 >
                                                   {savingMemorialCommentId === c.id ? "Saving..." : "Save"}
                                                 </button>
@@ -4974,7 +5078,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                                       setEditingMemorialCommentId(c.id);
                                                       setEditingMemorialCommentContent(c.content);
                                                     }}
-                                                    style={{ background: "transparent", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: "#d9582b", cursor: "pointer" }}
+                                                    style={{ background: "transparent", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: theme.color, cursor: "pointer" }}
                                                   >
                                                     Edit
                                                   </button>
@@ -4999,9 +5103,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                         onChange={val => setMemorialCommentInputs(p => ({ ...p, [m.id]: val }))}
                                         onChangeRaw={raw => { memorialCommentRawsRef.current[m.id] = raw; }}
                                         placeholder="Leave a tribute..."
-                                        style={{ width: "100%", minHeight: 70, border: `1px solid ${isDark ? "#5c2e12" : "#f5c6a8"}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: isDark ? "#2a1409" : "#fdf3ed", color: t.text, outline: "none" }}
+                                        style={{ width: "100%", minHeight: 70, border: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: isDark ? theme.darkBg : theme.lightBg, color: t.text, outline: "none" }}
                                       />
-                                      <button type="button" onClick={() => submitMemorialComment(m.id)} disabled={submittingMemorialComment === m.id} style={{ alignSelf: "flex-end", background: "#d9582b", color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: submittingMemorialComment === m.id ? "not-allowed" : "pointer", opacity: submittingMemorialComment === m.id ? 0.7 : 1, fontSize: 13 }}>
+                                      <button type="button" onClick={() => submitMemorialComment(m.id)} disabled={submittingMemorialComment === m.id} style={{ alignSelf: "flex-end", background: theme.color, color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: submittingMemorialComment === m.id ? "not-allowed" : "pointer", opacity: submittingMemorialComment === m.id ? 0.7 : 1, fontSize: 13 }}>
                                         {submittingMemorialComment === m.id ? "..." : "Reply"}
                                       </button>
                                     </div>
@@ -5017,15 +5121,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   <div
                     style={{
                       padding: "8px 20px 12px",
-                      background: isDark ? "#2a1409" : "#fdf3ed",
-                      borderTop: `1px solid ${isDark ? "#5c2e12" : "#fbe2cf"}`,
+                      background: isDark ? theme.darkBg : theme.lightBg,
+                      borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}`,
                       fontSize: 11,
                       lineHeight: 1.5,
                       color: t.textFaint,
                       fontStyle: "italic",
                     }}
                   >
-                    * This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.
+                    {memorialDisclaimer(m.category)}
                   </div>
                 </div>
               );
@@ -5182,6 +5286,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         </div>
                       )}
                       {post.content &&
+                        !isOnlyPreviewUrl(post.content, post.og_url) &&
                         !(post.event_id && post.feed_event) &&
                         !(
                           (post.content_type === "news" || post.user_id === RUMINT_USER_ID) &&
@@ -6499,7 +6604,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   cursor: "pointer",
                 }}
               >
-                Biz/Orgs/Resources
+                Businesses/Orgs
               </Link>
               <div style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>
                 {isMobile ? "Approved listings" : "Featured listings"}
@@ -6510,7 +6615,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               onClick={() => { setShowBizForm((p) => !p); setBizSubmitSuccess(false); }}
               style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "6px 14px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
             >
-              {showBizForm ? "Cancel" : "Submit Biz/Org/Resource"}
+              {showBizForm ? "Cancel" : "Submit Business/Org"}
             </button>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 6, marginBottom: 12 }}>
@@ -6519,7 +6624,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 href="/businesses"
                 style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none" }}
               >
-                See all Biz/Org/Resources ΓåÆ
+                See all Businesses/Orgs -&gt;
               </a>
             )}
             {isMobile && (
@@ -6528,7 +6633,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   { id: "all", label: "All" },
                   { id: "business", label: "Businesses" },
                   { id: "organization", label: "Organizations" },
-                  { id: "resource", label: "Resources" },
                 ] as { id: BizMobileFilter; label: string }[]).map((opt) => {
                   const active = bizMobileFilter === opt.id;
                   return (
@@ -6582,12 +6686,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 4 }}>Type *</label>
                     <select
                       value={bizType}
-                      onChange={(e) => setBizType(e.target.value as BizListingType)}
+                      onChange={(e) => setBizType(e.target.value as BusinessOrgListingType)}
                       style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, boxSizing: "border-box", background: t.input, color: t.text }}
                     >
                       <option value="business">Business</option>
                       <option value="organization">Organization</option>
-                      <option value="resource">Resource</option>
                     </select>
                   </div>
 
@@ -6650,9 +6753,10 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     key={`billboard-${listing.id}`}
                     style={{
                       border: `2px solid ${t.border}`,
-                      borderRadius: 12,
+                      borderRadius: 16,
                       overflow: "hidden",
                       background: t.surface,
+                      boxSizing: "border-box",
                     }}
                   >
                     <a
@@ -6665,32 +6769,30 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         <img
                           src={httpsAssetUrl(listing.og_image)}
                           alt={displayTitle}
-                          style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
+                          style={{ width: "100%", height: 230, objectFit: "contain", display: "block", background: "#fff" }}
                         />
                       ) : null}
-                      <div style={{ padding: 14, paddingBottom: 10 }}>
+                      <div style={{ padding: 16, paddingBottom: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                           <span style={{ fontSize: 11, fontWeight: 800, color: "#111", background: "#fef9c3", padding: "2px 8px", borderRadius: 20 }}>
-                            Featured Spotlight
+                            Business/Org Spotlight
                           </span>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
-                            Rotates every 5s
-                          </span>
+                          
                         </div>
-                        <div style={{ fontWeight: 800, lineHeight: 1.3, fontSize: 18 }}>
+                        <div style={{ fontWeight: 800, lineHeight: 1.25, fontSize: 20 }}>
                           {displayTitle}
                         </div>
-                        <div style={{ marginTop: 8, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>
+                        <div style={{ marginTop: 10, fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>
                           {displayDescription}
                         </div>
                       </div>
                     </a>
-                    <div style={{ padding: "0 14px 8px" }}>
+                    <div style={{ padding: "0 16px 8px" }}>
                       <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} />
                     </div>
-                    <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ padding: "0 16px 14px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                       <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
-                        Business
+                        {normalizeBizListingTypeForListing(listing) === "organization" ? "Organization" : "Business"}
                       </span>
                       <button
                         onClick={(e) => handleBizLike(e, listing.id)}
@@ -6707,14 +6809,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 );
               })()
             )}
-            {!bizLoaded && [0,1,2].map((i) => <SkeletonCard key={i} />)}
-            {bizLoaded && businessListingsForPane.length === 0 && (
+            {!bizLoaded && (!isMobile ? <SkeletonCard /> : [0,1,2].map((i) => <SkeletonCard key={i} />))}
+            {bizLoaded && (isMobile ? businessListingsForPane.length === 0 : !desktopBillboardListing) && (
               <div style={{ fontSize: 14, color: t.textMuted }}>
-                {isMobile ? "No approved listings yet." : "No featured listings yet."}
+                No approved listings yet.
               </div>
             )}
 
-            {bizLoaded && businessListingsForPane.map((listing) => {
+            {bizLoaded && isMobile && businessListingsForPane.map((listing) => {
               const displayTitle =
                 listing.og_title ||
                 listing.business_name ||
@@ -6796,10 +6898,10 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         renderFeedCenter()
       )}
 
-      {/* Donate modal ΓÇö in-app iframe over EOD Warrior Foundation donation form */}
-      {donateModalOpen && (
+      {/* Donate modal - in-app iframe over the appropriate memorial fund donation form. */}
+      {donateModal && (
         <div
-          onClick={() => setDonateModalOpen(false)}
+          onClick={() => setDonateModal(null)}
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center" }}
         >
           <div
@@ -6807,18 +6909,18 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             style={{ width: "100%", maxWidth: 640, height: "88vh", background: "#fff", borderRadius: "18px 18px 0 0", display: "flex", flexDirection: "column", overflow: "hidden" }}
           >
             {/* Modal header */}
-            <div style={{ background: "#d9582b", padding: "12px 18px", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-              <span style={{ color: "white", fontSize: 15, fontWeight: 800, flex: 1 }}>Donate as Tribute to the EOD Warrior Foundation</span>
+            <div style={{ background: donateModal.color, padding: "12px 18px", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+              <span style={{ color: "white", fontSize: 15, fontWeight: 800, flex: 1 }}>{donateModal.title}</span>
               <button
                 type="button"
-                onClick={() => setDonateModalOpen(false)}
+                onClick={() => setDonateModal(null)}
                 style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 6, color: "white", fontWeight: 900, fontSize: 18, lineHeight: 1, cursor: "pointer", padding: "2px 8px" }}
               >x</button>
             </div>
             {/* Iframe */}
             <iframe
-              src="https://eod-wf.org/?form=supportEODWF"
-              title="Donate as Tribute to the EOD Warrior Foundation"
+              src={donateModal.url}
+              title={donateModal.title}
               style={{ flex: 1, border: "none", width: "100%" }}
               allow="payment"
             />

@@ -41,8 +41,6 @@ export async function DELETE(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // Delete profile first, then auth user
-    await adminClient.from("profiles").delete().eq("user_id", userId);
     const { error } = await adminClient.auth.admin.deleteUser(userId);
 
     if (error) {

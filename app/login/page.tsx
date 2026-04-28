@@ -14,6 +14,7 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [forgotEmail, setForgotEmail] = useState("");
@@ -421,16 +422,26 @@ export default function LoginPage() {
 
           <input
             placeholder="Password"
-            type="password"
+            type={showPassword ? "text" : "password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={inputStyle}
           />
 
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -4 }}>
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              style={{ background: "none", border: "none", padding: 0, fontSize: 13, color: t.textMuted, cursor: "pointer", textDecoration: "underline" }}
+            >
+              {showPassword ? "Hide password" : "Show password"}
+            </button>
+          </div>
+
           {mode === "signup" && (
             <input
               placeholder="Confirm Password"
-              type="password"
+              type={showPassword ? "text" : "password"}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               style={{

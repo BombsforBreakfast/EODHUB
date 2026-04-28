@@ -20,6 +20,7 @@ function getAdminClient() {
 
 type FlaggableContentType =
   | "post"
+  | "unit_post"
   | "comment"
   | "message"
   | "rabbithole_contribution"
@@ -29,6 +30,7 @@ type FlaggableContentType =
 
 const FLAGGABLE_CONTENT_TYPES: FlaggableContentType[] = [
   "post",
+  "unit_post",
   "comment",
   "message",
   "rabbithole_contribution",
@@ -45,6 +47,8 @@ function contentLabel(contentType: FlaggableContentType): string {
   switch (contentType) {
     case "post":
       return "post";
+    case "unit_post":
+      return "group post";
     case "comment":
       return "comment";
     case "message":
@@ -62,6 +66,13 @@ function contentLabel(contentType: FlaggableContentType): string {
   }
 }
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const maybe = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+  const haystack = `${String(maybe.message ?? "")} ${String(maybe.details ?? "")} ${String(maybe.hint ?? "")}`.toLowerCase();
+  return haystack.includes(columnName.toLowerCase()) && (haystack.includes("column") || maybe.code === "42703");
+}
+
 type ContentLookup = {
   table: string;
   authorColumn: string;
@@ -71,6 +82,7 @@ type ContentLookup = {
 
 const CONTENT_LOOKUP: Record<FlaggableContentType, ContentLookup> = {
   post: { table: "posts", authorColumn: "user_id", hidable: true },
+  unit_post: { table: "unit_posts", authorColumn: "user_id", hidable: true },
   comment: { table: "post_comments", authorColumn: "user_id", hidable: true },
   message: { table: "messages", authorColumn: "sender_id", hidable: true },
   rabbithole_contribution: {
@@ -167,7 +179,7 @@ export async function POST(req: NextRequest) {
       .from(lookup.table)
       .update({ hidden_for_review: true })
       .eq("id", contentId);
-    if (hideErr) {
+    if (hideErr && !isMissingColumnError(hideErr, "hidden_for_review")) {
       return NextResponse.json({ error: hideErr.message }, { status: 500 });
     }
   }

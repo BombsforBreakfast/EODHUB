@@ -50,6 +50,8 @@ type UserProfile = {
   first_name: string | null;
   last_name: string | null;
   display_name: string | null;
+  /** Mirrored from Auth / onboarding for admin + Table Editor visibility (after migration). */
+  name?: string | null;
   email: string | null;
   role: string | null;
   service: string | null;
@@ -62,7 +64,26 @@ type UserProfile = {
   access_tier?: "basic" | "senior" | "master" | null;
 };
 
-type Tab = "businesses" | "jobs" | "users" | "flags" | "events" | "reports" | "directory" | "engagement" | "news";
+type UsersFallbackQueryResult = {
+  data: Array<Record<string, unknown>> | null;
+  error: { message: string } | null;
+};
+
+type AdminGroup = {
+  id: string;
+  name: string;
+  slug: string;
+  description: string | null;
+  cover_photo_url: string | null;
+  type: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  member_count: number;
+  post_count: number;
+  owner_name: string | null;
+};
+
+type Tab = "businesses" | "jobs" | "users" | "groups" | "flags" | "events" | "reports" | "directory" | "engagement" | "news";
 
 type AdminNewsItem = {
   id: string;
@@ -245,6 +266,8 @@ type AdminCalendarEvent = {
   poc_name: string | null;
   poc_phone: string | null;
   created_at: string;
+  unit_id?: string | null;
+  visibility?: string | null;
 };
 
 type EventEdit = {
@@ -359,6 +382,8 @@ export default function AdminPage() {
   const [businesses, setBusinesses] = useState<BusinessListing[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [groups, setGroups] = useState<AdminGroup[]>([]);
+  const [groupSearch, setGroupSearch] = useState("");
   const [flags, setFlags] = useState<Flag[]>([]);
 
   const [pendingOnly, setPendingOnly] = useState(true);
@@ -902,21 +927,43 @@ const [memWizUrl, setMemWizUrl] = useState("");
     });
     if (!res.ok) {
       // Fallback: direct query (works if RLS allows admin to read all profiles)
-      const withTier = await supabase
+      let fallback = (await supabase
         .from("profiles")
-        .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, access_tier")
-        .order("created_at", { ascending: false });
-      const fallback = withTier.error
-        ? await supabase
-            .from("profiles")
-            .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
-            .order("created_at", { ascending: false })
-        : withTier;
-      if (!fallback.error) setUsers((fallback.data ?? []).map((u) => ({ ...u, email: null })) as UserProfile[]);
+        .select("user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, access_tier")
+        .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
+      if (fallback.error) {
+        fallback = (await supabase
+          .from("profiles")
+          .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, access_tier")
+          .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
+      }
+      if (fallback.error) {
+        fallback = (await supabase
+          .from("profiles")
+          .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
+          .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
+      }
+      if (!fallback.error) setUsers((fallback.data ?? []).map((u) => ({ ...u, email: (u as { email?: string | null }).email ?? null })) as UserProfile[]);
       return;
     }
     const json = await res.json();
     setUsers((json.users ?? []) as UserProfile[]);
+  }
+
+  async function loadGroups(search = groupSearch) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const params = new URLSearchParams();
+    if (search.trim()) params.set("q", search.trim());
+    const res = await fetch(`/api/admin/groups${params.toString() ? `?${params.toString()}` : ""}`, {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+    });
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({} as { error?: string }));
+      alert(json.error ?? "Could not load groups.");
+      return;
+    }
+    const json = await res.json();
+    setGroups((json.groups ?? []) as AdminGroup[]);
   }
 
   async function loadFlags() {
@@ -931,12 +978,14 @@ const [memWizUrl, setMemWizUrl] = useState("");
     // Enrich with reporter names and content previews
     const reporterIds = [...new Set(rawFlags.map((f) => f.reporter_id).filter(Boolean))] as string[];
     const postIds = rawFlags.filter((f) => f.content_type === "post").map((f) => f.content_id);
+    const unitPostIds = rawFlags.filter((f) => f.content_type === "unit_post").map((f) => f.content_id);
     const commentIds = rawFlags.filter((f) => f.content_type === "comment").map((f) => f.content_id);
     const messageIds = rawFlags.filter((f) => f.content_type === "message").map((f) => f.content_id);
 
-    const [profilesRes, postsRes, commentsRes, msgsRes] = await Promise.all([
+    const [profilesRes, postsRes, unitPostsRes, commentsRes, msgsRes] = await Promise.all([
       reporterIds.length > 0 ? supabase.from("profiles").select("user_id, first_name, last_name, display_name").in("user_id", reporterIds) : { data: [] },
       postIds.length > 0 ? supabase.from("posts").select("id, user_id, content").in("id", postIds) : { data: [] },
+      unitPostIds.length > 0 ? supabase.from("unit_posts").select("id, user_id, content").in("id", unitPostIds) : { data: [] },
       commentIds.length > 0 ? supabase.from("post_comments").select("id, user_id, content").in("id", commentIds) : { data: [] },
       messageIds.length > 0 ? supabase.from("messages").select("id, sender_id, content, gif_url").in("id", messageIds) : { data: [] },
     ]);
@@ -954,6 +1003,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
     const contentMap = new Map<string, string>();
     const authorByContentId = new Map<string, string>();
     ((postsRes.data ?? []) as PostRow[]).forEach((c) => {
+      contentMap.set(c.id, c.content || "");
+      authorByContentId.set(c.id, c.user_id);
+    });
+    ((unitPostsRes.data ?? []) as PostRow[]).forEach((c) => {
       contentMap.set(c.id, c.content || "");
       authorByContentId.set(c.id, c.user_id);
     });
@@ -1028,6 +1081,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
     if (activeTab === "businesses") loadBusinesses();
     if (activeTab === "jobs") loadJobs();
     if (activeTab === "users") loadUsers();
+    if (activeTab === "groups") loadGroups();
     if (activeTab === "flags") loadFlags();
     if (activeTab === "events") {
       void loadAdminEvents();
@@ -1210,6 +1264,28 @@ const [memWizUrl, setMemWizUrl] = useState("");
     });
   }
 
+  async function deleteGroup(group: AdminGroup) {
+    askConfirm(`Delete the group “${group.name}”? This will remove its members, posts, and join requests.`, async () => {
+      setActionLoading(group.id + "-delete");
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`/api/admin/groups?id=${group.id}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+        });
+        const json = await res.json().catch(() => ({} as { error?: string }));
+        if (!res.ok) {
+          alert(json.error ?? "Delete failed");
+        } else {
+          showToast("Group deleted.");
+          await loadGroups();
+        }
+      } finally {
+        setActionLoading(null);
+      }
+    });
+  }
+
   async function setVerification(userId: string, status: string) {
     setActionLoading(userId + "-verify");
     try {
@@ -1380,11 +1456,16 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function removeFlaggedContent(flag: Flag) {
     if (!confirm(`Permanently delete this ${flag.content_type}?`)) return;
     setActionLoading(flag.id + "-remove");
-    const table = flag.content_type === "post" ? "posts" : "post_comments";
+    const table =
+      flag.content_type === "post"
+        ? "posts"
+        : flag.content_type === "unit_post"
+        ? "unit_posts"
+        : "post_comments";
     const { error } = await supabase.from(table).delete().eq("id", flag.content_id);
     if (error) { alert(error.message); return; }
     await supabase.from("flags").update({ reviewed: true }).eq("id", flag.id);
-    showToast(`${flag.content_type === "post" ? "Post" : "Comment"} removed.`);
+    showToast(`${flag.content_type === "unit_post" ? "Group post" : flag.content_type === "post" ? "Post" : "Comment"} removed.`);
     await loadFlags();
     setActionLoading(null);
   }
@@ -1509,7 +1590,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function loadAdminEvents() {
     const { data, error } = await supabase
       .from("events")
-      .select("id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at")
+      .select("id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at, unit_id, visibility")
       .order("date", { ascending: false })
       .limit(500);
     if (error) {
@@ -1997,6 +2078,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
             Users
             {tabNotifyBadge(pendingCounts.users)}
           </button>
+          <button type="button" style={tabStyle("groups")} onClick={() => setActiveTab("groups")}>
+            Groups
+          </button>
           <button type="button" style={tabStyle("flags")} onClick={() => setActiveTab("flags")}>
             Flags
             {tabNotifyBadge(pendingCounts.flags)}
@@ -2279,6 +2363,116 @@ const [memWizUrl, setMemWizUrl] = useState("");
           </div>
         )}
 
+        {/* ── GROUPS TAB ── */}
+        {activeTab === "groups" && (
+          <div style={{ marginTop: 20, display: "grid", gap: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontWeight: 900, fontSize: 18, color: t.text }}>Manage Groups</div>
+                <div style={{ marginTop: 3, fontSize: 13, color: t.textMuted }}>
+                  Delete groups and their group-specific members, posts, and join requests.
+                </div>
+              </div>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void loadGroups(groupSearch);
+                }}
+                style={{ display: "flex", gap: 8, flexWrap: "wrap" }}
+              >
+                <input
+                  value={groupSearch}
+                  onChange={(e) => setGroupSearch(e.target.value)}
+                  placeholder="Search groups..."
+                  style={{
+                    border: `1px solid ${t.inputBorder}`,
+                    borderRadius: 10,
+                    padding: "8px 12px",
+                    background: t.input,
+                    color: t.text,
+                    minWidth: 220,
+                  }}
+                />
+                <button type="submit" style={actionBtn("#374151")}>Search</button>
+                {groupSearch && (
+                  <button
+                    type="button"
+                    style={actionBtn("#6b7280")}
+                    onClick={() => {
+                      setGroupSearch("");
+                      void loadGroups("");
+                    }}
+                  >
+                    Clear
+                  </button>
+                )}
+              </form>
+            </div>
+
+            {groups.length === 0 && (
+              <div style={{ padding: 32, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
+                No groups found.
+              </div>
+            )}
+
+            <div style={{ display: "grid", gap: 12 }}>
+              {groups.map((group) => (
+                <div key={group.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: 12, minWidth: 0, flex: 1 }}>
+                      {group.cover_photo_url && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={group.cover_photo_url}
+                          alt=""
+                          style={{ width: 72, height: 72, borderRadius: 12, objectFit: "cover", flexShrink: 0 }}
+                        />
+                      )}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <Link href={`/units/${encodeURIComponent(group.slug)}`} style={{ color: t.text, textDecoration: "none", fontWeight: 900, fontSize: 17 }}>
+                            {group.name}
+                          </Link>
+                          {group.type && (
+                            <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 800, textTransform: "uppercase" }}>
+                              {group.type}
+                            </span>
+                          )}
+                        </div>
+                        {group.description && (
+                          <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                            {group.description}
+                          </div>
+                        )}
+                        <div style={{ marginTop: 8, display: "flex", gap: 12, flexWrap: "wrap", color: t.textFaint, fontSize: 12 }}>
+                          <span>{group.member_count} member{group.member_count === 1 ? "" : "s"}</span>
+                          <span>{group.post_count} post{group.post_count === 1 ? "" : "s"}</span>
+                          <span>Owner: {group.owner_name ?? "Unknown"}</span>
+                          {group.created_at && <span>Created {new Date(group.created_at).toLocaleDateString()}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+                      <Link href={`/units/${encodeURIComponent(group.slug)}`} style={{ ...actionBtn("#374151"), textDecoration: "none" }}>
+                        View
+                      </Link>
+                      <button
+                        type="button"
+                        style={{ ...actionBtn("#ef4444"), display: "flex", alignItems: "center", gap: 5 }}
+                        disabled={actionLoading === group.id + "-delete"}
+                        onClick={() => deleteGroup(group)}
+                      >
+                        {actionLoading === group.id + "-delete" && <span className="btn-spinner" />}
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* ── FLAGS TAB ── */}
         {activeTab === "flags" && (
           <div style={{ marginTop: 20 }}>
@@ -2293,7 +2487,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-                        <span style={{ background: flag.content_type === "post" ? "#dbeafe" : flag.content_type === "message" ? "#ede9fe" : "#fef9c3", color: flag.content_type === "post" ? "#1d4ed8" : flag.content_type === "message" ? "#6d28d9" : "#854d0e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>
+                        <span style={{ background: flag.content_type === "post" || flag.content_type === "unit_post" ? "#dbeafe" : flag.content_type === "message" ? "#ede9fe" : "#fef9c3", color: flag.content_type === "post" || flag.content_type === "unit_post" ? "#1d4ed8" : flag.content_type === "message" ? "#6d28d9" : "#854d0e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>
                           {flag.content_type}
                         </span>
                         {flag.reviewed && <span style={{ background: t.badgeBg, color: t.badgeText, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Reviewed</span>}
@@ -2360,7 +2554,11 @@ const [memWizUrl, setMemWizUrl] = useState("");
             </div>
             <div style={{ display: "grid", gap: 10 }}>
               {users.filter((u) => userFilter === "all" || u.verification_status === userFilter).map((u) => {
-                const name = u.display_name || `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Unnamed User";
+                const name =
+                  u.display_name ||
+                  u.name ||
+                  `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
+                  "Unnamed User";
                 const isVerified = u.verification_status === "verified";
                 const isPending = u.verification_status === "pending";
                 const isDenied = u.verification_status === "denied";

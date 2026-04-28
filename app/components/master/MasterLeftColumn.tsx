@@ -46,6 +46,15 @@ type SavedEventRow = {
   going_count: number;
 };
 
+type EventInviteUser = {
+  user_id: string;
+  display_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  photo_url: string | null;
+  service: string | null;
+};
+
 type SavedJobRow = {
   id: string;
   job_id: string;
@@ -73,6 +82,8 @@ type DesktopCalendarEvent = {
   date: string;
   signup_url: string | null;
   image_url: string | null;
+  unit_id?: string | null;
+  visibility?: string | null;
 };
 
 type DesktopMemorial = {
@@ -82,7 +93,41 @@ type DesktopMemorial = {
   source_url: string | null;
   photo_url: string | null;
   bio: string | null;
+  category?: "military" | "leo_fed" | null;
 };
+
+const MEMORIAL_MILITARY_COLOR = "#d9582b";
+const MEMORIAL_LEO_COLOR = "#062b4f";
+const EVENT_INVITE_BRANCHES = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal"];
+const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
+
+function isHiddenEventInviteAccount(user: Pick<EventInviteUser, "user_id" | "display_name" | "first_name" | "last_name">) {
+  const name = `${user.display_name ?? ""} ${user.first_name ?? ""} ${user.last_name ?? ""}`
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const compactName = name.replace(/[^a-z0-9]/g, "");
+  return (
+    user.user_id === RUMINT_USER_ID ||
+    compactName === "rumint" ||
+    compactName === "eodhub" ||
+    compactName === "eodhubadmin"
+  );
+}
+
+function memorialTheme(category?: DesktopMemorial["category"]) {
+  const isLeoFed = category === "leo_fed";
+  return {
+    color: isLeoFed ? MEMORIAL_LEO_COLOR : MEMORIAL_MILITARY_COLOR,
+    label: isLeoFed ? "End of Watch" : "We Remember",
+  };
+}
+
+function memorialDisclaimer(category?: DesktopMemorial["category"]) {
+  return category === "leo_fed"
+    ? "* This information has been respectfully referenced from bombtechmemorial.org."
+    : "* This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.";
+}
 
 type DesktopSelectedEvent = {
   id: string;
@@ -96,6 +141,8 @@ type DesktopSelectedEvent = {
   event_time: string | null;
   poc_name: string | null;
   poc_phone: string | null;
+  unit_id?: string | null;
+  visibility?: string | null;
 };
 
 type Props = {
@@ -116,7 +163,7 @@ export default function MasterLeftColumn({
   onToggleRail,
   sideRailsReady,
 }: Props) {
-  const { t } = useTheme();
+  const { t, isDark } = useTheme();
 
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
@@ -156,9 +203,17 @@ export default function MasterLeftColumn({
     interested: PostLikerBrief[];
   }>({ going: [], interested: [] });
   const [leftColAttendeesListModal, setLeftColAttendeesListModal] = useState<"interested" | "going" | null>(null);
+  const [eventInviteTarget, setEventInviteTarget] = useState<SavedEventRow | null>(null);
+  const [eventInviteUsers, setEventInviteUsers] = useState<EventInviteUser[]>([]);
+  const [eventInviteQuery, setEventInviteQuery] = useState("");
+  const [eventInviteBranches, setEventInviteBranches] = useState<Set<string>>(new Set());
+  const [selectedEventInvites, setSelectedEventInvites] = useState<Set<string>>(new Set());
+  const [sendingEventInvites, setSendingEventInvites] = useState(false);
+  const [eventInviteMsg, setEventInviteMsg] = useState<string | null>(null);
 
   const savedEventIdsForRealtimeRef = useRef<Set<string>>(new Set());
   const selectedEventIdRef = useRef<string | null>(null);
+  const eventInviteUsersLoadedRef = useRef(false);
   useEffect(() => {
     savedEventIdsForRealtimeRef.current = new Set(desktopSavedEvents.map((e) => e.event_id));
   }, [desktopSavedEvents]);
@@ -170,6 +225,96 @@ export default function MasterLeftColumn({
     if (memberInteractionAllowedRef.current) return false;
     onMemberPaywall();
     return true;
+  }
+
+  const filteredEventInviteUsers = eventInviteUsers.filter((u) => {
+    if (u.user_id === userId) return false;
+    if (isHiddenEventInviteAccount(u)) return false;
+    const name = u.display_name || `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || "EOD Member";
+    const q = eventInviteQuery.trim().toLowerCase();
+    const matchesQuery = !q || name.toLowerCase().includes(q) || (u.service ?? "").toLowerCase().includes(q);
+    const matchesBranch = eventInviteBranches.size === 0 || (u.service && eventInviteBranches.has(u.service));
+    return matchesQuery && matchesBranch;
+  });
+
+  async function loadEventInviteUsers() {
+    if (eventInviteUsersLoadedRef.current) return;
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("user_id, display_name, first_name, last_name, photo_url, service")
+      .order("display_name", { ascending: true });
+
+    if (error) {
+      console.error("Saved event invite users load error:", error);
+      return;
+    }
+
+    setEventInviteUsers((data ?? []) as EventInviteUser[]);
+    eventInviteUsersLoadedRef.current = true;
+  }
+
+  function openSavedEventInvite(event: SavedEventRow) {
+    if (blockMemberInteraction()) return;
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    setEventInviteTarget(event);
+    setSelectedEventInvites(new Set());
+    setEventInviteBranches(new Set());
+    setEventInviteQuery("");
+    setEventInviteMsg(null);
+    void loadEventInviteUsers();
+  }
+
+  async function sendSavedEventInvites() {
+    if (!userId || !eventInviteTarget || selectedEventInvites.size === 0 || sendingEventInvites) return;
+    setSendingEventInvites(true);
+    setEventInviteMsg(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("You must be signed in to invite members.");
+
+      const selectedUserIds = Array.from(selectedEventInvites);
+      const payload = encodeURIComponent(JSON.stringify({ type: "event_invite", eventId: eventInviteTarget.event_id }));
+      const inviteUrl = `${window.location.origin}/events?event=${eventInviteTarget.event_id}&invite=${payload}`;
+      const message = `You're invited to: ${eventInviteTarget.title || "this event"}\n${inviteUrl}`;
+
+      for (const otherUserId of selectedUserIds) {
+        const res = await fetch("/api/sidebar/ensure-conversation", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ other_user_id: otherUserId }),
+        });
+        const json = (await res.json()) as { conversation_id?: string; error?: string };
+        if (!res.ok || !json.conversation_id) {
+          throw new Error(json.error ?? "Could not create conversation.");
+        }
+
+        const { error: msgError } = await supabase
+          .from("messages")
+          .insert({ conversation_id: json.conversation_id, sender_id: userId, content: message });
+        if (msgError) throw msgError;
+
+        await supabase
+          .from("conversations")
+          .update({ last_message_at: new Date().toISOString() })
+          .eq("id", json.conversation_id);
+      }
+
+      setEventInviteMsg(`Invited ${selectedUserIds.length} member${selectedUserIds.length === 1 ? "" : "s"}.`);
+      setSelectedEventInvites(new Set());
+    } catch (err) {
+      console.error("sendSavedEventInvites failed:", err);
+      setEventInviteMsg(err instanceof Error ? err.message : "Could not send invites.");
+    } finally {
+      setSendingEventInvites(false);
+    }
   }
 
   const loadDesktopSavedEvents = useCallback(async (uid: string) => {
@@ -319,8 +464,10 @@ export default function MasterLeftColumn({
         .select("id, title, organization, date, signup_url, image_url")
         .gte("date", startIso)
         .lte("date", endIso)
+        .is("unit_id", null)
+        .eq("visibility", "public")
         .order("date", { ascending: true }),
-      supabase.from("memorials").select("id, name, death_date, source_url, photo_url, bio"),
+      supabase.from("memorials").select("id, name, death_date, source_url, photo_url, bio, category"),
     ]);
 
     setDesktopCalendarEvents((eventsData ?? []) as DesktopCalendarEvent[]);
@@ -345,7 +492,7 @@ export default function MasterLeftColumn({
         const [eventRes, attRes] = await Promise.all([
           supabase
             .from("events")
-            .select("id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone")
+            .select("id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, unit_id, visibility")
             .eq("id", eventId)
             .maybeSingle(),
           supabase
@@ -1077,7 +1224,7 @@ export default function MasterLeftColumn({
                   eventId: null as string | null,
                   thumbAlt: `Open memorial for ${m.name}`,
                   thumb: m.photo_url?.trim() ? m.photo_url : null,
-                  thumbBorder: "2px solid #d9582b",
+                  thumbBorder: `2px solid ${memorialTheme(m.category).color}`,
                   memorial: m,
                 })),
             ]
@@ -1088,6 +1235,7 @@ export default function MasterLeftColumn({
                 // both trigger this so the user can stay on the current page
                 // (feed, jobs, rabbithole) instead of being force-navigated
                 // to /events. "Website" is a separate external link.
+                const memorialCardTheme = item.memorial ? memorialTheme(item.memorial.category) : null;
                 const openModal: (() => void) | null =
                   item.kind === "memorial" && item.memorial
                     ? () => setSelectedMemorial(item.memorial)
@@ -1095,7 +1243,23 @@ export default function MasterLeftColumn({
                       ? () => { void openEventModal(item.eventId!); }
                       : null;
                 return (
-                  <div key={item.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px" }}>
+                  <div
+                    key={item.id}
+                    style={{
+                      border: memorialCardTheme ? `2px solid ${memorialCardTheme.color}` : `1px solid ${t.border}`,
+                      borderRadius: 10,
+                      background: memorialCardTheme
+                        ? isDark
+                          ? item.memorial?.category === "leo_fed"
+                            ? "#061a30"
+                            : "#2a1409"
+                          : item.memorial?.category === "leo_fed"
+                            ? "#eef6ff"
+                            : "#fdf3ed"
+                        : t.surface,
+                      padding: "8px 10px",
+                    }}
+                  >
                     <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         {openModal ? (
@@ -1120,13 +1284,15 @@ export default function MasterLeftColumn({
                         ) : (
                           <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>{item.title}</div>
                         )}
-                        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{item.sub}</div>
+                        <div style={{ fontSize: 11, color: memorialCardTheme ? memorialCardTheme.color : t.textMuted, marginTop: 2 }}>
+                          {item.sub}
+                        </div>
                         {item.websiteUrl && (
                           <a
                             href={item.websiteUrl}
                             target="_blank"
                             rel="noreferrer"
-                            style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}
+                            style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: memorialCardTheme ? memorialCardTheme.color : "#2563eb", fontWeight: 700, textDecoration: "none" }}
                           >
                             Website <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
                           </a>
@@ -1193,6 +1359,12 @@ export default function MasterLeftColumn({
               // modal now opens in place and the page stays put.
               const openThisEvent = () => { void openEventModal(ev.event_id); };
               const thumb = ev.image_url?.trim() ? ev.image_url : null;
+              const attendanceLabel =
+                ev.my_attendance === "going"
+                  ? `GOING${ev.going_count > 0 ? ` · ${ev.going_count}` : ""}`
+                  : ev.my_attendance === "interested"
+                    ? `INTERESTED${ev.interested_count > 0 ? ` · ${ev.interested_count}` : ""}`
+                    : null;
               return (
                 <div key={ev.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px", position: "relative" }}>
                   <button
@@ -1225,63 +1397,76 @@ export default function MasterLeftColumn({
                   </button>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 10, paddingRight: 26 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                        <button
-                          type="button"
-                          onClick={openThisEvent}
-                          style={{
-                            fontSize: 12,
-                            fontWeight: 800,
-                            color: t.text,
-                            lineHeight: 1.25,
-                            background: "transparent",
-                            border: "none",
-                            padding: 0,
-                            margin: 0,
-                            textAlign: "left",
-                            cursor: "pointer",
-                            minWidth: 0,
-                          }}
-                        >
-                          {ev.title || "Event"}
-                        </button>
-                        {ev.my_attendance === "going" ? (
-                          <span
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <button
+                            type="button"
+                            onClick={openThisEvent}
                             style={{
-                              borderRadius: 999,
-                              border: `1px solid ${t.border}`,
-                              background: t.text,
-                              color: t.surface,
-                              fontSize: 10,
+                              fontSize: 12,
                               fontWeight: 800,
-                              letterSpacing: 0.3,
-                              padding: "2px 7px",
-                              lineHeight: 1.1,
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            GOING{ev.going_count > 0 ? ` · ${ev.going_count}` : ""}
-                          </span>
-                        ) : ev.my_attendance === "interested" ? (
-                          <span
-                            style={{
-                              borderRadius: 999,
-                              border: `1px solid ${t.border}`,
-                              background: t.surface,
                               color: t.text,
-                              fontSize: 10,
-                              fontWeight: 800,
-                              letterSpacing: 0.3,
-                              padding: "2px 7px",
-                              lineHeight: 1.1,
-                              whiteSpace: "nowrap",
+                              lineHeight: 1.25,
+                              background: "transparent",
+                              border: "none",
+                              padding: 0,
+                              margin: 0,
+                              textAlign: "left",
+                              cursor: "pointer",
+                              minWidth: 0,
                             }}
                           >
-                            INTERESTED{ev.interested_count > 0 ? ` · ${ev.interested_count}` : ""}
-                          </span>
-                        ) : null}
+                            {ev.title || "Event"}
+                          </button>
+                          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3 }}>{ev.organization || "Saved item"}</div>
+                        </div>
+                        <div style={{ display: "grid", gap: 5, width: 76, flexShrink: 0 }}>
+                          {attendanceLabel ? (
+                            <span
+                              style={{
+                                borderRadius: 999,
+                                border: `1px solid ${t.border}`,
+                                background: ev.my_attendance === "going" ? t.text : t.surface,
+                                color: ev.my_attendance === "going" ? t.surface : t.text,
+                                fontSize: 10,
+                                fontWeight: 800,
+                                letterSpacing: 0.3,
+                                padding: "3px 7px",
+                                lineHeight: 1.1,
+                                whiteSpace: "nowrap",
+                                textAlign: "center",
+                                minHeight: 22,
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
+                            >
+                              {attendanceLabel}
+                            </span>
+                          ) : null}
+                          {userId ? (
+                            <button
+                              type="button"
+                              onClick={() => openSavedEventInvite(ev)}
+                              style={{
+                                border: `1px solid ${t.border}`,
+                                borderRadius: 999,
+                                background: t.badgeBg,
+                                color: t.text,
+                                padding: "3px 7px",
+                                fontSize: 10,
+                                fontWeight: 800,
+                                letterSpacing: 0.3,
+                                lineHeight: 1.1,
+                                minHeight: 22,
+                                cursor: "pointer",
+                              }}
+                            >
+                              INVITE
+                            </button>
+                          ) : null}
+                        </div>
                       </div>
-                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
                       <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
                         {ev.signup_url ? (
                           <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
@@ -1550,11 +1735,119 @@ export default function MasterLeftColumn({
         onToggleSave={(j) => toggleSaveJob(j.id)}
       />
 
+      {eventInviteTarget && typeof document !== "undefined" && createPortal(
+        <div
+          onClick={() => setEventInviteTarget(null)}
+          style={{ position: "fixed", inset: 0, zIndex: 1100, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 620, maxHeight: "85vh", overflow: "hidden", background: t.surface, color: t.text, borderRadius: 18, boxShadow: "0 20px 60px rgba(0,0,0,0.4)", display: "flex", flexDirection: "column" }}
+          >
+            <div style={{ padding: "18px 20px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 19, fontWeight: 900 }}>Invite Members</div>
+                <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>{eventInviteTarget.title || "Event"}</div>
+              </div>
+              <button type="button" onClick={() => setEventInviteTarget(null)} style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontWeight: 800 }}>
+                X
+              </button>
+            </div>
+
+            <div style={{ padding: 16, borderBottom: `1px solid ${t.border}`, display: "grid", gap: 12 }}>
+              <input
+                value={eventInviteQuery}
+                onChange={(e) => setEventInviteQuery(e.target.value)}
+                placeholder="Search members..."
+                style={{ width: "100%", boxSizing: "border-box", border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 12px", background: t.surface, color: t.text, outline: "none", fontSize: 14 }}
+              />
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {EVENT_INVITE_BRANCHES.map((branch) => {
+                  const active = eventInviteBranches.has(branch);
+                  return (
+                    <button
+                      key={branch}
+                      type="button"
+                      onClick={() => {
+                        setEventInviteBranches((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(branch)) next.delete(branch);
+                          else next.add(branch);
+                          return next;
+                        });
+                      }}
+                      style={{ border: `1px solid ${active ? t.text : t.border}`, borderRadius: 999, padding: "5px 10px", background: active ? t.text : t.surface, color: active ? t.surface : t.textMuted, fontSize: 12, fontWeight: 800, cursor: "pointer" }}
+                    >
+                      {branch}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 12 }}>
+              {filteredEventInviteUsers.length === 0 ? (
+                <div style={{ padding: 24, textAlign: "center", color: t.textFaint, fontSize: 14 }}>No matching members found.</div>
+              ) : (
+                filteredEventInviteUsers.map((u) => {
+                  const name = u.display_name || `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim() || "EOD Member";
+                  const checked = selectedEventInvites.has(u.user_id);
+                  return (
+                    <label key={u.user_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 8px", borderRadius: 12, cursor: "pointer", background: checked ? t.surfaceHover : "transparent" }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          setSelectedEventInvites((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(u.user_id);
+                            else next.delete(u.user_id);
+                            return next;
+                          });
+                        }}
+                      />
+                      <div style={{ width: 38, height: 38, borderRadius: "50%", overflow: "hidden", background: "#111", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 900, flexShrink: 0 }}>
+                        {u.photo_url ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={u.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        ) : name[0]?.toUpperCase()}
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, fontSize: 14 }}>{name}</div>
+                        {u.service ? <div style={{ fontSize: 12, color: t.textMuted }}>{u.service}</div> : null}
+                      </div>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+
+            <div style={{ padding: "14px 16px", borderTop: `1px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 13, color: eventInviteMsg?.startsWith("Invited") ? "#16a34a" : t.textMuted }}>
+                {eventInviteMsg ?? (selectedEventInvites.size > 0 ? `${selectedEventInvites.size} selected` : "Select members to invite")}
+              </div>
+              <button
+                type="button"
+                onClick={sendSavedEventInvites}
+                disabled={selectedEventInvites.size === 0 || sendingEventInvites}
+                style={{ border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 900, cursor: selectedEventInvites.size === 0 || sendingEventInvites ? "not-allowed" : "pointer", background: selectedEventInvites.size === 0 ? t.badgeBg : "#111", color: selectedEventInvites.size === 0 ? t.textMuted : "#fff", opacity: sendingEventInvites ? 0.7 : 1 }}
+              >
+                {sendingEventInvites ? "Inviting..." : `Invite${selectedEventInvites.size > 0 ? ` (${selectedEventInvites.size})` : ""}`}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Memorial detail modal — visual parity with the modal on /events.
           Rendered via a portal into document.body so parent stacking contexts
           (the aside + the main app grid) can't pin it below the feed
           composer or other high-z page chrome. */}
       {selectedMemorial && typeof document !== "undefined" && createPortal(
+        (() => {
+          const theme = memorialTheme(selectedMemorial.category);
+          return (
         <div
           onClick={() => setSelectedMemorial(null)}
           style={{
@@ -1593,7 +1886,7 @@ export default function MasterLeftColumn({
                       borderRadius: "50%",
                       overflow: "hidden",
                       flexShrink: 0,
-                      border: "3px solid #d9582b",
+                      border: `3px solid ${theme.color}`,
                     }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1605,8 +1898,8 @@ export default function MasterLeftColumn({
                   </div>
                 )}
                 <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: "#d9582b", fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
-                    We Remember
+                  <div style={{ fontSize: 12, color: theme.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+                    {theme.label}
                   </div>
                   <div style={{ fontSize: 22, fontWeight: 900, marginTop: 2, lineHeight: 1.2 }}>
                     {selectedMemorial.name}
@@ -1648,45 +1941,17 @@ export default function MasterLeftColumn({
                 </div>
               ) : (
                 <div style={{ color: t.textFaint, fontSize: 14 }}>
-                  No biography on file.{selectedMemorial.source_url ? " Use “View Full Memorial” for the full tribute." : ""}
+                  No biography on file.
                 </div>
               )}
               <div style={{ marginTop: 16, fontSize: 11, lineHeight: 1.5, color: t.textFaint, fontStyle: "italic" }}>
-                * This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.
+                {memorialDisclaimer(selectedMemorial.category)}
               </div>
             </div>
-
-            <div
-              style={{
-                marginTop: 12,
-                padding: "14px 24px 20px",
-                borderTop: `1px solid ${t.border}`,
-                display: "flex",
-                justifyContent: "flex-end",
-              }}
-            >
-              {selectedMemorial.source_url && (
-                <a
-                  href={selectedMemorial.source_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  style={{
-                    display: "inline-block",
-                    textDecoration: "none",
-                    background: "#d9582b",
-                    color: "white",
-                    padding: "10px 16px",
-                    borderRadius: 10,
-                    fontWeight: 800,
-                    fontSize: 14,
-                  }}
-                >
-                  View Full Memorial →
-                </a>
-              )}
-            </div>
           </div>
-        </div>,
+        </div>
+          );
+        })(),
         document.body
       )}
 

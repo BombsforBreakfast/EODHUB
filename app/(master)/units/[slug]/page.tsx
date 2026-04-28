@@ -12,6 +12,9 @@ import EmojiPickerButton from "../../../components/EmojiPickerButton";
 import { useMasterShell } from "../../../components/master/masterShellContext";
 import AddToRabbitholeModal from "../../../rabbithole/components/AddToRabbitholeModal";
 import { MurphyRabbitholeBanner } from "../../../components/MurphyRabbitholeBanner";
+import FeedPostHeader from "../../../components/FeedPostHeader";
+import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
+import { ensureSavedEventForUser } from "../../../lib/ensureSavedEventForUser";
 
 const RABBITHOLE_THRESHOLD_BYPASS = true;
 
@@ -39,7 +42,7 @@ type UnitPost = {
   content: string | null;
   photo_url: string | null;
   gif_url: string | null;
-  post_type: "post" | "join_request";
+  post_type: "post" | "join_request" | "photo_album";
   meta: {
     requester_id?: string;
     requester_name?: string;
@@ -62,6 +65,7 @@ type UnitPost = {
   user_voted?: boolean;
   rabbithole_thread_id?: string | null;
   rabbithole_contribution_id?: string | null;
+  hidden_for_review?: boolean | null;
 };
 
 type Comment = {
@@ -94,7 +98,40 @@ type InviteUser = {
   service: string | null;
 };
 
+type UnitEvent = {
+  id: string;
+  user_id: string;
+  title: string;
+  description: string | null;
+  date: string;
+  organization: string | null;
+  signup_url: string | null;
+  image_url: string | null;
+  location: string | null;
+  event_time: string | null;
+  poc_name: string | null;
+  poc_phone: string | null;
+  created_at: string;
+  unit_id: string | null;
+  visibility: "public" | "group" | string | null;
+};
+
 const BRANCHES = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal"];
+const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
+
+function isHiddenInviteAccount(user: Pick<InviteUser, "user_id" | "display_name" | "first_name" | "last_name">) {
+  const name = `${user.display_name ?? ""} ${user.first_name ?? ""} ${user.last_name ?? ""}`
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  const compactName = name.replace(/[^a-z0-9]/g, "");
+  return (
+    user.user_id === RUMINT_USER_ID ||
+    compactName === "rumint" ||
+    compactName === "eodhub" ||
+    compactName === "eodhubadmin"
+  );
+}
 
 function getYouTubeId(url: string): string | null {
   try {
@@ -121,6 +158,15 @@ function displayName(user: { display_name?: string | null; first_name?: string |
   return user.display_name || `${user.first_name ?? ""} ${user.last_name ?? ""}`.trim() || "Member";
 }
 
+function formatEventDate(date: string) {
+  return new Date(`${date}T12:00:00`).toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function UnitPage() {
@@ -134,7 +180,7 @@ export default function UnitPage() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [activeTab, setActiveTab] = useState<"wall" | "members" | "photos">("wall");
+  const [activeTab, setActiveTab] = useState<"wall" | "events" | "members" | "photos">("wall");
 
   // Wall
   const [posts, setPosts] = useState<UnitPost[]>([]);
@@ -149,9 +195,39 @@ export default function UnitPage() {
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
+  const [isMobile, setIsMobile] = useState(false);
+  const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingPostContent, setEditingPostContent] = useState("");
+  const [savingPostId, setSavingPostId] = useState<string | null>(null);
+  const [flaggingId, setFlaggingId] = useState<string | null>(null);
+  const [flagModal, setFlagModal] = useState<{ contentType: "unit_post"; contentId: string } | null>(null);
+  const [flagCategoryChoice, setFlagCategoryChoice] = useState<FlagCategory>("general");
 
   // Members
   const [members, setMembers] = useState<Member[]>([]);
+
+  // Events
+  const [unitEvents, setUnitEvents] = useState<UnitEvent[]>([]);
+  const [unitEventsLoaded, setUnitEventsLoaded] = useState(false);
+  const [unitEventsLoading, setUnitEventsLoading] = useState(false);
+  const [unitEventFormOpen, setUnitEventFormOpen] = useState(false);
+  const [unitEventSubmitting, setUnitEventSubmitting] = useState(false);
+  const [unitEventForm, setUnitEventForm] = useState({
+    title: "",
+    date: "",
+    event_time: "",
+    location: "",
+    organization: "",
+    description: "",
+    signup_url: "",
+    poc_name: "",
+    poc_phone: "",
+  });
+  const [unitEventAttendance, setUnitEventAttendance] = useState<Record<string, { interested: number; going: number }>>({});
+  const [unitEventMyAttendance, setUnitEventMyAttendance] = useState<Record<string, "interested" | "going" | null>>({});
+  const [unitSavedEventIds, setUnitSavedEventIds] = useState<Set<string>>(new Set());
+  const [selectedUnitEvent, setSelectedUnitEvent] = useState<UnitEvent | null>(null);
 
   // Join
   const [joining, setJoining] = useState(false);
@@ -159,45 +235,14 @@ export default function UnitPage() {
   // Rabbithole modal
   const [rabbitholeModalPost, setRabbitholeModalPost] = useState<{ id: string; content: string } | null>(null);
 
-  // Admin modal (join requests inline)
-  const [showAdminModal, setShowAdminModal] = useState(false);
-  type AdminPendingMember = { user_id: string; display_name: string; photo_url: string | null; service: string | null; job_title: string | null; requested_at: string };
-  const [adminPending, setAdminPending] = useState<AdminPendingMember[]>([]);
-  const [adminPendingLoaded, setAdminPendingLoaded] = useState(false);
-  const [adminWorking, setAdminWorking] = useState<string | null>(null);
-
-  async function openAdminModal() {
-    setShowAdminModal(true);
-    if (adminPendingLoaded) return;
-    try {
-      const token = await getToken();
-      const res = await fetch(`/api/units/${slug}/admin`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        const json = await res.json();
-        setAdminPending(json.pending ?? []);
-        setAdminPendingLoaded(true);
-      }
-    } catch { /* non-fatal */ }
-  }
-
-  async function handleAdminAction(action: "approve_member" | "deny_member", userId: string) {
-    setAdminWorking(userId);
-    try {
-      const token = await getToken();
-      const res = await fetch(`/api/units/${slug}/admin`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ action, user_id: userId }),
-      });
-      if (res.ok) {
-        setAdminPending((prev) => prev.filter((m) => m.user_id !== userId));
-      }
-    } finally {
-      setAdminWorking(null);
-    }
-  }
+  // Photos tab submission
+  const [photoCaption, setPhotoCaption] = useState("");
+  const [photoUploadFile, setPhotoUploadFile] = useState<File | null>(null);
+  const [photoUploadPreview, setPhotoUploadPreview] = useState<string | null>(null);
+  const [submittingPhoto, setSubmittingPhoto] = useState(false);
+  const [photoSubmitMsg, setPhotoSubmitMsg] = useState<string | null>(null);
+  const photoUploadInputRef = useRef<HTMLInputElement | null>(null);
+  const [galleryPhotoIndex, setGalleryPhotoIndex] = useState<number | null>(null);
 
   // Invite modal
   const [showInvite, setShowInvite] = useState(false);
@@ -224,6 +269,15 @@ export default function UnitPage() {
   useEffect(() => {
     postsRef.current = posts;
   }, [posts]);
+
+  useEffect(() => {
+    function checkMobile() {
+      setIsMobile(window.innerWidth <= 700);
+    }
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   async function getToken() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -281,11 +335,104 @@ export default function UnitPage() {
     }
   }
 
+  async function loadUnitEvents() {
+    setUnitEventsLoading(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/units/${slug}/events`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const json = await res.json() as {
+          events?: UnitEvent[];
+          attendance?: Record<string, { interested: number; going: number }>;
+          myAttendance?: Record<string, "interested" | "going" | null>;
+          savedEventIds?: string[];
+        };
+        setUnitEvents(json.events ?? []);
+        setUnitEventAttendance(json.attendance ?? {});
+        setUnitEventMyAttendance(json.myAttendance ?? {});
+        setUnitSavedEventIds(new Set(json.savedEventIds ?? []));
+        setUnitEventsLoaded(true);
+      }
+    } finally {
+      setUnitEventsLoading(false);
+    }
+  }
+
+  async function createUnitEvent() {
+    if (!unitEventForm.title.trim() || !unitEventForm.date || unitEventSubmitting) return;
+    setUnitEventSubmitting(true);
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/units/${slug}/events`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(unitEventForm),
+      });
+      const json = await res.json().catch(() => ({})) as { event?: UnitEvent; error?: string };
+      if (!res.ok) {
+        alert(json.error ?? "Could not create event.");
+        return;
+      }
+      setUnitEventForm({ title: "", date: "", event_time: "", location: "", organization: "", description: "", signup_url: "", poc_name: "", poc_phone: "" });
+      setUnitEventFormOpen(false);
+      await loadUnitEvents();
+    } finally {
+      setUnitEventSubmitting(false);
+    }
+  }
+
+  async function toggleUnitEventAttendance(eventId: string, status: "interested" | "going") {
+    if (!currentUserId) {
+      window.location.href = "/login";
+      return;
+    }
+    const current = unitEventMyAttendance[eventId] ?? null;
+    try {
+      if (current === status) {
+        const { error } = await supabase
+          .from("event_attendance")
+          .delete()
+          .eq("event_id", eventId)
+          .eq("user_id", currentUserId);
+        if (error) throw error;
+        await supabase
+          .from("saved_events")
+          .delete()
+          .eq("event_id", eventId)
+          .eq("user_id", currentUserId);
+        setUnitSavedEventIds((prev) => {
+          const next = new Set(prev);
+          next.delete(eventId);
+          return next;
+        });
+      } else {
+        const { error } = await supabase
+          .from("event_attendance")
+          .upsert([{ event_id: eventId, user_id: currentUserId, status }], { onConflict: "event_id,user_id" });
+        if (error) throw error;
+        await ensureSavedEventForUser(supabase, currentUserId, eventId);
+        setUnitSavedEventIds((prev) => new Set(prev).add(eventId));
+      }
+      await loadUnitEvents();
+    } catch (err) {
+      console.error("toggleUnitEventAttendance failed:", err);
+      alert(err instanceof Error ? err.message : "Could not update RSVP.");
+    }
+  }
+
   useEffect(() => {
     if (activeTab === "members" && membership?.status === "approved" && members.length === 0) {
       loadMembers();
     }
   }, [activeTab, membership]);
+
+  useEffect(() => {
+    if (activeTab === "events" && membership?.status === "approved" && !unitEventsLoaded) {
+      void loadUnitEvents();
+    }
+  }, [activeTab, membership?.status, unitEventsLoaded]);
 
   // Deep-link from notifications: ?unitPostId=…&commentId=… (unit_post_comments id)
   useEffect(() => {
@@ -460,6 +607,147 @@ export default function UnitPage() {
     }
   }
 
+  async function submitGroupPhoto() {
+    if (!photoUploadFile || submittingPhoto) return;
+    setSubmittingPhoto(true);
+    setPhotoSubmitMsg(null);
+    try {
+      const finalPhotoUrl = await uploadUnitPhoto(photoUploadFile);
+      const token = await getToken();
+      const wallRes = await fetch(`/api/units/${slug}/posts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          content: photoCaption.trim() || null,
+          photo_url: finalPhotoUrl,
+          meta: { source: "photos_tab_wall" },
+        }),
+      });
+      const wallJson = await wallRes.json().catch(() => ({})) as { error?: string };
+      if (!wallRes.ok) {
+        alert(wallJson.error ?? "Could not post photo to wall.");
+        return;
+      }
+
+      const albumRes = await fetch(`/api/units/${slug}/posts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          content: photoCaption.trim() || null,
+          photo_url: finalPhotoUrl,
+          post_type: "photo_album",
+          photo_submission_only: true,
+          meta: { source: "photos_tab_album" },
+        }),
+      });
+      const albumJson = await albumRes.json().catch(() => ({})) as { error?: string };
+      if (!albumRes.ok) {
+        alert(albumJson.error ?? "Photo posted to wall, but album submission failed.");
+        return;
+      }
+
+      setPhotoCaption("");
+      setPhotoUploadFile(null);
+      if (photoUploadPreview) URL.revokeObjectURL(photoUploadPreview);
+      setPhotoUploadPreview(null);
+      if (photoUploadInputRef.current) photoUploadInputRef.current.value = "";
+      setPhotoSubmitMsg(isGod ? "Photo posted and added to group album." : "Photo posted to wall and submitted to album for admin approval.");
+      await loadPosts();
+    } finally {
+      setSubmittingPhoto(false);
+    }
+  }
+
+  function startEditPost(postId: string, currentContent: string | null) {
+    setEditingPostId(postId);
+    setEditingPostContent(currentContent ?? "");
+  }
+
+  function cancelEditPost() {
+    setEditingPostId(null);
+    setEditingPostContent("");
+  }
+
+  async function savePostEdit(postId: string) {
+    if (!currentUserId || !editingPostContent.trim()) return;
+    setSavingPostId(postId);
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/units/${slug}/posts/${postId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: editingPostContent.trim() }),
+      });
+      const json = await res.json().catch(() => ({} as { error?: string }));
+      if (!res.ok) {
+        alert(json.error ?? "Could not update post.");
+        return;
+      }
+      setEditingPostId(null);
+      setEditingPostContent("");
+      await loadPosts();
+    } finally {
+      setSavingPostId(null);
+    }
+  }
+
+  async function deletePost(postId: string) {
+    if (!currentUserId) return;
+    if (!window.confirm("Delete this group post?")) return;
+    setDeletingPostId(postId);
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/units/${slug}/posts/${postId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => ({} as { error?: string }));
+      if (!res.ok) {
+        alert(json.error ?? "Could not delete post.");
+        return;
+      }
+      await loadPosts();
+    } finally {
+      setDeletingPostId(null);
+    }
+  }
+
+  function openFlagModal(contentId: string) {
+    if (!currentUserId) {
+      window.location.href = "/login";
+      return;
+    }
+    setFlagCategoryChoice("general");
+    setFlagModal({ contentType: "unit_post", contentId });
+  }
+
+  async function submitFlagFromModal() {
+    if (!flagModal || !currentUserId) return;
+    setFlaggingId(flagModal.contentId);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/flag-content", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          contentType: flagModal.contentType,
+          contentId: flagModal.contentId,
+          category: flagCategoryChoice,
+        }),
+      });
+      const json = await res.json().catch(() => ({} as { error?: string }));
+      if (!res.ok) {
+        alert(json.error ?? "Could not submit flag.");
+        return;
+      }
+      alert("Flagged for review. Thank you.");
+      setFlagModal(null);
+      await loadPosts();
+    } finally {
+      setFlaggingId(null);
+    }
+  }
+
   async function toggleLike(postId: string) {
     if (!currentUserId) {
       window.location.href = "/login";
@@ -580,6 +868,7 @@ export default function UnitPage() {
   }
 
   const filteredInviteUsers = inviteUsers.filter((u) => {
+    if (isHiddenInviteAccount(u)) return false;
     const name = displayName(u).toLowerCase();
     const matchesQuery = !inviteQuery.trim() || name.includes(inviteQuery.toLowerCase());
     const matchesBranch = inviteBranches.size === 0 || (u.service && inviteBranches.has(u.service));
@@ -589,7 +878,46 @@ export default function UnitPage() {
   // ── Styles ───────────────────────────────────────────────────────────────
 
   const isGod = membership?.status === "approved" && (membership.role === "owner" || membership.role === "admin");
-  const photos = posts.filter((p) => p.photo_url && p.post_type === "post");
+  const wallPosts = posts.filter((p) => p.post_type !== "photo_album");
+  const photos = posts.filter((p) => p.photo_url && p.post_type === "photo_album");
+  const activeGalleryPhoto = galleryPhotoIndex !== null ? photos[galleryPhotoIndex] : null;
+
+  async function openPhotoGallery(index: number) {
+    setGalleryPhotoIndex(index);
+    const postId = photos[index]?.id;
+    if (!postId || comments[postId]) return;
+    const token = await getToken();
+    const res = await fetch(`/api/units/${slug}/posts/${postId}/comments`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const json = await res.json();
+      setComments((prev) => ({ ...prev, [postId]: json.comments ?? [] }));
+    }
+  }
+
+  function shiftGallery(delta: number) {
+    if (galleryPhotoIndex === null || photos.length === 0) return;
+    setGalleryPhotoIndex((galleryPhotoIndex + delta + photos.length) % photos.length);
+  }
+
+  useEffect(() => {
+    if (galleryPhotoIndex === null) return;
+    function handleGalleryKeys(event: KeyboardEvent) {
+      if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        shiftGallery(-1);
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        shiftGallery(1);
+      } else if (event.key === "Escape") {
+        event.preventDefault();
+        setGalleryPhotoIndex(null);
+      }
+    }
+    window.addEventListener("keydown", handleGalleryKeys);
+    return () => window.removeEventListener("keydown", handleGalleryKeys);
+  }, [galleryPhotoIndex, photos.length]);
 
   const inputStyle: CSSProperties = {
     width: "100%",
@@ -629,7 +957,7 @@ export default function UnitPage() {
         <div style={bodyShell}>
           <div style={{ textAlign: "center", padding: 60 }}>
             <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 8 }}>Unit not found</div>
-            <a href="/units" style={{ color: "#3b82f6", fontWeight: 700, fontSize: 14 }}>← Back to Groups</a>
+            <Link href="/units" style={{ color: "#3b82f6", fontWeight: 700, fontSize: 14 }}>← Back to Groups</Link>
           </div>
         </div>
       </div>
@@ -642,9 +970,9 @@ export default function UnitPage() {
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text }}>
       <div style={bodyShell}>
         {/* Back */}
-        <a href="/units" style={{ color: t.textMuted, fontSize: 13, fontWeight: 700, textDecoration: "none", display: "inline-block", marginBottom: 16 }}>
+        <Link href="/units" style={{ color: t.textMuted, fontSize: 13, fontWeight: 700, textDecoration: "none", display: "inline-block", marginBottom: 16 }}>
           ← Groups
-        </a>
+        </Link>
 
         {/* Cover + Header — vertical split: portrait cover | details */}
         <div style={{ borderRadius: 16, overflow: "hidden", border: `1px solid ${t.border}`, background: t.surface, marginBottom: 20 }}>
@@ -695,12 +1023,12 @@ export default function UnitPage() {
                 )}
                 {membership?.status === "approved" && isGod && (
                   <>
-                    <button
-                      onClick={openAdminModal}
-                      style={{ background: "transparent", color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                    <Link
+                      href={`/units/${slug}/admin`}
+                      style={{ background: "transparent", color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 16px", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, textDecoration: "none" }}
                     >
                       ⚙ Admin
-                    </button>
+                    </Link>
                     <button onClick={openInviteModal} style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
                       Invite Members
                     </button>
@@ -752,7 +1080,7 @@ export default function UnitPage() {
           <>
             {/* Tab bar */}
             <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${t.border}`, paddingBottom: 0 }}>
-              {(["wall", "members", "photos"] as const).map((tab) => (
+              {(["wall", "events", "members", "photos"] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -855,7 +1183,7 @@ export default function UnitPage() {
                   <div style={{ color: t.textMuted, textAlign: "center", padding: 40, fontSize: 14 }}>No posts yet. Be the first to post.</div>
                 )}
 
-                {posts.map((post) => {
+                {wallPosts.map((post) => {
                   if (post.post_type === "join_request") {
                     return (
                       <JoinRequestCard
@@ -871,6 +1199,8 @@ export default function UnitPage() {
                       />
                     );
                   }
+                  const canManagePost = currentUserId === post.user_id;
+                  const isEditingPost = editingPostId === post.id;
                   return (
                     <PostCard
                       key={post.id}
@@ -884,7 +1214,19 @@ export default function UnitPage() {
                       onToggleLike={() => toggleLike(post.id)}
                       onToggleComments={() => toggleComments(post.id)}
                       onSubmitComment={(imageFile, gifUrl) => submitComment(post.id, imageFile, gifUrl)}
-                      currentUserId={currentUserId}
+                      canManagePost={canManagePost}
+                      isEditingPost={isEditingPost}
+                      editingPostContent={editingPostContent}
+                      savingPost={savingPostId === post.id}
+                      deletingPost={deletingPostId === post.id}
+                      flaggingPost={flaggingId === post.id}
+                      isMobile={isMobile}
+                      onEdit={() => startEditPost(post.id, post.content)}
+                      onCancelEdit={cancelEditPost}
+                      onEditContentChange={setEditingPostContent}
+                      onSaveEdit={() => savePostEdit(post.id)}
+                      onDelete={() => deletePost(post.id)}
+                      onFlag={() => openFlagModal(post.id)}
                       onAddToRabbithole={
                         currentUserId &&
                         (RABBITHOLE_THRESHOLD_BYPASS || post.like_count >= 3 || post.comment_count >= 2) &&
@@ -896,6 +1238,203 @@ export default function UnitPage() {
                     />
                   );
                 })}
+              </div>
+            )}
+
+            {/* EVENTS TAB */}
+            {activeTab === "events" && (
+              <div style={{ display: "grid", gap: 16 }}>
+                <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface, padding: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                    <div>
+                      <div style={{ fontSize: 18, fontWeight: 900, color: t.text }}>Group Events</div>
+                      <div style={{ marginTop: 3, fontSize: 13, color: t.textMuted }}>Private calendar for {unit.name} members.</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setUnitEventFormOpen((prev) => !prev)}
+                      style={{ border: "none", borderRadius: 10, background: "#111", color: "#fff", padding: "9px 16px", fontWeight: 800, cursor: "pointer" }}
+                    >
+                      {unitEventFormOpen ? "Close" : "Create Event"}
+                    </button>
+                  </div>
+
+                  {unitEventFormOpen && (
+                    <div style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 16, display: "grid", gap: 14 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: t.text }}>Add Event</div>
+                        <button
+                          type="button"
+                          onClick={() => setUnitEventFormOpen(false)}
+                          style={{ border: "none", background: "transparent", color: t.textMuted, fontWeight: 800, fontSize: 18, cursor: "pointer", lineHeight: 1 }}
+                          aria-label="Close add event form"
+                        >
+                          ×
+                        </button>
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <label style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Title *</label>
+                        <input
+                          value={unitEventForm.title}
+                          onChange={(e) => setUnitEventForm((prev) => ({ ...prev, title: e.target.value }))}
+                          placeholder="Event title"
+                          style={{ ...inputStyle, marginBottom: 0 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <label style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Date *</label>
+                        <input
+                          type="date"
+                          value={unitEventForm.date}
+                          onChange={(e) => setUnitEventForm((prev) => ({ ...prev, date: e.target.value }))}
+                          style={{ ...inputStyle, marginBottom: 0 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <label style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Time</label>
+                        <input
+                          value={unitEventForm.event_time}
+                          onChange={(e) => setUnitEventForm((prev) => ({ ...prev, event_time: e.target.value }))}
+                          placeholder="e.g. '6:00 PM EST' or '0900 - 1100'"
+                          style={{ ...inputStyle, marginBottom: 0 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <label style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Location / Address</label>
+                        <input
+                          value={unitEventForm.location}
+                          onChange={(e) => setUnitEventForm((prev) => ({ ...prev, location: e.target.value }))}
+                          placeholder="Venue or street address (or 'Online — Zoom')"
+                          style={{ ...inputStyle, marginBottom: 0 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <label style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Organization</label>
+                        <input
+                          value={unitEventForm.organization}
+                          onChange={(e) => setUnitEventForm((prev) => ({ ...prev, organization: e.target.value }))}
+                          placeholder="Hosting organization"
+                          style={{ ...inputStyle, marginBottom: 0 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <label style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Description</label>
+                        <textarea
+                          value={unitEventForm.description}
+                          onChange={(e) => setUnitEventForm((prev) => ({ ...prev, description: e.target.value }))}
+                          placeholder="Event details..."
+                          rows={4}
+                          style={{ ...inputStyle, minHeight: 92, resize: "vertical", marginBottom: 0 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <label style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Point of Contact (POC) name</label>
+                        <input
+                          value={unitEventForm.poc_name}
+                          onChange={(e) => setUnitEventForm((prev) => ({ ...prev, poc_name: e.target.value }))}
+                          placeholder="Name of organizer / point of contact"
+                          style={{ ...inputStyle, marginBottom: 0 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <label style={{ fontSize: 13, fontWeight: 800, color: t.text }}>POC phone number</label>
+                        <input
+                          value={unitEventForm.poc_phone}
+                          onChange={(e) => setUnitEventForm((prev) => ({ ...prev, poc_phone: e.target.value }))}
+                          placeholder="(555) 555-1234"
+                          style={{ ...inputStyle, marginBottom: 0 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "grid", gap: 6 }}>
+                        <label style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Sign-up / External URL</label>
+                        <input
+                          value={unitEventForm.signup_url}
+                          onChange={(e) => setUnitEventForm((prev) => ({ ...prev, signup_url: e.target.value }))}
+                          placeholder="https://..."
+                          style={{ ...inputStyle, marginBottom: 0 }}
+                        />
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 4 }}>
+                        <button
+                          type="button"
+                          onClick={() => setUnitEventFormOpen(false)}
+                          style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: "10px 18px", fontWeight: 800, background: t.surface, color: t.text, cursor: "pointer" }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={createUnitEvent}
+                          disabled={unitEventSubmitting || !unitEventForm.title.trim() || !unitEventForm.date}
+                          style={{ border: "none", borderRadius: 12, padding: "10px 20px", fontWeight: 900, background: "#111", color: "#fff", cursor: unitEventSubmitting || !unitEventForm.title.trim() || !unitEventForm.date ? "not-allowed" : "pointer", opacity: unitEventSubmitting || !unitEventForm.title.trim() || !unitEventForm.date ? 0.65 : 1 }}
+                        >
+                          {unitEventSubmitting ? "Publishing..." : "Publish Event"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface, overflow: "hidden" }}>
+                  <div style={{ padding: "14px 16px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ fontWeight: 900, color: t.text }}>Upcoming Group Events</div>
+                    <div style={{ color: t.textMuted, fontSize: 12, fontWeight: 700 }}>{unitEvents.length} event{unitEvents.length === 1 ? "" : "s"}</div>
+                  </div>
+                  {unitEventsLoading ? (
+                    <div style={{ padding: 32, textAlign: "center", color: t.textMuted }}>Loading events...</div>
+                  ) : unitEvents.length === 0 ? (
+                    <div style={{ padding: 32, textAlign: "center", color: t.textMuted }}>No group events yet.</div>
+                  ) : (
+                    <div style={{ display: "grid" }}>
+                      {unitEvents.map((event, idx) => {
+                        const counts = unitEventAttendance[event.id] ?? { interested: 0, going: 0 };
+                        const myStatus = unitEventMyAttendance[event.id] ?? null;
+                        return (
+                          <div key={event.id} style={{ display: "flex", gap: 14, padding: 16, borderBottom: idx < unitEvents.length - 1 ? `1px solid ${t.borderLight}` : "none" }}>
+                            <div style={{ width: 54, flexShrink: 0, borderRadius: 10, background: "#111", color: "#fff", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "8px 4px" }}>
+                              <div style={{ fontSize: 10, fontWeight: 900, textTransform: "uppercase", opacity: 0.8 }}>{new Date(`${event.date}T12:00:00`).toLocaleDateString("en-US", { month: "short" })}</div>
+                              <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1 }}>{new Date(`${event.date}T12:00:00`).getDate()}</div>
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <button type="button" onClick={() => setSelectedUnitEvent(event)} style={{ border: "none", background: "transparent", padding: 0, margin: 0, color: t.text, fontWeight: 900, fontSize: 16, cursor: "pointer", textAlign: "left" }}>
+                                {event.title}
+                              </button>
+                              <div style={{ marginTop: 4, color: t.textMuted, fontSize: 13 }}>{formatEventDate(event.date)}</div>
+                              <div style={{ marginTop: 5, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                <span style={{ borderRadius: 999, background: t.badgeBg, color: t.textMuted, padding: "3px 8px", fontSize: 11, fontWeight: 800 }}>Group Event</span>
+                                <span style={{ borderRadius: 999, background: t.badgeBg, color: t.textMuted, padding: "3px 8px", fontSize: 11, fontWeight: 800 }}>Private</span>
+                                {event.location ? <span style={{ color: t.textMuted, fontSize: 12 }}>{event.location}</span> : null}
+                              </div>
+                              {event.description ? (
+                                <div style={{ marginTop: 8, color: t.textMuted, fontSize: 13, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{event.description}</div>
+                              ) : null}
+                              <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                                <button type="button" onClick={() => toggleUnitEventAttendance(event.id, "interested")} style={{ background: myStatus === "interested" ? t.text : t.surface, color: myStatus === "interested" ? t.surface : t.textMuted, border: `1px solid ${t.border}`, borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                                  Interested{counts.interested > 0 ? ` · ${counts.interested}` : ""}
+                                </button>
+                                <button type="button" onClick={() => toggleUnitEventAttendance(event.id, "going")} style={{ background: myStatus === "going" ? t.text : t.surface, color: myStatus === "going" ? t.surface : t.textMuted, border: `1px solid ${t.border}`, borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>
+                                  Going{counts.going > 0 ? ` · ${counts.going}` : ""}
+                                </button>
+                                {unitSavedEventIds.has(event.id) ? <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 700 }}>Saved</span> : null}
+                                {event.signup_url ? <a href={event.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 800, textDecoration: "none" }}>Website →</a> : null}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
@@ -936,15 +1475,92 @@ export default function UnitPage() {
 
             {/* PHOTOS TAB */}
             {activeTab === "photos" && (
-              <div>
+              <div style={{ display: "grid", gap: 16 }}>
+                <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontWeight: 900, fontSize: 16, color: t.text }}>Add a group photo</div>
+                      <div style={{ color: t.textMuted, fontSize: 12, marginTop: 2 }}>
+                        {isGod
+                          ? "Posts to the wall immediately and adds to the album immediately."
+                          : "Posts to the wall immediately; album entry is submitted for admin approval."}
+                      </div>
+                    </div>
+                    {photoSubmitMsg ? <div style={{ color: "#16a34a", fontSize: 13, fontWeight: 800 }}>{photoSubmitMsg}</div> : null}
+                  </div>
+
+                  {photoUploadPreview ? (
+                    <div style={{ width: 220, maxWidth: "100%", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, marginBottom: 12, position: "relative" }}>
+                      <img src={photoUploadPreview} alt="Selected group photo" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (photoUploadPreview) URL.revokeObjectURL(photoUploadPreview);
+                          setPhotoUploadPreview(null);
+                          setPhotoUploadFile(null);
+                          if (photoUploadInputRef.current) photoUploadInputRef.current.value = "";
+                        }}
+                        style={{ position: "absolute", top: 6, right: 6, width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.7)", color: "#fff", fontWeight: 900, cursor: "pointer" }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <input
+                    ref={photoUploadInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      if (!file) return;
+                      if (photoUploadPreview) URL.revokeObjectURL(photoUploadPreview);
+                      setPhotoUploadFile(file);
+                      setPhotoUploadPreview(URL.createObjectURL(file));
+                      setPhotoSubmitMsg(null);
+                    }}
+                  />
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <input
+                      value={photoCaption}
+                      onChange={(e) => setPhotoCaption(e.target.value)}
+                      placeholder="Optional caption"
+                      style={{ ...inputStyle, marginBottom: 0 }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => photoUploadInputRef.current?.click()}
+                        style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 800, cursor: "pointer" }}
+                      >
+                        {photoUploadFile ? "Change Photo" : "Choose Photo"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={submitGroupPhoto}
+                        disabled={!photoUploadFile || submittingPhoto}
+                        style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontWeight: 900, cursor: !photoUploadFile || submittingPhoto ? "not-allowed" : "pointer", opacity: !photoUploadFile || submittingPhoto ? 0.65 : 1 }}
+                      >
+                        {submittingPhoto ? "Submitting..." : isGod ? "Add Photo" : "Submit for Approval"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
                 {photos.length === 0 && (
                   <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>No photos shared yet.</div>
                 )}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 8 }}>
-                  {photos.map((p) => (
-                    <div key={p.id} style={{ aspectRatio: "1", borderRadius: 10, overflow: "hidden" }}>
-                      <img src={p.photo_url!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                    </div>
+                  {photos.map((p, index) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => { void openPhotoGallery(index); }}
+                      style={{ aspectRatio: "1", borderRadius: 10, overflow: "hidden", border: "none", padding: 0, cursor: "pointer", background: "transparent" }}
+                    >
+                      <img src={p.photo_url!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    </button>
                   ))}
                 </div>
               </div>
@@ -953,66 +1569,72 @@ export default function UnitPage() {
         )}
       </div>
 
-      {/* Admin Modal — join requests inline */}
-      {showAdminModal && (
+      {/* Group photo gallery modal */}
+      {activeGalleryPhoto && (
         <div
-          onClick={(e) => { if (e.target === e.currentTarget) setShowAdminModal(false); }}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 16 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setGalleryPhotoIndex(null); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 550, padding: isMobile ? 10 : 20 }}
         >
-          <div style={{ background: t.surface, borderRadius: 20, padding: 28, width: "100%", maxWidth: 480, border: `1px solid ${t.border}`, maxHeight: "80vh", display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, flexShrink: 0 }}>
-              <div>
-                <div style={{ fontSize: 18, fontWeight: 900, color: t.text }}>{unit.name}</div>
-                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Join Requests</div>
+          <div style={{ width: "100%", maxWidth: 860, maxHeight: "92vh", borderRadius: 16, overflow: "hidden", border: `1px solid ${isDark ? "#222" : "#d1d5db"}`, background: isDark ? "#141414" : "#fff", display: "flex", flexDirection: "column" }}>
+            <div style={{ position: "relative", background: "#000", minHeight: isMobile ? 260 : 380, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <img src={activeGalleryPhoto.photo_url!} alt="" style={{ width: "100%", maxHeight: isMobile ? 360 : 520, objectFit: "contain", display: "block" }} />
+              <button onClick={() => setGalleryPhotoIndex(null)} style={{ position: "absolute", top: 10, right: 10, width: 34, height: 34, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.65)", color: "#fff", fontSize: 20, lineHeight: 1, cursor: "pointer" }}>×</button>
+              {photos.length > 1 && (
+                <>
+                  <button onClick={() => shiftGallery(-1)} style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", width: 38, height: 38, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.65)", color: "#fff", fontSize: 20, cursor: "pointer" }}>‹</button>
+                  <button onClick={() => shiftGallery(1)} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", width: 38, height: 38, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.65)", color: "#fff", fontSize: 20, cursor: "pointer" }}>›</button>
+                </>
+              )}
+            </div>
+
+            <div style={{ padding: 14, overflowY: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <button
+                  type="button"
+                  onClick={() => toggleLike(activeGalleryPhoto.id)}
+                  style={{ border: "none", background: "transparent", color: activeGalleryPhoto.user_liked ? "#ef4444" : t.textMuted, fontWeight: 800, fontSize: 14, lineHeight: 1, cursor: "pointer" }}
+                >
+                  {activeGalleryPhoto.user_liked ? "Unlike" : "Like"}
+                </button>
+                <div style={{ fontSize: 14, color: t.textMuted }}>{activeGalleryPhoto.like_count} likes</div>
+                <div style={{ marginLeft: "auto", fontSize: 12, color: t.textFaint }}>{new Date(activeGalleryPhoto.created_at).toLocaleDateString()}</div>
               </div>
-              <button onClick={() => setShowAdminModal(false)} style={{ background: "transparent", border: "none", color: t.textMuted, fontSize: 22, cursor: "pointer", lineHeight: 1, padding: 4 }}>×</button>
-            </div>
+              {activeGalleryPhoto.content ? (
+                <div style={{ fontSize: 14, color: t.text, marginTop: 8, lineHeight: 1.5 }}>{activeGalleryPhoto.content}</div>
+              ) : null}
 
-            <div style={{ overflowY: "auto", flex: 1 }}>
-              {!adminPendingLoaded && (
-                <div style={{ color: t.textMuted, fontSize: 14, textAlign: "center", padding: "32px 0" }}>Loading…</div>
-              )}
-              {adminPendingLoaded && adminPending.length === 0 && (
-                <div style={{ color: t.textMuted, fontSize: 14, textAlign: "center", padding: "32px 0" }}>No pending requests.</div>
-              )}
-              {adminPendingLoaded && adminPending.map((p) => (
-                <div key={p.user_id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: `1px solid ${t.borderLight}` }}>
-                  <div style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0, overflow: "hidden", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, color: t.textMuted }}>
-                    {p.photo_url ? <img src={p.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : p.display_name.charAt(0).toUpperCase()}
+              <div style={{ marginTop: 14, borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8 }}>Comments</div>
+                {(comments[activeGalleryPhoto.id] ?? []).length === 0 ? (
+                  <div style={{ color: t.textFaint, fontSize: 13, marginBottom: 10 }}>No comments yet.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 10, marginBottom: 12 }}>
+                    {(comments[activeGalleryPhoto.id] ?? []).map((c) => (
+                      <div key={c.id} style={{ display: "flex", gap: 8 }}>
+                        <Avatar photo={c.author_photo} name={c.author_name} size={28} />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, color: t.text }}><strong>{c.author_name}</strong> {c.content}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>{p.display_name}</div>
-                    <div style={{ fontSize: 12, color: t.textMuted }}>{[p.service, p.job_title].filter(Boolean).join(" · ") || "EOD Professional"}</div>
-                    <div style={{ fontSize: 11, color: t.textFaint, marginTop: 2 }}>Requested {new Date(p.requested_at).toLocaleDateString()}</div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                    <button
-                      disabled={adminWorking === p.user_id}
-                      onClick={() => handleAdminAction("approve_member", p.user_id)}
-                      style={{ background: "#16a34a", color: "#fff", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 800, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}
-                    >
-                      {adminWorking === p.user_id && <span className="btn-spinner" />}
-                      Approve
-                    </button>
-                    <button
-                      disabled={adminWorking === p.user_id}
-                      onClick={() => handleAdminAction("deny_member", p.user_id)}
-                      style={{ background: "transparent", color: "#dc2626", border: "1px solid #dc2626", borderRadius: 8, padding: "6px 14px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}
-                    >
-                      Deny
-                    </button>
-                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    value={commentInputs[activeGalleryPhoto.id] ?? ""}
+                    onChange={(e) => setCommentInputs((prev) => ({ ...prev, [activeGalleryPhoto.id]: e.target.value }))}
+                    placeholder="Write a comment..."
+                    style={{ flex: 1, padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => submitComment(activeGalleryPhoto.id)}
+                    style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, cursor: "pointer" }}
+                  >
+                    Post
+                  </button>
                 </div>
-              ))}
-            </div>
-
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${t.borderLight}`, flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <a href={`/units/${slug}/admin`} style={{ fontSize: 12, color: t.textMuted, textDecoration: "none", fontWeight: 700 }}>
-                Full admin page →
-              </a>
-              <button onClick={() => setShowAdminModal(false)} style={{ background: t.badgeBg, color: t.text, border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-                Done
-              </button>
+              </div>
             </div>
           </div>
         </div>
@@ -1040,7 +1662,8 @@ export default function UnitPage() {
                       key={branch}
                       onClick={() => setInviteBranches((prev) => {
                         const s = new Set(prev);
-                        active ? s.delete(branch) : s.add(branch);
+                        if (active) s.delete(branch);
+                        else s.add(branch);
                         return s;
                       })}
                       style={{ background: active ? "#111" : t.badgeBg, color: active ? "#fff" : t.text, border: `1px solid ${active ? "#111" : t.border}`, borderRadius: 20, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
@@ -1079,7 +1702,8 @@ export default function UnitPage() {
                     key={u.user_id}
                     onClick={() => setSelectedInvites((prev) => {
                       const s = new Set(prev);
-                      checked ? s.delete(u.user_id) : s.add(u.user_id);
+                      if (checked) s.delete(u.user_id);
+                      else s.add(u.user_id);
                       return s;
                     })}
                     style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 20px", cursor: "pointer", background: checked ? (isDark ? "#1a2a1a" : "#f0fdf4") : "transparent" }}
@@ -1125,6 +1749,111 @@ export default function UnitPage() {
                   {inviting ? "Inviting..." : `Invite${selectedInvites.size > 0 ? ` (${selectedInvites.size})` : ""}`}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {flagModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="unit-flag-modal-title"
+          onClick={() => !flaggingId && setFlagModal(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 600, padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 400, background: t.surface, borderRadius: 16, border: `1px solid ${t.border}`, padding: "20px 22px", boxShadow: isDark ? "0 12px 40px rgba(0,0,0,0.5)" : "0 12px 40px rgba(0,0,0,0.12)" }}
+          >
+            <h2 id="unit-flag-modal-title" style={{ margin: "0 0 14px", fontSize: 18, fontWeight: 800, color: t.text }}>
+              Flag this group post
+            </h2>
+            <label htmlFor="unit-flag-reason" style={{ display: "block", fontSize: 13, fontWeight: 700, color: t.textMuted, marginBottom: 6 }}>
+              Reason
+            </label>
+            <select
+              id="unit-flag-reason"
+              value={flagCategoryChoice}
+              onChange={(e) => setFlagCategoryChoice(e.target.value as FlagCategory)}
+              disabled={!!flaggingId}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, marginBottom: 18, boxSizing: "border-box" }}
+            >
+              {FLAG_CATEGORIES.map((category) => (
+                <option key={category} value={category}>
+                  {FLAG_CATEGORY_LABELS[category]}
+                </option>
+              ))}
+            </select>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                type="button"
+                onClick={() => !flaggingId && setFlagModal(null)}
+                disabled={!!flaggingId}
+                style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.surfaceHover, color: t.text, fontWeight: 700, fontSize: 14, cursor: flaggingId ? "default" : "pointer" }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitFlagFromModal()}
+                disabled={!!flaggingId}
+                style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#b91c1c", color: "white", fontWeight: 700, fontSize: 14, cursor: flaggingId ? "default" : "pointer" }}
+              >
+                {flaggingId ? "Submitting..." : "Submit Flag"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedUnitEvent && (
+        <div
+          onClick={() => setSelectedUnitEvent(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 650, padding: 20 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: "100%", maxWidth: 560, maxHeight: "85vh", overflowY: "auto", background: t.surface, color: t.text, borderRadius: 18, border: `1px solid ${t.border}`, padding: 24, boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+                  <span style={{ borderRadius: 999, background: t.badgeBg, color: t.textMuted, padding: "3px 9px", fontSize: 11, fontWeight: 900 }}>Group Event</span>
+                  <span style={{ borderRadius: 999, background: t.badgeBg, color: t.textMuted, padding: "3px 9px", fontSize: 11, fontWeight: 900 }}>{unit?.name}</span>
+                </div>
+                <div style={{ fontSize: 24, fontWeight: 900, lineHeight: 1.15 }}>{selectedUnitEvent.title}</div>
+                <div style={{ marginTop: 8, color: t.textMuted, fontSize: 14 }}>{formatEventDate(selectedUnitEvent.date)}</div>
+              </div>
+              <button type="button" onClick={() => setSelectedUnitEvent(null)} style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 10, padding: "6px 10px", cursor: "pointer", fontWeight: 800 }}>
+                X
+              </button>
+            </div>
+
+            {selectedUnitEvent.description ? (
+              <div style={{ marginTop: 18, color: t.textMuted, lineHeight: 1.6, fontSize: 14, whiteSpace: "pre-wrap" }}>{selectedUnitEvent.description}</div>
+            ) : null}
+
+            <div style={{ marginTop: 20, borderTop: `1px solid ${t.border}`, paddingTop: 16, display: "grid", gap: 8 }}>
+              {selectedUnitEvent.event_time ? <div style={{ color: t.textMuted, fontSize: 14 }}><strong>Time:</strong> {selectedUnitEvent.event_time}</div> : null}
+              {selectedUnitEvent.location ? <div style={{ color: t.textMuted, fontSize: 14 }}><strong>Location:</strong> {selectedUnitEvent.location}</div> : null}
+              {(selectedUnitEvent.poc_name || selectedUnitEvent.poc_phone) ? (
+                <div style={{ color: t.textMuted, fontSize: 14 }}>
+                  <strong>Point of Contact:</strong> {selectedUnitEvent.poc_name ?? ""}
+                  {selectedUnitEvent.poc_name && selectedUnitEvent.poc_phone ? " — " : ""}
+                  {selectedUnitEvent.poc_phone ? <a href={`tel:${selectedUnitEvent.poc_phone.replace(/\s+/g, "")}`} style={{ fontWeight: 800 }}>{selectedUnitEvent.poc_phone}</a> : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div style={{ marginTop: 22, display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              <button type="button" onClick={() => toggleUnitEventAttendance(selectedUnitEvent.id, "interested")} style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer", background: unitEventMyAttendance[selectedUnitEvent.id] === "interested" ? t.text : t.surface, color: unitEventMyAttendance[selectedUnitEvent.id] === "interested" ? t.surface : t.text }}>
+                Interested{(unitEventAttendance[selectedUnitEvent.id]?.interested ?? 0) > 0 ? ` · ${unitEventAttendance[selectedUnitEvent.id].interested}` : ""}
+              </button>
+              <button type="button" onClick={() => toggleUnitEventAttendance(selectedUnitEvent.id, "going")} style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer", background: unitEventMyAttendance[selectedUnitEvent.id] === "going" ? t.text : t.surface, color: unitEventMyAttendance[selectedUnitEvent.id] === "going" ? t.surface : t.text }}>
+                Going{(unitEventAttendance[selectedUnitEvent.id]?.going ?? 0) > 0 ? ` · ${unitEventAttendance[selectedUnitEvent.id].going}` : ""}
+              </button>
+              {selectedUnitEvent.signup_url ? <a href={selectedUnitEvent.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", textDecoration: "none", background: "#111", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 800, marginLeft: "auto" }}>Open Event Link</a> : null}
             </div>
           </div>
         </div>
@@ -1237,7 +1966,33 @@ function JoinRequestCard({ post, isGod, currentUserId, onVote, onApprove, onDeny
   );
 }
 
-function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChange, expanded, onToggleLike, onToggleComments, onSubmitComment, currentUserId, onAddToRabbithole, rabbitholeThreadId }: {
+function PostCard({
+  post,
+  t,
+  isDark,
+  comments,
+  commentInput,
+  onCommentInputChange,
+  expanded,
+  onToggleLike,
+  onToggleComments,
+  onSubmitComment,
+  canManagePost,
+  isEditingPost,
+  editingPostContent,
+  savingPost,
+  deletingPost,
+  flaggingPost,
+  isMobile,
+  onEdit,
+  onCancelEdit,
+  onEditContentChange,
+  onSaveEdit,
+  onDelete,
+  onFlag,
+  onAddToRabbithole,
+  rabbitholeThreadId,
+}: {
   post: UnitPost; t: ThemeTokens; isDark: boolean;
   comments: Comment[] | undefined;
   commentInput: string;
@@ -1246,7 +2001,19 @@ function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChang
   onToggleLike: () => void;
   onToggleComments: () => void;
   onSubmitComment: (imageFile?: File | null, gifUrl?: string | null) => Promise<void>;
-  currentUserId: string | null;
+  canManagePost: boolean;
+  isEditingPost: boolean;
+  editingPostContent: string;
+  savingPost: boolean;
+  deletingPost: boolean;
+  flaggingPost: boolean;
+  isMobile: boolean;
+  onEdit: () => void;
+  onCancelEdit: () => void;
+  onEditContentChange: (value: string) => void;
+  onSaveEdit: () => void;
+  onDelete: () => void;
+  onFlag: () => void;
   onAddToRabbithole?: (() => void) | undefined;
   rabbitholeThreadId?: string | null;
 }) {
@@ -1276,14 +2043,63 @@ function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChang
   return (
     <div id={`unit-post-${post.id}`} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
       {/* Author row */}
-      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 12 }}>
-        <Avatar photo={post.author_photo} name={post.author_name} size={38} />
-        <div>
-          <div style={{ fontWeight: 800, fontSize: 14 }}>{post.author_name}</div>
-          <div style={{ fontSize: 12, color: t.textMuted }}>{timeAgo(post.created_at)}</div>
-        </div>
-      </div>
+      <FeedPostHeader
+        profileHref={`/profile/${post.user_id}`}
+        avatar={<Avatar photo={post.author_photo} name={post.author_name} size={38} />}
+        authorName={post.author_name}
+        createdAtLabel={timeAgo(post.created_at)}
+        t={t}
+        isOwnPost={canManagePost}
+        canEdit={canManagePost}
+        canDelete={canManagePost}
+        isEditingPost={isEditingPost}
+        isMobile={isMobile}
+        isDeleting={deletingPost}
+        isFlagging={flaggingPost}
+        onEdit={onEdit}
+        onDelete={onDelete}
+        onFlag={onFlag}
+      />
 
+      {isEditingPost ? (
+        <div style={{ marginTop: 12 }}>
+          <textarea
+            value={editingPostContent}
+            onChange={(e) => onEditContentChange(e.target.value)}
+            style={{
+              width: "100%",
+              minHeight: 90,
+              border: `1px solid ${t.inputBorder}`,
+              borderRadius: 10,
+              padding: 10,
+              resize: "vertical",
+              fontSize: 15,
+              boxSizing: "border-box",
+              background: t.input,
+              color: t.text,
+              fontFamily: "inherit",
+            }}
+          />
+          <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+            <button
+              type="button"
+              onClick={onCancelEdit}
+              style={{ background: "transparent", border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 14px", fontWeight: 700, cursor: "pointer", color: t.text }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={onSaveEdit}
+              disabled={savingPost}
+              style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 700, cursor: savingPost ? "not-allowed" : "pointer", opacity: savingPost ? 0.7 : 1 }}
+            >
+              {savingPost ? "Saving..." : "Save"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
       {/* Content */}
       {post.rabbithole_contribution_id && (
         <div style={{ marginBottom: 6, fontSize: 11, color: t.textFaint }}>
@@ -1431,6 +2247,8 @@ function PostCard({ post, t, isDark, comments, commentInput, onCommentInputChang
 
       {/* Murphy banner — shown when post has been filed to Rabbithole */}
       {rabbitholeThreadId && <MurphyRabbitholeBanner />}
+        </>
+      )}
 
       {/* Comments section */}
       {expanded && (

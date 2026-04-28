@@ -13,12 +13,15 @@ import GifPickerButton from "../../../components/GifPickerButton";
 import { PostLikersStack, type PostLikerBrief } from "../../../components/PostLikersStack";
 import SidebarThreadDrawer from "../../../components/SidebarThreadDrawer";
 import { useMasterShell } from "../../../components/master/masterShellContext";
+import EventFeedActions from "../../../components/EventFeedActions";
+import FeedPostHeader from "../../../components/FeedPostHeader";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
 import { postNotifyJson } from "../../../lib/postNotifyClient";
 import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
 import { KangarooCourtVerdictBanner } from "../../../components/KangarooCourtVerdictBanner";
 import { Gem, Medal, Camera, FileText, Play, Check, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { SkillBadgeValue } from "../../../lib/skillBadges";
 import type {
   FeedKangarooBundle,
   KangarooCourtOptionRow,
@@ -26,6 +29,8 @@ import type {
   KangarooCourtVerdictRow,
 } from "../../../lib/kangarooCourt";
 import { sanitizeRumintOgDescription } from "../../../lib/sanitizeRumintOgDescription";
+import { ServiceSealValue } from "../../../lib/serviceSeals";
+import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
 
 type Profile = {
   user_id: string;
@@ -101,6 +106,8 @@ type SavedEventRow = {
   organization: string | null;
   date: string | null;
   signup_url: string | null;
+  unit_id?: string | null;
+  visibility?: string | null;
 };
 
 type SavedJobRow = {
@@ -114,12 +121,31 @@ type SavedJobRow = {
   created_at: string | null;
 };
 
+type FeedEventSnapshot = {
+  id: string;
+  user_id: string;
+  title: string;
+  date: string;
+  description: string | null;
+  organization: string | null;
+  signup_url: string | null;
+  image_url: string | null;
+  location: string | null;
+  event_time: string | null;
+  poc_name: string | null;
+  poc_phone: string | null;
+  unit_id?: string | null;
+  visibility?: string | null;
+};
+
 type DesktopCalendarEvent = {
   id: string;
   title: string;
   organization: string | null;
   date: string;
   signup_url: string | null;
+  unit_id?: string | null;
+  visibility?: string | null;
 };
 
 type DesktopMemorial = {
@@ -164,6 +190,12 @@ type Post = {
   authorPhotoUrl: string | null;
   authorService: string | null;
   rabbithole_contribution_id: string | null;
+  event_id: string | null;
+  feed_event: FeedEventSnapshot | null;
+  event_interested_count: number;
+  event_going_count: number;
+  event_my_attendance: "interested" | "going" | null;
+  event_saved: boolean;
   /** Same feed bundles as home ΓÇö courts attach via `feed_post_id` */
   kangaroo?: FeedKangarooBundle | null;
 };
@@ -198,7 +230,7 @@ type GroupTile = {
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
 const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
-const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "Civil Service"];
+const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "LEO/FED", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
 const WORK_TAG_PREVIEW_LIMIT = 3;
 const WORK_TAG_MAX = 30;
@@ -224,6 +256,53 @@ function getYouTubeId(url: string): string | null {
   return null;
 }
 
+function httpsAssetUrl(url: string | null | undefined): string {
+  if (!url?.trim()) return "";
+  const u = url.trim();
+  if (u.startsWith("http://")) return `https://${u.slice(7)}`;
+  return u;
+}
+
+function formatEventDisplayDate(dateIso: string | null | undefined) {
+  if (!dateIso) return null;
+  const d = new Date(`${dateIso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return dateIso;
+  return d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const maybe = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+  const haystack = `${String(maybe.message ?? "")} ${String(maybe.details ?? "")} ${String(maybe.hint ?? "")}`.toLowerCase();
+  return haystack.includes(columnName.toLowerCase()) && (haystack.includes("column") || maybe.code === "42703");
+}
+
+function extractLegacyEventTitle(content: string | null | undefined): string | null {
+  if (!content) return null;
+  const line = content
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => /new event:/i.test(l));
+  if (!line) return null;
+  const afterLabel = line.replace(/^.*?\bnew event:\s*/i, "").trim();
+  if (!afterLabel) return null;
+  const titleOnly = afterLabel.replace(/\s+[🗓📅🏢📍].*$/u, "").trim();
+  return titleOnly || null;
+}
+
+function normalizeEventTitle(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const BARE_DOMAIN_RE = /\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/;
 const URL_PATTERN_SRC = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/.source;
 
@@ -233,6 +312,23 @@ function extractFirstUrl(text: string): string | null {
   const bare = text.match(BARE_DOMAIN_RE);
   if (bare) return `https://${bare[0].replace(/[.,)>]+$/, "")}`;
   return null;
+}
+
+function normalizePreviewUrl(value: string | null | undefined): string {
+  if (!value?.trim()) return "";
+  const withScheme = /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
+  try {
+    const url = new URL(withScheme);
+    url.hash = "";
+    return `${url.hostname.replace(/^www\./i, "").toLowerCase()}${url.pathname.replace(/\/$/, "")}${url.search}`;
+  } catch {
+    return withScheme.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, "").toLowerCase();
+  }
+}
+
+function isOnlyPreviewUrl(content: string | null | undefined, previewUrl: string | null | undefined): boolean {
+  if (!content?.trim() || !previewUrl?.trim()) return false;
+  return normalizePreviewUrl(content.trim()) === normalizePreviewUrl(previewUrl);
 }
 
 const MENTION_RE_SRC = /@\[([^\]]+)\]\(([^)]+)\)/;
@@ -510,6 +606,12 @@ export default function PublicProfilePage() {
   const [togglingLikeFor, setTogglingLikeFor] = useState<string | null>(null);
   const [submittingCommentFor, setSubmittingCommentFor] = useState<string | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const [editingPostId, setEditingPostId] = useState<string | null>(null);
+  const [editingPostContent, setEditingPostContent] = useState("");
+  const [savingPostId, setSavingPostId] = useState<string | null>(null);
+  const [flaggingId, setFlaggingId] = useState<string | null>(null);
+  const [flagModal, setFlagModal] = useState<{ contentType: "post"; contentId: string } | null>(null);
+  const [flagCategoryChoice, setFlagCategoryChoice] = useState<FlagCategory>("general");
   const [togglingCommentLikeFor, setTogglingCommentLikeFor] = useState<string | null>(null);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -901,14 +1003,91 @@ export default function PublicProfilePage() {
     const postIds = rawPosts.map((p) => p.id);
 
     // Legacy single image_url
-    const { data: legacyImgData } = await supabase
-      .from("posts").select("id, image_url, gif_url").in("id", postIds);
+    const legacyWithEvent = await supabase
+      .from("posts")
+      .select("id, image_url, gif_url, event_id")
+      .in("id", postIds);
+    let legacyImgData = legacyWithEvent.data as Array<{
+      id: string;
+      image_url: string | null;
+      gif_url: string | null;
+      event_id?: string | null;
+    }> | null;
+    if (legacyWithEvent.error && isMissingColumnError(legacyWithEvent.error, "event_id")) {
+      const fallback = await supabase
+        .from("posts")
+        .select("id, image_url, gif_url")
+        .in("id", postIds);
+      if (fallback.error) {
+        console.error("Legacy post media load error:", fallback.error);
+      }
+      legacyImgData = ((fallback.data ?? []) as Array<{
+        id: string;
+        image_url: string | null;
+        gif_url: string | null;
+      }>).map((row) => ({ ...row, event_id: null }));
+    } else if (legacyWithEvent.error) {
+      console.error("Legacy post media load error:", legacyWithEvent.error);
+    }
     const legacyImageMap = new Map<string, string | null>();
     const gifUrlMap = new Map<string, string | null>();
-    ((legacyImgData ?? []) as { id: string; image_url: string | null; gif_url: string | null }[]).forEach((r) => {
+    const eventIdByPostId = new Map<string, string | null>();
+    ((legacyImgData ?? []) as { id: string; image_url: string | null; gif_url: string | null; event_id?: string | null }[]).forEach((r) => {
       legacyImageMap.set(r.id, r.image_url ?? null);
       gifUrlMap.set(r.id, r.gif_url ?? null);
+      eventIdByPostId.set(r.id, r.event_id ?? null);
     });
+
+    const missingEventCandidates = rawPosts
+      .filter((post) => !eventIdByPostId.get(post.id))
+      .map((post) => ({
+        postId: post.id,
+        userId: post.user_id,
+        postCreatedAt: post.created_at,
+        eventTitle: extractLegacyEventTitle(post.content),
+      }))
+      .filter(
+        (
+          p
+        ): p is {
+          postId: string;
+          userId: string;
+          postCreatedAt: string;
+          eventTitle: string;
+        } => Boolean(p.eventTitle)
+      );
+
+    if (missingEventCandidates.length > 0) {
+      const candidateUserIds = [...new Set(missingEventCandidates.map((c) => c.userId))];
+      const { data: candidateEvents, error: candidateEventsErr } = await supabase
+        .from("events")
+        .select("id, user_id, title, date")
+        .in("user_id", candidateUserIds);
+      if (candidateEventsErr) {
+        console.error("Profile legacy event inference load error:", candidateEventsErr);
+      } else {
+        const grouped = new Map<string, Array<{ id: string; user_id: string; title: string; date: string }>>();
+        ((candidateEvents ?? []) as Array<{ id: string; user_id: string; title: string; date: string }>).forEach((ev) => {
+          const key = `${ev.user_id}::${normalizeEventTitle(ev.title)}`;
+          const arr = grouped.get(key) ?? [];
+          arr.push(ev);
+          grouped.set(key, arr);
+        });
+
+        missingEventCandidates.forEach((candidate) => {
+          const key = `${candidate.userId}::${normalizeEventTitle(candidate.eventTitle)}`;
+          const matches = grouped.get(key) ?? [];
+          if (matches.length === 0) return;
+          const postTs = new Date(candidate.postCreatedAt).getTime();
+          const best = [...matches].sort((a, b) => {
+            const da = Math.abs(new Date(a.date).getTime() - postTs);
+            const db = Math.abs(new Date(b.date).getTime() - postTs);
+            return da - db;
+          })[0];
+          if (best?.id) eventIdByPostId.set(candidate.postId, best.id);
+        });
+      }
+    }
 
     // Multi-image post_images table
     const { data: postImgData } = await supabase
@@ -1017,6 +1196,98 @@ export default function PublicProfilePage() {
         });
     }
 
+    const uniqueFeedEventIds = [
+      ...new Set(Array.from(eventIdByPostId.values()).filter((id): id is string => Boolean(id))),
+    ];
+    const visibleProfileUnitIds = await loadVisibleProfileUnitIds(targetUserId, currentUserId);
+    const eventSnapshotById = new Map<string, FeedEventSnapshot>();
+    const eventAttCounts = new Map<string, { interested: number; going: number }>();
+    const eventMyAttendance = new Map<string, "interested" | "going" | null>();
+    const savedFeedEventIds = new Set<string>();
+
+    if (uniqueFeedEventIds.length > 0) {
+      const eventsResult = await supabase
+        .from("events")
+        .select("id, user_id, title, date, description, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, unit_id, visibility")
+        .in("id", uniqueFeedEventIds);
+      let eventRows: FeedEventSnapshot[] = [];
+      if (
+        eventsResult.error &&
+        (
+          isMissingColumnError(eventsResult.error, "image_url") ||
+          isMissingColumnError(eventsResult.error, "description") ||
+          isMissingColumnError(eventsResult.error, "location") ||
+          isMissingColumnError(eventsResult.error, "event_time") ||
+          isMissingColumnError(eventsResult.error, "poc_name") ||
+          isMissingColumnError(eventsResult.error, "poc_phone")
+        )
+      ) {
+        const fallback = await supabase
+          .from("events")
+          .select("id, user_id, title, date, organization, signup_url, unit_id, visibility")
+          .in("id", uniqueFeedEventIds);
+        if (fallback.error) {
+          console.error("Profile feed events load error:", fallback.error);
+        } else {
+          eventRows = ((fallback.data ?? []) as Array<{
+            id: string;
+            user_id: string;
+            title: string;
+            date: string;
+            organization: string | null;
+            signup_url: string | null;
+            unit_id?: string | null;
+            visibility?: string | null;
+          }>).map((row) => ({
+            ...row,
+            description: null,
+            image_url: null,
+            location: null,
+            event_time: null,
+            poc_name: null,
+            poc_phone: null,
+          }));
+        }
+      } else if (eventsResult.error) {
+        console.error("Profile feed events load error:", eventsResult.error);
+      } else {
+        eventRows = (eventsResult.data ?? []) as FeedEventSnapshot[];
+      }
+      eventRows
+        .filter((event) => !event.unit_id || visibleProfileUnitIds.has(event.unit_id))
+        .forEach((event) => eventSnapshotById.set(event.id, event));
+
+      const { data: attRows, error: attErr } = await supabase
+        .from("event_attendance")
+        .select("event_id, user_id, status")
+        .in("event_id", uniqueFeedEventIds);
+      if (attErr) {
+        console.error("Profile feed event attendance load error:", attErr);
+      } else {
+        ((attRows ?? []) as { event_id: string; user_id: string; status: "interested" | "going" }[]).forEach((row) => {
+          const cur = eventAttCounts.get(row.event_id) ?? { interested: 0, going: 0 };
+          cur[row.status]++;
+          eventAttCounts.set(row.event_id, cur);
+          if (currentUserId && row.user_id === currentUserId) {
+            eventMyAttendance.set(row.event_id, row.status);
+          }
+        });
+      }
+
+      if (currentUserId) {
+        const { data: savedRows, error: savedErr } = await supabase
+          .from("saved_events")
+          .select("event_id")
+          .eq("user_id", currentUserId)
+          .in("event_id", uniqueFeedEventIds);
+        if (savedErr) {
+          console.error("Profile feed saved events load error:", savedErr);
+        } else {
+          ((savedRows ?? []) as { event_id: string }[]).forEach((row) => savedFeedEventIds.add(row.event_id));
+        }
+      }
+    }
+
     const kcBundleByPostId = new Map<string, FeedKangarooBundle>();
     const { data: kcAuth } = await supabase.auth.getSession();
     const kcViewerId = kcAuth.session?.user?.id ?? null;
@@ -1122,6 +1393,8 @@ export default function PublicProfilePage() {
       const multiImages = multiImageMap.get(p.id) || [];
       const legacyImage = legacyImageMap.get(p.id) ?? null;
       const postComments = commentsByPost.get(p.id) || [];
+      const eventId = eventIdByPostId.get(p.id) ?? null;
+      const eventCounts = eventId ? eventAttCounts.get(eventId) ?? { interested: 0, going: 0 } : { interested: 0, going: 0 };
       return {
         ...p,
         image_url: legacyImage,
@@ -1142,6 +1415,12 @@ export default function PublicProfilePage() {
         author_name: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorNameMap.get(p.user_id) ?? null) : null,
         authorPhotoUrl: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorPhotoMap.get(p.user_id) ?? null) : null,
         authorService: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorServiceMap.get(p.user_id) ?? null) : null,
+        event_id: eventId,
+        feed_event: eventId ? eventSnapshotById.get(eventId) ?? null : null,
+        event_interested_count: eventCounts.interested,
+        event_going_count: eventCounts.going,
+        event_my_attendance: eventId ? eventMyAttendance.get(eventId) ?? null : null,
+        event_saved: Boolean(eventId && currentUserId && savedFeedEventIds.has(eventId)),
         kangaroo: kcBundleByPostId.get(p.id) ?? null,
       };
     });
@@ -1361,6 +1640,76 @@ export default function PublicProfilePage() {
     } finally { setDeletingPostId(null); }
   }
 
+  function startEditPost(postId: string, currentContent: string) {
+    setEditingPostId(postId);
+    setEditingPostContent(currentContent);
+  }
+
+  function cancelEditPost() {
+    setEditingPostId(null);
+    setEditingPostContent("");
+  }
+
+  async function savePostEdit(postId: string) {
+    if (!currentUserId || !editingPostContent.trim()) return;
+    try {
+      setSavingPostId(postId);
+      const { error } = await supabase
+        .from("posts")
+        .update({ content: editingPostContent.trim() })
+        .eq("id", postId);
+
+      if (error) {
+        alert(error.message);
+        return;
+      }
+
+      setEditingPostId(null);
+      setEditingPostContent("");
+      if (userId) await loadPosts(userId);
+    } finally {
+      setSavingPostId(null);
+    }
+  }
+
+  function openFlagModal(contentId: string) {
+    if (!currentUserId) {
+      window.location.href = "/login";
+      return;
+    }
+    setFlagCategoryChoice("general");
+    setFlagModal({ contentType: "post", contentId });
+  }
+
+  async function submitFlagFromModal() {
+    if (!flagModal || !currentUserId) return;
+    setFlaggingId(flagModal.contentId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/flag-content", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({
+          contentType: flagModal.contentType,
+          contentId: flagModal.contentId,
+          category: flagCategoryChoice,
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        alert(json.error ?? "Could not submit flag");
+        return;
+      }
+      alert("Flagged for review. Thank you.");
+      setFlagModal(null);
+    } finally {
+      setFlaggingId(null);
+    }
+  }
+
   async function deleteWallComment(commentId: string) {
     if (!currentUserId) return;
     if (!window.confirm("Delete this comment?")) return;
@@ -1425,10 +1774,31 @@ export default function PublicProfilePage() {
     return result;
   }
 
+  async function loadVisibleProfileUnitIds(profileUserId: string, viewerUserId: string | null): Promise<Set<string>> {
+    const { data: profileMemberships } = await supabase
+      .from("unit_members")
+      .select("unit_id")
+      .eq("user_id", profileUserId)
+      .eq("status", "approved");
+    const profileUnitIds = ((profileMemberships ?? []) as { unit_id: string }[]).map((row) => row.unit_id);
+    if (profileUnitIds.length === 0) return new Set();
+    if (viewerUserId === profileUserId) return new Set(profileUnitIds);
+    if (!viewerUserId) return new Set();
+
+    const { data: viewerMemberships } = await supabase
+      .from("unit_members")
+      .select("unit_id")
+      .eq("user_id", viewerUserId)
+      .eq("status", "approved")
+      .in("unit_id", profileUnitIds);
+    return new Set(((viewerMemberships ?? []) as { unit_id: string }[]).map((row) => row.unit_id));
+  }
+
   async function loadSavedEventsForUser(uid: string) {
+    const visibleUnitIds = await loadVisibleProfileUnitIds(uid, currentUserId);
     const { data, error } = await supabase
       .from("saved_events")
-      .select("id, event_id, events(title, organization, date, signup_url)")
+      .select("id, event_id, events(title, organization, date, signup_url, unit_id, visibility)")
       .eq("user_id", uid)
       .order("created_at", { ascending: false });
     if (error) {
@@ -1439,7 +1809,7 @@ export default function PublicProfilePage() {
     type RawRow = {
       id: string;
       event_id: string;
-      events: { title: string | null; organization: string | null; date: string | null; signup_url: string | null } | null | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }[];
+      events: { title: string | null; organization: string | null; date: string | null; signup_url: string | null; unit_id?: string | null; visibility?: string | null } | null | { title: string | null; organization: string | null; date: string | null; signup_url: string | null; unit_id?: string | null; visibility?: string | null }[];
     };
     const raw = (data ?? []) as unknown as RawRow[];
     const seenEid = new Set<string>();
@@ -1456,15 +1826,18 @@ export default function PublicProfilePage() {
         organization: ev?.organization ?? null,
         date: ev?.date ?? null,
         signup_url: ev?.signup_url ?? null,
+        unit_id: ev?.unit_id ?? null,
+        visibility: ev?.visibility ?? null,
       };
-    });
+    }).filter((row) => !row.unit_id || visibleUnitIds.has(row.unit_id));
     setWallSavedEvents(rows);
   }
 
   async function loadDesktopSavedEvents(uid: string) {
+    const visibleUnitIds = await loadVisibleProfileUnitIds(uid, currentUserId);
     const { data, error } = await supabase
       .from("saved_events")
-      .select("id, event_id, events(title, organization, date, signup_url)")
+      .select("id, event_id, events(title, organization, date, signup_url, unit_id, visibility)")
       .eq("user_id", uid)
       .order("created_at", { ascending: false });
     if (error) {
@@ -1474,7 +1847,7 @@ export default function PublicProfilePage() {
     type RawRow = {
       id: string;
       event_id: string;
-      events: { title: string | null; organization: string | null; date: string | null; signup_url: string | null } | null | { title: string | null; organization: string | null; date: string | null; signup_url: string | null }[];
+      events: { title: string | null; organization: string | null; date: string | null; signup_url: string | null; unit_id?: string | null; visibility?: string | null } | null | { title: string | null; organization: string | null; date: string | null; signup_url: string | null; unit_id?: string | null; visibility?: string | null }[];
     };
     const raw = (data ?? []) as unknown as RawRow[];
     const seenEid = new Set<string>();
@@ -1491,8 +1864,10 @@ export default function PublicProfilePage() {
         organization: ev?.organization ?? null,
         date: ev?.date ?? null,
         signup_url: ev?.signup_url ?? null,
+        unit_id: ev?.unit_id ?? null,
+        visibility: ev?.visibility ?? null,
       };
-    });
+    }).filter((row) => !row.unit_id || visibleUnitIds.has(row.unit_id));
     setDesktopSavedEvents(rows);
   }
 
@@ -1566,6 +1941,8 @@ export default function PublicProfilePage() {
         .select("id, title, organization, date, signup_url")
         .gte("date", startIso)
         .lte("date", endIso)
+        .is("unit_id", null)
+        .eq("visibility", "public")
         .order("date", { ascending: true }),
       supabase
         .from("memorials")
@@ -3022,10 +3399,14 @@ export default function PublicProfilePage() {
                     <>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
                         <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
-                        <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
+                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
+                          <strong>Service:</strong> <ServiceSealValue service={profile.service} size={50} />
+                        </div>
                         <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
                         <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
-                        <div><strong>Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
+                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
+                          <strong>Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={52} />
+                        </div>
                         {profile.is_employer && (
                           <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
                             {profile.company_website
@@ -3295,10 +3676,14 @@ export default function PublicProfilePage() {
                     <>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
                         <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
-                        <div><strong>Service:</strong> {profile.service || "Not added yet"}</div>
+                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
+                          <strong>Service:</strong> <ServiceSealValue service={profile.service} size={60} />
+                        </div>
                         <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
                         <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
-                        <div><strong>Skill Badge:</strong> {profile.skill_badge || "Not added yet"}</div>
+                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
+                          <strong>Skill Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={64} />
+                        </div>
                         {profile.is_employer && (
                           <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
                             {profile.company_website
@@ -4329,47 +4714,44 @@ export default function PublicProfilePage() {
 
               {posts.map((post) => {
                 const commentsOpen = expandedComments[post.id] || false;
-                const isOwnPost = currentUserId === post.user_id;
+                const isAuthoredByCurrentUser = currentUserId === post.user_id;
+                const canManagePost = currentUserId === userId && isAuthoredByCurrentUser;
+                const isEditingPost = editingPostId === post.id;
 
                 return (
                   <div key={post.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                     {/* Post header */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-                        {(() => {
-                          const postAuthorPhoto = post.authorPhotoUrl ?? profile.photo_url;
-                          const postAuthorService = post.authorService ?? profile.service;
-                          const postAuthorName = post.author_name ?? fullName;
-                          const postAuthorId = post.user_id;
-                          const avatar = (
-                            <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(postAuthorService) ? `3px solid ${getServiceRingColor(postAuthorService)}` : undefined }}>
-                              {postAuthorPhoto
-                                ? <img src={postAuthorPhoto} alt={postAuthorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                                : postAuthorName[0]?.toUpperCase()}
-                            </div>
-                          );
-                          return (
-                            <>
-                              <a href={`/profile/${postAuthorId}`} style={{ textDecoration: "none", flexShrink: 0 }}>{avatar}</a>
-                              <div>
-                                <a href={`/profile/${postAuthorId}`} style={{ fontWeight: 800, textDecoration: "none", color: t.text }}>{postAuthorName}</a>
-                                <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{formatDate(post.created_at)}</div>
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                      {isOwnPost && (
-                        <button
-                          type="button"
-                          onClick={() => deleteWallPost(post.id)}
-                          disabled={deletingPostId === post.id}
-                          style={{ background: "transparent", border: "none", padding: 0, cursor: deletingPostId === post.id ? "not-allowed" : "pointer", color: t.textMuted, fontWeight: 700, opacity: deletingPostId === post.id ? 0.6 : 1 }}
-                        >
-                          {deletingPostId === post.id ? "Deleting..." : "Delete"}
-                        </button>
-                      )}
-                    </div>
+                    {(() => {
+                      const postAuthorPhoto = post.authorPhotoUrl ?? profile.photo_url;
+                      const postAuthorService = post.authorService ?? profile.service;
+                      const postAuthorName = post.author_name ?? fullName;
+                      const avatar = (
+                        <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(postAuthorService) ? `3px solid ${getServiceRingColor(postAuthorService)}` : undefined }}>
+                          {postAuthorPhoto
+                            ? <img src={postAuthorPhoto} alt={postAuthorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                            : postAuthorName[0]?.toUpperCase()}
+                        </div>
+                      );
+                      return (
+                        <FeedPostHeader
+                          profileHref={`/profile/${post.user_id}`}
+                          avatar={avatar}
+                          authorName={postAuthorName}
+                          createdAtLabel={formatDate(post.created_at)}
+                          t={t}
+                          isOwnPost={canManagePost}
+                          canEdit={canManagePost}
+                          canDelete={canManagePost}
+                          isEditingPost={isEditingPost}
+                          isMobile={isMobile}
+                          isDeleting={deletingPostId === post.id}
+                          isFlagging={flaggingId === post.id}
+                          onEdit={() => startEditPost(post.id, post.content)}
+                          onDelete={() => deleteWallPost(post.id)}
+                          onFlag={() => openFlagModal(post.id)}
+                        />
+                      );
+                    })()}
 
                     {/* Wall post attribution */}
                     {post.author_name && (
@@ -4378,6 +4760,45 @@ export default function PublicProfilePage() {
                       </div>
                     )}
 
+                    {isEditingPost ? (
+                      <div style={{ marginTop: 10 }}>
+                        <textarea
+                          value={editingPostContent}
+                          onChange={(e) => setEditingPostContent(e.target.value)}
+                          style={{
+                            width: "100%",
+                            minHeight: 90,
+                            border: `1px solid ${t.inputBorder}`,
+                            borderRadius: 10,
+                            padding: 10,
+                            resize: "vertical",
+                            fontSize: 15,
+                            boxSizing: "border-box",
+                            background: t.input,
+                            color: t.text,
+                            fontFamily: "inherit",
+                          }}
+                        />
+                        <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                          <button
+                            type="button"
+                            onClick={cancelEditPost}
+                            style={{ background: "transparent", border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 14px", fontWeight: 700, cursor: "pointer", color: t.text }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => savePostEdit(post.id)}
+                            disabled={savingPostId === post.id}
+                            style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 700, cursor: savingPostId === post.id ? "not-allowed" : "pointer", opacity: savingPostId === post.id ? 0.7 : 1 }}
+                          >
+                            {savingPostId === post.id ? "Saving..." : "Save"}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
                     {/* Post content */}
                     {post.rabbithole_contribution_id && (
                       <div style={{ marginTop: 8, fontSize: 11, color: t.textFaint }}>
@@ -4391,6 +4812,8 @@ export default function PublicProfilePage() {
                       </div>
                     )}
                     {post.content &&
+                      !isOnlyPreviewUrl(post.content, post.og_url) &&
+                      !(post.event_id && post.feed_event) &&
                       !(
                         post.user_id === RUMINT_USER_ID &&
                         post.og_url &&
@@ -4471,6 +4894,75 @@ export default function PublicProfilePage() {
                       );
                     })()}
 
+                    {post.event_id && (
+                      <>
+                        {post.feed_event && (
+                          <button
+                            type="button"
+                            onClick={() => { window.location.href = `/events?event=${encodeURIComponent(post.event_id!)}`; }}
+                            style={{
+                              marginTop: 12,
+                              width: "100%",
+                              maxWidth: 600,
+                              marginLeft: "auto",
+                              marginRight: "auto",
+                              display: "flex",
+                              flexDirection: "column",
+                              alignItems: "center",
+                              borderRadius: 12,
+                              border: `1px solid ${t.border}`,
+                              background: t.bg,
+                              color: "inherit",
+                              textAlign: "center",
+                              cursor: "pointer",
+                              padding: 16,
+                              boxSizing: "border-box",
+                              boxShadow: "0 1px 0 rgba(0,0,0,0.12)",
+                            }}
+                            aria-label={`Open event details for ${post.feed_event.title}`}
+                          >
+                            <div style={{ fontSize: 21, fontWeight: 800, lineHeight: 1.15, marginBottom: 8, color: t.text, width: "100%" }}>
+                              New Event: {post.feed_event.title}
+                            </div>
+                            <div style={{ fontWeight: 800, fontSize: 17, color: t.text, marginBottom: 10, width: "100%" }}>
+                              {formatEventDisplayDate(post.feed_event.date) ?? post.feed_event.date}
+                              {post.feed_event.event_time ? `  ${post.feed_event.event_time}` : ""}
+                            </div>
+
+                            {post.feed_event.image_url ? (
+                              <div style={{ width: "100%", display: "flex", justifyContent: "center", alignItems: "center", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: t.surface, marginBottom: 10, boxSizing: "border-box" }}>
+                                <img
+                                  src={httpsAssetUrl(post.feed_event.image_url)}
+                                  alt={post.feed_event.title}
+                                  style={{ width: "100%", height: "auto", maxHeight: 420, objectFit: "contain", objectPosition: "center", display: "block", margin: "0 auto" }}
+                                />
+                              </div>
+                            ) : null}
+
+                            {(post.feed_event.location || post.feed_event.organization) && (
+                              <div style={{ fontSize: 19, fontWeight: 700, color: t.text, marginBottom: 8, width: "100%" }}>
+                                {post.feed_event.location ?? post.feed_event.organization}
+                              </div>
+                            )}
+                            {post.feed_event.description && (
+                              <div style={{ fontSize: 15, lineHeight: 1.45, color: t.textMuted, width: "100%" }}>
+                                {post.feed_event.description}
+                              </div>
+                            )}
+                          </button>
+                        )}
+                        <EventFeedActions
+                          eventId={post.event_id}
+                          signupUrl={post.feed_event?.signup_url ?? null}
+                          initialInterested={post.event_interested_count}
+                          initialGoing={post.event_going_count}
+                          initialMyAttendance={post.event_my_attendance}
+                          initialSaved={post.event_saved}
+                          userId={currentUserId}
+                        />
+                      </>
+                    )}
+
                     {/* Kangaroo Court ΓÇö same order as home feed: post body above, then verdict, then poll */}
                     {post.kangaroo?.court?.status === "closed" && post.kangaroo?.verdict && (
                       <KangarooCourtVerdictBanner verdict={post.kangaroo.verdict} />
@@ -4487,6 +4979,8 @@ export default function PublicProfilePage() {
                         post.kangaroo?.court?.status === "closed" && Boolean(post.kangaroo?.verdict)
                       }
                     />
+                      </>
+                    )}
 
                     {/* Like / Comment bar ΓÇö KC chip is display-only on wall (no ΓÇ£start courtΓÇ¥) */}
                     <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
@@ -5069,7 +5563,7 @@ export default function PublicProfilePage() {
               onClick={() => setLightboxPhoto(null)}
               style={{ position: "absolute", top: 12, right: 12, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 36, height: 36, color: "white", fontWeight: 900, fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
             >
-              ├ù
+              x
             </button>
           </div>
 
@@ -5177,6 +5671,58 @@ export default function PublicProfilePage() {
                 );
               })
             )}
+          </div>
+        </div>
+      </div>
+    )}
+    {flagModal && (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-flag-modal-title"
+        onClick={() => !flaggingId && setFlagModal(null)}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1001, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          style={{ width: "100%", maxWidth: 400, background: t.surface, borderRadius: 16, border: `1px solid ${t.border}`, padding: "20px 22px", boxShadow: isDark ? "0 12px 40px rgba(0,0,0,0.5)" : "0 12px 40px rgba(0,0,0,0.12)" }}
+        >
+          <h2 id="profile-flag-modal-title" style={{ margin: "0 0 14px", fontSize: 18, fontWeight: 800, color: t.text }}>
+            Flag this post
+          </h2>
+          <label htmlFor="profile-flag-reason" style={{ display: "block", fontSize: 13, fontWeight: 700, color: t.textMuted, marginBottom: 6 }}>
+            Reason
+          </label>
+          <select
+            id="profile-flag-reason"
+            value={flagCategoryChoice}
+            onChange={(e) => setFlagCategoryChoice(e.target.value as FlagCategory)}
+            disabled={!!flaggingId}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, marginBottom: 18, boxSizing: "border-box" }}
+          >
+            {FLAG_CATEGORIES.map((category) => (
+              <option key={category} value={category}>
+                {FLAG_CATEGORY_LABELS[category]}
+              </option>
+            ))}
+          </select>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => !flaggingId && setFlagModal(null)}
+              disabled={!!flaggingId}
+              style={{ padding: "10px 16px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.surfaceHover, color: t.text, fontWeight: 700, fontSize: 14, cursor: flaggingId ? "default" : "pointer" }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => void submitFlagFromModal()}
+              disabled={!!flaggingId}
+              style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#b91c1c", color: "white", fontWeight: 700, fontSize: 14, cursor: flaggingId ? "default" : "pointer" }}
+            >
+              {flaggingId ? "Submitting..." : "Submit Flag"}
+            </button>
           </div>
         </div>
       </div>

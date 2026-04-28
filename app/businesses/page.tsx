@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 import {
@@ -15,7 +14,8 @@ import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 
-type BizPageFilter = "all" | BizListingType;
+type BusinessOrgListingType = Exclude<BizListingType, "resource">;
+type BizPageFilter = "all" | BusinessOrgListingType;
 type BizFilterState = {
   listingType: BizPageFilter;
   keyword: string;
@@ -92,7 +92,7 @@ export default function BusinessesPage() {
   const [bizUrl, setBizUrl] = useState("");
   const [bizName, setBizName] = useState("");
   const [bizBlurb, setBizBlurb] = useState("");
-  const [bizType, setBizType] = useState<BizListingType>("business");
+  const [bizType, setBizType] = useState<BusinessOrgListingType>("business");
   const [bizOgPreview, setBizOgPreview] = useState<OgPreview | null>(null);
   const [fetchingBizOg, setFetchingBizOg] = useState(false);
   const [submittingBiz, setSubmittingBiz] = useState(false);
@@ -130,21 +130,7 @@ export default function BusinessesPage() {
         .order("business_name", { ascending: true, nullsFirst: false })
         .limit(500);
 
-      let combined = (data ?? []) as BusinessListing[];
-
-      // Ensure known nonprofit resource entries always appear even if approval data is out of sync.
-      const { data: resourceFallback } = await supabase
-        .from("business_listings")
-        .select(BUSINESS_LISTING_COLUMNS)
-        .or("website_url.ilike.*thelongwalkhome.org*,website_url.ilike.*eod-wf.org*,website_url.ilike.*eodwarriorfoundation.org*,business_name.ilike.*long walk*,business_name.ilike.*eod warrior foundation*")
-        .limit(10);
-
-      if ((resourceFallback ?? []).length > 0) {
-        const byId = new Map<string, BusinessListing>();
-        combined.forEach((r) => byId.set(r.id, r));
-        (resourceFallback as BusinessListing[]).forEach((r) => byId.set(r.id, r));
-        combined = Array.from(byId.values());
-      }
+      const combined = (data ?? []) as BusinessListing[];
 
       if (error && combined.length === 0) {
         console.error("Businesses page load error:", error);
@@ -270,7 +256,11 @@ export default function BusinessesPage() {
   const visibleListings = useMemo(() => {
     const keyword = filters.keyword.trim().toLowerCase();
     const filtered = listings.filter((l) => {
-      if (filters.listingType !== "all" && normalizeBizListingTypeForListing(l) !== filters.listingType) {
+      const listingType = normalizeBizListingTypeForListing(l);
+      if (listingType === "resource") {
+        return false;
+      }
+      if (filters.listingType !== "all" && listingType !== filters.listingType) {
         return false;
       }
       if (!keyword) return true;
@@ -281,7 +271,7 @@ export default function BusinessesPage() {
         l.og_site_name ?? "",
         l.custom_blurb ?? "",
         l.website_url ?? "",
-        normalizeBizListingTypeForListing(l),
+        listingType,
         ...(Array.isArray(l.tags) ? l.tags : []).join(" "),
       ]
         .join(" ")
@@ -304,23 +294,16 @@ export default function BusinessesPage() {
   }, [listings, filters]);
 
   return (
-    <div
+    <section
       style={{
         width: "100%",
-        maxWidth: 1800,
-        margin: "0 auto",
-        padding: "24px 20px",
         boxSizing: "border-box",
-        background: t.bg,
-        minHeight: "100vh",
         color: t.text,
       }}
     >
-      <NavBar />
-
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>Biz/Org/Resources</h1>
+          <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>Businesses/Orgs</h1>
           <button
             type="button"
             onClick={() => {
@@ -329,11 +312,11 @@ export default function BusinessesPage() {
             }}
             style={{ border: "none", background: "none", color: "#2563eb", fontWeight: 700, fontSize: 18, cursor: "pointer", padding: 0, whiteSpace: "nowrap", textDecoration: "none" }}
           >
-            {showBizForm ? "Cancel" : "Add Biz/Org/Resource →"}
+            {showBizForm ? "Cancel" : "Add Business/Org →"}
           </button>
         </div>
         <div style={{ marginTop: 6, fontSize: 14, color: t.textMuted }}>
-          Browse the full approved community directory.
+          Browse EOD owned and operated businesses and organizations
         </div>
       </div>
 
@@ -369,12 +352,11 @@ export default function BusinessesPage() {
                 <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 4 }}>Type *</label>
                 <select
                   value={bizType}
-                  onChange={(e) => setBizType(e.target.value as BizListingType)}
+                  onChange={(e) => setBizType(e.target.value as BusinessOrgListingType)}
                   style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, boxSizing: "border-box", background: t.input, color: t.text }}
                 >
                   <option value="business">Business</option>
                   <option value="organization">Organization</option>
-                  <option value="resource">Resource</option>
                 </select>
               </div>
 
@@ -395,7 +377,7 @@ export default function BusinessesPage() {
                   value={bizBlurb}
                   onChange={(e) => setBizBlurb(e.target.value)}
                   rows={2}
-                  placeholder="What does this business/org/resource do?"
+                  placeholder="What does this business/org do?"
                   style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, boxSizing: "border-box", background: t.input, color: t.text, resize: "vertical", fontFamily: "inherit" }}
                 />
               </div>
@@ -428,10 +410,9 @@ export default function BusinessesPage() {
             onChange={(e) => setFilters((prev) => ({ ...prev, listingType: e.target.value as BizPageFilter }))}
             style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text }}
           >
-            <option value="all">All listing types</option>
+            <option value="all">All businesses/orgs</option>
             <option value="business">Businesses</option>
             <option value="organization">Organizations</option>
-            <option value="resource">Resources</option>
           </select>
 
           <input
@@ -507,7 +488,7 @@ export default function BusinessesPage() {
           })}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 

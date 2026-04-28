@@ -68,7 +68,9 @@ export async function POST(req: NextRequest) {
   const { error, count } = await adminClient
     .from("events")
     .delete({ count: "exact" })
-    .lt("date", today);
+    .lt("date", today)
+    .is("unit_id", null)
+    .eq("visibility", "public");
 
   if (error) {
     console.error("cleanup-events error:", error);

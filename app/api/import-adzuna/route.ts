@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  canonicalAdzunaDetailsUrl,
+  parseAdzunaAdIdFromUrl,
+} from "../../lib/adzunaJob";
 
 const EOD_KEYWORDS = [
   "explosive ordnance disposal",
@@ -150,7 +154,7 @@ export async function GET(req: NextRequest) {
     .neq("is_rejected", true)
     .lt("last_seen_at", cutoff);
 
-  const seenUrls = new Set<string>();
+  const seenAdzunaIds = new Set<string>();
   let imported = 0;
   let refreshed = 0;
   let skipped = 0;
@@ -164,14 +168,18 @@ export async function GET(req: NextRequest) {
       if (items.length === 0) break;
 
       for (const job of items) {
-        const applyUrl = job.redirect_url;
-
-        // Skip dupes within this run
-        if (seenUrls.has(applyUrl)) {
+        const adId = parseAdzunaAdIdFromUrl(job.redirect_url) ?? String(job.id);
+        if (!/^\d+$/.test(adId)) {
           skipped++;
           continue;
         }
-        seenUrls.add(applyUrl);
+
+        // Same listing can appear on many keyword searches with different redirect URLs
+        if (seenAdzunaIds.has(adId)) {
+          skipped++;
+          continue;
+        }
+        seenAdzunaIds.add(adId);
 
         if (!isRelevantTitle(job.title)) {
           skipped++;
@@ -183,31 +191,55 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
-        // Check if already in DB
-        const { data: existing } = await supabase
+        const applyUrl = canonicalAdzunaDetailsUrl(adId);
+        const now = new Date().toISOString();
+
+        const { data: existing, error: selectErr } = await supabase
           .from("jobs")
           .select("id, is_rejected")
-          .eq("apply_url", applyUrl)
+          .eq("source_type", "adzuna")
+          .eq("adzuna_ad_id", adId)
           .maybeSingle();
+
+        if (selectErr) {
+          errors.push(`[select adzuna ${adId}] ${selectErr.message}`);
+          continue;
+        }
 
         if (existing) {
           if (existing.is_rejected) {
             skipped++;
             continue;
           }
-          await supabase
+          const { error: upErr } = await supabase
             .from("jobs")
-            .update({ last_seen_at: new Date().toISOString() })
+            .update({
+              last_seen_at: now,
+              apply_url: applyUrl,
+              title: job.title,
+              company_name: job.company.display_name,
+              location: job.location.display_name,
+              description: job.description,
+              og_description: job.description,
+              pay_min: job.salary_min ?? null,
+              pay_max: job.salary_max ?? null,
+              category: detectCategory(job.title),
+            })
             .eq("id", existing.id);
+          if (upErr) {
+            errors.push(`[update adzuna ${adId}] ${upErr.message}`);
+            continue;
+          }
           refreshed++;
           continue;
         }
 
-        const { error } = await supabase.from("jobs").insert({
+        const { error: insErr } = await supabase.from("jobs").insert({
           title: job.title,
           company_name: job.company.display_name,
           location: job.location.display_name,
           apply_url: applyUrl,
+          adzuna_ad_id: adId,
           description: job.description,
           og_description: job.description,
           og_site_name: "Adzuna",
@@ -216,13 +248,15 @@ export async function GET(req: NextRequest) {
           category: detectCategory(job.title),
           is_approved: false,
           source_type: "adzuna",
-          last_seen_at: new Date().toISOString(),
+          last_seen_at: now,
         });
 
-        if (!error) {
-          imported++;
-          importedTitles.push(job.title);
+        if (insErr) {
+          errors.push(`[insert adzuna ${adId}] ${insErr.message}`);
+          continue;
         }
+        imported++;
+        importedTitles.push(job.title);
       }
 
       if (items.length < RESULTS_PER_PAGE) break;

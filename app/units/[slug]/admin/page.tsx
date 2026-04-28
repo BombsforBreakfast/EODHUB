@@ -42,6 +42,20 @@ type PhotoPost = {
   photo_url: string | null;
   content: string | null;
   created_at: string;
+  hidden_for_review?: boolean | null;
+};
+
+type UnitEvent = {
+  id: string;
+  user_id: string;
+  title: string;
+  date: string;
+  organization: string | null;
+  event_time: string | null;
+  location: string | null;
+  created_at: string;
+  author_name: string;
+  author_photo: string | null;
 };
 
 type AdminData = {
@@ -49,6 +63,8 @@ type AdminData = {
   pending: PendingMember[];
   members: Member[];
   photos: PhotoPost[];
+  pending_photos?: PhotoPost[];
+  events?: UnitEvent[];
 };
 
 const ROLE_BADGE: Record<string, { bg: string; color: string; label: string }> = {
@@ -75,7 +91,7 @@ export default function UnitAdminPage() {
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"requests" | "members" | "photos">("requests");
+  const [tab, setTab] = useState<"requests" | "members" | "photos" | "events">("requests");
   const [working, setWorking] = useState<string | null>(null); // id of item being actioned
   const [myRole, setMyRole] = useState<string | null>(null);
 
@@ -107,7 +123,7 @@ export default function UnitAdminPage() {
   useEffect(() => { load(); }, [slug]);
 
   async function action(body: Record<string, string>) {
-    const key = body.user_id ?? body.post_id ?? body.action;
+    const key = body.user_id ?? body.post_id ?? body.event_id ?? body.action;
     setWorking(key);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -195,7 +211,10 @@ export default function UnitAdminPage() {
 
   if (!data) return null;
 
-  const { unit, pending, members, photos } = data;
+  const { unit, pending, members } = data;
+  const pendingPhotos = data.pending_photos ?? data.photos.filter((photo) => photo.hidden_for_review);
+  const approvedPhotos = data.photos.filter((photo) => !photo.hidden_for_review);
+  const events = data.events ?? [];
   const isOwner = myRole === "owner";
 
   return (
@@ -229,7 +248,10 @@ export default function UnitAdminPage() {
           Members ({members.length})
         </button>
         <button style={tabBtn(tab === "photos")} onClick={() => setTab("photos")}>
-          Photos ({photos.length})
+          Photos ({approvedPhotos.length}) {pendingPhotos.length > 0 && <span style={{ marginLeft: 6, background: "#f97316", color: "#fff", borderRadius: 20, padding: "1px 7px", fontSize: 11 }}>{pendingPhotos.length}</span>}
+        </button>
+        <button style={tabBtn(tab === "events")} onClick={() => setTab("events")}>
+          Events ({events.length})
         </button>
       </div>
 
@@ -352,13 +374,64 @@ export default function UnitAdminPage() {
       {/* ── Photos ── */}
       {tab === "photos" && (
         <div>
-          {photos.length === 0 ? (
+          {pendingPhotos.length > 0 && (
+            <div style={card}>
+              <div style={{ fontSize: 16, fontWeight: 900, color: t.text, marginBottom: 14 }}>Pending Photo Approvals</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+                {pendingPhotos.map((ph) => (
+                  <div key={ph.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, overflow: "hidden", background: t.surface }}>
+                    <img
+                      src={ph.photo_url!}
+                      alt="Pending unit photo"
+                      style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", display: "block" }}
+                    />
+                    <div style={{ padding: "10px 14px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <Avatar name={ph.author_name} photo={ph.author_photo} size={26} />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{ph.author_name}</span>
+                      </div>
+                      {ph.content && (
+                        <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8, lineHeight: 1.4 }}>{ph.content}</div>
+                      )}
+                      <div style={{ fontSize: 11, color: t.textFaint, marginBottom: 10 }}>
+                        Submitted {new Date(ph.created_at).toLocaleDateString()}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          style={{ ...actionBtn("approve"), flex: 1, justifyContent: "center", display: "flex", alignItems: "center", gap: 5 }}
+                          disabled={working === ph.id}
+                          onClick={() => action({ action: "approve_photo", post_id: ph.id })}
+                        >
+                          {working === ph.id && <span className="btn-spinner" />}
+                          Approve
+                        </button>
+                        <button
+                          style={{ ...actionBtn("remove"), flex: 1, justifyContent: "center", display: "flex", alignItems: "center", gap: 5 }}
+                          disabled={working === ph.id}
+                          onClick={() => {
+                            if (confirm("Delete this pending photo?")) {
+                              action({ action: "delete_post", post_id: ph.id });
+                            }
+                          }}
+                        >
+                          {working === ph.id && <span className="btn-spinner" style={{ borderTopColor: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }} />}
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {approvedPhotos.length === 0 ? (
             <div style={{ ...card, color: t.textMuted, fontSize: 14, textAlign: "center", padding: "40px 24px" }}>
               No photos posted yet.
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
-              {photos.map((ph) => (
+              {approvedPhotos.map((ph) => (
                 <div key={ph.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, overflow: "hidden", background: t.surface }}>
                   <img
                     src={ph.photo_url!}
@@ -389,6 +462,50 @@ export default function UnitAdminPage() {
                       Delete Photo
                     </button>
                   </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Events ── */}
+      {tab === "events" && (
+        <div style={card}>
+          {events.length === 0 ? (
+            <div style={{ color: t.textMuted, fontSize: 14, textAlign: "center", padding: "24px 0" }}>
+              No group events yet.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: 12 }}>
+              {events.map((event) => (
+                <div key={event.id} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "12px 0", borderBottom: `1px solid ${t.borderLight}` }}>
+                  <Avatar name={event.author_name} photo={event.author_photo} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{event.title}</div>
+                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 3 }}>
+                      {new Date(`${event.date}T12:00:00`).toLocaleDateString()}
+                      {event.event_time ? ` · ${event.event_time}` : ""}
+                    </div>
+                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 3 }}>
+                      {[event.organization, event.location].filter(Boolean).join(" · ") || "Group Event"}
+                    </div>
+                    <div style={{ fontSize: 11, color: t.textFaint, marginTop: 3 }}>
+                      Created by {event.author_name}
+                    </div>
+                  </div>
+                  <button
+                    style={{ ...actionBtn("remove"), display: "flex", alignItems: "center", gap: 5 }}
+                    disabled={working === event.id}
+                    onClick={() => {
+                      if (confirm(`Delete "${event.title}"? This cannot be undone.`)) {
+                        action({ action: "delete_event", event_id: event.id });
+                      }
+                    }}
+                  >
+                    {working === event.id && <span className="btn-spinner" style={{ borderTopColor: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }} />}
+                    Delete Event
+                  </button>
                 </div>
               ))}
             </div>
