@@ -23,6 +23,10 @@ type BusinessListing = {
   business_name: string | null;
   website_url: string;
   custom_blurb: string | null;
+  poc_name?: string | null;
+  phone_number?: string | null;
+  contact_email?: string | null;
+  city_state?: string | null;
   og_title: string | null;
   og_description: string | null;
   og_image: string | null;
@@ -231,6 +235,10 @@ type BizEdit = {
   og_description: string;
   og_image: string;
   custom_blurb: string;
+  poc_name: string;
+  phone_number: string;
+  contact_email: string;
+  city_state: string;
   tags: string[];
 };
 
@@ -1403,6 +1411,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
       og_description: biz.og_description || "",
       og_image: biz.og_image || "",
       custom_blurb: biz.custom_blurb || "",
+      poc_name: biz.poc_name || "",
+      phone_number: biz.phone_number || "",
+      contact_email: biz.contact_email || "",
+      city_state: biz.city_state || "",
       tags: coerceTagsFromDb(biz.tags),
     });
   }
@@ -1430,6 +1442,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
         og_description: editingBiz.og_description || null,
         og_image: editingBiz.og_image || null,
         custom_blurb: editingBiz.custom_blurb || null,
+        poc_name: editingBiz.poc_name || null,
+        phone_number: editingBiz.phone_number || null,
+        contact_email: editingBiz.contact_email || null,
+        city_state: editingBiz.city_state || null,
         tags: tagList,
       })
       .eq("id", editingBiz.id);
@@ -1444,6 +1460,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
             og_description: editingBiz.og_description || null,
             og_image: editingBiz.og_image || null,
             custom_blurb: editingBiz.custom_blurb || null,
+            poc_name: editingBiz.poc_name || null,
+            phone_number: editingBiz.phone_number || null,
+            contact_email: editingBiz.contact_email || null,
+            city_state: editingBiz.city_state || null,
           })
           .eq("id", editingBiz.id);
         error = r2.error;
@@ -2132,6 +2152,14 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           <a href={biz.website_url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: "#1d4ed8", wordBreak: "break-all" }}>{biz.website_url}</a>
                           {biz.custom_blurb && <div style={{ marginTop: 6, fontSize: 14, color: t.textMuted, lineHeight: 1.5 }}>{biz.custom_blurb}</div>}
                           {biz.og_description && !biz.custom_blurb && <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>{biz.og_description}</div>}
+                          {(biz.poc_name || biz.phone_number || biz.contact_email || biz.city_state) && (
+                            <div style={{ marginTop: 8, display: "grid", gap: 3 }}>
+                              {biz.poc_name && <div style={{ fontSize: 12, color: t.textMuted }}><strong style={{ color: t.text }}>POC:</strong> {biz.poc_name}</div>}
+                              {biz.phone_number && <div style={{ fontSize: 12, color: t.textMuted }}><strong style={{ color: t.text }}>Phone:</strong> {biz.phone_number}</div>}
+                              {biz.contact_email && <div style={{ fontSize: 12, color: t.textMuted }}><strong style={{ color: t.text }}>Email:</strong> {biz.contact_email}</div>}
+                              {biz.city_state && <div style={{ fontSize: 12, color: t.textMuted }}><strong style={{ color: t.text }}>Location:</strong> {biz.city_state}</div>}
+                            </div>
+                          )}
                           <BizListingTagChips tags={coerceTagsFromDb(biz.tags)} />
                           <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint }}>{new Date(biz.created_at).toLocaleDateString()}</div>
                         </div>
@@ -2214,6 +2242,46 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 14, resize: "vertical", boxSizing: "border-box", background: t.input, color: t.text }}
                           placeholder="Custom description shown on the listing"
                         />
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 4 }}>POC Information</label>
+                          <input
+                            value={editingBiz.poc_name}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, poc_name: e.target.value })}
+                            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 14, boxSizing: "border-box", background: t.input, color: t.text }}
+                            placeholder="Point of contact name"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 4 }}>Phone Number</label>
+                          <input
+                            value={editingBiz.phone_number}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, phone_number: e.target.value })}
+                            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 14, boxSizing: "border-box", background: t.input, color: t.text }}
+                            placeholder="(555) 555-5555"
+                          />
+                        </div>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 4 }}>Email</label>
+                          <input
+                            value={editingBiz.contact_email}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, contact_email: e.target.value })}
+                            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 14, boxSizing: "border-box", background: t.input, color: t.text }}
+                            placeholder="support@example.org"
+                          />
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 4 }}>City / State</label>
+                          <input
+                            value={editingBiz.city_state}
+                            onChange={(e) => setEditingBiz({ ...editingBiz, city_state: e.target.value })}
+                            style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 14, boxSizing: "border-box", background: t.input, color: t.text }}
+                            placeholder="City, State"
+                          />
+                        </div>
                       </div>
                       <BizListingTagsField
                         value={editingBiz.tags}

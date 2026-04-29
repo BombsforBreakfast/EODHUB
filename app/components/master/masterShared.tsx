@@ -31,6 +31,10 @@ export type BusinessListingRow = {
   business_name: string | null;
   website_url: string;
   custom_blurb: string | null;
+  poc_name?: string | null;
+  phone_number?: string | null;
+  contact_email?: string | null;
+  city_state?: string | null;
   og_title: string | null;
   og_description: string | null;
   og_image: string | null;
