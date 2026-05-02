@@ -5,6 +5,7 @@ import { ThemeProvider } from "./lib/ThemeContext";
 import SessionGuard from "./components/SessionGuard";
 import AnalyticsTracker from "./components/AnalyticsTracker";
 import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { MemorialNavModalProvider } from "./components/memorial/MemorialNavModalProvider";
 
 const geistSans = Geist({
@@ -96,7 +97,12 @@ export default function RootLayout({
           >
             © EOD Hub — A professional network for the Explosive Ordnance Disposal community
           </footer>
-          {showVercelAnalytics ? <Analytics /> : null}
+          {showVercelAnalytics ? (
+            <>
+              <Analytics />
+              <SpeedInsights />
+            </>
+          ) : null}
           </MemorialNavModalProvider>
         </ThemeProvider>
       </body>
