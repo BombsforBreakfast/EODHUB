@@ -109,7 +109,10 @@ async function runQuery(query: string): Promise<NewsCandidate[]> {
       source_weight: 0,
       raw: { provider: "gdelt", query, ...a } as Record<string, unknown>,
     });
-    if (candidate) out.push(candidate);
+    if (candidate) {
+      candidate.matched_discovery_queries = [query];
+      out.push(candidate);
+    }
   }
   return out;
 }

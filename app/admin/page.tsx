@@ -89,6 +89,22 @@ type AdminGroup = {
 
 type Tab = "businesses" | "jobs" | "users" | "groups" | "flags" | "events" | "reports" | "directory" | "engagement" | "news";
 
+type NewsIntakeDebugPayload = {
+  provider: string;
+  matched_queries: string[];
+  feed_source: string | null;
+  matched_title_terms: string[];
+  matched_body_terms: string[];
+  matched_terms: string[];
+  le_boost_hits: string[];
+  le_boost_score: number;
+  compound_bonuses: string[];
+  compound_score: number;
+  final_score: number;
+  raw_score: number;
+  inclusion_reason: string;
+};
+
 type AdminNewsItem = {
   id: string;
   headline: string;
@@ -105,6 +121,7 @@ type AdminNewsItem = {
   status: "pending" | "published" | "rejected";
   created_at: string;
   reviewed_at: string | null;
+  raw_payload?: { intake_debug?: NewsIntakeDebugPayload } | null;
 };
 
 type NewsTabFilter = "pending" | "published" | "rejected";
@@ -122,6 +139,13 @@ type PreviewBreakdown = {
   rawScore: number;
   titleHits: number;
   bodyHits: number;
+  matchedTitleTerms?: string[];
+  matchedBodyTerms?: string[];
+  matchedTerms?: string[];
+  leBoostHits?: string[];
+  leBoostAmount?: number;
+  compoundLabels?: string[];
+  compoundAmount?: number;
   hasContext: boolean;
   freshnessBonus: number;
   sourceWeight: number;
@@ -141,10 +165,22 @@ type PreviewCandidate = {
   source_weight: number;
   dedupe_key: string;
   breakdown: PreviewBreakdown;
+  intake_debug?: NewsIntakeDebugPayload;
   enriched_from_body: boolean;
   score_before_body: number | null;
   alreadyInDb: boolean;
   status: PreviewStatus;
+};
+
+type NewsQueryLaneStat = {
+  lane: string;
+  fetched: number;
+  would_insert: number;
+  below_threshold: number;
+  no_positive_hits: number;
+  negative_in_title: number;
+  duplicate_in_db: number;
+  duplicate_in_batch: number;
 };
 
 type PreviewResult = {
@@ -152,6 +188,7 @@ type PreviewResult = {
   blockedCount: number;
   byStatus: Record<PreviewStatus, number>;
   candidates: PreviewCandidate[];
+  queryLaneStats?: NewsQueryLaneStat[];
 };
 
 type EngagementRange = "today" | "7d" | "30d";
@@ -3336,6 +3373,41 @@ const [memWizUrl, setMemWizUrl] = useState("");
                     <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>
                       Read-only scan. <strong>Send to pending</strong> for items the scorer dropped that should have been kept. <strong>Dismiss</strong> for junk you never want to see again — that dedupe key is permanently blocked from future runs.
                     </div>
+                    {previewResult.queryLaneStats && previewResult.queryLaneStats.length > 0 && (
+                      <div style={{ marginTop: 10, fontSize: 11, color: t.textMuted, maxWidth: "100%" }}>
+                        <div style={{ fontWeight: 800, marginBottom: 6, color: t.text }}>Source / query lane performance (this scan)</div>
+                        <div style={{ overflowX: "auto", border: `1px solid ${t.border}`, borderRadius: 8, background: t.bg }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                            <thead>
+                              <tr style={{ textAlign: "left", borderBottom: `1px solid ${t.border}` }}>
+                                <th style={{ padding: "6px 8px", fontWeight: 800 }}>Lane</th>
+                                <th style={{ padding: "6px 6px", fontWeight: 800, textAlign: "right" }}>Fetched</th>
+                                <th style={{ padding: "6px 6px", fontWeight: 800, textAlign: "right", color: "#166534" }}>Would insert</th>
+                                <th style={{ padding: "6px 6px", fontWeight: 800, textAlign: "right" }}>Low score</th>
+                                <th style={{ padding: "6px 6px", fontWeight: 800, textAlign: "right" }}>No kw</th>
+                                <th style={{ padding: "6px 6px", fontWeight: 800, textAlign: "right" }}>Neg</th>
+                                <th style={{ padding: "6px 6px", fontWeight: 800, textAlign: "right" }}>Dup DB</th>
+                                <th style={{ padding: "6px 8px", fontWeight: 800, textAlign: "right" }}>Dup batch</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {previewResult.queryLaneStats.map((row) => (
+                                <tr key={row.lane} style={{ borderBottom: `1px solid ${t.border}` }}>
+                                  <td style={{ padding: "6px 8px", wordBreak: "break-word", maxWidth: 280 }}>{row.lane}</td>
+                                  <td style={{ padding: "6px 6px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.fetched}</td>
+                                  <td style={{ padding: "6px 6px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.would_insert}</td>
+                                  <td style={{ padding: "6px 6px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.below_threshold}</td>
+                                  <td style={{ padding: "6px 6px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.no_positive_hits}</td>
+                                  <td style={{ padding: "6px 6px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.negative_in_title}</td>
+                                  <td style={{ padding: "6px 6px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.duplicate_in_db}</td>
+                                  <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.duplicate_in_batch}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -3514,7 +3586,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
                               </span>
                             )}
                             <span style={{ fontSize: 11, color: t.textMuted }}>
-                              T:{b.titleHits} B:{b.bodyHits} {b.hasContext ? "· ctx" : ""} {b.freshnessBonus ? `· fresh+${b.freshnessBonus}` : ""} {b.sourceWeight ? `· src+${b.sourceWeight}` : ""} {b.negativeIn ? `· neg(${b.negativeIn})` : ""}
+                              T:{b.titleHits} B:{b.bodyHits}
+                              {typeof b.leBoostAmount === "number" && b.leBoostAmount > 0 ? ` · LE+${b.leBoostAmount}` : ""}
+                              {typeof b.compoundAmount === "number" && b.compoundAmount > 0 ? ` · cmp+${b.compoundAmount}` : ""}
+                              {b.hasContext ? " · ctx" : ""} {b.freshnessBonus ? `· fresh+${b.freshnessBonus}` : ""} {b.sourceWeight ? `· src+${b.sourceWeight}` : ""} {b.negativeIn ? `· neg(${b.negativeIn})` : ""}
                             </span>
                             <span style={{ fontSize: 11, fontWeight: 700, color: t.text, marginLeft: "auto" }}>{c.source_name || "external"}</span>
                             {c.is_satire && (
@@ -3527,6 +3602,22 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           {c.summary && (
                             <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
                               {c.summary.length > 240 ? `${c.summary.slice(0, 240)}…` : c.summary}
+                            </div>
+                          )}
+                          {c.intake_debug && (
+                            <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.45, padding: "8px 10px", borderRadius: 8, background: t.badgeBg, border: `1px solid ${t.border}` }}>
+                              <div><strong style={{ color: t.text }}>Intake</strong> · provider {c.intake_debug.provider} · final score {c.intake_debug.final_score}</div>
+                              {c.intake_debug.matched_queries.length > 0 && (
+                                <div style={{ marginTop: 4 }}>
+                                  <span style={{ fontWeight: 700, color: t.text }}>Queries:</span> {c.intake_debug.matched_queries.join(" · ")}
+                                </div>
+                              )}
+                              {c.intake_debug.matched_terms.length > 0 && (
+                                <div style={{ marginTop: 4 }}>
+                                  <span style={{ fontWeight: 700, color: t.text }}>Matched terms:</span> {c.intake_debug.matched_terms.slice(0, 24).join(", ")}{c.intake_debug.matched_terms.length > 24 ? "…" : ""}
+                                </div>
+                              )}
+                              <div style={{ marginTop: 4, fontStyle: "italic" }}>{c.intake_debug.inclusion_reason.length > 360 ? `${c.intake_debug.inclusion_reason.slice(0, 360)}…` : c.intake_debug.inclusion_reason}</div>
                             </div>
                           )}
                           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -3625,6 +3716,18 @@ const [memWizUrl, setMemWizUrl] = useState("");
                       </a>
                       {n.summary && (
                         <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>{n.summary}</div>
+                      )}
+                      {n.raw_payload?.intake_debug && (
+                        <div style={{ marginTop: 8, fontSize: 11, color: t.textMuted, lineHeight: 1.45, padding: "8px 10px", borderRadius: 8, background: t.bg, border: `1px solid ${t.border}` }}>
+                          <div><strong style={{ color: t.text }}>Intake debug</strong> · score {n.raw_payload.intake_debug.final_score} · {n.raw_payload.intake_debug.provider}</div>
+                          {n.raw_payload.intake_debug.matched_queries.length > 0 && (
+                            <div style={{ marginTop: 4 }}><strong style={{ color: t.text }}>Queries:</strong> {n.raw_payload.intake_debug.matched_queries.join(" · ")}</div>
+                          )}
+                          {n.raw_payload.intake_debug.matched_terms.length > 0 && (
+                            <div style={{ marginTop: 4 }}><strong style={{ color: t.text }}>Terms:</strong> {n.raw_payload.intake_debug.matched_terms.slice(0, 20).join(", ")}{n.raw_payload.intake_debug.matched_terms.length > 20 ? "…" : ""}</div>
+                          )}
+                          <div style={{ marginTop: 4, fontStyle: "italic" }}>{n.raw_payload.intake_debug.inclusion_reason.length > 300 ? `${n.raw_payload.intake_debug.inclusion_reason.slice(0, 300)}…` : n.raw_payload.intake_debug.inclusion_reason}</div>
+                        </div>
                       )}
                       <a href={n.source_url} target="_blank" rel="noreferrer noopener" style={{ display: "inline-block", marginTop: 6, fontSize: 11, color: "#1d4ed8", wordBreak: "break-all" }}>
                         {n.source_url}

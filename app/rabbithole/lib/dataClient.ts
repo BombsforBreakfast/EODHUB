@@ -12,6 +12,12 @@ import type {
   RabbitholeThread,
   RabbitholeTopic,
 } from "./types";
+import {
+  aggregatesBySubjectId,
+  buildReactorDisplayNamesByTypeForSubject,
+  emptyAggregate,
+  fetchContentReactionsForSubjects,
+} from "../../lib/reactions";
 
 function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").replace(/\s+/g, " ").trim();
@@ -355,19 +361,12 @@ export async function fetchIsolatedFeedPost(
   postId: string,
   viewerUserId: string | null,
 ): Promise<{ post: IsolatedPost | null; comments: IsolatedComment[] }> {
-  const [postRes, likeRes, viewerLikeRes, commentRes] = await Promise.all([
+  const [postRes, commentRes] = await Promise.all([
     supabase
       .from("posts")
       .select("id, content, image_url, gif_url, og_title, og_description, og_image, og_url, created_at, user_id")
       .eq("id", postId)
       .maybeSingle(),
-    supabase
-      .from("post_likes")
-      .select("*", { count: "exact", head: true })
-      .eq("post_id", postId),
-    viewerUserId
-      ? supabase.from("post_likes").select("id").eq("post_id", postId).eq("user_id", viewerUserId).maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
     supabase
       .from("post_comments")
       .select("id, content, created_at, user_id, image_url, gif_url")
@@ -378,7 +377,39 @@ export async function fetchIsolatedFeedPost(
   ]);
 
   if (!postRes.data) return { post: null, comments: [] };
+
+  let reactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
+  try {
+    reactionRows = await fetchContentReactionsForSubjects(supabase, "post", [postId]);
+  } catch {
+    reactionRows = [];
+  }
+  const aggMap = aggregatesBySubjectId(reactionRows, viewerUserId);
+  const agg = aggMap.get(postId) ?? emptyAggregate();
   const row = postRes.data as any;
+
+  const reactorIds = [...new Set(reactionRows.map((r) => r.user_id))];
+  const reactorNameMap = new Map<string, string>();
+  if (reactorIds.length > 0) {
+    const { data: reactorProfiles } = await supabase
+      .from("profiles")
+      .select("user_id, display_name, first_name, last_name")
+      .in("user_id", reactorIds);
+    for (const p of (reactorProfiles ?? []) as {
+      user_id: string;
+      display_name: string | null;
+      first_name: string | null;
+      last_name: string | null;
+    }[]) {
+      reactorNameMap.set(
+        p.user_id,
+        (p.display_name?.trim() || null) ||
+          `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+          "Member",
+      );
+    }
+  }
+  const reactorNamesByType = buildReactorDisplayNamesByTypeForSubject(reactionRows, postId, reactorNameMap);
 
   const { data: profileRow } = await supabase
     .from("profiles")
@@ -429,8 +460,10 @@ export async function fetchIsolatedFeedPost(
     ogUrl: row.og_url ?? null,
     createdAt: row.created_at,
     author: { id: row.user_id, name: authorName, photoUrl: (profileRow as any)?.photo_url ?? null },
-    likeCount: (likeRes as any).count ?? 0,
-    viewerLiked: !!(viewerLikeRes as any).data,
+    likeCount: agg.totalCount,
+    myReaction: agg.myReaction,
+    reactionCountsByType: agg.countsByType,
+    reactorNamesByType,
     commentCount: commentRows.length,
     sourceType: "feed",
   };

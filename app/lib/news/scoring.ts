@@ -7,6 +7,7 @@ import {
   POSITIVE_TITLE,
   POSITIVE_BODY,
   LE_MIL_CONTEXT,
+  LE_EXPLOSIVES_BOOST,
   NEGATIVE_PHRASES,
   SATIRE_DOMAINS,
   MIN_SCORE,
@@ -21,6 +22,15 @@ function countHits(text: string, needles: string[]): number {
     if (text.includes(needle)) n += 1;
   }
   return n;
+}
+
+/** Which needles matched, in list order (stable for debugging). */
+export function collectMatched(text: string, needles: string[]): string[] {
+  const out: string[] = [];
+  for (const needle of needles) {
+    if (text.includes(needle)) out.push(needle);
+  }
+  return out;
 }
 
 function anyHit(text: string, needles: string[]): boolean {
@@ -50,6 +60,75 @@ function hostOf(url: string): string | null {
   }
 }
 
+const COMPOUND_CAP = 14;
+
+function compoundScore(full: string): { amount: number; labels: string[] } {
+  const labels: string[] = [];
+  let amount = 0;
+  const tryAdd = (label: string, bonus: number, ok: boolean) => {
+    if (!ok || amount >= COMPOUND_CAP) return;
+    const add = Math.min(bonus, COMPOUND_CAP - amount);
+    if (add <= 0) return;
+    labels.push(label);
+    amount += add;
+  };
+
+  tryAdd(
+    "training_facility+explosion",
+    5,
+    full.includes("training facility") && full.includes("explosion")
+  );
+  tryAdd(
+    "deputies+killed_or_fatal+explosion_or_blast",
+    5,
+    (full.includes("deputies killed") ||
+      (full.includes("deputies") &&
+        (full.includes("killed") || full.includes("kills") || full.includes("fatal")))) &&
+      (full.includes("explosion") || full.includes("blast"))
+  );
+  tryAdd(
+    "sheriff_deputies+blast",
+    4,
+    full.includes("sheriff") && full.includes("deputies") && full.includes("blast")
+  );
+  tryAdd(
+    "lasd+explosion_or_blast",
+    4,
+    full.includes("lasd") && (full.includes("explosion") || full.includes("blast"))
+  );
+  tryAdd(
+    "bomb_squad+explosion_or_blast",
+    4,
+    full.includes("bomb squad") && (full.includes("explosion") || full.includes("blast"))
+  );
+
+  return { amount, labels };
+}
+
+function computeLeBoost(full: string): { amount: number; hits: string[] } {
+  const hits = collectMatched(full, LE_EXPLOSIVES_BOOST);
+  const raw = hits.length * SCORE.leBoostPerHit;
+  const amount = Math.min(raw, SCORE.leBoostMax);
+  return { amount, hits };
+}
+
+export type NewsIntakeDebug = {
+  provider: string;
+  matched_queries: string[];
+  feed_source: string | null;
+  matched_title_terms: string[];
+  matched_body_terms: string[];
+  /** De-duplicated union of title + body positive matches (for quick scanning). */
+  matched_terms: string[];
+  le_boost_hits: string[];
+  le_boost_score: number;
+  compound_bonuses: string[];
+  compound_score: number;
+  final_score: number;
+  raw_score: number;
+  inclusion_reason: string;
+};
+
 export type ScoreBreakdown = {
   /** Final score after the hard "no positive hit" gate. This is what the runner uses. */
   score: number;
@@ -57,6 +136,13 @@ export type ScoreBreakdown = {
   rawScore: number;
   titleHits: number;
   bodyHits: number;
+  matchedTitleTerms: string[];
+  matchedBodyTerms: string[];
+  matchedTerms: string[];
+  leBoostHits: string[];
+  leBoostAmount: number;
+  compoundLabels: string[];
+  compoundAmount: number;
   hasContext: boolean;
   freshnessBonus: number;
   sourceWeight: number;
@@ -65,22 +151,87 @@ export type ScoreBreakdown = {
   dropReason: "no_positive_hits" | "below_threshold" | "negative_in_title" | null;
 };
 
+function buildInclusionReason(b: ScoreBreakdown, c: NewsCandidate): string {
+  if (b.dropReason === "no_positive_hits") {
+    return "Dropped: no headline/body match on the core EOD / LE explosives keyword lists.";
+  }
+  if (b.dropReason === "negative_in_title") {
+    return "Dropped: entertainment or metaphor penalty phrase in the headline.";
+  }
+  if (b.dropReason === "below_threshold") {
+    return `Dropped: score ${b.score} is below the minimum for ${c.is_satire ? "satire" : "news"} items.`;
+  }
+  const parts = [
+    `Included for manual review: relevance score ${b.score}.`,
+    `Title keyword matches (${b.titleHits}): ${b.matchedTitleTerms.slice(0, 8).join(", ") || "—"}.`,
+    `Body/snippet matches (${b.bodyHits}): ${b.matchedBodyTerms.slice(0, 8).join(", ") || "—"}.`,
+  ];
+  if (b.leBoostAmount > 0) {
+    parts.push(`LE explosives boost +${b.leBoostAmount} (${b.leBoostHits.slice(0, 6).join(", ")}).`);
+  }
+  if (b.compoundAmount > 0) {
+    parts.push(`Compound context +${b.compoundAmount} [${b.compoundLabels.join(", ")}].`);
+  }
+  if (b.freshnessBonus !== 0) parts.push(`Freshness ${b.freshnessBonus > 0 ? "+" : ""}${b.freshnessBonus}.`);
+  if (b.sourceWeight !== 0) parts.push(`Trusted feed weight +${b.sourceWeight}.`);
+  return parts.join(" ");
+}
+
+export function buildNewsIntakeDebug(c: NewsCandidate, b: ScoreBreakdown): NewsIntakeDebug {
+  const raw = c.raw ?? {};
+  const provider = typeof raw.provider === "string" ? raw.provider : "unknown";
+  const matched_queries = [...(c.matched_discovery_queries ?? [])];
+  const feed_source =
+    provider === "feeds" && typeof raw.feed === "string"
+      ? raw.feed
+      : provider === "feeds"
+        ? c.source_name
+        : null;
+
+  const matched_terms = [...new Set([...b.matchedTitleTerms, ...b.matchedBodyTerms])];
+
+  return {
+    provider,
+    matched_queries: matched_queries.length > 0 ? matched_queries : provider === "feeds" ? [`feed:${feed_source ?? "rss"}`] : [],
+    feed_source,
+    matched_title_terms: b.matchedTitleTerms,
+    matched_body_terms: b.matchedBodyTerms,
+    matched_terms,
+    le_boost_hits: b.leBoostHits,
+    le_boost_score: b.leBoostAmount,
+    compound_bonuses: b.compoundLabels,
+    compound_score: b.compoundAmount,
+    final_score: b.score,
+    raw_score: b.rawScore,
+    inclusion_reason: buildInclusionReason(b, c),
+  };
+}
+
 /** Pure computation, no mutation. Used by both runner and preview. */
 export function analyzeCandidate(c: NewsCandidate): ScoreBreakdown {
   const title = c.headline.toLowerCase();
   const body = (c.summary ?? "").toLowerCase();
+  const full = `${title} ${body}`;
 
   if (!c.is_satire) {
     const host = hostOf(c.source_url);
     if (host && SATIRE_DOMAINS.includes(host)) c.is_satire = true;
   }
 
-  const titleHits = countHits(title, POSITIVE_TITLE);
-  const bodyHits = countHits(body, POSITIVE_BODY);
+  const matchedTitleTerms = collectMatched(title, POSITIVE_TITLE);
+  const matchedBodyTerms = collectMatched(body, POSITIVE_BODY);
+  const titleHits = matchedTitleTerms.length;
+  const bodyHits = matchedBodyTerms.length;
+  const matchedTerms = [...new Set([...matchedTitleTerms, ...matchedBodyTerms])];
+
+  const { amount: compoundAmount, labels: compoundLabels } = compoundScore(full);
+  const { amount: leBoostAmount, hits: leBoostHits } = computeLeBoost(full);
 
   let raw = 0;
   raw += Math.min(titleHits * SCORE.perTitleHit, SCORE.maxTitleBonus);
   raw += Math.min(bodyHits * SCORE.perBodyHit, SCORE.maxBodyBonus);
+  raw += leBoostAmount;
+  raw += compoundAmount;
 
   const hasContext = anyHit(title, LE_MIL_CONTEXT) || anyHit(body, LE_MIL_CONTEXT);
   if (hasContext) raw += SCORE.contextBonus;
@@ -119,6 +270,13 @@ export function analyzeCandidate(c: NewsCandidate): ScoreBreakdown {
     rawScore: raw,
     titleHits,
     bodyHits,
+    matchedTitleTerms,
+    matchedBodyTerms,
+    matchedTerms,
+    leBoostHits,
+    leBoostAmount,
+    compoundLabels,
+    compoundAmount,
     hasContext,
     freshnessBonus: freshness,
     sourceWeight,

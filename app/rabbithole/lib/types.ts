@@ -1,3 +1,5 @@
+import type { ReactionType } from "../../lib/reactions";
+
 export type RabbitholeTopic = {
   slug: string;
   name: string;
@@ -111,7 +113,12 @@ export type IsolatedPost = {
   createdAt: string;
   author: { id: string; name: string; photoUrl: string | null };
   likeCount: number;
-  viewerLiked: boolean;
+  /** Unit forum binary like only — unset on feed posts that use reactions. */
+  viewerLiked?: boolean;
+  /** Feed posts (`content_reactions`, subject_kind post). */
+  myReaction?: ReactionType | null;
+  reactionCountsByType?: Partial<Record<ReactionType, number>>;
+  reactorNamesByType?: Partial<Record<ReactionType, string[]>>;
   commentCount: number;
   sourceType: "feed" | "unit";
   /** For unit posts: the name of the unit it came from. */

@@ -29,6 +29,15 @@ import type {
   KangarooCourtVerdictRow,
 } from "../../../lib/kangarooCourt";
 import { sanitizeRumintOgDescription } from "../../../lib/sanitizeRumintOgDescription";
+import { ReactionLeaderboard, ReactionPickerTrigger } from "../../../components/ReactionBar";
+import {
+  aggregatesBySubjectId,
+  applyContentReaction,
+  buildReactorDisplayNamesByTypeForSubject,
+  emptyAggregate,
+  fetchContentReactionsForSubjects,
+  type ReactionType,
+} from "../../../lib/reactions";
 import { ServiceSealValue } from "../../../lib/serviceSeals";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
 
@@ -89,7 +98,9 @@ type WallComment = RawComment & {
   authorPhotoUrl: string | null;
   authorService: string | null;
   likeCount: number;
-  likedByCurrentUser: boolean;
+  myReaction: ReactionType | null;
+  reactionCountsByType: Partial<Record<ReactionType, number>>;
+  reactorNamesByType: Partial<Record<ReactionType, string[]>>;
 };
 
 type OgPreview = {
@@ -177,7 +188,9 @@ type Post = {
   image_urls: string[];
   likeCount: number;
   commentCount: number;
-  likedByCurrentUser: boolean;
+  myReaction: ReactionType | null;
+  reactionCountsByType: Partial<Record<ReactionType, number>>;
+  reactorNamesByType: Partial<Record<ReactionType, string[]>>;
   likers: PostLikerBrief[];
   comments: WallComment[];
   og_url: string | null;
@@ -1100,15 +1113,13 @@ export default function PublicProfilePage() {
       multiImageMap.set(r.post_id, arr);
     });
 
-    // Likes
-    const { data: likesData } = await supabase
-      .from("post_likes").select("post_id, user_id").in("post_id", postIds);
-    const likesByPost = new Map<string, string[]>();
-    ((likesData ?? []) as { post_id: string; user_id: string }[]).forEach((r) => {
-      const arr = likesByPost.get(r.post_id) || [];
-      arr.push(r.user_id);
-      likesByPost.set(r.post_id, arr);
-    });
+    let reactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
+    try {
+      reactionRows = await fetchContentReactionsForSubjects(supabase, "post", postIds);
+    } catch (reactionsErr) {
+      console.error("Wall reactions load error:", reactionsErr);
+    }
+    const aggregatesMap = aggregatesBySubjectId(reactionRows, currentUserId ?? null);
 
     // Comments
     const { data: commentsData } = await supabase
@@ -1116,30 +1127,30 @@ export default function PublicProfilePage() {
       .in("post_id", postIds).order("created_at", { ascending: true });
     const rawComments = (commentsData ?? []) as RawComment[];
 
-    // Comment likes
     const commentIds = rawComments.map((c) => c.id);
-    const { data: commentLikesData } = commentIds.length > 0
-      ? await supabase.from("post_comment_likes").select("comment_id, user_id").in("comment_id", commentIds)
-      : { data: [] };
-    const likesByComment = new Map<string, string[]>();
-    ((commentLikesData ?? []) as { comment_id: string; user_id: string }[]).forEach((r) => {
-      const arr = likesByComment.get(r.comment_id) || [];
-      arr.push(r.user_id);
-      likesByComment.set(r.comment_id, arr);
-    });
+    let commentReactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
+    try {
+      commentReactionRows =
+        commentIds.length > 0
+          ? await fetchContentReactionsForSubjects(supabase, "post_comment", commentIds)
+          : [];
+    } catch (commentReactionsErr) {
+      console.error("Wall comment reactions load error:", commentReactionsErr);
+    }
+    const commentAggregatesMap = aggregatesBySubjectId(commentReactionRows, currentUserId ?? null);
 
-    const postLikerUserIds = ((likesData ?? []) as { post_id: string; user_id: string }[]).map((r) => r.user_id);
-    const commentLikerUserIds = ((commentLikesData ?? []) as { comment_id: string; user_id: string }[]).map((r) => r.user_id);
+    const postLikerUserIds = reactionRows.map((r) => r.user_id);
+    const commentReactorUserIds = commentReactionRows.map((r) => r.user_id);
 
     // Comment authors + everyone who liked a post or comment (for avatars / names)
     const commentAuthorIds = [...new Set(rawComments.map((c) => c.user_id))];
     const commentAndLikerIds = [
-      ...new Set([...commentAuthorIds, ...postLikerUserIds, ...commentLikerUserIds].filter(Boolean)),
+      ...new Set([...commentAuthorIds, ...postLikerUserIds, ...commentReactorUserIds].filter(Boolean)),
     ];
     const { data: commentProfileData } = commentAndLikerIds.length > 0
       ? await supabase
           .from("profiles")
-          .select("user_id, first_name, last_name, photo_url, service, is_employer")
+          .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer")
           .in("user_id", commentAndLikerIds)
       : { data: [] };
     const commentNameMap = new Map<string, string>();
@@ -1148,13 +1159,19 @@ export default function PublicProfilePage() {
     const commentEmployerMap = new Map<string, boolean | null>();
     ((commentProfileData ?? []) as {
       user_id: string;
+      display_name: string | null;
       first_name: string | null;
       last_name: string | null;
       photo_url: string | null;
       service: string | null;
       is_employer: boolean | null;
     }[]).forEach((p) => {
-      commentNameMap.set(p.user_id, `${p.first_name || ""} ${p.last_name || ""}`.trim() || "User");
+      commentNameMap.set(
+        p.user_id,
+        (p.display_name?.trim() || null) ||
+          `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+          "User",
+      );
       commentPhotoMap.set(p.user_id, p.photo_url ?? null);
       commentServiceMap.set(p.user_id, p.service ?? null);
       commentEmployerMap.set(p.user_id, p.is_employer ?? null);
@@ -1164,14 +1181,20 @@ export default function PublicProfilePage() {
     const commentsByPost = new Map<string, WallComment[]>();
     rawComments.forEach((c) => {
       const arr = commentsByPost.get(c.post_id) || [];
-      const cLikes = likesByComment.get(c.id) || [];
+      const agg = commentAggregatesMap.get(c.id) ?? emptyAggregate();
       arr.push({
         ...c,
         authorName: commentNameMap.get(c.user_id) || "User",
         authorPhotoUrl: commentPhotoMap.get(c.user_id) ?? null,
         authorService: commentServiceMap.get(c.user_id) ?? null,
-        likeCount: cLikes.length,
-        likedByCurrentUser: currentUserId ? cLikes.includes(currentUserId) : false,
+        likeCount: agg.totalCount,
+        myReaction: agg.myReaction,
+        reactionCountsByType: agg.countsByType,
+        reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(
+          commentReactionRows,
+          c.id,
+          commentNameMap,
+        ),
       });
       commentsByPost.set(c.post_id, arr);
     });
@@ -1376,7 +1399,8 @@ export default function PublicProfilePage() {
     }
 
     const merged: Post[] = rawPosts.map((p) => {
-      const postLikes = likesByPost.get(p.id) || [];
+      const agg = aggregatesMap.get(p.id) ?? emptyAggregate();
+      const postLikes = agg.userIds;
       const seenLiker = new Set<string>();
       const orderedLikerIds = postLikes.filter((uid) => {
         if (seenLiker.has(uid)) return false;
@@ -1400,9 +1424,15 @@ export default function PublicProfilePage() {
         image_url: legacyImage,
         gif_url: gifUrlMap.get(p.id) ?? null,
         image_urls: multiImages.length > 0 ? multiImages : legacyImage ? [legacyImage] : [],
-        likeCount: postLikes.length,
+        likeCount: agg.totalCount,
         commentCount: postComments.length,
-        likedByCurrentUser: currentUserId ? postLikes.includes(currentUserId) : false,
+        myReaction: agg.myReaction,
+        reactionCountsByType: agg.countsByType,
+        reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(
+          reactionRows,
+          p.id,
+          commentNameMap,
+        ),
         likers,
         comments: postComments,
         og_url: p.og_url ?? null,
@@ -1519,54 +1549,80 @@ export default function PublicProfilePage() {
     setIsMutualConnection(myWorkedWith || myKnows);
   }
 
-  async function toggleLike(postId: string, isLiked: boolean) {
-    if (!currentUserId) { window.location.href = "/login"; return; }
+  async function handleWallPostReaction(postId: string, picked: ReactionType) {
+    if (!currentUserId) {
+      window.location.href = "/login";
+      return;
+    }
     cancelDelayedLikeNotify(`wall:post:${postId}:${currentUserId}`);
     try {
       setTogglingLikeFor(postId);
-      if (isLiked) {
-        await supabase.from("post_likes").delete().eq("post_id", postId).eq("user_id", currentUserId);
-      } else {
-        await supabase.from("post_likes").insert([{ post_id: postId, user_id: currentUserId }]);
-        let post = posts.find((p) => p.id === postId);
-        if (!post) {
+      const priorReaction = postsRef.current.find((p) => p.id === postId)?.myReaction ?? null;
+
+      await applyContentReaction(supabase, {
+        subjectKind: "post",
+        subjectId: postId,
+        userId: currentUserId,
+        picked,
+      });
+
+      if (picked === "like" && priorReaction !== "like") {
+        let postRow = posts.find((p) => p.id === postId);
+        if (!postRow) {
           const { data: row } = await supabase
             .from("posts")
             .select("user_id, wall_user_id")
             .eq("id", postId)
             .maybeSingle();
           if (row) {
-            post = {
+            postRow = {
               id: postId,
               user_id: row.user_id,
               wall_user_id: row.wall_user_id ?? null,
             } as Post;
           }
         }
-        if (post && profile && currentUserId !== post.user_id) {
-          const navOwner = post.wall_user_id ?? post.user_id;
+        if (postRow && profile && currentUserId !== postRow.user_id) {
+          const navOwner = postRow.wall_user_id ?? postRow.user_id;
           const actorName = currentUserName?.trim() || "Someone";
-          const recipientId = post.user_id;
+          const recipientId = postRow.user_id;
           scheduleDelayedLikeNotify(`wall:post:${postId}:${currentUserId}`, () => {
             const p = postsRef.current.find((x) => x.id === postId);
-            if (!p?.likedByCurrentUser) return;
+            if (p?.myReaction !== "like") return;
             return notify(recipientId, `${actorName} liked your post`, navOwner, { type: "wall_like", post_id: postId });
           });
         }
       }
+
       if (userId) await loadPosts(userId);
-    } finally { setTogglingLikeFor(null); }
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save reaction");
+    } finally {
+      setTogglingLikeFor(null);
+    }
   }
 
-  async function toggleCommentLike(commentId: string, isLiked: boolean) {
-    if (!currentUserId) { window.location.href = "/login"; return; }
+  async function handleWallCommentReaction(commentId: string, picked: ReactionType) {
+    if (!currentUserId) {
+      window.location.href = "/login";
+      return;
+    }
     cancelDelayedLikeNotify(`wall:comment:${commentId}:${currentUserId}`);
     try {
       setTogglingCommentLikeFor(commentId);
-      if (isLiked) {
-        await supabase.from("post_comment_likes").delete().eq("comment_id", commentId).eq("user_id", currentUserId);
-      } else {
-        await supabase.from("post_comment_likes").insert([{ comment_id: commentId, user_id: currentUserId }]);
+
+      const priorReaction =
+        postsRef.current.flatMap((p) => p.comments).find((c) => c.id === commentId)?.myReaction ?? null;
+
+      await applyContentReaction(supabase, {
+        subjectKind: "post_comment",
+        subjectId: commentId,
+        userId: currentUserId,
+        picked,
+      });
+
+      if (picked === "like" && priorReaction !== "like") {
         const comment = posts.flatMap((p) => p.comments).find((c) => c.id === commentId);
         const ownerPost = comment ? posts.find((p) => p.id === comment.post_id) : undefined;
         if (comment && comment.user_id !== currentUserId && ownerPost) {
@@ -1577,13 +1633,22 @@ export default function PublicProfilePage() {
           scheduleDelayedLikeNotify(`wall:comment:${commentId}:${currentUserId}`, () => {
             const p = postsRef.current.find((x) => x.id === postIdForComment);
             const c = p?.comments.find((x) => x.id === commentId);
-            if (!c?.likedByCurrentUser) return;
-            return notify(recipientId, `${name} liked your comment`, ownerId, { type: "wall_comment_like", post_id: postIdForComment });
+            if (c?.myReaction !== "like") return;
+            return notify(recipientId, `${name} liked your comment`, ownerId, {
+              type: "wall_comment_like",
+              post_id: postIdForComment,
+            });
           });
         }
       }
+
       if (userId) await loadPosts(userId);
-    } finally { setTogglingCommentLikeFor(null); }
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save reaction");
+    } finally {
+      setTogglingCommentLikeFor(null);
+    }
   }
 
   async function submitComment(postId: string) {
@@ -2767,7 +2832,16 @@ export default function PublicProfilePage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "post_likes" },
-        () => { loadPosts(userId); }
+        () => {
+          loadPosts(userId);
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "content_reactions" },
+        () => {
+          loadPosts(userId);
+        }
       )
       .subscribe();
 
@@ -4982,8 +5056,19 @@ export default function PublicProfilePage() {
                       </>
                     )}
 
-                    {/* Like / Comment bar ΓÇö KC chip is display-only on wall (no ΓÇ£start courtΓÇ¥) */}
-                    <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
+                    {/* Reactions / Comment bar ΓÇö KC chip is display-only on wall (no ΓÇ£start courtΓÇ¥) */}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 16,
+                        alignItems: "center",
+                        marginTop: 14,
+                        flexWrap: "wrap",
+                        width: "100%",
+                        minWidth: 0,
+                        boxSizing: "border-box",
+                      }}
+                    >
                       <KangarooCourtFeedSection
                         postId={post.id}
                         userId={currentUserId}
@@ -4994,14 +5079,15 @@ export default function PublicProfilePage() {
                         mode="trigger-inline"
                         wallStaticToolbar
                       />
-                      <button
-                        type="button"
-                        onClick={() => toggleLike(post.id, post.likedByCurrentUser)}
-                        disabled={togglingLikeFor === post.id}
-                        style={{ background: "transparent", border: "none", padding: 0, cursor: togglingLikeFor === post.id ? "not-allowed" : "pointer", fontWeight: 700, color: post.likedByCurrentUser ? t.text : t.textMuted, opacity: togglingLikeFor === post.id ? 0.6 : 1 }}
-                      >
-                        {post.likedByCurrentUser ? "Unlike" : "Like"}
-                      </button>
+                      <ReactionPickerTrigger
+                        t={t}
+                        disabled={!currentUserId}
+                        viewerReaction={post.myReaction}
+                        totalCount={post.likeCount}
+                        busy={togglingLikeFor === post.id}
+                        showTriggerCount={false}
+                        onPick={(type) => void handleWallPostReaction(post.id, type)}
+                      />
                       <button
                         type="button"
                         onClick={() => setExpandedComments((prev) => ({ ...prev, [post.id]: !commentsOpen }))}
@@ -5010,8 +5096,15 @@ export default function PublicProfilePage() {
                         {commentsOpen ? "Hide Comments" : "Comment"}
                       </button>
                       {post.likeCount > 0 && <PostLikersStack likers={post.likers} />}
-                      <div style={{ fontSize: 14, color: t.textMuted }}>{post.likeCount} {post.likeCount === 1 ? "like" : "likes"}</div>
-                      <div style={{ fontSize: 14, color: t.textMuted }}>{post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}</div>
+                      <div style={{ flex: "1 1 24px", minWidth: 0 }} />
+                      <ReactionLeaderboard
+                        t={t}
+                        countsByType={post.reactionCountsByType}
+                        reactorNamesByType={post.reactorNamesByType}
+                      />
+                      <div style={{ fontSize: 14, color: t.textMuted }}>
+                        {post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}
+                      </div>
                     </div>
 
                     {/* Comments section */}
@@ -5068,16 +5161,30 @@ export default function PublicProfilePage() {
                                   <img src={comment.image_url} alt="Comment image" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
                                 </div>
                               )}
-                              <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 4 }}>
-                                <button
-                                  type="button"
-                                  onClick={() => toggleCommentLike(comment.id, comment.likedByCurrentUser)}
-                                  disabled={togglingCommentLikeFor === comment.id}
-                                  style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, fontSize: 13, color: comment.likedByCurrentUser ? t.text : t.textMuted, opacity: togglingCommentLikeFor === comment.id ? 0.6 : 1 }}
-                                >
-                                  {comment.likedByCurrentUser ? "Unlike" : "Like"}
-                                </button>
-                                <div style={{ fontSize: 13, color: t.textMuted }}>{comment.likeCount} {comment.likeCount === 1 ? "like" : "likes"}</div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 10,
+                                  alignItems: "center",
+                                  marginTop: 4,
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <ReactionPickerTrigger
+                                  t={t}
+                                  disabled={!currentUserId}
+                                  viewerReaction={comment.myReaction}
+                                  totalCount={comment.likeCount}
+                                  busy={togglingCommentLikeFor === comment.id}
+                                  showTriggerCount={false}
+                                  onPick={(type) => void handleWallCommentReaction(comment.id, type)}
+                                />
+                                <div style={{ flex: "1 1 12px", minWidth: 0 }} />
+                                <ReactionLeaderboard
+                                  t={t}
+                                  countsByType={comment.reactionCountsByType}
+                                  reactorNamesByType={comment.reactorNamesByType}
+                                />
                               </div>
                             </div>
                           ); })}

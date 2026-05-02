@@ -33,6 +33,7 @@ import { useMasterShell } from "../components/master/masterShellContext";
 import { sectionTitleLinkZoom } from "../components/master/masterShared";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
+import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../components/StarRating";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 import { Award, UserCircle2, Play, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
@@ -58,6 +59,15 @@ import {
   FEED_POST_IMAGES_MAX_WIDTH,
 } from "../lib/feedLayout";
 import { sanitizeRumintOgDescription } from "../lib/sanitizeRumintOgDescription";
+import { ReactionLeaderboard, ReactionPickerTrigger } from "../components/ReactionBar";
+import {
+  aggregatesBySubjectId,
+  applyContentReaction,
+  buildReactorDisplayNamesByTypeForSubject,
+  emptyAggregate,
+  fetchContentReactionsForSubjects,
+  type ReactionType,
+} from "../lib/reactions";
 
 const MEMORIAL_MILITARY_COLOR = "#d9582b";
 const MEMORIAL_LEO_COLOR = "#062b4f";
@@ -165,12 +175,38 @@ type BusinessListing = {
   like_count: number;
   listing_type?: "business" | "organization" | "resource" | null;
   tags?: string[] | null;
+  poc_name?: string | null;
+  phone_number?: string | null;
+  contact_email?: string | null;
+  city_state?: string | null;
+};
+
+type BizListingCommentRow = {
+  id: string;
+  resource_id: string;
+  user_id: string;
+  content: string;
+  rating: number | null;
+  created_at: string;
+};
+
+type BizListingCommentProfile = {
+  user_id: string;
+  display_name: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  photo_url: string | null;
+};
+
+type BizListingComment = BizListingCommentRow & {
+  authorName: string;
+  authorPhotoUrl: string | null;
 };
 
 const JOB_COLUMNS =
   "id, created_at, title, category, location, pay_min, pay_max, clearance, description, apply_url, company_name, is_approved, source_type, user_id, og_title, og_description, og_image, og_site_name, anonymous";
 const BUSINESS_LISTING_COLUMNS =
-  "id, created_at, business_name, website_url, custom_blurb, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags";
+  "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags";
 const PERF_DEBUG = process.env.NODE_ENV !== "production";
 
 function perfNowMs(): number {
@@ -317,23 +353,15 @@ type Comment = {
   gif_url: string | null;
 };
 
-type LikeRow = {
-  post_id: string;
-  user_id: string;
-};
-
-type CommentLikeRow = {
-  comment_id: string;
-  user_id: string;
-};
-
 type FeedComment = Comment & {
   authorName: string;
   authorPhotoUrl: string | null;
   authorService: string | null;
   authorIsEmployer: boolean | null;
   likeCount: number;
-  likedByCurrentUser: boolean;
+  myReaction: ReactionType | null;
+  reactionCountsByType: Partial<Record<ReactionType, number>>;
+  reactorNamesByType: Partial<Record<ReactionType, string[]>>;
 };
 
 type MemorialComment = {
@@ -385,7 +413,9 @@ type FeedPost = RankedPostRow & {
   authorIsPureAdmin: boolean | null;
   likeCount: number;
   commentCount: number;
-  likedByCurrentUser: boolean;
+  myReaction: ReactionType | null;
+  reactionCountsByType: Partial<Record<ReactionType, number>>;
+  reactorNamesByType: Partial<Record<ReactionType, string[]>>;
   likers: PostLikerBrief[];
   comments: FeedComment[];
   og_url: string | null;
@@ -805,6 +835,12 @@ export default function HomePage() {
 
   const [likedBizIds, setLikedBizIds] = useState<Set<string>>(new Set());
   const [togglingBizLikeFor, setTogglingBizLikeFor] = useState<string | null>(null);
+
+  const [listingCommentsById, setListingCommentsById] = useState<Record<string, BizListingComment[]>>({});
+  const [listingCommentInputs, setListingCommentInputs] = useState<Record<string, string>>({});
+  const [listingCommentRatings, setListingCommentRatings] = useState<Record<string, number | null>>({});
+  const [submittingListingCommentFor, setSubmittingListingCommentFor] = useState<string | null>(null);
+  const [mobileBizDetailListing, setMobileBizDetailListing] = useState<BusinessListing | null>(null);
 
   const [togglingLikeFor, setTogglingLikeFor] = useState<string | null>(null);
   const [togglingCommentLikeFor, setTogglingCommentLikeFor] = useState<
@@ -2180,7 +2216,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         authorIsPureAdmin: null,
         likeCount: 0,
         commentCount: 0,
-        likedByCurrentUser: false,
+        myReaction: null,
+        reactionCountsByType: {},
+        reactorNamesByType: {},
         likers: [],
         comments: [],
         og_url: null,
@@ -2343,35 +2381,33 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       multiPostImageMap.set(row.post_id, existing);
     });
 
-    const { data: likesData, error: likesError } = await supabase
-      .from("post_likes")
-      .select("post_id, user_id")
-      .in("post_id", postIds);
-
-    if (likesError) {
-      console.error("Likes load error:", likesError);
+    let reactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
+    try {
+      reactionRows = await fetchContentReactionsForSubjects(supabase, "post", postIds);
+    } catch (reactionsErr) {
+      console.error("Reactions load error:", reactionsErr);
     }
+
+    const aggregatesMap = aggregatesBySubjectId(reactionRows, effectiveUserId);
 
     const { comments: rawComments } = await loadCommentsForPosts(postIds);
 
     const commentIds = rawComments.map((comment) => comment.id);
 
-    const { data: commentLikesData, error: commentLikesError } =
-      commentIds.length > 0
-        ? await supabase
-            .from("post_comment_likes")
-            .select("comment_id, user_id")
-            .in("comment_id", commentIds)
-        : { data: [], error: null };
-
-    if (commentLikesError) {
-      console.error("Comment likes load error:", commentLikesError);
+    let commentReactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
+    try {
+      commentReactionRows =
+        commentIds.length > 0
+          ? await fetchContentReactionsForSubjects(supabase, "post_comment", commentIds)
+          : [];
+    } catch (commentReactionsErr) {
+      console.error("Comment reactions load error:", commentReactionsErr);
     }
 
-    const postLikerUserIds = ((likesData ?? []) as LikeRow[]).map((l) => l.user_id);
-    const commentLikerUserIds = ((commentLikesData ?? []) as CommentLikeRow[]).map(
-      (l) => l.user_id
-    );
+    const commentAggregatesMap = aggregatesBySubjectId(commentReactionRows, effectiveUserId);
+
+    const postLikerUserIds = reactionRows.map((l) => l.user_id);
+    const commentReactorUserIds = commentReactionRows.map((l) => l.user_id);
 
     const allProfileUserIds = [
       ...new Set(
@@ -2379,7 +2415,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           ...uniqueUserIds,
           ...rawComments.map((comment) => comment.user_id),
           ...postLikerUserIds,
-          ...commentLikerUserIds,
+          ...commentReactorUserIds,
         ].filter((id): id is string => Boolean(id))
       ),
     ];
@@ -2418,24 +2454,10 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
     });
 
-    const likesByPost = new Map<string, string[]>();
-    ((likesData ?? []) as LikeRow[]).forEach((like) => {
-      const existing = likesByPost.get(like.post_id) || [];
-      existing.push(like.user_id);
-      likesByPost.set(like.post_id, existing);
-    });
-
-    const likesByComment = new Map<string, string[]>();
-    ((commentLikesData ?? []) as CommentLikeRow[]).forEach((like) => {
-      const existing = likesByComment.get(like.comment_id) || [];
-      existing.push(like.user_id);
-      likesByComment.set(like.comment_id, existing);
-    });
-
     const commentsByPost = new Map<string, FeedComment[]>();
     rawComments.forEach((comment) => {
       const existing = commentsByPost.get(comment.post_id) || [];
-      const commentLikes = likesByComment.get(comment.id) || [];
+      const agg = commentAggregatesMap.get(comment.id) ?? emptyAggregate();
 
       existing.push({
         ...comment,
@@ -2443,10 +2465,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         authorPhotoUrl: profilePhotoMap.get(comment.user_id) || null,
         authorService: profileServiceMap.get(comment.user_id) ?? null,
         authorIsEmployer: profileEmployerMap.get(comment.user_id) ?? null,
-        likeCount: commentLikes.length,
-        likedByCurrentUser: effectiveUserId
-          ? commentLikes.includes(effectiveUserId)
-          : false,
+        likeCount: agg.totalCount,
+        myReaction: agg.myReaction,
+        reactionCountsByType: agg.countsByType,
+        reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(
+          commentReactionRows,
+          comment.id,
+          profileNameMap,
+        ),
       });
 
       commentsByPost.set(comment.post_id, existing);
@@ -2727,7 +2753,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     }
 
     const mergedPosts: FeedPost[] = rawPosts.map((post) => {
-      const likesForPost = likesByPost.get(post.id) || [];
+      const agg = aggregatesMap.get(post.id) ?? emptyAggregate();
+      const likesForPost = agg.userIds;
       const seenLiker = new Set<string>();
       const orderedLikerIds = likesForPost.filter((uid) => {
         if (seenLiker.has(uid)) return false;
@@ -2768,11 +2795,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         authorService: profileServiceMap.get(post.user_id) ?? null,
         authorIsEmployer: profileEmployerMap.get(post.user_id) ?? null,
         authorIsPureAdmin: profilePureAdminMap.get(post.user_id) ?? null,
-        likeCount: likesForPost.length,
+        likeCount: agg.totalCount,
         commentCount: commentsForPost.length,
-        likedByCurrentUser: effectiveUserId
-          ? likesForPost.includes(effectiveUserId)
-          : false,
+        myReaction: agg.myReaction,
+        reactionCountsByType: agg.countsByType,
+        reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(
+          reactionRows,
+          post.id,
+          profileNameMap,
+        ),
         likers,
         comments: commentsForPost,
         og_url: ogData?.og_url ?? null,
@@ -3349,7 +3380,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     });
   }
 
-  async function toggleLike(postId: string, isCurrentlyLiked: boolean) {
+  async function handleFeedPostReaction(postId: string, picked: ReactionType) {
     if (!userId) {
       window.location.href = "/login";
       return;
@@ -3360,59 +3391,44 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       setTogglingLikeFor(postId);
       cancelDelayedLikeNotify(`feed:post:${postId}:${userId}`);
 
-      if (isCurrentlyLiked) {
-        const { error } = await supabase
-          .from("post_likes")
-          .delete()
-          .eq("post_id", postId)
-          .eq("user_id", userId);
+      const priorReaction = postsRef.current.find((p) => p.id === postId)?.myReaction ?? null;
 
-        if (error) {
-          alert(error.message);
-          return;
-        }
-      } else {
-        const { error } = await supabase.from("post_likes").insert([
-          {
-            post_id: postId,
-            user_id: userId,
-          },
-        ]);
+      await applyContentReaction(supabase, {
+        subjectKind: "post",
+        subjectId: postId,
+        userId,
+        picked,
+      });
 
-        if (error) {
-          alert(error.message);
-          return;
-        }
-
-        let post = posts.find((p) => p.id === postId);
-        if (!post) {
-          const { data: row } = await supabase
-            .from("posts")
-            .select("user_id")
-            .eq("id", postId)
-            .maybeSingle();
+      if (picked === "like" && priorReaction !== "like") {
+        let postRow = posts.find((p) => p.id === postId);
+        if (!postRow) {
+          const { data: row } = await supabase.from("posts").select("user_id").eq("id", postId).maybeSingle();
           if (row?.user_id) {
-            post = { user_id: row.user_id } as FeedPost;
+            postRow = { user_id: row.user_id } as FeedPost;
           }
         }
         const actorName = currentUserName?.trim() || "Someone";
-        if (post && post.user_id !== userId) {
-          const recipientId = post.user_id;
+        if (postRow && postRow.user_id !== userId) {
+          const recipientId = postRow.user_id;
           scheduleDelayedLikeNotify(`feed:post:${postId}:${userId}`, () => {
             const p = postsRef.current.find((x) => x.id === postId);
-            if (!p?.likedByCurrentUser) return;
+            if (p?.myReaction !== "like") return;
             return notify(recipientId, `${actorName} liked your post`, recipientId, { type: "feed_like", post_id: postId });
           });
         }
       }
 
       await loadPosts();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save reaction");
     } finally {
       setTogglingLikeFor(null);
     }
   }
 
-  async function toggleCommentLike(commentId: string, isCurrentlyLiked: boolean) {
+  async function handleFeedCommentReaction(commentId: string, picked: ReactionType) {
     if (!userId) {
       window.location.href = "/login";
       return;
@@ -3423,30 +3439,17 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       setTogglingCommentLikeFor(commentId);
       cancelDelayedLikeNotify(`feed:comment:${commentId}:${userId}`);
 
-      if (isCurrentlyLiked) {
-        const { error } = await supabase
-          .from("post_comment_likes")
-          .delete()
-          .eq("comment_id", commentId)
-          .eq("user_id", userId);
+      const priorReaction =
+        postsRef.current.flatMap((p) => p.comments).find((c) => c.id === commentId)?.myReaction ?? null;
 
-        if (error) {
-          alert(error.message);
-          return;
-        }
-      } else {
-        const { error } = await supabase.from("post_comment_likes").insert([
-          {
-            comment_id: commentId,
-            user_id: userId,
-          },
-        ]);
+      await applyContentReaction(supabase, {
+        subjectKind: "post_comment",
+        subjectId: commentId,
+        userId,
+        picked,
+      });
 
-        if (error) {
-          alert(error.message);
-          return;
-        }
-
+      if (picked === "like" && priorReaction !== "like") {
         const comment = posts.flatMap((p) => p.comments).find((c) => c.id === commentId);
         if (comment && comment.user_id !== userId) {
           const ownerPost = posts.find((p) => p.id === comment.post_id);
@@ -3458,14 +3461,20 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             scheduleDelayedLikeNotify(`feed:comment:${commentId}:${userId}`, () => {
               const p = postsRef.current.find((x) => x.id === postIdForComment);
               const c = p?.comments.find((x) => x.id === commentId);
-              if (!c?.likedByCurrentUser) return;
-              return notify(recipientCommentUserId, `${actorName} liked your comment`, ownerId, { type: "feed_comment_like", post_id: postIdForComment });
+              if (c?.myReaction !== "like") return;
+              return notify(recipientCommentUserId, `${actorName} liked your comment`, ownerId, {
+                type: "feed_comment_like",
+                post_id: postIdForComment,
+              });
             });
           }
         }
       }
 
       await loadPosts();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save reaction");
     } finally {
       setTogglingCommentLikeFor(null);
     }
@@ -3994,7 +4003,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       )
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "post_comment_likes" },
+        { event: "*", schema: "public", table: "content_reactions" },
         () => scheduleFeedRefresh()
       )
       .subscribe();
@@ -4165,6 +4174,124 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         ? businessListings.filter((b) => normalizeBizListingTypeForListing(b) !== "resource")
         : businessListings.filter((b) => normalizeBizListingTypeForListing(b) === bizMobileFilter))
     : [];
+
+  const mobileBizPaneListingIdsKey = useMemo(
+    () => businessListingsForPane.map((l) => l.id).join("|"),
+    [businessListingsForPane]
+  );
+
+  const loadBizListingEngagement = React.useCallback(
+    async (listingIds: string[]) => {
+      if (listingIds.length === 0) {
+        setListingCommentsById({});
+        return;
+      }
+      const { data: commentRows } = await supabase
+        .from("resource_comments")
+        .select("id, resource_id, user_id, content, rating, created_at")
+        .in("resource_id", listingIds)
+        .order("created_at", { ascending: true });
+
+      const comments = (commentRows ?? []) as BizListingCommentRow[];
+
+      const uniqueUserIds = Array.from(new Set(comments.map((c) => c.user_id)));
+      let profileMap = new Map<string, BizListingCommentProfile>();
+      if (uniqueUserIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from("profiles")
+          .select("user_id, display_name, first_name, last_name, photo_url")
+          .in("user_id", uniqueUserIds);
+        const profileRows = (profiles ?? []) as BizListingCommentProfile[];
+        profileMap = new Map(profileRows.map((p) => [p.user_id, p]));
+      }
+
+      function profileNameForBizListingComment(p: BizListingCommentProfile | undefined, fallbackUserId: string): string {
+        if (!p) return "Member";
+        const composed = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+        return (
+          p.display_name?.trim() ||
+          composed ||
+          (fallbackUserId === userId ? (currentUserName ?? "You") : "Member")
+        );
+      }
+
+      const commentByListing: Record<string, BizListingComment[]> = {};
+      for (const c of comments) {
+        const row: BizListingComment = {
+          ...c,
+          rating: c.rating === null ? null : Number(c.rating),
+          authorName: profileNameForBizListingComment(profileMap.get(c.user_id), c.user_id),
+          authorPhotoUrl: profileMap.get(c.user_id)?.photo_url ?? null,
+        };
+        if (!commentByListing[c.resource_id]) commentByListing[c.resource_id] = [];
+        commentByListing[c.resource_id].push(row);
+      }
+
+      setListingCommentsById(commentByListing);
+    },
+    [userId, currentUserName]
+  );
+
+  function getBizRatingSummary(listingId: string): {
+    average: number | null;
+    averageRounded: number | null;
+    ratedCount: number;
+  } {
+    const comments = listingCommentsById[listingId] ?? [];
+    const rated = comments.filter((c) => typeof c.rating === "number") as Array<BizListingComment & { rating: number }>;
+    if (rated.length === 0) return { average: null, averageRounded: null, ratedCount: 0 };
+    const average = rated.reduce((sum, row) => sum + row.rating, 0) / rated.length;
+    return {
+      average,
+      averageRounded: roundToNearestHalf(average),
+      ratedCount: rated.length,
+    };
+  }
+
+  async function handleSubmitMobileBizListingComment(listingId: string) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    const content = (listingCommentInputs[listingId] ?? "").trim();
+    if (!content || submittingListingCommentFor === listingId) return;
+    setSubmittingListingCommentFor(listingId);
+    try {
+      await supabase.from("resource_comments").insert({
+        resource_id: listingId,
+        user_id: userId,
+        content,
+        rating: listingCommentRatings[listingId] ?? null,
+      });
+      setListingCommentInputs((prev) => ({ ...prev, [listingId]: "" }));
+      setListingCommentRatings((prev) => ({ ...prev, [listingId]: null }));
+      await loadBizListingEngagement(businessListingsForPane.map((l) => l.id));
+    } finally {
+      setSubmittingListingCommentFor(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!isMobile) return;
+    const ids = mobileBizPaneListingIdsKey ? mobileBizPaneListingIdsKey.split("|") : [];
+    void loadBizListingEngagement(ids);
+  }, [isMobile, userId, mobileBizPaneListingIdsKey, loadBizListingEngagement]);
+
+  useEffect(() => {
+    if (!mobileBizDetailListing) return;
+    const next = businessListings.find((r) => r.id === mobileBizDetailListing.id);
+    if (!next) setMobileBizDetailListing(null);
+    else setMobileBizDetailListing(next);
+  }, [businessListings, mobileBizDetailListing?.id]);
+
+  useEffect(() => {
+    if (!mobileBizDetailListing) return;
+    function onEsc(e: KeyboardEvent) {
+      if (e.key === "Escape") setMobileBizDetailListing(null);
+    }
+    window.addEventListener("keydown", onEsc);
+    return () => window.removeEventListener("keydown", onEsc);
+  }, [mobileBizDetailListing]);
 
   useEffect(() => {
     if (isMobile) return;
@@ -4886,7 +5013,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           />
                         )}
                         <div style={{ marginTop: 9, fontSize: 12, color: t.textMuted }}>
-                          {p.like_count} likes ┬╖ {p.comment_count} comments
+                          {p.like_count} likes · {p.comment_count} comments
                         </div>
                       </div>
                     </div>
@@ -5695,22 +5822,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       )}
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={() => toggleLike(post.id, post.likedByCurrentUser)}
-                      disabled={togglingLikeFor === post.id}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        cursor: togglingLikeFor === post.id ? "not-allowed" : "pointer",
-                        fontWeight: 700,
-                        color: post.likedByCurrentUser ? t.text : t.textMuted,
-                        opacity: togglingLikeFor === post.id ? 0.6 : 1,
-                      }}
-                    >
-                      {post.likedByCurrentUser ? "Unlike" : "Like"}
-                    </button>
+                    <ReactionPickerTrigger
+                      t={t}
+                      disabled={!userId}
+                      viewerReaction={post.myReaction}
+                      totalCount={post.likeCount}
+                      busy={togglingLikeFor === post.id}
+                      showTriggerCount={false}
+                      onPick={(type) => void handleFeedPostReaction(post.id, type)}
+                    />
 
                     <button
                       type="button"
@@ -5729,9 +5849,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
                     {post.likeCount > 0 && <PostLikersStack likers={post.likers} />}
 
-                    <div style={{ fontSize: 14, color: t.textMuted }}>
-                      {post.likeCount} {post.likeCount === 1 ? "like" : "likes"}
-                    </div>
+                    <div style={{ flex: "1 1 24px", minWidth: 0 }} />
+
+                    <ReactionLeaderboard
+                      t={t}
+                      countsByType={post.reactionCountsByType}
+                      reactorNamesByType={post.reactorNamesByType}
+                    />
 
                     <div style={{ fontSize: 14, color: t.textMuted }}>
                       {post.commentCount}{" "}
@@ -6022,39 +6146,29 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                               <div
                                 style={{
                                   display: "flex",
-                                  gap: 14,
+                                  gap: 10,
                                   alignItems: "center",
                                   marginTop: 4,
                                   flexWrap: "wrap",
                                 }}
                               >
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    toggleCommentLike(comment.id, comment.likedByCurrentUser)
+                                <ReactionPickerTrigger
+                                  t={t}
+                                  disabled={!userId}
+                                  viewerReaction={comment.myReaction}
+                                  totalCount={comment.likeCount}
+                                  busy={togglingCommentLikeFor === comment.id}
+                                  showTriggerCount={false}
+                                  onPick={(type) =>
+                                    void handleFeedCommentReaction(comment.id, type)
                                   }
-                                  disabled={togglingCommentLikeFor === comment.id}
-                                  style={{
-                                    background: "transparent",
-                                    border: "none",
-                                    padding: 0,
-                                    cursor:
-                                      togglingCommentLikeFor === comment.id
-                                        ? "not-allowed"
-                                        : "pointer",
-                                    fontWeight: 700,
-                                    color: comment.likedByCurrentUser ? t.text : t.textMuted,
-                                    opacity:
-                                      togglingCommentLikeFor === comment.id ? 0.6 : 1,
-                                  }}
-                                >
-                                  {comment.likedByCurrentUser ? "Unlike" : "Like"}
-                                </button>
-
-                                <div style={{ fontSize: 13, color: t.textMuted }}>
-                                  {comment.likeCount}{" "}
-                                  {comment.likeCount === 1 ? "like" : "likes"}
-                                </div>
+                                />
+                                <div style={{ flex: "1 1 12px", minWidth: 0 }} />
+                                <ReactionLeaderboard
+                                  t={t}
+                                  countsByType={comment.reactionCountsByType}
+                                  reactorNamesByType={comment.reactorNamesByType}
+                                />
                               </div>
                             </div>
                           );
@@ -6827,22 +6941,30 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 listing.custom_blurb || listing.og_description || "Visit website";
 
               const isLiked = likedBizIds.has(listing.id);
+              const comments = listingCommentsById[listing.id] ?? [];
+              const { averageRounded, ratedCount } = getBizRatingSummary(listing.id);
+
               return (
-                <div
+                <article
                   key={listing.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setMobileBizDetailListing(listing)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setMobileBizDetailListing(listing);
+                    }
+                  }}
                   style={{
                     border: `1px solid ${t.border}`,
                     borderRadius: 12,
                     overflow: "hidden",
                     background: t.surface,
+                    cursor: "pointer",
                   }}
                 >
-                  <a
-                    href={listing.website_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ display: "block", textDecoration: "none", color: "inherit" }}
-                  >
+                  <div style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                     {listing.og_image ? (
                       <img
                         src={httpsAssetUrl(listing.og_image)}
@@ -6859,13 +6981,22 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         {displayDescription}
                       </div>
                     </div>
-                  </a>
+                  </div>
                   <div style={{ padding: "0 14px 8px" }}>
                     <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} />
                   </div>
 
-                  <div style={{ padding: "0 14px 12px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <div
+                    style={{
+                      padding: "0 14px 12px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      gap: 10,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", minWidth: 0 }}>
                       {(listing.is_featured || isPermanentlyFeaturedListing(listing)) ? (
                         <span style={{ fontSize: 11, fontWeight: 800, color: "#111", background: "#fef9c3", padding: "2px 8px", borderRadius: 20 }}>
                           Featured
@@ -6874,11 +7005,60 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "capitalize" }}>
                         {normalizeBizListingTypeForListing(listing)}
                       </span>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setMobileBizDetailListing(listing);
+                        }}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          padding: 0,
+                          display: "inline-flex",
+                          gap: 5,
+                          alignItems: "center",
+                          color: t.text,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <span style={{ fontSize: 13, fontWeight: 700 }}>Comment</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>{comments.length}</span>
+                      </button>
+                      <div
+                        style={{ display: "flex", alignItems: "center", gap: 6 }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                        }}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        {averageRounded === null ? (
+                          <span style={{ fontSize: 12, color: t.textMuted }}>No ratings yet</span>
+                        ) : (
+                          <>
+                            <StarRatingDisplay value={averageRounded} size={15} />
+                            <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 700 }}>
+                              {averageRounded.toFixed(1)} ({ratedCount})
+                            </span>
+                          </>
+                        )}
+                      </div>
                     </div>
                     <button
+                      type="button"
                       onClick={(e) => handleBizLike(e, listing.id)}
                       disabled={togglingBizLikeFor === listing.id || !userId}
-                      style={{ background: "none", border: "none", cursor: userId ? "pointer" : "default", display: "flex", alignItems: "center", gap: 5, padding: "4px 0", opacity: togglingBizLikeFor === listing.id ? 0.5 : 1 }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        cursor: userId ? "pointer" : "default",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "4px 0",
+                        opacity: togglingBizLikeFor === listing.id ? 0.5 : 1,
+                      }}
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill={isLiked ? t.text : "none"} stroke={t.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
@@ -6886,7 +7066,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       <span style={{ fontSize: 13, fontWeight: 700 }}>{listing.like_count ?? 0}</span>
                     </button>
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>
@@ -7174,6 +7354,244 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         isTogglingSave={jobDetailsModal ? togglingJobSaveFor === jobDetailsModal.id : false}
         onToggleSave={(j) => toggleSaveJob(j.id)}
       />
+
+      {mobileBizDetailListing && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setMobileBizDetailListing(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            zIndex: 1250,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(760px, 100%)",
+              maxHeight: "88vh",
+              overflowY: "auto",
+              background: t.surface,
+              border: `1px solid ${t.border}`,
+              borderRadius: 14,
+              color: t.text,
+            }}
+          >
+            <div style={{ padding: 16, borderBottom: `1px solid ${t.border}`, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>
+                  {mobileBizDetailListing.og_title ||
+                    mobileBizDetailListing.business_name ||
+                    mobileBizDetailListing.og_site_name ||
+                    "Listing"}
+                </div>
+                <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted }}>
+                  {(listingCommentsById[mobileBizDetailListing.id] ?? []).length} comments
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMobileBizDetailListing(null)}
+                style={{ background: "none", border: "none", color: t.text, fontSize: 24, fontWeight: 800, cursor: "pointer", lineHeight: 1, flexShrink: 0 }}
+              >
+                x
+              </button>
+            </div>
+            {mobileBizDetailListing.og_image ? (
+              <img
+                src={httpsAssetUrl(mobileBizDetailListing.og_image)}
+                alt={mobileBizDetailListing.business_name || "Listing"}
+                style={{ width: "100%", maxHeight: 320, objectFit: "cover", display: "block" }}
+              />
+            ) : null}
+            <div style={{ padding: 16 }}>
+              <div style={{ fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>
+                {mobileBizDetailListing.custom_blurb || mobileBizDetailListing.og_description || "Visit website"}
+              </div>
+              {(mobileBizDetailListing.poc_name ||
+                mobileBizDetailListing.phone_number ||
+                mobileBizDetailListing.contact_email ||
+                mobileBizDetailListing.city_state) && (
+                <div style={{ marginTop: 12, display: "grid", gap: 4 }}>
+                  {mobileBizDetailListing.poc_name && (
+                    <div style={{ fontSize: 13, color: t.textMuted }}>
+                      <span style={{ color: t.text, fontWeight: 700 }}>POC:</span> {mobileBizDetailListing.poc_name}
+                    </div>
+                  )}
+                  {mobileBizDetailListing.phone_number && (
+                    <div style={{ fontSize: 13, color: t.textMuted }}>
+                      <span style={{ color: t.text, fontWeight: 700 }}>Phone:</span> {mobileBizDetailListing.phone_number}
+                    </div>
+                  )}
+                  {mobileBizDetailListing.contact_email && (
+                    <div style={{ fontSize: 13, color: t.textMuted, wordBreak: "break-word" }}>
+                      <span style={{ color: t.text, fontWeight: 700 }}>Email:</span> {mobileBizDetailListing.contact_email}
+                    </div>
+                  )}
+                  {mobileBizDetailListing.city_state && (
+                    <div style={{ fontSize: 13, color: t.textMuted }}>
+                      <span style={{ color: t.text, fontWeight: 700 }}>Location:</span> {mobileBizDetailListing.city_state}
+                    </div>
+                  )}
+                </div>
+              )}
+              <div style={{ marginTop: 10 }}>
+                <BizListingTagChips
+                  tags={coerceTagsFromDb(mobileBizDetailListing.tags)}
+                  maxVisible={coerceTagsFromDb(mobileBizDetailListing.tags).length}
+                />
+              </div>
+              <div style={{ marginTop: 14, display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
+                {(() => {
+                  const { averageRounded, ratedCount } = getBizRatingSummary(mobileBizDetailListing.id);
+                  if (averageRounded === null) {
+                    return <span style={{ fontSize: 13, color: t.textMuted }}>No ratings yet</span>;
+                  }
+                  return (
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                      <StarRatingDisplay value={averageRounded} size={16} />
+                      <span style={{ fontSize: 13, color: t.textMuted, fontWeight: 700 }}>
+                        {averageRounded.toFixed(1)} ({ratedCount})
+                      </span>
+                    </div>
+                  );
+                })()}
+                <div style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center" }}>
+                  <a
+                    href={mobileBizDetailListing.website_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      background: "#2563eb",
+                      color: "white",
+                      borderRadius: 8,
+                      padding: "7px 12px",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      textDecoration: "none",
+                    }}
+                  >
+                    Visit Website
+                  </a>
+                </div>
+              </div>
+              <div style={{ marginTop: 18, borderTop: `1px solid ${t.border}`, paddingTop: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 8 }}>Leave a comment</div>
+                <div style={{ marginBottom: 8 }}>
+                  <StarRatingInput
+                    value={listingCommentRatings[mobileBizDetailListing.id] ?? null}
+                    onChange={(next) =>
+                      setListingCommentRatings((prev) => ({ ...prev, [mobileBizDetailListing.id]: next }))
+                    }
+                  />
+                  <div style={{ marginTop: 4, fontSize: 12, color: t.textMuted }}>Optional rating</div>
+                </div>
+                <textarea
+                  value={listingCommentInputs[mobileBizDetailListing.id] ?? ""}
+                  onChange={(e) =>
+                    setListingCommentInputs((prev) => ({ ...prev, [mobileBizDetailListing.id]: e.target.value }))
+                  }
+                  rows={3}
+                  placeholder="Add your comment"
+                  style={{
+                    width: "100%",
+                    borderRadius: 8,
+                    border: `1px solid ${t.inputBorder}`,
+                    background: t.input,
+                    color: t.text,
+                    fontSize: 13,
+                    boxSizing: "border-box",
+                    padding: "9px 10px",
+                    resize: "vertical",
+                    fontFamily: "inherit",
+                  }}
+                />
+                <div style={{ marginTop: 8, display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    type="button"
+                    onClick={() => void handleSubmitMobileBizListingComment(mobileBizDetailListing.id)}
+                    disabled={
+                      !userId ||
+                      submittingListingCommentFor === mobileBizDetailListing.id ||
+                      !(listingCommentInputs[mobileBizDetailListing.id] ?? "").trim()
+                    }
+                    style={{
+                      background: "#111",
+                      color: "white",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "8px 13px",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: "pointer",
+                      opacity:
+                        !userId ||
+                        submittingListingCommentFor === mobileBizDetailListing.id ||
+                        !(listingCommentInputs[mobileBizDetailListing.id] ?? "").trim()
+                          ? 0.6
+                          : 1,
+                    }}
+                  >
+                    {submittingListingCommentFor === mobileBizDetailListing.id ? "Posting..." : "Post Comment"}
+                  </button>
+                </div>
+              </div>
+              <div style={{ marginTop: 16, display: "grid", gap: 10 }}>
+                {(listingCommentsById[mobileBizDetailListing.id] ?? []).length === 0 ? (
+                  <div style={{ fontSize: 13, color: t.textMuted }}>No comments yet.</div>
+                ) : (
+                  (listingCommentsById[mobileBizDetailListing.id] ?? []).map((comment) => (
+                    <div key={comment.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 10, background: t.bg }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <div
+                          style={{
+                            width: 26,
+                            height: 26,
+                            borderRadius: "50%",
+                            overflow: "hidden",
+                            background: t.border,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 11,
+                            fontWeight: 700,
+                          }}
+                        >
+                          {comment.authorPhotoUrl ? (
+                            <img
+                              src={comment.authorPhotoUrl}
+                              alt={comment.authorName}
+                              style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                            />
+                          ) : (
+                            comment.authorName[0]?.toUpperCase() ?? "M"
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 700 }}>{comment.authorName}</div>
+                        {comment.rating !== null && (
+                          <div style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            <StarRatingDisplay value={comment.rating} size={14} />
+                            <span style={{ fontSize: 12, color: t.textMuted }}>{comment.rating.toFixed(1)}</span>
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 13, lineHeight: 1.45, color: t.text }}>{comment.content}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedFeedEvent && typeof document !== "undefined" &&
         createPortal(
           <div

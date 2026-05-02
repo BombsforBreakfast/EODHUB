@@ -6,6 +6,8 @@ import { useTheme } from "../../lib/ThemeContext";
 import { supabase } from "../../lib/lib/supabaseClient";
 import GifPickerButton from "../../components/GifPickerButton";
 import EmojiPickerButton from "../../components/EmojiPickerButton";
+import { ReactionLeaderboard, ReactionPickerTrigger } from "../../components/ReactionBar";
+import { applyContentReaction, type ReactionType } from "../../lib/reactions";
 import { fetchIsolatedFeedPost, fetchIsolatedUnitPost } from "../lib/dataClient";
 import type { IsolatedComment, IsolatedPost as IsolatedPostData } from "../lib/types";
 
@@ -102,7 +104,7 @@ export default function IsolatedPost({ sourceType, sourcePostId, viewerUserId, c
       setComments(result.comments);
       if (result.post) {
         setLikeCount(result.post.likeCount);
-        setViewerLiked(result.post.viewerLiked);
+        setViewerLiked(sourceType === "unit" ? (result.post.viewerLiked ?? false) : false);
       }
       setLoading(false);
     }
@@ -112,11 +114,34 @@ export default function IsolatedPost({ sourceType, sourcePostId, viewerUserId, c
     };
   }, [sourceType, sourcePostId, viewerUserId]);
 
-  async function toggleLike() {
-    if (!viewerUserId || togglingLike) return;
+  async function handleFeedReactionPick(picked: ReactionType) {
+    if (!viewerUserId || togglingLike || sourceType !== "feed") return;
     setTogglingLike(true);
-    const table = sourceType === "feed" ? "post_likes" : "unit_post_likes";
-    const col = sourceType === "feed" ? "post_id" : "unit_post_id";
+    try {
+      await applyContentReaction(supabase, {
+        subjectKind: "post",
+        subjectId: sourcePostId,
+        userId: viewerUserId,
+        picked,
+      });
+      const refreshed = await fetchIsolatedFeedPost(supabase, sourcePostId, viewerUserId);
+      setPost(refreshed.post);
+      setComments(refreshed.comments);
+      if (refreshed.post) {
+        setLikeCount(refreshed.post.likeCount);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTogglingLike(false);
+    }
+  }
+
+  async function toggleUnitLike() {
+    if (!viewerUserId || togglingLike || sourceType !== "unit") return;
+    setTogglingLike(true);
+    const table = "unit_post_likes";
+    const col = "unit_post_id";
     if (viewerLiked) {
       await supabase.from(table).delete().eq(col, sourcePostId).eq("user_id", viewerUserId);
       setLikeCount((c) => Math.max(0, c - 1));
@@ -365,45 +390,88 @@ export default function IsolatedPost({ sourceType, sourcePostId, viewerUserId, c
             padding: "10px 16px",
             borderTop: `1px solid ${t.border}`,
             flexWrap: "wrap",
+            width: "100%",
+            minWidth: 0,
+            boxSizing: "border-box",
           }}
         >
-          <button
-            type="button"
-            onClick={toggleLike}
-            disabled={!viewerUserId || togglingLike}
-            style={{
-              background: "transparent",
-              border: "none",
-              padding: 0,
-              cursor: viewerUserId ? "pointer" : "default",
-              fontWeight: 700,
-              fontSize: 14,
-              color: viewerLiked ? t.text : (t.textMuted ?? "#94a3b8"),
-            }}
-          >
-            {viewerLiked ? "Unlike" : "Like"}
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowComments((v) => !v)}
-            style={{
-              background: "transparent",
-              border: "none",
-              padding: 0,
-              cursor: "pointer",
-              fontWeight: 700,
-              fontSize: 14,
-              color: t.textMuted ?? "#94a3b8",
-            }}
-          >
-            {showComments ? "Hide comments" : "Comment"}
-          </button>
-          <span style={{ fontSize: 13, color: t.textMuted ?? "#94a3b8" }}>
-            {likeCount} {likeCount === 1 ? "like" : "likes"}
-          </span>
-          <span style={{ fontSize: 13, color: t.textMuted ?? "#94a3b8" }}>
-            {comments.length} {comments.length === 1 ? "comment" : "comments"}
-          </span>
+          {post.sourceType === "feed" ? (
+            <>
+              <ReactionPickerTrigger
+                t={t}
+                disabled={!viewerUserId}
+                viewerReaction={post.myReaction ?? null}
+                totalCount={likeCount}
+                busy={togglingLike}
+                showTriggerCount={false}
+                onPick={(type) => void handleFeedReactionPick(type)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowComments((v) => !v)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  color: t.textMuted ?? "#94a3b8",
+                }}
+              >
+                {showComments ? "Hide comments" : "Comment"}
+              </button>
+              <div style={{ flex: "1 1 24px", minWidth: 0 }} />
+              <ReactionLeaderboard
+                t={t}
+                countsByType={post.reactionCountsByType ?? {}}
+                reactorNamesByType={post.reactorNamesByType ?? {}}
+              />
+              <span style={{ fontSize: 13, color: t.textMuted ?? "#94a3b8" }}>
+                {comments.length} {comments.length === 1 ? "comment" : "comments"}
+              </span>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={toggleUnitLike}
+                disabled={!viewerUserId || togglingLike}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor: viewerUserId ? "pointer" : "default",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  color: viewerLiked ? t.text : (t.textMuted ?? "#94a3b8"),
+                }}
+              >
+                {viewerLiked ? "Unlike" : "Like"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowComments((v) => !v)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor: "pointer",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  color: t.textMuted ?? "#94a3b8",
+                }}
+              >
+                {showComments ? "Hide comments" : "Comment"}
+              </button>
+              <span style={{ fontSize: 13, color: t.textMuted ?? "#94a3b8" }}>
+                {likeCount} {likeCount === 1 ? "like" : "likes"}
+              </span>
+              <span style={{ fontSize: 13, color: t.textMuted ?? "#94a3b8" }}>
+                {comments.length} {comments.length === 1 ? "comment" : "comments"}
+              </span>
+            </>
+          )}
         </div>
 
         {/* Comments section */}

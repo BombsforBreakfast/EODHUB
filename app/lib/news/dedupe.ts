@@ -20,6 +20,12 @@ function sha1(s: string): string {
   return createHash("sha1").update(s).digest("hex");
 }
 
+function mergeDiscoveryQueries(a?: string[], b?: string[]): string[] | undefined {
+  const set = new Set<string>([...(a ?? []), ...(b ?? [])]);
+  if (set.size === 0) return undefined;
+  return [...set];
+}
+
 export function headlineKey(headline: string): string {
   const cleaned = headline
     .toLowerCase()
@@ -77,6 +83,7 @@ export function decorateAndCollapseInBatch(candidates: NewsCandidate[]): NewsCan
     const challengerWeight = (c.source_weight ?? 0) + (c.relevance_score ?? 0) * 0.01;
     const existingWeight = (existing.source_weight ?? 0) + (existing.relevance_score ?? 0) * 0.01;
     if (challengerWeight > existingWeight) {
+      c.matched_discovery_queries = mergeDiscoveryQueries(c.matched_discovery_queries, existing.matched_discovery_queries);
       // Replace pointers so both keys land on the better candidate.
       byKey.set(`d:${dupKey}`, c);
       byKey.set(`h:${composite}`, c);
@@ -84,6 +91,8 @@ export function decorateAndCollapseInBatch(candidates: NewsCandidate[]): NewsCan
       if (existing.dedupe_key && existing.dedupe_key !== dupKey) {
         byKey.set(`d:${existing.dedupe_key}`, c);
       }
+    } else {
+      existing.matched_discovery_queries = mergeDiscoveryQueries(existing.matched_discovery_queries, c.matched_discovery_queries);
     }
   }
 

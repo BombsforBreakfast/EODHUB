@@ -15,6 +15,16 @@ import { MurphyRabbitholeBanner } from "../../../components/MurphyRabbitholeBann
 import FeedPostHeader from "../../../components/FeedPostHeader";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
 import { ensureSavedEventForUser } from "../../../lib/ensureSavedEventForUser";
+import type { Theme } from "../../../lib/theme";
+import { ReactionLeaderboard, ReactionPickerTrigger } from "../../../components/ReactionBar";
+import {
+  aggregatesBySubjectId,
+  applyContentReaction,
+  buildReactorDisplayNamesByTypeForSubject,
+  emptyAggregate,
+  fetchContentReactionsForSubjects,
+  type ReactionType,
+} from "../../../lib/reactions";
 
 const RABBITHOLE_THRESHOLD_BYPASS = true;
 
@@ -61,6 +71,9 @@ type UnitPost = {
   like_count: number;
   comment_count: number;
   user_liked: boolean;
+  myReaction: ReactionType | null;
+  reactionCountsByType: Partial<Record<ReactionType, number>>;
+  reactorNamesByType: Partial<Record<ReactionType, string[]>>;
   approval_count?: number;
   user_voted?: boolean;
   rabbithole_thread_id?: string | null;
@@ -76,6 +89,10 @@ type Comment = {
   author_photo: string | null;
   image_url?: string | null;
   gif_url?: string | null;
+  likeCount: number;
+  myReaction: ReactionType | null;
+  reactionCountsByType: Partial<Record<ReactionType, number>>;
+  reactorNamesByType: Partial<Record<ReactionType, string[]>>;
 };
 
 type Member = {
@@ -194,6 +211,9 @@ export default function UnitPage() {
   const [submittingPost, setSubmittingPost] = useState(false);
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
+  const commentsRef = useRef<Record<string, Comment[]>>({});
+  const [togglingPostReactionFor, setTogglingPostReactionFor] = useState<string | null>(null);
+  const [togglingCommentReactionFor, setTogglingCommentReactionFor] = useState<string | null>(null);
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [isMobile, setIsMobile] = useState(false);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
@@ -271,6 +291,10 @@ export default function UnitPage() {
   }, [posts]);
 
   useEffect(() => {
+    commentsRef.current = comments;
+  }, [comments]);
+
+  useEffect(() => {
     function checkMobile() {
       setIsMobile(window.innerWidth <= 700);
     }
@@ -282,6 +306,118 @@ export default function UnitPage() {
   async function getToken() {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token ?? "";
+  }
+
+  async function hydrateUnitPostCommentReactions(postId: string, list: Comment[]) {
+    const ids = list.map((c) => c.id);
+    let enriched: Comment[] = list.map((c) => ({
+      ...c,
+      likeCount: 0,
+      myReaction: null,
+      reactionCountsByType: {} as Partial<Record<ReactionType, number>>,
+      reactorNamesByType: {} as Partial<Record<ReactionType, string[]>>,
+    }));
+    if (ids.length > 0) {
+      try {
+        const rows = await fetchContentReactionsForSubjects(supabase, "unit_post_comment", ids);
+        const map = aggregatesBySubjectId(rows, currentUserId ?? null);
+        const reactorIds = [...new Set(rows.map((r) => r.user_id))];
+        const reactorNameMap = new Map<string, string>();
+        if (reactorIds.length > 0) {
+          const { data: profs } = await supabase
+            .from("profiles")
+            .select("user_id, display_name, first_name, last_name")
+            .in("user_id", reactorIds);
+          ((profs ?? []) as {
+            user_id: string;
+            display_name: string | null;
+            first_name: string | null;
+            last_name: string | null;
+          }[]).forEach((p) => {
+            reactorNameMap.set(
+              p.user_id,
+              (p.display_name?.trim() || null) ||
+                `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+                "Member",
+            );
+          });
+        }
+        enriched = list.map((c) => {
+          const agg = map.get(c.id) ?? emptyAggregate();
+          return {
+            ...c,
+            likeCount: agg.totalCount,
+            myReaction: agg.myReaction,
+            reactionCountsByType: agg.countsByType,
+            reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(rows, c.id, reactorNameMap),
+          };
+        });
+      } catch (e) {
+        console.error("Unit comment reactions load error:", e);
+      }
+    }
+    setComments((prev) => ({ ...prev, [postId]: enriched }));
+  }
+
+  async function handleUnitCommentReaction(postId: string, commentId: string, picked: ReactionType) {
+    if (!currentUserId) {
+      window.location.href = "/login";
+      return;
+    }
+    if (!membership || membership.status !== "approved") return;
+
+    try {
+      setTogglingCommentReactionFor(commentId);
+      await applyContentReaction(supabase, {
+        subjectKind: "unit_post_comment",
+        subjectId: commentId,
+        userId: currentUserId,
+        picked,
+      });
+      const ids = (commentsRef.current[postId] ?? []).map((c) => c.id);
+      if (ids.length === 0) return;
+      const rows = await fetchContentReactionsForSubjects(supabase, "unit_post_comment", ids);
+      const map = aggregatesBySubjectId(rows, currentUserId);
+      const reactorIds = [...new Set(rows.map((r) => r.user_id))];
+      const reactorNameMap = new Map<string, string>();
+      if (reactorIds.length > 0) {
+        const { data: profs } = await supabase
+          .from("profiles")
+          .select("user_id, display_name, first_name, last_name")
+          .in("user_id", reactorIds);
+        ((profs ?? []) as {
+          user_id: string;
+          display_name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+        }[]).forEach((p) => {
+          reactorNameMap.set(
+            p.user_id,
+            (p.display_name?.trim() || null) ||
+              `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+              "Member",
+          );
+        });
+      }
+      setComments((prev) => ({
+        ...prev,
+        [postId]: (prev[postId] ?? []).map((c) => {
+          const agg = map.get(c.id) ?? emptyAggregate();
+          return {
+            ...c,
+            likeCount: agg.totalCount,
+            myReaction: agg.myReaction,
+            reactionCountsByType: agg.countsByType,
+            reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(rows, c.id, reactorNameMap),
+          };
+        }),
+      }));
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save reaction");
+    } finally {
+      setTogglingCommentReactionFor(null);
+    }
   }
 
   async function loadUnit(uid: string | null, token: string | null) {
@@ -320,7 +456,75 @@ export default function UnitPage() {
     });
     if (res.ok) {
       const json = await res.json();
-      setPosts(json.posts ?? []);
+      const rawPosts = (json.posts ?? []) as UnitPost[];
+      const ids = rawPosts.map((p) => p.id);
+      let reactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
+      try {
+        reactionRows =
+          ids.length > 0
+            ? await fetchContentReactionsForSubjects(supabase, "unit_post", ids)
+            : [];
+      } catch (err) {
+        console.error("Unit post reactions load error:", err);
+      }
+      const reactionMap = aggregatesBySubjectId(reactionRows, currentUserId ?? null);
+      const reactorIds = [...new Set(reactionRows.map((r) => r.user_id))];
+      const reactorNameMap = new Map<string, string>();
+      if (reactorIds.length > 0) {
+        const { data: profs } = await supabase
+          .from("profiles")
+          .select("user_id, display_name, first_name, last_name")
+          .in("user_id", reactorIds);
+        ((profs ?? []) as {
+          user_id: string;
+          display_name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+        }[]).forEach((p) => {
+          reactorNameMap.set(
+            p.user_id,
+            (p.display_name?.trim() || null) ||
+              `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+              "Member",
+          );
+        });
+      }
+      setPosts(
+        rawPosts.map((p) => {
+          const agg = reactionMap.get(p.id) ?? emptyAggregate();
+          return {
+            ...p,
+            like_count: agg.totalCount,
+            user_liked: agg.myReaction === "like",
+            myReaction: agg.myReaction,
+            reactionCountsByType: agg.countsByType,
+            reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(reactionRows, p.id, reactorNameMap),
+          };
+        }),
+      );
+    }
+  }
+
+  async function handleUnitPostReaction(postId: string, picked: ReactionType) {
+    if (!currentUserId) {
+      window.location.href = "/login";
+      return;
+    }
+
+    try {
+      setTogglingPostReactionFor(postId);
+      await applyContentReaction(supabase, {
+        subjectKind: "unit_post",
+        subjectId: postId,
+        userId: currentUserId,
+        picked,
+      });
+      await loadPosts();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save reaction");
+    } finally {
+      setTogglingPostReactionFor(null);
     }
   }
 
@@ -455,7 +659,7 @@ export default function UnitPage() {
         });
         if (res.ok) {
           const json = await res.json();
-          setComments((prev) => ({ ...prev, [unitPostId]: json.comments ?? [] }));
+          await hydrateUnitPostCommentReactions(unitPostId, json.comments ?? []);
         }
       })();
     }
@@ -794,7 +998,7 @@ export default function UnitPage() {
       });
       if (res.ok) {
         const json = await res.json();
-        setComments((prev) => ({ ...prev, [postId]: json.comments ?? [] }));
+        await hydrateUnitPostCommentReactions(postId, json.comments ?? []);
       }
     }
   }
@@ -821,8 +1025,30 @@ export default function UnitPage() {
     });
     if (res.ok) {
       const json = await res.json();
+      const jc = json.comment as {
+        id: string;
+        content?: string;
+        created_at: string;
+        author_name?: string;
+        author_photo?: string | null;
+        image_url?: string | null;
+        gif_url?: string | null;
+      };
+      const padded: Comment = {
+        id: jc.id,
+        content: jc.content ?? "",
+        created_at: jc.created_at,
+        author_name: jc.author_name ?? "Member",
+        author_photo: jc.author_photo ?? null,
+        image_url: jc.image_url,
+        gif_url: jc.gif_url,
+        likeCount: 0,
+        myReaction: null,
+        reactionCountsByType: {},
+        reactorNamesByType: {},
+      };
       setCommentInputs((prev) => ({ ...prev, [postId]: "" }));
-      setComments((prev) => ({ ...prev, [postId]: [...(prev[postId] ?? []), json.comment] }));
+      setComments((prev) => ({ ...prev, [postId]: [...(prev[postId] ?? []), padded] }));
       setPosts((prev) => prev.map((p) => p.id === postId ? { ...p, comment_count: p.comment_count + 1 } : p));
     }
   }
@@ -892,7 +1118,7 @@ export default function UnitPage() {
     });
     if (res.ok) {
       const json = await res.json();
-      setComments((prev) => ({ ...prev, [postId]: json.comments ?? [] }));
+      await hydrateUnitPostCommentReactions(postId, json.comments ?? []);
     }
   }
 
@@ -1211,7 +1437,13 @@ export default function UnitPage() {
                       commentInput={commentInputs[post.id] ?? ""}
                       onCommentInputChange={(v) => setCommentInputs((prev) => ({ ...prev, [post.id]: v }))}
                       expanded={expandedComments.has(post.id)}
-                      onToggleLike={() => toggleLike(post.id)}
+                      togglingPostReactionFor={togglingPostReactionFor}
+                      onPostReaction={(picked) => void handleUnitPostReaction(post.id, picked)}
+                      currentUserId={currentUserId}
+                      togglingCommentReactionFor={togglingCommentReactionFor}
+                      onCommentReaction={(commentId, picked) =>
+                        void handleUnitCommentReaction(post.id, commentId, picked)
+                      }
                       onToggleComments={() => toggleComments(post.id)}
                       onSubmitComment={(imageFile, gifUrl) => submitComment(post.id, imageFile, gifUrl)}
                       canManagePost={canManagePost}
@@ -1612,8 +1844,35 @@ export default function UnitPage() {
                     {(comments[activeGalleryPhoto.id] ?? []).map((c) => (
                       <div key={c.id} style={{ display: "flex", gap: 8 }}>
                         <Avatar photo={c.author_photo} name={c.author_name} size={28} />
-                        <div style={{ minWidth: 0 }}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
                           <div style={{ fontSize: 13, color: t.text }}><strong>{c.author_name}</strong> {c.content}</div>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 10,
+                              alignItems: "center",
+                              marginTop: 6,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <ReactionPickerTrigger
+                              t={t as Theme}
+                              disabled={!currentUserId}
+                              viewerReaction={c.myReaction}
+                              totalCount={c.likeCount}
+                              busy={togglingCommentReactionFor === c.id}
+                              showTriggerCount={false}
+                              onPick={(type) =>
+                                void handleUnitCommentReaction(activeGalleryPhoto.id, c.id, type)
+                              }
+                            />
+                            <div style={{ flex: "1 1 12px", minWidth: 0 }} />
+                            <ReactionLeaderboard
+                              t={t as Theme}
+                              countsByType={c.reactionCountsByType}
+                              reactorNamesByType={c.reactorNamesByType}
+                            />
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -1974,7 +2233,11 @@ function PostCard({
   commentInput,
   onCommentInputChange,
   expanded,
-  onToggleLike,
+  togglingPostReactionFor,
+  onPostReaction,
+  currentUserId,
+  togglingCommentReactionFor,
+  onCommentReaction,
   onToggleComments,
   onSubmitComment,
   canManagePost,
@@ -1998,7 +2261,11 @@ function PostCard({
   commentInput: string;
   onCommentInputChange: (v: string) => void;
   expanded: boolean;
-  onToggleLike: () => void;
+  togglingPostReactionFor: string | null;
+  onPostReaction: (picked: ReactionType) => void;
+  currentUserId: string | null;
+  togglingCommentReactionFor: string | null;
+  onCommentReaction: (commentId: string, picked: ReactionType) => void;
   onToggleComments: () => void;
   onSubmitComment: (imageFile?: File | null, gifUrl?: string | null) => Promise<void>;
   canManagePost: boolean;
@@ -2175,13 +2442,15 @@ function PostCard({
 
       {/* Like / Comment / Rabbithole toolbar */}
       <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
-        <button
-          type="button"
-          onClick={onToggleLike}
-          style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: post.user_liked ? t.text : t.textMuted, fontSize: 14 }}
-        >
-          {post.user_liked ? "Unlike" : "Like"}
-        </button>
+        <ReactionPickerTrigger
+          t={t as Theme}
+          disabled={!currentUserId}
+          viewerReaction={post.myReaction}
+          totalCount={post.like_count}
+          busy={togglingPostReactionFor === post.id}
+          showTriggerCount={false}
+          onPick={onPostReaction}
+        />
         <button
           type="button"
           onClick={onToggleComments}
@@ -2189,7 +2458,11 @@ function PostCard({
         >
           {expanded ? "Hide Comments" : "Comment"}
         </button>
-        <div style={{ fontSize: 14, color: t.textMuted }}>{post.like_count} {post.like_count === 1 ? "like" : "likes"}</div>
+        <ReactionLeaderboard
+          t={t as Theme}
+          countsByType={post.reactionCountsByType}
+          reactorNamesByType={post.reactorNamesByType}
+        />
         <div style={{ fontSize: 14, color: t.textMuted }}>{post.comment_count} {post.comment_count === 1 ? "comment" : "comments"}</div>
 
         {/* Rabbithole button — grouped at right edge */}
@@ -2272,6 +2545,31 @@ function PostCard({
                     <img src={c.gif_url} alt="GIF" style={{ maxWidth: 180, borderRadius: 10, display: "block" }} />
                   </div>
                 )}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "center",
+                    marginTop: 6,
+                    flexWrap: "wrap",
+                  }}
+                >
+                  <ReactionPickerTrigger
+                    t={t as Theme}
+                    disabled={!currentUserId}
+                    viewerReaction={c.myReaction}
+                    totalCount={c.likeCount}
+                    busy={togglingCommentReactionFor === c.id}
+                    showTriggerCount={false}
+                    onPick={(type) => onCommentReaction(c.id, type)}
+                  />
+                  <div style={{ flex: "1 1 12px", minWidth: 0 }} />
+                  <ReactionLeaderboard
+                    t={t as Theme}
+                    countsByType={c.reactionCountsByType}
+                    reactorNamesByType={c.reactorNamesByType}
+                  />
+                </div>
               </div>
             </div>
           ))}

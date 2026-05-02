@@ -26,6 +26,8 @@ export const POSITIVE_TITLE: string[] = [
   "evacuated after bomb threat",
   "pipe bomb",
   "grenade found",
+  "grenade",
+  "grenades",
   "wwii bomb",
   "world war ii bomb",
   "wartime bomb",
@@ -34,6 +36,20 @@ export const POSITIVE_TITLE: string[] = [
   "ordnance disposal",
   "demining",
   "atf explosives",
+  // Law-enforcement / public-safety explosives incidents (headline recall)
+  "explosion kills",
+  "killed in explosion",
+  "fatal explosion",
+  "deputies killed",
+  "lasd",
+  "arson explosives",
+  "arson/explosives",
+  "explosives detail",
+  "special enforcement bureau",
+  "police explosives unit",
+  "military explosive",
+  "ammunition disposal",
+  "hazmat and explosives",
 ];
 
 /** Same keywords, lower weight when found only in summary/snippet. */
@@ -53,12 +69,43 @@ export const POSITIVE_BODY: string[] = [
   "munitions",
   "post-blast",
   "robot deployed",
+  "live grenade",
+  "hand grenade",
+  "training facility",
+  "explosives bureau",
+  "explosives section",
+  "arson and explosives",
+];
+
+/**
+ * Extra relevance for sheriff / LE explosives-unit vocabulary (counts in
+ * addition to POSITIVE_* tallies; capped in scoring).
+ */
+export const LE_EXPLOSIVES_BOOST: string[] = [
+  "arson/explosives",
+  "arson explosives",
+  "explosives detail",
+  "special enforcement bureau",
+  "lasd",
+  "police explosives unit",
+  "bomb squad",
+  "grenade",
+  "grenades",
+  "training facility",
+  "deputies killed",
+  "sheriff's deputies",
+  "explosive device",
+  "controlled detonation",
+  "render safe",
+  "post-blast",
 ];
 
 /** Context words that boost military / law-enforcement framing. */
 export const LE_MIL_CONTEXT: string[] = [
   "police",
   "sheriff",
+  "deputy",
+  "deputies",
   "trooper",
   "fbi",
   "atf",
@@ -109,6 +156,12 @@ export const NEGATIVE_PHRASES: string[] = [
   // unrelated acronym collisions
   "improvised electronic device",
   "ied team building",
+  "bomb cyclone",
+  "box office bomb",
+  "blew up online",
+  "sports bomb",
+  "fantasy football",
+  "bomb recipe",
 ];
 
 /** Domains permitted in the satire lane. Items from these sources get the satire badge. */
@@ -133,6 +186,9 @@ export const SCORE = {
   // Lowered from 3 → 1: LE/military framing is too common (any base story
   // mentions "navy"/"military"/"department"). It's a tiebreaker, not a signal.
   contextBonus: 1,
+  /** Per matched LE_EXPLOSIVES_BOOST needle (title+body combined). */
+  leBoostPerHit: 2,
+  leBoostMax: 10,
   freshnessUnder6h: 4,
   freshnessUnder24h: 2,
   freshnessOver72hPenalty: -5,

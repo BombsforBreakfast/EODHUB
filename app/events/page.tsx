@@ -11,6 +11,24 @@ import { EventAttendeesListModal } from "../components/events/EventAttendeesList
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
 import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import type { PostLikerBrief } from "../components/PostLikersStack";
+import { ReactionLeaderboard, ReactionPickerTrigger } from "../components/ReactionBar";
+import {
+  aggregatesBySubjectId,
+  applyContentReaction,
+  buildReactorDisplayNamesByTypeForSubject,
+  emptyAggregate,
+  fetchContentReactionsForSubjects,
+  type ReactionAggregate,
+  type ReactionType,
+} from "../lib/reactions";
+
+type EventReactionBundle = ReactionAggregate & {
+  reactorNamesByType: Partial<Record<ReactionType, string[]>>;
+};
+
+function emptyEventReactionBundle(): EventReactionBundle {
+  return { ...emptyAggregate(), reactorNamesByType: {} };
+}
 
 type CalendarEvent = {
   id: string;
@@ -56,6 +74,23 @@ type InviteUser = {
   photo_url: string | null;
   service: string | null;
 };
+
+/** Calendar upcoming-list comment row (public events only). */
+type EventCalendarComment = {
+  id: string;
+  event_id: string;
+  user_id: string;
+  content: string;
+  created_at: string;
+  authorName: string;
+  authorPhotoUrl: string | null;
+  likeCount: number;
+  myReaction: ReactionType | null;
+  reactionCountsByType: Partial<Record<ReactionType, number>>;
+  reactorNamesByType: Partial<Record<ReactionType, string[]>>;
+};
+
+const MAX_EVENT_COMMENT_CHARS = 4000;
 
 const INVITE_BRANCHES = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal"];
 const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
@@ -152,6 +187,12 @@ function isMissingDbColumn(err: unknown, column: string): boolean {
   return m.includes(column.toLowerCase()) && (m.includes("column") || m.includes("schema"));
 }
 
+function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error) return err.message;
+  const message = (err as { message?: unknown } | null)?.message;
+  return typeof message === "string" && message.trim() ? message : fallback;
+}
+
 export default function EventsPage() {
   // useSearchParams must be inside a Suspense boundary so Next.js doesn't
   // bail the whole route out of static rendering at build time.
@@ -201,6 +242,15 @@ function EventsPageInner() {
   const [myAttendance, setMyAttendance] = useState<Record<string, "interested" | "going" | null>>({});
   const [attendeesListModal, setAttendeesListModal] = useState<{ eventId: string; status: "interested" | "going" } | null>(null);
   const [attendeePreviews, setAttendeePreviews] = useState<Record<string, { going: PostLikerBrief[]; interested: PostLikerBrief[] }>>({});
+
+  const [eventReactionsByEventId, setEventReactionsByEventId] = useState<Record<string, EventReactionBundle>>({});
+  const [togglingEventReactionFor, setTogglingEventReactionFor] = useState<string | null>(null);
+  const [eventCommentsByEventId, setEventCommentsByEventId] = useState<Record<string, EventCalendarComment[]>>({});
+  const [openEventCommentComposer, setOpenEventCommentComposer] = useState<Record<string, boolean>>({});
+  const [eventCommentInputs, setEventCommentInputs] = useState<Record<string, string>>({});
+  const [submittingEventCommentFor, setSubmittingEventCommentFor] = useState<string | null>(null);
+  const [deletingEventCommentId, setDeletingEventCommentId] = useState<string | null>(null);
+  const [togglingEventCommentReactionFor, setTogglingEventCommentReactionFor] = useState<string | null>(null);
 
   const [showEventForm, setShowEventForm] = useState(false);
   const [eventForm, setEventForm] = useState({
@@ -276,6 +326,154 @@ function EventsPageInner() {
     for (let i = 1; i <= daysInMonth; i++) cells.push(new Date(year, month, i));
     return cells;
   }, [calendarView, calendarDayDate, weekStart, year, month, daysInMonth, firstDayOfMonth]);
+
+  const loadEventReactionsForEvents = useCallback(
+    async (eventIds: string[]) => {
+      if (eventIds.length === 0) {
+        setEventReactionsByEventId({});
+        return;
+      }
+
+      try {
+        const rows = await fetchContentReactionsForSubjects(supabase, "event", eventIds);
+        const aggregates = aggregatesBySubjectId(rows, userId);
+        const reactorIds = [...new Set(rows.map((r) => r.user_id))];
+        const { data: profRows } =
+          reactorIds.length > 0
+            ? await supabase
+                .from("profiles")
+                .select("user_id, display_name, first_name, last_name")
+                .in("user_id", reactorIds)
+            : { data: [] };
+        const eventNameMap = new Map<string, string>();
+        ((profRows ?? []) as {
+          user_id: string;
+          display_name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+        }[]).forEach((p) => {
+          eventNameMap.set(
+            p.user_id,
+            (p.display_name?.trim() || null) ||
+              `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+              "Member",
+          );
+        });
+        setEventReactionsByEventId((prev) => {
+          const next = { ...prev };
+          for (const id of eventIds) {
+            const agg = aggregates.get(id) ?? emptyAggregate();
+            next[id] = {
+              ...agg,
+              reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(rows, id, eventNameMap),
+            };
+          }
+          return next;
+        });
+      } catch (err) {
+        console.error("Event reactions load error:", err);
+      }
+    },
+    [userId],
+  );
+
+  const loadEventCommentsForEvents = useCallback(
+    async (eventIds: string[]) => {
+      if (eventIds.length === 0) {
+        setEventCommentsByEventId({});
+        return;
+      }
+
+      const { data: rows, error } = await supabase
+        .from("event_comments")
+        .select("id, event_id, user_id, content, created_at")
+        .in("event_id", eventIds)
+        .order("created_at", { ascending: true });
+
+      if (error) {
+        console.error("Event comments load error:", error);
+        return;
+      }
+
+      const raw = (rows ?? []) as {
+        id: string;
+        event_id: string;
+        user_id: string;
+        content: string;
+        created_at: string;
+      }[];
+
+      const commentIds = raw.map((r) => r.id);
+      const authorIds = [...new Set(raw.map((r) => r.user_id))];
+
+      let reactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
+      try {
+        reactionRows =
+          commentIds.length > 0
+            ? await fetchContentReactionsForSubjects(supabase, "event_comment", commentIds)
+            : [];
+      } catch (reactionsErr) {
+        console.error("Event comment reactions load error:", reactionsErr);
+      }
+
+      const reactorIdsFromComments = [...new Set(reactionRows.map((r) => r.user_id))];
+      const profileIds = [...new Set([...authorIds, ...reactorIdsFromComments])];
+
+      const { data: profileData } =
+        profileIds.length > 0
+          ? await supabase
+              .from("profiles")
+              .select("user_id, display_name, first_name, last_name, photo_url")
+              .in("user_id", profileIds)
+          : { data: [] };
+
+      const nameMap = new Map<string, string>();
+      const photoMap = new Map<string, string | null>();
+      ((profileData ?? []) as {
+        user_id: string;
+        display_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        photo_url: string | null;
+      }[]).forEach((p) => {
+        nameMap.set(
+          p.user_id,
+          p.display_name?.trim() ||
+            `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+            "Member",
+        );
+        photoMap.set(p.user_id, p.photo_url ?? null);
+      });
+
+      const aggBySubject = aggregatesBySubjectId(reactionRows, userId);
+
+      const byEvent = new Map<string, EventCalendarComment[]>();
+      for (const r of raw) {
+        const agg = aggBySubject.get(r.id) ?? emptyAggregate();
+        const row: EventCalendarComment = {
+          ...r,
+          authorName: nameMap.get(r.user_id) || "Member",
+          authorPhotoUrl: photoMap.get(r.user_id) ?? null,
+          likeCount: agg.totalCount,
+          myReaction: agg.myReaction,
+          reactionCountsByType: agg.countsByType,
+          reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(reactionRows, r.id, nameMap),
+        };
+        const list = byEvent.get(r.event_id) ?? [];
+        list.push(row);
+        byEvent.set(r.event_id, list);
+      }
+
+      setEventCommentsByEventId((prev) => {
+        const next = { ...prev };
+        for (const eid of eventIds) {
+          next[eid] = byEvent.get(eid) ?? [];
+        }
+        return next;
+      });
+    },
+    [userId],
+  );
 
   const todayStr = initialTodayStr;
 
@@ -471,6 +669,114 @@ function EventsPageInner() {
     setAllUpcomingEvents(result);
     if (result.length > 0) {
       await loadAttendance(result.map((e) => e.id), userId);
+      await loadEventReactionsForEvents(result.map((e) => e.id));
+    } else {
+      setEventCommentsByEventId({});
+      setEventReactionsByEventId({});
+    }
+  }
+
+  function toggleEventCommentComposer(eventId: string) {
+    setOpenEventCommentComposer((prev) => ({ ...prev, [eventId]: !prev[eventId] }));
+  }
+
+  async function handleEventReaction(eventId: string, picked: ReactionType) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+
+    try {
+      setTogglingEventReactionFor(eventId);
+      await applyContentReaction(supabase, {
+        subjectKind: "event",
+        subjectId: eventId,
+        userId,
+        picked,
+      });
+      await loadEventReactionsForEvents([eventId]);
+    } catch (err) {
+      console.error(err);
+      alert(errorMessage(err, "Could not save reaction."));
+    } finally {
+      setTogglingEventReactionFor(null);
+    }
+  }
+
+  async function submitEventCalendarComment(eventId: string) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    const text = (eventCommentInputs[eventId] ?? "").trim();
+    if (!text) return;
+    if (text.length > MAX_EVENT_COMMENT_CHARS) {
+      alert(`Comment must be ${MAX_EVENT_COMMENT_CHARS} characters or fewer.`);
+      return;
+    }
+    try {
+      setSubmittingEventCommentFor(eventId);
+      const { error } = await supabase.from("event_comments").insert({
+        event_id: eventId,
+        user_id: userId,
+        content: text,
+      });
+      if (error) throw error;
+      setEventCommentInputs((prev) => ({ ...prev, [eventId]: "" }));
+      setOpenEventCommentComposer((prev) => ({ ...prev, [eventId]: false }));
+      await loadEventCommentsForEvents([eventId]);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not post comment.");
+    } finally {
+      setSubmittingEventCommentFor(null);
+    }
+  }
+
+  async function handleEventCalendarCommentReaction(
+    eventId: string,
+    commentId: string,
+    picked: ReactionType,
+  ) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+
+    try {
+      setTogglingEventCommentReactionFor(commentId);
+      await applyContentReaction(supabase, {
+        subjectKind: "event_comment",
+        subjectId: commentId,
+        userId,
+        picked,
+      });
+      await loadEventCommentsForEvents([eventId]);
+    } catch (err) {
+      console.error(err);
+      alert(errorMessage(err, "Could not save reaction."));
+    } finally {
+      setTogglingEventCommentReactionFor(null);
+    }
+  }
+
+  async function deleteEventCalendarComment(eventId: string, commentId: string) {
+    if (!userId) return;
+    if (!window.confirm("Delete this comment?")) return;
+    try {
+      setDeletingEventCommentId(commentId);
+      const { error } = await supabase
+        .from("event_comments")
+        .delete()
+        .eq("id", commentId)
+        .eq("user_id", userId);
+      if (error) throw error;
+      await loadEventCommentsForEvents([eventId]);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not delete.");
+    } finally {
+      setDeletingEventCommentId(null);
     }
   }
 
@@ -1113,6 +1419,35 @@ function EventsPageInner() {
       void supabase.removeChannel(ch);
     };
   }, [selectedEvent?.id]);
+
+  useEffect(() => {
+    if (allUpcomingEvents.length === 0) return;
+    void loadEventCommentsForEvents(allUpcomingEvents.map((e) => e.id));
+  }, [loadEventCommentsForEvents, allUpcomingEvents]);
+
+  useEffect(() => {
+    const ids = allUpcomingEvents.map((e) => e.id);
+    if (ids.length === 0) return;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleReload = () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        void loadEventCommentsForEvents(ids);
+      }, 450);
+    };
+    const channel = supabase
+      .channel("events-calendar-comments-live")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "event_comments" },
+        scheduleReload,
+      )
+      .subscribe();
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      void supabase.removeChannel(channel);
+    };
+  }, [allUpcomingEvents, loadEventCommentsForEvents]);
 
   // NOTE: keep ALL hook calls above the early `return` below — React requires a
   // stable hook order across renders, so any useMemo/useCallback declared after
@@ -2394,6 +2729,10 @@ function EventsPageInner() {
               const tomorrowStr = toDateStr(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate());
               const isTomorrow = ev.date === tomorrowStr;
               const dayLabel = isToday ? "Today" : isTomorrow ? "Tomorrow" : null;
+              const eventReaction = eventReactionsByEventId[ev.id] ?? emptyEventReactionBundle();
+              const eventComments = eventCommentsByEventId[ev.id] ?? [];
+              const composerOpen = Boolean(openEventCommentComposer[ev.id]);
+              const commentsVisible = eventComments.length > 0 || composerOpen;
 
               return (
                 <div
@@ -2421,96 +2760,420 @@ function EventsPageInner() {
                     )}
                   </div>
 
-                  {ev.image_url ? (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedEvent(ev)}
-                      onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.04)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-                      aria-label={`Open details for ${ev.title}`}
-                      style={{
-                        flexShrink: 0,
-                        width: 88,
-                        height: 88,
-                        borderRadius: 10,
-                        overflow: "hidden",
-                        border: `1px solid ${t.border}`,
-                        background: t.bg,
-                        padding: 0,
-                        cursor: "pointer",
-                        transition: "transform 120ms ease",
-                        transformOrigin: "center",
-                      }}
-                    >
-                      <img src={httpsAssetUrl(ev.image_url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                    </button>
-                  ) : null}
+                  <div
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 12,
+                      alignItems: "stretch",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                      {ev.image_url ? (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedEvent(ev)}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.04)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+                          aria-label={`Open details for ${ev.title}`}
+                          style={{
+                            flexShrink: 0,
+                            width: 88,
+                            height: 88,
+                            borderRadius: 10,
+                            overflow: "hidden",
+                            border: `1px solid ${t.border}`,
+                            background: t.bg,
+                            padding: 0,
+                            cursor: "pointer",
+                            transition: "transform 120ms ease",
+                            transformOrigin: "center",
+                          }}
+                        >
+                          <img src={httpsAssetUrl(ev.image_url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        </button>
+                      ) : null}
 
-                  {/* Event details */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedEvent(ev)}
-                      onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.04)"; }}
-                      onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        margin: 0,
-                        cursor: "pointer",
-                        textAlign: "left",
-                        font: "inherit",
-                        color: t.text,
-                        fontWeight: 800,
-                        fontSize: 16,
-                        lineHeight: 1.2,
-                        transition: "transform 120ms ease",
-                        transformOrigin: "left center",
-                        display: "inline-block",
-                      }}
-                    >
-                      {ev.title}
-                    </button>
-                    {ev.organization && (
-                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>{ev.organization}</div>
-                    )}
-                    {ev.description && (
-                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
-                        {ev.description}
+                      {/* Title / host / description only — actions sit below full-width */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedEvent(ev)}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = "scale(1.04)"; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = "scale(1)"; }}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            padding: 0,
+                            margin: 0,
+                            cursor: "pointer",
+                            textAlign: "left",
+                            font: "inherit",
+                            color: t.text,
+                            fontWeight: 800,
+                            fontSize: 16,
+                            lineHeight: 1.2,
+                            transition: "transform 120ms ease",
+                            transformOrigin: "left center",
+                            display: "inline-block",
+                          }}
+                        >
+                          {ev.title}
+                        </button>
+                        {ev.organization && (
+                          <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>{ev.organization}</div>
+                        )}
+                        {ev.description && (
+                          <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                            {ev.description}
+                          </div>
+                        )}
                       </div>
-                    )}
+                    </div>
 
-                    <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    {/* Row 1: RSVP + react + summary — left-aligned, same with or without thumbnail */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 8,
+                        alignItems: "center",
+                        justifyContent: "flex-start",
+                        width: "100%",
+                      }}
+                    >
                       <button
                         type="button"
                         onClick={() => toggleAttendance(ev.id, "interested")}
-                        style={{ background: myAttendance[ev.id] === "interested" ? t.text : t.surface, color: myAttendance[ev.id] === "interested" ? t.surface : t.textMuted, border: `1px solid ${t.border}`, borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                        style={{
+                          background: myAttendance[ev.id] === "interested" ? t.text : t.surface,
+                          color: myAttendance[ev.id] === "interested" ? t.surface : t.textMuted,
+                          border: `1px solid ${t.border}`,
+                          borderRadius: 8,
+                          padding: "5px 12px",
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: "pointer",
+                        }}
                       >
-                        Interested {(attendance[ev.id]?.interested ?? 0) > 0 ? `· ${attendance[ev.id].interested}` : ""}
+                        Interested
                       </button>
                       <button
                         type="button"
                         onClick={() => toggleAttendance(ev.id, "going")}
-                        style={{ background: myAttendance[ev.id] === "going" ? t.text : t.surface, color: myAttendance[ev.id] === "going" ? t.surface : t.textMuted, border: `1px solid ${t.border}`, borderRadius: 8, padding: "5px 12px", fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                        style={{
+                          background: myAttendance[ev.id] === "going" ? t.text : t.surface,
+                          color: myAttendance[ev.id] === "going" ? t.surface : t.textMuted,
+                          border: `1px solid ${t.border}`,
+                          borderRadius: 8,
+                          padding: "5px 12px",
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: "pointer",
+                        }}
                       >
-                        Going {(attendance[ev.id]?.going ?? 0) > 0 ? `· ${attendance[ev.id].going}` : ""}
+                        Going
                       </button>
                       {userId && (
                         <button
                           type="button"
                           onClick={() => openEventInvite(ev)}
-                          style={{ background: t.badgeBg, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: "pointer" }}
+                          style={{
+                            background: t.badgeBg,
+                            color: t.text,
+                            border: `1px solid ${t.border}`,
+                            borderRadius: 8,
+                            padding: "5px 12px",
+                            fontWeight: 800,
+                            fontSize: 12,
+                            cursor: "pointer",
+                          }}
                         >
                           Invite
                         </button>
                       )}
+                      <ReactionPickerTrigger
+                        t={t}
+                        disabled={!userId}
+                        viewerReaction={eventReaction.myReaction}
+                        totalCount={eventReaction.totalCount}
+                        busy={togglingEventReactionFor === ev.id}
+                        showTriggerCount={false}
+                        pickerOffsetX="-68%"
+                        onPick={(type) => void handleEventReaction(ev.id, type)}
+                      />
+                    </div>
+
+                    {/* Row 2: Comment + Website + reaction summary */}
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 14,
+                        alignItems: "center",
+                        justifyContent: "flex-start",
+                        width: "100%",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleEventCommentComposer(ev.id)}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          padding: "2px 0",
+                          cursor: "pointer",
+                          fontWeight: 800,
+                          fontSize: 13,
+                          color: composerOpen ? t.text : t.textMuted,
+                        }}
+                      >
+                        Comment
+                      </button>
                       {ev.signup_url && (
-                        <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: isDark ? "#60a5fa" : "#1d4ed8", textDecoration: "none" }}>
+                        <a
+                          href={ev.signup_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: isDark ? "#60a5fa" : "#1d4ed8",
+                            textDecoration: "none",
+                          }}
+                        >
                           Website ↗
                         </a>
                       )}
+                      <ReactionLeaderboard
+                        t={t}
+                        countsByType={eventReaction.countsByType}
+                        reactorNamesByType={eventReaction.reactorNamesByType}
+                      />
                     </div>
+
+                    {commentsVisible && (
+                    <div
+                      style={{
+                        paddingTop: 12,
+                        borderTop: `1px solid ${t.borderLight}`,
+                      }}
+                    >
+                      <div style={{ fontSize: 12, fontWeight: 800, color: t.textMuted, marginBottom: 8 }}>
+                        Comments{" "}
+                        {eventComments.length > 0
+                          ? `(${eventComments.length})`
+                          : ""}
+                      </div>
+                      <div
+                        style={{
+                          maxHeight: 280,
+                          overflowY: "auto",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 12,
+                          paddingRight: 4,
+                        }}
+                      >
+                        {eventComments.map((c) => (
+                          <div key={c.id} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                            <div
+                              style={{
+                                width: 32,
+                                height: 32,
+                                borderRadius: "50%",
+                                overflow: "hidden",
+                                flexShrink: 0,
+                                background: "#1f2937",
+                                color: "#fff",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                fontWeight: 800,
+                                fontSize: 13,
+                              }}
+                            >
+                              {c.authorPhotoUrl ? (
+                                <img src={c.authorPhotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                              ) : (
+                                (c.authorName[0] || "?").toUpperCase()
+                              )}
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
+                                <span style={{ fontWeight: 800, fontSize: 13, color: t.text }}>{c.authorName}</span>
+                                <span style={{ fontSize: 11, color: t.textFaint, flexShrink: 0 }}>
+                                  {new Date(c.created_at).toLocaleString(undefined, {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "numeric",
+                                    minute: "2-digit",
+                                  })}
+                                </span>
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 13,
+                                  lineHeight: 1.45,
+                                  marginTop: 4,
+                                  whiteSpace: "pre-wrap",
+                                  overflowWrap: "anywhere",
+                                  color: t.text,
+                                }}
+                              >
+                                {c.content}
+                              </div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 12,
+                                  marginTop: 6,
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <ReactionPickerTrigger
+                                  t={t}
+                                  disabled={!userId}
+                                  viewerReaction={c.myReaction}
+                                  totalCount={c.likeCount}
+                                  busy={togglingEventCommentReactionFor === c.id}
+                                  showTriggerCount={false}
+                                pickerOffsetX="-68%"
+                                  onPick={(type) =>
+                                    void handleEventCalendarCommentReaction(ev.id, c.id, type)
+                                  }
+                                />
+                                {userId === c.user_id && (
+                                  <button
+                                    type="button"
+                                    onClick={() => void deleteEventCalendarComment(ev.id, c.id)}
+                                    disabled={deletingEventCommentId === c.id}
+                                    style={{
+                                      background: "transparent",
+                                      border: "none",
+                                      padding: 0,
+                                      cursor: deletingEventCommentId === c.id ? "not-allowed" : "pointer",
+                                      fontWeight: 700,
+                                      fontSize: 11,
+                                      color: t.textMuted,
+                                      opacity: deletingEventCommentId === c.id ? 0.6 : 1,
+                                    }}
+                                  >
+                                    {deletingEventCommentId === c.id ? "…" : "Delete"}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div
+                              style={{
+                                flexShrink: 0,
+                                display: "flex",
+                                flexDirection: "column",
+                                alignItems: "flex-end",
+                                gap: 4,
+                                paddingTop: 2,
+                                minWidth: 70,
+                              }}
+                            >
+                              <ReactionLeaderboard
+                              t={t}
+                              countsByType={c.reactionCountsByType}
+                              reactorNamesByType={c.reactorNamesByType}
+                            />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {composerOpen ? (
+                      userId ? (
+                        <div style={{ marginTop: 12 }}>
+                          <textarea
+                            value={eventCommentInputs[ev.id] ?? ""}
+                            onChange={(e) =>
+                              setEventCommentInputs((prev) => ({
+                                ...prev,
+                                [ev.id]: e.target.value.slice(0, MAX_EVENT_COMMENT_CHARS),
+                              }))
+                            }
+                            placeholder="Write a comment…"
+                            rows={2}
+                            style={{
+                              width: "100%",
+                              boxSizing: "border-box",
+                              borderRadius: 10,
+                              border: `1px solid ${t.border}`,
+                              background: t.input,
+                              color: t.text,
+                              padding: "8px 12px",
+                              fontSize: 13,
+                              resize: "vertical",
+                              outline: "none",
+                              minHeight: 52,
+                              fontFamily: "inherit",
+                            }}
+                          />
+                          <div
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "space-between",
+                              gap: 10,
+                              marginTop: 8,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <span style={{ fontSize: 11, color: t.textFaint }}>
+                              {MAX_EVENT_COMMENT_CHARS - (eventCommentInputs[ev.id] ?? "").length} left
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void submitEventCalendarComment(ev.id)}
+                              disabled={
+                                submittingEventCommentFor === ev.id ||
+                                !(eventCommentInputs[ev.id] ?? "").trim()
+                              }
+                              style={{
+                                border: "none",
+                                borderRadius: 10,
+                                padding: "8px 16px",
+                                fontWeight: 800,
+                                fontSize: 13,
+                                cursor:
+                                  submittingEventCommentFor === ev.id ||
+                                  !(eventCommentInputs[ev.id] ?? "").trim()
+                                    ? "not-allowed"
+                                    : "pointer",
+                                background:
+                                  submittingEventCommentFor === ev.id ||
+                                  !(eventCommentInputs[ev.id] ?? "").trim()
+                                    ? t.badgeBg
+                                    : "#111",
+                                color:
+                                  submittingEventCommentFor === ev.id ||
+                                  !(eventCommentInputs[ev.id] ?? "").trim()
+                                    ? t.textMuted
+                                    : "#fff",
+                                opacity: submittingEventCommentFor === ev.id ? 0.75 : 1,
+                              }}
+                            >
+                              {submittingEventCommentFor === ev.id ? "Posting…" : "Post"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 10, fontSize: 12, color: t.textMuted }}>
+                          <a href="/login" style={{ color: isDark ? "#60a5fa" : "#1d4ed8", fontWeight: 700 }}>
+                            Sign in
+                          </a>{" "}
+                          to comment.
+                        </div>
+                      )) : null}
+                    </div>
+                    )}
                   </div>
                 </div>
               );

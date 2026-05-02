@@ -172,6 +172,44 @@ export default function ResourcesPage() {
     };
   }, []);
 
+  async function refreshApprovedListings() {
+    const { data, error } = await supabase
+      .from("business_listings")
+      .select(BUSINESS_LISTING_COLUMNS)
+      .eq("is_approved", true)
+      .order("is_featured", { ascending: false })
+      .order("business_name", { ascending: true, nullsFirst: false })
+      .limit(500);
+
+    let combined = (data ?? []) as BusinessListing[];
+
+    const { data: resourceFallback } = await supabase
+      .from("business_listings")
+      .select(BUSINESS_LISTING_COLUMNS)
+      .or(
+        "website_url.ilike.*thelongwalkhome.org*,website_url.ilike.*eod-wf.org*,website_url.ilike.*eodwarriorfoundation.org*,business_name.ilike.*long walk*,business_name.ilike.*eod warrior foundation*"
+      )
+      .limit(10);
+
+    if ((resourceFallback ?? []).length > 0) {
+      const byId = new Map<string, BusinessListing>();
+      combined.forEach((r) => byId.set(r.id, r));
+      (resourceFallback as BusinessListing[]).forEach((r) => byId.set(r.id, r));
+      combined = Array.from(byId.values());
+    }
+
+    if (error && combined.length === 0) {
+      console.error("Resources list refresh error:", error);
+      return;
+    }
+
+    setListings(combined);
+    setSelectedResource((prev) => {
+      if (!prev) return null;
+      return combined.find((r) => r.id === prev.id) ?? null;
+    });
+  }
+
   function handleResourceUrlChange(value: string) {
     setResourceUrl(value);
     setResourceOgPreview(null);
@@ -325,6 +363,7 @@ export default function ResourcesPage() {
         alert(error.message);
         return;
       }
+      await refreshApprovedListings();
       setResourceSubmitSuccess(true);
       setResourceUrl("");
       setResourceName("");

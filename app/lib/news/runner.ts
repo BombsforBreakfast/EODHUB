@@ -14,7 +14,14 @@ import type { SupabaseClient as SupaClient } from "@supabase/supabase-js";
 
 import { feedsProvider } from "./providers/feeds";
 import { discoveryProvider } from "./providers/discovery";
-import { scoreCandidate, passesThreshold, analyzeCandidate, type ScoreBreakdown } from "./scoring";
+import {
+  scoreCandidate,
+  passesThreshold,
+  analyzeCandidate,
+  buildNewsIntakeDebug,
+  type ScoreBreakdown,
+  type NewsIntakeDebug,
+} from "./scoring";
 import { computeDedupeKey, decorateAndCollapseInBatch, filterAgainstRecent, headlineKey } from "./dedupe";
 import { fetchBodiesConcurrent } from "./fetchBody";
 import type { IngestionStats, NewsCandidate } from "./types";
@@ -31,6 +38,8 @@ export type PreviewCandidate = {
   source_weight: number;
   dedupe_key: string;
   breakdown: ScoreBreakdown;
+  /** Discovery query or feed lane provenance + matched vocabulary (mirrors DB `raw_payload.intake_debug`). */
+  intake_debug?: NewsIntakeDebug;
   /** True if the runner pulled the article body and re-scored against it. */
   enriched_from_body: boolean;
   /** Score from headline+snippet only, before the body fetch ran (if it ran). */
@@ -47,12 +56,26 @@ export type PreviewCandidate = {
     | "duplicate_in_batch";
 };
 
+/** Per GDELT query string (or `feed:Name`) — how many raw rows and how each disposition landed. */
+export type NewsQueryLaneStat = {
+  lane: string;
+  fetched: number;
+  would_insert: number;
+  below_threshold: number;
+  no_positive_hits: number;
+  negative_in_title: number;
+  duplicate_in_db: number;
+  duplicate_in_batch: number;
+};
+
 export type PreviewResult = {
   totalFetched: number;
   /** How many of the fetched candidates were filtered out by the admin blocklist. */
   blockedCount: number;
   byStatus: Record<PreviewCandidate["status"], number>;
   candidates: PreviewCandidate[];
+  /** Which discovery queries / feed lanes produced useful vs noisy rows in this scan. */
+  queryLaneStats: NewsQueryLaneStat[];
 };
 
 const MAX_PER_RUN = 5;
@@ -68,6 +91,50 @@ const RECENT_DUP_WINDOW_DAYS = 14;
 const MAX_BODY_FETCHES_PER_RUN = 30;
 const BODY_FETCH_CONCURRENCY = 5;
 const SOURCE_WEIGHT_FOR_BODY_FETCH = 3;
+
+function laneKeysForCandidate(c: NewsCandidate): string[] {
+  if (c.matched_discovery_queries && c.matched_discovery_queries.length > 0) {
+    return c.matched_discovery_queries;
+  }
+  const r = c.raw;
+  if (r && r.provider === "feeds" && typeof r.feed === "string") {
+    return [`feed:${r.feed}`];
+  }
+  if (r && r.provider === "feeds") {
+    return [`feed:${c.source_name ?? "rss"}`];
+  }
+  return ["(unknown lane)"];
+}
+
+function bumpLaneStat(
+  map: Map<string, NewsQueryLaneStat>,
+  lanes: string[],
+  status: PreviewCandidate["status"]
+) {
+  for (const lane of lanes) {
+    let row = map.get(lane);
+    if (!row) {
+      row = {
+        lane,
+        fetched: 0,
+        would_insert: 0,
+        below_threshold: 0,
+        no_positive_hits: 0,
+        negative_in_title: 0,
+        duplicate_in_db: 0,
+        duplicate_in_batch: 0,
+      };
+      map.set(lane, row);
+    }
+    row.fetched += 1;
+    if (status === "would_insert") row.would_insert += 1;
+    else if (status === "below_threshold") row.below_threshold += 1;
+    else if (status === "no_positive_hits") row.no_positive_hits += 1;
+    else if (status === "negative_in_title") row.negative_in_title += 1;
+    else if (status === "duplicate_in_db") row.duplicate_in_db += 1;
+    else if (status === "duplicate_in_batch") row.duplicate_in_batch += 1;
+  }
+}
 
 async function loadBlockedDedupeKeys(supabase: SupaClient): Promise<Set<string>> {
   const blocked = new Set<string>();
@@ -244,22 +311,27 @@ export async function runNewsIngestion(supabase: SupabaseClient): Promise<Ingest
 
   // 7. Insert. Pending status, awaiting admin approval.
   if (toInsert.length > 0) {
-    const rows = toInsert.map((c) => ({
-      headline: c.headline,
-      source_name: c.source_name,
-      source_url: c.source_url,
-      canonical_url: c.canonical_url,
-      summary: c.summary,
-      thumbnail_url: c.thumbnail_url,
-      published_at: c.published_at,
-      tags: c.tags,
-      relevance_score: c.relevance_score ?? null,
-      dedupe_key: c.dedupe_key!,
-      raw_payload: c.raw,
-      content_type: "news",
-      is_satire: c.is_satire,
-      status: "pending" as const,
-    }));
+    const rows = toInsert.map((c) => {
+      const breakdown = analyzeCandidate(c);
+      c.relevance_score = breakdown.score;
+      const intake = buildNewsIntakeDebug(c, breakdown);
+      return {
+        headline: c.headline,
+        source_name: c.source_name,
+        source_url: c.source_url,
+        canonical_url: c.canonical_url,
+        summary: c.summary,
+        thumbnail_url: c.thumbnail_url,
+        published_at: c.published_at,
+        tags: c.tags,
+        relevance_score: breakdown.score,
+        dedupe_key: c.dedupe_key!,
+        raw_payload: { ...c.raw, intake_debug: intake } as Record<string, unknown>,
+        content_type: "news",
+        is_satire: c.is_satire,
+        status: "pending" as const,
+      };
+    });
 
     // ON CONFLICT DO NOTHING via upsert + ignoreDuplicates. Two parallel cron
     // runs racing on the same dedupe_key are safe.
@@ -328,6 +400,7 @@ export async function previewNewsIngestion(supabase: SupaClient): Promise<Previe
   // which key is winning when two providers cover the same story.
   const seenInBatch = new Set<string>();
   const candidates: PreviewCandidate[] = [];
+  const queryLaneStatsMap = new Map<string, NewsQueryLaneStat>();
   for (const c of fetched) {
     const breakdown = analyzeCandidate(c);
     let status: PreviewCandidate["status"];
@@ -349,6 +422,10 @@ export async function previewNewsIngestion(supabase: SupaClient): Promise<Previe
       status = "would_insert";
     }
 
+    bumpLaneStat(queryLaneStatsMap, laneKeysForCandidate(c), status);
+
+    const intake_debug = buildNewsIntakeDebug(c, breakdown);
+
     candidates.push({
       headline: c.headline,
       source_name: c.source_name,
@@ -363,6 +440,7 @@ export async function previewNewsIngestion(supabase: SupaClient): Promise<Previe
       source_weight: c.source_weight ?? 0,
       dedupe_key: c.dedupe_key!,
       breakdown,
+      intake_debug,
       enriched_from_body: c.enriched_from_body === true,
       score_before_body: c.score_before_body ?? null,
       alreadyInDb: dupInDb,
@@ -395,11 +473,14 @@ export async function previewNewsIngestion(supabase: SupaClient): Promise<Previe
   };
   for (const c of candidates) byStatus[c.status] += 1;
 
+  const queryLaneStats = [...queryLaneStatsMap.values()].sort((a, b) => b.fetched - a.fetched);
+
   return {
     totalFetched: rawFetched.length,
     blockedCount: rawFetched.length - fetched.length,
     byStatus,
     candidates,
+    queryLaneStats,
   };
 }
 
@@ -412,6 +493,25 @@ export async function insertManualCandidate(
   supabase: SupaClient,
   c: PreviewCandidate
 ): Promise<{ inserted: boolean; error?: string }> {
+  const intake =
+    c.intake_debug ??
+    ({
+      provider: "manual_admin_insert",
+      matched_queries: [],
+      feed_source: null,
+      matched_title_terms: c.breakdown.matchedTitleTerms ?? [],
+      matched_body_terms: c.breakdown.matchedBodyTerms ?? [],
+      matched_terms: c.breakdown.matchedTerms ?? [],
+      le_boost_hits: c.breakdown.leBoostHits ?? [],
+      le_boost_score: c.breakdown.leBoostAmount ?? 0,
+      compound_bonuses: c.breakdown.compoundLabels ?? [],
+      compound_score: c.breakdown.compoundAmount ?? 0,
+      final_score: c.breakdown.score,
+      raw_score: c.breakdown.rawScore,
+      inclusion_reason:
+        "Inserted manually by admin from preview; scoring snapshot from preview row.",
+    } satisfies NewsIntakeDebug);
+
   const { error } = await supabase
     .from("news_items")
     .upsert(
@@ -427,7 +527,11 @@ export async function insertManualCandidate(
           tags: [],
           relevance_score: c.breakdown.score,
           dedupe_key: c.dedupe_key,
-          raw_payload: { provider: "manual_admin_insert", from_preview: true } as Record<string, unknown>,
+          raw_payload: {
+            provider: "manual_admin_insert",
+            from_preview: true,
+            intake_debug: { ...intake, inclusion_reason: `${intake.inclusion_reason} (manual queue insert).` },
+          } as Record<string, unknown>,
           content_type: "news",
           is_satire: c.is_satire,
           status: "pending" as const,

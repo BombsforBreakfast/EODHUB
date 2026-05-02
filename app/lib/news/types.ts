@@ -31,6 +31,8 @@ export type NewsCandidate = {
   enriched_from_body?: boolean;
   /** Score before body-fetch enrichment ran. Useful for debug/preview. */
   score_before_body?: number;
+  /** GDELT query strings that returned this URL (merged across in-batch dedupe). */
+  matched_discovery_queries?: string[];
 };
 
 export type NewsItem = {

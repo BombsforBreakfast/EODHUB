@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:news": "tsx app/lib/news/goldenLasd.verify.ts"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",
@@ -26,6 +27,7 @@
     "stripe": "^21.0.1"
   },
   "devDependencies": {
+    "tsx": "^4.19.2",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

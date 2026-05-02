@@ -258,7 +258,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabase
     .from("news_items")
     .select(
-      "id, headline, source_name, source_url, canonical_url, summary, thumbnail_url, published_at, ingested_at, approved_at, release_at, tags, relevance_score, is_satire, status, created_at, reviewed_at"
+      "id, headline, source_name, source_url, canonical_url, summary, thumbnail_url, published_at, ingested_at, approved_at, release_at, tags, relevance_score, is_satire, status, created_at, reviewed_at, raw_payload"
     )
     .eq("status", status)
     .order(status === "pending" ? "relevance_score" : "created_at", { ascending: false })

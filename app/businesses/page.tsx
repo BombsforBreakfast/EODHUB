@@ -178,6 +178,29 @@ export default function BusinessesPage() {
     };
   }, []);
 
+  async function refreshApprovedBizListings() {
+    const { data, error } = await supabase
+      .from("business_listings")
+      .select(BUSINESS_LISTING_COLUMNS)
+      .eq("is_approved", true)
+      .order("is_featured", { ascending: false })
+      .order("business_name", { ascending: true, nullsFirst: false })
+      .limit(500);
+
+    const combined = (data ?? []) as BusinessListing[];
+
+    if (error && combined.length === 0) {
+      console.error("Businesses list refresh error:", error);
+      return;
+    }
+
+    setListings(combined);
+    setSelectedListing((prev) => {
+      if (!prev) return null;
+      return combined.find((r) => r.id === prev.id) ?? null;
+    });
+  }
+
   function handleBizUrlChange(value: string) {
     setBizUrl(value);
     setBizOgPreview(null);
@@ -327,6 +350,8 @@ export default function BusinessesPage() {
         return;
       }
 
+      await refreshApprovedBizListings();
+
       setBizSubmitSuccess(true);
       setBizUrl("");
       setBizName("");
@@ -349,16 +374,6 @@ export default function BusinessesPage() {
         setBizSubmitSuccess(false);
         setShowBizForm(false);
         void loadListingEngagement(visibleListingIds);
-        void (async () => {
-          const { data: refreshed } = await supabase
-            .from("business_listings")
-            .select(BUSINESS_LISTING_COLUMNS)
-            .eq("is_approved", true)
-            .order("is_featured", { ascending: false })
-            .order("business_name", { ascending: true, nullsFirst: false })
-            .limit(500);
-          setListings((refreshed ?? []) as BusinessListing[]);
-        })();
       }, 3000);
     } finally {
       setSubmittingBiz(false);
