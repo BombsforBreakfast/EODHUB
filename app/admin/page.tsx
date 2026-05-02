@@ -2452,8 +2452,13 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           {biz.managed_by_user_id && biz.is_approved ? (
                             <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                               <span>
-                                <strong style={{ color: t.text }}>Manager:</strong>{" "}
-                                {bizManagerLabels[biz.managed_by_user_id] ?? `${biz.managed_by_user_id.slice(0, 8)}…`}
+                                <strong style={{ color: t.text }}>Claimed by:</strong>{" "}
+                                <Link
+                                  href={`/profile/${biz.managed_by_user_id}`}
+                                  style={{ color: "#1d4ed8", fontWeight: 700, textDecoration: "underline", textUnderlineOffset: 2 }}
+                                >
+                                  {bizManagerLabels[biz.managed_by_user_id] ?? `${biz.managed_by_user_id.slice(0, 8)}…`}
+                                </Link>
                               </span>
                               <button
                                 type="button"
