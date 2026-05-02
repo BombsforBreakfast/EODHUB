@@ -178,16 +178,12 @@ export default function ContributeToRabbitholeModal({ onClose, onCreated }: Prop
       setError("Choose a content type.");
       return;
     }
-    if (!title.trim() || !categorySlug || !summary.trim()) {
-      setError("Title, category, and summary are required.");
+    if (!title.trim() || !categorySlug) {
+      setError("Title and category are required.");
       return;
     }
     if (showNewCategoryInput && newCategoryName.trim()) {
       setError('Press "Add" to save the new category before continuing.');
-      return;
-    }
-    if (summary.trim().length < 20) {
-      setError("Summary must be at least 20 characters.");
       return;
     }
 
@@ -428,17 +424,15 @@ export default function ContributeToRabbitholeModal({ onClose, onCreated }: Prop
             </label>
 
             <label style={labelStyle}>
-              Summary
+              Summary <span style={{ fontWeight: 500, color: t.textMuted }}>(optional)</span>
               <textarea
                 value={summary}
                 onChange={(e) => setSummary(e.target.value)}
-                required
-                minLength={20}
                 rows={4}
                 placeholder="Why this is valuable to archive."
                 style={{ ...inputStyle(t), resize: "vertical" }}
               />
-              <span style={{ fontSize: 11, color: t.textMuted }}>Minimum 20 characters</span>
+              <span style={{ fontSize: 11, color: t.textMuted }}>Helps curators and search when filled.</span>
             </label>
 
             {(contentType === "video" || contentType === "article_news" || contentType === "external_link" || contentType === "document") && (

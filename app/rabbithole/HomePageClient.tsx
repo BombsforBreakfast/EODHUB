@@ -8,6 +8,7 @@ import type { Theme } from "../lib/theme";
 import { supabase } from "../lib/lib/supabaseClient";
 import ContributeToRabbitholeModal from "./components/ContributeToRabbitholeModal";
 import { appendToTrail } from "./lib/helpers";
+import { linkifyPlainText } from "./lib/linkifyPlainText";
 import { fetchRabbitholeContributions, fetchRabbitholeThreads, fetchRabbitholeTopics } from "./lib/dataClient";
 import type { RabbitholeContentType, RabbitholeContribution, RabbitholeThread, RabbitholeTopic } from "./lib/types";
 
@@ -606,9 +607,15 @@ function ContributionCard({ contribution, theme: t }: { contribution: Rabbithole
             WebkitLineClamp: 3,
             WebkitBoxOrient: "vertical",
             overflow: "hidden",
+            wordBreak: "break-word",
           }}
         >
-          {contribution.summary}
+          {linkifyPlainText(contribution.summary, {
+            color: "#2563eb",
+            textDecoration: "underline",
+            fontWeight: 600,
+            wordBreak: "break-all",
+          })}
         </p>
       </div>
 

@@ -6940,7 +6940,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               const displayDescription =
                 listing.custom_blurb || listing.og_description || "Visit website";
 
-              const isLiked = likedBizIds.has(listing.id);
               const comments = listingCommentsById[listing.id] ?? [];
               const { averageRounded, ratedCount } = getBizRatingSummary(listing.id);
 
@@ -6991,7 +6990,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       padding: "0 14px 12px",
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "space-between",
+                      justifyContent: "flex-start",
                       gap: 10,
                       flexWrap: "wrap",
                     }}
@@ -7002,9 +7001,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           Featured
                         </span>
                       ) : null}
-                      <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "capitalize" }}>
-                        {normalizeBizListingTypeForListing(listing)}
-                      </span>
                       <button
                         type="button"
                         onClick={(e) => {
@@ -7045,26 +7041,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         )}
                       </div>
                     </div>
-                    <button
-                      type="button"
-                      onClick={(e) => handleBizLike(e, listing.id)}
-                      disabled={togglingBizLikeFor === listing.id || !userId}
-                      style={{
-                        background: "none",
-                        border: "none",
-                        cursor: userId ? "pointer" : "default",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 5,
-                        padding: "4px 0",
-                        opacity: togglingBizLikeFor === listing.id ? 0.5 : 1,
-                      }}
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill={isLiked ? t.text : "none"} stroke={t.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
-                      </svg>
-                      <span style={{ fontSize: 13, fontWeight: 700 }}>{listing.like_count ?? 0}</span>
-                    </button>
                   </div>
                 </article>
               );

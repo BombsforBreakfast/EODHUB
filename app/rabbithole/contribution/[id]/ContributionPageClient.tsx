@@ -16,6 +16,7 @@ import {
 import { resolveRabbitholeAssetUrl } from "../../lib/storageService";
 import type { RabbitholeAsset, RabbitholeContribution, RabbitholeContributionComment } from "../../lib/types";
 import { supabase } from "../../../lib/lib/supabaseClient";
+import { linkifyPlainText } from "../../lib/linkifyPlainText";
 
 type ShareDestinationType = "feed" | "user_wall" | "unit_wall";
 type ShareUserResult = { id: string; name: string; photoUrl: string | null };
@@ -561,7 +562,14 @@ export default function ContributionPageClient() {
     <RabbitholeShell title={contribution.title}>
       <BreadcrumbTrail label="Library Path" steps={librarySteps} />
 
-      <p style={{ margin: "8px 0 12px", color: "#cbd5e1", lineHeight: 1.55 }}>{contribution.summary}</p>
+      <p style={{ margin: "8px 0 12px", color: "#cbd5e1", lineHeight: 1.55, wordBreak: "break-word" }}>
+        {linkifyPlainText(contribution.summary, {
+          color: "#38bdf8",
+          textDecoration: "underline",
+          fontWeight: 600,
+          wordBreak: "break-all",
+        })}
+      </p>
       <div style={{ marginBottom: 12, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
         <button
           type="button"
