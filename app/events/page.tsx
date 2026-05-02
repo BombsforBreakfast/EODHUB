@@ -2480,36 +2480,39 @@ function EventsPageInner() {
                     </button>
                   )}
 
-                  {visibleMemorials.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedMemorial(m);
-                      }}
-                      title={m.name}
-                      style={{
-                        width: "100%",
-                        minWidth: 0,
-                        textAlign: "left" as const,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        background: "#d9582b",
-                        color: "white",
-                        borderRadius: 4,
-                        padding: "2px 5px",
-                        overflow: "hidden",
-                        whiteSpace: "nowrap" as const,
-                        textOverflow: "ellipsis" as const,
-                        border: "none",
-                        cursor: "pointer",
-                        flexShrink: 0,
-                      }}
-                    >
-                      ✦ {m.name}
-                    </button>
-                  ))}
+                  {visibleMemorials.map((m) => {
+                    const mt = memorialTheme(m.category);
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedMemorial(m);
+                        }}
+                        title={m.name}
+                        style={{
+                          width: "100%",
+                          minWidth: 0,
+                          textAlign: "left" as const,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background: mt.color,
+                          color: "white",
+                          borderRadius: 4,
+                          padding: "2px 5px",
+                          overflow: "hidden",
+                          whiteSpace: "nowrap" as const,
+                          textOverflow: "ellipsis" as const,
+                          border: "none",
+                          cursor: "pointer",
+                          flexShrink: 0,
+                        }}
+                      >
+                        ✦ {m.name}
+                      </button>
+                    );
+                  })}
 
                   {memorialOverflow > 0 && (
                     <button
