@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useTheme } from "../lib/ThemeContext";
 import type { Theme } from "../lib/theme";
@@ -563,7 +563,20 @@ function ThreadCard({ thread, theme: t }: { thread: RabbitholeThread; theme: The
 }
 
 function ContributionCard({ contribution, theme: t }: { contribution: RabbitholeContribution; theme: Theme }) {
+  const router = useRouter();
   const previewSrc = contribution.previewImageUrl?.trim() ? httpsAssetUrl(contribution.previewImageUrl) : "";
+  const contributionHref = `/rabbithole/contribution/${contribution.id}?trail=${appendToTrail([], contribution.categoryName)}`;
+
+  function goToContribution() {
+    router.push(contributionHref);
+  }
+
+  function onContributionBodyKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      goToContribution();
+    }
+  }
 
   return (
     <div
@@ -598,46 +611,57 @@ function ContributionCard({ contribution, theme: t }: { contribution: Rabbithole
           >
             {contribution.categoryName}
           </span>
-          {contribution.sourceDomain && (
-            <span style={{ fontSize: 11, color: "#64748b" }}>{contribution.sourceDomain}</span>
-          )}
         </div>
 
-        <Link
-          href={`/rabbithole/contribution/${contribution.id}?trail=${appendToTrail([], contribution.categoryName)}`}
+        <div
+          role="link"
+          tabIndex={0}
+          aria-label={`View contribution: ${contribution.title}`}
+          onClick={goToContribution}
+          onKeyDown={onContributionBodyKeyDown}
           style={{
-            color: t.text,
-            fontWeight: 800,
-            fontSize: 15,
-            textDecoration: "none",
-            lineHeight: 1.3,
-            display: "block",
-            marginBottom: 8,
+            cursor: "pointer",
+            borderRadius: 8,
+            margin: "0 -4px",
+            padding: "4px 4px 2px",
+            outline: "none",
           }}
         >
-          {contribution.title}
-        </Link>
-
-        <p
-          style={{
-            margin: 0,
-            fontSize: 13,
-            color: t.textMuted,
-            lineHeight: 1.5,
-            display: "-webkit-box",
-            WebkitLineClamp: 3,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-            wordBreak: "break-word",
-          }}
-        >
-          {linkifyPlainText(contribution.summary, {
-            color: "#2563eb",
-            textDecoration: "underline",
-            fontWeight: 600,
-            wordBreak: "break-all",
-          })}
-        </p>
+          {contribution.sourceDomain ? (
+            <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6, wordBreak: "break-all" }}>{contribution.sourceDomain}</div>
+          ) : null}
+          <div
+            style={{
+              color: t.text,
+              fontWeight: 800,
+              fontSize: 15,
+              lineHeight: 1.3,
+              marginBottom: 8,
+            }}
+          >
+            {contribution.title}
+          </div>
+          <p
+            style={{
+              margin: 0,
+              fontSize: 13,
+              color: t.textMuted,
+              lineHeight: 1.5,
+              display: "-webkit-box",
+              WebkitLineClamp: 3,
+              WebkitBoxOrient: "vertical",
+              overflow: "hidden",
+              wordBreak: "break-word",
+            }}
+          >
+            {linkifyPlainText(contribution.summary, {
+              color: "#2563eb",
+              textDecoration: "underline",
+              fontWeight: 600,
+              wordBreak: "break-all",
+            })}
+          </p>
+        </div>
       </div>
 
       <div
@@ -666,7 +690,7 @@ function ContributionCard({ contribution, theme: t }: { contribution: Rabbithole
           </>
         )}
         <Link
-          href={`/rabbithole/contribution/${contribution.id}?trail=${appendToTrail([], contribution.categoryName)}`}
+          href={contributionHref}
           style={{
             marginLeft: "auto",
             fontWeight: 700,

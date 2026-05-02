@@ -21,6 +21,7 @@ import JobCardActions from "../components/jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
 import EventFeedActions from "../components/EventFeedActions";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
+import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
 import FeedPostHeader from "../components/FeedPostHeader";
@@ -5128,6 +5129,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           >
                             See all comments
                           </button>
+                          <MemorialScrapbookPreview
+                            memorialId={m.id}
+                            t={t}
+                            accentColor={theme.color}
+                            variant="compact"
+                            isMobile={isMobile}
+                          />
                         </div>
                       )}
                       {isExpanded && (
@@ -5158,6 +5166,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                   <button type="button" onClick={() => setDonateModal(memorialDonationConfig(m.category))} style={{ background: theme.color, border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
                                     {memorialDonationConfig(m.category).title}
                                   </button>
+                                </div>
+                                <div style={{ textAlign: "left", width: "100%" }}>
+                                  <MemorialScrapbookPreview
+                                    memorialId={m.id}
+                                    t={t}
+                                    accentColor={theme.color}
+                                    variant="full"
+                                    isMobile={isMobile}
+                                  />
                                 </div>
                                 {commentsOpen && (
                                   <div style={{ marginTop: 12 }}>

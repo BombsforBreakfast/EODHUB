@@ -12,6 +12,7 @@ import { isVerifiedRabbitholeViewer } from "../lib/rabbitholeAccess";
 import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import NotificationCenter from "./NotificationCenter";
+import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
 
 type Notification = {
   id: string;
@@ -33,7 +34,7 @@ type Notification = {
 };
 
 type SearchResult = {
-  type: "user" | "business" | "job" | "unit" | "rabbithole" | "directory";
+  type: "user" | "business" | "job" | "memorial" | "unit" | "rabbithole" | "directory";
   id: string;
   title: string;
   subtitle: string;
@@ -42,6 +43,7 @@ type SearchResult = {
 };
 
 export default function NavBar() {
+  const { openMemorialById } = useMemorialNavModal();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [userInitial, setUserInitial] = useState<string>("?");
@@ -293,7 +295,7 @@ export default function NavBar() {
     setSearching(true);
     setShowSearchDropdown(true);
     try {
-      const [profilesRes, businessesRes, jobsRes, unitsRes, directoryRes] = await Promise.all([
+      const [profilesRes, businessesRes, jobsRes, memorialsRes, unitsRes, directoryRes] = await Promise.all([
         supabase.from("profiles").select("user_id, first_name, last_name, display_name, role")
           .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%,role.ilike.%${q}%`).limit(5),
         supabase.from("business_listings").select("id, business_name, og_title, og_site_name, website_url, custom_blurb")
@@ -302,6 +304,7 @@ export default function NavBar() {
         supabase.from("jobs").select("id, title, company_name, location, apply_url")
           .eq("is_approved", true)
           .or(`title.ilike.%${q}%,company_name.ilike.%${q}%,location.ilike.%${q}%`).limit(5),
+        supabase.from("memorials").select("id, name, death_date, category").ilike("name", `%${q}%`).limit(5),
         supabase.from("units").select("id, name, slug, type, description").ilike("name", `%${q}%`).limit(5),
         supabase.from("unit_directory").select("id, name, org_type, state, unit_slug, base_city")
           .or(`name.ilike.%${q}%,org_type.ilike.%${q}%,state.ilike.%${q}%,base_city.ilike.%${q}%`).limit(5),
@@ -324,6 +327,21 @@ export default function NavBar() {
 
       ((jobsRes.data ?? []) as { id: string; title: string | null; company_name: string | null; location: string | null; apply_url: string | null }[]).forEach((j) => {
         results.push({ type: "job", id: j.id, title: j.title || "Job Listing", subtitle: [j.company_name, j.location].filter(Boolean).join(" · "), href: j.apply_url || "/", external: !!j.apply_url });
+      });
+
+      ((memorialsRes.data ?? []) as { id: string; name: string; death_date: string; category?: "military" | "leo_fed" | null }[]).forEach((m) => {
+        const dateLabel = m.death_date
+          ? new Date(`${m.death_date}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+          : "";
+        const kind = m.category === "leo_fed" ? "End of Watch" : "We Remember";
+        results.push({
+          type: "memorial",
+          id: m.id,
+          title: m.name,
+          subtitle: [kind, dateLabel ? `d. ${dateLabel}` : null].filter(Boolean).join(" · "),
+          href: `/events?memorial=${encodeURIComponent(m.id)}`,
+          external: false,
+        });
       });
 
       ((unitsRes.data ?? []) as { id: string; name: string; slug: string; type: string; description: string | null }[]).forEach((u) => {
@@ -369,8 +387,15 @@ export default function NavBar() {
     setShowSearchDropdown(false);
     setSearchQuery("");
     setSearchResults([]);
-    if (result.external) { window.open(result.href, "_blank", "noreferrer"); }
-    else { window.location.href = result.href; }
+    if (result.external) {
+      window.open(result.href, "_blank", "noreferrer");
+      return;
+    }
+    if (result.type === "memorial") {
+      openMemorialById(result.id);
+      return;
+    }
+    window.location.href = result.href;
   }
 
   // Close search dropdown on outside click
@@ -677,8 +702,8 @@ export default function NavBar() {
                     onChange={(e) => handleSearchChange(e.target.value)}
                     onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
                     placeholder={canAccessRabbithole
-                      ? "Search people, jobs, groups, businesses, directory, Rabbithole…"
-                      : "Search people, jobs, groups, businesses, directory…"}
+                      ? "Search people, jobs, memorials, groups, businesses, directory, Rabbithole…"
+                      : "Search people, jobs, memorials, groups, businesses, directory…"}
                     style={{ border: "none", outline: "none", fontSize: 13, flex: "1 1 0", minWidth: 0, width: "100%", background: "transparent", color: t.text, height: 36, lineHeight: "36px", padding: 0 }}
                   />
                   {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
@@ -705,15 +730,52 @@ export default function NavBar() {
                     )}
 
                     {(canAccessRabbithole
-                      ? (["user", "unit", "job", "business", "directory", "rabbithole"] as const)
-                      : (["user", "unit", "job", "business", "directory"] as const)
+                      ? (["user", "unit", "job", "memorial", "business", "directory", "rabbithole"] as const)
+                      : (["user", "unit", "job", "memorial", "business", "directory"] as const)
                     ).map((type) => {
                       const group = searchResults.filter((r) => r.type === type);
                       if (group.length === 0) return null;
-                      const label = type === "user" ? "People" : type === "job" ? "Jobs" : type === "unit" ? "Groups" : type === "business" ? "Businesses" : type === "directory" ? "Directory" : "Rabbithole";
-                      const badgeColors: Record<SearchResult["type"], string> = { user: "#dbeafe", job: "#dcfce7", business: "#fef9c3", unit: "#ede9fe", rabbithole: "#fee2e2", directory: "#cffafe" };
-                      const badgeText: Record<SearchResult["type"], string> = { user: "#1d4ed8", job: "#15803d", business: "#854d0e", unit: "#7c3aed", rabbithole: "#991b1b", directory: "#0e7490" };
-                      const badgeLabel: Record<SearchResult["type"], string> = { user: "Person", job: "Job", business: "Biz", unit: "Group", rabbithole: "Library", directory: "Org" };
+                      const label =
+                        type === "user"
+                          ? "People"
+                          : type === "job"
+                            ? "Jobs"
+                          : type === "memorial"
+                            ? "Memorials"
+                          : type === "unit"
+                            ? "Groups"
+                          : type === "business"
+                            ? "Businesses"
+                          : type === "directory"
+                            ? "Directory"
+                            : "Rabbithole";
+                      const badgeColors: Record<SearchResult["type"], string> = {
+                        user: "#dbeafe",
+                        job: "#dcfce7",
+                        memorial: "#ffedd5",
+                        business: "#fef9c3",
+                        unit: "#ede9fe",
+                        rabbithole: "#fee2e2",
+                        directory: "#cffafe",
+                      };
+                      const badgeText: Record<SearchResult["type"], string> = {
+                        user: "#1d4ed8",
+                        job: "#15803d",
+                        memorial: "#c2410c",
+                        business: "#854d0e",
+                        unit: "#7c3aed",
+                        rabbithole: "#991b1b",
+                        directory: "#0e7490",
+                      };
+                      const badgeLabel: Record<SearchResult["type"], string> = {
+                        user: "Person",
+                        job: "Job",
+                        memorial: "Memorial",
+                        business: "Biz",
+                        unit: "Group",
+                        rabbithole: "Library",
+                        directory: "Org",
+                      };
                       return (
                         <div key={type}>
                           <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>

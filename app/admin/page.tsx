@@ -15,6 +15,7 @@ import {
 import { FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
+import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
 import { coerceTagsFromDb, normalizeBizTagsInput } from "../lib/bizListingTags";
 
 type BusinessListing = {
@@ -98,7 +99,18 @@ type AdminGroup = {
   owner_name: string | null;
 };
 
-type Tab = "businesses" | "jobs" | "users" | "groups" | "flags" | "events" | "reports" | "directory" | "engagement" | "news";
+type Tab =
+  | "businesses"
+  | "jobs"
+  | "users"
+  | "groups"
+  | "flags"
+  | "events"
+  | "scrapbook"
+  | "reports"
+  | "directory"
+  | "engagement"
+  | "news";
 
 type NewsIntakeDebugPayload = {
   provider: string;
@@ -2350,6 +2362,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
           </button>
           <button type="button" style={tabStyle("events")} onClick={() => setActiveTab("events")}>
             Events
+          </button>
+          <button type="button" style={tabStyle("scrapbook")} onClick={() => setActiveTab("scrapbook")}>
+            Scrapbook
           </button>
           <button type="button" style={tabStyle("reports")} onClick={() => setActiveTab("reports")}>
             Reports
@@ -4790,6 +4805,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
           </div>
         )}
+
+        {activeTab === "scrapbook" && <AdminScrapbookReview t={t} showToast={showToast} />}
 
       </div>
     </div>

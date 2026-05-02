@@ -6,6 +6,14 @@ import { supabase } from "../lib/lib/supabaseClient";
 import ImageCropDialog from "../components/ImageCropDialog";
 import { ASPECT_EVENT_COVER } from "../lib/imageCropTargets";
 import { useTheme } from "../lib/ThemeContext";
+import { MemorialReadModal } from "../components/memorial/MemorialReadModal";
+import type { Memorial } from "../components/memorial/memorialModalShared";
+import {
+  MEMORIAL_COLUMNS,
+  MEMORIAL_LEO_COLOR,
+  MEMORIAL_MILITARY_COLOR,
+  memorialTheme,
+} from "../components/memorial/memorialModalShared";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
@@ -46,18 +54,6 @@ type CalendarEvent = {
   created_at: string;
   unit_id?: string | null;
   visibility?: "public" | "group" | string | null;
-};
-
-type Memorial = {
-  id: string;
-  user_id: string;
-  name: string;
-  bio: string | null;
-  photo_url: string | null;
-  death_date: string;
-  created_at: string;
-  source_url: string | null;
-  category?: "military" | "leo_fed" | null;
 };
 
 type AttendanceRow = {
@@ -113,26 +109,6 @@ type CalendarView = "day" | "week" | "month";
 
 const EVENT_COLUMNS =
   "id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at, unit_id, visibility";
-const MEMORIAL_COLUMNS =
-  "id, user_id, name, bio, photo_url, death_date, created_at, source_url, category";
-
-const MEMORIAL_MILITARY_COLOR = "#d9582b";
-const MEMORIAL_LEO_COLOR = "#062b4f";
-
-function memorialTheme(category?: Memorial["category"]) {
-  const isLeoFed = category === "leo_fed";
-  return {
-    color: isLeoFed ? MEMORIAL_LEO_COLOR : MEMORIAL_MILITARY_COLOR,
-    label: isLeoFed ? "End of Watch" : "We Remember",
-  };
-}
-
-function memorialDisclaimer(category?: Memorial["category"]) {
-  return category === "leo_fed"
-    ? "* This information has been respectfully referenced from bombtechmemorial.org."
-    : "* This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.";
-}
-
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -208,6 +184,7 @@ function EventsPageInner() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const deepLinkEventId = searchParams?.get("event") ?? null;
+  const deepLinkMemorialId = searchParams?.get("memorial") ?? null;
   const deepLinkAdd = searchParams?.get("add")?.toLowerCase() ?? null;
   const today = new Date();
   const initialTodayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate());
@@ -1372,6 +1349,32 @@ function EventsPageInner() {
       cancelled = true;
     };
   }, [deepLinkEventId, userId]);
+
+  // Deep-link: `/events?memorial=<id>` opens the same memorial modal as the calendar (nav search).
+  useEffect(() => {
+    if (!deepLinkMemorialId) return;
+    if (typeof window === "undefined") return;
+
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("memorials")
+        .select(MEMORIAL_COLUMNS)
+        .eq("id", deepLinkMemorialId)
+        .maybeSingle();
+      if (cancelled) return;
+      if (!error && data) {
+        setSelectedMemorial(data as Memorial);
+      }
+      const url = new URL(window.location.href);
+      url.searchParams.delete("memorial");
+      window.history.replaceState({}, "", url.toString());
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [deepLinkMemorialId]);
 
   // Deep-link: `/events?add=event` or `?add=memorial` opens the create form (e.g. from
   // master left column or profile). Scrub `add` after opening so refresh doesn’t re-open.
@@ -3593,114 +3596,11 @@ function EventsPageInner() {
         </div>
       )}
       {selectedMemorial && (
-        (() => {
-          const theme = memorialTheme(selectedMemorial.category);
-          return (
-        <div
-          onClick={() => setSelectedMemorial(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            display: "flex",
-            alignItems: isCalendarMobile ? "flex-start" : "center",
-            justifyContent: "center",
-            padding: isCalendarMobile ? "92px 14px 18px" : 20,
-            zIndex: 1000,
-            boxSizing: "border-box",
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 560,
-              maxHeight: isCalendarMobile ? "calc(100dvh - 110px)" : "calc(100vh - 40px)",
-              background: t.surface,
-              color: t.text,
-              borderRadius: 18,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, padding: "22px 24px 10px" }}>
-              <div style={{ display: "flex", gap: 14, alignItems: "flex-start", minWidth: 0 }}>
-                {selectedMemorial.photo_url && (
-                  <div
-                    style={{
-                      width: 72,
-                      height: 72,
-                      borderRadius: "50%",
-                      overflow: "hidden",
-                      flexShrink: 0,
-                      border: `3px solid ${theme.color}`,
-                    }}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={selectedMemorial.photo_url}
-                      alt={selectedMemorial.name}
-                      style={{ width: "100%", height: "100%", objectFit: "cover" }}
-                    />
-                  </div>
-                )}
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 12, color: theme.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
-                    {theme.label}
-                  </div>
-                  <div style={{ fontSize: 22, fontWeight: 900, marginTop: 2, lineHeight: 1.2 }}>
-                    {selectedMemorial.name}
-                  </div>
-                  <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
-                    {new Date(`${selectedMemorial.death_date}T12:00:00`).toLocaleDateString("en-US", {
-                      month: "long",
-                      day: "numeric",
-                      year: "numeric",
-                    })}
-                    {" · "}
-                    {year - parseInt(selectedMemorial.death_date.split("-")[0], 10)} years ago
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSelectedMemorial(null)}
-                aria-label="Close"
-                style={{
-                  border: `1px solid ${t.border}`,
-                  background: t.surface,
-                  color: t.text,
-                  borderRadius: 10,
-                  padding: "6px 10px",
-                  cursor: "pointer",
-                  fontWeight: 700,
-                  flexShrink: 0,
-                }}
-              >
-                X
-              </button>
-            </div>
-
-            <div style={{ padding: "6px 24px 4px", overflowY: "auto", flex: 1, minHeight: 0 }}>
-              {selectedMemorial.bio ? (
-                <div style={{ lineHeight: 1.65, color: t.text, fontSize: 14, whiteSpace: "pre-wrap" }}>
-                  {selectedMemorial.bio}
-                </div>
-              ) : (
-                <div style={{ color: t.textFaint, fontSize: 14 }}>
-                  No biography on file.
-                </div>
-              )}
-              <div style={{ marginTop: 16, fontSize: 11, lineHeight: 1.5, color: t.textFaint, fontStyle: "italic" }}>
-                {memorialDisclaimer(selectedMemorial.category)}
-              </div>
-            </div>
-          </div>
-        </div>
-          );
-        })()
+        <MemorialReadModal
+          memorial={selectedMemorial}
+          onClose={() => setSelectedMemorial(null)}
+          isMobile={isCalendarMobile}
+        />
       )}
       <EventAttendeesListModal
         open={attendeesListModal !== null}

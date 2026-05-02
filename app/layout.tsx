@@ -5,6 +5,7 @@ import { ThemeProvider } from "./lib/ThemeContext";
 import SessionGuard from "./components/SessionGuard";
 import AnalyticsTracker from "./components/AnalyticsTracker";
 import { Analytics } from "@vercel/analytics/next";
+import { MemorialNavModalProvider } from "./components/memorial/MemorialNavModalProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,6 +40,7 @@ export default function RootLayout({
         data-dark="true"
       >
         <ThemeProvider>
+          <MemorialNavModalProvider>
           <SessionGuard />
           <AnalyticsTracker />
           <script
@@ -95,6 +97,7 @@ export default function RootLayout({
             © EOD Hub — A professional network for the Explosive Ordnance Disposal community
           </footer>
           {showVercelAnalytics ? <Analytics /> : null}
+          </MemorialNavModalProvider>
         </ThemeProvider>
       </body>
     </html>
