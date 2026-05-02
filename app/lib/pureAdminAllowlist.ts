@@ -9,6 +9,9 @@
  */
 export const PURE_ADMIN_EMAILS = ["hello@eod-hub.com"] as const;
 
+/** Public path to the EOD HUB line-art logo; used as the default staff profile photo in nav and profile. */
+export const STAFF_DEFAULT_PROFILE_PHOTO_PATH = "/branding/eod-crab-logo.png" as const;
+
 export function isPureAdminEmail(email: string | null | undefined): boolean {
   if (!email) return false;
   const normalized = email.trim().toLowerCase();

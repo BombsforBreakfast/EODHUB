@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "./EodCrabLogo";
-import PureAdminAvatar from "./PureAdminAvatar";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
 import { isVerifiedRabbitholeViewer } from "../lib/rabbitholeAccess";
@@ -48,7 +47,6 @@ export default function NavBar() {
   const [authLoaded, setAuthLoaded] = useState(false);
   const [userInitial, setUserInitial] = useState<string>("?");
   const [avatarPhotoUrl, setAvatarPhotoUrl] = useState<string | null>(null);
-  const [isPureAdmin, setIsPureAdmin] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showHub, setShowHub] = useState(false);
   const hubBtnRef = useRef<HTMLButtonElement>(null);
@@ -162,7 +160,7 @@ export default function NavBar() {
     async function loadNavProfile(uid: string) {
       const { data } = await supabase
         .from("profiles")
-        .select("first_name, display_name, photo_url, is_admin, account_type, is_pure_admin, verification_status")
+        .select("first_name, display_name, photo_url, is_admin, account_type, verification_status")
         .eq("user_id", uid)
         .maybeSingle();
       if (!mounted) return;
@@ -172,13 +170,11 @@ export default function NavBar() {
         photo_url: string | null;
         is_admin: boolean | null;
         account_type: string | null;
-        is_pure_admin: boolean | null;
         verification_status: string | null;
       } | null;
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
       setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
       setIsEmployer(row?.account_type === "employer");
-      setIsPureAdmin(!!row?.is_pure_admin);
       setVerificationStatus(row?.verification_status ?? null);
       if (row?.is_admin) {
         setIsAdmin(true);
@@ -539,54 +535,75 @@ export default function NavBar() {
       {/* Desktop: centered cluster — avatar | [ row: bell+crab+hub+account; row: search ]; mobile: flattened via display:contents */}
       <div className="nav-desktop-cluster">
         <div className="nav-primary-avatar" style={{ position: "relative", flexShrink: 0 }}>
-          {isPureAdmin ? (
-            <div
-              className="nav-avatar nav-avatar-pure-admin"
-              aria-label="EOD HUB staff"
-              title="EOD HUB"
-              style={{ width: 81, height: 81, display: "flex", alignItems: "center", justifyContent: "center", cursor: "default" }}
-            >
-              <PureAdminAvatar size={81} />
-            </div>
-          ) : (
-            <Link
-              href={currentUserId ? `/profile/${currentUserId}` : "/login"}
-              className="nav-avatar"
-              aria-label="My profile"
-              title="My profile"
-              onClick={(e) => {
-                setShowHub(false);
-                if (!authLoaded) {
-                  e.preventDefault();
-                  return;
-                }
-              }}
-              style={{
-                width: 81,
-                height: 81,
-                borderRadius: "50%",
-                background: t.text,
-                color: t.navBg,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontWeight: 700,
-                fontSize: 33,
-                border: "none",
-                cursor: "pointer",
-                padding: 0,
-                overflow: "hidden",
-                textDecoration: "none",
-              }}
-            >
-              {avatarPhotoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element -- user-uploaded profile photo URL
-                <img src={avatarPhotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-              ) : (
-                userInitial
-              )}
-            </Link>
-          )}
+          {(() => {
+            const navAvatarCircleStyle = {
+              width: 81,
+              height: 81,
+              borderRadius: "50%",
+              background: t.text,
+              color: t.navBg,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 700,
+              fontSize: 33,
+              border: "none",
+              padding: 0,
+              overflow: "hidden",
+              textDecoration: "none",
+            } as const;
+            const inner = avatarPhotoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element -- user-uploaded profile photo URL
+              <img src={avatarPhotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              userInitial
+            );
+            const openProfile = (e: { preventDefault: () => void }) => {
+              setShowHub(false);
+              if (!authLoaded) {
+                e.preventDefault();
+              }
+            };
+            if (!currentUserId) {
+              return (
+                <Link
+                  href="/login"
+                  className="nav-avatar"
+                  aria-label="Sign in"
+                  title="Sign in"
+                  onClick={() => { setShowHub(false); }}
+                  style={{ ...navAvatarCircleStyle, cursor: "pointer" }}
+                >
+                  {inner}
+                </Link>
+              );
+            }
+            if (isAdmin) {
+              return (
+                <Link
+                  href={`/profile/${currentUserId}`}
+                  className="nav-avatar"
+                  aria-label="My profile — edit photo and settings"
+                  title="My profile"
+                  onClick={openProfile}
+                  style={{ ...navAvatarCircleStyle, cursor: "pointer" }}
+                >
+                  {inner}
+                </Link>
+              );
+            }
+            return (
+              <div
+                className="nav-avatar"
+                role="img"
+                aria-label="Your profile photo"
+                title="Profile photo"
+                style={{ ...navAvatarCircleStyle, cursor: "default" }}
+              >
+                {inner}
+              </div>
+            );
+          })()}
         </div>
 
         <div className="nav-stack-main">

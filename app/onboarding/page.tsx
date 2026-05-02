@@ -9,7 +9,7 @@ import {
   PRIVACY_POLICY_TEXT,
   TERMS_OF_SERVICE_TEXT,
 } from "../lib/legalText";
-import { isPureAdminEmail } from "../lib/pureAdminAllowlist";
+import { isPureAdminEmail, STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../lib/pureAdminAllowlist";
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
 const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
@@ -94,7 +94,7 @@ export default function OnboardingPage() {
             skill_badge: null,
             years_experience: null,
             company_name: null,
-            photo_url: null,
+            photo_url: STAFF_DEFAULT_PROFILE_PHOTO_PATH,
           })
           .eq("user_id", user.id);
         if (promoteErr) {

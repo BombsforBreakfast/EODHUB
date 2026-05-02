@@ -40,6 +40,7 @@ import {
 } from "../../../lib/reactions";
 import { ServiceSealValue } from "../../../lib/serviceSeals";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
+import { STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../../../lib/pureAdminAllowlist";
 
 type Profile = {
   user_id: string;
@@ -2897,8 +2898,41 @@ export default function PublicProfilePage() {
             borderRadius: 16,
             padding: 22,
             background: t.surface,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            textAlign: "center",
           }}
         >
+          <div
+            style={{
+              width: 120,
+              height: 120,
+              borderRadius: "50%",
+              border: `1px solid ${t.border}`,
+              background: isDark ? "#000000" : "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflow: "hidden",
+              marginBottom: 16,
+              boxSizing: "border-box",
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- static public branding asset */}
+            <img
+              src={profile.photo_url?.trim() || STAFF_DEFAULT_PROFILE_PHOTO_PATH}
+              alt=""
+              style={{
+                width: "86%",
+                height: "86%",
+                objectFit: "contain",
+                display: "block",
+                mixBlendMode: isDark ? undefined : "multiply",
+                filter: isDark ? "invert(1) contrast(1.08)" : undefined,
+              }}
+            />
+          </div>
           <div style={{ fontSize: 22, fontWeight: 900, color: t.text }}>EOD HUB</div>
           <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted }}>Staff Account</div>
           <div style={{ marginTop: 14, fontSize: 14, color: t.text }}>
