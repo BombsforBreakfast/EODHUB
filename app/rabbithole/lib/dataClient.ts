@@ -18,6 +18,7 @@ import {
   emptyAggregate,
   fetchContentReactionsForSubjects,
 } from "../../lib/reactions";
+import { resolveRabbitholeAssetUrl } from "./storageService";
 
 function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").replace(/\s+/g, " ").trim();
@@ -59,6 +60,142 @@ function mapContributionAssetRow(row: any): RabbitholeAsset {
  * `promoted_from_post_id` so the thread detail page can fetch the live KC verdict for
  * that post at render time — meaning a verdict issued after promotion is always reflected.
  */
+/** Card thumbnail: YouTube still, optional OG URL in metadata, or filled later from assets / promoted post. */
+function contributionPreviewFromMeta(metadata: Record<string, unknown>, sourceUrl?: string | null): string | null {
+  const ytMeta = typeof metadata.youtubeId === "string" ? metadata.youtubeId.trim() : "";
+  if (ytMeta) return `https://img.youtube.com/vi/${ytMeta}/hqdefault.jpg`;
+
+  if (sourceUrl) {
+    try {
+      const u = new URL(sourceUrl);
+      if (u.hostname === "youtu.be") {
+        const id = u.pathname.replace("/", "").trim();
+        if (id) return `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+      }
+      if (u.hostname.includes("youtube.com")) {
+        const v = u.searchParams.get("v");
+        if (v) return `https://img.youtube.com/vi/${v}/hqdefault.jpg`;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const ogCandidates = [
+    metadata.og_image,
+    metadata.ogImage,
+    metadata.preview_image_url,
+    metadata.previewImageUrl,
+    metadata.source_preview_image,
+  ];
+  for (const v of ogCandidates) {
+    if (typeof v === "string") {
+      const s = v.trim();
+      if (s) return s;
+    }
+  }
+  return null;
+}
+
+async function enrichContributionsWithAssetPreviews(
+  supabase: SupabaseClient,
+  items: RabbitholeContribution[],
+): Promise<RabbitholeContribution[]> {
+  const needsAssetIds = items.filter((i) => !i.previewImageUrl?.trim()).map((i) => i.id);
+  const ids = [...new Set(needsAssetIds)];
+  if (ids.length === 0) return items;
+
+  const { data: assetRows, error } = await supabase
+    .from("rabbithole_assets")
+    .select("contribution_id, bucket, object_key, mime_type, is_primary, access_level, status, created_at")
+    .in("contribution_id", ids)
+    .in("status", ["uploaded", "ready"]);
+
+  if (error || !assetRows?.length) return items;
+
+  type AssetPick = {
+    contribution_id: string;
+    bucket: string;
+    object_key: string;
+    mime_type: string | null;
+    is_primary: boolean;
+    access_level: string;
+    created_at: string;
+  };
+
+  const images = (assetRows as AssetPick[]).filter((r) => (r.mime_type ?? "").startsWith("image/"));
+  const bestByContrib = new Map<string, AssetPick>();
+  const rank = (r: AssetPick) => (r.is_primary ? 1000 : 0);
+
+  for (const row of images) {
+    const prev = bestByContrib.get(row.contribution_id);
+    if (!prev) {
+      bestByContrib.set(row.contribution_id, row);
+      continue;
+    }
+    if (rank(row) > rank(prev)) bestByContrib.set(row.contribution_id, row);
+    else if (rank(row) === rank(prev) && row.created_at < prev.created_at) bestByContrib.set(row.contribution_id, row);
+  }
+
+  const urlByContrib = new Map<string, string>();
+  await Promise.all(
+    [...bestByContrib.entries()].map(async ([cid, asset]) => {
+      const res = await resolveRabbitholeAssetUrl(
+        supabase,
+        {
+          accessLevel: asset.access_level as "public" | "private" | "team",
+          bucket: asset.bucket,
+          objectKey: asset.object_key,
+        },
+        { signedUrlTtlSec: 3600 },
+      );
+      if (res.ok) urlByContrib.set(cid, res.url);
+    }),
+  );
+
+  return items.map((item) => {
+    if (item.previewImageUrl?.trim()) return item;
+    const u = urlByContrib.get(item.id);
+    return u ? { ...item, previewImageUrl: u } : item;
+  });
+}
+
+async function enrichThreadsWithPromotedPreviews(
+  supabase: SupabaseClient,
+  threads: RabbitholeThread[],
+): Promise<RabbitholeThread[]> {
+  const postIds = [...new Set(threads.map((t) => t.promotedFromPostId).filter(Boolean))] as string[];
+  const unitIds = [...new Set(threads.map((t) => t.promotedFromUnitPostId).filter(Boolean))] as string[];
+
+  const [postsRes, unitRes] = await Promise.all([
+    postIds.length > 0
+      ? supabase.from("posts").select("id, og_image, image_url").in("id", postIds)
+      : Promise.resolve({ data: [] as any[], error: null }),
+    unitIds.length > 0
+      ? supabase.from("unit_posts").select("id, photo_url, gif_url").in("id", unitIds)
+      : Promise.resolve({ data: [] as any[], error: null }),
+  ]);
+
+  const postPreview = new Map<string, string>();
+  (postsRes.data ?? []).forEach((row: { id: string; og_image?: string | null; image_url?: string | null }) => {
+    const url = row.og_image || row.image_url;
+    if (typeof url === "string" && url.trim()) postPreview.set(row.id, url.trim());
+  });
+
+  const unitPreview = new Map<string, string>();
+  (unitRes.data ?? []).forEach((row: { id: string; photo_url?: string | null; gif_url?: string | null }) => {
+    const url = row.photo_url || row.gif_url;
+    if (typeof url === "string" && url.trim()) unitPreview.set(row.id, url.trim());
+  });
+
+  return threads.map((t) => {
+    let preview: string | null = null;
+    if (t.promotedFromPostId) preview = postPreview.get(t.promotedFromPostId) ?? null;
+    if (!preview && t.promotedFromUnitPostId) preview = unitPreview.get(t.promotedFromUnitPostId) ?? null;
+    return preview ? { ...t, previewImageUrl: preview } : t;
+  });
+}
+
 function mapThreadRow(row: any): RabbitholeThread {
   const topic = Array.isArray(row.rabbithole_topics) ? row.rabbithole_topics[0] : row.rabbithole_topics;
   const subtopic = Array.isArray(row.rabbithole_subtopics) ? row.rabbithole_subtopics[0] : row.rabbithole_subtopics;
@@ -86,6 +223,7 @@ function mapThreadRow(row: any): RabbitholeThread {
     sourceType: (row.source_type as "feed" | "unit") ?? "feed",
     promotedFromPostId: row.promoted_from_post_id ?? null,
     promotedFromUnitPostId: row.promoted_from_unit_post_id ?? null,
+    previewImageUrl: null,
   };
 }
 
@@ -228,7 +366,8 @@ export async function fetchRabbitholeThreads(
   const { data, error } = await query;
   if (error || !data) return [];
 
-  return (data as any[]).map(mapThreadRow);
+  const mapped = (data as any[]).map(mapThreadRow);
+  return enrichThreadsWithPromotedPreviews(supabase, mapped);
 }
 
 export async function searchRabbitholeThreads(
@@ -302,7 +441,7 @@ export async function searchRabbitholeThreads(
 
   const all = Array.from(byId.values());
   if (all.length > 0) {
-    return all
+    const sorted = all
       .map((thread) => {
         let score = 0;
         const pool = [thread.title, thread.curatorNote ?? "", thread.subtopic ?? "", ...thread.tags, thread.topicSlug].map(normalize).join(" ");
@@ -319,6 +458,7 @@ export async function searchRabbitholeThreads(
       .sort((a, b) => (b.score - a.score) || b.thread.lastActivityAt.localeCompare(a.thread.lastActivityAt))
       .slice(0, limit)
       .map((item) => item.thread);
+    return enrichThreadsWithPromotedPreviews(supabase, sorted);
   }
 
   return [];
@@ -343,8 +483,11 @@ export async function fetchRabbitholeThreadDetail(
 
   if (error || !data) return { thread: null, replies: [] };
 
+  const mapped = mapThreadRow(data);
+  const [withPreview] = await enrichThreadsWithPromotedPreviews(supabase, [mapped]);
+
   return {
-    thread: mapThreadRow(data),
+    thread: withPreview,
     replies: (repliesData ?? []).map((row: any) => ({
       id: row.id,
       threadId: row.thread_id,
@@ -794,6 +937,8 @@ function mapContributionRow(row: any): RabbitholeContribution {
     })
     .filter(Boolean) as string[];
 
+  const meta = (row.metadata as Record<string, unknown>) ?? {};
+
   return {
     id: row.id,
     title: row.title ?? "",
@@ -804,7 +949,7 @@ function mapContributionRow(row: any): RabbitholeContribution {
     tags,
     sourceUrl: row.source_url ?? null,
     sourceDomain: row.source_domain ?? null,
-    metadata: (row.metadata as Record<string, unknown>) ?? {},
+    metadata: meta,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastActivityAt: row.last_activity_at ?? row.created_at,
@@ -812,6 +957,7 @@ function mapContributionRow(row: any): RabbitholeContribution {
     likeCount: 0,
     commentCount: 0,
     viewerLiked: false,
+    previewImageUrl: contributionPreviewFromMeta(meta, row.source_url ?? null),
   };
 }
 
@@ -872,12 +1018,14 @@ export async function fetchRabbitholeContributions(
 
   const viewerLikedSet = new Set<string>((viewerLikesRes.data ?? []).map((row: any) => row.contribution_id));
 
-  return base.map((item) => ({
+  const withCounts = base.map((item) => ({
     ...item,
     likeCount: likeCountById.get(item.id) ?? 0,
     commentCount: commentCountById.get(item.id) ?? 0,
     viewerLiked: viewerLikedSet.has(item.id),
   }));
+
+  return enrichContributionsWithAssetPreviews(supabase, withCounts);
 }
 
 export async function createRabbitholeContribution(
@@ -1058,13 +1206,16 @@ export async function fetchRabbitholeContributionDetail(
 
   const assets = (assetRes.data ?? []).map(mapContributionAssetRow);
 
+  const mergedContribution = {
+    ...contribution,
+    likeCount: (likesRes as any).count ?? 0,
+    commentCount: comments.length,
+    viewerLiked: !!(viewerLikeRes as any).data,
+  };
+  const [withPreview] = await enrichContributionsWithAssetPreviews(supabase, [mergedContribution]);
+
   return {
-    contribution: {
-      ...contribution,
-      likeCount: (likesRes as any).count ?? 0,
-      commentCount: comments.length,
-      viewerLiked: !!(viewerLikeRes as any).data,
-    },
+    contribution: withPreview,
     comments,
     assets,
   };

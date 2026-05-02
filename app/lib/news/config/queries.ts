@@ -50,8 +50,13 @@ export const DISCOVERY_QUERIES: string[] = [
   '"explosive device" sheriff',
 ];
 
-/** GDELT timespan for the discovery query (rolling window). */
-export const DISCOVERY_TIMESPAN = "24h";
+/**
+ * GDELT timespan for the discovery query (rolling window).
+ * Use at least several days so local TV / affiliate pieces that GDELT indexes
+ * late still surface; `24h` misses anything older than the last day even when
+ * it is clearly on-topic (e.g. bomb squad / suspicious package stories).
+ */
+export const DISCOVERY_TIMESPAN = "7d";
 
 /** Hard cap on records pulled per query, keeps cron run latency bounded. */
 export const DISCOVERY_MAX_RECORDS_PER_QUERY = 15;

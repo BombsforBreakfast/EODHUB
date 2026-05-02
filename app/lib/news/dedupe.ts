@@ -54,6 +54,11 @@ export function computeDedupeKey(c: NewsCandidate): string {
   return sha1(`${host}::${headlineKey(c.headline)}`);
 }
 
+/** Same hash `computeDedupeKey` uses when a canonical article URL is known (e.g. manual admin enqueue). */
+export function dedupeKeyFromArticleUrl(url: string): string {
+  return sha1(url);
+}
+
 /**
  * Decorates each candidate with `dedupe_key` and `headline_key`, then collapses
  * in-batch duplicates by keeping the highest-weight (or, on tie, highest-score)

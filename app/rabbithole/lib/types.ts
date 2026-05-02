@@ -22,6 +22,8 @@ export type RabbitholeThread = {
   lastActivityAt: string;
   replyCount: number;
   isHighValue?: boolean;
+  /** Feed/unit OG image or photo when promoted from a post with media. */
+  previewImageUrl?: string | null;
   /**
    * 'feed' = promoted from the main feed (posts table)
    * 'unit' = promoted from a unit/group forum (unit_posts table)
@@ -67,6 +69,8 @@ export type RabbitholeContribution = {
   likeCount: number;
   commentCount: number;
   viewerLiked: boolean;
+  /** YouTube thumb, metadata OG image, or signed URL for an attached image asset. */
+  previewImageUrl?: string | null;
 };
 
 export type RabbitholeContributionComment = {

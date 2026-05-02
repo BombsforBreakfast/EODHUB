@@ -11,6 +11,7 @@ import { appendToTrail } from "./lib/helpers";
 import { linkifyPlainText } from "./lib/linkifyPlainText";
 import { fetchRabbitholeContributions, fetchRabbitholeThreads, fetchRabbitholeTopics } from "./lib/dataClient";
 import type { RabbitholeContentType, RabbitholeContribution, RabbitholeThread, RabbitholeTopic } from "./lib/types";
+import { httpsAssetUrl } from "../lib/urlPreview";
 
 type FilterState = {
   keyword: string;
@@ -429,6 +430,8 @@ export default function RabbitholeHomePageClient() {
 }
 
 function ThreadCard({ thread, theme: t }: { thread: RabbitholeThread; theme: Theme }) {
+  const previewSrc = thread.previewImageUrl?.trim() ? httpsAssetUrl(thread.previewImageUrl) : "";
+
   return (
     <div
       style={{
@@ -440,6 +443,14 @@ function ThreadCard({ thread, theme: t }: { thread: RabbitholeThread; theme: The
         overflow: "hidden",
       }}
     >
+      {previewSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={previewSrc}
+          alt={thread.title}
+          style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }}
+        />
+      ) : null}
       <div style={{ padding: "14px 14px 12px" }}>
         {/* Topic + source badges */}
         <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -552,6 +563,8 @@ function ThreadCard({ thread, theme: t }: { thread: RabbitholeThread; theme: The
 }
 
 function ContributionCard({ contribution, theme: t }: { contribution: RabbitholeContribution; theme: Theme }) {
+  const previewSrc = contribution.previewImageUrl?.trim() ? httpsAssetUrl(contribution.previewImageUrl) : "";
+
   return (
     <div
       style={{
@@ -563,6 +576,14 @@ function ContributionCard({ contribution, theme: t }: { contribution: Rabbithole
         overflow: "hidden",
       }}
     >
+      {previewSrc ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={previewSrc}
+          alt={contribution.title}
+          style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }}
+        />
+      ) : null}
       <div style={{ padding: "14px 14px 12px" }}>
         <div style={{ marginBottom: 6, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={typeBadgeStyle(contribution.contentType)}>{contentTypeLabel(contribution.contentType)}</span>

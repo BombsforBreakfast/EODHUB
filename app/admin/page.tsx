@@ -279,6 +279,26 @@ type BizEdit = {
   tags: string[];
 };
 
+type MemorialCategory = "military" | "leo_fed";
+
+/** Matches Events calendar memorial styling */
+const ADMIN_MEMORIAL_MILITARY_ACCENT = "#d9582b";
+const ADMIN_MEMORIAL_LEO_ACCENT = "#062b4f";
+
+function adminMemorialAccent(category?: MemorialCategory | null): string {
+  return category === "leo_fed" ? ADMIN_MEMORIAL_LEO_ACCENT : ADMIN_MEMORIAL_MILITARY_ACCENT;
+}
+
+function adminMemorialCardBg(category: MemorialCategory | undefined | null, isDark: boolean): string {
+  const leo = category === "leo_fed";
+  if (isDark) return leo ? "#061a30" : "#2a1409";
+  return leo ? "#eef6ff" : "#fdf3ed";
+}
+
+function normalizeMemorialCategory(category?: string | null): MemorialCategory {
+  return category === "leo_fed" ? "leo_fed" : "military";
+}
+
 type Memorial = {
   id: string;
   name: string;
@@ -286,6 +306,7 @@ type Memorial = {
   photo_url: string | null;
   bio: string | null;
   source_url: string | null;
+  category?: MemorialCategory | null;
 };
 
 type MemorialEdit = {
@@ -295,6 +316,7 @@ type MemorialEdit = {
   photo_url: string;
   bio: string;
   source_url: string;
+  category: MemorialCategory;
 };
 
 type AdminCalendarEvent = {
@@ -527,6 +549,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const [previewBulkSending, setPreviewBulkSending] = useState(false);
   const [newsSelected, setNewsSelected] = useState<Set<string>>(new Set());
   const [newsBulkBusy, setNewsBulkBusy] = useState(false);
+  const [manualNewsUrl, setManualNewsUrl] = useState("");
+  const [manualNewsHeadline, setManualNewsHeadline] = useState("");
+  const [manualNewsSummary, setManualNewsSummary] = useState("");
+  const [manualNewsBusy, setManualNewsBusy] = useState(false);
 
   const [pendingCounts, setPendingCounts] = useState({
     biz: 0,
@@ -605,6 +631,52 @@ const [memWizUrl, setMemWizUrl] = useState("");
       const json = await res.json();
       setNewsPendingCount((json.items ?? []).length);
     } catch { /* noop */ }
+  }
+
+  async function submitManualNews() {
+    const url = manualNewsUrl.trim();
+    if (!url) {
+      showToast("Enter an article URL");
+      return;
+    }
+    setManualNewsBusy(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/news/manual", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({
+          url,
+          headline: manualNewsHeadline.trim() || undefined,
+          summary: manualNewsSummary.trim() || undefined,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.status === 409) {
+        showToast(j.error || "That URL is already in the queue");
+        return;
+      }
+      if (!res.ok) {
+        showToast(`Could not add: ${j.error || res.status}`);
+        return;
+      }
+      setManualNewsUrl("");
+      setManualNewsHeadline("");
+      setManualNewsSummary("");
+      setNewsFilter("pending");
+      showToast(
+        j.metadata_fetched === false
+          ? "Added to pending (page metadata could not be fetched — optional headline/summary help next time)"
+          : "Added to pending queue"
+      );
+      await loadNews("pending");
+      void loadNewsPendingCount();
+    } finally {
+      setManualNewsBusy(false);
+    }
   }
 
   async function actOnNewsItem(id: string, action: "approve" | "reject") {
@@ -1638,7 +1710,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function loadMemorials() {
     const { data, error } = await supabase
       .from("memorials")
-      .select("id, name, death_date, photo_url, bio, source_url")
+      .select("id, name, death_date, photo_url, bio, source_url, category")
       .order("death_date", { ascending: false });
     if (error) { console.error(error); return; }
     setMemorials((data ?? []) as Memorial[]);
@@ -1719,6 +1791,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
         photo_url: editingMemorial.photo_url.trim() || null,
         bio: editingMemorial.bio.trim() || null,
         source_url: editingMemorial.source_url.trim() || null,
+        category: editingMemorial.category,
       }).eq("id", editingMemorial.id).select("id");
       if (error) throw new Error(error.message);
       // Defense-in-depth: Supabase returns success with 0 rows when an RLS
@@ -1959,7 +2032,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
               padding: 0,
               border: "none",
               background: "none",
-              color: "#d9582b",
+              color: adminMemorialAccent(mem.category),
               fontWeight: 700,
               fontSize: 12,
               cursor: "pointer",
@@ -3258,6 +3331,95 @@ const [memWizUrl, setMemWizUrl] = useState("");
               External stories ingest hourly via Supabase cron. Nothing reaches the public feed until you approve it here. Items below the relevance threshold are dropped before they ever land in this queue. Use <strong>Preview pipeline</strong> to inspect every candidate the scorer saw and surface false negatives.
             </div>
 
+            <div
+              style={{
+                border: `1px solid ${t.border}`,
+                borderRadius: 14,
+                background: t.surface,
+                padding: 14,
+                display: "grid",
+                gap: 10,
+              }}
+            >
+              <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>Manual RUMINT source</div>
+              <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
+                Paste a story URL. We pull Open Graph title, description, image, and outlet name when possible, then enqueue a normal pending item. Approving creates the same RUMINT shadow post as automated ingestion.
+              </div>
+              <input
+                type="url"
+                value={manualNewsUrl}
+                onChange={(e) => setManualNewsUrl(e.target.value)}
+                placeholder="https://…"
+                disabled={manualNewsBusy}
+                style={{
+                  width: "100%",
+                  maxWidth: 560,
+                  padding: "10px 12px",
+                  borderRadius: 8,
+                  border: `1px solid ${t.border}`,
+                  background: t.bg,
+                  color: t.text,
+                  fontSize: 14,
+                }}
+              />
+              <div style={{ display: "grid", gap: 8, maxWidth: 560 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Override headline (optional)</label>
+                <input
+                  type="text"
+                  value={manualNewsHeadline}
+                  onChange={(e) => setManualNewsHeadline(e.target.value)}
+                  placeholder="Leave blank to use page title / OG title"
+                  disabled={manualNewsBusy}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${t.border}`,
+                    background: t.bg,
+                    color: t.text,
+                    fontSize: 13,
+                  }}
+                />
+              </div>
+              <div style={{ display: "grid", gap: 8, maxWidth: 560 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Override summary (optional)</label>
+                <textarea
+                  value={manualNewsSummary}
+                  onChange={(e) => setManualNewsSummary(e.target.value)}
+                  placeholder="Leave blank to use meta description"
+                  disabled={manualNewsBusy}
+                  rows={3}
+                  style={{
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${t.border}`,
+                    background: t.bg,
+                    color: t.text,
+                    fontSize: 13,
+                    resize: "vertical",
+                  }}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => void submitManualNews()}
+                disabled={manualNewsBusy}
+                style={{
+                  justifySelf: "start",
+                  padding: "8px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: manualNewsBusy ? "default" : "pointer",
+                  background: manualNewsBusy ? t.badgeBg : "#0f766e",
+                  color: manualNewsBusy ? t.text : "white",
+                  opacity: manualNewsBusy ? 0.75 : 1,
+                }}
+              >
+                {manualNewsBusy ? "Adding…" : "Add to pending queue"}
+              </button>
+            </div>
+
             {newsItems.length > 0 && (
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "8px 12px", border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: t.text, cursor: "pointer" }}>
@@ -4129,11 +4291,15 @@ const [memWizUrl, setMemWizUrl] = useState("");
               )}
 
               <div style={{ display: "grid", gap: 12, minWidth: 0, width: "100%" }}>
-                {filteredMemorials.map((mem) => (
+                {filteredMemorials.map((mem) => {
+                  const accent = adminMemorialAccent(mem.category);
+                  const cardBg = adminMemorialCardBg(mem.category, isDark);
+                  const kindLabel = mem.category === "leo_fed" ? "LEO / Fed" : "Military";
+                  return (
                   <div key={mem.id}>
                     {editingMemorial?.id === mem.id ? (
                       /* ── Inline edit form ── */
-                      <div style={{ border: `2px solid #d9582b`, borderRadius: 12, padding: 16, display: "grid", gap: 10 }}>
+                      <div style={{ border: `2px solid ${adminMemorialAccent(editingMemorial.category)}`, borderRadius: 12, padding: 16, display: "grid", gap: 10, background: adminMemorialCardBg(editingMemorial.category, isDark) }}>
                         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 180px", gap: 8 }}>
                           <input
                             value={editingMemorial.name}
@@ -4147,6 +4313,29 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             onChange={(e) => setEditingMemorial((p) => p && ({ ...p, death_date: e.target.value }))}
                             style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
                           />
+                        </div>
+                        <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+                          <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Category</label>
+                          <select
+                            value={editingMemorial.category}
+                            onChange={(e) =>
+                              setEditingMemorial((p) =>
+                                p ? { ...p, category: e.target.value as MemorialCategory } : p
+                              )
+                            }
+                            style={{
+                              border: `1px solid ${t.inputBorder}`,
+                              borderRadius: 8,
+                              padding: "8px 10px",
+                              fontSize: 14,
+                              background: t.input,
+                              color: t.text,
+                              fontWeight: 600,
+                            }}
+                          >
+                            <option value="military">Military (EODWF)</option>
+                            <option value="leo_fed">LEO / Fed (Bomb Tech Memorial)</option>
+                          </select>
                         </div>
                         <input
                           value={editingMemorial.photo_url}
@@ -4171,7 +4360,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             onClick={() => memorialPhotoInputRef.current?.click()}
                             disabled={memPhotoUploading}
                             style={{
-                              background: "#d9582b",
+                              background: adminMemorialAccent(editingMemorial.category),
                               color: "white",
                               border: "none",
                               borderRadius: 8,
@@ -4222,7 +4411,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                         />
                         {editingMemorial.photo_url && (
                           <div style={{ position: "relative", width: 72, height: 90 }}>
-                            <img src={editingMemorial.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: "2px solid #d9582b" }} />
+                            <img src={editingMemorial.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: `2px solid ${adminMemorialAccent(editingMemorial.category)}` }} />
                             <button
                               type="button"
                               onClick={() => memorialPhotoInputRef.current?.click()}
@@ -4248,7 +4437,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           <button
                             onClick={updateMemorial}
                             disabled={memEditSaving || !editingMemorial.name.trim() || !editingMemorial.death_date}
-                            style={{ background: "#d9582b", color: "white", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: memEditSaving ? 0.6 : 1 }}
+                            style={{ background: adminMemorialAccent(editingMemorial.category), color: "white", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: memEditSaving ? 0.6 : 1 }}
                           >
                             {memEditSaving ? "Saving..." : "Save Changes"}
                           </button>
@@ -4264,10 +4453,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
                       /* ── Mobile: same card pattern as events page day-detail memorials ── */
                       <div
                         style={{
-                          border: "2px solid #d9582b",
+                          border: `2px solid ${accent}`,
                           borderRadius: 14,
                           padding: 20,
-                          background: isDark ? "#2a1409" : "#fdf3ed",
+                          background: cardBg,
                           display: "flex",
                           flexDirection: "column",
                           gap: 14,
@@ -4285,7 +4474,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 borderRadius: "50%",
                                 overflow: "hidden",
                                 flexShrink: 0,
-                                border: "3px solid #d9582b",
+                                border: `3px solid ${accent}`,
                               }}
                             >
                               <img src={mem.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -4302,13 +4491,14 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 alignItems: "center",
                                 justifyContent: "center",
                                 fontSize: 28,
-                                border: "3px solid #d9582b",
+                                border: `3px solid ${accent}`,
                               }}
                             >
-                              🪖
+                              {mem.category === "leo_fed" ? "🛡️" : "🪖"}
                             </div>
                           )}
                           <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ color: accent, fontSize: 10, fontWeight: 900, letterSpacing: "0.06em", textTransform: "uppercase" }}>{kindLabel}</div>
                             <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.25 }}>{mem.name}</div>
                             <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
                               {mem.death_date
@@ -4333,6 +4523,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 photo_url: mem.photo_url ?? "",
                                 bio: mem.bio ?? "",
                                 source_url: mem.source_url ?? "",
+                                category: normalizeMemorialCategory(mem.category),
                               })
                             }
                             style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
@@ -4350,12 +4541,13 @@ const [memWizUrl, setMemWizUrl] = useState("");
                       </div>
                     ) : (
                       /* ── Desktop: row view ── */
-                      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap", minWidth: 0, width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.bg, overflow: "hidden" }}>
+                      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap", minWidth: 0, width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: `2px solid ${accent}`, background: cardBg, overflow: "hidden" }}>
                         {mem.photo_url
-                          ? <img src={mem.photo_url} alt="" style={{ width: 44, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: "2px solid #d9582b" }} />
-                          : <div style={{ width: 44, height: 56, borderRadius: 6, background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🪖</div>
+                          ? <img src={mem.photo_url} alt="" style={{ width: 44, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: `2px solid ${accent}` }} />
+                          : <div style={{ width: 44, height: 56, borderRadius: 6, background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{mem.category === "leo_fed" ? "🛡️" : "🪖"}</div>
                         }
                         <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ color: accent, fontSize: 10, fontWeight: 900, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>{kindLabel}</div>
                           <div style={{ fontWeight: 800, fontSize: 14, wordBreak: "break-word" }}>{mem.name}</div>
                           <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
                             {mem.death_date ? new Date(mem.death_date + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "No date"}
@@ -4365,7 +4557,17 @@ const [memWizUrl, setMemWizUrl] = useState("");
                         <div style={{ display: "flex", gap: 6, flexShrink: 0, alignSelf: "center", marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "100%" }}>
                           <button
                             type="button"
-                            onClick={() => setEditingMemorial({ id: mem.id, name: mem.name, death_date: mem.death_date, photo_url: mem.photo_url ?? "", bio: mem.bio ?? "", source_url: mem.source_url ?? "" })}
+                            onClick={() =>
+                              setEditingMemorial({
+                                id: mem.id,
+                                name: mem.name,
+                                death_date: mem.death_date,
+                                photo_url: mem.photo_url ?? "",
+                                bio: mem.bio ?? "",
+                                source_url: mem.source_url ?? "",
+                                category: normalizeMemorialCategory(mem.category),
+                              })
+                            }
                             style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                           >
                             Edit
@@ -4381,7 +4583,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
