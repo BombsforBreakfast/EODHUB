@@ -44,6 +44,8 @@ export type BusinessListingRow = {
   like_count: number;
   listing_type?: "business" | "organization" | "resource" | null;
   tags?: string[] | null;
+  /** Set when a user's ownership claim was approved; grants edit/delete on the public listing. */
+  managed_by_user_id?: string | null;
 };
 
 export type BizListingType = "business" | "organization" | "resource";

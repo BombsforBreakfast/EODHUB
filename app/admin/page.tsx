@@ -34,6 +34,17 @@ type BusinessListing = {
   is_approved: boolean;
   is_featured: boolean;
   tags?: string[] | null;
+  listing_type?: string | null;
+  managed_by_user_id?: string | null;
+};
+
+type BizListingClaimPending = {
+  id: string;
+  listing_id: string;
+  claimant_user_id: string;
+  created_at: string;
+  listing_label: string;
+  claimant_label: string;
 };
 
 type Job = {
@@ -447,6 +458,8 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>("businesses");
 
   const [businesses, setBusinesses] = useState<BusinessListing[]>([]);
+  const [bizClaimsPending, setBizClaimsPending] = useState<BizListingClaimPending[]>([]);
+  const [bizManagerLabels, setBizManagerLabels] = useState<Record<string, string>>({});
   const [jobs, setJobs] = useState<Job[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
@@ -1024,7 +1037,84 @@ const [memWizUrl, setMemWizUrl] = useState("");
       ? await query.neq("is_approved", true)
       : await query;
     if (error) { console.error(error); return; }
-    setBusinesses((data ?? []) as BusinessListing[]);
+    const rows = (data ?? []) as BusinessListing[];
+    setBusinesses(rows);
+    const mgrIds = [...new Set(rows.map((r) => r.managed_by_user_id).filter(Boolean))] as string[];
+    if (mgrIds.length === 0) {
+      setBizManagerLabels({});
+      return;
+    }
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("user_id, display_name, first_name, last_name, email")
+      .in("user_id", mgrIds);
+    const next: Record<string, string> = {};
+    for (const p of profs ?? []) {
+      const row = p as {
+        user_id: string;
+        display_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        email: string | null;
+      };
+      const composed = [row.first_name, row.last_name].filter(Boolean).join(" ").trim();
+      next[row.user_id] = row.display_name?.trim() || composed || row.email || row.user_id.slice(0, 8);
+    }
+    setBizManagerLabels(next);
+  }
+
+  async function loadBizClaims() {
+    const { data, error } = await supabase
+      .from("business_listing_claims")
+      .select("id, listing_id, claimant_user_id, created_at, business_listings(business_name, og_title, website_url)")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false });
+    if (error) {
+      console.error(error);
+      setBizClaimsPending([]);
+      return;
+    }
+    const rows = (data ?? []) as unknown as Array<{
+      id: string;
+      listing_id: string;
+      claimant_user_id: string;
+      created_at: string;
+      business_listings:
+        | { business_name: string | null; og_title: string | null; website_url: string }
+        | { business_name: string | null; og_title: string | null; website_url: string }[]
+        | null;
+    }>;
+    const claimantIds = [...new Set(rows.map((r) => r.claimant_user_id))];
+    const { data: profs } = claimantIds.length
+      ? await supabase.from("profiles").select("user_id, display_name, first_name, last_name, email").in("user_id", claimantIds)
+      : { data: [] as { user_id: string; display_name: string | null; first_name: string | null; last_name: string | null; email: string | null }[] };
+    const profMap = new Map(
+      (profs ?? []).map((p) => [
+        p.user_id,
+        p as { user_id: string; display_name: string | null; first_name: string | null; last_name: string | null; email: string | null },
+      ]),
+    );
+    function claimantLabel(uid: string): string {
+      const p = profMap.get(uid);
+      if (!p) return `${uid.slice(0, 8)}…`;
+      const composed = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+      return p.display_name?.trim() || composed || p.email || `${uid.slice(0, 8)}…`;
+    }
+    setBizClaimsPending(
+      rows.map((r) => {
+        const rawNested = r.business_listings;
+        const nested = Array.isArray(rawNested) ? rawNested[0] : rawNested;
+        const listing_label = nested?.business_name || nested?.og_title || nested?.website_url || r.listing_id.slice(0, 8);
+        return {
+          id: r.id,
+          listing_id: r.listing_id,
+          claimant_user_id: r.claimant_user_id,
+          created_at: r.created_at,
+          listing_label,
+          claimant_label: claimantLabel(r.claimant_user_id),
+        };
+      }),
+    );
   }
 
   async function loadJobs() {
@@ -1187,7 +1277,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       }
 
       setAuthorized(true);
-      await Promise.all([loadBusinesses(), loadJobs(), loadUsers(), loadFlags(), loadPendingCounts()]);
+      await Promise.all([loadBusinesses(), loadBizClaims(), loadJobs(), loadUsers(), loadFlags(), loadPendingCounts()]);
       setLoading(false);
     }
     init();
@@ -1195,7 +1285,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
   useEffect(() => {
     if (!authorized) return;
-    if (activeTab === "businesses") loadBusinesses();
+    if (activeTab === "businesses") {
+      void loadBusinesses();
+      void loadBizClaims();
+    }
     if (activeTab === "jobs") loadJobs();
     if (activeTab === "users") loadUsers();
     if (activeTab === "groups") loadGroups();
@@ -1244,8 +1337,48 @@ const [memWizUrl, setMemWizUrl] = useState("");
       .from("business_listings")
       .update({ is_approved: true, is_featured: featured })
       .eq("id", id);
-    if (error) { alert(error.message); } else { showToast(featured ? "Approved & featured!" : "Approved!"); await Promise.all([loadBusinesses(), loadPendingCounts()]); }
+    if (error) { alert(error.message); } else { showToast(featured ? "Approved & featured!" : "Approved!"); await Promise.all([loadBusinesses(), loadBizClaims(), loadPendingCounts()]); }
     setActionLoading(null);
+  }
+
+  async function approveBizClaim(claimId: string) {
+    setActionLoading(`${claimId}-claim-ap`);
+    const { error } = await supabase.rpc("approve_business_listing_claim", { p_claim_id: claimId });
+    if (error) {
+      alert(error.message);
+    } else {
+      showToast("Ownership claim approved.");
+      await Promise.all([loadBizClaims(), loadBusinesses(), loadPendingCounts()]);
+    }
+    setActionLoading(null);
+  }
+
+  function rejectBizClaim(claimId: string) {
+    askConfirm("Reject this ownership claim?", async () => {
+      setActionLoading(`${claimId}-claim-rj`);
+      const { error } = await supabase.rpc("reject_business_listing_claim", { p_claim_id: claimId });
+      if (error) {
+        alert(error.message);
+      } else {
+        showToast("Claim rejected.");
+        await Promise.all([loadBizClaims(), loadPendingCounts()]);
+      }
+      setActionLoading(null);
+    });
+  }
+
+  function revokeListingManager(listingId: string) {
+    askConfirm("Remove this user as listing manager? They will lose edit access.", async () => {
+      setActionLoading(`${listingId}-revoke-mgr`);
+      const { error } = await supabase.from("business_listings").update({ managed_by_user_id: null }).eq("id", listingId);
+      if (error) {
+        alert(error.message);
+      } else {
+        showToast("Manager removed.");
+        await Promise.all([loadBusinesses(), loadPendingCounts()]);
+      }
+      setActionLoading(null);
+    });
   }
 
   async function toggleBusinessFeatured(id: string, nextFeatured: boolean) {
@@ -1258,7 +1391,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
       alert(error.message);
     } else {
       showToast(nextFeatured ? "Listing featured." : "Listing unfeatured.");
-      await Promise.all([loadBusinesses(), loadPendingCounts()]);
+      await Promise.all([loadBusinesses(), loadBizClaims(), loadPendingCounts()]);
     }
     setActionLoading(null);
   }
@@ -1267,7 +1400,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
     askConfirm("Delete this business listing?", async () => {
       setActionLoading(id);
       const { error } = await supabase.from("business_listings").delete().eq("id", id);
-      if (error) { alert(error.message); } else { showToast("Listing removed."); await Promise.all([loadBusinesses(), loadPendingCounts()]); }
+      if (error) { alert(error.message); } else { showToast("Listing removed."); await Promise.all([loadBusinesses(), loadBizClaims(), loadPendingCounts()]); }
       setActionLoading(null);
     });
   }
@@ -2243,6 +2376,51 @@ const [memWizUrl, setMemWizUrl] = useState("");
         {/* ── BUSINESSES TAB ── */}
         {activeTab === "businesses" && (
           <div style={{ marginTop: 20 }}>
+            {bizClaimsPending.length > 0 && (
+              <div
+                style={{
+                  marginBottom: 20,
+                  border: `1px solid ${isDark ? "#854d0e" : "#fcd34d"}`,
+                  borderRadius: 14,
+                  padding: 16,
+                  background: isDark ? "#1c1917" : "#fffbeb",
+                }}
+              >
+                <div style={{ fontWeight: 900, fontSize: 16, color: t.text, marginBottom: 4 }}>Pending ownership claims</div>
+                <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 12, lineHeight: 1.45 }}>
+                  Approving grants that user edit access for the listing. Other pending claims for the same listing are rejected automatically.
+                </div>
+                <div style={{ display: "grid", gap: 12 }}>
+                  {bizClaimsPending.map((c) => (
+                    <div key={c.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 12, background: t.surface }}>
+                      <div style={{ fontWeight: 800, color: t.text }}>{c.listing_label}</div>
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>Claimant: {c.claimant_label}</div>
+                      <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2 }}>Requested {new Date(c.created_at).toLocaleString()}</div>
+                      <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }}
+                          disabled={actionLoading === `${c.id}-claim-ap`}
+                          onClick={() => void approveBizClaim(c.id)}
+                        >
+                          {actionLoading === `${c.id}-claim-ap` && <span className="btn-spinner" />}
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          style={{ ...actionBtn("#6b7280"), display: "flex", alignItems: "center", gap: 5 }}
+                          disabled={actionLoading === `${c.id}-claim-rj`}
+                          onClick={() => rejectBizClaim(c.id)}
+                        >
+                          {actionLoading === `${c.id}-claim-rj` && <span className="btn-spinner" />}
+                          Reject
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {businesses.length === 0 && (
               <div style={{ padding: 32, textAlign: "center", color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
                 {pendingOnly ? "No pending business submissions." : "No business listings found."}
@@ -2271,6 +2449,23 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             </div>
                           )}
                           <BizListingTagChips tags={coerceTagsFromDb(biz.tags)} />
+                          {biz.managed_by_user_id && biz.is_approved ? (
+                            <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                              <span>
+                                <strong style={{ color: t.text }}>Manager:</strong>{" "}
+                                {bizManagerLabels[biz.managed_by_user_id] ?? `${biz.managed_by_user_id.slice(0, 8)}…`}
+                              </span>
+                              <button
+                                type="button"
+                                style={{ ...actionBtn("#6b7280"), fontSize: 11, padding: "4px 9px" }}
+                                disabled={actionLoading === `${biz.id}-revoke-mgr`}
+                                onClick={() => revokeListingManager(biz.id)}
+                              >
+                                {actionLoading === `${biz.id}-revoke-mgr` && <span className="btn-spinner" />}
+                                Revoke manager
+                              </button>
+                            </div>
+                          ) : null}
                           <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint }}>{new Date(biz.created_at).toLocaleDateString()}</div>
                         </div>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>

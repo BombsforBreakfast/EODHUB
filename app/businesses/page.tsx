@@ -63,10 +63,27 @@ type ListingComment = ListingCommentRow & {
 };
 
 const BUSINESS_LISTING_COLUMNS =
-  "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags";
+  "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags, managed_by_user_id";
 
 function coerceBizOrgType(listing: Pick<BusinessListing, "listing_type">): BusinessOrgListingType {
   return listing.listing_type === "organization" ? "organization" : "business";
+}
+
+function listingEligibleForClaim(listing: BusinessListing): boolean {
+  const t = normalizeBizListingTypeForListing(listing);
+  if (t !== "business" && t !== "organization") return false;
+  if (!listing.is_approved) return false;
+  if (listing.managed_by_user_id) return false;
+  return true;
+}
+
+function userManagesListing(listing: Pick<BusinessListing, "managed_by_user_id">, uid: string | null): boolean {
+  return Boolean(uid && listing.managed_by_user_id === uid);
+}
+
+function canEditBizListing(listing: BusinessListing, uid: string | null, admin: boolean): boolean {
+  if (admin) return true;
+  return userManagesListing(listing, uid);
 }
 
 export default function BusinessesPage() {
@@ -108,6 +125,10 @@ export default function BusinessesPage() {
   const [listingCommentRatings, setListingCommentRatings] = useState<Record<string, number | null>>({});
   const [submittingListingCommentFor, setSubmittingListingCommentFor] = useState<string | null>(null);
   const [selectedListing, setSelectedListing] = useState<BusinessListing | null>(null);
+  const [pendingClaimListingIds, setPendingClaimListingIds] = useState<Set<string>>(() => new Set());
+  const [claimSubmittingFor, setClaimSubmittingFor] = useState<string | null>(null);
+  const [claimConfirmListing, setClaimConfirmListing] = useState<BusinessListing | null>(null);
+  const [bizNotice, setBizNotice] = useState<string | null>(null);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 900);
@@ -144,6 +165,31 @@ export default function BusinessesPage() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!userId) {
+      setPendingClaimListingIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const { data, error } = await supabase
+        .from("business_listing_claims")
+        .select("listing_id")
+        .eq("claimant_user_id", userId)
+        .eq("status", "pending");
+      if (cancelled) return;
+      if (error) {
+        console.error("Pending business claims load error:", error);
+        setPendingClaimListingIds(new Set());
+        return;
+      }
+      setPendingClaimListingIds(new Set((data ?? []).map((r) => (r as { listing_id: string }).listing_id)));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   function profileName(p: ProfileRow | undefined, fallbackUserId: string): string {
     if (!p) return "Member";
@@ -277,7 +323,7 @@ export default function BusinessesPage() {
       for (const x of tagList) rememberCustomBizTag(x);
       const manualImageUrl = bizImageFile ? await uploadBizImage(bizImageFile) : null;
 
-      const basePayload = {
+      const contentPayload = {
         website_url: url,
         business_name: bizName.trim(),
         custom_blurb: bizBlurb.trim() || null,
@@ -289,62 +335,80 @@ export default function BusinessesPage() {
         og_description: bizOgPreview?.description ?? null,
         og_image: manualImageUrl ?? bizOgPreview?.image ?? null,
         og_site_name: bizOgPreview?.siteName ?? null,
-        is_approved: isAdmin,
-        is_featured: false,
         tags: tagList,
       };
 
-      let error: { message: string } | null = null;
       const listingTypeForRow = bizType;
+      const ownerScopedUpdate = Boolean(editingBizId && !isAdmin);
+
+      async function runUpdate(payload: Record<string, unknown>) {
+        let q = supabase.from("business_listings").update(payload).eq("id", editingBizId!);
+        if (ownerScopedUpdate) q = q.eq("managed_by_user_id", userId);
+        return q;
+      }
+
+      let error: { message: string; code?: string } | null = null;
 
       if (editingBizId) {
-        const res = await supabase
-          .from("business_listings")
-          .update({
-            ...basePayload,
-            listing_type: listingTypeForRow,
-            is_approved: true,
-          })
-          .eq("id", editingBizId);
-        error = res.error as { message: string } | null;
+        const adminUpdatePayload = { ...contentPayload, listing_type: listingTypeForRow, is_approved: true as const };
+        const ownerUpdatePayload = { ...contentPayload, listing_type: listingTypeForRow };
+        const res = await runUpdate(ownerScopedUpdate ? ownerUpdatePayload : adminUpdatePayload);
+        error = res.error;
+        if (error && isBizListingTagsMissingColumnError(error)) {
+          const { tags, ...noTagsContent } = contentPayload;
+          void tags;
+          const r2 = await runUpdate(
+            ownerScopedUpdate
+              ? { ...noTagsContent, listing_type: listingTypeForRow }
+              : { ...noTagsContent, listing_type: listingTypeForRow, is_approved: true as const },
+          );
+          error = r2.error;
+          if (error && isBizListingTypeMissingColumnError(error)) {
+            const r3 = await runUpdate(ownerScopedUpdate ? { ...noTagsContent } : { ...noTagsContent, is_approved: true as const });
+            error = r3.error;
+          }
+        } else if (error && isBizListingTypeMissingColumnError(error)) {
+          const r2 = await runUpdate(
+            ownerScopedUpdate ? { ...contentPayload } : { ...contentPayload, is_approved: true as const },
+          );
+          error = r2.error;
+          if (error && isBizListingTagsMissingColumnError(error)) {
+            const { tags, ...noTagsContent } = contentPayload;
+            void tags;
+            const r3 = await runUpdate(ownerScopedUpdate ? { ...noTagsContent } : { ...noTagsContent, is_approved: true as const });
+            error = r3.error;
+          }
+        }
       } else {
-        const res = await supabase.from("business_listings").insert([{ ...basePayload, listing_type: listingTypeForRow }]);
-        error = res.error as { message: string } | null;
+        const insertPayload = {
+          ...contentPayload,
+          listing_type: listingTypeForRow,
+          is_approved: isAdmin,
+          is_featured: false,
+        };
+        const res = await supabase.from("business_listings").insert([insertPayload]);
+        error = res.error;
+        if (error && isBizListingTagsMissingColumnError(error)) {
+          const { tags, ...noTags } = contentPayload;
+          void tags;
+          const r2 = await supabase.from("business_listings").insert([{ ...noTags, listing_type: listingTypeForRow, is_approved: isAdmin, is_featured: false }]);
+          error = r2.error;
+          if (error && isBizListingTypeMissingColumnError(error)) {
+            const r3 = await supabase.from("business_listings").insert([{ ...noTags, is_approved: isAdmin, is_featured: false }]);
+            error = r3.error;
+          }
+        } else if (error && isBizListingTypeMissingColumnError(error)) {
+          const r2 = await supabase.from("business_listings").insert([{ ...contentPayload, is_approved: isAdmin, is_featured: false }]);
+          error = r2.error;
+          if (error && isBizListingTagsMissingColumnError(error)) {
+            const { tags, ...noTags } = contentPayload;
+            void tags;
+            const r3 = await supabase.from("business_listings").insert([{ ...noTags, is_approved: isAdmin, is_featured: false }]);
+            error = r3.error;
+          }
+        }
       }
 
-      if (error && isBizListingTagsMissingColumnError(error)) {
-        const { tags, ...noTags } = basePayload;
-        void tags;
-        const r2 = editingBizId
-          ? await supabase
-              .from("business_listings")
-              .update({ ...noTags, listing_type: listingTypeForRow, is_approved: true })
-              .eq("id", editingBizId)
-          : await supabase.from("business_listings").insert([{ ...noTags, listing_type: listingTypeForRow }]);
-        error = r2.error;
-        if (error && isBizListingTypeMissingColumnError(error)) {
-          const r3 = editingBizId
-            ? await supabase.from("business_listings").update({ ...noTags, is_approved: true }).eq("id", editingBizId)
-            : await supabase.from("business_listings").insert([noTags]);
-          error = r3.error;
-        }
-      } else if (error && isBizListingTypeMissingColumnError(error)) {
-        const r2 = editingBizId
-          ? await supabase.from("business_listings").update({ ...basePayload, is_approved: true }).eq("id", editingBizId)
-          : await supabase.from("business_listings").insert([basePayload]);
-        error = r2.error;
-        if (error && isBizListingTagsMissingColumnError(error)) {
-          const { tags, ...noTags } = basePayload;
-          void tags;
-          const r3 = editingBizId
-            ? await supabase.from("business_listings").update({ ...noTags, is_approved: true }).eq("id", editingBizId)
-            : await supabase.from("business_listings").insert([noTags]);
-          error = r3.error;
-        }
-      } else if (error) {
-        alert(error.message);
-        return;
-      }
       if (error) {
         alert(error.message);
         return;
@@ -380,8 +444,65 @@ export default function BusinessesPage() {
     }
   }
 
+  async function submitBizClaim(listing: BusinessListing) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    if (!listingEligibleForClaim(listing)) return;
+    if (pendingClaimListingIds.has(listing.id)) {
+      setBizNotice("You already have a pending claim for this listing.");
+      window.setTimeout(() => setBizNotice(null), 4500);
+      return;
+    }
+    setClaimSubmittingFor(listing.id);
+    try {
+      const { error } = await supabase.from("business_listing_claims").insert({
+        listing_id: listing.id,
+        claimant_user_id: userId,
+      });
+      if (error) {
+        const code = (error as { code?: string }).code;
+        const msg = error.message?.toLowerCase() ?? "";
+        if (code === "23505" || msg.includes("duplicate")) {
+          setBizNotice("You already have a pending claim for this listing.");
+        } else {
+          setBizNotice(error.message || "Could not submit claim.");
+        }
+        window.setTimeout(() => setBizNotice(null), 5000);
+        return;
+      }
+      setPendingClaimListingIds((prev) => new Set(prev).add(listing.id));
+      setBizNotice("Claim submitted for review. An admin will approve or reject your request.");
+      window.setTimeout(() => setBizNotice(null), 5500);
+    } finally {
+      setClaimSubmittingFor(null);
+    }
+  }
+
+  async function handleClaimConfirmSubmit() {
+    if (!claimConfirmListing) return;
+    const listing = claimConfirmListing;
+    await submitBizClaim(listing);
+    setClaimConfirmListing(null);
+  }
+
+  async function deleteManagedBizListing(listing: BusinessListing) {
+    if (!userId || listing.managed_by_user_id !== userId) return;
+    if (!window.confirm("Remove this listing from the directory? This cannot be undone.")) return;
+    const { error } = await supabase.from("business_listings").delete().eq("id", listing.id).eq("managed_by_user_id", userId);
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setSelectedListing(null);
+    await refreshApprovedBizListings();
+    setBizNotice("Listing removed.");
+    window.setTimeout(() => setBizNotice(null), 4000);
+  }
+
   function beginEditBizListing(listing: BusinessListing) {
-    if (!isAdmin) return;
+    if (!canEditBizListing(listing, userId, isAdmin)) return;
     setEditingBizId(listing.id);
     setBizUrl(listing.website_url ?? "");
     setBizName(listing.business_name ?? listing.og_title ?? "");
@@ -464,11 +585,16 @@ export default function BusinessesPage() {
 
   useEffect(() => {
     function onEsc(ev: KeyboardEvent) {
-      if (ev.key === "Escape") setSelectedListing(null);
+      if (ev.key !== "Escape") return;
+      if (claimConfirmListing) {
+        setClaimConfirmListing(null);
+        return;
+      }
+      setSelectedListing(null);
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, []);
+  }, [claimConfirmListing]);
 
   async function loadListingEngagement(listingIds: string[]) {
     if (listingIds.length === 0) {
@@ -594,6 +720,25 @@ export default function BusinessesPage() {
           Browse EOD owned and operated businesses and organizations
         </div>
       </div>
+
+      {bizNotice ? (
+        <div
+          role="status"
+          style={{
+            marginBottom: 14,
+            padding: "11px 14px",
+            borderRadius: 10,
+            background: "#ecfdf5",
+            color: "#065f46",
+            fontWeight: 700,
+            fontSize: 14,
+            lineHeight: 1.45,
+            border: "1px solid #6ee7b7",
+          }}
+        >
+          {bizNotice}
+        </div>
+      ) : null}
 
       {showBizForm && (
         <div ref={bizFormRef} style={{ marginTop: 4, marginBottom: 14, border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
@@ -889,28 +1034,60 @@ export default function BusinessesPage() {
                 <div style={{ padding: "0 14px 8px" }}>
                   <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} maxVisible={3} />
                 </div>
-                <div style={{ padding: "0 14px 12px", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setSelectedListing(listing);
-                    }}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      display: "inline-flex",
-                      gap: 5,
-                      alignItems: "center",
-                      color: t.text,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <span style={{ fontSize: 13, fontWeight: 700 }}>Comment</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>{comments.length}</span>
-                  </button>
+                <div style={{ padding: "0 14px 12px", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ display: "inline-flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSelectedListing(listing);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        display: "inline-flex",
+                        gap: 5,
+                        alignItems: "center",
+                        color: t.text,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>Comment</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>{comments.length}</span>
+                    </button>
+                    {userId && listingEligibleForClaim(listing) ? (
+                      pendingClaimListingIds.has(listing.id) ? (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Claim pending</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={claimSubmittingFor === listing.id}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setClaimConfirmListing(listing);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "#2563eb",
+                            cursor: claimSubmittingFor === listing.id ? "wait" : "pointer",
+                            opacity: claimSubmittingFor === listing.id ? 0.65 : 1,
+                          }}
+                        >
+                          {claimSubmittingFor === listing.id ? "Claim…" : "Claim"}
+                        </button>
+                      )
+                    ) : null}
+                    {userManagesListing(listing, userId) ? (
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#15803d" }}>You manage this</span>
+                    ) : null}
+                  </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     {averageRounded === null ? (
                       <span style={{ fontSize: 12, color: t.textMuted }}>No ratings yet</span>
@@ -927,6 +1104,89 @@ export default function BusinessesPage() {
               </article>
             );
           })}
+        </div>
+      )}
+
+      {claimConfirmListing && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="claim-confirm-title"
+          onClick={() => {
+            if (claimSubmittingFor === claimConfirmListing.id) return;
+            setClaimConfirmListing(null);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            zIndex: 1300,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(420px, 100%)",
+              background: t.surface,
+              border: `1px solid ${t.border}`,
+              borderRadius: 14,
+              padding: 20,
+              boxSizing: "border-box",
+            }}
+          >
+            <div id="claim-confirm-title" style={{ fontSize: 18, fontWeight: 900, color: t.text, lineHeight: 1.3, marginBottom: 10 }}>
+              Confirm ownership claim
+            </div>
+            <p style={{ margin: "0 0 8px", fontSize: 15, color: t.text, lineHeight: 1.55 }}>
+              You are submitting that you are the owner of this business or organization.
+            </p>
+            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18, lineHeight: 1.45 }}>
+              <strong style={{ color: t.text }}>Listing:</strong>{" "}
+              {claimConfirmListing.og_title || claimConfirmListing.business_name || claimConfirmListing.og_site_name || "This listing"}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                disabled={claimSubmittingFor === claimConfirmListing.id}
+                onClick={() => setClaimConfirmListing(null)}
+                style={{
+                  background: t.surface,
+                  color: t.text,
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 8,
+                  padding: "9px 16px",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: claimSubmittingFor === claimConfirmListing.id ? "not-allowed" : "pointer",
+                  opacity: claimSubmittingFor === claimConfirmListing.id ? 0.6 : 1,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={claimSubmittingFor === claimConfirmListing.id}
+                onClick={() => void handleClaimConfirmSubmit()}
+                style={{
+                  background: "#2563eb",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "9px 16px",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: claimSubmittingFor === claimConfirmListing.id ? "wait" : "pointer",
+                  opacity: claimSubmittingFor === claimConfirmListing.id ? 0.85 : 1,
+                }}
+              >
+                {claimSubmittingFor === claimConfirmListing.id ? "Submitting…" : "Confirm"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1022,7 +1282,7 @@ export default function BusinessesPage() {
                     </div>
                   );
                 })()}
-                <div style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center" }}>
+                <div style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
                   <a
                     href={selectedListing.website_url}
                     target="_blank"
@@ -1032,7 +1292,31 @@ export default function BusinessesPage() {
                   >
                     Visit Website
                   </a>
-                  {isAdmin && (
+                  {userId && listingEligibleForClaim(selectedListing) ? (
+                    pendingClaimListingIds.has(selectedListing.id) ? (
+                      <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>Claim pending review</span>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={claimSubmittingFor === selectedListing.id}
+                        onClick={() => setClaimConfirmListing(selectedListing)}
+                        style={{
+                          background: "#eef2ff",
+                          color: "#3730a3",
+                          border: "1px solid #c7d2fe",
+                          borderRadius: 8,
+                          padding: "7px 12px",
+                          fontWeight: 700,
+                          fontSize: 13,
+                          cursor: claimSubmittingFor === selectedListing.id ? "wait" : "pointer",
+                          opacity: claimSubmittingFor === selectedListing.id ? 0.65 : 1,
+                        }}
+                      >
+                        {claimSubmittingFor === selectedListing.id ? "Submitting…" : "Claim listing"}
+                      </button>
+                    )
+                  ) : null}
+                  {canEditBizListing(selectedListing, userId, isAdmin) ? (
                     <button
                       type="button"
                       onClick={() => beginEditBizListing(selectedListing)}
@@ -1040,7 +1324,16 @@ export default function BusinessesPage() {
                     >
                       Edit
                     </button>
-                  )}
+                  ) : null}
+                  {userManagesListing(selectedListing, userId) ? (
+                    <button
+                      type="button"
+                      onClick={() => void deleteManagedBizListing(selectedListing)}
+                      style={{ background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca", borderRadius: 8, padding: "7px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                    >
+                      Delete listing
+                    </button>
+                  ) : null}
                 </div>
               </div>
               <div style={{ marginTop: 18, borderTop: `1px solid ${t.border}`, paddingTop: 14 }}>
