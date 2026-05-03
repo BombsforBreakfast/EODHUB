@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
+import { loadActiveProfile } from "../lib/auth/activeProfile";
+import { clearAppAuthState } from "../lib/auth/sessionState";
 
 const VOUCHES_NEEDED = 3;
 
@@ -21,13 +23,27 @@ export default function PendingPage() {
       setEmail(user.email ?? null);
       setUserId(user.id);
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("verification_status, first_name, referral_code, is_pure_admin")
-        .eq("user_id", user.id)
-        .maybeSingle();
+      const { profile } = await loadActiveProfile<{
+        user_id: string;
+        email: string | null;
+        display_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        photo_url: string | null;
+        verification_status: string | null;
+        referral_code: string | null;
+        is_pure_admin?: boolean | null;
+      }>(supabase, user, {
+        route: "app/pending/page.tsx:check",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, referral_code, is_pure_admin",
+      });
 
       const profileRow = profile as { verification_status: string | null; first_name: string | null; referral_code: string | null; is_pure_admin?: boolean | null } | null;
+
+      if (!profileRow) {
+        window.location.href = "/onboarding";
+        return;
+      }
 
       setStatus(profileRow?.verification_status ?? null);
       setReferralCode(profileRow?.referral_code ?? null);
@@ -80,6 +96,7 @@ export default function PendingPage() {
   }, [userId]);
 
   async function handleLogout() {
+    clearAppAuthState();
     await supabase.auth.signOut();
     window.location.href = "/login";
   }
@@ -116,11 +133,11 @@ export default function PendingPage() {
               Awaiting Verification
             </h2>
             <p style={{ fontSize: 15, color: "#555", lineHeight: 1.7, margin: "0 0 8px" }}>
-              Your account is pending review. Once verified, you'll receive a confirmation email and can access EOD HUB.
+              Your account is pending review. Once verified, you&apos;ll receive a confirmation email and can access EOD HUB.
             </p>
             {email && (
               <p style={{ fontSize: 14, color: "#888", margin: "0 0 28px" }}>
-                We'll notify you at <strong>{email}</strong>
+                We&apos;ll notify you at <strong>{email}</strong>
               </p>
             )}
 

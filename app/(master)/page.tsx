@@ -72,6 +72,7 @@ import {
 import { MemorialDisclaimer } from "../components/memorial/MemorialDisclaimer";
 import { memorialTheme } from "../components/memorial/memorialModalShared";
 import { getServiceRingColor } from "../lib/serviceBranchVisual";
+import { loadActiveProfile } from "../lib/auth/activeProfile";
 
 const EODWF_DONATION_URL = "https://eod-wf.org/?form=supportEODWF";
 const BTMF_DONATION_URL = "https://www.paypal.com/ncp/payment/SMU4NWRW55V6L";
@@ -856,6 +857,7 @@ export default function HomePage() {
   const [pendingMembers, setPendingMembers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null; vouch_count: number; user_vouched: boolean }[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const memberInteractionAllowedRef = useRef(true);
+  const activeProfileLoadSeqRef = useRef(0);
   const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
 
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
@@ -3841,7 +3843,23 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       }, 250);
     };
 
+    function resetActiveProfileState() {
+      setCurrentUserName(null);
+      setCurrentUserHasPhoto(true);
+      setCurrentUserReferralCode(null);
+      setIsAdmin(false);
+      setCanViewFullJobs(true);
+      setCanUseJobFilters(true);
+      setLikedBizIds(new Set());
+      setSavedJobIds(new Set());
+      setDiscoverProfiles([]);
+      setDiscoverVisible([]);
+      setPendingMembers([]);
+      memberInteractionAllowedRef.current = false;
+    }
+
     async function init() {
+      const loadSeq = ++activeProfileLoadSeqRef.current;
       try {
         const { data, error } = await supabase.auth.getUser();
 
@@ -3849,27 +3867,48 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           console.error("Auth load error:", error);
         }
 
-        const currentUserId = data.user?.id ?? null;
+        const authUser = data.user ?? null;
+        const currentUserId = authUser?.id ?? null;
 
-        if (!isMounted) return;
+        if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
-        if (!currentUserId) {
+        if (!authUser || !currentUserId) {
           window.location.href = "/login";
           return;
         }
 
         // Check verification status ΓÇö unverified users go to /pending
-        const { data: profileCheck } = await supabase
-          .from("profiles")
-          .select("verification_status, first_name, last_name, photo_url, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, access_tier, is_pure_admin, show_memorial_feed_cards")
-          .eq("user_id", currentUserId)
-          .maybeSingle();
+        const { profile: profileCheck } = await loadActiveProfile<{
+          user_id: string;
+          email: string | null;
+          display_name: string | null;
+          first_name: string | null;
+          last_name: string | null;
+          photo_url: string | null;
+          verification_status: string | null;
+          service: string | null;
+          status: string | null;
+          professional_tags: string[] | null;
+          unit_history_tags: string[] | null;
+          company_name: string | null;
+          account_type: string | null;
+          subscription_status: string | null;
+          referral_code: string | null;
+          is_admin: boolean | null;
+          access_tier: string | null;
+          is_pure_admin: boolean | null;
+          show_memorial_feed_cards: boolean | null;
+        }>(supabase, authUser, {
+          route: "app/(master)/page.tsx:init",
+          select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, access_tier, is_pure_admin, show_memorial_feed_cards",
+        });
+        if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
         const isPureAdminProfile = !!(profileCheck as { is_pure_admin?: boolean | null } | null)?.is_pure_admin;
 
         // Sync Google OAuth name to profile if first_name is missing
         // (skip for pure admins — they intentionally have no public name)
-        const googleName = data.user?.user_metadata?.full_name || data.user?.user_metadata?.name;
+        const googleName = authUser.user_metadata?.full_name || authUser.user_metadata?.name;
         if (!isPureAdminProfile && profileCheck && !profileCheck.first_name && googleName) {
           const parts = (googleName as string).trim().split(/\s+/);
           const fn = parts[0] || "";
@@ -3877,14 +3916,19 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           await supabase.from("profiles").update({ first_name: fn, last_name: ln }).eq("user_id", currentUserId);
         }
 
-        // If profile not yet set up, send to onboarding
-        // (pure admins have neither service nor company_name by design — skip)
-        if (!isPureAdminProfile && profileCheck && !profileCheck.service && !profileCheck.company_name) {
+        if (!profileCheck) {
           window.location.href = "/onboarding";
           return;
         }
 
-        if (!profileCheck || (profileCheck.verification_status !== "verified")) {
+        // If profile not yet set up, send to onboarding
+        // (pure admins have neither service nor company_name by design — skip)
+        if (!isPureAdminProfile && !profileCheck.service && !profileCheck.company_name) {
+          window.location.href = "/onboarding";
+          return;
+        }
+
+        if (profileCheck.verification_status !== "verified") {
           window.location.href = "/pending";
           return;
         }
@@ -3892,7 +3936,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         const interactionOk = memberHasInteractionAccess({
           accountType: profileCheck.account_type,
           subscriptionStatus: profileCheck.subscription_status ?? null,
-          authUserCreatedAtIso: data.user?.created_at ?? null,
+          authUserCreatedAtIso: authUser.created_at ?? null,
           isAdmin: profileCheck.is_admin,
         });
         const jobsAccess = getFeatureAccess((profileCheck as { access_tier?: string | null } | null)?.access_tier ?? null);
@@ -3903,7 +3947,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         setUserId(currentUserId);
 
         const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null; is_admin: boolean | null } | null;
-        if (isMounted) {
+        if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
           setCurrentUserHasPhoto(!!nd?.photo_url);
           setCurrentUserReferralCode(nd?.referral_code ?? null);
@@ -3915,7 +3959,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
         // Prioritize feed readiness: render as soon as posts are loaded, then hydrate secondary data.
         await loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err));
-        if (isMounted) {
+        if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setLoading(false);
         }
 
@@ -3940,7 +3984,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             loadSavedJobs(currentUserId).catch((err) => console.error("loadSavedJobs failed:", err))
           );
         }
-        void Promise.all(deferredTasks);
+        if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
+          void Promise.all(deferredTasks);
+        }
       } catch (error) {
         console.error("Homepage init error:", error);
         if (isMounted) {
@@ -3958,6 +4004,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     } = supabase.auth.onAuthStateChange((_event, session) => {
       const nextUserId = session?.user?.id ?? null;
       setUserId(nextUserId);
+      resetActiveProfileState();
+      setLoading(true);
+      if (nextUserId) {
+        void init();
+      } else {
+        window.location.href = "/login";
+      }
     });
 
     const channel = supabase
@@ -5115,6 +5168,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                             accentColor={theme.color}
                             variant="compact"
                             isMobile={isMobile}
+                            panelBackground={isDark ? theme.darkCommentBg : theme.lightCommentBg}
+                            scrapbookActorUserId={userId}
+                            scrapbookActorIsAdmin={isAdmin}
                           />
                         </div>
                       )}
@@ -5154,6 +5210,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                     accentColor={theme.color}
                                     variant="full"
                                     isMobile={isMobile}
+                                    panelBackground={isDark ? theme.darkCommentBg : theme.lightCommentBg}
+                                    scrapbookActorUserId={userId}
+                                    scrapbookActorIsAdmin={isAdmin}
                                   />
                                 </div>
                                 {commentsOpen && (

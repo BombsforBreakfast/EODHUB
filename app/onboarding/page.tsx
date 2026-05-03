@@ -10,6 +10,8 @@ import {
   TERMS_OF_SERVICE_TEXT,
 } from "../lib/legalText";
 import { isPureAdminEmail, STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../lib/pureAdminAllowlist";
+import { loadActiveProfile } from "../lib/auth/activeProfile";
+import { clearAppAuthState } from "../lib/auth/sessionState";
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
 const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
@@ -132,13 +134,22 @@ export default function OnboardingPage() {
       }
 
       // If already onboarded, redirect appropriately
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select(
-          "service, company_name, account_type, verification_status, first_name, subscription_terms_acknowledged_at",
-        )
-        .eq("user_id", user.id)
-        .maybeSingle();
+      const { profile } = await loadActiveProfile<{
+        user_id: string;
+        email: string | null;
+        display_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        photo_url: string | null;
+        service: string | null;
+        company_name: string | null;
+        account_type: "member" | "employer" | "admin" | null;
+        verification_status: string | null;
+        subscription_terms_acknowledged_at: string | null;
+      }>(supabase, user, {
+        route: "app/onboarding/page.tsx:check",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, service, company_name, account_type, verification_status, subscription_terms_acknowledged_at",
+      });
 
       if (profile?.verification_status === "verified" && (profile?.service || profile?.company_name)) {
         window.location.href = "/";
@@ -302,7 +313,7 @@ export default function OnboardingPage() {
             If you&apos;re already signed in on the main site, open the <strong>avatar menu</strong> (top-left) to switch to your other login. Otherwise sign out below and sign in the way you used originally. After you&apos;re in, use <strong>My Account → Sign-In Methods</strong> to add Google (or email &amp; password) so one account works everywhere.
           </div>
           <button
-            onClick={async () => { await supabase.auth.signOut(); window.location.href = "/login"; }}
+            onClick={async () => { clearAppAuthState(); await supabase.auth.signOut(); window.location.href = "/login"; }}
             style={{ padding: "12px 28px", borderRadius: 12, border: "none", background: "#111", color: "white", fontWeight: 700, fontSize: 15, cursor: "pointer", width: "100%" }}
           >
             Sign out &amp; go to login

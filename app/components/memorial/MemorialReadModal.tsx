@@ -13,10 +13,20 @@ type Props = {
   isMobile: boolean;
   /** Events calendar modal uses 1000; global nav layer should sit above nav chrome. */
   zIndex?: number;
+  /** From parent (single auth load) so scrapbook previews do not each call `getUser()`. */
+  scrapbookActorUserId?: string | null;
+  scrapbookActorIsAdmin?: boolean;
 };
 
-export function MemorialReadModal({ memorial, onClose, isMobile, zIndex = 1000 }: Props) {
-  const { t } = useTheme();
+export function MemorialReadModal({
+  memorial,
+  onClose,
+  isMobile,
+  zIndex = 1000,
+  scrapbookActorUserId = null,
+  scrapbookActorIsAdmin = false,
+}: Props) {
+  const { t, isDark } = useTheme();
   const theme = memorialTheme(memorial.category, memorial.service);
   const currentYear = new Date().getFullYear();
 
@@ -119,7 +129,15 @@ export function MemorialReadModal({ memorial, onClose, isMobile, zIndex = 1000 }
           ) : (
             <div style={{ color: t.textFaint, fontSize: 14 }}>No biography on file.</div>
           )}
-          <MemorialScrapbookPreview memorialId={memorial.id} t={t} accentColor={theme.color} isMobile={isMobile} />
+          <MemorialScrapbookPreview
+            memorialId={memorial.id}
+            t={t}
+            accentColor={theme.color}
+            isMobile={isMobile}
+            panelBackground={isDark ? theme.darkCommentBg : theme.lightCommentBg}
+            scrapbookActorUserId={scrapbookActorUserId}
+            scrapbookActorIsAdmin={scrapbookActorIsAdmin}
+          />
           <div style={{ marginTop: 16, fontSize: 11, lineHeight: 1.5, color: t.textFaint, fontStyle: "italic" }}>
             <MemorialDisclaimer category={memorial.category} sourceUrl={memorial.source_url} linkColor={theme.color} />
           </div>

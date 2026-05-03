@@ -6,6 +6,9 @@ import EodCrabLogo from "../components/EodCrabLogo";
 import { Turnstile } from "@marsidev/react-turnstile";
 import type { TurnstileInstance } from "@marsidev/react-turnstile";
 import { useTheme } from "../lib/ThemeContext";
+import { loadActiveProfile } from "../lib/auth/activeProfile";
+import { clearAppAuthState, markAppSessionActive } from "../lib/auth/sessionState";
+import BetaAccessModal from "../components/BetaAccessModal";
 
 
 export default function LoginPage() {
@@ -102,6 +105,7 @@ export default function LoginPage() {
   }, []);
 
   function signInWithGoogleOAuth() {
+    clearAppAuthState();
     const redirectTo = `${window.location.origin}/auth/callback?next=/onboarding`;
     const hint = email.trim();
     const options =
@@ -135,6 +139,7 @@ export default function LoginPage() {
         return;
       }
 
+      clearAppAuthState();
       const { error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
@@ -152,21 +157,25 @@ export default function LoginPage() {
       }
 
       // Remember me logic — mark whether this session should persist past browser close
-      if (!rememberMe) {
-        localStorage.setItem("eod_no_persist", "1");
-      } else {
-        localStorage.removeItem("eod_no_persist");
-      }
-      sessionStorage.setItem("eod_active", "1");
+      markAppSessionActive(rememberMe);
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("verification_status")
-        .eq("user_id", session.user.id)
-        .maybeSingle();
+      const { profile } = await loadActiveProfile<{
+        user_id: string;
+        email: string | null;
+        display_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        photo_url: string | null;
+        verification_status: string | null;
+      }>(supabase, session.user, {
+        route: "app/login/page.tsx:handleLogin",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status",
+      });
 
       if (profile?.verification_status === "verified") {
         window.location.href = "/";
+      } else if (!profile) {
+        window.location.href = "/onboarding";
       } else {
         window.location.href = "/pending";
       }
@@ -191,6 +200,7 @@ export default function LoginPage() {
         return;
       }
 
+      clearAppAuthState();
       const { error: signUpError } = await supabase.auth.signUp({ email, password });
 
       if (signUpError) {
@@ -205,7 +215,7 @@ export default function LoginPage() {
         return;
       }
 
-      sessionStorage.setItem("eod_active", "1");
+      markAppSessionActive(true);
       window.location.href = "/onboarding";
     } finally {
       setSubmitting(false);
@@ -280,6 +290,8 @@ export default function LoginPage() {
   };
 
   return (
+    <>
+      <BetaAccessModal />
     <div
       style={{
         minHeight: "100vh",
@@ -417,7 +429,14 @@ export default function LoginPage() {
       {/* ── Login / Signup flow ── */}
       {mode !== "forgot" && (
         <form
-          onSubmit={(e) => { e.preventDefault(); mode === "login" ? handleLogin() : handleSignup(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (mode === "login") {
+              handleLogin();
+            } else {
+              handleSignup();
+            }
+          }}
           style={{ display: "grid", gap: mode === "login" ? 9 : 12, marginTop: mode === "login" ? 0 : 8 }}
         >
           <input
@@ -483,7 +502,7 @@ export default function LoginPage() {
           {mode === "login" ? (
             <>
               <button
-                onClick={handleLogin}
+                type="submit"
                 disabled={submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError)}
                 style={{ ...buttonPrimary, opacity: submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
@@ -504,14 +523,14 @@ export default function LoginPage() {
                 <GoogleIcon />
                 Sign in with Google
               </button>
-              <button onClick={() => setMode("signup")} disabled={submitting} style={buttonSecondary}>
+              <button type="button" onClick={() => setMode("signup")} disabled={submitting} style={buttonSecondary}>
                 Need an account? Sign Up
               </button>
             </>
           ) : (
             <>
               <button
-                onClick={handleSignup}
+                type="submit"
                 disabled={submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError)}
                 style={{ ...buttonPrimary, opacity: submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
@@ -532,7 +551,7 @@ export default function LoginPage() {
                 <GoogleIcon />
                 Sign up with Google
               </button>
-              <button onClick={() => setMode("login")} disabled={submitting} style={buttonSecondary}>
+              <button type="button" onClick={() => setMode("login")} disabled={submitting} style={buttonSecondary}>
                 Back to Login
               </button>
             </>
@@ -551,6 +570,7 @@ export default function LoginPage() {
         </form>
       )}
     </div>
+    </>
   );
 }
 

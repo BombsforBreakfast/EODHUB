@@ -23,6 +23,8 @@ export function useMemorialNavModal(): MemorialNavModalContextValue {
 export function MemorialNavModalProvider({ children }: { children: ReactNode }) {
   const [memorial, setMemorial] = useState<Memorial | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [scrapbookActorUserId, setScrapbookActorUserId] = useState<string | null>(null);
+  const [scrapbookActorIsAdmin, setScrapbookActorIsAdmin] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -31,6 +33,35 @@ export function MemorialNavModalProvider({ children }: { children: ReactNode }) 
     sync();
     media.addEventListener("change", sync);
     return () => media.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function syncActorFromSession() {
+      const { data: { session } } = await supabase.auth.getSession();
+      const uid = session?.user?.id ?? null;
+      if (cancelled) return;
+      if (!uid) {
+        setScrapbookActorUserId(null);
+        setScrapbookActorIsAdmin(false);
+        return;
+      }
+      setScrapbookActorUserId(uid);
+      const { data: pr } = await supabase.from("profiles").select("is_admin").eq("user_id", uid).maybeSingle();
+      if (!cancelled) {
+        setScrapbookActorIsAdmin(Boolean((pr as { is_admin?: boolean | null } | null)?.is_admin));
+      }
+    }
+
+    void syncActorFromSession();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      void syncActorFromSession();
+    });
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
   }, []);
 
   const openMemorialById = useCallback((id: string) => {
@@ -49,7 +80,14 @@ export function MemorialNavModalProvider({ children }: { children: ReactNode }) 
     <MemorialNavModalContext.Provider value={value}>
       {children}
       {memorial ? (
-        <MemorialReadModal memorial={memorial} onClose={() => setMemorial(null)} isMobile={isMobile} zIndex={1200} />
+        <MemorialReadModal
+          memorial={memorial}
+          onClose={() => setMemorial(null)}
+          isMobile={isMobile}
+          zIndex={1200}
+          scrapbookActorUserId={scrapbookActorUserId}
+          scrapbookActorIsAdmin={scrapbookActorIsAdmin}
+        />
       ) : null}
     </MemorialNavModalContext.Provider>
   );

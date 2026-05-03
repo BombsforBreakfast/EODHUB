@@ -204,6 +204,7 @@ function EventsPageInner() {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [userId, setUserId] = useState<string | null>(null);
+  const [userIsAdmin, setUserIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const [allUpcomingEvents, setAllUpcomingEvents] = useState<CalendarEvent[]>([]);
@@ -1278,6 +1279,12 @@ function EventsPageInner() {
       const uid = data.user?.id ?? null;
 
       setUserId(uid);
+      if (uid) {
+        const { data: pr } = await supabase.from("profiles").select("is_admin").eq("user_id", uid).maybeSingle();
+        setUserIsAdmin(Boolean((pr as { is_admin?: boolean | null } | null)?.is_admin));
+      } else {
+        setUserIsAdmin(false);
+      }
 
       // Fire-and-forget: purge past events (memorials are unaffected)
       if (uid) {
@@ -3636,6 +3643,8 @@ function EventsPageInner() {
           memorial={selectedMemorial}
           onClose={() => setSelectedMemorial(null)}
           isMobile={isCalendarMobile}
+          scrapbookActorUserId={userId}
+          scrapbookActorIsAdmin={userIsAdmin}
         />
       )}
       <EventAttendeesListModal

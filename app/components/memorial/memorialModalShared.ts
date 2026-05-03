@@ -71,8 +71,8 @@ const ARMY_MEMORIAL_PRIMARY = "#5d6e31";
 /** Slightly brighter olive for card border / portrait ring. */
 const ARMY_MEMORIAL_RING = "#6b8e23";
 
-/** Marines: bright red CTAs + gold border (branch colors). */
-const MARINES_MEMORIAL_RED = "#ef4444";
+/** Marines: true scarlet (high R, very low B — same hue as CTAs; dark fills are mixed from this, not brown/purple neutrals). */
+const MARINES_MEMORIAL_RED = "#e01010";
 const MARINES_MEMORIAL_GOLD_OUTLINE = "#d4af37";
 
 /**
@@ -95,16 +95,18 @@ export function memorialTheme(category: MemorialCategory, service?: string | nul
     };
   }
   if (isMarinesService(service)) {
+    const R = MARINES_MEMORIAL_RED;
     return {
       color: MARINES_MEMORIAL_RED,
       outlineColor: MARINES_MEMORIAL_GOLD_OUTLINE,
       label: "We Remember",
-      darkBg: "#1a0a0a",
-      lightBg: "#fff7f7",
-      darkCommentBg: "#2a1010",
-      lightCommentBg: "#fee2e2",
-      darkBorder: "#7f1d1d",
-      lightBorder: "#fca5a5",
+      // Same hue as “Add to scrapbook” — deep scarlet, not burgundy/purple-gray.
+      darkBg: `color-mix(in srgb, ${R} 62%, #050000)`,
+      lightBg: "#fff8f8",
+      darkCommentBg: `color-mix(in srgb, ${R} 44%, #030000)`,
+      lightCommentBg: "#ffe8e6",
+      darkBorder: `color-mix(in srgb, ${R} 72%, #000000)`,
+      lightBorder: "#ffb8ae",
     };
   }
 

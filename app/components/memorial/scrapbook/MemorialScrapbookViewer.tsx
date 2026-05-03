@@ -16,6 +16,9 @@ type Props = {
   t: MemorialScrapbookTheme;
   accentColor: string;
   isMobile?: boolean;
+  canManageItem: (item: ScrapbookItemWithAuthor) => boolean;
+  onEditItem: (item: ScrapbookItemWithAuthor) => void;
+  onDeleteItem: (item: ScrapbookItemWithAuthor) => void;
 };
 
 export function MemorialScrapbookViewer({
@@ -27,16 +30,22 @@ export function MemorialScrapbookViewer({
   t,
   accentColor,
   isMobile,
+  canManageItem,
+  onEditItem,
+  onDeleteItem,
 }: Props) {
   const [index, setIndex] = useState(initialIndex);
   const compact = useScrapbookCompact(isMobile);
 
   useEffect(() => {
-    if (open) setIndex(Math.min(Math.max(0, initialIndex), Math.max(0, items.length - 1)));
+    if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- align viewer index when opening from strip
+    setIndex(Math.min(Math.max(0, initialIndex), Math.max(0, items.length - 1)));
   }, [open, initialIndex, items.length]);
 
   const n = items.length;
-  const current = n > 0 ? items[index] : null;
+  const indexSafe = Math.min(Math.max(0, index), Math.max(0, n - 1));
+  const current = n > 0 ? items[indexSafe] : null;
 
   useEffect(() => {
     if (!open || n === 0) return;
@@ -48,11 +57,17 @@ export function MemorialScrapbookViewer({
   }, [open, n]);
 
   const goPrev = useCallback(() => {
-    setIndex((i) => (i <= 0 ? n - 1 : i - 1));
+    setIndex((i) => {
+      const safe = Math.min(Math.max(0, i), Math.max(0, n - 1));
+      return safe <= 0 ? Math.max(0, n - 1) : safe - 1;
+    });
   }, [n]);
 
   const goNext = useCallback(() => {
-    setIndex((i) => (i >= n - 1 ? 0 : i + 1));
+    setIndex((i) => {
+      const safe = Math.min(Math.max(0, i), Math.max(0, n - 1));
+      return safe >= Math.max(0, n - 1) ? 0 : safe + 1;
+    });
   }, [n]);
 
   useEffect(() => {
@@ -145,7 +160,7 @@ export function MemorialScrapbookViewer({
           }}
         >
           <div style={{ fontSize: 14, fontWeight: 800, color: t.textMuted }}>
-            {index + 1} of {n}
+            {indexSafe + 1} of {n}
           </div>
           <button
             type="button"
@@ -268,25 +283,72 @@ export function MemorialScrapbookViewer({
                   </div>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={() => onFlag(current.id)}
+              <div
                 style={{
                   marginLeft: compact ? 0 : "auto",
-                  alignSelf: compact ? "stretch" : undefined,
-                  borderRadius: 10,
-                  border: `1px solid ${t.border}`,
-                  background: "transparent",
-                  color: t.textMuted,
-                  fontWeight: 700,
-                  fontSize: 12,
-                  padding: "10px 14px",
-                  minHeight: 44,
-                  cursor: "pointer",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 8,
+                  alignItems: "center",
+                  justifyContent: compact ? "flex-start" : "flex-end",
                 }}
               >
-                Flag / report
-              </button>
+                <button
+                  type="button"
+                  onClick={() => onFlag(current.id)}
+                  style={{
+                    borderRadius: 10,
+                    border: `1px solid ${t.border}`,
+                    background: "transparent",
+                    color: t.textMuted,
+                    fontWeight: 700,
+                    fontSize: 12,
+                    padding: "10px 14px",
+                    minHeight: 44,
+                    cursor: "pointer",
+                  }}
+                >
+                  Flag / report
+                </button>
+                {canManageItem(current) && (
+                  <button
+                    type="button"
+                    onClick={() => onEditItem(current)}
+                    style={{
+                      borderRadius: 10,
+                      border: `1px solid ${t.border}`,
+                      background: t.surfaceHover,
+                      color: t.text,
+                      fontWeight: 700,
+                      fontSize: 12,
+                      padding: "10px 14px",
+                      minHeight: 44,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Edit
+                  </button>
+                )}
+                {canManageItem(current) && (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteItem(current)}
+                    style={{
+                      borderRadius: 10,
+                      border: "none",
+                      background: "#ef4444",
+                      color: "white",
+                      fontWeight: 700,
+                      fontSize: 12,
+                      padding: "10px 14px",
+                      minHeight: 44,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -329,7 +391,7 @@ export function MemorialScrapbookViewer({
                     padding: 0,
                     borderRadius: 8,
                     overflow: "hidden",
-                    border: i === index ? `2px solid ${accentColor}` : `1px solid ${t.border}`,
+                    border: i === indexSafe ? `2px solid ${accentColor}` : `1px solid ${t.border}`,
                     cursor: "pointer",
                     background: t.badgeBg,
                   }}

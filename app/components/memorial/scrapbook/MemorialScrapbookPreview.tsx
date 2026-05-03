@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/app/lib/lib/supabaseClient";
 import { AddScrapbookItemModal } from "./AddScrapbookItemModal";
+import { EditScrapbookItemModal } from "./EditScrapbookItemModal";
 import { FlagScrapbookItemModal } from "./FlagScrapbookItemModal";
 import { MemorialScrapbookViewer } from "./MemorialScrapbookViewer";
 import {
@@ -29,6 +30,14 @@ type Props = {
   /** Full strip + buttons, or single summary line for compact memorial cards */
   variant?: "full" | "compact";
   isMobile?: boolean;
+  /** When set, empty / muted panels use this instead of `t.badgeBg` (keeps branch cards on-theme). */
+  panelBackground?: string;
+  /**
+   * Pass from the parent so we do not call `getUser()` per preview. Many memorial cards on one page
+   * each calling auth would contend on the browser Navigator lock and time out (breaking scrapbook load).
+   */
+  scrapbookActorUserId?: string | null;
+  scrapbookActorIsAdmin?: boolean;
 };
 
 async function loadApprovedWithAuthors(memorialId: string): Promise<{ items: ScrapbookItemWithAuthor[]; count: number }> {
@@ -102,7 +111,16 @@ function applyArticlePreviewThumbnails(
   });
 }
 
-export function MemorialScrapbookPreview({ memorialId, t, accentColor, variant = "full", isMobile }: Props) {
+export function MemorialScrapbookPreview({
+  memorialId,
+  t,
+  accentColor,
+  variant = "full",
+  isMobile,
+  panelBackground,
+  scrapbookActorUserId = null,
+  scrapbookActorIsAdmin = false,
+}: Props) {
   const [items, setItems] = useState<ScrapbookItemWithAuthor[]>([]);
   const [articleOgImages, setArticleOgImages] = useState<Record<string, string>>({});
   /** One OG fetch attempt per item id (success or fail) so we never spin when HTML has no og:image. */
@@ -113,6 +131,7 @@ export function MemorialScrapbookPreview({ memorialId, t, accentColor, variant =
   const [viewerIndex, setViewerIndex] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [flagItemId, setFlagItemId] = useState<string | null>(null);
+  const [editItem, setEditItem] = useState<ScrapbookItemWithAuthor | null>(null);
 
   const displayItems = useMemo(
     () => applyArticlePreviewThumbnails(items, articleOgImages),
@@ -135,6 +154,29 @@ export function MemorialScrapbookPreview({ memorialId, t, accentColor, variant =
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  const canManageItem = useCallback(
+    (it: ScrapbookItemWithAuthor) => {
+      if (scrapbookActorIsAdmin) return true;
+      if (scrapbookActorUserId && it.user_id && it.user_id === scrapbookActorUserId) return true;
+      return false;
+    },
+    [scrapbookActorUserId, scrapbookActorIsAdmin],
+  );
+
+  const handleDeleteItem = useCallback(
+    async (it: ScrapbookItemWithAuthor) => {
+      if (!window.confirm("Delete this scrapbook entry? This cannot be undone.")) return;
+      const { error } = await supabase.rpc("delete_memorial_scrapbook_item", { p_item_id: it.id });
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      setEditItem((cur) => (cur?.id === it.id ? null : cur));
+      await refresh();
+    },
+    [refresh],
+  );
 
   useEffect(() => {
     const pending = items.filter((i) => {
@@ -315,8 +357,8 @@ export function MemorialScrapbookPreview({ memorialId, t, accentColor, variant =
               marginTop: 14,
               padding: "16px 14px",
               borderRadius: 12,
-              border: `1px dashed ${t.border}`,
-              background: t.badgeBg,
+              border: `1px dashed ${panelBackground ? accentColor : t.border}`,
+              background: panelBackground ?? t.badgeBg,
               fontSize: 14,
               color: t.textMuted,
               lineHeight: 1.55,
@@ -340,41 +382,88 @@ export function MemorialScrapbookPreview({ memorialId, t, accentColor, variant =
             }}
           >
             {stripItems.map((it, i) => (
-              <button
+              <div
                 key={it.id}
-                type="button"
-                onClick={() => {
-                  setViewerIndex(i);
-                  setViewerOpen(true);
-                }}
                 style={{
                   width: SCRAPBOOK_PREVIEW_THUMB_PX,
                   flexShrink: 0,
-                  padding: "3px 5px 4px",
-                  borderRadius: 12,
-                  border: `1px solid ${t.border}`,
-                  background: t.surfaceHover,
-                  cursor: "pointer",
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "stretch",
-                  gap: 2,
+                  gap: 4,
                   boxSizing: "border-box",
                 }}
               >
-                <div
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewerIndex(i);
+                    setViewerOpen(true);
+                  }}
                   style={{
                     width: "100%",
-                    aspectRatio: "1 / 1",
-                    minHeight: 0,
-                    overflow: "hidden",
-                    borderRadius: 10,
+                    padding: "3px 5px 0",
+                    borderRadius: 12,
+                    border: `1px solid ${t.border}`,
+                    background: t.surfaceHover,
+                    cursor: "pointer",
                     display: "flex",
                     flexDirection: "column",
+                    alignItems: "stretch",
+                    gap: 2,
+                    boxSizing: "border-box",
                   }}
                 >
-                  <ScrapbookItemCard item={it} t={t} accentColor={accentColor} variant="thumb" />
-                </div>
+                  <div
+                    style={{
+                      width: "100%",
+                      aspectRatio: "1 / 1",
+                      minHeight: 0,
+                      overflow: "hidden",
+                      borderRadius: 10,
+                      display: "flex",
+                      flexDirection: "column",
+                    }}
+                  >
+                    <ScrapbookItemCard item={it} t={t} accentColor={accentColor} variant="thumb" />
+                  </div>
+                </button>
+                {canManageItem(it) && (
+                  <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => setEditItem(it)}
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: "4px 8px",
+                        borderRadius: 8,
+                        border: `1px solid ${t.border}`,
+                        background: t.surface,
+                        color: t.text,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteItem(it)}
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 800,
+                        padding: "4px 8px",
+                        borderRadius: 8,
+                        border: "none",
+                        background: "#ef4444",
+                        color: "white",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
                 <span
                   style={{
                     margin: 0,
@@ -389,7 +478,7 @@ export function MemorialScrapbookPreview({ memorialId, t, accentColor, variant =
                 >
                   {scrapbookThumbKindLabel(it)}
                 </span>
-              </button>
+              </div>
             ))}
           </div>
         )}
@@ -407,6 +496,18 @@ export function MemorialScrapbookPreview({ memorialId, t, accentColor, variant =
         t={t}
         accentColor={accentColor}
         isMobile={isMobile}
+        canManageItem={canManageItem}
+        onEditItem={(it) => setEditItem(it)}
+        onDeleteItem={(it) => void handleDeleteItem(it)}
+      />
+
+      <EditScrapbookItemModal
+        open={editItem !== null}
+        item={editItem}
+        onClose={() => setEditItem(null)}
+        onSaved={() => void refresh()}
+        t={t}
+        accentColor={accentColor}
       />
 
       <AddScrapbookItemModal

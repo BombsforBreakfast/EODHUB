@@ -12,6 +12,9 @@ import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import NotificationCenter from "./NotificationCenter";
 import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
+import { loadActiveProfile } from "../lib/auth/activeProfile";
+import { clearAppAuthState } from "../lib/auth/sessionState";
+import type { User } from "@supabase/supabase-js";
 
 type Notification = {
   id: string;
@@ -157,21 +160,33 @@ export default function NavBar() {
       }
     }
 
-    async function loadNavProfile(uid: string) {
-      const { data } = await supabase
-        .from("profiles")
-        .select("first_name, display_name, photo_url, is_admin, account_type, verification_status")
-        .eq("user_id", uid)
-        .maybeSingle();
-      if (!mounted) return;
-      const row = data as {
-        first_name: string | null;
+    function resetNavProfileState() {
+      setUserInitial("?");
+      setAvatarPhotoUrl(null);
+      setIsAdmin(false);
+      setIsEmployer(false);
+      setVerificationStatus(null);
+      setAdminPendingTotal(0);
+      setGroupPendingTotal(0);
+    }
+
+    async function loadNavProfile(user: User) {
+      const { profile } = await loadActiveProfile<{
+        user_id: string;
+        email: string | null;
         display_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
         photo_url: string | null;
         is_admin: boolean | null;
         account_type: string | null;
         verification_status: string | null;
-      } | null;
+      }>(supabase, user, {
+        route: "app/components/NavBar.tsx:loadNavProfile",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, is_admin, account_type, verification_status",
+      });
+      if (!mounted) return;
+      const row = profile;
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
       setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
       setIsEmployer(row?.account_type === "employer");
@@ -193,9 +208,10 @@ export default function NavBar() {
       const uid = session?.user?.id ?? null;
       setCurrentUserId(uid);
       setAuthLoaded(true);
+      resetNavProfileState();
 
-      if (uid) {
-        await loadNavProfile(uid);
+      if (uid && session?.user) {
+        await loadNavProfile(session.user);
         await loadNotifications(uid);
         // Load group pending count for any logged-in user (not just site admins)
         const { data: { session: s } } = await supabase.auth.getSession();
@@ -211,13 +227,6 @@ export default function NavBar() {
             })
             .catch(() => { /* non-fatal */ });
         }
-      } else {
-        setAvatarPhotoUrl(null);
-        setIsAdmin(false);
-        setIsEmployer(false);
-        setVerificationStatus(null);
-        setAdminPendingTotal(0);
-        setGroupPendingTotal(0);
       }
     }
 
@@ -228,15 +237,11 @@ export default function NavBar() {
       const uid = session?.user?.id ?? null;
       setCurrentUserId(uid);
       setAuthLoaded(true);
-      if (uid) {
-        void loadNavProfile(uid);
+      resetNavProfileState();
+      if (uid && session?.user) {
+        void loadNavProfile(session.user);
         void loadNotifications(uid);
       } else {
-        setAvatarPhotoUrl(null);
-        setIsAdmin(false);
-        setIsEmployer(false);
-        setVerificationStatus(null);
-        setAdminPendingTotal(0);
         setUserInitial("?");
       }
     });
@@ -435,6 +440,7 @@ export default function NavBar() {
   }, [showHub]);
 
   async function handleLogout() {
+    clearAppAuthState();
     const { error } = await supabase.auth.signOut();
     if (error) { console.error("Logout error:", error); return; }
     setIsAdmin(false);

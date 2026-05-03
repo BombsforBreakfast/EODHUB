@@ -23,7 +23,7 @@ import {
   MEMORIAL_MILITARY_COLOR,
   memorialTheme,
 } from "../components/memorial/memorialModalShared";
-import { MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
+import { isMarinesService, MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
 
 type BusinessListing = {
   id: string;
@@ -106,6 +106,68 @@ type AdminGroup = {
   owner_name: string | null;
 };
 
+type WaitlistSignupRow = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  email: string;
+  service: string | null;
+  created_at: string;
+};
+
+function isWaitlistSignupRow(x: unknown): x is WaitlistSignupRow {
+  if (typeof x !== "object" || x === null) return false;
+  const o = x as Record<string, unknown>;
+  return (
+    typeof o.id === "string" &&
+    typeof o.email === "string" &&
+    typeof o.created_at === "string" &&
+    (o.first_name === null || typeof o.first_name === "string") &&
+    (o.last_name === null || typeof o.last_name === "string") &&
+    (o.service === null || typeof o.service === "string")
+  );
+}
+
+function waitlistDisplayName(row: WaitlistSignupRow): string {
+  const parts = [row.first_name, row.last_name]
+    .map((s) => (typeof s === "string" ? s.trim() : ""))
+    .filter((s) => s.length > 0);
+  return parts.join(" ").trim() || "—";
+}
+
+function waitlistHaystack(row: WaitlistSignupRow): string {
+  return [waitlistDisplayName(row), row.email, row.service ?? ""].join(" ").toLowerCase();
+}
+
+function escapeCsvField(value: string): string {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+function buildWaitlistCsv(rows: WaitlistSignupRow[]): string {
+  const header = ["Name", "Email", "Service", "Joined Date"];
+  const lines = [header.map(escapeCsvField).join(",")];
+  for (const r of rows) {
+    const disp = waitlistDisplayName(r);
+    const nameForCsv = disp === "—" ? "" : disp;
+    const joined = new Date(r.created_at).toLocaleString();
+    lines.push([nameForCsv, r.email, r.service ?? "", joined].map(escapeCsvField).join(","));
+  }
+  return lines.join("\r\n");
+}
+
+function downloadWaitlistCsv(rows: WaitlistSignupRow[]): void {
+  const csv = buildWaitlistCsv(rows);
+  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `eod-hub-waitlist-${stamp}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 type Tab =
   | "businesses"
   | "jobs"
@@ -116,7 +178,8 @@ type Tab =
   | "reports"
   | "directory"
   | "engagement"
-  | "news";
+  | "news"
+  | "waitlist";
 
 type NewsIntakeDebugPayload = {
   provider: string;
@@ -461,6 +524,8 @@ function KpiCard({
 export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
+  /** Logged-in admin user id (scrapbook manage UI); set once on admin gate — avoids per-preview auth locks. */
+  const [adminActorUserId, setAdminActorUserId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("businesses");
 
   const [businesses, setBusinesses] = useState<BusinessListing[]>([]);
@@ -581,6 +646,17 @@ export default function AdminPage() {
   const [manualNewsHeadline, setManualNewsHeadline] = useState("");
   const [manualNewsSummary, setManualNewsSummary] = useState("");
   const [manualNewsBusy, setManualNewsBusy] = useState(false);
+
+  const [waitlistRows, setWaitlistRows] = useState<WaitlistSignupRow[]>([]);
+  const [waitlistLoading, setWaitlistLoading] = useState(false);
+  const [waitlistError, setWaitlistError] = useState<string | null>(null);
+  const [waitlistSearch, setWaitlistSearch] = useState("");
+
+  const filteredWaitlistRows = useMemo(() => {
+    const q = waitlistSearch.trim().toLowerCase();
+    if (!q) return waitlistRows;
+    return waitlistRows.filter((r) => waitlistHaystack(r).includes(q));
+  }, [waitlistRows, waitlistSearch]);
 
   const [pendingCounts, setPendingCounts] = useState({
     biz: 0,
@@ -1292,10 +1368,12 @@ export default function AdminPage() {
       if (!profile?.is_admin) {
         setLoading(false);
         setAuthorized(false);
+        setAdminActorUserId(null);
         return;
       }
 
       setAuthorized(true);
+      setAdminActorUserId(user.id);
       await Promise.all([loadBusinesses(), loadBizClaims(), loadJobs(), loadUsers(), loadFlags(), loadPendingCounts()]);
       setLoading(false);
     }
@@ -1320,6 +1398,7 @@ export default function AdminPage() {
     if (activeTab === "directory") loadDirectory();
     if (activeTab === "engagement") void loadEngagement(engagementRange);
     if (activeTab === "news") void loadNews(newsFilter);
+    if (activeTab === "waitlist") void loadWaitlist();
   }, [pendingOnly, activeTab, authorized, engagementRange, newsFilter]);
 
   useEffect(() => {
@@ -1846,6 +1925,47 @@ export default function AdminPage() {
     setBugReports(reports);
   }
 
+  async function loadWaitlist() {
+    setWaitlistLoading(true);
+    setWaitlistError(null);
+    try {
+      const { data, error } = await supabase
+        .from("waitlist_signups")
+        .select("id, first_name, last_name, email, service, created_at")
+        .order("created_at", { ascending: false });
+      if (error) {
+        setWaitlistError(error.message);
+        setWaitlistRows([]);
+        return;
+      }
+      const rows: WaitlistSignupRow[] = [];
+      for (const raw of data ?? []) {
+        if (isWaitlistSignupRow(raw)) rows.push(raw);
+      }
+      setWaitlistRows(rows);
+    } finally {
+      setWaitlistLoading(false);
+    }
+  }
+
+  function deleteWaitlistSignup(id: string, label: string) {
+    askConfirm(`Remove this waitlist entry (${label})?`, async () => {
+      const key = `waitlist-${id}`;
+      setActionLoading(key);
+      try {
+        const { error } = await supabase.from("waitlist_signups").delete().eq("id", id);
+        if (error) {
+          alert(error.message);
+          return;
+        }
+        showToast("Removed from waitlist.");
+        await loadWaitlist();
+      } finally {
+        setActionLoading(null);
+      }
+    });
+  }
+
   async function markReportReviewed(id: string) {
     setActionLoading(id);
     await supabase.from("bug_reports").update({ reviewed: true }).eq("id", id);
@@ -2175,7 +2295,7 @@ export default function AdminPage() {
     const likelyNeedsToggle = bio.length > 90 || bio.includes("\n");
     const showToggle = likelyNeedsToggle || expanded;
     const fontSize = variant === "mobile" ? 13 : 12;
-    const color = variant === "mobile" ? t.textMuted : t.textFaint;
+    const color = isDark ? "#ffffff" : variant === "mobile" ? t.textMuted : t.textFaint;
     const marginTop = variant === "mobile" ? 8 : 2;
     return (
       <div style={{ marginTop, minWidth: 0, width: "100%" }}>
@@ -2412,6 +2532,9 @@ export default function AdminPage() {
           <button type="button" style={tabStyle("news")} onClick={() => setActiveTab("news")}>
             News
             {tabNotifyBadge(newsPendingCount)}
+          </button>
+          <button type="button" style={tabStyle("waitlist")} onClick={() => setActiveTab("waitlist")}>
+            Waitlist
           </button>
 
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: t.textMuted }}>
@@ -4174,6 +4297,147 @@ export default function AdminPage() {
           </div>
         )}
 
+        {/* ── WAITLIST TAB ── */}
+        {activeTab === "waitlist" && (
+          <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 12,
+                justifyContent: "space-between",
+                border: `1px solid ${t.border}`,
+                borderRadius: 12,
+                padding: "14px 16px",
+                background: t.surface,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>Beta waitlist</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: t.text, marginTop: 2 }}>
+                  {waitlistLoading ? "…" : `${waitlistRows.length.toLocaleString()} total`}
+                  {waitlistSearch.trim() ? (
+                    <span style={{ fontSize: 14, fontWeight: 600, color: t.textMuted, marginLeft: 8 }}>
+                      ({filteredWaitlistRows.length} shown)
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", flex: 1, justifyContent: "flex-end", minWidth: 0 }}>
+                <input
+                  type="search"
+                  value={waitlistSearch}
+                  onChange={(e) => setWaitlistSearch(e.target.value)}
+                  placeholder="Search name, email, or service…"
+                  aria-label="Filter waitlist by name, email, or service"
+                  style={{
+                    minWidth: 200,
+                    maxWidth: 360,
+                    flex: "1 1 200px",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: `1px solid ${t.inputBorder}`,
+                    background: t.input,
+                    color: t.text,
+                    fontSize: 14,
+                    boxSizing: "border-box",
+                  }}
+                />
+                <button type="button" onClick={() => downloadWaitlistCsv(filteredWaitlistRows)} disabled={filteredWaitlistRows.length === 0} style={{ ...actionBtn("#374151"), opacity: filteredWaitlistRows.length === 0 ? 0.5 : 1, cursor: filteredWaitlistRows.length === 0 ? "not-allowed" : "pointer" }}>
+                  Export CSV
+                </button>
+                <button type="button" onClick={() => void loadWaitlist()} disabled={waitlistLoading} style={{ ...actionBtn("#111"), opacity: waitlistLoading ? 0.7 : 1 }}>
+                  {waitlistLoading ? "…" : "↻ Refresh"}
+                </button>
+              </div>
+            </div>
+
+            {waitlistError && (
+              <div style={{ border: "1px solid #fca5a5", borderRadius: 12, padding: 14, background: isDark ? "#2a1515" : "#fff5f5", color: "#b91c1c", fontSize: 14, fontWeight: 600 }}>
+                {waitlistError}
+              </div>
+            )}
+
+            {!waitlistLoading && !waitlistError && waitlistRows.length === 0 && (
+              <div style={{ color: t.textFaint, fontSize: 14, padding: 16, border: `1px dashed ${t.border}`, borderRadius: 12 }}>
+                No waitlist signups yet.
+              </div>
+            )}
+
+            {waitlistLoading && waitlistRows.length === 0 && !waitlistError && (
+              <div style={{ color: t.textMuted, fontSize: 14, padding: 16 }}>Loading waitlist…</div>
+            )}
+
+            {filteredWaitlistRows.length > 0 && !isMobile && (
+              <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface }}>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 600 }}>
+                    <thead>
+                      <tr style={{ background: t.badgeBg, color: t.text, textAlign: "left" }}>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}` }}>Name</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}` }}>Email</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}` }}>Service</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}`, whiteSpace: "nowrap" }}>Joined Date</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}`, width: 100, textAlign: "right" }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredWaitlistRows.map((r) => (
+                        <tr key={r.id} style={{ borderBottom: `1px solid ${t.border}` }}>
+                          <td style={{ padding: "12px 14px", fontWeight: 600, color: t.text, verticalAlign: "top" }}>{waitlistDisplayName(r)}</td>
+                          <td style={{ padding: "12px 14px", color: t.text, wordBreak: "break-all", verticalAlign: "top" }}>{r.email}</td>
+                          <td style={{ padding: "12px 14px", color: t.textMuted, verticalAlign: "top" }}>{r.service?.trim() || "—"}</td>
+                          <td style={{ padding: "12px 14px", color: t.textMuted, whiteSpace: "nowrap", verticalAlign: "top" }}>
+                            {new Date(r.created_at).toLocaleString()}
+                          </td>
+                          <td style={{ padding: "12px 14px", textAlign: "right", verticalAlign: "top" }}>
+                            <button
+                              type="button"
+                              onClick={() => deleteWaitlistSignup(r.id, r.email)}
+                              disabled={actionLoading === `waitlist-${r.id}`}
+                              style={{ ...actionBtn("#ef4444"), fontSize: 12, padding: "6px 12px" }}
+                            >
+                              {actionLoading === `waitlist-${r.id}` ? "…" : "Delete"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {filteredWaitlistRows.length > 0 && isMobile && (
+              <div style={{ display: "grid", gap: 10 }}>
+                {filteredWaitlistRows.map((r) => (
+                  <div key={r.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
+                    <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{waitlistDisplayName(r)}</div>
+                    <div style={{ fontSize: 13, color: t.text, marginTop: 6, wordBreak: "break-all" }}>{r.email}</div>
+                    <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6 }}>Service: {r.service?.trim() || "—"}</div>
+                    <div style={{ fontSize: 12, color: t.textFaint, marginTop: 8 }}>Joined {new Date(r.created_at).toLocaleString()}</div>
+                    <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end" }}>
+                      <button
+                        type="button"
+                        onClick={() => deleteWaitlistSignup(r.id, r.email)}
+                        disabled={actionLoading === `waitlist-${r.id}`}
+                        style={{ ...actionBtn("#ef4444"), fontSize: 12, padding: "6px 12px" }}
+                      >
+                        {actionLoading === `waitlist-${r.id}` ? "…" : "Delete"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!waitlistLoading && waitlistRows.length > 0 && filteredWaitlistRows.length === 0 && (
+              <div style={{ color: t.textMuted, fontSize: 14, padding: 12 }}>No rows match your search.</div>
+            )}
+          </div>
+        )}
+
         {/* ── EVENTS TAB ── */}
         {activeTab === "events" && (
           <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
@@ -5042,6 +5306,9 @@ export default function AdminPage() {
                           accentColor={editPal.color}
                           variant="full"
                           isMobile={isMobile}
+                          panelBackground={isDark ? editPal.darkCommentBg : editPal.lightCommentBg}
+                          scrapbookActorUserId={adminActorUserId}
+                          scrapbookActorIsAdmin
                         />
                       </div>
                     ) : isMobile ? (
@@ -5140,6 +5407,9 @@ export default function AdminPage() {
                           accentColor={accent}
                           variant="full"
                           isMobile={isMobile}
+                          panelBackground={isDark ? listPal.darkCommentBg : listPal.lightCommentBg}
+                          scrapbookActorUserId={adminActorUserId}
+                          scrapbookActorIsAdmin
                         />
                       </div>
                     ) : (
@@ -5213,6 +5483,9 @@ export default function AdminPage() {
                             accentColor={accent}
                             variant="full"
                             isMobile={isMobile}
+                            panelBackground={isDark ? listPal.darkCommentBg : listPal.lightCommentBg}
+                            scrapbookActorUserId={adminActorUserId}
+                            scrapbookActorIsAdmin
                           />
                         </div>
                       </div>

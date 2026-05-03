@@ -10,12 +10,25 @@ import SidebarThreadDrawer from "../SidebarThreadDrawer";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { MasterShellProvider } from "./masterShellContext";
+import { loadActiveProfile } from "../../lib/auth/activeProfile";
 
 const MasterLeftColumn = dynamic(() => import("./MasterLeftColumn"), { ssr: true });
 const MasterRightColumn = dynamic(() => import("./MasterRightColumn"), { ssr: true });
 
+function getSavedRailState(key: string): "expanded" | "collapsed" {
+  if (typeof window === "undefined") return "expanded";
+  try {
+    const saved = window.localStorage.getItem(key);
+    return saved === "expanded" || saved === "collapsed" ? saved : "expanded";
+  } catch {
+    return "expanded";
+  }
+}
+
 export default function MasterShell({ children }: { children: React.ReactNode }) {
   const { t } = useTheme();
+  // Must match server first paint: never read `window` / `localStorage` in useState initializers,
+  // or wide viewports hydrate as desktop while SSR always emitted mobile shell → hydration mismatch.
   const [isDesktop, setIsDesktop] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [leftRailState, setLeftRailState] = useState<"expanded" | "collapsed">("expanded");
@@ -32,70 +45,100 @@ export default function MasterShell({ children }: { children: React.ReactNode })
 
   useLayoutEffect(() => {
     const mq = window.matchMedia("(min-width: 901px)");
-    setIsDesktop(mq.matches);
-    const onChange = () => setIsDesktop(mq.matches);
-    mq.addEventListener("change", onChange);
-    return () => mq.removeEventListener("change", onChange);
+    function syncViewport() {
+      const desktop = mq.matches;
+      setIsDesktop(desktop);
+      if (desktop) {
+        setLeftRailState(getSavedRailState("eod-master-rail-left"));
+        setRightRailState(getSavedRailState("eod-master-rail-right"));
+      }
+    }
+    syncViewport();
+    mq.addEventListener("change", syncViewport);
+    return () => mq.removeEventListener("change", syncViewport);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    async function loadShellUser() {
       const { data } = await supabase.auth.getUser();
-      const uid = data.user?.id ?? null;
+      const user = data.user ?? null;
+      const uid = user?.id ?? null;
       if (cancelled) return;
       setUserId(uid);
-      if (!uid) return;
-      const { data: profileCheck } = await supabase
-        .from("profiles")
-        .select("account_type, subscription_status, is_admin, show_memorial_feed_cards")
-        .eq("user_id", uid)
-        .maybeSingle();
-      if (cancelled || !profileCheck) return;
+      if (!user) {
+        setShowMemorialFeedCards(true);
+        memberInteractionAllowedRef.current = false;
+        return;
+      }
+      const { profile: profileCheck } = await loadActiveProfile<{
+        user_id: string;
+        email: string | null;
+        display_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        photo_url: string | null;
+        account_type: string | null;
+        subscription_status: string | null;
+        is_admin: boolean | null;
+        show_memorial_feed_cards: boolean | null;
+      }>(supabase, user, {
+        route: "app/components/master/MasterShell.tsx:loadShellUser",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, account_type, subscription_status, is_admin, show_memorial_feed_cards",
+      });
+      if (cancelled) return;
+      if (!profileCheck) {
+        setShowMemorialFeedCards(true);
+        memberInteractionAllowedRef.current = false;
+        return;
+      }
       const p = profileCheck as { show_memorial_feed_cards?: boolean | null };
       setShowMemorialFeedCards(p.show_memorial_feed_cards !== false);
       memberInteractionAllowedRef.current = memberHasInteractionAccess({
         accountType: profileCheck.account_type,
         subscriptionStatus: profileCheck.subscription_status ?? null,
-        authUserCreatedAtIso: data.user?.created_at ?? null,
+        authUserCreatedAtIso: user.created_at ?? null,
         isAdmin: profileCheck.is_admin,
       });
-    })();
+    }
+
+    void loadShellUser();
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
+      void loadShellUser();
+    });
     return () => {
       cancelled = true;
+      subscription.unsubscribe();
     };
   }, []);
 
   useEffect(() => {
     if (!isDesktop) {
-      setSideRailsReady(false);
-      return;
+      const tid = window.setTimeout(() => {
+        setSideRailsReady(false);
+      }, 0);
+      return () => {
+        window.clearTimeout(tid);
+      };
     }
     // Keep side rails from competing with initial feed paint on cold desktop loads.
     // We intentionally wait a bit (not just "idle") because idle can fire almost immediately.
-    setSideRailsReady(false);
-    const tid = window.setTimeout(() => {
+    const resetTid = window.setTimeout(() => {
+      setSideRailsReady(false);
+    }, 0);
+    const readyTid = window.setTimeout(() => {
       setSideRailsReady(true);
     }, 900);
     return () => {
-      window.clearTimeout(tid);
+      window.clearTimeout(resetTid);
+      window.clearTimeout(readyTid);
     };
   }, [isDesktop]);
 
   useEffect(() => {
-    if (!isDesktop) return;
-    try {
-      const savedLeft = window.localStorage.getItem("eod-master-rail-left");
-      const savedRight = window.localStorage.getItem("eod-master-rail-right");
-      if (savedLeft === "expanded" || savedLeft === "collapsed") setLeftRailState(savedLeft);
-      if (savedRight === "expanded" || savedRight === "collapsed") setRightRailState(savedRight);
-    } catch {
-      // Ignore localStorage read issues (private mode, blocked storage)
+    if (!isDesktop) {
+      return;
     }
-  }, [isDesktop]);
-
-  useEffect(() => {
-    if (!isDesktop) return;
     try {
       window.localStorage.setItem("eod-master-rail-left", leftRailState);
       window.localStorage.setItem("eod-master-rail-right", rightRailState);

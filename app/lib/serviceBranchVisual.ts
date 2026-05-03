@@ -19,7 +19,7 @@ export function isMarinesService(service: string | null | undefined): boolean {
 export function getServiceRingColor(service: string | null | undefined): string | null {
   const s = typeof service === "string" ? service.trim() : "";
   if (!s) return null;
-  if (isMarinesService(s)) return "#bf0a30";
+  if (isMarinesService(s)) return "#e01010";
   switch (s) {
     case "Army":
       return "#556b2f";
@@ -28,7 +28,7 @@ export function getServiceRingColor(service: string | null | undefined): string 
     case "Air Force":
       return "#00b0f0";
     case "Marines":
-      return "#bf0a30";
+      return "#e01010";
     case "Civilian Bomb Tech":
       return "#000000";
     case "Civil Service":
