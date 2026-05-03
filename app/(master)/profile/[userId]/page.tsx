@@ -41,6 +41,7 @@ import {
 import { ServiceSealValue } from "../../../lib/serviceSeals";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
 import { STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../../../lib/pureAdminAllowlist";
+import { getServiceRingColor } from "../../../lib/serviceBranchVisual";
 
 type Profile = {
   user_id: string;
@@ -165,6 +166,10 @@ type DesktopMemorial = {
   name: string;
   death_date: string;
   source_url: string | null;
+  photo_url?: string | null;
+  bio?: string | null;
+  category?: "military" | "leo_fed" | null;
+  service?: string | null;
 };
 
 type DesktopConversation = {
@@ -392,19 +397,6 @@ function OgCard({ og }: { og: OgPreview }) {
       </div>
     </a>
   );
-}
-
-function getServiceRingColor(service: string | null | undefined): string | null {
-  switch (service) {
-    case "Army": return "#556b2f";
-    case "Navy": return "#003087";
-    case "Air Force": return "#00b0f0";
-    case "Marines": return "#bf0a30";
-    case "Civilian Bomb Tech": return "#000000";
-    case "Civil Service": return "#d97706";
-    case "Federal": return "#7c3aed";
-    default: return null;
-  }
 }
 
 function formatDate(dateString: string) {
@@ -2012,7 +2004,7 @@ export default function PublicProfilePage() {
         .order("date", { ascending: true }),
       supabase
         .from("memorials")
-        .select("id, name, death_date, source_url"),
+        .select("id, name, death_date, source_url, photo_url, bio, category, service"),
     ]);
 
     setDesktopCalendarEvents((eventsData ?? []) as DesktopCalendarEvent[]);

@@ -16,7 +16,10 @@ import { FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
+import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { coerceTagsFromDb, normalizeBizTagsInput } from "../lib/bizListingTags";
+import { memorialTheme } from "../components/memorial/memorialModalShared";
+import { MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
 
 type BusinessListing = {
   id: string;
@@ -106,7 +109,6 @@ type Tab =
   | "groups"
   | "flags"
   | "events"
-  | "scrapbook"
   | "reports"
   | "directory"
   | "engagement"
@@ -304,20 +306,6 @@ type BizEdit = {
 
 type MemorialCategory = "military" | "leo_fed";
 
-/** Matches Events calendar memorial styling */
-const ADMIN_MEMORIAL_MILITARY_ACCENT = "#d9582b";
-const ADMIN_MEMORIAL_LEO_ACCENT = "#062b4f";
-
-function adminMemorialAccent(category?: MemorialCategory | null): string {
-  return category === "leo_fed" ? ADMIN_MEMORIAL_LEO_ACCENT : ADMIN_MEMORIAL_MILITARY_ACCENT;
-}
-
-function adminMemorialCardBg(category: MemorialCategory | undefined | null, isDark: boolean): string {
-  const leo = category === "leo_fed";
-  if (isDark) return leo ? "#061a30" : "#2a1409";
-  return leo ? "#eef6ff" : "#fdf3ed";
-}
-
 function normalizeMemorialCategory(category?: string | null): MemorialCategory {
   return category === "leo_fed" ? "leo_fed" : "military";
 }
@@ -330,6 +318,7 @@ type Memorial = {
   bio: string | null;
   source_url: string | null;
   category?: MemorialCategory | null;
+  service?: string | null;
 };
 
 type MemorialEdit = {
@@ -340,6 +329,7 @@ type MemorialEdit = {
   bio: string;
   source_url: string;
   category: MemorialCategory;
+  service: string;
 };
 
 type AdminCalendarEvent = {
@@ -587,7 +577,11 @@ const [memWizUrl, setMemWizUrl] = useState("");
     reports: 0,
     dir: 0,
     locReq: 0,
+    scrapbook: 0,
   });
+
+  /** When true, Events tab shows the scrapbook moderation queue instead of calendars/memorials. */
+  const [eventsAdminScrapbookReviewOpen, setEventsAdminScrapbookReviewOpen] = useState(false);
 
   const { t, isDark } = useTheme();
 
@@ -1855,7 +1849,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
   async function loadMemorials() {
     const { data, error } = await supabase
       .from("memorials")
-      .select("id, name, death_date, photo_url, bio, source_url, category")
+      .select("id, name, death_date, photo_url, bio, source_url, category, service")
       .order("death_date", { ascending: false });
     if (error) { console.error(error); return; }
     setMemorials((data ?? []) as Memorial[]);
@@ -1937,6 +1931,10 @@ const [memWizUrl, setMemWizUrl] = useState("");
         bio: editingMemorial.bio.trim() || null,
         source_url: editingMemorial.source_url.trim() || null,
         category: editingMemorial.category,
+        service:
+          editingMemorial.category === "military" && editingMemorial.service.trim()
+            ? editingMemorial.service.trim()
+            : null,
       }).eq("id", editingMemorial.id).select("id");
       if (error) throw new Error(error.message);
       // Defense-in-depth: Supabase returns success with 0 rows when an RLS
@@ -2177,7 +2175,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
               padding: 0,
               border: "none",
               background: "none",
-              color: adminMemorialAccent(mem.category),
+              color: memorialTheme(mem.category, mem.service).color,
               fontWeight: 700,
               fontSize: 12,
               cursor: "pointer",
@@ -2362,9 +2360,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
           </button>
           <button type="button" style={tabStyle("events")} onClick={() => setActiveTab("events")}>
             Events
-          </button>
-          <button type="button" style={tabStyle("scrapbook")} onClick={() => setActiveTab("scrapbook")}>
-            Scrapbook
+            {tabNotifyBadge(pendingCounts.scrapbook)}
           </button>
           <button type="button" style={tabStyle("reports")} onClick={() => setActiveTab("reports")}>
             Reports
@@ -4145,6 +4141,44 @@ const [memWizUrl, setMemWizUrl] = useState("");
         {/* ── EVENTS TAB ── */}
         {activeTab === "events" && (
           <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              {eventsAdminScrapbookReviewOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setEventsAdminScrapbookReviewOpen(false)}
+                  style={{
+                    ...tabStyle("events"),
+                    background: "#111",
+                    color: "white",
+                    fontSize: 13,
+                    padding: "6px 14px",
+                  }}
+                >
+                  ← Events & memorials
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEventsAdminScrapbookReviewOpen(true)}
+                  style={{
+                    ...tabStyle("events"),
+                    background: t.badgeBg,
+                    color: t.text,
+                    fontSize: 13,
+                    padding: "6px 14px",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  Scrapbook review
+                  {tabNotifyBadge(pendingCounts.scrapbook)}
+                </button>
+              )}
+            </div>
+
+            {!eventsAdminScrapbookReviewOpen && (
+            <>
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
               <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Manage Events</div>
               <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
@@ -4507,14 +4541,20 @@ const [memWizUrl, setMemWizUrl] = useState("");
 
               <div style={{ display: "grid", gap: 12, minWidth: 0, width: "100%" }}>
                 {filteredMemorials.map((mem) => {
-                  const accent = adminMemorialAccent(mem.category);
-                  const cardBg = adminMemorialCardBg(mem.category, isDark);
+                  const listPal = memorialTheme(mem.category, mem.service);
+                  const accent = listPal.color;
+                  const outlineAccent = listPal.outlineColor;
+                  const cardBg = isDark ? listPal.darkBg : listPal.lightBg;
                   const kindLabel = mem.category === "leo_fed" ? "LEO / Fed" : "Military";
+                  const editPal =
+                    editingMemorial?.id === mem.id && editingMemorial
+                      ? memorialTheme(editingMemorial.category, editingMemorial.service)
+                      : null;
                   return (
                   <div key={mem.id}>
-                    {editingMemorial?.id === mem.id ? (
+                    {editingMemorial?.id === mem.id && editPal ? (
                       /* ── Inline edit form ── */
-                      <div style={{ border: `2px solid ${adminMemorialAccent(editingMemorial.category)}`, borderRadius: 12, padding: 16, display: "grid", gap: 10, background: adminMemorialCardBg(editingMemorial.category, isDark) }}>
+                      <div style={{ border: `2px solid ${editPal.outlineColor}`, borderRadius: 12, padding: 16, display: "grid", gap: 10, background: isDark ? editPal.darkBg : editPal.lightBg }}>
                         <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 180px", gap: 8 }}>
                           <input
                             value={editingMemorial.name}
@@ -4535,7 +4575,13 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             value={editingMemorial.category}
                             onChange={(e) =>
                               setEditingMemorial((p) =>
-                                p ? { ...p, category: e.target.value as MemorialCategory } : p
+                                p
+                                  ? {
+                                      ...p,
+                                      category: e.target.value as MemorialCategory,
+                                      service: e.target.value === "leo_fed" ? "" : p.service,
+                                    }
+                                  : p
                               )
                             }
                             style={{
@@ -4552,6 +4598,29 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             <option value="leo_fed">LEO / Fed (Bomb Tech Memorial)</option>
                           </select>
                         </div>
+                        {editingMemorial.category === "military" && (
+                          <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+                            <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Service</label>
+                            <select
+                              value={editingMemorial.service}
+                              onChange={(e) => setEditingMemorial((p) => (p ? { ...p, service: e.target.value } : p))}
+                              style={{
+                                border: `1px solid ${t.inputBorder}`,
+                                borderRadius: 8,
+                                padding: "8px 10px",
+                                fontSize: 14,
+                                background: t.input,
+                                color: t.text,
+                                fontWeight: 600,
+                              }}
+                            >
+                              <option value="">Not specified</option>
+                              {MEMORIAL_MILITARY_SERVICE_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                         <input
                           value={editingMemorial.photo_url}
                           onChange={(e) => setEditingMemorial((p) => p && ({ ...p, photo_url: e.target.value }))}
@@ -4575,7 +4644,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             onClick={() => memorialPhotoInputRef.current?.click()}
                             disabled={memPhotoUploading}
                             style={{
-                              background: adminMemorialAccent(editingMemorial.category),
+                              background: editPal.color,
                               color: "white",
                               border: "none",
                               borderRadius: 8,
@@ -4626,7 +4695,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                         />
                         {editingMemorial.photo_url && (
                           <div style={{ position: "relative", width: 72, height: 90 }}>
-                            <img src={editingMemorial.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: `2px solid ${adminMemorialAccent(editingMemorial.category)}` }} />
+                            <img src={editingMemorial.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: `2px solid ${editPal.outlineColor}` }} />
                             <button
                               type="button"
                               onClick={() => memorialPhotoInputRef.current?.click()}
@@ -4652,7 +4721,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                           <button
                             onClick={updateMemorial}
                             disabled={memEditSaving || !editingMemorial.name.trim() || !editingMemorial.death_date}
-                            style={{ background: adminMemorialAccent(editingMemorial.category), color: "white", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: memEditSaving ? 0.6 : 1 }}
+                            style={{ background: editPal.color, color: "white", border: "none", borderRadius: 8, padding: "8px 18px", fontWeight: 800, fontSize: 14, cursor: "pointer", opacity: memEditSaving ? 0.6 : 1 }}
                           >
                             {memEditSaving ? "Saving..." : "Save Changes"}
                           </button>
@@ -4663,12 +4732,19 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             Cancel
                           </button>
                         </div>
+                        <MemorialScrapbookPreview
+                          memorialId={mem.id}
+                          t={t}
+                          accentColor={editPal.color}
+                          variant="full"
+                          isMobile={isMobile}
+                        />
                       </div>
                     ) : isMobile ? (
                       /* ── Mobile: same card pattern as events page day-detail memorials ── */
                       <div
                         style={{
-                          border: `2px solid ${accent}`,
+                          border: `2px solid ${outlineAccent}`,
                           borderRadius: 14,
                           padding: 20,
                           background: cardBg,
@@ -4689,7 +4765,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 borderRadius: "50%",
                                 overflow: "hidden",
                                 flexShrink: 0,
-                                border: `3px solid ${accent}`,
+                                border: `3px solid ${outlineAccent}`,
                               }}
                             >
                               <img src={mem.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -4706,7 +4782,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 alignItems: "center",
                                 justifyContent: "center",
                                 fontSize: 28,
-                                border: `3px solid ${accent}`,
+                                border: `3px solid ${outlineAccent}`,
                               }}
                             >
                               {mem.category === "leo_fed" ? "🛡️" : "🪖"}
@@ -4739,6 +4815,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
                                 bio: mem.bio ?? "",
                                 source_url: mem.source_url ?? "",
                                 category: normalizeMemorialCategory(mem.category),
+                                service: mem.service ?? "",
                               })
                             }
                             style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
@@ -4753,47 +4830,86 @@ const [memWizUrl, setMemWizUrl] = useState("");
                             Delete
                           </button>
                         </div>
+                        <MemorialScrapbookPreview
+                          memorialId={mem.id}
+                          t={t}
+                          accentColor={accent}
+                          variant="full"
+                          isMobile={isMobile}
+                        />
                       </div>
                     ) : (
-                      /* ── Desktop: row view ── */
-                      <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap", minWidth: 0, width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: `2px solid ${accent}`, background: cardBg, overflow: "hidden" }}>
-                        {mem.photo_url
-                          ? <img src={mem.photo_url} alt="" style={{ width: 44, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: `2px solid ${accent}` }} />
-                          : <div style={{ width: 44, height: 56, borderRadius: 6, background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{mem.category === "leo_fed" ? "🛡️" : "🪖"}</div>
-                        }
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: accent, fontSize: 10, fontWeight: 900, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>{kindLabel}</div>
-                          <div style={{ fontWeight: 800, fontSize: 14, wordBreak: "break-word" }}>{mem.name}</div>
-                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                            {mem.death_date ? new Date(mem.death_date + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "No date"}
+                      /* ── Desktop: row view + scrapbook (same actions as memorial modal on Events page) ── */
+                      <div
+                        style={{
+                          borderRadius: 10,
+                          border: `2px solid ${outlineAccent}`,
+                          background: cardBg,
+                          overflow: "hidden",
+                          width: "100%",
+                          boxSizing: "border-box",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 12,
+                            alignItems: "flex-start",
+                            flexWrap: "wrap",
+                            minWidth: 0,
+                            width: "100%",
+                            boxSizing: "border-box",
+                            padding: "10px 12px",
+                          }}
+                        >
+                          {mem.photo_url
+                            ? <img src={mem.photo_url} alt="" style={{ width: 44, height: 56, objectFit: "cover", borderRadius: 6, flexShrink: 0, border: `2px solid ${outlineAccent}` }} />
+                            : <div style={{ width: 44, height: 56, borderRadius: 6, background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{mem.category === "leo_fed" ? "🛡️" : "🪖"}</div>
+                          }
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ color: accent, fontSize: 10, fontWeight: 900, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>{kindLabel}</div>
+                            <div style={{ fontWeight: 800, fontSize: 14, wordBreak: "break-word" }}>{mem.name}</div>
+                            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                              {mem.death_date ? new Date(mem.death_date + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "No date"}
+                            </div>
+                            {memorialBioPreview(mem, "desktop")}
                           </div>
-                          {memorialBioPreview(mem, "desktop")}
+                          <div style={{ display: "flex", gap: 6, flexShrink: 0, alignSelf: "center", marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "100%" }}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingMemorial({
+                                  id: mem.id,
+                                  name: mem.name,
+                                  death_date: mem.death_date,
+                                  photo_url: mem.photo_url ?? "",
+                                  bio: mem.bio ?? "",
+                                  source_url: mem.source_url ?? "",
+                                  category: normalizeMemorialCategory(mem.category),
+                                  service: mem.service ?? "",
+                                })
+                              }
+                              style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteMemorial(mem.id, mem.name)}
+                              style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </div>
-                        <div style={{ display: "flex", gap: 6, flexShrink: 0, alignSelf: "center", marginLeft: "auto", flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "100%" }}>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditingMemorial({
-                                id: mem.id,
-                                name: mem.name,
-                                death_date: mem.death_date,
-                                photo_url: mem.photo_url ?? "",
-                                bio: mem.bio ?? "",
-                                source_url: mem.source_url ?? "",
-                                category: normalizeMemorialCategory(mem.category),
-                              })
-                            }
-                            style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteMemorial(mem.id, mem.name)}
-                            style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-                          >
-                            Delete
-                          </button>
+                        <div style={{ padding: "0 12px 12px", boxSizing: "border-box" }}>
+                          <MemorialScrapbookPreview
+                            memorialId={mem.id}
+                            t={t}
+                            accentColor={accent}
+                            variant="full"
+                            isMobile={isMobile}
+                          />
                         </div>
                       </div>
                     )}
@@ -4802,11 +4918,14 @@ const [memWizUrl, setMemWizUrl] = useState("");
                 })}
               </div>
             </div>
+            </>
+            )}
+            {eventsAdminScrapbookReviewOpen && (
+              <AdminScrapbookReview t={t} showToast={showToast} onQueueChanged={() => void loadPendingCounts()} />
+            )}
 
           </div>
         )}
-
-        {activeTab === "scrapbook" && <AdminScrapbookReview t={t} showToast={showToast} />}
 
       </div>
     </div>

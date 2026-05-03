@@ -69,39 +69,21 @@ import {
   fetchContentReactionsForSubjects,
   type ReactionType,
 } from "../lib/reactions";
+import { MemorialDisclaimer } from "../components/memorial/MemorialDisclaimer";
+import { memorialTheme } from "../components/memorial/memorialModalShared";
+import { getServiceRingColor } from "../lib/serviceBranchVisual";
 
-const MEMORIAL_MILITARY_COLOR = "#d9582b";
-const MEMORIAL_LEO_COLOR = "#062b4f";
 const EODWF_DONATION_URL = "https://eod-wf.org/?form=supportEODWF";
 const BTMF_DONATION_URL = "https://www.paypal.com/ncp/payment/SMU4NWRW55V6L";
 
 type MemorialCategory = "military" | "leo_fed" | null | undefined;
 
-function memorialTheme(category: MemorialCategory) {
+function memorialDonationConfig(category: MemorialCategory, service?: string | null) {
   const isLeoFed = category === "leo_fed";
-  return {
-    color: isLeoFed ? MEMORIAL_LEO_COLOR : MEMORIAL_MILITARY_COLOR,
-    label: isLeoFed ? "End of Watch" : "We Remember",
-    darkBg: isLeoFed ? "#061a30" : "#2a1409",
-    lightBg: isLeoFed ? "#eef6ff" : "#fdf3ed",
-    darkCommentBg: isLeoFed ? "#0a2542" : "#3d1810",
-    lightCommentBg: isLeoFed ? "#dceeff" : "#fce8d9",
-    darkBorder: isLeoFed ? "#17476f" : "#5c2e12",
-    lightBorder: isLeoFed ? "#b8d8f3" : "#fbe2cf",
-  };
-}
-
-function memorialDisclaimer(category: MemorialCategory) {
-  return category === "leo_fed"
-    ? "* This information has been respectfully referenced from bombtechmemorial.org."
-    : "* This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.";
-}
-
-function memorialDonationConfig(category: MemorialCategory) {
-  const isLeoFed = category === "leo_fed";
+  const theme = memorialTheme(category, service);
   return {
     url: isLeoFed ? BTMF_DONATION_URL : EODWF_DONATION_URL,
-    color: isLeoFed ? MEMORIAL_LEO_COLOR : MEMORIAL_MILITARY_COLOR,
+    color: theme.color,
     title: isLeoFed
       ? "Donate as Tribute to the Bomb Technician Memorial Fund"
       : "Donate as Tribute to the EOD Warrior Foundation",
@@ -264,19 +246,6 @@ const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
 function isConnV2MissingColumnError(error: unknown): boolean {
   const msg = (error as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
   return msg.includes("column") && (msg.includes("status") || msg.includes("worked_with"));
-}
-
-function getServiceRingColor(service: string | null | undefined): string | null {
-  switch (service) {
-    case "Army": return "#556b2f";
-    case "Navy": return "#003087";
-    case "Air Force": return "#00b0f0";
-    case "Marines": return "#bf0a30";
-    case "Civilian Bomb Tech": return "#000000";
-    case "Civil Service": return "#d97706";
-    case "Federal": return "#7c3aed";
-    default: return null;
-  }
 }
 
 function normalizeTagArray(value: unknown): string[] {
@@ -866,7 +835,9 @@ export default function HomePage() {
   }>({ going: [], interested: [] });
   const [feedEventAttendeesListModal, setFeedEventAttendeesListModal] = useState<"interested" | "going" | null>(null);
 
-  const [todayMemorials, setTodayMemorials] = useState<{ id: string; name: string; bio: string | null; photo_url: string | null; death_date: string; category?: "military" | "leo_fed" | null }[]>([]);
+  const [todayMemorials, setTodayMemorials] = useState<
+    { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string; category?: "military" | "leo_fed" | null; service?: string | null; source_url?: string | null }[]
+  >([]);
   const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
   const [expandedMemorialCards, setExpandedMemorialCards] = useState<Record<string, boolean>>({});
   const [memorialLikes, setMemorialLikes] = useState<Record<string, string[]>>({});
@@ -1407,7 +1378,7 @@ export default function HomePage() {
 
     const { data, error } = await supabase
       .from("memorials")
-      .select("id, name, bio, photo_url, death_date, category");
+      .select("id, name, bio, photo_url, death_date, category, service, source_url");
 
     if (error) { console.error("Memorials load error:", error); return; }
 
@@ -1416,7 +1387,16 @@ export default function HomePage() {
       return parts[1] === mm && parts[2] === dd;
     });
 
-    const anniversaryList = todayAnniversaries as { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string; category?: "military" | "leo_fed" | null }[];
+    const anniversaryList = todayAnniversaries as {
+      id: string;
+      name: string;
+      bio: string | null;
+      photo_url: string | null;
+      death_date: string;
+      category?: "military" | "leo_fed" | null;
+      service?: string | null;
+      source_url?: string | null;
+    }[];
     setTodayMemorials(anniversaryList);
     void loadMemorialInteractions(anniversaryList.map(m => m.id));
 
@@ -5032,9 +5012,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               const isExpanded = !!expandedMemorialCards[m.id];
               const memorialCommentList = memorialComments[m.id] ?? [];
               const compactPreviewComments = memorialCommentList.slice(0, 2);
-              const theme = memorialTheme(m.category);
+              const theme = memorialTheme(m.category, m.service);
               return (
-                <div key={`memorial-${m.id}`} style={{ border: `2px solid ${theme.color}`, borderRadius: 14, overflow: "hidden" }}>
+                <div key={`memorial-${m.id}`} style={{ border: `2px solid ${theme.outlineColor}`, borderRadius: 14, overflow: "hidden" }}>
                   {/* Header banner */}
                   <div
                     style={{
@@ -5081,7 +5061,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       states so source context is always visible. */}
                   <div style={{ padding: isMobile ? 22 : 20, background: isDark ? theme.darkBg : theme.lightBg, display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? 12 : 16, alignItems: isMobile ? "center" : "flex-start" }}>
                     {m.photo_url && (
-                      <div style={{ width: isMobile ? 112 : 72, height: isMobile ? 112 : 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: `3px solid ${theme.color}` }}>
+                      <div style={{ width: isMobile ? 112 : 72, height: isMobile ? 112 : 72, borderRadius: "50%", overflow: "hidden", flexShrink: 0, border: `3px solid ${theme.outlineColor}` }}>
                         <img src={m.photo_url} alt={m.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       </div>
                     )}
@@ -5163,8 +5143,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                   </button>
                                 </div>
                                 <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}` }}>
-                                  <button type="button" onClick={() => setDonateModal(memorialDonationConfig(m.category))} style={{ background: theme.color, border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
-                                    {memorialDonationConfig(m.category).title}
+                                  <button type="button" onClick={() => setDonateModal(memorialDonationConfig(m.category, m.service))} style={{ background: theme.color, border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
+                                    {memorialDonationConfig(m.category, m.service).title}
                                   </button>
                                 </div>
                                 <div style={{ textAlign: "left", width: "100%" }}>
@@ -5273,7 +5253,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       fontStyle: "italic",
                     }}
                   >
-                    {memorialDisclaimer(m.category)}
+                    <MemorialDisclaimer category={m.category} sourceUrl={m.source_url} linkColor={theme.color} />
                   </div>
                 </div>
               );

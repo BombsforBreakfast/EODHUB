@@ -5,8 +5,9 @@ import { supabase } from "@/app/lib/lib/supabaseClient";
 import type { MemorialScrapbookTheme } from "./types";
 import type { ScrapbookItemType } from "./types";
 
-const SUCCESS_MSG =
+const SUCCESS_MSG_REVIEW =
   "Thanks for contributing. Your scrapbook item has been submitted for admin review.";
+const SUCCESS_MSG_PUBLISHED = "Your scrapbook item has been published.";
 
 type Props = {
   open: boolean;
@@ -31,6 +32,7 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [successMessage, setSuccessMessage] = useState(SUCCESS_MSG_REVIEW);
 
   useEffect(() => {
     if (!open) return;
@@ -55,6 +57,7 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
     setConfirmed(false);
     setError(null);
     setSuccess(false);
+    setSuccessMessage(SUCCESS_MSG_REVIEW);
   }
 
   function close() {
@@ -117,6 +120,9 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
       return;
     }
 
+    const { data: profileRow } = await supabase.from("profiles").select("is_admin").eq("user_id", uid).maybeSingle();
+    const isAdminContributor = Boolean((profileRow as { is_admin?: boolean | null } | null)?.is_admin);
+
     setSubmitting(true);
     try {
       let fileUrl: string | null = null;
@@ -133,7 +139,7 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
         fileUrl = await uploadFile(file, uid);
       } else if (itemType === "article") {
         if (!externalUrl.trim()) {
-          setError("Please enter an article or news URL.");
+          setError("Please enter a website URL.");
           return;
         }
         extUrl = externalUrl.trim();
@@ -155,14 +161,15 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
         thumbnail_url: thumb,
         memory_body: memBody,
         caption: cap,
-        location: location.trim() || null,
-        event_date: eventDate.trim() || null,
-        status: "pending" as const,
+        location: itemType === "photo" ? (location.trim() || null) : null,
+        event_date: itemType === "photo" ? (eventDate.trim() || null) : null,
+        status: (isAdminContributor ? "approved" : "pending") as "pending" | "approved",
       };
 
       const { error: insErr } = await supabase.from("memorial_scrapbook_items").insert(row);
       if (insErr) throw new Error(insErr.message);
 
+      setSuccessMessage(isAdminContributor ? SUCCESS_MSG_PUBLISHED : SUCCESS_MSG_REVIEW);
       setSuccess(true);
       onSubmitted();
       setTimeout(() => {
@@ -217,7 +224,7 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
           Add to scrapbook
         </div>
         {success ? (
-          <p style={{ marginTop: 14, fontSize: 14, lineHeight: 1.55, color: t.textMuted }}>{SUCCESS_MSG}</p>
+          <p style={{ marginTop: 14, fontSize: 14, lineHeight: 1.55, color: t.textMuted }}>{successMessage}</p>
         ) : (
           <>
             <div style={{ marginTop: 12, fontSize: 12, fontWeight: 700, color: t.textMuted }}>Item type</div>
@@ -237,6 +244,10 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
                     setItemType(v);
                     setFile(null);
                     setError(null);
+                    if (v !== "photo") {
+                      setLocation("");
+                      setEventDate("");
+                    }
                   }}
                   style={{
                     borderRadius: 999,
@@ -269,7 +280,7 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
             {itemType === "article" && (
               <div style={{ marginTop: 14 }}>
                 <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>
-                  External URL
+                  Website
                   <input
                     value={externalUrl}
                     onChange={(e) => setExternalUrl(e.target.value)}
@@ -341,66 +352,112 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
               </label>
             )}
 
-            <label style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 700, color: t.textMuted }}>
-              Caption / context {itemType === "memory" ? "(optional)" : ""}
-              <input
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  marginTop: 6,
-                  boxSizing: "border-box",
-                  borderRadius: 10,
-                  border: `1px solid ${t.border}`,
-                  background: t.surfaceHover,
-                  color: t.text,
-                  padding: "10px 12px",
-                  fontSize: 14,
-                }}
-              />
-            </label>
+            {itemType === "photo" && (
+              <>
+                <label style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 700, color: t.textMuted }}>
+                  Caption (optional)
+                  <input
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      marginTop: 6,
+                      boxSizing: "border-box",
+                      borderRadius: 10,
+                      border: `1px solid ${t.border}`,
+                      background: t.surfaceHover,
+                      color: t.text,
+                      padding: "10px 12px",
+                      fontSize: 14,
+                    }}
+                  />
+                </label>
+                <label style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 700, color: t.textMuted }}>
+                  Location (optional)
+                  <input
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      marginTop: 6,
+                      boxSizing: "border-box",
+                      borderRadius: 10,
+                      border: `1px solid ${t.border}`,
+                      background: t.surfaceHover,
+                      color: t.text,
+                      padding: "10px 12px",
+                      fontSize: 14,
+                    }}
+                  />
+                </label>
+                <label style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 700, color: t.textMuted }}>
+                  Date of photo (approx) (optional)
+                  <input
+                    type="date"
+                    value={eventDate}
+                    onChange={(e) => setEventDate(e.target.value)}
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      marginTop: 6,
+                      boxSizing: "border-box",
+                      borderRadius: 10,
+                      border: `1px solid ${t.border}`,
+                      background: t.surfaceHover,
+                      color: t.text,
+                      padding: "10px 12px",
+                      fontSize: 14,
+                    }}
+                  />
+                </label>
+              </>
+            )}
 
-            <label style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 700, color: t.textMuted }}>
-              Location (optional)
-              <input
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  marginTop: 6,
-                  boxSizing: "border-box",
-                  borderRadius: 10,
-                  border: `1px solid ${t.border}`,
-                  background: t.surfaceHover,
-                  color: t.text,
-                  padding: "10px 12px",
-                  fontSize: 14,
-                }}
-              />
-            </label>
+            {(itemType === "document" || itemType === "article") && (
+              <label style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 700, color: t.textMuted }}>
+                Caption / context (optional)
+                <input
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    marginTop: 6,
+                    boxSizing: "border-box",
+                    borderRadius: 10,
+                    border: `1px solid ${t.border}`,
+                    background: t.surfaceHover,
+                    color: t.text,
+                    padding: "10px 12px",
+                    fontSize: 14,
+                  }}
+                />
+              </label>
+            )}
 
-            <label style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 700, color: t.textMuted }}>
-              Event date (optional)
-              <input
-                type="date"
-                value={eventDate}
-                onChange={(e) => setEventDate(e.target.value)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  marginTop: 6,
-                  boxSizing: "border-box",
-                  borderRadius: 10,
-                  border: `1px solid ${t.border}`,
-                  background: t.surfaceHover,
-                  color: t.text,
-                  padding: "10px 12px",
-                  fontSize: 14,
-                }}
-              />
-            </label>
+            {itemType === "memory" && (
+              <label style={{ display: "block", marginTop: 12, fontSize: 12, fontWeight: 700, color: t.textMuted }}>
+                Caption / context (optional)
+                <input
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    marginTop: 6,
+                    boxSizing: "border-box",
+                    borderRadius: 10,
+                    border: `1px solid ${t.border}`,
+                    background: t.surfaceHover,
+                    color: t.text,
+                    padding: "10px 12px",
+                    fontSize: 14,
+                  }}
+                />
+              </label>
+            )}
 
             <label
               style={{

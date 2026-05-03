@@ -29,6 +29,7 @@ import {
   type ReactionAggregate,
   type ReactionType,
 } from "../lib/reactions";
+import { MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
 
 type EventReactionBundle = ReactionAggregate & {
   reactorNamesByType: Partial<Record<ReactionType, string[]>>;
@@ -270,12 +271,19 @@ function EventsPageInner() {
   const [memWizBio, setMemWizBio] = useState("");
   const [memWizImage, setMemWizImage] = useState("");
   const [memWizCategory, setMemWizCategory] = useState<"military" | "leo_fed">("military");
+  /** Military branch — matches profile service seals (only used when category is military). */
+  const [memWizService, setMemWizService] = useState("");
   const [memWizPhotoUploading, setMemWizPhotoUploading] = useState(false);
   const [memWizFetching, setMemWizFetching] = useState(false);
   const [memWizSaving, setMemWizSaving] = useState(false);
   const [memWizMsg, setMemWizMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const { t, isDark } = useTheme();
+
+  const memorialWizTheme = useMemo(
+    () => memorialTheme(memWizCategory, memWizService),
+    [memWizCategory, memWizService],
+  );
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDayOfMonth = new Date(year, month, 1).getDay();
@@ -1114,10 +1122,11 @@ function EventsPageInner() {
         bio: memWizBio.trim() || null,
         photo_url: memWizImage.trim() || null,
         category: memWizCategory,
+        service: memWizCategory === "military" && memWizService.trim() ? memWizService.trim() : null,
       }]);
       if (error) throw new Error(error.message);
       setMemWizMsg({ type: "ok", text: `${memWizName.trim()} added.` });
-      setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military");
+      setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military"); setMemWizService("");
       await loadMemorials();
     } catch (err) {
       setMemWizMsg({ type: "err", text: err instanceof Error ? err.message : String(err) });
@@ -1889,7 +1898,7 @@ function EventsPageInner() {
             <div style={{ fontSize: 18, fontWeight: 900 }}>Add Memorial</div>
             <button
               type="button"
-              onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military"); setMemWizMsg(null); }}
+              onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military"); setMemWizService(""); setMemWizMsg(null); }}
               style={{ background: "transparent", border: "none", fontSize: 20, cursor: "pointer", color: t.textMuted }}
             >×</button>
           </div>
@@ -1910,7 +1919,10 @@ function EventsPageInner() {
                     <button
                       key={option.value}
                       type="button"
-                      onClick={() => setMemWizCategory(option.value)}
+                      onClick={() => {
+                        setMemWizCategory(option.value);
+                        if (option.value === "leo_fed") setMemWizService("");
+                      }}
                       style={{
                         border: `2px solid ${selected ? option.color : t.border}`,
                         borderRadius: 12,
@@ -1927,6 +1939,30 @@ function EventsPageInner() {
                 })}
               </div>
             </div>
+
+            {memWizCategory === "military" && (
+              <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Service (optional)</label>
+                <select
+                  value={memWizService}
+                  onChange={(e) => setMemWizService(e.target.value)}
+                  style={{
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 8,
+                    padding: "8px 10px",
+                    fontSize: 14,
+                    background: t.input,
+                    color: t.text,
+                    fontWeight: 600,
+                  }}
+                >
+                  <option value="">Not specified</option>
+                  {MEMORIAL_MILITARY_SERVICE_OPTIONS.map((opt) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* URL + get info */}
             <div style={{ display: "flex", gap: 8 }}>
@@ -1973,7 +2009,7 @@ function EventsPageInner() {
 
             {/* Preview card */}
             {(memWizImage || memWizBio) && (
-              <div style={{ display: "flex", gap: 14, padding: 14, borderRadius: 10, border: `2px solid ${memorialTheme(memWizCategory).color}`, background: isDark ? (memWizCategory === "leo_fed" ? "#061a30" : "#2a1409") : (memWizCategory === "leo_fed" ? "#eef6ff" : "#fdf3ed") }}>
+              <div style={{ display: "flex", gap: 14, padding: 14, borderRadius: 10, border: `2px solid ${memorialWizTheme.outlineColor}`, background: isDark ? memorialWizTheme.darkBg : memorialWizTheme.lightBg }}>
                 {memWizImage && (
                   <button
                     type="button"
@@ -1983,7 +2019,7 @@ function EventsPageInner() {
                     style={{
                       width: 72,
                       height: 90,
-                      border: `2px solid ${memorialTheme(memWizCategory).color}`,
+                      border: `2px solid ${memorialWizTheme.outlineColor}`,
                       borderRadius: 8,
                       padding: 0,
                       overflow: "hidden",
@@ -1997,8 +2033,8 @@ function EventsPageInner() {
                   </button>
                 )}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ color: memorialTheme(memWizCategory).color, fontSize: 11, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase" }}>
-                    {memorialTheme(memWizCategory).label}
+                  <div style={{ color: memorialWizTheme.color, fontSize: 11, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                    {memorialWizTheme.label}
                   </div>
                   {memWizName && <div style={{ fontWeight: 800, fontSize: 15 }}>{memWizName}</div>}
                   {memWizBio && (
@@ -2026,13 +2062,13 @@ function EventsPageInner() {
                 onClick={() => memorialPhotoInputRef.current?.click()}
                 disabled={memWizPhotoUploading}
                 style={{
-                  border: `1px solid ${memorialTheme(memWizCategory).color}`,
+                  border: `1px solid ${memorialWizTheme.outlineColor}`,
                   borderRadius: 8,
                   padding: "9px 16px",
                   fontWeight: 800,
                   fontSize: 14,
                   background: "transparent",
-                  color: memorialTheme(memWizCategory).color,
+                  color: memorialWizTheme.color,
                   cursor: memWizPhotoUploading ? "not-allowed" : "pointer",
                   opacity: memWizPhotoUploading ? 0.6 : 1,
                 }}
@@ -2043,13 +2079,13 @@ function EventsPageInner() {
                 type="button"
                 onClick={saveMemorial}
                 disabled={memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate}
-                style={{ background: memorialTheme(memWizCategory).color, color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
+                style={{ background: memorialWizTheme.color, color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
               >
                 {memWizSaving ? "Publishing..." : "Publish Memorial"}
               </button>
               <button
                 type="button"
-                onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military"); setMemWizMsg(null); }}
+                onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military"); setMemWizService(""); setMemWizMsg(null); }}
                 style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, background: "transparent", color: t.text, cursor: "pointer" }}
               >
                 Cancel
@@ -2219,7 +2255,7 @@ function EventsPageInner() {
 
             {dayViewMemorials.map((m) => (
               (() => {
-                const theme = memorialTheme(m.category);
+                const theme = memorialTheme(m.category, m.service);
                 return (
               <button
                 key={m.id}
@@ -2228,10 +2264,10 @@ function EventsPageInner() {
                 style={{
                   width: "100%",
                   textAlign: "left",
-                  border: `2px solid ${theme.color}`,
+                  border: `2px solid ${theme.outlineColor}`,
                   borderRadius: 14,
                   padding: 16,
-                  background: isDark ? (m.category === "leo_fed" ? "#061a30" : "#2a1409") : (m.category === "leo_fed" ? "#eef6ff" : "#fdf3ed"),
+                  background: isDark ? theme.darkBg : theme.lightBg,
                   color: t.text,
                   cursor: "pointer",
                 }}
@@ -2244,7 +2280,7 @@ function EventsPageInner() {
                         height: 54,
                         borderRadius: "50%",
                         overflow: "hidden",
-                        border: `3px solid ${theme.color}`,
+                        border: `3px solid ${theme.outlineColor}`,
                         flexShrink: 0,
                       }}
                     >
@@ -2484,7 +2520,7 @@ function EventsPageInner() {
                   )}
 
                   {visibleMemorials.map((m) => {
-                    const mt = memorialTheme(m.category);
+                    const mt = memorialTheme(m.category, m.service);
                     return (
                       <button
                         key={m.id}
@@ -2608,7 +2644,7 @@ function EventsPageInner() {
 
             <div style={{ padding: "4px 24px 24px", overflowY: "auto", flex: 1, minHeight: 0 }}>
               {memorialOnSelectedDay.map((m) => {
-                const theme = memorialTheme(m.category);
+                const theme = memorialTheme(m.category, m.service);
                 return (
                 <button
                   key={m.id}
@@ -2621,11 +2657,11 @@ function EventsPageInner() {
                     display: "block",
                     width: "100%",
                     textAlign: "left",
-                    border: `2px solid ${theme.color}`,
+                    border: `2px solid ${theme.outlineColor}`,
                     borderRadius: 14,
                     padding: 20,
                     marginBottom: 12,
-                    background: isDark ? (m.category === "leo_fed" ? "#061a30" : "#2a1409") : (m.category === "leo_fed" ? "#eef6ff" : "#fdf3ed"),
+                    background: isDark ? theme.darkBg : theme.lightBg,
                     color: t.text,
                     cursor: "pointer",
                   }}
@@ -2639,7 +2675,7 @@ function EventsPageInner() {
                           borderRadius: "50%",
                           overflow: "hidden",
                           flexShrink: 0,
-                          border: `3px solid ${theme.color}`,
+                          border: `3px solid ${theme.outlineColor}`,
                         }}
                       >
                         <img

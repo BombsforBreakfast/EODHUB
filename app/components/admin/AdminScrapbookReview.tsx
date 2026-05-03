@@ -33,9 +33,12 @@ function flagReasonLabel(code: string): string {
 export function AdminScrapbookReview({
   t,
   showToast,
+  onQueueChanged,
 }: {
   t: Theme;
   showToast: (msg: string) => void;
+  /** Optional: refresh admin pending badges (e.g. Events tab scrapbook count). */
+  onQueueChanged?: () => void;
 }) {
   const [rows, setRows] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -151,6 +154,7 @@ export function AdminScrapbookReview({
       }
       showToast(okMsg);
       await load();
+      onQueueChanged?.();
     } finally {
       setActingId(null);
     }
@@ -224,9 +228,21 @@ export function AdminScrapbookReview({
                     {it.memory_body}
                   </div>
                 )}
-                {(it.location || it.event_date) && (
+                {it.item_type === "photo" && (it.location || it.event_date) && (
                   <div style={{ fontSize: 12, color: t.textMuted }}>
-                    {[it.location, it.event_date].filter(Boolean).join(" · ")}
+                    {[
+                      it.location?.trim() || "",
+                      it.event_date?.trim()
+                        ? (() => {
+                            const d = new Date(`${it.event_date}T12:00:00`);
+                            return Number.isNaN(d.getTime())
+                              ? it.event_date
+                              : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                          })()
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
                   </div>
                 )}
                 {it.file_url && (
@@ -239,7 +255,7 @@ export function AdminScrapbookReview({
                 )}
                 {it.external_url && (
                   <div style={{ fontSize: 13 }}>
-                    <span style={{ color: t.textMuted, fontWeight: 700 }}>Link: </span>
+                    <span style={{ color: t.textMuted, fontWeight: 700 }}>Website: </span>
                     <a href={it.external_url} target="_blank" rel="noopener noreferrer" style={{ color: "#60a5fa", wordBreak: "break-all" }}>
                       {it.external_url}
                     </a>

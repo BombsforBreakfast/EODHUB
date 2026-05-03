@@ -27,7 +27,21 @@ export function ScrapbookItemCard({ item, t, accentColor, variant = "stage" }: P
   const thumb = scrapbookHttpsUrl(item.thumbnail_url);
   const ext = scrapbookHttpsUrl(item.external_url);
 
-  const metaLine = [item.location, item.event_date].filter(Boolean).join(" · ");
+  const photoMetaParts =
+    item.item_type === "photo"
+      ? [
+          item.location?.trim() || "",
+          item.event_date?.trim()
+            ? (() => {
+                const d = new Date(`${item.event_date}T12:00:00`);
+                return Number.isNaN(d.getTime())
+                  ? item.event_date
+                  : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+              })()
+            : "",
+        ].filter(Boolean)
+      : [];
+  const metaLine = photoMetaParts.join(" · ");
 
   return (
     <div

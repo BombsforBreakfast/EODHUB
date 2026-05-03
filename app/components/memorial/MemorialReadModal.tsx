@@ -1,9 +1,11 @@
 "use client";
 
 import { useTheme } from "@/app/lib/ThemeContext";
+import { ServiceSealValue } from "@/app/lib/serviceSeals";
 import { MemorialScrapbookPreview } from "./scrapbook";
 import type { Memorial } from "./memorialModalShared";
-import { memorialDisclaimer, memorialTheme } from "./memorialModalShared";
+import { MemorialDisclaimer } from "./MemorialDisclaimer";
+import { memorialTheme } from "./memorialModalShared";
 
 type Props = {
   memorial: Memorial;
@@ -15,7 +17,7 @@ type Props = {
 
 export function MemorialReadModal({ memorial, onClose, isMobile, zIndex = 1000 }: Props) {
   const { t } = useTheme();
-  const theme = memorialTheme(memorial.category);
+  const theme = memorialTheme(memorial.category, memorial.service);
   const currentYear = new Date().getFullYear();
 
   return (
@@ -58,7 +60,7 @@ export function MemorialReadModal({ memorial, onClose, isMobile, zIndex = 1000 }
                   borderRadius: "50%",
                   overflow: "hidden",
                   flexShrink: 0,
-                  border: `3px solid ${theme.color}`,
+                  border: `3px solid ${theme.outlineColor}`,
                 }}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -69,9 +71,14 @@ export function MemorialReadModal({ memorial, onClose, isMobile, zIndex = 1000 }
                 />
               </div>
             )}
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 12, color: theme.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
-                {theme.label}
+              <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, color: theme.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
+                  {theme.label}
+                </div>
+                {memorial.category !== "leo_fed" && memorial.service?.trim() ? (
+                  <ServiceSealValue service={memorial.service} size={28} />
+                ) : null}
               </div>
               <div style={{ fontSize: 22, fontWeight: 900, marginTop: 2, lineHeight: 1.2 }}>
                 {memorial.name}
@@ -114,7 +121,7 @@ export function MemorialReadModal({ memorial, onClose, isMobile, zIndex = 1000 }
           )}
           <MemorialScrapbookPreview memorialId={memorial.id} t={t} accentColor={theme.color} isMobile={isMobile} />
           <div style={{ marginTop: 16, fontSize: 11, lineHeight: 1.5, color: t.textFaint, fontStyle: "italic" }}>
-            {memorialDisclaimer(memorial.category)}
+            <MemorialDisclaimer category={memorial.category} sourceUrl={memorial.source_url} linkColor={theme.color} />
           </div>
         </div>
       </div>

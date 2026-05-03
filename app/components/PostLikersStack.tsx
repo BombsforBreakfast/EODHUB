@@ -3,6 +3,7 @@
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
 import { useTheme } from "../lib/ThemeContext";
+import { getServiceRingColor } from "../lib/serviceBranchVisual";
 
 export type PostLikerBrief = {
   userId: string;
@@ -11,27 +12,6 @@ export type PostLikerBrief = {
   service: string | null;
   isEmployer: boolean | null;
 };
-
-function getServiceRingColor(service: string | null | undefined): string | null {
-  switch (service) {
-    case "Army":
-      return "#556b2f";
-    case "Navy":
-      return "#003087";
-    case "Air Force":
-      return "#00b0f0";
-    case "Marines":
-      return "#bf0a30";
-    case "Civilian Bomb Tech":
-      return "#000000";
-    case "Civil Service":
-      return "#d97706";
-    case "Federal":
-      return "#7c3aed";
-    default:
-      return null;
-  }
-}
 
 export function LikerAvatar({
   photoUrl,

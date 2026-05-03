@@ -17,6 +17,8 @@ import { fetchEventAttendeePreviews } from "../../lib/fetchEventAttendeePreviews
 import type { PostLikerBrief } from "../PostLikersStack";
 import { dedupeSavedEventRowsByEventId, ensureSavedEventForUser } from "../../lib/ensureSavedEventForUser";
 import { collapsedRailTitleLinkZoom, httpsAssetUrl, sectionTitleLinkZoom, type JobRow } from "./masterShared";
+import { MemorialDisclaimer } from "../memorial/MemorialDisclaimer";
+import { memorialTheme } from "../memorial/memorialModalShared";
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -94,10 +96,9 @@ type DesktopMemorial = {
   photo_url: string | null;
   bio: string | null;
   category?: "military" | "leo_fed" | null;
+  service?: string | null;
 };
 
-const MEMORIAL_MILITARY_COLOR = "#d9582b";
-const MEMORIAL_LEO_COLOR = "#062b4f";
 const EVENT_INVITE_BRANCHES = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal"];
 const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
 
@@ -113,20 +114,6 @@ function isHiddenEventInviteAccount(user: Pick<EventInviteUser, "user_id" | "dis
     compactName === "eodhub" ||
     compactName === "eodhubadmin"
   );
-}
-
-function memorialTheme(category?: DesktopMemorial["category"]) {
-  const isLeoFed = category === "leo_fed";
-  return {
-    color: isLeoFed ? MEMORIAL_LEO_COLOR : MEMORIAL_MILITARY_COLOR,
-    label: isLeoFed ? "End of Watch" : "We Remember",
-  };
-}
-
-function memorialDisclaimer(category?: DesktopMemorial["category"]) {
-  return category === "leo_fed"
-    ? "* This information has been respectfully referenced from bombtechmemorial.org."
-    : "* This memorial is respectfully referenced from the EOD Warrior Foundation Digital Wall. If anything appears inaccurate, please contact our admin or connect directly with EODWF through their website.";
 }
 
 type DesktopSelectedEvent = {
@@ -467,7 +454,7 @@ export default function MasterLeftColumn({
         .is("unit_id", null)
         .eq("visibility", "public")
         .order("date", { ascending: true }),
-      supabase.from("memorials").select("id, name, death_date, source_url, photo_url, bio, category"),
+      supabase.from("memorials").select("id, name, death_date, source_url, photo_url, bio, category, service"),
     ]);
 
     setDesktopCalendarEvents((eventsData ?? []) as DesktopCalendarEvent[]);
@@ -1224,7 +1211,7 @@ export default function MasterLeftColumn({
                   eventId: null as string | null,
                   thumbAlt: `Open memorial for ${m.name}`,
                   thumb: m.photo_url?.trim() ? m.photo_url : null,
-                  thumbBorder: `2px solid ${memorialTheme(m.category).color}`,
+                  thumbBorder: `2px solid ${memorialTheme(m.category, m.service).outlineColor}`,
                   memorial: m,
                 })),
             ]
@@ -1235,7 +1222,7 @@ export default function MasterLeftColumn({
                 // both trigger this so the user can stay on the current page
                 // (feed, jobs, rabbithole) instead of being force-navigated
                 // to /events. "Website" is a separate external link.
-                const memorialCardTheme = item.memorial ? memorialTheme(item.memorial.category) : null;
+                const memorialCardTheme = item.memorial ? memorialTheme(item.memorial.category, item.memorial.service) : null;
                 const openModal: (() => void) | null =
                   item.kind === "memorial" && item.memorial
                     ? () => setSelectedMemorial(item.memorial)
@@ -1246,16 +1233,10 @@ export default function MasterLeftColumn({
                   <div
                     key={item.id}
                     style={{
-                      border: memorialCardTheme ? `2px solid ${memorialCardTheme.color}` : `1px solid ${t.border}`,
+                      border: memorialCardTheme ? `2px solid ${memorialCardTheme.outlineColor}` : `1px solid ${t.border}`,
                       borderRadius: 10,
                       background: memorialCardTheme
-                        ? isDark
-                          ? item.memorial?.category === "leo_fed"
-                            ? "#061a30"
-                            : "#2a1409"
-                          : item.memorial?.category === "leo_fed"
-                            ? "#eef6ff"
-                            : "#fdf3ed"
+                        ? (isDark ? memorialCardTheme.darkBg : memorialCardTheme.lightBg)
                         : t.surface,
                       padding: "8px 10px",
                     }}
@@ -1846,7 +1827,7 @@ export default function MasterLeftColumn({
           composer or other high-z page chrome. */}
       {selectedMemorial && typeof document !== "undefined" && createPortal(
         (() => {
-          const theme = memorialTheme(selectedMemorial.category);
+          const theme = memorialTheme(selectedMemorial.category, selectedMemorial.service);
           return (
         <div
           onClick={() => setSelectedMemorial(null)}
@@ -1886,7 +1867,7 @@ export default function MasterLeftColumn({
                       borderRadius: "50%",
                       overflow: "hidden",
                       flexShrink: 0,
-                      border: `3px solid ${theme.color}`,
+                      border: `3px solid ${theme.outlineColor}`,
                     }}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1945,7 +1926,11 @@ export default function MasterLeftColumn({
                 </div>
               )}
               <div style={{ marginTop: 16, fontSize: 11, lineHeight: 1.5, color: t.textFaint, fontStyle: "italic" }}>
-                {memorialDisclaimer(selectedMemorial.category)}
+                <MemorialDisclaimer
+                  category={selectedMemorial.category}
+                  sourceUrl={selectedMemorial.source_url}
+                  linkColor={theme.color}
+                />
               </div>
             </div>
           </div>
