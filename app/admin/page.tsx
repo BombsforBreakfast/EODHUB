@@ -18,7 +18,11 @@ import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
 import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { coerceTagsFromDb, normalizeBizTagsInput } from "../lib/bizListingTags";
-import { memorialTheme } from "../components/memorial/memorialModalShared";
+import {
+  MEMORIAL_LEO_COLOR,
+  MEMORIAL_MILITARY_COLOR,
+  memorialTheme,
+} from "../components/memorial/memorialModalShared";
 import { MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
 
 type BusinessListing = {
@@ -477,13 +481,16 @@ export default function AdminPage() {
   const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [batchActing, setBatchActing] = useState(false);
-const [memWizUrl, setMemWizUrl] = useState("");
+  const [memWizUrl, setMemWizUrl] = useState("");
   const [memWizName, setMemWizName] = useState("");
   const [memWizDate, setMemWizDate] = useState("");
   const [memWizImage, setMemWizImage] = useState("");
   const [memWizBio, setMemWizBio] = useState("");
+  const [memWizCategory, setMemWizCategory] = useState<MemorialCategory>("military");
+  const [memWizService, setMemWizService] = useState("");
   const [memWizFetching, setMemWizFetching] = useState(false);
   const [memWizSaving, setMemWizSaving] = useState(false);
+  const [memWizPhotoUploading, setMemWizPhotoUploading] = useState(false);
   const [memWizMsg, setMemWizMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const [memorials, setMemorials] = useState<Memorial[]>([]);
@@ -491,6 +498,7 @@ const [memWizUrl, setMemWizUrl] = useState("");
   const [memEditSaving, setMemEditSaving] = useState(false);
   const [memPhotoUploading, setMemPhotoUploading] = useState(false);
   const memorialPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const memorialAddPhotoInputRef = useRef<HTMLInputElement | null>(null);
   /** Admin memorial list: expand/collapse long bios (Manage Memorials cards). */
   const [memorialBioExpandedIds, setMemorialBioExpandedIds] = useState<Record<string, boolean>>({});
   /** Client-side filter for the Manage Memorials list (matches name / bio). */
@@ -532,6 +540,11 @@ const [memWizUrl, setMemWizUrl] = useState("");
       return haystack.includes(q);
     });
   }, [memorials, memorialSearch]);
+
+  const memorialAddWizTheme = useMemo(
+    () => memorialTheme(memWizCategory, memWizService),
+    [memWizCategory, memWizService],
+  );
 
   const [bugReports, setBugReports] = useState<BugReport[]>([]);
   const [reportsFilter, setReportsFilter] = useState<"unreviewed" | "all">("unreviewed");
@@ -1787,6 +1800,8 @@ const [memWizUrl, setMemWizUrl] = useState("");
         source_url,
         bio: memWizBio.trim() || null,
         photo_url: memWizImage.trim() || null,
+        category: memWizCategory,
+        service: memWizCategory === "military" && memWizService.trim() ? memWizService.trim() : null,
       }]);
       if (error) throw new Error(error.message);
       setMemWizMsg({ type: "ok", text: `${memWizName.trim()} added.` });
@@ -1795,6 +1810,9 @@ const [memWizUrl, setMemWizUrl] = useState("");
       setMemWizDate("");
       setMemWizImage("");
       setMemWizBio("");
+      setMemWizCategory("military");
+      setMemWizService("");
+      await loadMemorials();
     } catch (err) {
       setMemWizMsg({ type: "err", text: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -1961,6 +1979,24 @@ const [memWizUrl, setMemWizUrl] = useState("");
     const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
     if (error) throw error;
     return supabase.storage.from("feed-images").getPublicUrl(path).data.publicUrl;
+  }
+
+  async function handleMemorialAddWizPhotoPick(file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please choose an image file.");
+      return;
+    }
+    setMemWizPhotoUploading(true);
+    try {
+      const publicUrl = await uploadMemorialPhoto(file);
+      setMemWizImage(publicUrl);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to upload photo.");
+    } finally {
+      setMemWizPhotoUploading(false);
+      if (memorialAddPhotoInputRef.current) memorialAddPhotoInputRef.current.value = "";
+    }
   }
 
   async function handleMemorialPhotoPick(file: File | null) {
@@ -4499,11 +4535,279 @@ const [memWizUrl, setMemWizUrl] = useState("");
               </div>
             </div>
 
+            {/* Add memorial (admin) */}
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
+              <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Add Memorial</div>
+              <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
+                Paste an EOD Warrior Foundation memorial URL and click Get info, or fill in manually. Choose Military or LEO/Fed; for Military you can set service for branch-themed cards.
+              </div>
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Memorial type</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                    {([
+                      { value: "military" as const, label: "Military", color: MEMORIAL_MILITARY_COLOR },
+                      { value: "leo_fed" as const, label: "LEO/FED", color: MEMORIAL_LEO_COLOR },
+                    ]).map((option) => {
+                      const selected = memWizCategory === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => {
+                            setMemWizCategory(option.value);
+                            if (option.value === "leo_fed") setMemWizService("");
+                          }}
+                          style={{
+                            border: `2px solid ${selected ? option.color : t.border}`,
+                            borderRadius: 12,
+                            padding: "10px 12px",
+                            background: selected ? option.color : t.surface,
+                            color: selected ? "white" : t.text,
+                            cursor: "pointer",
+                            textAlign: "left",
+                          }}
+                        >
+                          <div style={{ fontWeight: 900, fontSize: 14 }}>{option.label}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {memWizCategory === "military" && (
+                  <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Service (optional)</label>
+                    <select
+                      value={memWizService}
+                      onChange={(e) => setMemWizService(e.target.value)}
+                      style={{
+                        border: `1px solid ${t.inputBorder}`,
+                        borderRadius: 8,
+                        padding: "8px 10px",
+                        fontSize: 14,
+                        background: t.input,
+                        color: t.text,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <option value="">Not specified</option>
+                      {MEMORIAL_MILITARY_SERVICE_OPTIONS.map((opt) => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <input
+                    value={memWizUrl}
+                    onChange={(e) => setMemWizUrl(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && void fetchMemorialMeta()}
+                    placeholder="https://eod-wf.org/virtual-memorial/... (optional)"
+                    style={{
+                      flex: 1,
+                      minWidth: 200,
+                      border: `1px solid ${t.inputBorder}`,
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      fontSize: 14,
+                      background: t.input,
+                      color: t.text,
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void fetchMemorialMeta()}
+                    disabled={memWizFetching || !memWizUrl.trim()}
+                    style={{
+                      background: t.text,
+                      color: t.surface,
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "8px 16px",
+                      fontWeight: 700,
+                      fontSize: 14,
+                      cursor: memWizFetching || !memWizUrl.trim() ? "not-allowed" : "pointer",
+                      opacity: memWizFetching || !memWizUrl.trim() ? 0.5 : 1,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {memWizFetching ? "Getting info..." : "Get info"}
+                  </button>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 180px", gap: 8 }}>
+                  <input
+                    value={memWizName}
+                    onChange={(e) => setMemWizName(e.target.value)}
+                    placeholder="Full name *"
+                    style={{
+                      border: `1px solid ${t.inputBorder}`,
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      fontSize: 14,
+                      background: t.input,
+                      color: t.text,
+                    }}
+                  />
+                  <input
+                    type="date"
+                    value={memWizDate}
+                    onChange={(e) => setMemWizDate(e.target.value)}
+                    style={{
+                      border: `1px solid ${t.inputBorder}`,
+                      borderRadius: 8,
+                      padding: "8px 12px",
+                      fontSize: 14,
+                      background: t.input,
+                      color: t.text,
+                    }}
+                  />
+                </div>
+                <textarea
+                  value={memWizBio}
+                  onChange={(e) => setMemWizBio(e.target.value)}
+                  placeholder="Bio / about (optional)"
+                  rows={4}
+                  style={{
+                    border: `1px solid ${t.inputBorder}`,
+                    borderRadius: 8,
+                    padding: "8px 12px",
+                    fontSize: 14,
+                    background: t.input,
+                    color: t.text,
+                    resize: "vertical",
+                    minHeight: 80,
+                  }}
+                />
+                {(memWizImage || memWizBio) && (
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: 14,
+                      padding: 14,
+                      borderRadius: 10,
+                      border: `2px solid ${memorialAddWizTheme.outlineColor}`,
+                      background: isDark ? memorialAddWizTheme.darkBg : memorialAddWizTheme.lightBg,
+                    }}
+                  >
+                    {memWizImage && (
+                      <button
+                        type="button"
+                        onClick={() => memorialAddPhotoInputRef.current?.click()}
+                        disabled={memWizPhotoUploading}
+                        title="Change memorial photo"
+                        style={{
+                          width: 72,
+                          height: 90,
+                          border: `2px solid ${memorialAddWizTheme.outlineColor}`,
+                          borderRadius: 8,
+                          padding: 0,
+                          overflow: "hidden",
+                          flexShrink: 0,
+                          background: "transparent",
+                          cursor: memWizPhotoUploading ? "not-allowed" : "pointer",
+                          opacity: memWizPhotoUploading ? 0.65 : 1,
+                        }}
+                      >
+                        <img src={memWizImage} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      </button>
+                    )}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ color: memorialAddWizTheme.color, fontSize: 11, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                        {memorialAddWizTheme.label}
+                      </div>
+                      {memWizName && <div style={{ fontWeight: 800, fontSize: 15 }}>{memWizName}</div>}
+                      {memWizBio && (
+                        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 6, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                          {memWizBio}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <input
+                    ref={memorialAddPhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      void handleMemorialAddWizPhotoPick(e.target.files?.[0] ?? null);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => memorialAddPhotoInputRef.current?.click()}
+                    disabled={memWizPhotoUploading}
+                    style={{
+                      border: `1px solid ${memorialAddWizTheme.outlineColor}`,
+                      borderRadius: 8,
+                      padding: "9px 16px",
+                      fontWeight: 800,
+                      fontSize: 14,
+                      background: "transparent",
+                      color: memorialAddWizTheme.color,
+                      cursor: memWizPhotoUploading ? "not-allowed" : "pointer",
+                      opacity: memWizPhotoUploading ? 0.6 : 1,
+                    }}
+                  >
+                    {memWizPhotoUploading ? "Uploading..." : memWizImage ? "Change Photo" : "Add Photo"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void saveMemorial()}
+                    disabled={memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate}
+                    style={{
+                      background: memorialAddWizTheme.color,
+                      color: "white",
+                      border: "none",
+                      borderRadius: 8,
+                      padding: "9px 20px",
+                      fontWeight: 800,
+                      fontSize: 14,
+                      cursor: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer",
+                      opacity: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? 0.5 : 1,
+                    }}
+                  >
+                    {memWizSaving ? "Publishing..." : "Publish Memorial"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMemWizUrl("");
+                      setMemWizName("");
+                      setMemWizDate("");
+                      setMemWizBio("");
+                      setMemWizImage("");
+                      setMemWizCategory("military");
+                      setMemWizService("");
+                      setMemWizMsg(null);
+                    }}
+                    style={{
+                      border: `1px solid ${t.border}`,
+                      borderRadius: 8,
+                      padding: "9px 16px",
+                      fontWeight: 700,
+                      background: "transparent",
+                      color: t.text,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Clear form
+                  </button>
+                  {memWizMsg && (
+                    <div style={{ fontSize: 14, fontWeight: 700, color: memWizMsg.type === "ok" ? "#16a34a" : "#ef4444" }}>
+                      {memWizMsg.type === "ok" ? "✓ " : "✗ "}{memWizMsg.text}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Manage Memorials */}
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
               <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Manage Memorials</div>
               <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
-                Edit or delete memorial entries (same data as the Events page). New memorials should be added from the Events page.
+                Edit or delete memorial entries (same data as the Events page). Service applies when category is Military (EODWF).
               </div>
 
               {memorials.length > 0 && (

@@ -56,16 +56,24 @@ const MEMORIAL_LEGACY_MILITARY_THEME: MemorialThemePalette = {
 };
 
 const NAVY_BRANCH_BLUE = "#003087";
-const NAVY_MEMORIAL_GOLD_OUTLINE = "#c9a227";
+const NAVY_MEMORIAL_GOLD_OUTLINE = "#d4af37";
 
-/** Matches `getServiceRingColor("Air Force")` — avatar rings stay bright sky blue; memorial chrome uses ultramarine + yellow. */
+/** Matches `getServiceRingColor("Air Force")` — rings stay sky blue; memorial chrome uses lighter branch blue + gold. */
 const AIR_FORCE_SERVICE_RING = "#00b0f0";
-const AIR_FORCE_ULTRAMARINE = "#152563";
-const AIR_FORCE_YELLOW_OUTLINE = "#ffb612";
+/** Primary CTA / “Military” label — lighter Air Force blue (not ultramarine). */
+const AIR_FORCE_MEMORIAL_BLUE = "#3b82f6";
+const AIR_FORCE_MEMORIAL_GOLD = "#d4af37";
 
-/** Marines CTA / highlights — vivid red (high R, minimal B so it never reads violet). */
-const MARINES_MEMORIAL_RED = "#dc2626";
-const MARINES_MEMORIAL_GOLD_OUTLINE = "#c9a227";
+/** `getServiceRingColor("Army")` — olive drab; memorial cards use a full green scale around this. */
+const ARMY_OLIVE = "#556b2f";
+/** Muted olive for buttons and uppercase label (matches admin reference). */
+const ARMY_MEMORIAL_PRIMARY = "#5d6e31";
+/** Slightly brighter olive for card border / portrait ring. */
+const ARMY_MEMORIAL_RING = "#6b8e23";
+
+/** Marines: bright red CTAs + gold border (branch colors). */
+const MARINES_MEMORIAL_RED = "#ef4444";
+const MARINES_MEMORIAL_GOLD_OUTLINE = "#d4af37";
 
 /**
  * Full memorial chrome (feed cards, calendar, modals). Military branch uses the same accent
@@ -91,12 +99,12 @@ export function memorialTheme(category: MemorialCategory, service?: string | nul
       color: MARINES_MEMORIAL_RED,
       outlineColor: MARINES_MEMORIAL_GOLD_OUTLINE,
       label: "We Remember",
-      darkBg: "#3a1212",
-      lightBg: "#fff5f5",
-      darkCommentBg: "#4a1818",
-      lightCommentBg: "#fecaca",
-      darkBorder: "#b91c1c",
-      lightBorder: "#f87171",
+      darkBg: "#1a0a0a",
+      lightBg: "#fff7f7",
+      darkCommentBg: "#2a1010",
+      lightCommentBg: "#fee2e2",
+      darkBorder: "#7f1d1d",
+      lightBorder: "#fca5a5",
     };
   }
 
@@ -109,25 +117,38 @@ export function memorialTheme(category: MemorialCategory, service?: string | nul
       color: NAVY_BRANCH_BLUE,
       outlineColor: NAVY_MEMORIAL_GOLD_OUTLINE,
       label: "We Remember",
-      darkBg: "#071426",
-      lightBg: "#e5edf7",
-      darkCommentBg: "#0f2139",
-      lightCommentBg: "#d2e0f5",
-      darkBorder: "#1e3a5f",
-      lightBorder: "#9eb6d4",
+      darkBg: "#030d18",
+      lightBg: "#e8eef6",
+      darkCommentBg: "#0a1a2e",
+      lightCommentBg: "#d6e0f0",
+      darkBorder: "#1a3a5c",
+      lightBorder: "#9eb4cc",
     };
   }
   if (branchAccent === AIR_FORCE_SERVICE_RING) {
     return {
-      color: AIR_FORCE_ULTRAMARINE,
-      outlineColor: AIR_FORCE_YELLOW_OUTLINE,
+      color: AIR_FORCE_MEMORIAL_BLUE,
+      outlineColor: AIR_FORCE_MEMORIAL_GOLD,
       label: "We Remember",
-      darkBg: "#0c1240",
-      lightBg: "#e8eaf9",
-      darkCommentBg: "#141b52",
-      lightCommentBg: "#dce2f5",
-      darkBorder: "#283578",
-      lightBorder: "#a8b2dc",
+      darkBg: "#0f1f33",
+      lightBg: "#eef4fc",
+      darkCommentBg: "#162a45",
+      lightCommentBg: "#dce8f8",
+      darkBorder: "#2d4a72",
+      lightBorder: "#a8c0e0",
+    };
+  }
+  if (branchAccent === ARMY_OLIVE) {
+    return {
+      color: ARMY_MEMORIAL_PRIMARY,
+      outlineColor: ARMY_MEMORIAL_RING,
+      label: "We Remember",
+      darkBg: "#121608",
+      lightBg: "#f3f5ec",
+      darkCommentBg: "#1a2210",
+      lightCommentBg: "#e5e9da",
+      darkBorder: "#3d4a28",
+      lightBorder: "#c4ccb0",
     };
   }
   return {
