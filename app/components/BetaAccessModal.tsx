@@ -11,6 +11,7 @@ import {
   type CSSProperties,
   type FormEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/app/lib/lib/supabaseClient";
 import EodCrabLogo from "@/app/components/EodCrabLogo";
@@ -181,7 +182,7 @@ export default function BetaAccessModal() {
     opacity: waitlistSubmitting || codeSubmitting ? 0.65 : 1,
   };
 
-  return (
+  const modalTree = (
     <>
       <style>{`
         @keyframes betaGateFadeIn {
@@ -191,6 +192,11 @@ export default function BetaAccessModal() {
         @keyframes betaGatePopIn {
           from { opacity: 0; transform: translateY(10px) scale(0.98); }
           to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        .beta-gate-overlay {
+          min-height: 100vh;
+          min-height: 100dvh;
+          min-height: -webkit-fill-available;
         }
         .beta-access-code-eye {
           display: flex;
@@ -213,29 +219,50 @@ export default function BetaAccessModal() {
           cursor: not-allowed;
           opacity: 0.35;
         }
+        @media (max-width: 480px) {
+          .beta-gate-sticker {
+            font-size: 22px !important;
+            padding: 8px 16px !important;
+          }
+          .beta-gate-title {
+            font-size: 24px !important;
+            letter-spacing: 1px !important;
+          }
+        }
       `}</style>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="beta-gate-heading"
+        className="beta-gate-overlay"
         style={{
           position: "fixed",
-          inset: 0,
-          zIndex: 9999,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: "100%",
+          zIndex: 20000,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: 20,
+          paddingTop: "max(20px, env(safe-area-inset-top, 0px))",
+          paddingBottom: "max(20px, env(safe-area-inset-bottom, 0px))",
+          paddingLeft: "max(16px, env(safe-area-inset-left, 0px))",
+          paddingRight: "max(16px, env(safe-area-inset-right, 0px))",
           boxSizing: "border-box",
           background: "radial-gradient(ellipse at 50% 20%, rgba(55, 62, 48, 0.5) 0%, rgba(6, 8, 10, 0.97) 55%, #040506 100%)",
           animation: "betaGateFadeIn 320ms ease-out both",
+          touchAction: "manipulation",
+          WebkitOverflowScrolling: "touch",
+          overscrollBehavior: "contain",
         }}
       >
         <div
           style={{
             width: "100%",
             maxWidth: 440,
-            maxHeight: "min(92dvh, 900px)",
+            maxHeight: "min(calc(100dvh - max(40px, env(safe-area-inset-top) + env(safe-area-inset-bottom))), 900px)",
             overflowY: "auto",
             borderRadius: 16,
             border: "1px solid rgba(140, 155, 125, 0.35)",
@@ -247,6 +274,7 @@ export default function BetaAccessModal() {
         >
           <div style={{ textAlign: "center", marginBottom: 18 }}>
             <div
+              className="beta-gate-title"
               style={{
                 fontSize: 28,
                 fontWeight: 900,
@@ -264,6 +292,7 @@ export default function BetaAccessModal() {
             </div>
             <div
               id="beta-gate-heading"
+              className="beta-gate-sticker"
               style={{
                 display: "inline-block",
                 marginTop: 4,
@@ -323,7 +352,7 @@ export default function BetaAccessModal() {
                 style={{
                   ...inputBase,
                   width: "100%",
-                  paddingRight: 44,
+                  paddingRight: 48,
                   boxSizing: "border-box",
                 }}
               />
@@ -335,9 +364,13 @@ export default function BetaAccessModal() {
                 disabled={codeSubmitting}
                 style={{
                   position: "absolute",
-                  right: 8,
+                  right: 4,
                   top: "50%",
                   transform: "translateY(-50%)",
+                  minWidth: 44,
+                  minHeight: 44,
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
               >
                 {showAccessCode ? <EyeOff size={18} strokeWidth={2} aria-hidden /> : <Eye size={18} strokeWidth={2} aria-hidden />}
@@ -458,4 +491,6 @@ export default function BetaAccessModal() {
       </div>
     </>
   );
+
+  return createPortal(modalTree, document.body);
 }
