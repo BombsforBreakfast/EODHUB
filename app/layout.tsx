@@ -7,6 +7,7 @@ import AnalyticsTracker from "./components/AnalyticsTracker";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { MemorialNavModalProvider } from "./components/memorial/MemorialNavModalProvider";
+import BetaAccessGate from "./components/BetaAccessGate";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -43,6 +44,7 @@ export default function RootLayout({
         <ThemeProvider>
           <MemorialNavModalProvider>
           <SessionGuard />
+          <BetaAccessGate />
           <AnalyticsTracker />
           <script
             type="application/ld+json"

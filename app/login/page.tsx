@@ -8,7 +8,6 @@ import type { TurnstileInstance } from "@marsidev/react-turnstile";
 import { useTheme } from "../lib/ThemeContext";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { clearAppAuthState, markAppSessionActive } from "../lib/auth/sessionState";
-import BetaAccessModal from "../components/BetaAccessModal";
 
 
 export default function LoginPage() {
@@ -290,8 +289,6 @@ export default function LoginPage() {
   };
 
   return (
-    <>
-      <BetaAccessModal />
     <div
       style={{
         minHeight: "100vh",
@@ -570,7 +567,6 @@ export default function LoginPage() {
         </form>
       )}
     </div>
-    </>
   );
 }
 
