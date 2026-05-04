@@ -21,6 +21,9 @@ const STORAGE_KEY = "beta_access_granted";
 const WAITLIST_THANK_YOU =
   "Thanks — you're on the waitlist. You'll receive an email when the doors open.";
 
+const BETA_PRICING_FOOTNOTE =
+  "EOD Hub is free during beta and for the first 30 days after we go live. After that, a $1.99/month subscription helps us operate, maintain, and improve the site.";
+
 type WaitlistRow = {
   first_name: string;
   last_name: string;
@@ -487,6 +490,20 @@ export default function BetaAccessModal() {
               </p>
             </div>
           )}
+          <p
+            style={{
+              marginTop: 20,
+              marginBottom: 0,
+              paddingTop: 16,
+              borderTop: "1px solid rgba(140, 155, 125, 0.2)",
+              fontSize: 11,
+              lineHeight: 1.55,
+              color: "rgba(160, 170, 155, 0.82)",
+              textAlign: "center",
+            }}
+          >
+            {BETA_PRICING_FOOTNOTE}
+          </p>
         </div>
       </div>
     </>
