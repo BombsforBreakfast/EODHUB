@@ -76,6 +76,7 @@ export function EditScrapbookItemModal({ open, item, onClose, onSaved, t, accent
   }
 
   async function save() {
+    if (!item) return;
     setError(null);
     if (item.item_type === "memory") {
       if (!memoryBody.trim() && !caption.trim()) {
