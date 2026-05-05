@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { useTheme } from "@/app/lib/ThemeContext";
 
@@ -30,8 +31,13 @@ export function ReferralQrModal({ open, referralUrl, onClose }: Props) {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
+    const prevOverflow = document.body.style.overflow;
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open, onClose]);
 
   if (!open) return null;
@@ -41,14 +47,14 @@ export function ReferralQrModal({ open, referralUrl, onClose }: Props) {
   const muted = t.textMuted;
   const accent = "#60a5fa";
 
-  return (
+  const modal = (
     <div
       role="presentation"
       onClick={onClose}
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 1300,
+        zIndex: 10100,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -150,4 +156,6 @@ export function ReferralQrModal({ open, referralUrl, onClose }: Props) {
       </div>
     </div>
   );
+
+  return createPortal(modal, document.body);
 }
