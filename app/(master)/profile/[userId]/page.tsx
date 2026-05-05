@@ -3569,7 +3569,7 @@ export default function PublicProfilePage() {
                           <button
                             type="button"
                             onClick={() => {
-                              navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code));
+                              navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code!));
                               setCopiedReferral(true);
                               setTimeout(() => setCopiedReferral(false), 2000);
                             }}
@@ -3978,7 +3978,7 @@ export default function PublicProfilePage() {
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code));
+                            navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code!));
                             setCopiedReferral(true);
                             setTimeout(() => setCopiedReferral(false), 2000);
                           }}
@@ -5914,7 +5914,7 @@ export default function PublicProfilePage() {
       <ReferralQrModal
         open={referralQrOpen}
         onClose={() => setReferralQrOpen(false)}
-        referralUrl={buildLoginReferralUrl(profile.referral_code)}
+        referralUrl={buildLoginReferralUrl(profile.referral_code!)}
       />
     ) : null}
     </>
