@@ -16,6 +16,17 @@ export default function PendingPage() {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
+    const prevDocColorScheme = document.documentElement.style.colorScheme;
+    const prevBodyColorScheme = document.body.style.colorScheme;
+    document.documentElement.style.colorScheme = "light";
+    document.body.style.colorScheme = "light";
+    return () => {
+      document.documentElement.style.colorScheme = prevDocColorScheme;
+      document.body.style.colorScheme = prevBodyColorScheme;
+    };
+  }, []);
+
+  useEffect(() => {
     async function check() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.href = "/login"; return; }
@@ -129,7 +140,7 @@ export default function PendingPage() {
             <div style={{ width: 64, height: 64, borderRadius: "50%", background: "#fef9c3", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontSize: 28 }}>
               ⏳
             </div>
-            <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 12px" }}>
+            <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 12px", color: "#6b7280" }}>
               Awaiting Verification
             </h2>
             <p style={{ fontSize: 15, color: "#555", lineHeight: 1.7, margin: "0 0 8px" }}>
@@ -143,7 +154,7 @@ export default function PendingPage() {
 
             {/* Vouch progress */}
             <div style={{ background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 12, padding: "18px 20px", marginBottom: 28, textAlign: "left" }}>
-              <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10 }}>
+              <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10, color: "#6b7280" }}>
                 Community Verification
               </div>
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -195,7 +206,7 @@ export default function PendingPage() {
 
         <button
           onClick={handleLogout}
-          style={{ padding: "11px 28px", borderRadius: 10, border: "1px solid #d1d5db", background: "white", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
+          style={{ padding: "11px 28px", borderRadius: 10, border: "1px solid #111827", background: "#111827", color: "#ffffff", fontWeight: 700, fontSize: 14, cursor: "pointer" }}
         >
           Log Out
         </button>

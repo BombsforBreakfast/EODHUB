@@ -17,7 +17,7 @@ const DEFAULT_MSG =
   "Your free trial has expired. Please subscribe for full access!";
 
 const ONBOARDING_BODY =
-  "EOD-HUB is a subscription app. Free launch window until 1 June 2026. After that, new members receive a free 7-day trial, then $1.99/month. If you signed up before 1 June, your trial period is aligned to that launch window and billing begins 8 June 2026 unless you subscribe sooner.";
+  "EOD-HUB is free during BETA, and for the first 30-days after full launch. After which, new members will have a 10-day free trial period and there will be a membership fee of $1.99 a month. Your subscription helps us to operate, maintain, and improve the site.";
 
 export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MSG, onboardingAck }: Props) {
   const { t } = useTheme();

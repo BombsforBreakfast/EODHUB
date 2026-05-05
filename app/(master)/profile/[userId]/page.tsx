@@ -42,6 +42,8 @@ import { ServiceSealValue } from "../../../lib/serviceSeals";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
 import { STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../../../lib/pureAdminAllowlist";
 import { getServiceRingColor } from "../../../lib/serviceBranchVisual";
+import { buildLoginReferralUrl } from "../../../lib/referralLink";
+import { ReferralQrModal } from "../../../components/profile/ReferralQrModal";
 
 type Profile = {
   user_id: string;
@@ -628,6 +630,7 @@ export default function PublicProfilePage() {
   const educationFileInputRef = useRef<HTMLInputElement | null>(null);
   const trainingFileInputRef = useRef<HTMLInputElement | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
+  const [referralQrOpen, setReferralQrOpen] = useState(false);
   const [showDesktopProfileBack, setShowDesktopProfileBack] = useState(false);
   const [showAllWorkHistoryTags, setShowAllWorkHistoryTags] = useState(false);
   const canViewEmployerBackNow = (currentUserId === profile?.user_id) || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities);
@@ -3562,28 +3565,47 @@ export default function PublicProfilePage() {
                   {isOwnWall && (profile.referral_code || !editingProfile) && (
                     <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
                       {profile.referral_code && !showDesktopProfileBack && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
-                            setCopiedReferral(true);
-                            setTimeout(() => setCopiedReferral(false), 2000);
-                          }}
-                          style={{
-                            background: copiedReferral ? "#16a34a" : "#111",
-                            color: "white",
-                            border: "none",
-                            borderRadius: 999,
-                            padding: "6px 12px",
-                            minWidth: 112,
-                            fontWeight: 700,
-                            fontSize: 11,
-                            cursor: "pointer",
-                            transition: "background 0.2s",
-                          }}
-                        >
-                          {copiedReferral ? "Copied" : "Referral Link"}
-                        </button>
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code));
+                              setCopiedReferral(true);
+                              setTimeout(() => setCopiedReferral(false), 2000);
+                            }}
+                            style={{
+                              background: copiedReferral ? "#16a34a" : "#111",
+                              color: "white",
+                              border: "none",
+                              borderRadius: 999,
+                              padding: "6px 12px",
+                              minWidth: 112,
+                              fontWeight: 700,
+                              fontSize: 11,
+                              cursor: "pointer",
+                              transition: "background 0.2s",
+                            }}
+                          >
+                            {copiedReferral ? "Copied" : "Referral Link"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setReferralQrOpen(true)}
+                            style={{
+                              background: t.surface,
+                              color: t.text,
+                              border: `1px solid ${t.border}`,
+                              borderRadius: 999,
+                              padding: "6px 12px",
+                              minWidth: 112,
+                              fontWeight: 700,
+                              fontSize: 11,
+                              cursor: "pointer",
+                            }}
+                          >
+                            Show QR Code
+                          </button>
+                        </>
                       )}
                       {!editingProfile && !showDesktopProfileBack && (
                         <button
@@ -3952,28 +3974,47 @@ export default function PublicProfilePage() {
                   )}
                   <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
                     {isOwnWall && profile.referral_code && !showDesktopProfileBack && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${profile.referral_code}`);
-                          setCopiedReferral(true);
-                          setTimeout(() => setCopiedReferral(false), 2000);
-                        }}
-                        style={{
-                          background: copiedReferral ? "#16a34a" : "#111",
-                          color: "white",
-                          border: "none",
-                          borderRadius: 999,
-                          padding: "6px 12px",
-                          minWidth: 112,
-                          fontWeight: 700,
-                          fontSize: 11,
-                          cursor: "pointer",
-                          transition: "background 0.2s",
-                        }}
-                      >
-                        {copiedReferral ? "Copied" : "Referral Link"}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code));
+                            setCopiedReferral(true);
+                            setTimeout(() => setCopiedReferral(false), 2000);
+                          }}
+                          style={{
+                            background: copiedReferral ? "#16a34a" : "#111",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "6px 12px",
+                            minWidth: 112,
+                            fontWeight: 700,
+                            fontSize: 11,
+                            cursor: "pointer",
+                            transition: "background 0.2s",
+                          }}
+                        >
+                          {copiedReferral ? "Copied" : "Referral Link"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReferralQrOpen(true)}
+                          style={{
+                            background: t.surface,
+                            color: t.text,
+                            border: `1px solid ${t.border}`,
+                            borderRadius: 999,
+                            padding: "6px 12px",
+                            minWidth: 112,
+                            fontWeight: 700,
+                            fontSize: 11,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Show QR Code
+                        </button>
+                      </>
                     )}
                     {isOwnWall && !editingProfile && !showDesktopProfileBack && (
                       <button
@@ -5869,6 +5910,13 @@ export default function PublicProfilePage() {
         modalOnDesktop
       />
     )}
+    {profile?.referral_code ? (
+      <ReferralQrModal
+        open={referralQrOpen}
+        onClose={() => setReferralQrOpen(false)}
+        referralUrl={buildLoginReferralUrl(profile.referral_code)}
+      />
+    ) : null}
     </>
   );
 }

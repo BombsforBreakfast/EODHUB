@@ -48,6 +48,17 @@ export default function OnboardingPage() {
   const [missingFieldId, setMissingFieldId] = useState<string | null>(null);
   const [showRequiredHelper, setShowRequiredHelper] = useState(false);
 
+  useEffect(() => {
+    const prevDocColorScheme = document.documentElement.style.colorScheme;
+    const prevBodyColorScheme = document.body.style.colorScheme;
+    document.documentElement.style.colorScheme = "light";
+    document.body.style.colorScheme = "light";
+    return () => {
+      document.documentElement.style.colorScheme = prevDocColorScheme;
+      document.body.style.colorScheme = prevBodyColorScheme;
+    };
+  }, []);
+
   function markMissingField(fieldId: string) {
     setMissingFieldId(fieldId);
     setShowRequiredHelper(true);
@@ -285,11 +296,11 @@ export default function OnboardingPage() {
   const inputStyle: React.CSSProperties = {
     width: "100%", padding: "10px 14px", borderRadius: 10,
     border: "1px solid #d1d5db", fontSize: 16, boxSizing: "border-box",
-    fontFamily: "inherit",
+    fontFamily: "inherit", color: "#111827", background: "#ffffff",
   };
 
   const selectStyle: React.CSSProperties = {
-    ...inputStyle, background: "white", cursor: "pointer",
+    ...inputStyle, background: "white", cursor: "pointer", color: "#374151",
   };
 
   if (duplicateProviders) {
@@ -365,14 +376,14 @@ export default function OnboardingPage() {
       <div style={{ maxWidth: 520, margin: "0 auto" }}>
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
-          <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>EOD HUB</div>
+          <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, lineHeight: 1, color: "#111827" }}>EOD HUB</div>
           <div style={{ fontSize: 13, color: "#374151", marginTop: 6, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>
             Built for EOD Techs, by an EOD Tech.
           </div>
         </div>
 
         <div style={{ background: "white", borderRadius: 16, padding: "32px 28px", boxShadow: "0 2px 16px rgba(0,0,0,0.06)" }}>
-          <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 6px" }}>Set up your account</h2>
+          <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 6px", color: "#111827" }}>Set up your account</h2>
           <p style={{ fontSize: 14, color: "#1f2937", margin: "0 0 28px", lineHeight: 1.6 }}>
             Tell us who you are. Your account will be reviewed before access is granted.
           </p>
@@ -389,9 +400,9 @@ export default function OnboardingPage() {
                 onMouseEnter={(e) => e.currentTarget.style.borderColor = "#111"}
                 onMouseLeave={(e) => e.currentTarget.style.borderColor = "#e5e7eb"}
               >
-                <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4 }}>EOD Community Member</div>
+                <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 4, color: "#111827" }}>EOD Community Member</div>
                 <div style={{ fontSize: 13, color: "#1f2937", lineHeight: 1.5 }}>
-                  Active, former, or retired EOD tech. Join the community, access the job board, and connect with fellow techs.
+                  Active, former, or retired EOD tech or public service Bomb Technician. Join the community, access the job board, and connect with fellow techs.
                 </div>
               </button>
 
@@ -405,7 +416,7 @@ export default function OnboardingPage() {
                 onMouseLeave={(e) => e.currentTarget.style.borderColor = "#e5e7eb"}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontWeight: 900, fontSize: 16 }}>Employer Account</span>
+                  <span style={{ fontWeight: 900, fontSize: 16, color: "#111827" }}>Employer Account</span>
                   <span style={{ background: "#dbeafe", color: "#1d4ed8", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>FREE</span>
                 </div>
                 <div style={{ fontSize: 13, color: "#1f2937", lineHeight: 1.5 }}>
@@ -453,7 +464,7 @@ export default function OnboardingPage() {
                       id="field-member-first-name"
                       style={isMissing("field-member-first-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
                     >
-                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>First Name *</label>
+                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>First Name *</label>
                       <input
                         value={firstName}
                         onChange={(e) => {
@@ -469,7 +480,7 @@ export default function OnboardingPage() {
                       id="field-member-last-name"
                       style={isMissing("field-member-last-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
                     >
-                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Last Name *</label>
+                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Last Name *</label>
                       <input
                         value={lastName}
                         onChange={(e) => {
@@ -487,7 +498,7 @@ export default function OnboardingPage() {
                     id="field-member-service"
                     style={isMissing("field-member-service") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
                   >
-                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Service Branch *</label>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Service Branch *</label>
                     <select
                       value={service}
                       onChange={(e) => {
@@ -506,7 +517,7 @@ export default function OnboardingPage() {
                     id="field-member-status"
                     style={isMissing("field-member-status") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
                   >
-                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Status *</label>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Status *</label>
                     <select
                       value={status}
                       onChange={(e) => {
@@ -523,14 +534,14 @@ export default function OnboardingPage() {
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <div>
-                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Skill Badge</label>
+                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Skill Badge</label>
                       <select value={skillBadge} onChange={(e) => setSkillBadge(e.target.value)} style={selectStyle}>
                         <option value="">Select badge...</option>
                         {SKILL_BADGE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
                     <div>
-                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Years of Experience</label>
+                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Years of Experience</label>
                       <select value={yearsExperience} onChange={(e) => setYearsExperience(e.target.value)} style={selectStyle}>
                         <option value="">Select years...</option>
                         {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -549,7 +560,7 @@ export default function OnboardingPage() {
                       id="field-employer-first-name"
                       style={isMissing("field-employer-first-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
                     >
-                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>First Name *</label>
+                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>First Name *</label>
                       <input
                         value={empFirstName}
                         onChange={(e) => {
@@ -565,7 +576,7 @@ export default function OnboardingPage() {
                       id="field-employer-last-name"
                       style={isMissing("field-employer-last-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
                     >
-                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Last Name *</label>
+                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Last Name *</label>
                       <input
                         value={empLastName}
                         onChange={(e) => {
@@ -583,7 +594,7 @@ export default function OnboardingPage() {
                     id="field-employer-company"
                     style={isMissing("field-employer-company") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
                   >
-                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>Company / Organization Name *</label>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Company / Organization Name *</label>
                     <input
                       value={companyName}
                       onChange={(e) => {
@@ -604,7 +615,7 @@ export default function OnboardingPage() {
 
               {/* Referral code — optional, shown for both account types */}
               <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, marginTop: 4 }}>
-                <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5 }}>
+                <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>
                   Referral Code <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
                 </label>
                 <input
@@ -620,7 +631,7 @@ export default function OnboardingPage() {
               </div>
 
               <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, marginTop: 4 }}>
-                <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 10 }}>Legal Agreements *</div>
+                <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 10, color: "#111827" }}>Legal Agreements *</div>
                 <div style={{ fontSize: 12, color: "#374151", marginBottom: 10 }}>
                   Review each document below. These are required to create your account.
                 </div>
@@ -631,13 +642,13 @@ export default function OnboardingPage() {
                     style={isMissing("field-legal-terms") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13 }}>Terms of Service *</span>
+                      <span style={{ fontWeight: 800, fontSize: 13, color: "#111827" }}>Terms of Service *</span>
                       <Link href="/terms" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
                     </div>
-                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", color: "#1f2937" }}>
                       {TERMS_OF_SERVICE_TEXT}
                     </div>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#111827" }}>
                       <input
                         type="checkbox"
                         checked={agreedTerms}
@@ -656,13 +667,13 @@ export default function OnboardingPage() {
                     style={isMissing("field-legal-privacy") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13 }}>Privacy Policy *</span>
+                      <span style={{ fontWeight: 800, fontSize: 13, color: "#111827" }}>Privacy Policy *</span>
                       <Link href="/privacy" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
                     </div>
-                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", color: "#1f2937" }}>
                       {PRIVACY_POLICY_TEXT}
                     </div>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#111827" }}>
                       <input
                         type="checkbox"
                         checked={agreedPrivacy}
@@ -681,13 +692,13 @@ export default function OnboardingPage() {
                     style={isMissing("field-legal-guidelines") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13 }}>Community Guidelines *</span>
+                      <span style={{ fontWeight: 800, fontSize: 13, color: "#111827" }}>Community Guidelines *</span>
                       <Link href="/guidelines" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
                     </div>
-                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", color: "#1f2937" }}>
                       {COMMUNITY_GUIDELINES_TEXT}
                     </div>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#111827" }}>
                       <input
                         type="checkbox"
                         checked={agreedGuidelines}
