@@ -279,6 +279,11 @@ type ActionBody = {
   thumbnail_url?: string | null;
 };
 
+type PatchBody = {
+  id?: string;
+  thumbnail_url?: string | null;
+};
+
 export async function POST(req: NextRequest) {
   const auth = await requireAdmin(req);
   if (auth instanceof NextResponse) return auth;
@@ -421,4 +426,57 @@ export async function POST(req: NextRequest) {
     { error: "Provide id, ids[], or scope+status with the action" },
     { status: 400 }
   );
+}
+
+export async function PATCH(req: NextRequest) {
+  const auth = await requireAdmin(req);
+  if (auth instanceof NextResponse) return auth;
+
+  let body: PatchBody;
+  try {
+    body = (await req.json()) as PatchBody;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const id = typeof body.id === "string" ? body.id : "";
+  if (!id) {
+    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  }
+
+  const thumbnail_url =
+    typeof body.thumbnail_url === "string"
+      ? body.thumbnail_url.trim() || null
+      : body.thumbnail_url === null
+        ? null
+        : undefined;
+
+  if (thumbnail_url === undefined) {
+    return NextResponse.json({ error: "thumbnail_url must be string or null" }, { status: 400 });
+  }
+
+  const supabase = adminClient();
+  const { data: row, error: rowErr } = await supabase
+    .from("news_items")
+    .select("id, status")
+    .eq("id", id)
+    .maybeSingle();
+  if (rowErr) return NextResponse.json({ error: rowErr.message }, { status: 500 });
+  if (!row) return NextResponse.json({ error: "News item not found" }, { status: 404 });
+
+  const { error: newsErr } = await supabase
+    .from("news_items")
+    .update({ thumbnail_url })
+    .eq("id", id);
+  if (newsErr) return NextResponse.json({ error: newsErr.message }, { status: 500 });
+
+  if ((row as { status: Status }).status === "published") {
+    const { error: postErr } = await supabase
+      .from("posts")
+      .update({ og_image: thumbnail_url })
+      .eq("news_item_id", id);
+    if (postErr) return NextResponse.json({ error: postErr.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, id, thumbnail_url });
 }

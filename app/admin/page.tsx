@@ -626,6 +626,7 @@ export default function AdminPage() {
   const [newsFilter, setNewsFilter] = useState<NewsTabFilter>("pending");
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsActingId, setNewsActingId] = useState<string | null>(null);
+  const [newsThumbnailSavingId, setNewsThumbnailSavingId] = useState<string | null>(null);
   const [newsPendingCount, setNewsPendingCount] = useState(0);
   const [newsRunStats, setNewsRunStats] = useState<string | null>(null);
   const [newsRunning, setNewsRunning] = useState(false);
@@ -828,6 +829,36 @@ export default function AdminPage() {
       void loadNewsPendingCount();
     } finally {
       setNewsActingId(null);
+    }
+  }
+
+  async function saveNewsThumbnailOverride(id: string) {
+    setNewsThumbnailSavingId(id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const thumbnailOverride = (newsThumbnailOverrides[id] ?? "").trim();
+      const res = await fetch(`/api/admin/news`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({
+          id,
+          thumbnail_url: thumbnailOverride.length > 0 ? thumbnailOverride : null,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showToast(`Photo update failed: ${j.error || res.status}`);
+        return;
+      }
+      setNewsItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, thumbnail_url: j.thumbnail_url ?? null } : item))
+      );
+      showToast("OG photo updated");
+    } finally {
+      setNewsThumbnailSavingId(null);
     }
   }
 
@@ -4285,7 +4316,7 @@ export default function AdminPage() {
                       </a>
                     </div>
                   </div>
-                  {newsFilter === "pending" && (
+                  {(newsFilter === "pending" || newsFilter === "published") && (
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ display: "grid", gap: 5 }}>
                         <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
@@ -4309,23 +4340,37 @@ export default function AdminPage() {
                         />
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                      <button
-                        type="button"
-                        onClick={() => void actOnNewsItem(n.id, "reject")}
-                        disabled={newsActingId === n.id}
-                        style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 13, cursor: newsActingId === n.id ? "default" : "pointer", opacity: newsActingId === n.id ? 0.7 : 1 }}
-                      >
-                        Reject
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void actOnNewsItem(n.id, "approve")}
-                        disabled={newsActingId === n.id}
-                        style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#16a34a", color: "white", fontWeight: 700, fontSize: 13, cursor: newsActingId === n.id ? "default" : "pointer", opacity: newsActingId === n.id ? 0.7 : 1 }}
-                      >
-                        {newsActingId === n.id ? "Saving…" : "Approve to feed"}
-                      </button>
-                    </div>
+                        {newsFilter === "pending" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => void actOnNewsItem(n.id, "reject")}
+                              disabled={newsActingId === n.id}
+                              style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 13, cursor: newsActingId === n.id ? "default" : "pointer", opacity: newsActingId === n.id ? 0.7 : 1 }}
+                            >
+                              Reject
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void actOnNewsItem(n.id, "approve")}
+                              disabled={newsActingId === n.id}
+                              style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#16a34a", color: "white", fontWeight: 700, fontSize: 13, cursor: newsActingId === n.id ? "default" : "pointer", opacity: newsActingId === n.id ? 0.7 : 1 }}
+                            >
+                              {newsActingId === n.id ? "Saving…" : "Approve to feed"}
+                            </button>
+                          </>
+                        )}
+                        {newsFilter === "published" && (
+                          <button
+                            type="button"
+                            onClick={() => void saveNewsThumbnailOverride(n.id)}
+                            disabled={newsThumbnailSavingId === n.id}
+                            style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#1d4ed8", color: "white", fontWeight: 700, fontSize: 13, cursor: newsThumbnailSavingId === n.id ? "default" : "pointer", opacity: newsThumbnailSavingId === n.id ? 0.7 : 1 }}
+                          >
+                            {newsThumbnailSavingId === n.id ? "Saving…" : "Save photo override"}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                   {newsFilter !== "pending" && n.reviewed_at && (
