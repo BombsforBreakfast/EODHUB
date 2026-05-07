@@ -2247,31 +2247,59 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       .in("id", postIds);
 
     let legacyPostImagesData: LegacyPostRow[] | null = legacyWithEvent.data as LegacyPostRow[] | null;
-    if (
-      legacyWithEvent.error &&
-      (
-        isMissingColumnError(legacyWithEvent.error, "event_id") ||
+    if (legacyWithEvent.error) {
+      const missingNewsMetaColumns =
         isMissingColumnError(legacyWithEvent.error, "content_type") ||
         isMissingColumnError(legacyWithEvent.error, "system_generated") ||
-        isMissingColumnError(legacyWithEvent.error, "news_item_id")
-      )
-    ) {
-      const fb = await supabase
-        .from("posts")
-        .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name")
-        .in("id", postIds);
-      legacyPostImagesData = (fb.data as LegacyPostRow[] | null)?.map((row) => ({
-        ...row,
-        event_id: null,
-        content_type: null,
-        system_generated: null,
-        news_item_id: null,
-      })) ?? null;
-      if (fb.error) {
-        console.error("Legacy post image load error:", fb.error);
+        isMissingColumnError(legacyWithEvent.error, "news_item_id");
+
+      if (missingNewsMetaColumns) {
+        const fbWithEvent = await supabase
+          .from("posts")
+          .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id")
+          .in("id", postIds);
+
+        if (fbWithEvent.error && isMissingColumnError(fbWithEvent.error, "event_id")) {
+          const fbNoEvent = await supabase
+            .from("posts")
+            .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name")
+            .in("id", postIds);
+          legacyPostImagesData = (fbNoEvent.data as LegacyPostRow[] | null)?.map((row) => ({
+            ...row,
+            event_id: null,
+            content_type: null,
+            system_generated: null,
+            news_item_id: null,
+          })) ?? null;
+          if (fbNoEvent.error) {
+            console.error("Legacy post image load error:", fbNoEvent.error);
+          }
+        } else {
+          legacyPostImagesData = (fbWithEvent.data as LegacyPostRow[] | null)?.map((row) => ({
+            ...row,
+            content_type: null,
+            system_generated: null,
+            news_item_id: null,
+          })) ?? null;
+          if (fbWithEvent.error) {
+            console.error("Legacy post image load error:", fbWithEvent.error);
+          }
+        }
+      } else if (isMissingColumnError(legacyWithEvent.error, "event_id")) {
+        const fb = await supabase
+          .from("posts")
+          .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, content_type, system_generated, news_item_id")
+          .in("id", postIds);
+        legacyPostImagesData = (fb.data as LegacyPostRow[] | null)?.map((row) => ({
+          ...row,
+          event_id: null,
+        })) ?? null;
+        if (fb.error) {
+          console.error("Legacy post image load error:", fb.error);
+        }
+      } else {
+        console.error("Legacy post image load error:", legacyWithEvent.error);
       }
-    } else if (legacyWithEvent.error) {
-      console.error("Legacy post image load error:", legacyWithEvent.error);
     }
 
     const { data: postImagesData, error: postImagesError } = await supabase
