@@ -276,6 +276,7 @@ type ActionBody = {
   scope?: "all";
   status?: Status;
   action?: "approve" | "reject" | "delete";
+  thumbnail_url?: string | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -339,7 +340,14 @@ export async function POST(req: NextRequest) {
 
   // Single id (legacy shape).
   if (body.id) {
-    const { error } = await supabase.from("news_items").update(patch).eq("id", body.id);
+    const thumbnail_url =
+      typeof body.thumbnail_url === "string"
+        ? body.thumbnail_url.trim() || null
+        : body.thumbnail_url === null
+          ? null
+          : undefined;
+    const singlePatch = thumbnail_url !== undefined ? { ...patch, thumbnail_url } : patch;
+    const { error } = await supabase.from("news_items").update(singlePatch).eq("id", body.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     try {
       const affectedIds = await getAffectedNewsItemIds(supabase, newStatus, auth.userId, reviewedAt);

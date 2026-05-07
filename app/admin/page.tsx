@@ -642,6 +642,7 @@ export default function AdminPage() {
   const [previewBulkSending, setPreviewBulkSending] = useState(false);
   const [newsSelected, setNewsSelected] = useState<Set<string>>(new Set());
   const [newsBulkBusy, setNewsBulkBusy] = useState(false);
+  const [newsThumbnailOverrides, setNewsThumbnailOverrides] = useState<Record<string, string>>({});
   const [manualNewsUrl, setManualNewsUrl] = useState("");
   const [manualNewsHeadline, setManualNewsHeadline] = useState("");
   const [manualNewsSummary, setManualNewsSummary] = useState("");
@@ -721,7 +722,14 @@ export default function AdminPage() {
         return;
       }
       const json = await res.json();
-      setNewsItems((json.items ?? []) as AdminNewsItem[]);
+      const items = (json.items ?? []) as AdminNewsItem[];
+      setNewsItems(items);
+      setNewsThumbnailOverrides(
+        items.reduce<Record<string, string>>((acc, item) => {
+          acc[item.id] = item.thumbnail_url ?? "";
+          return acc;
+        }, {})
+      );
     } catch (err) {
       console.error("loadNews failed", err);
     } finally {
@@ -791,13 +799,18 @@ export default function AdminPage() {
     setNewsActingId(id);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+      const thumbnailOverride = (newsThumbnailOverrides[id] ?? "").trim();
       const res = await fetch(`/api/admin/news`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? ""}`,
         },
-        body: JSON.stringify({ id, action }),
+        body: JSON.stringify({
+          id,
+          action,
+          thumbnail_url: thumbnailOverride.length > 0 ? thumbnailOverride : null,
+        }),
       });
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
@@ -4219,9 +4232,15 @@ export default function AdminPage() {
                       style={{ marginTop: 4, cursor: "pointer" }}
                       aria-label="Select item"
                     />
-                    {n.thumbnail_url && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={n.thumbnail_url} alt="" style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 8, flexShrink: 0 }} />
+                    {(newsThumbnailOverrides[n.id]?.trim() || n.thumbnail_url) && (
+                      <a href={n.source_url} target="_blank" rel="noreferrer noopener">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={(newsThumbnailOverrides[n.id]?.trim() || n.thumbnail_url) ?? ""}
+                          alt=""
+                          style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 8, flexShrink: 0 }}
+                        />
+                      </a>
                     )}
                     <div style={{ flex: 1, minWidth: 240 }}>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -4267,7 +4286,29 @@ export default function AdminPage() {
                     </div>
                   </div>
                   {newsFilter === "pending" && (
-                    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <div style={{ display: "grid", gap: 8 }}>
+                      <div style={{ display: "grid", gap: 5 }}>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
+                          OG photo URL override (optional)
+                        </label>
+                        <input
+                          type="url"
+                          value={newsThumbnailOverrides[n.id] ?? ""}
+                          onChange={(e) => setNewsThumbnailOverrides((prev) => ({ ...prev, [n.id]: e.target.value }))}
+                          placeholder="https://.../image.jpg"
+                          style={{
+                            width: "100%",
+                            padding: "8px 10px",
+                            borderRadius: 8,
+                            border: `1px solid ${t.inputBorder}`,
+                            background: t.input,
+                            color: t.text,
+                            fontSize: 12,
+                            boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+                      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                       <button
                         type="button"
                         onClick={() => void actOnNewsItem(n.id, "reject")}
@@ -4284,6 +4325,7 @@ export default function AdminPage() {
                       >
                         {newsActingId === n.id ? "Saving…" : "Approve to feed"}
                       </button>
+                    </div>
                     </div>
                   )}
                   {newsFilter !== "pending" && n.reviewed_at && (
