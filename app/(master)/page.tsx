@@ -2356,8 +2356,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       const { data: candidateEvents, error: candidateEventsErr } = await supabase
         .from("events")
         .select("id, user_id, title, date")
-        .is("unit_id", null)
-        .eq("visibility", "public")
         .in("user_id", candidateUserIds);
       if (candidateEventsErr) {
         console.error("Legacy event inference load error:", candidateEventsErr);
@@ -2549,7 +2547,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       } else {
         eventRows = (eventsResult.data ?? []) as FeedEventSnapshot[];
       }
-      eventRows.filter((event) => !event.unit_id).forEach((e) => {
+      eventRows.forEach((e) => {
         eventSnapshotById.set(e.id, e);
       });
 
