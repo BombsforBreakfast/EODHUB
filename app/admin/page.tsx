@@ -627,6 +627,7 @@ export default function AdminPage() {
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsActingId, setNewsActingId] = useState<string | null>(null);
   const [newsThumbnailSavingId, setNewsThumbnailSavingId] = useState<string | null>(null);
+  const [newsThumbnailUploadingId, setNewsThumbnailUploadingId] = useState<string | null>(null);
   const [newsPendingCount, setNewsPendingCount] = useState(0);
   const [newsRunStats, setNewsRunStats] = useState<string | null>(null);
   const [newsRunning, setNewsRunning] = useState(false);
@@ -859,6 +860,33 @@ export default function AdminPage() {
       showToast("OG photo updated");
     } finally {
       setNewsThumbnailSavingId(null);
+    }
+  }
+
+  async function uploadNewsThumbnail(file: File): Promise<string> {
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const path = `news-overrides/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+    const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
+    if (error) throw error;
+    return supabase.storage.from("feed-images").getPublicUrl(path).data.publicUrl;
+  }
+
+  async function handleNewsThumbnailPick(newsId: string, file: File | null) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      showToast("Please choose an image file.");
+      return;
+    }
+    setNewsThumbnailUploadingId(newsId);
+    try {
+      const publicUrl = await uploadNewsThumbnail(file);
+      setNewsThumbnailOverrides((prev) => ({ ...prev, [newsId]: publicUrl }));
+      showToast("Photo uploaded. Click save to apply.");
+    } catch (err) {
+      const msg = (err as { message?: string } | null)?.message || "Failed to upload photo.";
+      showToast(msg);
+    } finally {
+      setNewsThumbnailUploadingId(null);
     }
   }
 
@@ -4320,24 +4348,50 @@ export default function AdminPage() {
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ display: "grid", gap: 5 }}>
                         <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
-                          OG photo URL override (optional)
+                          OG photo override (optional)
                         </label>
-                        <input
-                          type="url"
-                          value={newsThumbnailOverrides[n.id] ?? ""}
-                          onChange={(e) => setNewsThumbnailOverrides((prev) => ({ ...prev, [n.id]: e.target.value }))}
-                          placeholder="https://.../image.jpg"
-                          style={{
-                            width: "100%",
-                            padding: "8px 10px",
-                            borderRadius: 8,
-                            border: `1px solid ${t.inputBorder}`,
-                            background: t.input,
-                            color: t.text,
-                            fontSize: 12,
-                            boxSizing: "border-box",
-                          }}
-                        />
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <label
+                            style={{
+                              padding: "7px 12px",
+                              borderRadius: 8,
+                              border: "none",
+                              background: "#374151",
+                              color: "white",
+                              fontWeight: 700,
+                              fontSize: 12,
+                              cursor: newsThumbnailUploadingId === n.id ? "default" : "pointer",
+                              opacity: newsThumbnailUploadingId === n.id ? 0.7 : 1,
+                            }}
+                          >
+                            {newsThumbnailUploadingId === n.id ? "Uploading…" : "Upload photo"}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              style={{ display: "none" }}
+                              disabled={newsThumbnailUploadingId === n.id}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0] ?? null;
+                                void handleNewsThumbnailPick(n.id, file);
+                                e.currentTarget.value = "";
+                              }}
+                            />
+                          </label>
+                          {(newsThumbnailOverrides[n.id] ?? "").trim().length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setNewsThumbnailOverrides((prev) => ({ ...prev, [n.id]: "" }))}
+                              style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                            >
+                              Remove photo
+                            </button>
+                          )}
+                          <span style={{ fontSize: 11, color: t.textMuted }}>
+                            {newsThumbnailOverrides[n.id]?.trim()
+                              ? "Override selected"
+                              : "Using current OG image"}
+                          </span>
+                        </div>
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                         {newsFilter === "pending" && (
