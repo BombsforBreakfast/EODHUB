@@ -12,9 +12,19 @@ type Props = {
   onSubmitted: () => void;
   t: MemorialScrapbookTheme;
   accentColor: string;
+  subjectType?: "memorial" | "event";
 };
 
-export function FlagScrapbookItemModal({ open, itemId, onClose, onSubmitted, t, accentColor }: Props) {
+export function FlagScrapbookItemModal({
+  open,
+  itemId,
+  onClose,
+  onSubmitted,
+  t,
+  accentColor,
+  subjectType = "memorial",
+}: Props) {
+  const flagTable = subjectType === "event" ? "event_scrapbook_flags" : "memorial_scrapbook_flags";
   const [reason, setReason] = useState<ScrapbookFlagReason>("inappropriate");
   const [details, setDetails] = useState("");
   const [saving, setSaving] = useState(false);
@@ -41,7 +51,7 @@ export function FlagScrapbookItemModal({ open, itemId, onClose, onSubmitted, t, 
         window.location.href = "/login";
         return;
       }
-      const { error: insErr } = await supabase.from("memorial_scrapbook_flags").insert({
+      const { error: insErr } = await supabase.from(flagTable).insert({
         scrapbook_item_id: itemId,
         user_id: uid,
         reason,

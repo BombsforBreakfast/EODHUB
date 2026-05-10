@@ -11,6 +11,7 @@ import { postNotifyJson } from "../lib/postNotifyClient";
 import UrlPreviewCard from "../components/UrlPreviewCard";
 import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
 import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
+import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -1269,9 +1270,9 @@ export default function SidebarPage() {
                 {selectedInviteMeta.myStatus === "going" ? "Going ✓" : "Going"} · {selectedInviteMeta.going}
               </button>
               {selectedInviteMeta.event.signup_url ? (
-                <a href={selectedInviteMeta.event.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", textDecoration: "none", background: "black", color: "white", padding: "10px 16px", borderRadius: 10, fontWeight: 800, marginLeft: "auto" }}>
+                <ExternalSiteLink href={selectedInviteMeta.event.signup_url} style={{ display: "inline-block", textDecoration: "none", background: "black", color: "white", padding: "10px 16px", borderRadius: 10, fontWeight: 800, marginLeft: "auto" }}>
                   Open Event Link
-                </a>
+                </ExternalSiteLink>
               ) : null}
             </div>
           </div>

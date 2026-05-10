@@ -16,15 +16,32 @@ import { ScrapbookItemCard } from "./ScrapbookItemCard";
 import type { MemorialScrapbookTheme } from "./types";
 import type { ScrapbookItemRow, ScrapbookItemWithAuthor } from "./types";
 
-const SELECT_FIELDS =
+const MEMORIAL_SELECT_FIELDS =
   "id, memorial_id, user_id, item_type, file_url, external_url, thumbnail_url, memory_body, caption, location, event_date, status, created_at";
+const EVENT_SELECT_FIELDS =
+  "id, event_id, user_id, item_type, file_url, external_url, thumbnail_url, memory_body, caption, location, event_date, status, created_at";
+
+function isMissingSchemaError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const maybe = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+  const haystack = `${String(maybe.message ?? "")} ${String(maybe.details ?? "")} ${String(maybe.hint ?? "")}`.toLowerCase();
+  return (
+    maybe.code === "42703" || // undefined column
+    maybe.code === "42P01" || // undefined table
+    haystack.includes("column") ||
+    haystack.includes("relation") ||
+    haystack.includes("does not exist")
+  );
+}
 
 /** Horizontal preview strip: larger tiles → fewer slots (viewer still has full list). */
 const SCRAPBOOK_PREVIEW_THUMB_PX = Math.round(88 * 1.5);
 const SCRAPBOOK_PREVIEW_STRIP_MAX = 8;
 
 type Props = {
-  memorialId: string;
+  memorialId?: string;
+  targetId?: string;
+  subjectType?: "memorial" | "event";
   t: MemorialScrapbookTheme;
   accentColor: string;
   /** Full strip + buttons, or single summary line for compact memorial cards */
@@ -38,26 +55,36 @@ type Props = {
    */
   scrapbookActorUserId?: string | null;
   scrapbookActorIsAdmin?: boolean;
+  nounLabel?: string;
 };
 
-async function loadApprovedWithAuthors(memorialId: string): Promise<{ items: ScrapbookItemWithAuthor[]; count: number }> {
+async function loadApprovedWithAuthors(
+  subjectType: "memorial" | "event",
+  targetId: string
+): Promise<{ items: ScrapbookItemWithAuthor[]; count: number }> {
+  const tableName = subjectType === "event" ? "event_scrapbook_items" : "memorial_scrapbook_items";
+  const fkColumn = subjectType === "event" ? "event_id" : "memorial_id";
+  const selectFields = subjectType === "event" ? EVENT_SELECT_FIELDS : MEMORIAL_SELECT_FIELDS;
   const countRes = await supabase
-    .from("memorial_scrapbook_items")
+    .from(tableName)
     .select("id", { count: "exact", head: true })
-    .eq("memorial_id", memorialId)
+    .eq(fkColumn, targetId)
     .eq("status", "approved");
 
   const count = countRes.count ?? 0;
 
   const { data: rows, error } = await supabase
-    .from("memorial_scrapbook_items")
-    .select(SELECT_FIELDS)
-    .eq("memorial_id", memorialId)
+    .from(tableName)
+    .select(selectFields)
+    .eq(fkColumn, targetId)
     .eq("status", "approved")
     .order("created_at", { ascending: false })
     .limit(40);
 
   if (error) {
+    if (isMissingSchemaError(error)) {
+      return { items: [], count: 0 };
+    }
     console.error("Scrapbook load error:", error);
     return { items: [], count: 0 };
   }
@@ -113,6 +140,8 @@ function applyArticlePreviewThumbnails(
 
 export function MemorialScrapbookPreview({
   memorialId,
+  targetId,
+  subjectType = "memorial",
   t,
   accentColor,
   variant = "full",
@@ -120,7 +149,11 @@ export function MemorialScrapbookPreview({
   panelBackground,
   scrapbookActorUserId = null,
   scrapbookActorIsAdmin = false,
+  nounLabel,
 }: Props) {
+  const resolvedTargetId = targetId ?? memorialId ?? "";
+  const subjectNoun = nounLabel ?? (subjectType === "event" ? "event" : "life");
+  const deleteRpc = subjectType === "event" ? "delete_event_scrapbook_item" : "delete_memorial_scrapbook_item";
   const [items, setItems] = useState<ScrapbookItemWithAuthor[]>([]);
   const [articleOgImages, setArticleOgImages] = useState<Record<string, string>>({});
   /** One OG fetch attempt per item id (success or fail) so we never spin when HTML has no og:image. */
@@ -139,17 +172,23 @@ export function MemorialScrapbookPreview({
   );
 
   const refresh = useCallback(async () => {
+    if (!resolvedTargetId) {
+      setItems([]);
+      setCount(0);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
-    const res = await loadApprovedWithAuthors(memorialId);
+    const res = await loadApprovedWithAuthors(subjectType, resolvedTargetId);
     setItems(res.items);
     setCount(res.count);
     setLoading(false);
-  }, [memorialId]);
+  }, [resolvedTargetId, subjectType]);
 
   useEffect(() => {
     setArticleOgImages({});
     articleOgFetchedRef.current = new Set();
-  }, [memorialId]);
+  }, [resolvedTargetId]);
 
   useEffect(() => {
     void refresh();
@@ -167,7 +206,7 @@ export function MemorialScrapbookPreview({
   const handleDeleteItem = useCallback(
     async (it: ScrapbookItemWithAuthor) => {
       if (!window.confirm("Delete this scrapbook entry? This cannot be undone.")) return;
-      const { error } = await supabase.rpc("delete_memorial_scrapbook_item", { p_item_id: it.id });
+      const { error } = await supabase.rpc(deleteRpc, { p_item_id: it.id });
       if (error) {
         alert(error.message);
         return;
@@ -175,7 +214,7 @@ export function MemorialScrapbookPreview({
       setEditItem((cur) => (cur?.id === it.id ? null : cur));
       await refresh();
     },
-    [refresh],
+    [deleteRpc, refresh],
   );
 
   useEffect(() => {
@@ -283,6 +322,8 @@ export function MemorialScrapbookPreview({
         <AddScrapbookItemModal
           open={addOpen}
           memorialId={memorialId}
+          targetId={resolvedTargetId}
+          subjectType={subjectType}
           onClose={() => setAddOpen(false)}
           onSubmitted={() => void refresh()}
           t={t}
@@ -364,7 +405,7 @@ export function MemorialScrapbookPreview({
               lineHeight: 1.55,
             }}
           >
-            No scrapbook contributions yet. Share a photo, story, article, or document to celebrate this life—submissions
+            No scrapbook contributions yet. Share a photo, story, article, or document to celebrate this {subjectNoun}—submissions
             are reviewed before they appear here.
           </div>
         ) : (
@@ -508,11 +549,14 @@ export function MemorialScrapbookPreview({
         onSaved={() => void refresh()}
         t={t}
         accentColor={accentColor}
+        subjectType={subjectType}
       />
 
       <AddScrapbookItemModal
         open={addOpen}
         memorialId={memorialId}
+        targetId={resolvedTargetId}
+        subjectType={subjectType}
         onClose={() => setAddOpen(false)}
         onSubmitted={() => void refresh()}
         t={t}
@@ -526,6 +570,7 @@ export function MemorialScrapbookPreview({
         onSubmitted={() => void refresh()}
         t={t}
         accentColor={accentColor}
+        subjectType={subjectType}
       />
     </>
   );

@@ -16,6 +16,7 @@ import {
 } from "../components/memorial/memorialModalShared";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
+import EventScrapbookPreview from "../components/events/EventScrapbookPreview";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
 import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import type { PostLikerBrief } from "../components/PostLikersStack";
@@ -30,6 +31,7 @@ import {
   type ReactionType,
 } from "../lib/reactions";
 import { MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
+import { ExternalSiteEmbedModal, ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
 
 type EventReactionBundle = ReactionAggregate & {
   reactorNamesByType: Partial<Record<ReactionType, string[]>>;
@@ -170,6 +172,14 @@ function errorMessage(err: unknown, fallback: string): string {
   return typeof message === "string" && message.trim() ? message : fallback;
 }
 
+type UrlPreviewResult = {
+  title: string | null;
+  description: string | null;
+  image: string | null;
+  siteName: string | null;
+  url: string;
+};
+
 export default function EventsPage() {
   // useSearchParams must be inside a Suspense boundary so Next.js doesn't
   // bail the whole route out of static rendering at build time.
@@ -252,6 +262,10 @@ function EventsPageInner() {
   const [eventCoverCropSrc, setEventCoverCropSrc] = useState<string | null>(null);
   const [eventCoverUrl, setEventCoverUrl] = useState<string | null>(null);
   const [uploadingEventCover, setUploadingEventCover] = useState(false);
+  const [eventUrlPreview, setEventUrlPreview] = useState<UrlPreviewResult | null>(null);
+  const [eventUrlPreviewLoading, setEventUrlPreviewLoading] = useState(false);
+  const [eventUrlPreviewError, setEventUrlPreviewError] = useState<string | null>(null);
+  const [eventFormUrlPreviewModalOpen, setEventFormUrlPreviewModalOpen] = useState(false);
   const [isCalendarMobile, setIsCalendarMobile] = useState(false);
   const [showEventInvite, setShowEventInvite] = useState(false);
   const [eventInviteTarget, setEventInviteTarget] = useState<CalendarEvent | null>(null);
@@ -633,25 +647,24 @@ function EventsPageInner() {
     await refreshAttendanceFor(eventId);
   }
 
-  function getNext5pm(): string {
-    const now = new Date();
-    const target = new Date(now);
-    target.setHours(17, 0, 0, 0);
-    if (now >= target) target.setDate(target.getDate() + 1);
-    return target.toISOString();
-  }
-
   async function loadAllUpcomingEvents() {
-    const todayStr = toDateStr(today.getFullYear(), today.getMonth(), today.getDate());
     const { data, error } = await supabase
       .from("events")
       .select(EVENT_COLUMNS)
-      .gte("date", todayStr)
       .is("unit_id", null)
       .eq("visibility", "public")
       .order("date", { ascending: true });
-    if (error) { console.error("Upcoming events load error:", error); return; }
-    const result = (data ?? []) as CalendarEvent[];
+    if (error) { console.error("Events list load error:", error); return; }
+    const todayStart = new Date(today);
+    todayStart.setHours(0, 0, 0, 0);
+    const result = ((data ?? []) as CalendarEvent[]).sort((a, b) => {
+      const aTime = new Date(`${a.date}T00:00:00`).getTime();
+      const bTime = new Date(`${b.date}T00:00:00`).getTime();
+      const aUpcoming = aTime >= todayStart.getTime();
+      const bUpcoming = bTime >= todayStart.getTime();
+      if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
+      return aTime - bTime;
+    });
     setAllUpcomingEvents(result);
     if (result.length > 0) {
       await loadAttendance(result.map((e) => e.id), userId);
@@ -934,6 +947,45 @@ function EventsPageInner() {
     setEventCoverCropOpen(true);
   }
 
+  async function fetchEventUrlPreview(rawUrl: string): Promise<UrlPreviewResult | null> {
+    const url = rawUrl.trim();
+    if (!url) {
+      setEventUrlPreview(null);
+      setEventUrlPreviewError(null);
+      return null;
+    }
+    setEventUrlPreviewLoading(true);
+    setEventUrlPreviewError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return null;
+      const res = await fetch("/api/preview-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ url }),
+      });
+      const json = (await res.json().catch(() => null)) as UrlPreviewResult | { error?: string } | null;
+      if (!res.ok || !json || !("url" in json)) {
+        const msg = json && "error" in json && typeof json.error === "string" ? json.error : "Could not load URL preview.";
+        setEventUrlPreviewError(msg);
+        setEventUrlPreview(null);
+        return null;
+      }
+      setEventUrlPreview(json);
+      return json;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not load URL preview.";
+      setEventUrlPreviewError(msg);
+      setEventUrlPreview(null);
+      return null;
+    } finally {
+      setEventUrlPreviewLoading(false);
+    }
+  }
+
   async function uploadMemorialPhoto(file: File): Promise<string> {
     const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
     const path = `memorials/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.${ext}`;
@@ -990,6 +1042,12 @@ function EventsPageInner() {
         poc_name: eventForm.poc_name.trim() || null,
         poc_phone: eventForm.poc_phone.trim() || null,
       };
+      if (!eventCoverUrl?.trim() && eventForm.signup_url.trim()) {
+        const preview = eventUrlPreview ?? (await fetchEventUrlPreview(eventForm.signup_url));
+        if (preview?.image) {
+          insertRow.image_url = httpsAssetUrl(preview.image);
+        }
+      }
 
       let { data: insertedEvent, error } = await supabase.from("events").insert([insertRow]).select("id").single();
 
@@ -1011,38 +1069,8 @@ function EventsPageInner() {
 
       const newEventId = insertedEvent?.id as string | undefined;
 
-      // Create a feed post scheduled for next 5pm
-      const formattedDate = formatEventDate(eventForm.date);
-      const pocLine =
-        eventForm.poc_name.trim() && eventForm.poc_phone.trim()
-          ? `${eventForm.poc_name.trim()} — ${eventForm.poc_phone.trim()}`
-          : eventForm.poc_name.trim() || eventForm.poc_phone.trim() || "";
-      const lines = [
-        `📅 New Event: ${eventForm.title.trim()}`,
-        `📆 ${formattedDate}`,
-        eventForm.event_time.trim() ? `🕒 ${eventForm.event_time.trim()}` : null,
-        eventForm.location.trim() ? `📍 ${eventForm.location.trim()}` : null,
-        eventForm.organization.trim() ? `🏢 ${eventForm.organization.trim()}` : null,
-        pocLine ? `📞 POC: ${pocLine}` : null,
-        eventForm.description.trim() ? `\n${eventForm.description.trim()}` : null,
-        eventForm.signup_url.trim() ? `\nSign up: ${eventForm.signup_url.trim()}` : null,
-      ].filter(Boolean);
-
-      const postPayload: Record<string, unknown> = {
-        user_id: userId,
-        content: lines.join("\n"),
-        created_at: getNext5pm(),
-      };
-      if (newEventId) postPayload.event_id = newEventId;
-
-      let { error: postErr } = await supabase.from("posts").insert([postPayload]);
-      if (postErr && newEventId && isMissingDbColumn(postErr, "event_id")) {
-        const { event_id: _e, ...fallback } = postPayload;
-        postErr = (await supabase.from("posts").insert([fallback])).error;
-      }
-      if (postErr) {
-        console.error("Event feed post error:", postErr);
-      }
+      // Feed post creation is handled centrally in DB trigger so all
+      // event-publish paths stay consistent and deduped by event_id.
 
       if (newEventId && pendingEventInvites.size > 0) {
         try {
@@ -1070,6 +1098,8 @@ function EventsPageInner() {
 
       setEventForm({ title: "", description: "", date: "", organization: "", signup_url: "", location: "", event_time: "", poc_name: "", poc_phone: "" });
       setEventCoverUrl(null);
+      setEventUrlPreview(null);
+      setEventUrlPreviewError(null);
       setShowEventForm(false);
       await Promise.all([loadEvents(), loadAllUpcomingEvents()]);
     } finally {
@@ -1839,9 +1869,49 @@ function EventsPageInner() {
           <input
             style={inputStyle}
             value={eventForm.signup_url}
-            onChange={(e) => setEventForm((p) => ({ ...p, signup_url: e.target.value }))}
+            onChange={(e) => {
+              const value = e.target.value;
+              setEventForm((p) => ({ ...p, signup_url: value }));
+              if (!value.trim()) {
+                setEventUrlPreview(null);
+                setEventUrlPreviewError(null);
+              }
+            }}
+            onBlur={() => { void fetchEventUrlPreview(eventForm.signup_url); }}
             placeholder="https://..."
           />
+          {eventUrlPreviewLoading ? (
+            <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted }}>Loading URL preview...</div>
+          ) : null}
+          {eventUrlPreviewError ? (
+            <div style={{ marginTop: 6, fontSize: 12, color: "#f87171" }}>{eventUrlPreviewError}</div>
+          ) : null}
+          {!eventCoverUrl && eventUrlPreview?.image ? (
+            <button
+              type="button"
+              onClick={() => setEventFormUrlPreviewModalOpen(true)}
+              style={{
+                marginTop: 10,
+                display: "block",
+                borderRadius: 12,
+                overflow: "hidden",
+                border: `1px solid ${t.border}`,
+                maxWidth: 420,
+                aspectRatio: "16 / 9",
+                background: t.bg,
+                padding: 0,
+                cursor: "pointer",
+                width: "100%",
+              }}
+            >
+              <img src={httpsAssetUrl(eventUrlPreview.image)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+            </button>
+          ) : null}
+          {!eventCoverUrl && eventUrlPreview?.image ? (
+            <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint }}>
+              URL preview will be used as the event image unless you upload a flyer.
+            </div>
+          ) : null}
 
           <div style={{ marginTop: 16, display: "flex", justifyContent: "flex-end", gap: 10 }}>
             <button
@@ -1851,6 +1921,8 @@ function EventsPageInner() {
                 setEventCoverCropSrc(null);
                 setEventCoverCropOpen(false);
                 setEventCoverUrl(null);
+                setEventUrlPreview(null);
+                setEventUrlPreviewError(null);
                 setShowEventForm(false);
               }}
               style={{
@@ -2741,11 +2813,11 @@ function EventsPageInner() {
         </div>
       )}
 
-      {/* ── Upcoming Events List View ── */}
+      {/* ── Events List View ── */}
       <div style={{ marginTop: 24, border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, overflow: "hidden" }}>
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 18, fontWeight: 900 }}>
-            Upcoming Events
+            Events
             {allUpcomingEvents.length > 0 && (
               <span style={{ marginLeft: 10, fontSize: 13, fontWeight: 700, color: t.textMuted }}>{allUpcomingEvents.length} event{allUpcomingEvents.length !== 1 ? "s" : ""}</span>
             )}
@@ -2754,7 +2826,7 @@ function EventsPageInner() {
 
         {allUpcomingEvents.length === 0 ? (
           <div style={{ padding: "32px 20px", textAlign: "center", color: t.textFaint, fontSize: 14 }}>
-            No upcoming events. Be the first to add one!
+            No events yet. Be the first to add one!
           </div>
         ) : (
           <div style={{ display: "grid", gap: 0 }}>
@@ -2931,6 +3003,22 @@ function EventsPageInner() {
                           Invite
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEvent(ev)}
+                        style={{
+                          background: t.surface,
+                          color: t.text,
+                          border: `1px solid ${t.border}`,
+                          borderRadius: 8,
+                          padding: "5px 12px",
+                          fontWeight: 800,
+                          fontSize: 12,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Scrapbook
+                      </button>
                       <ReactionPickerTrigger
                         t={t}
                         disabled={!userId}
@@ -2970,10 +3058,8 @@ function EventsPageInner() {
                         Comment
                       </button>
                       {ev.signup_url && (
-                        <a
+                        <ExternalSiteLink
                           href={ev.signup_url}
-                          target="_blank"
-                          rel="noreferrer"
                           style={{
                             fontSize: 13,
                             fontWeight: 700,
@@ -2982,7 +3068,7 @@ function EventsPageInner() {
                           }}
                         >
                           Website ↗
-                        </a>
+                        </ExternalSiteLink>
                       )}
                       <ReactionLeaderboard
                         t={t}
@@ -3460,6 +3546,16 @@ function EventsPageInner() {
 
             </div>
 
+            <div style={{ marginTop: 18 }}>
+              <EventScrapbookPreview
+                eventId={selectedEvent.id}
+                t={t}
+                accentColor={isDark ? "#a78bfa" : "#7c3aed"}
+                scrapbookActorUserId={userId}
+                scrapbookActorIsAdmin={userIsAdmin}
+              />
+            </div>
+
             <div
               style={{
                 marginTop: 24,
@@ -3485,10 +3581,8 @@ function EventsPageInner() {
                   {myAttendance[selectedEvent.id] === "going" ? "Going ✓" : "Going"}
                 </button>
                 {selectedEvent.signup_url && (
-                  <a
+                  <ExternalSiteLink
                     href={selectedEvent.signup_url}
-                    target="_blank"
-                    rel="noreferrer"
                     style={{
                       display: "inline-block",
                       textDecoration: "none",
@@ -3501,7 +3595,7 @@ function EventsPageInner() {
                     }}
                   >
                     Open Event Link
-                  </a>
+                  </ExternalSiteLink>
                 )}
                 {userId && selectedEvent.user_id === userId && (
                   <button
@@ -3640,6 +3734,12 @@ function EventsPageInner() {
         eventId={attendeesListModal?.eventId ?? null}
         status={attendeesListModal?.status ?? null}
         onClose={() => setAttendeesListModal(null)}
+      />
+      <ExternalSiteEmbedModal
+        open={eventFormUrlPreviewModalOpen && Boolean(eventUrlPreview?.url)}
+        onClose={() => setEventFormUrlPreviewModalOpen(false)}
+        url={eventUrlPreview?.url ? httpsAssetUrl(eventUrlPreview.url) : null}
+        title="Sign-up URL preview"
       />
     </div>
   );

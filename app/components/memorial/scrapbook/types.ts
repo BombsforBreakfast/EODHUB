@@ -2,7 +2,8 @@ export type ScrapbookItemType = "photo" | "article" | "document" | "memory";
 
 export type ScrapbookItemRow = {
   id: string;
-  memorial_id: string;
+  memorial_id?: string | null;
+  event_id?: string | null;
   user_id: string | null;
   item_type: ScrapbookItemType;
   file_url: string | null;

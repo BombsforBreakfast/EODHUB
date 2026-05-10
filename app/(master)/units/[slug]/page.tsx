@@ -25,6 +25,7 @@ import {
   fetchContentReactionsForSubjects,
   type ReactionType,
 } from "../../../lib/reactions";
+import { ExternalSiteLink } from "../../../components/ExternalSiteEmbedModal";
 
 const RABBITHOLE_THRESHOLD_BYPASS = true;
 
@@ -1658,7 +1659,7 @@ export default function UnitPage() {
                                   Going{counts.going > 0 ? ` · ${counts.going}` : ""}
                                 </button>
                                 {unitSavedEventIds.has(event.id) ? <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 700 }}>Saved</span> : null}
-                                {event.signup_url ? <a href={event.signup_url} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", fontWeight: 800, textDecoration: "none" }}>Website →</a> : null}
+                                {event.signup_url ? <ExternalSiteLink href={event.signup_url} style={{ fontSize: 12, color: "#2563eb", fontWeight: 800, textDecoration: "none" }}>Website →</ExternalSiteLink> : null}
                               </div>
                             </div>
                           </div>
@@ -2112,7 +2113,7 @@ export default function UnitPage() {
               <button type="button" onClick={() => toggleUnitEventAttendance(selectedUnitEvent.id, "going")} style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 16px", fontWeight: 800, cursor: "pointer", background: unitEventMyAttendance[selectedUnitEvent.id] === "going" ? t.text : t.surface, color: unitEventMyAttendance[selectedUnitEvent.id] === "going" ? t.surface : t.text }}>
                 Going{(unitEventAttendance[selectedUnitEvent.id]?.going ?? 0) > 0 ? ` · ${unitEventAttendance[selectedUnitEvent.id].going}` : ""}
               </button>
-              {selectedUnitEvent.signup_url ? <a href={selectedUnitEvent.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-block", textDecoration: "none", background: "#111", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 800, marginLeft: "auto" }}>Open Event Link</a> : null}
+              {selectedUnitEvent.signup_url ? <ExternalSiteLink href={selectedUnitEvent.signup_url} style={{ display: "inline-block", textDecoration: "none", background: "#111", color: "#fff", padding: "10px 16px", borderRadius: 10, fontWeight: 800, marginLeft: "auto" }}>Open Event Link</ExternalSiteLink> : null}
             </div>
           </div>
         </div>

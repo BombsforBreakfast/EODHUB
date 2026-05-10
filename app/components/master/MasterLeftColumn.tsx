@@ -19,6 +19,7 @@ import { dedupeSavedEventRowsByEventId, ensureSavedEventForUser } from "../../li
 import { collapsedRailTitleLinkZoom, httpsAssetUrl, sectionTitleLinkZoom, type JobRow } from "./masterShared";
 import { MemorialDisclaimer } from "../memorial/MemorialDisclaimer";
 import { memorialTheme } from "../memorial/memorialModalShared";
+import { ExternalSiteLink } from "../ExternalSiteEmbedModal";
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -1450,9 +1451,9 @@ export default function MasterLeftColumn({
                       </div>
                       <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
                         {ev.signup_url ? (
-                          <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                          <ExternalSiteLink href={ev.signup_url} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
                             Website <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
-                          </a>
+                          </ExternalSiteLink>
                         ) : null}
                       </div>
                     </div>
@@ -2103,10 +2104,8 @@ export default function MasterLeftColumn({
                   {selectedEventCounts.going > 0 ? ` · ${selectedEventCounts.going}` : ""}
                 </button>
                 {selectedEvent.signup_url && (
-                  <a
+                  <ExternalSiteLink
                     href={selectedEvent.signup_url}
-                    target="_blank"
-                    rel="noreferrer"
                     style={{
                       marginLeft: "auto",
                       display: "inline-block",
@@ -2120,7 +2119,7 @@ export default function MasterLeftColumn({
                     }}
                   >
                     Open Event Link
-                  </a>
+                  </ExternalSiteLink>
                 )}
               </div>
               <EventAttendeeAvatarRows

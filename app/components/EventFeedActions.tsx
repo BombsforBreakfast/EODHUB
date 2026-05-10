@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
+import { ExternalSiteLink } from "./ExternalSiteEmbedModal";
 
 export type EventFeedActionsProps = {
   eventId: string;
@@ -214,9 +215,9 @@ export default function EventFeedActions({
         </button>
       ) : null}
       {signupHref ? (
-        <a href={signupHref} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: isDark ? "#60a5fa" : "#1d4ed8", textDecoration: "none" }}>
+        <ExternalSiteLink href={signupHref} style={{ fontSize: 12, fontWeight: 700, color: isDark ? "#60a5fa" : "#1d4ed8", textDecoration: "none" }}>
           Sign Up ↗
-        </a>
+        </ExternalSiteLink>
       ) : null}
     </div>
   );

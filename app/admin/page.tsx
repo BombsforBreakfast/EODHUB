@@ -175,7 +175,7 @@ type Tab =
   | "groups"
   | "flags"
   | "events"
-  | "reports"
+  | "bugs"
   | "directory"
   | "engagement"
   | "news"
@@ -330,14 +330,20 @@ type LocationRequest = {
   created_at: string;
 };
 
+type BugReportStatus = "new" | "reviewing" | "fixed" | "ignored";
+
 type BugReport = {
   id: string;
   user_id: string | null;
-  message: string;
+  title: string | null;
+  description: string | null;
+  message: string | null;
   screenshot_url: string | null;
   page_url: string | null;
+  user_agent: string | null;
+  status: BugReportStatus;
+  admin_notes: string | null;
   created_at: string;
-  reviewed: boolean;
   reporter_name?: string | null;
 };
 
@@ -612,7 +618,8 @@ export default function AdminPage() {
   );
 
   const [bugReports, setBugReports] = useState<BugReport[]>([]);
-  const [reportsFilter, setReportsFilter] = useState<"unreviewed" | "all">("unreviewed");
+  const [bugsFilter, setBugsFilter] = useState<"open" | "all">("open");
+  const [bugNotesDraft, setBugNotesDraft] = useState<Record<string, string>>({});
 
   const [directoryEntries, setDirectoryEntries] = useState<DirectoryEntry[]>([]);
   const [editingDirectory, setEditingDirectory] = useState<DirectoryEntry | null>(null);
@@ -666,7 +673,7 @@ export default function AdminPage() {
     jobs: 0,
     users: 0,
     flags: 0,
-    reports: 0,
+    bugs: 0,
     dir: 0,
     locReq: 0,
     scrapbook: 0,
@@ -1466,12 +1473,12 @@ export default function AdminPage() {
       void loadAdminEvents();
       void loadMemorials();
     }
-    if (activeTab === "reports") loadBugReports();
+    if (activeTab === "bugs") loadBugReports();
     if (activeTab === "directory") loadDirectory();
     if (activeTab === "engagement") void loadEngagement(engagementRange);
     if (activeTab === "news") void loadNews(newsFilter);
     if (activeTab === "waitlist") void loadWaitlist();
-  }, [pendingOnly, activeTab, authorized, engagementRange, newsFilter]);
+  }, [pendingOnly, activeTab, authorized, engagementRange, newsFilter, bugsFilter]);
 
   useEffect(() => {
     if (!authorized) return;
@@ -1974,27 +1981,64 @@ export default function AdminPage() {
   async function loadBugReports() {
     const query = supabase
       .from("bug_reports")
-      .select("id, user_id, message, screenshot_url, page_url, created_at, reviewed")
+      .select(
+        "id, user_id, title, description, message, screenshot_url, page_url, user_agent, status, admin_notes, created_at",
+      )
       .order("created_at", { ascending: false });
-    const { data, error } = reportsFilter === "unreviewed"
-      ? await query.eq("reviewed", false)
-      : await query;
-    if (error) { console.error(error); return; }
+    const { data, error } =
+      bugsFilter === "open" ? await query.eq("status", "new") : await query;
+    if (error) {
+      console.error(error);
+      return;
+    }
 
-    const reports = (data ?? []) as BugReport[];
+    const rawRows = data ?? [];
+    const reports: BugReport[] = rawRows.map((row) => {
+      const r = row as Record<string, unknown>;
+      const statusRaw = r.status;
+      const status: BugReportStatus =
+        statusRaw === "reviewing" || statusRaw === "fixed" || statusRaw === "ignored"
+          ? statusRaw
+          : "new";
+      return {
+        id: String(r.id),
+        user_id: (r.user_id as string | null) ?? null,
+        title: (r.title as string | null) ?? null,
+        description: (r.description as string | null) ?? null,
+        message: (r.message as string | null) ?? null,
+        screenshot_url: (r.screenshot_url as string | null) ?? null,
+        page_url: (r.page_url as string | null) ?? null,
+        user_agent: (r.user_agent as string | null) ?? null,
+        status,
+        admin_notes: (r.admin_notes as string | null) ?? null,
+        created_at: String(r.created_at ?? ""),
+      };
+    });
+
     const userIds = [...new Set(reports.map((r) => r.user_id).filter(Boolean))] as string[];
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
         .from("profiles")
         .select("user_id, first_name, last_name")
         .in("user_id", userIds);
-      const nameMap = new Map((profiles ?? []).map((p: { user_id: string; first_name: string | null; last_name: string | null }) => [
-        p.user_id,
-        `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown",
-      ]));
-      reports.forEach((r) => { r.reporter_name = r.user_id ? (nameMap.get(r.user_id) ?? null) : null; });
+      const nameMap = new Map(
+        (profiles ?? []).map((p: { user_id: string; first_name: string | null; last_name: string | null }) => [
+          p.user_id,
+          `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown",
+        ]),
+      );
+      reports.forEach((r) => {
+        r.reporter_name = r.user_id ? (nameMap.get(r.user_id) ?? null) : null;
+      });
     }
     setBugReports(reports);
+    setBugNotesDraft((prev) => {
+      const next = { ...prev };
+      for (const r of reports) {
+        if (next[r.id] === undefined) next[r.id] = r.admin_notes ?? "";
+      }
+      return next;
+    });
   }
 
   async function loadWaitlist() {
@@ -2038,21 +2082,51 @@ export default function AdminPage() {
     });
   }
 
-  async function markReportReviewed(id: string) {
-    setActionLoading(id);
-    await supabase.from("bug_reports").update({ reviewed: true }).eq("id", id);
-    showToast("Marked as reviewed.");
-    await Promise.all([loadBugReports(), loadPendingCounts()]);
-    setActionLoading(null);
+  async function updateBugReportStatus(id: string, status: BugReportStatus) {
+    setActionLoading(id + "-status");
+    try {
+      const { error } = await supabase.from("bug_reports").update({ status }).eq("id", id);
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      showToast("Status updated.");
+      await Promise.all([loadBugReports(), loadPendingCounts()]);
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function saveBugReportNotes(id: string) {
+    const notes = bugNotesDraft[id] ?? "";
+    setActionLoading(id + "-notes");
+    try {
+      const { error } = await supabase.from("bug_reports").update({ admin_notes: notes.trim() || null }).eq("id", id);
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      showToast("Notes saved.");
+      await loadBugReports();
+    } finally {
+      setActionLoading(null);
+    }
   }
 
   async function deleteBugReport(id: string) {
     askConfirm("Delete this report?", async () => {
       setActionLoading(id);
-      await supabase.from("bug_reports").delete().eq("id", id);
-      showToast("Report deleted.");
-      await Promise.all([loadBugReports(), loadPendingCounts()]);
-      setActionLoading(null);
+      try {
+        const { error } = await supabase.from("bug_reports").delete().eq("id", id);
+        if (error) {
+          alert(error.message);
+          return;
+        }
+        showToast("Report deleted.");
+        await Promise.all([loadBugReports(), loadPendingCounts()]);
+      } finally {
+        setActionLoading(null);
+      }
     });
   }
 
@@ -2590,9 +2664,9 @@ export default function AdminPage() {
             Events
             {tabNotifyBadge(pendingCounts.scrapbook)}
           </button>
-          <button type="button" style={tabStyle("reports")} onClick={() => setActiveTab("reports")}>
-            Reports
-            {tabNotifyBadge(pendingCounts.reports)}
+          <button type="button" style={tabStyle("bugs")} onClick={() => setActiveTab("bugs")}>
+            Bugs
+            {tabNotifyBadge(pendingCounts.bugs)}
           </button>
           <button type="button" style={tabStyle("directory")} onClick={() => setActiveTab("directory")}>
             Directory
@@ -3306,51 +3380,173 @@ export default function AdminPage() {
             </div>
           </div>
         )}
-        {/* ── REPORTS TAB ── */}
-        {activeTab === "reports" && (
+        {/* ── BUGS TAB ── */}
+        {activeTab === "bugs" && (
           <div style={{ marginTop: 20, display: "grid", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <button onClick={() => setReportsFilter("unreviewed")} style={{ ...tabStyle("reports"), background: reportsFilter === "unreviewed" ? "#111" : t.badgeBg, color: reportsFilter === "unreviewed" ? "white" : t.text, fontSize: 13, padding: "6px 14px" }}>Unreviewed</button>
-              <button onClick={() => setReportsFilter("all")} style={{ ...tabStyle("reports"), background: reportsFilter === "all" ? "#111" : t.badgeBg, color: reportsFilter === "all" ? "white" : t.text, fontSize: 13, padding: "6px 14px" }}>All</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setBugsFilter("open")}
+                style={{
+                  ...tabStyle("bugs"),
+                  background: bugsFilter === "open" ? "#111" : t.badgeBg,
+                  color: bugsFilter === "open" ? "white" : t.text,
+                  fontSize: 13,
+                  padding: "6px 14px",
+                }}
+              >
+                New only
+              </button>
+              <button
+                type="button"
+                onClick={() => setBugsFilter("all")}
+                style={{
+                  ...tabStyle("bugs"),
+                  background: bugsFilter === "all" ? "#111" : t.badgeBg,
+                  color: bugsFilter === "all" ? "white" : t.text,
+                  fontSize: 13,
+                  padding: "6px 14px",
+                }}
+              >
+                All
+              </button>
             </div>
 
             {bugReports.length === 0 && (
-              <div style={{ color: t.textFaint, fontSize: 14, padding: 20 }}>No reports found.</div>
+              <div style={{ color: t.textFaint, fontSize: 14, padding: 20 }}>No bug reports found.</div>
             )}
 
-            {bugReports.map((r) => (
-              <div key={r.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 18, background: t.surface, opacity: r.reviewed ? 0.6 : 1 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{r.reporter_name ?? "Anonymous"}</div>
-                    <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2 }}>{new Date(r.created_at).toLocaleString()}</div>
-                    {r.page_url && <div style={{ fontSize: 11, color: t.textFaint, marginTop: 2, wordBreak: "break-all" }}>{r.page_url}</div>}
+            {bugReports.map((r) => {
+              const bodyText = r.description?.trim() || r.message?.trim() || "—";
+              const titleLine = r.title?.trim() || "—";
+              const busyStatus = actionLoading === `${r.id}-status`;
+              const busyNotes = actionLoading === `${r.id}-notes`;
+              const busyDelete = actionLoading === r.id;
+              return (
+                <div
+                  key={r.id}
+                  style={{
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 12,
+                    padding: 18,
+                    background: t.surface,
+                    display: "grid",
+                    gap: 14,
+                  }}
+                >
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-start", justifyContent: "space-between" }}>
+                    <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: t.text, wordBreak: "break-word" }}>{titleLine}</div>
+                      <div style={{ fontSize: 12, color: t.textFaint, marginTop: 4 }}>
+                        {r.reporter_name ?? "Unknown"} · {new Date(r.created_at).toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, wordBreak: "break-all" }}>
+                        <strong style={{ color: t.textMuted }}>User ID:</strong> {r.user_id ?? "—"}
+                      </div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, wordBreak: "break-all" }}>
+                        <strong style={{ color: t.textMuted }}>Page:</strong> {r.page_url ?? "—"}
+                      </div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, wordBreak: "break-word" }}>
+                        <strong style={{ color: t.textMuted }}>Agent:</strong> {r.user_agent ?? "—"}
+                      </div>
+                    </div>
+
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch", minWidth: 160 }}>
+                      <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Status</label>
+                      <select
+                        value={r.status}
+                        disabled={busyStatus}
+                        onChange={(e) => void updateBugReportStatus(r.id, e.target.value as BugReportStatus)}
+                        style={{
+                          padding: "8px 10px",
+                          borderRadius: 8,
+                          border: `1px solid ${t.border}`,
+                          background: t.input,
+                          color: t.text,
+                          fontWeight: 700,
+                          fontSize: 13,
+                          cursor: busyStatus ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        <option value="new">new</option>
+                        <option value="reviewing">reviewing</option>
+                        <option value="fixed">fixed</option>
+                        <option value="ignored">ignored</option>
+                      </select>
+                    </div>
                   </div>
-                  {r.reviewed && <span style={{ background: "#d1fae5", color: "#065f46", borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, flexShrink: 0 }}>Reviewed</span>}
-                </div>
 
-                <div style={{ fontSize: 14, color: t.text, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: r.screenshot_url ? 12 : 0 }}>{r.message}</div>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, marginBottom: 6 }}>Description</div>
+                    <div style={{ fontSize: 14, color: t.text, lineHeight: 1.55, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{bodyText}</div>
+                  </div>
 
-                {r.screenshot_url && (
-                  <a href={r.screenshot_url} target="_blank" rel="noreferrer">
-                    <img src={r.screenshot_url} alt="Screenshot" style={{ maxWidth: "100%", maxHeight: 280, borderRadius: 10, border: `1px solid ${t.border}`, display: "block", marginBottom: 12 }} />
-                  </a>
-                )}
+                  {r.screenshot_url ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Screenshot</span>
+                      <a href={r.screenshot_url} target="_blank" rel="noreferrer" title="Open full image">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={r.screenshot_url}
+                          alt="Bug screenshot thumbnail"
+                          style={{
+                            width: 72,
+                            height: 72,
+                            objectFit: "cover",
+                            borderRadius: 8,
+                            border: `1px solid ${t.border}`,
+                            cursor: "pointer",
+                          }}
+                        />
+                      </a>
+                    </div>
+                  ) : null}
 
-                <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                  {!r.reviewed && (
-                    <button onClick={() => markReportReviewed(r.id)} disabled={actionLoading === r.id} style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }}>
-                      {actionLoading === r.id && <span className="btn-spinner" />}
-                      Mark Reviewed
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, marginBottom: 6 }}>Admin notes</div>
+                    <textarea
+                      value={bugNotesDraft[r.id] ?? ""}
+                      onChange={(e) => setBugNotesDraft((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                      rows={3}
+                      placeholder="Internal notes…"
+                      disabled={busyNotes}
+                      style={{
+                        width: "100%",
+                        boxSizing: "border-box",
+                        border: `1px solid ${t.border}`,
+                        borderRadius: 10,
+                        padding: "10px 12px",
+                        fontSize: 13,
+                        resize: "vertical",
+                        background: t.input,
+                        color: t.text,
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void saveBugReportNotes(r.id)}
+                      disabled={busyNotes}
+                      style={{ ...actionBtn("#2563eb"), marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6 }}
+                    >
+                      {busyNotes ? <span className="btn-spinner" /> : null}
+                      Save notes
                     </button>
-                  )}
-                  <button onClick={() => deleteBugReport(r.id)} disabled={actionLoading === r.id} style={{ ...actionBtn("#ef4444"), display: "flex", alignItems: "center", gap: 5 }}>
-                    {actionLoading === r.id && <span className="btn-spinner" />}
-                    Delete
-                  </button>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={() => deleteBugReport(r.id)}
+                      disabled={busyDelete || busyStatus || busyNotes}
+                      style={{ ...actionBtn("#ef4444"), display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      {busyDelete ? <span className="btn-spinner" /> : null}
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 

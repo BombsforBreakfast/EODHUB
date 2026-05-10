@@ -7,7 +7,9 @@ import type { Theme } from "@/app/lib/theme";
 
 type QueueItem = {
   id: string;
-  memorial_id: string;
+  subjectType: "memorial" | "event";
+  memorial_id?: string | null;
+  event_id?: string | null;
   user_id: string | null;
   item_type: string;
   file_url: string | null;
@@ -19,8 +21,8 @@ type QueueItem = {
   event_date: string | null;
   status: string;
   created_at: string;
-  memorialName: string;
-  memorialDeathDate: string;
+  subjectTitle: string;
+  subjectMeta: string;
   contributorLabel: string;
   flags: { id: string; reason: string; details: string | null; created_at: string }[];
 };
@@ -43,6 +45,7 @@ export function AdminScrapbookReview({
   const [rows, setRows] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [actingId, setActingId] = useState<string | null>(null);
+  const [sourceFilter, setSourceFilter] = useState<"all" | "memorial" | "event">("all");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,17 +57,61 @@ export function AdminScrapbookReview({
         )
         .in("status", ["pending", "flagged"])
         .order("created_at", { ascending: false });
+      const { data: eventItems, error: eventError } = await supabase
+        .from("event_scrapbook_items")
+        .select(
+          "id, event_id, user_id, item_type, file_url, external_url, thumbnail_url, memory_body, caption, location, event_date, status, created_at",
+        )
+        .in("status", ["pending", "flagged"])
+        .order("created_at", { ascending: false });
 
-      if (error) {
-        console.error("Admin scrapbook load:", error);
+      if (error || eventError) {
+        console.error("Admin scrapbook load:", error ?? eventError);
         setRows([]);
         return;
       }
 
-      const list = (items ?? []) as Omit<QueueItem, "memorialName" | "memorialDeathDate" | "contributorLabel" | "flags">[];
-      const memorialIds = [...new Set(list.map((x) => x.memorial_id))];
+      const memorialList = (items ?? []) as Array<{
+        id: string;
+        memorial_id: string;
+        user_id: string | null;
+        item_type: string;
+        file_url: string | null;
+        external_url: string | null;
+        thumbnail_url: string | null;
+        memory_body: string | null;
+        caption: string | null;
+        location: string | null;
+        event_date: string | null;
+        status: string;
+        created_at: string;
+      }>;
+      const eventList = (eventItems ?? []) as Array<{
+        id: string;
+        event_id: string;
+        user_id: string | null;
+        item_type: string;
+        file_url: string | null;
+        external_url: string | null;
+        thumbnail_url: string | null;
+        memory_body: string | null;
+        caption: string | null;
+        location: string | null;
+        event_date: string | null;
+        status: string;
+        created_at: string;
+      }>;
+
+      const list = [
+        ...memorialList.map((x) => ({ ...x, subjectType: "memorial" as const })),
+        ...eventList.map((x) => ({ ...x, subjectType: "event" as const })),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      const memorialIds = [...new Set(memorialList.map((x) => x.memorial_id))];
+      const eventIds = [...new Set(eventList.map((x) => x.event_id))];
       const userIds = [...new Set(list.map((x) => x.user_id).filter(Boolean))] as string[];
-      const itemIds = list.map((x) => x.id);
+      const memorialItemIds = memorialList.map((x) => x.id);
+      const eventItemIds = eventList.map((x) => x.id);
 
       const memorialMap: Record<string, { name: string; death_date: string }> = {};
       if (memorialIds.length > 0) {
@@ -72,6 +119,14 @@ export function AdminScrapbookReview({
         for (const m of mems ?? []) {
           const r = m as { id: string; name: string; death_date: string };
           memorialMap[r.id] = { name: r.name, death_date: r.death_date };
+        }
+      }
+      const eventMap: Record<string, { title: string; date: string; location: string | null }> = {};
+      if (eventIds.length > 0) {
+        const { data: evs } = await supabase.from("events").select("id, title, date, location").in("id", eventIds);
+        for (const e of evs ?? []) {
+          const r = e as { id: string; title: string; date: string; location: string | null };
+          eventMap[r.id] = { title: r.title, date: r.date, location: r.location };
         }
       }
 
@@ -98,11 +153,34 @@ export function AdminScrapbookReview({
       }
 
       const flagsByItem: Record<string, { id: string; reason: string; details: string | null; created_at: string }[]> = {};
-      if (itemIds.length > 0) {
+      if (memorialItemIds.length > 0) {
         const { data: flagRows } = await supabase
           .from("memorial_scrapbook_flags")
           .select("id, scrapbook_item_id, reason, details, created_at")
-          .in("scrapbook_item_id", itemIds)
+          .in("scrapbook_item_id", memorialItemIds)
+          .order("created_at", { ascending: true });
+        for (const f of flagRows ?? []) {
+          const r = f as {
+            id: string;
+            scrapbook_item_id: string;
+            reason: string;
+            details: string | null;
+            created_at: string;
+          };
+          if (!flagsByItem[r.scrapbook_item_id]) flagsByItem[r.scrapbook_item_id] = [];
+          flagsByItem[r.scrapbook_item_id].push({
+            id: r.id,
+            reason: r.reason,
+            details: r.details,
+            created_at: r.created_at,
+          });
+        }
+      }
+      if (eventItemIds.length > 0) {
+        const { data: flagRows } = await supabase
+          .from("event_scrapbook_flags")
+          .select("id, scrapbook_item_id, reason, details, created_at")
+          .in("scrapbook_item_id", eventItemIds)
           .order("created_at", { ascending: true });
         for (const f of flagRows ?? []) {
           const r = f as {
@@ -124,8 +202,22 @@ export function AdminScrapbookReview({
 
       const enriched: QueueItem[] = list.map((it) => ({
         ...it,
-        memorialName: memorialMap[it.memorial_id]?.name ?? "Unknown memorial",
-        memorialDeathDate: memorialMap[it.memorial_id]?.death_date ?? "",
+        subjectTitle:
+          it.subjectType === "memorial"
+            ? (it.memorial_id ? memorialMap[it.memorial_id]?.name : null) ?? "Unknown memorial"
+            : (it.event_id ? eventMap[it.event_id]?.title : null) ?? "Unknown event",
+        subjectMeta:
+          it.subjectType === "memorial"
+            ? (it.memorial_id ? memorialMap[it.memorial_id]?.death_date : null) ?? ""
+            : (() => {
+                const ev = it.event_id ? eventMap[it.event_id] : null;
+                if (!ev?.date) return "";
+                const d = new Date(`${ev.date}T12:00:00`);
+                const dateLabel = Number.isNaN(d.getTime())
+                  ? ev.date
+                  : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+                return [dateLabel, ev.location ?? ""].filter(Boolean).join(" · ");
+              })(),
         contributorLabel: it.user_id ? profileMap[it.user_id] ?? it.user_id : "Unknown",
         flags: flagsByItem[it.id] ?? [],
       }));
@@ -140,25 +232,43 @@ export function AdminScrapbookReview({
     void load();
   }, [load]);
 
-  async function runRpc(
-    rpc: "approve_memorial_scrapbook_item" | "reject_memorial_scrapbook_item" | "restore_memorial_scrapbook_item" | "delete_memorial_scrapbook_item",
-    id: string,
-    okMsg: string,
-  ) {
-    setActingId(id);
+  async function runAction(it: QueueItem, action: "approve" | "reject" | "restore" | "delete") {
+    const rpcMap =
+      it.subjectType === "event"
+        ? {
+            approve: "approve_event_scrapbook_item",
+            reject: "reject_event_scrapbook_item",
+            restore: "restore_event_scrapbook_item",
+            delete: "delete_event_scrapbook_item",
+          }
+        : {
+            approve: "approve_memorial_scrapbook_item",
+            reject: "reject_memorial_scrapbook_item",
+            restore: "restore_memorial_scrapbook_item",
+            delete: "delete_memorial_scrapbook_item",
+          };
+    const okMsgMap = {
+      approve: "Scrapbook item approved.",
+      reject: "Item rejected.",
+      restore: "Item restored to approved.",
+      delete: "Item deleted.",
+    } as const;
+    setActingId(it.id);
     try {
-      const { error } = await supabase.rpc(rpc, { p_item_id: id });
+      const { error } = await supabase.rpc(rpcMap[action], { p_item_id: it.id });
       if (error) {
         showToast(error.message);
         return;
       }
-      showToast(okMsg);
+      showToast(okMsgMap[action]);
       await load();
       onQueueChanged?.();
     } finally {
       setActingId(null);
     }
   }
+
+  const filteredRows = rows.filter((row) => sourceFilter === "all" || row.subjectType === sourceFilter);
 
   return (
     <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
@@ -167,13 +277,38 @@ export function AdminScrapbookReview({
         <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
           Pending submissions and community-flagged scrapbook items. Approve, reject, delete, or restore after review.
         </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+          {([
+            { id: "all", label: `All (${rows.length})` },
+            { id: "memorial", label: `Memorial (${rows.filter((r) => r.subjectType === "memorial").length})` },
+            { id: "event", label: `Event (${rows.filter((r) => r.subjectType === "event").length})` },
+          ] as const).map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => setSourceFilter(opt.id)}
+              style={{
+                borderRadius: 999,
+                border: `1px solid ${sourceFilter === opt.id ? t.text : t.border}`,
+                background: sourceFilter === opt.id ? t.text : t.surface,
+                color: sourceFilter === opt.id ? t.surface : t.text,
+                fontWeight: 800,
+                fontSize: 12,
+                padding: "6px 12px",
+                cursor: "pointer",
+              }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
         {loading ? (
           <div style={{ color: t.textFaint }}>Loading…</div>
-        ) : rows.length === 0 ? (
+        ) : filteredRows.length === 0 ? (
           <div style={{ color: t.textFaint, fontSize: 14 }}>No pending or flagged scrapbook items.</div>
         ) : (
           <div style={{ display: "grid", gap: 14 }}>
-            {rows.map((it) => (
+            {filteredRows.map((it) => (
               <div
                 key={it.id}
                 style={{
@@ -187,11 +322,12 @@ export function AdminScrapbookReview({
               >
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center", justifyContent: "space-between" }}>
                   <div style={{ fontSize: 13, fontWeight: 800 }}>
-                    {it.memorialName}
-                    {it.memorialDeathDate ? (
+                    {it.subjectType === "event" ? "Event: " : "Memorial: "}
+                    {it.subjectTitle}
+                    {it.subjectMeta ? (
                       <span style={{ color: t.textMuted, fontWeight: 600 }}>
                         {" "}
-                        · d. {it.memorialDeathDate}
+                        · {it.subjectMeta}
                       </span>
                     ) : null}
                   </div>
@@ -215,6 +351,8 @@ export function AdminScrapbookReview({
                   Submitted {new Date(it.created_at).toLocaleString()}
                   {" · "}
                   Type: <span style={{ fontWeight: 700 }}>{it.item_type}</span>
+                  {" · "}
+                  Source: <span style={{ fontWeight: 700 }}>{it.subjectType}</span>
                 </div>
                 {it.caption && (
                   <div style={{ fontSize: 14, color: t.text }}>
@@ -287,7 +425,7 @@ export function AdminScrapbookReview({
                       <button
                         type="button"
                         disabled={actingId === it.id}
-                        onClick={() => void runRpc("approve_memorial_scrapbook_item", it.id, "Scrapbook item approved.")}
+                        onClick={() => void runAction(it, "approve")}
                         style={{
                           padding: "7px 14px",
                           borderRadius: 8,
@@ -305,7 +443,7 @@ export function AdminScrapbookReview({
                       <button
                         type="button"
                         disabled={actingId === it.id}
-                        onClick={() => void runRpc("reject_memorial_scrapbook_item", it.id, "Item rejected.")}
+                        onClick={() => void runAction(it, "reject")}
                         style={{
                           padding: "7px 14px",
                           borderRadius: 8,
@@ -326,7 +464,7 @@ export function AdminScrapbookReview({
                     <button
                       type="button"
                       disabled={actingId === it.id}
-                      onClick={() => void runRpc("restore_memorial_scrapbook_item", it.id, "Item restored to approved.")}
+                      onClick={() => void runAction(it, "restore")}
                       style={{
                         padding: "7px 14px",
                         borderRadius: 8,
@@ -345,7 +483,7 @@ export function AdminScrapbookReview({
                   <button
                     type="button"
                     disabled={actingId === it.id}
-                    onClick={() => void runRpc("delete_memorial_scrapbook_item", it.id, "Item deleted.")}
+                    onClick={() => void runAction(it, "delete")}
                     style={{
                       padding: "7px 14px",
                       borderRadius: 8,

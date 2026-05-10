@@ -11,14 +11,29 @@ const SUCCESS_MSG_PUBLISHED = "Your scrapbook item has been published.";
 
 type Props = {
   open: boolean;
-  memorialId: string;
+  memorialId?: string;
+  targetId?: string;
+  subjectType?: "memorial" | "event";
   onClose: () => void;
   onSubmitted: () => void;
   t: MemorialScrapbookTheme;
   accentColor: string;
 };
 
-export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, t, accentColor }: Props) {
+export function AddScrapbookItemModal({
+  open,
+  memorialId,
+  targetId,
+  subjectType = "memorial",
+  onClose,
+  onSubmitted,
+  t,
+  accentColor,
+}: Props) {
+  const resolvedTargetId = targetId ?? memorialId ?? "";
+  const tableName = subjectType === "event" ? "event_scrapbook_items" : "memorial_scrapbook_items";
+  const fkColumn = subjectType === "event" ? "event_id" : "memorial_id";
+  const subjectLabel = subjectType === "event" ? "event" : "memorial";
   const [itemType, setItemType] = useState<ScrapbookItemType>("photo");
   const [file, setFile] = useState<File | null>(null);
   const [externalUrl, setExternalUrl] = useState("");
@@ -97,7 +112,7 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
   async function uploadFile(f: File, uid: string): Promise<string> {
     const ext = (f.name.split(".").pop() || "bin").toLowerCase().slice(0, 8);
     const safeExt = ext.replace(/[^a-z0-9]/g, "") || "bin";
-    const path = `${memorialId}/${uid}/${crypto.randomUUID()}.${safeExt}`;
+    const path = `${resolvedTargetId}/${uid}/${crypto.randomUUID()}.${safeExt}`;
     const { error: upErr } = await supabase.storage.from("memorial-scrapbook").upload(path, f, {
       upsert: false,
       contentType: f.type || undefined,
@@ -109,6 +124,10 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
 
   async function submit() {
     setError(null);
+    if (!resolvedTargetId) {
+      setError("Missing scrapbook target.");
+      return;
+    }
     if (!confirmed) {
       setError("Please confirm the content is respectful and appropriate.");
       return;
@@ -153,7 +172,7 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
       }
 
       const row = {
-        memorial_id: memorialId,
+        [fkColumn]: resolvedTargetId,
         user_id: uid,
         item_type: itemType,
         file_url: fileUrl,
@@ -166,7 +185,7 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
         status: (isAdminContributor ? "approved" : "pending") as "pending" | "approved",
       };
 
-      const { error: insErr } = await supabase.from("memorial_scrapbook_items").insert(row);
+      const { error: insErr } = await supabase.from(tableName).insert(row);
       if (insErr) throw new Error(insErr.message);
 
       setSuccessMessage(isAdminContributor ? SUCCESS_MSG_PUBLISHED : SUCCESS_MSG_REVIEW);
@@ -471,7 +490,7 @@ export function AddScrapbookItemModal({ open, memorialId, onClose, onSubmitted, 
               }}
             >
               <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} style={{ marginTop: 2 }} />
-              <span>I confirm this content is respectful, relevant, and appropriate for this memorial.</span>
+              <span>I confirm this content is respectful, relevant, and appropriate for this {subjectLabel}.</span>
             </label>
 
             {error && <div style={{ marginTop: 10, fontSize: 13, color: "#f87171", fontWeight: 600 }}>{error}</div>}

@@ -12,9 +12,19 @@ type Props = {
   onSaved: () => void;
   t: MemorialScrapbookTheme;
   accentColor: string;
+  subjectType?: "memorial" | "event";
 };
 
-export function EditScrapbookItemModal({ open, item, onClose, onSaved, t, accentColor }: Props) {
+export function EditScrapbookItemModal({
+  open,
+  item,
+  onClose,
+  onSaved,
+  t,
+  accentColor,
+  subjectType = "memorial",
+}: Props) {
+  const updateRpc = subjectType === "event" ? "update_event_scrapbook_item" : "update_memorial_scrapbook_item";
   const [caption, setCaption] = useState("");
   const [memoryBody, setMemoryBody] = useState("");
   const [externalUrl, setExternalUrl] = useState("");
@@ -107,7 +117,7 @@ export function EditScrapbookItemModal({ open, item, onClose, onSaved, t, accent
         updates.caption = caption.trim();
       }
 
-      const { error: rpcErr } = await supabase.rpc("update_memorial_scrapbook_item", {
+      const { error: rpcErr } = await supabase.rpc(updateRpc, {
         p_item_id: item.id,
         p_updates: updates,
       });

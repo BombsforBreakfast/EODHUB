@@ -14,6 +14,7 @@ import { PostLikersStack, type PostLikerBrief } from "../../../components/PostLi
 import SidebarThreadDrawer from "../../../components/SidebarThreadDrawer";
 import { useMasterShell } from "../../../components/master/masterShellContext";
 import EventFeedActions from "../../../components/EventFeedActions";
+import { ExternalSiteLink } from "../../../components/ExternalSiteEmbedModal";
 import FeedPostHeader from "../../../components/FeedPostHeader";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
@@ -4612,14 +4613,12 @@ export default function PublicProfilePage() {
                         ) : null}
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 2, flexWrap: "wrap" }}>
                           {ev.signup_url ? (
-                            <a
+                            <ExternalSiteLink
                               href={ev.signup_url}
-                              target="_blank"
-                              rel="noreferrer"
                               style={{ display: "inline-flex", alignItems: "center", gap: 4, fontWeight: 700, fontSize: 13, color: "#2563eb", textDecoration: "none" }}
                             >
                               Sign up <ArrowRight size={13} strokeWidth={2.5} aria-hidden />
-                            </a>
+                            </ExternalSiteLink>
                           ) : (
                             <span />
                           )}
@@ -5546,9 +5545,15 @@ export default function PublicProfilePage() {
                     <div key={item.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.bg, padding: "8px 10px" }}>
                       <div style={{ fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.3 }}>{item.title}</div>
                       <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{item.sub}</div>
-                      <a href={item.link} target={item.link.startsWith("http") ? "_blank" : undefined} rel="noreferrer" style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
-                        {item.link.startsWith("http") ? "Open" : "Sign up"} <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
-                      </a>
+                      {item.link.startsWith("http") ? (
+                        <ExternalSiteLink href={item.link} style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                          Open <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
+                        </ExternalSiteLink>
+                      ) : (
+                        <Link href={item.link} style={{ marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                          Sign up <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
+                        </Link>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -5566,9 +5571,9 @@ export default function PublicProfilePage() {
                       <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{ev.organization || "Saved item"}</div>
                       <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                         {ev.signup_url ? (
-                          <a href={ev.signup_url} target="_blank" rel="noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                          <ExternalSiteLink href={ev.signup_url} style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
                             Sign up <ArrowRight size={12} strokeWidth={2.5} aria-hidden />
-                          </a>
+                          </ExternalSiteLink>
                         ) : <span />}
                         <button
                           type="button"

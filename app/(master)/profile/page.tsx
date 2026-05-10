@@ -338,7 +338,7 @@ export default function MyAccountPage() {
           {/* Home feed: memorial anniversary post cards (calendars unchanged) */}
           {currentUserId && <MemorialFeedPreferencesCard userId={currentUserId} />}
 
-          {/* Report Issue */}
+          {/* Beta bug report */}
           <div style={{ ...card, padding: "18px 24px" }}>
             <ReportProblemButton inline />
           </div>

@@ -20,6 +20,9 @@ import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
 import EventFeedActions from "../components/EventFeedActions";
+import EventPostCard from "../components/EventPostCard";
+import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
+import EventScrapbookPreview from "../components/events/EventScrapbookPreview";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
 import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
@@ -5664,138 +5667,67 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
                   {post.event_id && (
                     <>
-                      {post.feed_event && (
-                        <button
-                          type="button"
-                          onClick={() => void openFeedEventModal(post.feed_event!.id)}
+                      {post.feed_event && post.content_type !== "event_scrapbook" && (
+                        <EventPostCard
+                          event={post.feed_event}
+                          onOpen={(eventId) => void openFeedEventModal(eventId)}
+                          maxWidth={FEED_POST_EMBED_MAX_WIDTH}
+                        />
+                      )}
+                      {post.feed_event && post.content_type === "event_scrapbook" && (
+                        <div
                           style={{
                             marginTop: 12,
                             width: "100%",
                             maxWidth: FEED_POST_EMBED_MAX_WIDTH,
                             marginLeft: "auto",
                             marginRight: "auto",
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "center",
                             borderRadius: 12,
                             border: `1px solid ${t.border}`,
-                            background: t.bg,
-                            color: "inherit",
-                            textAlign: "center",
-                            cursor: "pointer",
-                            padding: "16px 16px 16px",
-                            boxSizing: "border-box",
-                            transition: "transform 140ms ease, box-shadow 140ms ease",
-                            boxShadow: "0 1px 0 rgba(0,0,0,0.12)",
+                            background: t.surface,
+                            padding: "14px 16px",
                           }}
-                          onMouseEnter={(e) => {
-                            e.currentTarget.style.transform = "translateY(-1px)";
-                            e.currentTarget.style.boxShadow = "0 6px 18px rgba(0,0,0,0.18)";
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.transform = "translateY(0)";
-                            e.currentTarget.style.boxShadow = "0 1px 0 rgba(0,0,0,0.12)";
-                          }}
-                          aria-label={`Open event details for ${post.feed_event.title}`}
                         >
-                          <div
-                            style={{
-                              fontSize: 21,
-                              fontWeight: 800,
-                              lineHeight: 1.15,
-                              marginBottom: 8,
-                              color: t.text,
-                              width: "100%",
-                              textAlign: "center",
-                            }}
-                          >
-                            New Event: {post.feed_event.title}
+                          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: t.textMuted }}>
+                            MEMORIES
                           </div>
-                          <div
-                            style={{
-                              fontWeight: 800,
-                              fontSize: 17,
-                              color: t.text,
-                              marginBottom: 10,
-                              width: "100%",
-                              textAlign: "center",
-                            }}
-                          >
+                          <div style={{ marginTop: 6, fontSize: 20, fontWeight: 900, color: t.text }}>
+                            Share memories from {post.feed_event.title}
+                          </div>
+                          <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted }}>
                             {formatEventDisplayDate(post.feed_event.date) ?? post.feed_event.date}
-                            {post.feed_event.event_time ? `  ${post.feed_event.event_time}` : ""}
+                            {post.feed_event.location ? ` · ${post.feed_event.location}` : ""}
                           </div>
-
-                          {post.feed_event.image_url ? (
-                            <div
+                          <div style={{ marginTop: 12 }}>
+                            <button
+                              type="button"
+                              onClick={() => void openFeedEventModal(post.feed_event!.id)}
                               style={{
-                                width: "100%",
-                                maxWidth: "100%",
-                                display: "flex",
-                                justifyContent: "center",
-                                alignItems: "center",
-                                borderRadius: 12,
-                                overflow: "hidden",
-                                border: `1px solid ${t.border}`,
-                                background: t.surface,
-                                marginBottom: 10,
-                                minHeight: 0,
-                                boxSizing: "border-box",
+                                border: "none",
+                                borderRadius: 10,
+                                padding: "8px 14px",
+                                background: t.text,
+                                color: t.surface,
+                                fontWeight: 800,
+                                cursor: "pointer",
                               }}
                             >
-                              <img
-                                src={httpsAssetUrl(post.feed_event.image_url)}
-                                alt={post.feed_event.title}
-                                style={{
-                                  width: "100%",
-                                  height: "auto",
-                                  maxHeight: 420,
-                                  objectFit: "contain",
-                                  objectPosition: "center",
-                                  display: "block",
-                                  margin: "0 auto",
-                                }}
-                              />
-                            </div>
-                          ) : null}
-
-                          {(post.feed_event.location || post.feed_event.organization) && (
-                            <div
-                              style={{
-                                fontSize: 19,
-                                fontWeight: 700,
-                                color: t.text,
-                                marginBottom: 8,
-                                width: "100%",
-                                textAlign: "center",
-                              }}
-                            >
-                              {post.feed_event.location ?? post.feed_event.organization}
-                            </div>
-                          )}
-                          {post.feed_event.description && (
-                            <div
-                              style={{
-                                fontSize: 15,
-                                lineHeight: 1.45,
-                                color: t.textMuted,
-                                width: "100%",
-                                textAlign: "center",
-                              }}
-                            >
-                              {post.feed_event.description}
-                            </div>
-                          )}
-                        </button>
+                              Open Scrapbook
+                            </button>
+                          </div>
+                        </div>
                       )}
-                      <EventFeedActions
-                        eventId={post.event_id}
-                        signupUrl={post.feed_event?.signup_url ?? null}
-                        initialInterested={post.event_interested_count}
-                        initialGoing={post.event_going_count}
-                        initialMyAttendance={post.event_my_attendance}
-                        initialSaved={post.event_saved}
-                        userId={userId}
-                      />
+                      {post.content_type !== "event_scrapbook" && (
+                        <EventFeedActions
+                          eventId={post.event_id}
+                          signupUrl={post.feed_event?.signup_url ?? null}
+                          initialInterested={post.event_interested_count}
+                          initialGoing={post.event_going_count}
+                          initialMyAttendance={post.event_my_attendance}
+                          initialSaved={post.event_saved}
+                          userId={userId}
+                        />
+                      )}
                     </>
                   )}
 
@@ -7751,6 +7683,16 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 </div>
               )}
 
+              <div style={{ marginTop: 16 }}>
+                <EventScrapbookPreview
+                  eventId={selectedFeedEvent.id}
+                  t={t}
+                  accentColor={isDark ? "#a78bfa" : "#7c3aed"}
+                  scrapbookActorUserId={userId}
+                  scrapbookActorIsAdmin={isAdmin}
+                />
+              </div>
+
               <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 0, width: "100%" }}>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
                   <button
@@ -7786,10 +7728,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     {selectedFeedEventMyStatus === "going" ? "Going ✓" : "Going"}
                   </button>
                   {selectedFeedEvent.signup_url && (
-                    <a
+                    <ExternalSiteLink
                       href={httpsAssetUrl(selectedFeedEvent.signup_url)}
-                      target="_blank"
-                      rel="noreferrer"
                       style={{
                         marginLeft: "auto",
                         alignSelf: "center",
@@ -7800,7 +7740,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       }}
                     >
                       Open Event Link
-                    </a>
+                    </ExternalSiteLink>
                   )}
                 </div>
                 {selectedFeedEvent.id && (
