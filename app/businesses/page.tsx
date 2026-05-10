@@ -16,7 +16,7 @@ import {
   OgCard,
   type BusinessListingRow,
 } from "../components/master/masterShared";
-import { ASPECT_EVENT_COVER } from "../lib/imageCropTargets";
+import { ASPECT_RESOURCE_LOGO } from "../lib/imageCropTargets";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
@@ -38,6 +38,7 @@ type OgPreview = {
   description: string | null;
   image: string | null;
   siteName: string | null;
+  favicon?: string | null;
 };
 
 type ListingCommentRow = {
@@ -110,6 +111,7 @@ export default function BusinessesPage() {
   const [bizType, setBizType] = useState<BusinessOrgListingType>("business");
   const [bizOgPreview, setBizOgPreview] = useState<OgPreview | null>(null);
   const [fetchingBizOg, setFetchingBizOg] = useState(false);
+  const [bizImageLookupStatus, setBizImageLookupStatus] = useState<"idle" | "loading" | "not-found">("idle");
   const [submittingBiz, setSubmittingBiz] = useState(false);
   const [bizSubmitSuccess, setBizSubmitSuccess] = useState(false);
   const [bizTags, setBizTags] = useState<string[]>([]);
@@ -119,6 +121,7 @@ export default function BusinessesPage() {
   const [bizCropSrc, setBizCropSrc] = useState<string | null>(null);
   const bizImageInputRef = useRef<HTMLInputElement | null>(null);
   const bizOgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bizMetadataRequestRef = useRef(0);
 
   const [listingCommentsById, setListingCommentsById] = useState<Record<string, ListingComment[]>>({});
   const [listingCommentInputs, setListingCommentInputs] = useState<Record<string, string>>({});
@@ -250,39 +253,45 @@ export default function BusinessesPage() {
   function handleBizUrlChange(value: string) {
     setBizUrl(value);
     setBizOgPreview(null);
+    setBizImageLookupStatus("idle");
+    const requestId = bizMetadataRequestRef.current + 1;
+    bizMetadataRequestRef.current = requestId;
     const url = value.trim() ? normalizeUrl(value.trim()) : null;
     if (!url) return;
     if (bizOgDebounceRef.current) clearTimeout(bizOgDebounceRef.current);
     bizOgDebounceRef.current = setTimeout(async () => {
       try {
         setFetchingBizOg(true);
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        const res = await fetch("/api/preview-url", {
+        setBizImageLookupStatus("loading");
+        const res = await fetch("/api/fetch-url-metadata", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token ?? ""}`,
           },
           body: JSON.stringify({ url }),
         });
+        if (bizMetadataRequestRef.current !== requestId) return;
         if (res.ok) {
           const data = await res.json();
+          const image = data.image ?? data.favicon ?? null;
           setBizOgPreview({
             url,
             title: data.title ?? null,
             description: data.description ?? null,
-            image: data.image ?? null,
+            image,
             siteName: data.siteName ?? null,
+            favicon: data.favicon ?? null,
           });
+          setBizImageLookupStatus(image ? "idle" : "not-found");
           if (!bizName && (data.title || data.siteName)) setBizName(data.title || data.siteName || "");
           if (!bizBlurb && data.description) setBizBlurb(data.description);
+        } else {
+          setBizImageLookupStatus("not-found");
         }
       } catch {
-        /* ignore */
+        if (bizMetadataRequestRef.current === requestId) setBizImageLookupStatus("not-found");
       } finally {
-        setFetchingBizOg(false);
+        if (bizMetadataRequestRef.current === requestId) setFetchingBizOg(false);
       }
     }, 800);
   }
@@ -428,6 +437,7 @@ export default function BusinessesPage() {
       setEditingBizId(null);
       setBizTags([]);
       setBizOgPreview(null);
+      setBizImageLookupStatus("idle");
       setBizImageFile(null);
       if (bizImagePreview) URL.revokeObjectURL(bizImagePreview);
       setBizImagePreview(null);
@@ -520,6 +530,7 @@ export default function BusinessesPage() {
       image: listing.og_image ?? null,
       siteName: listing.og_site_name ?? null,
     });
+    setBizImageLookupStatus("idle");
     setShowBizForm(true);
     setSelectedListing(null);
     setTimeout(() => bizFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
@@ -675,6 +686,10 @@ export default function BusinessesPage() {
     }
   }
 
+  const suggestedBizImage = bizOgPreview?.image ?? null;
+  const displayedBizFormImage = bizImagePreview ?? suggestedBizImage;
+  const hasManualBizImage = Boolean(bizImagePreview);
+
   return (
     <section
       style={{
@@ -686,7 +701,7 @@ export default function BusinessesPage() {
       <ImageCropDialog
         open={bizCropOpen}
         imageSrc={bizCropSrc}
-        aspect={ASPECT_EVENT_COVER}
+        aspect={ASPECT_RESOURCE_LOGO}
         cropShape="rect"
         title="Crop listing photo"
         onCancel={closeBizCrop}
@@ -771,34 +786,40 @@ export default function BusinessesPage() {
               <div style={{ marginBottom: 10 }}>
                 <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 4 }}>Listing photo</label>
                 <input ref={bizImageInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onPickBizPhoto} />
-                {bizImagePreview ? (
-                  <div style={{ width: 220, maxWidth: "100%", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, marginBottom: 8, position: "relative" }}>
+                {displayedBizFormImage ? (
+                  <div style={{ width: 320, maxWidth: "100%", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, marginBottom: 8, position: "relative", background: "#111827" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={bizImagePreview} alt="Selected listing preview" style={{ width: "100%", height: 130, objectFit: "cover", display: "block" }} />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (bizImagePreview) URL.revokeObjectURL(bizImagePreview);
-                        setBizImagePreview(null);
-                        setBizImageFile(null);
-                        if (bizImageInputRef.current) bizImageInputRef.current.value = "";
-                      }}
-                      style={{
-                        position: "absolute",
-                        top: 6,
-                        right: 6,
-                        width: 24,
-                        height: 24,
-                        borderRadius: "50%",
-                        border: "none",
-                        background: "rgba(0,0,0,0.7)",
-                        color: "#fff",
-                        fontWeight: 900,
-                        cursor: "pointer",
-                      }}
-                    >
-                      x
-                    </button>
+                    <img
+                      src={httpsAssetUrl(displayedBizFormImage)}
+                      alt="Selected listing preview"
+                      style={{ width: "100%", aspectRatio: "2 / 1", objectFit: hasManualBizImage ? "cover" : "contain", display: "block" }}
+                    />
+                    {hasManualBizImage ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (bizImagePreview) URL.revokeObjectURL(bizImagePreview);
+                          setBizImagePreview(null);
+                          setBizImageFile(null);
+                          if (bizImageInputRef.current) bizImageInputRef.current.value = "";
+                        }}
+                        style={{
+                          position: "absolute",
+                          top: 6,
+                          right: 6,
+                          width: 24,
+                          height: 24,
+                          borderRadius: "50%",
+                          border: "none",
+                          background: "rgba(0,0,0,0.7)",
+                          color: "#fff",
+                          fontWeight: 900,
+                          cursor: "pointer",
+                        }}
+                      >
+                        x
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
                 <button
@@ -806,10 +827,18 @@ export default function BusinessesPage() {
                   onClick={() => bizImageInputRef.current?.click()}
                   style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                 >
-                  {bizImageFile ? "Change photo" : "Add photo"}
+                  {displayedBizFormImage ? "Replace image" : "Add photo"}
                 </button>
                 <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>
-                  Optional. Crop to a wide card (16:9). If chosen, this replaces the scraped metadata image.
+                  {hasManualBizImage
+                    ? "Uploaded image selected. Remove it to use the website image again."
+                    : suggestedBizImage
+                      ? "Image pulled from website. You can replace it."
+                      : bizImageLookupStatus === "loading"
+                        ? "Looking for website image..."
+                        : bizImageLookupStatus === "not-found"
+                          ? "No website image found. You can upload one."
+                          : "Optional. Crop to a wide logo/photo (2:1). If chosen, this replaces the website image."}
                 </div>
               </div>
 
@@ -994,12 +1023,14 @@ export default function BusinessesPage() {
               >
                 <div style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                   {listing.og_image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={httpsAssetUrl(listing.og_image)}
-                      alt={displayTitle}
-                      style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }}
-                    />
+                    <div style={{ width: "100%", aspectRatio: "2 / 1", background: "#111827", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={httpsAssetUrl(listing.og_image)}
+                        alt={displayTitle}
+                        style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+                      />
+                    </div>
                   ) : null}
                   <div style={{ padding: 14, paddingBottom: 8 }}>
                     <div
@@ -1231,12 +1262,14 @@ export default function BusinessesPage() {
               </button>
             </div>
             {selectedListing.og_image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={httpsAssetUrl(selectedListing.og_image)}
-                alt={selectedListing.business_name || "Listing"}
-                style={{ width: "100%", maxHeight: 320, objectFit: "cover", display: "block" }}
-              />
+              <div style={{ width: "100%", aspectRatio: "2 / 1", maxHeight: 320, background: "#111827", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={httpsAssetUrl(selectedListing.og_image)}
+                  alt={selectedListing.business_name || "Listing"}
+                  style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+                />
+              </div>
             ) : null}
             <div style={{ padding: 16 }}>
               <div style={{ fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>

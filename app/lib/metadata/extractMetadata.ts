@@ -6,8 +6,11 @@ export type ExtractedMetadata = {
   description: string | null;
   image: string | null;
   siteName: string | null;
+  favicon: string | null;
   url: string;
 };
+
+const METADATA_FETCH_TIMEOUT_MS = 8000;
 
 function isPrivateIpv4(ip: string): boolean {
   const parts = ip.split(".").map((part) => Number.parseInt(part, 10));
@@ -39,7 +42,7 @@ function isPrivateIp(ip: string): boolean {
 async function assertSafePublicHttpUrl(websiteUrl: string): Promise<URL> {
   let parsed: URL;
   try {
-    parsed = new URL(websiteUrl);
+    parsed = new URL(websiteUrl.includes("://") ? websiteUrl : `https://${websiteUrl}`);
   } catch {
     throw new Error("Invalid URL");
   }
@@ -117,6 +120,26 @@ function extractMetaTag(html: string, key: string): string | null {
   return null;
 }
 
+function extractLinkTag(html: string, relMatchers: string[]): string | null {
+  const linkTags = html.match(/<link\b[^>]*>/gi) ?? [];
+
+  for (const tag of linkTags) {
+    const rel = tag.match(/\brel=["']([^"']+)["']/i)?.[1]?.toLowerCase();
+    if (!rel) continue;
+    const relTokens = rel.split(/\s+/).filter(Boolean);
+    const matchesRel = relMatchers.some((matcher) => {
+      const matcherTokens = matcher.toLowerCase().split(/\s+/).filter(Boolean);
+      return matcherTokens.every((token) => relTokens.includes(token));
+    });
+    if (!matchesRel) continue;
+
+    const href = tag.match(/\bhref=["']([^"']+)["']/i)?.[1]?.trim();
+    if (href) return decodeHtmlEntities(href);
+  }
+
+  return null;
+}
+
 function extractTitle(html: string): string | null {
   const match = html.match(/<title[^>]*>(.*?)<\/title>/i);
   return match?.[1] ? decodeHtmlEntities(match[1].trim()) : null;
@@ -145,15 +168,23 @@ function normalizeImageUrl(imageUrl: string | null): string | null {
 export async function extractMetadata(websiteUrl: string): Promise<ExtractedMetadata> {
   const parsedUrl = await assertSafePublicHttpUrl(websiteUrl);
   const safeUrl = parsedUrl.toString();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), METADATA_FETCH_TIMEOUT_MS);
 
-  const response = await fetch(safeUrl, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (compatible; EODZoneBot/1.0)",
-      Accept: "text/html,application/xhtml+xml",
-    },
-    cache: "no-store",
-    redirect: "follow",
-  });
+  let response: Response;
+  try {
+    response = await fetch(safeUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; EODZoneBot/1.0)",
+        Accept: "text/html,application/xhtml+xml",
+      },
+      cache: "no-store",
+      redirect: "follow",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     throw new Error(`Failed to fetch website: ${response.status}`);
@@ -175,7 +206,14 @@ export async function extractMetadata(websiteUrl: string): Promise<ExtractedMeta
     extractMetaTag(html, "og:image") ||
     extractMetaTag(html, "twitter:image");
 
-  const image = normalizeImageUrl(absolutizeUrl(rawImage, safeUrl));
+  const favicon = normalizeImageUrl(
+    absolutizeUrl(
+      extractLinkTag(html, ["icon", "shortcut icon", "apple-touch-icon", "apple-touch-icon-precomposed"]) ||
+        null,
+      safeUrl
+    )
+  );
+  const image = normalizeImageUrl(absolutizeUrl(rawImage, safeUrl)) ?? favicon;
 
   const siteName =
     extractMetaTag(html, "og:site_name") ||
@@ -186,6 +224,7 @@ export async function extractMetadata(websiteUrl: string): Promise<ExtractedMeta
     description,
     image,
     siteName,
+    favicon,
     url: safeUrl,
   };
 }

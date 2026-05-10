@@ -17,7 +17,7 @@ import {
 } from "../../components/master/masterShared";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../../lib/bizListingTags";
 import ImageCropDialog from "../../components/ImageCropDialog";
-import { ASPECT_EVENT_COVER } from "../../lib/imageCropTargets";
+import { ASPECT_RESOURCE_LOGO } from "../../lib/imageCropTargets";
 import { useTheme } from "../../lib/ThemeContext";
 import { supabase } from "../../lib/lib/supabaseClient";
 
@@ -32,6 +32,7 @@ type OgPreview = {
   description: string | null;
   image: string | null;
   siteName: string | null;
+  favicon?: string | null;
 };
 
 type ResourceCommentRow = {
@@ -75,6 +76,7 @@ export default function ResourcesPage() {
   const [resourceCityState, setResourceCityState] = useState("");
   const [resourceOgPreview, setResourceOgPreview] = useState<OgPreview | null>(null);
   const [fetchingResourceOg, setFetchingResourceOg] = useState(false);
+  const [resourceImageLookupStatus, setResourceImageLookupStatus] = useState<"idle" | "loading" | "not-found">("idle");
   const [submittingResource, setSubmittingResource] = useState(false);
   const [resourceSubmitSuccess, setResourceSubmitSuccess] = useState(false);
   const [resourceTags, setResourceTags] = useState<string[]>([]);
@@ -90,6 +92,7 @@ export default function ResourcesPage() {
   const [selectedResource, setSelectedResource] = useState<BusinessListing | null>(null);
   const resourceFormRef = useRef<HTMLDivElement | null>(null);
   const resourceOgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resourceMetadataRequestRef = useRef(0);
   const resourceImageInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -213,39 +216,45 @@ export default function ResourcesPage() {
   function handleResourceUrlChange(value: string) {
     setResourceUrl(value);
     setResourceOgPreview(null);
+    setResourceImageLookupStatus("idle");
+    const requestId = resourceMetadataRequestRef.current + 1;
+    resourceMetadataRequestRef.current = requestId;
     const url = value.trim() ? normalizeUrl(value.trim()) : null;
     if (!url) return;
     if (resourceOgDebounceRef.current) clearTimeout(resourceOgDebounceRef.current);
     resourceOgDebounceRef.current = setTimeout(async () => {
       try {
         setFetchingResourceOg(true);
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        const res = await fetch("/api/preview-url", {
+        setResourceImageLookupStatus("loading");
+        const res = await fetch("/api/fetch-url-metadata", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${session?.access_token ?? ""}`,
           },
           body: JSON.stringify({ url }),
         });
+        if (resourceMetadataRequestRef.current !== requestId) return;
         if (res.ok) {
           const data = await res.json();
+          const image = data.image ?? data.favicon ?? null;
           setResourceOgPreview({
             url,
             title: data.title ?? null,
             description: data.description ?? null,
-            image: data.image ?? null,
+            image,
             siteName: data.siteName ?? null,
+            favicon: data.favicon ?? null,
           });
+          setResourceImageLookupStatus(image ? "idle" : "not-found");
           if (!resourceName && (data.title || data.siteName)) setResourceName(data.title || data.siteName || "");
           if (!resourceBlurb && data.description) setResourceBlurb(data.description);
+        } else {
+          setResourceImageLookupStatus("not-found");
         }
       } catch {
-        /* ignore preview failures */
+        if (resourceMetadataRequestRef.current === requestId) setResourceImageLookupStatus("not-found");
       } finally {
-        setFetchingResourceOg(false);
+        if (resourceMetadataRequestRef.current === requestId) setFetchingResourceOg(false);
       }
     }, 800);
   }
@@ -375,6 +384,7 @@ export default function ResourcesPage() {
       setEditingResourceId(null);
       setResourceTags([]);
       setResourceOgPreview(null);
+      setResourceImageLookupStatus("idle");
       setResourceImageFile(null);
       if (resourceImagePreview) URL.revokeObjectURL(resourceImagePreview);
       setResourceImagePreview(null);
@@ -408,6 +418,7 @@ export default function ResourcesPage() {
       image: resource.og_image ?? null,
       siteName: resource.og_site_name ?? null,
     });
+    setResourceImageLookupStatus("idle");
     setShowResourceForm(true);
     setSelectedResource(null);
     setTimeout(() => resourceFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
@@ -555,6 +566,10 @@ export default function ResourcesPage() {
     }
   }
 
+  const suggestedResourceImage = resourceOgPreview?.image ?? null;
+  const displayedResourceFormImage = resourceImagePreview ?? suggestedResourceImage;
+  const hasManualResourceImage = Boolean(resourceImagePreview);
+
   return (
     <section
       style={{
@@ -566,7 +581,7 @@ export default function ResourcesPage() {
       <ImageCropDialog
         open={resourceCropOpen}
         imageSrc={resourceCropSrc}
-        aspect={ASPECT_EVENT_COVER}
+        aspect={ASPECT_RESOURCE_LOGO}
         cropShape="rect"
         title="Crop resource photo"
         onCancel={closeResourceCrop}
@@ -637,22 +652,28 @@ export default function ResourcesPage() {
                   style={{ display: "none" }}
                   onChange={onPickResourcePhoto}
                 />
-                {resourceImagePreview ? (
-                  <div style={{ width: 220, maxWidth: "100%", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, marginBottom: 8, position: "relative" }}>
+                {displayedResourceFormImage ? (
+                  <div style={{ width: 320, maxWidth: "100%", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, marginBottom: 8, position: "relative", background: "#111827" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={resourceImagePreview} alt="Selected resource preview" style={{ width: "100%", height: 130, objectFit: "cover", display: "block" }} />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (resourceImagePreview) URL.revokeObjectURL(resourceImagePreview);
-                        setResourceImagePreview(null);
-                        setResourceImageFile(null);
-                        if (resourceImageInputRef.current) resourceImageInputRef.current.value = "";
-                      }}
-                      style={{ position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.7)", color: "#fff", fontWeight: 900, cursor: "pointer" }}
-                    >
-                      x
-                    </button>
+                    <img
+                      src={httpsAssetUrl(displayedResourceFormImage)}
+                      alt="Selected resource preview"
+                      style={{ width: "100%", aspectRatio: "2 / 1", objectFit: hasManualResourceImage ? "cover" : "contain", display: "block" }}
+                    />
+                    {hasManualResourceImage ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (resourceImagePreview) URL.revokeObjectURL(resourceImagePreview);
+                          setResourceImagePreview(null);
+                          setResourceImageFile(null);
+                          if (resourceImageInputRef.current) resourceImageInputRef.current.value = "";
+                        }}
+                        style={{ position: "absolute", top: 6, right: 6, width: 24, height: 24, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.7)", color: "#fff", fontWeight: 900, cursor: "pointer" }}
+                      >
+                        x
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
                 <button
@@ -660,10 +681,18 @@ export default function ResourcesPage() {
                   onClick={() => resourceImageInputRef.current?.click()}
                   style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 8, padding: "8px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                 >
-                  {resourceImageFile ? "Change photo" : "Add photo"}
+                  {displayedResourceFormImage ? "Replace image" : "Add photo"}
                 </button>
                 <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>
-                  Optional. Crop to a wide card (16:9). If chosen, this replaces the scraped metadata image.
+                  {hasManualResourceImage
+                    ? "Uploaded image selected. Remove it to use the website image again."
+                    : suggestedResourceImage
+                      ? "Image pulled from website. You can replace it."
+                      : resourceImageLookupStatus === "loading"
+                        ? "Looking for website image..."
+                        : resourceImageLookupStatus === "not-found"
+                          ? "No website image found. You can upload one."
+                          : "Optional. Crop to a wide logo/photo (2:1). If chosen, this replaces the website image."}
                 </div>
               </div>
 
@@ -801,12 +830,14 @@ export default function ResourcesPage() {
                   style={{ display: "block", textDecoration: "none", color: "inherit" }}
                 >
                   {listing.og_image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={httpsAssetUrl(listing.og_image)}
-                      alt={displayTitle}
-                      style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }}
-                    />
+                    <div style={{ width: "100%", aspectRatio: "2 / 1", background: "#111827", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={httpsAssetUrl(listing.og_image)}
+                        alt={displayTitle}
+                        style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+                      />
+                    </div>
                   ) : null}
                   <div style={{ padding: 14, paddingBottom: 8 }}>
                     <div
@@ -922,12 +953,14 @@ export default function ResourcesPage() {
               </button>
             </div>
             {selectedResource.og_image ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={httpsAssetUrl(selectedResource.og_image)}
-                alt={selectedResource.business_name || "Resource"}
-                style={{ width: "100%", maxHeight: 320, objectFit: "cover", display: "block" }}
-              />
+              <div style={{ width: "100%", aspectRatio: "2 / 1", maxHeight: 320, background: "#111827", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={httpsAssetUrl(selectedResource.og_image)}
+                  alt={selectedResource.business_name || "Resource"}
+                  style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+                />
+              </div>
             ) : null}
             <div style={{ padding: 16 }}>
               <div style={{ fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>
