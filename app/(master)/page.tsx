@@ -5195,7 +5195,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                             memorialId={m.id}
                             t={t}
                             accentColor={theme.color}
-                            variant="compact"
+                            variant="full"
                             isMobile={isMobile}
                             panelBackground={isDark ? theme.darkCommentBg : theme.lightCommentBg}
                             scrapbookActorUserId={userId}
@@ -5685,16 +5685,26 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                             borderRadius: 12,
                             border: `1px solid ${t.border}`,
                             background: t.surface,
-                            padding: "14px 16px",
+                            padding: isMobile ? "12px 14px" : "14px 16px",
+                            boxSizing: "border-box",
                           }}
                         >
-                          <div style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.8, color: t.textMuted }}>
+                          <div style={{ fontSize: isMobile ? 10 : 11, fontWeight: 800, letterSpacing: 0.8, color: t.textMuted }}>
                             MEMORIES
                           </div>
-                          <div style={{ marginTop: 6, fontSize: 20, fontWeight: 900, color: t.text }}>
+                          <div
+                            style={{
+                              marginTop: 6,
+                              fontSize: isMobile ? 17 : 20,
+                              fontWeight: 900,
+                              color: t.text,
+                              lineHeight: 1.25,
+                              wordBreak: "break-word",
+                            }}
+                          >
                             Share memories from {post.feed_event.title}
                           </div>
-                          <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted }}>
+                          <div style={{ marginTop: 8, fontSize: isMobile ? 12 : 13, color: t.textMuted, lineHeight: 1.4 }}>
                             {formatEventDisplayDate(post.feed_event.date) ?? post.feed_event.date}
                             {post.feed_event.location ? ` · ${post.feed_event.location}` : ""}
                           </div>
@@ -5705,10 +5715,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                               style={{
                                 border: "none",
                                 borderRadius: 10,
-                                padding: "8px 14px",
+                                padding: isMobile ? "12px 16px" : "8px 14px",
+                                width: isMobile ? "100%" : "auto",
+                                minHeight: isMobile ? 44 : undefined,
+                                boxSizing: "border-box",
                                 background: t.text,
                                 color: t.surface,
                                 fontWeight: 800,
+                                fontSize: isMobile ? 15 : undefined,
                                 cursor: "pointer",
                               }}
                             >
@@ -7593,21 +7607,25 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               zIndex: 2000,
               display: "grid",
               placeItems: "center",
-              padding: 16,
+              padding: isMobile ? 10 : 16,
+              boxSizing: "border-box",
             }}
           >
             <div
               onClick={(e) => e.stopPropagation()}
               style={{
-                width: "min(720px, 94vw)",
-                maxHeight: "86vh",
+                width: isMobile ? "100%" : "min(720px, 94vw)",
+                maxWidth: "100%",
+                maxHeight: isMobile ? "92dvh" : "86vh",
                 overflow: "auto",
-                borderRadius: 14,
+                WebkitOverflowScrolling: "touch",
+                borderRadius: isMobile ? 12 : 14,
                 border: `1px solid ${t.border}`,
                 background: t.bg,
                 color: t.text,
                 boxShadow: "0 18px 46px rgba(0,0,0,0.34)",
-                padding: 16,
+                padding: isMobile ? 14 : 16,
+                boxSizing: "border-box",
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
@@ -7683,11 +7701,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 </div>
               )}
 
-              <div style={{ marginTop: 16 }}>
+              <div style={{ marginTop: 16, minWidth: 0 }}>
                 <EventScrapbookPreview
                   eventId={selectedFeedEvent.id}
                   t={t}
                   accentColor={isDark ? "#a78bfa" : "#7c3aed"}
+                  isMobile={isMobile}
+                  panelBackground={t.surface}
                   scrapbookActorUserId={userId}
                   scrapbookActorIsAdmin={isAdmin}
                 />
