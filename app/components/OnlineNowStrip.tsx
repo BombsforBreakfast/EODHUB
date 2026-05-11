@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import { LikerAvatar } from "./PostLikersStack";
+import { isEmployerAccountType, isOrganizationAccountType } from "../lib/accountRoles";
 
 const PRESENCE_CHANNEL = "eod_home_online";
 const AVATAR = 22;
@@ -21,10 +22,13 @@ type ProfileRow = {
   photo_url: string | null;
   service: string | null;
   is_employer: boolean | null;
+  account_type: string | null;
+  company_name: string | null;
   privacy_show_online: boolean | null;
 };
 
 function displayName(p: ProfileRow): string {
+  if (isOrganizationAccountType(p.account_type) && p.company_name?.trim()) return p.company_name.trim();
   return p.display_name?.trim()
     || `${p.first_name || ""} ${p.last_name || ""}`.trim()
     || "Member";
@@ -82,7 +86,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     }
     const { data, error } = await supabase
       .from("profiles")
-      .select("user_id, first_name, last_name, display_name, photo_url, service, is_employer, privacy_show_online")
+      .select("user_id, first_name, last_name, display_name, photo_url, service, is_employer, account_type, company_name, privacy_show_online")
       .in("user_id", ids);
     if (error) return;
     const map = new Map<string, ProfileRow>();
@@ -92,8 +96,6 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
 
   useEffect(() => {
     if (!currentUserId) {
-      setOnlineIds([]);
-      setProfiles(new Map());
       return;
     }
 
@@ -121,16 +123,19 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
           const ids = [...presenceUserIds(channel.presenceState())];
           ids.sort();
           setOnlineIds(ids);
+          void syncProfiles(ids);
         })
         .on("presence", { event: "join" }, () => {
           const ids = [...presenceUserIds(channel.presenceState())];
           ids.sort();
           setOnlineIds(ids);
+          void syncProfiles(ids);
         })
         .on("presence", { event: "leave" }, () => {
           const ids = [...presenceUserIds(channel.presenceState())];
           ids.sort();
           setOnlineIds(ids);
+          void syncProfiles(ids);
         });
 
       channel.subscribe(async (status) => {
@@ -149,12 +154,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
       cancelled = true;
       if (cleanup) cleanup();
     };
-  }, [currentUserId]);
-
-  useEffect(() => {
-    if (onlineIds.length === 0) return;
-    void syncProfiles(onlineIds);
-  }, [onlineIds, syncProfiles]);
+  }, [currentUserId, syncProfiles]);
 
   useLayoutEffect(() => {
     const el = measureRef.current;
@@ -259,7 +259,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
                   name={displayName(p)}
                   size={AVATAR}
                   service={p.service}
-                  isEmployer={p.is_employer}
+                  isEmployer={isEmployerAccountType(p.account_type)}
                 />
               </Link>
             ))}
@@ -378,7 +378,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
                         name={displayName(p)}
                         size={40}
                         service={p.service}
-                        isEmployer={p.is_employer}
+                        isEmployer={isEmployerAccountType(p.account_type)}
                       />
                       <span style={{ fontWeight: 700, fontSize: 14 }}>{displayName(p)}</span>
                     </Link>

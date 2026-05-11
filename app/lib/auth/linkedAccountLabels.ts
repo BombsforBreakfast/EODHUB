@@ -1,4 +1,5 @@
 import type { User } from "@supabase/supabase-js";
+import { isEmployerAccountType } from "../accountRoles";
 
 export type ProfileRow = {
   user_id: string;
@@ -16,7 +17,7 @@ export type LinkedAccountSummary = {
   userId: string;
   isCurrent: boolean;
   label: string;
-  kind: "member" | "employer" | "business";
+  kind: "member" | "employer" | "business" | "organization";
   subtitle: string;
   signInMethods: string[];
   photoUrl: string | null;
@@ -35,14 +36,18 @@ export function buildLinkedAccountSummary(
 ): LinkedAccountSummary {
   const name = [profile?.first_name, profile?.last_name].filter(Boolean).join(" ").trim() || "User";
   const acct = profile?.account_type ?? null;
-  const isEmployer = !!profile?.is_employer || acct === "employer";
+  const employerRecruiting =
+    isEmployerAccountType(acct) || (!!profile?.is_employer && acct !== "organization");
 
   let kind: LinkedAccountSummary["kind"] = "member";
   let label: string;
-  if (acct === "business") {
+  if (acct === "organization") {
+    kind = "organization";
+    label = profile?.company_name ? `Organization · ${profile.company_name}` : `Organization · ${name}`;
+  } else if (acct === "business") {
     kind = "business";
     label = profile?.company_name ? `Business · ${profile.company_name}` : `Business · ${name}`;
-  } else if (isEmployer) {
+  } else if (employerRecruiting) {
     kind = "employer";
     label = profile?.company_name ? `Employer · ${profile.company_name}` : `Employer · ${name}`;
   } else {

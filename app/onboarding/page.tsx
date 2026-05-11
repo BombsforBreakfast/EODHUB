@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import MemberPaywallModal from "../components/MemberPaywallModal";
+import ImageCropDialog from "../components/ImageCropDialog";
+import { ASPECT_EMPLOYER_LOGO } from "../lib/imageCropTargets";
+import { isCommunityMemberAccountType } from "../lib/accountRoles";
 import Link from "next/link";
 import {
   COMMUNITY_GUIDELINES_TEXT,
@@ -20,7 +23,7 @@ const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "
 
 export default function OnboardingPage() {
   const [userId, setUserId] = useState<string | null>(null);
-  const [accountType, setAccountType] = useState<"member" | "employer" | null>(null);
+  const [accountType, setAccountType] = useState<"member" | "employer" | "organization" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
   const [duplicateProviders, setDuplicateProviders] = useState<string[] | null>(null);
@@ -37,6 +40,20 @@ export default function OnboardingPage() {
   const [empFirstName, setEmpFirstName] = useState("");
   const [empLastName, setEmpLastName] = useState("");
   const [companyName, setCompanyName] = useState("");
+
+  // Organization / business (paid community — not employer)
+  const [orgBusinessName, setOrgBusinessName] = useState("");
+  const [orgWebsite, setOrgWebsite] = useState("");
+  const [orgMission, setOrgMission] = useState("");
+  const [orgContactName, setOrgContactName] = useState("");
+  const [orgContactEmail, setOrgContactEmail] = useState("");
+  const [orgPhone, setOrgPhone] = useState("");
+  const [orgLocation, setOrgLocation] = useState("");
+  const [orgLogoCropOpen, setOrgLogoCropOpen] = useState(false);
+  const [orgLogoCropSrc, setOrgLogoCropSrc] = useState<string | null>(null);
+  const [orgLogoPreviewUrl, setOrgLogoPreviewUrl] = useState<string | null>(null);
+  const [orgCroppedBlob, setOrgCroppedBlob] = useState<Blob | null>(null);
+  const orgLogoInputRef = useRef<HTMLInputElement | null>(null);
 
   // Referral
   const [referralInput, setReferralInput] = useState("");
@@ -125,6 +142,7 @@ export default function OnboardingPage() {
         setLastName(parts.slice(1).join(" ") || "");
         setEmpFirstName(parts[0] || "");
         setEmpLastName(parts.slice(1).join(" ") || "");
+        setOrgContactName((googleName as string).trim());
       }
 
       // Check for duplicate accounts sharing this email (e.g. Google + email/password)
@@ -154,7 +172,7 @@ export default function OnboardingPage() {
         photo_url: string | null;
         service: string | null;
         company_name: string | null;
-        account_type: "member" | "employer" | "admin" | null;
+        account_type: "member" | "employer" | "organization" | "admin" | null;
         verification_status: string | null;
         subscription_terms_acknowledged_at: string | null;
       }>(supabase, user, {
@@ -168,13 +186,17 @@ export default function OnboardingPage() {
       }
 
       const memberNeedsSubscriptionAck =
-        profile?.account_type === "member" &&
-        !!profile?.service &&
+        isCommunityMemberAccountType(profile?.account_type) &&
+        (profile?.account_type === "member"
+          ? !!profile?.service
+          : profile?.account_type === "organization"
+            ? !!profile?.company_name
+            : false) &&
         !profile?.subscription_terms_acknowledged_at;
 
       if (memberNeedsSubscriptionAck) {
         setUserId(user.id);
-        setAccountType("member");
+        setAccountType(profile?.account_type === "organization" ? "organization" : "member");
         setResumeSubscriptionAckOnly(true);
         setMemberPaywallOpen(true);
         setChecking(false);
@@ -202,6 +224,36 @@ export default function OnboardingPage() {
     check();
   }, []);
 
+  function closeOrgLogoCrop() {
+    if (orgLogoCropSrc) URL.revokeObjectURL(orgLogoCropSrc);
+    setOrgLogoCropSrc(null);
+    setOrgLogoCropOpen(false);
+  }
+
+  function onOrgLogoFilePick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      alert("Please select an image file.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      alert("Image must be under 8 MB.");
+      return;
+    }
+    if (orgLogoCropSrc) URL.revokeObjectURL(orgLogoCropSrc);
+    setOrgLogoCropSrc(URL.createObjectURL(file));
+    setOrgLogoCropOpen(true);
+  }
+
+  function onOrgLogoCropComplete(blob: Blob) {
+    if (orgLogoPreviewUrl) URL.revokeObjectURL(orgLogoPreviewUrl);
+    setOrgLogoPreviewUrl(URL.createObjectURL(blob));
+    setOrgCroppedBlob(blob);
+    closeOrgLogoCrop();
+  }
+
   async function handleSubmit() {
     if (!userId || !accountType) return;
 
@@ -210,10 +262,19 @@ export default function OnboardingPage() {
       if (!lastName.trim()) return markMissingField("field-member-last-name");
       if (!service) return markMissingField("field-member-service");
       if (!status) return markMissingField("field-member-status");
-    } else {
+    } else if (accountType === "employer") {
       if (!empFirstName.trim()) return markMissingField("field-employer-first-name");
       if (!empLastName.trim()) return markMissingField("field-employer-last-name");
       if (!companyName.trim()) return markMissingField("field-employer-company");
+    } else if (accountType === "organization") {
+      if (!orgBusinessName.trim()) return markMissingField("field-org-name");
+      if (!orgCroppedBlob) return markMissingField("field-org-logo");
+      if (!orgWebsite.trim()) return markMissingField("field-org-website");
+      if (!orgMission.trim()) return markMissingField("field-org-mission");
+      if (!orgContactName.trim()) return markMissingField("field-org-contact-name");
+      if (!orgContactEmail.trim()) return markMissingField("field-org-contact-email");
+      if (!orgPhone.trim()) return markMissingField("field-org-phone");
+      if (!orgLocation.trim()) return markMissingField("field-org-location");
     }
 
     if (!agreedTerms) return markMissingField("field-legal-terms");
@@ -225,6 +286,24 @@ export default function OnboardingPage() {
 
     setSubmitting(true);
     try {
+      let orgPhotoUrl: string | null = null;
+      if (accountType === "organization" && orgCroppedBlob) {
+        const file = new File([orgCroppedBlob], "logo.jpg", { type: "image/jpeg" });
+        const safeName = `${Date.now()}-org-logo.jpg`;
+        const filePath = `${userId}/${safeName}`;
+        const { error: upErr } = await supabase.storage.from("profile-photos").upload(filePath, file, { upsert: true });
+        if (upErr) {
+          alert("Logo upload failed: " + upErr.message);
+          return;
+        }
+        const { data: pub } = supabase.storage.from("profile-photos").getPublicUrl(filePath);
+        orgPhotoUrl = pub.publicUrl;
+      }
+
+      const contactParts = orgContactName.trim().split(/\s+/).filter(Boolean);
+      const orgFirst = contactParts[0] || null;
+      const orgLast = contactParts.slice(1).join(" ") || null;
+
       const updates =
         accountType === "member"
           ? {
@@ -238,14 +317,32 @@ export default function OnboardingPage() {
               verification_status: "pending",
               is_approved: false,
             }
-          : {
-              account_type: "employer",
-              is_employer: true,
-              first_name: empFirstName,
-              last_name: empLastName,
-              company_name: companyName,
-              verification_status: "pending",
-            };
+          : accountType === "employer"
+            ? {
+                account_type: "employer",
+                is_employer: true,
+                first_name: empFirstName,
+                last_name: empLastName,
+                company_name: companyName,
+                verification_status: "pending",
+              }
+            : {
+                account_type: "organization",
+                is_employer: false,
+                company_name: orgBusinessName.trim(),
+                company_website: orgWebsite.trim() || null,
+                bio: orgMission.trim() || null,
+                organization_contact_name: orgContactName.trim(),
+                organization_contact_email: orgContactEmail.trim(),
+                organization_phone: orgPhone.trim(),
+                organization_location: orgLocation.trim(),
+                display_name: orgBusinessName.trim(),
+                first_name: orgFirst,
+                last_name: orgLast,
+                photo_url: orgPhotoUrl,
+                verification_status: "pending",
+                is_approved: false,
+              };
 
       const finalUpdates = referralInput.trim()
         ? { ...updates, referred_by: referralInput.trim().toUpperCase() }
@@ -269,7 +366,7 @@ export default function OnboardingPage() {
 
       localStorage.removeItem("eod_ref");
 
-      if (accountType === "member") {
+      if (accountType === "member" || accountType === "organization") {
         setMemberPaywallOpen(true);
       } else {
         window.location.href = "/pending";
@@ -358,7 +455,7 @@ export default function OnboardingPage() {
           <div style={{ textAlign: "center", maxWidth: 420 }}>
             <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>EOD HUB</div>
             <p style={{ margin: "18px 0 0", fontSize: 16, color: "#1f2937", lineHeight: 1.55 }}>
-              Finish member signup: review subscription details, then continue to verification.
+              Finish community signup: review subscription details, then continue to verification.
             </p>
           </div>
         </div>
@@ -407,6 +504,24 @@ export default function OnboardingPage() {
               </button>
 
               <button
+                onClick={() => setAccountType("organization")}
+                style={{
+                  padding: "20px 24px", borderRadius: 14, border: "2px solid #e5e7eb",
+                  background: "white", cursor: "pointer", textAlign: "left", transition: "border-color 0.15s",
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.borderColor = "#111"}
+                onMouseLeave={(e) => e.currentTarget.style.borderColor = "#e5e7eb"}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontWeight: 900, fontSize: 16, color: "#111827" }}>Organization / Business</span>
+                  <span style={{ background: "#ede9fe", color: "#5b21b6", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>$2/mo</span>
+                </div>
+                <div style={{ fontSize: 13, color: "#1f2937", lineHeight: 1.5 }}>
+                  Team, company, or nonprofit with full community access (posts, events, groups, jobs, resources). Same membership pricing as members — not the free employer recruiting account.
+                </div>
+              </button>
+
+              <button
                 onClick={() => setAccountType("employer")}
                 style={{
                   padding: "20px 24px", borderRadius: 14, border: "2px solid #e5e7eb",
@@ -437,8 +552,31 @@ export default function OnboardingPage() {
               </button>
 
               {/* Account type badge */}
-              <div style={{ padding: "10px 14px", borderRadius: 10, background: accountType === "employer" ? "#dbeafe" : "#f3f4f6", fontSize: 13, fontWeight: 800, color: accountType === "employer" ? "#1d4ed8" : "#111827" }}>
-                {accountType === "employer" ? "Employer Account" : "EOD Community Member"}
+              <div
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 10,
+                  background:
+                    accountType === "employer"
+                      ? "#dbeafe"
+                      : accountType === "organization"
+                        ? "#ede9fe"
+                        : "#f3f4f6",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  color:
+                    accountType === "employer"
+                      ? "#1d4ed8"
+                      : accountType === "organization"
+                        ? "#5b21b6"
+                        : "#111827",
+                }}
+              >
+                {accountType === "employer"
+                  ? "Employer Account"
+                  : accountType === "organization"
+                    ? "Organization / Business (community)"
+                    : "EOD Community Member"}
               </div>
               {showRequiredHelper && (
                 <div
@@ -613,7 +751,155 @@ export default function OnboardingPage() {
                 </>
               )}
 
-              {/* Referral code — optional, shown for both account types */}
+              {accountType === "organization" && (
+                <>
+                  <input ref={orgLogoInputRef} type="file" accept="image/*" style={{ display: "none" }} onChange={onOrgLogoFilePick} />
+                  <div
+                    id="field-org-logo"
+                    style={isMissing("field-org-logo") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                  >
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Logo / profile image (wide) *</label>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      <div
+                        style={{
+                          width: 160,
+                          height: 72,
+                          borderRadius: 10,
+                          border: "1px solid #d1d5db",
+                          background: "#f9fafb",
+                          overflow: "hidden",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#6b7280",
+                        }}
+                      >
+                        {orgLogoPreviewUrl
+                          ? <img src={orgLogoPreviewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          : "Preview"}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => orgLogoInputRef.current?.click()}
+                        style={{ padding: "10px 16px", borderRadius: 10, border: "1px solid #111827", background: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", color: "#111827" }}
+                      >
+                        Choose image…
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 12, color: "#4b5563", marginTop: 6 }}>Rectangular logo (you&apos;ll crop after selecting). Required.</div>
+                    {isMissing("field-org-logo") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please add and crop your logo.</div>}
+                  </div>
+
+                  <div id="field-org-name" style={isMissing("field-org-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Organization / business name *</label>
+                    <input
+                      value={orgBusinessName}
+                      onChange={(e) => {
+                        setOrgBusinessName(e.target.value);
+                        if (e.target.value.trim()) clearMissingFieldIfMatch("field-org-name");
+                      }}
+                      style={inputStyle}
+                      placeholder="e.g. EOD Warrior Foundation"
+                    />
+                    {isMissing("field-org-name") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
+                  </div>
+
+                  <div id="field-org-website" style={isMissing("field-org-website") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Website *</label>
+                    <input
+                      value={orgWebsite}
+                      onChange={(e) => {
+                        setOrgWebsite(e.target.value);
+                        if (e.target.value.trim()) clearMissingFieldIfMatch("field-org-website");
+                      }}
+                      style={inputStyle}
+                      placeholder="https://"
+                    />
+                    {isMissing("field-org-website") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
+                  </div>
+
+                  <div id="field-org-mission" style={isMissing("field-org-mission") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Mission / bio *</label>
+                    <textarea
+                      value={orgMission}
+                      onChange={(e) => {
+                        setOrgMission(e.target.value);
+                        if (e.target.value.trim()) clearMissingFieldIfMatch("field-org-mission");
+                      }}
+                      rows={4}
+                      style={{ ...inputStyle, resize: "vertical", fontFamily: "inherit" }}
+                      placeholder="What you do and why it matters to the EOD community…"
+                    />
+                    {isMissing("field-org-mission") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div id="field-org-contact-name" style={isMissing("field-org-contact-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}>
+                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Contact name *</label>
+                      <input
+                        value={orgContactName}
+                        onChange={(e) => {
+                          setOrgContactName(e.target.value);
+                          if (e.target.value.trim()) clearMissingFieldIfMatch("field-org-contact-name");
+                        }}
+                        style={inputStyle}
+                        placeholder="Primary contact"
+                      />
+                      {isMissing("field-org-contact-name") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
+                    </div>
+                    <div id="field-org-contact-email" style={isMissing("field-org-contact-email") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}>
+                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Contact email *</label>
+                      <input
+                        type="email"
+                        value={orgContactEmail}
+                        onChange={(e) => {
+                          setOrgContactEmail(e.target.value);
+                          if (e.target.value.trim()) clearMissingFieldIfMatch("field-org-contact-email");
+                        }}
+                        style={inputStyle}
+                        placeholder="contact@organization.org"
+                      />
+                      {isMissing("field-org-contact-email") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
+                    </div>
+                  </div>
+
+                  <div id="field-org-phone" style={isMissing("field-org-phone") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Phone number *</label>
+                    <input
+                      value={orgPhone}
+                      onChange={(e) => {
+                        setOrgPhone(e.target.value);
+                        if (e.target.value.trim()) clearMissingFieldIfMatch("field-org-phone");
+                      }}
+                      style={inputStyle}
+                      placeholder="Best number to reach your organization"
+                    />
+                    {isMissing("field-org-phone") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
+                  </div>
+
+                  <div id="field-org-location" style={isMissing("field-org-location") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}>
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Location *</label>
+                    <input
+                      value={orgLocation}
+                      onChange={(e) => {
+                        setOrgLocation(e.target.value);
+                        if (e.target.value.trim()) clearMissingFieldIfMatch("field-org-location");
+                      }}
+                      style={inputStyle}
+                      placeholder="City, state or region"
+                    />
+                    {isMissing("field-org-location") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
+                  </div>
+
+                  <div style={{ padding: "12px 14px", borderRadius: 10, background: "#f5f3ff", fontSize: 13, color: "#4c1d95", lineHeight: 1.5 }}>
+                    Organization accounts use the same $2/month community membership as members (free trial rules apply). You do not get employer recruiting tools or candidate search.
+                  </div>
+                </>
+              )}
+
+              {/* Referral code — optional, shown for all account types */}
               <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, marginTop: 4 }}>
                 <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>
                   Referral Code <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
@@ -730,6 +1016,16 @@ export default function OnboardingPage() {
           )}
         </div>
       </div>
+
+      <ImageCropDialog
+        open={orgLogoCropOpen}
+        imageSrc={orgLogoCropSrc}
+        aspect={ASPECT_EMPLOYER_LOGO}
+        cropShape="rect"
+        title="Crop organization logo"
+        onCancel={closeOrgLogoCrop}
+        onComplete={onOrgLogoCropComplete}
+      />
 
       <MemberPaywallModal
         open={memberPaywallOpen}

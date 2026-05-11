@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import { useMasterShell } from "../../components/master/masterShellContext";
@@ -11,6 +12,7 @@ import {
   type EmployerTab,
   type PublicCandidate,
 } from "./lib/types";
+import { isEmployerAccountType } from "../../lib/accountRoles";
 import {
   candidateAllTags,
   candidateDisplayName,
@@ -64,7 +66,7 @@ export default function EmployerDashboardClient() {
         .eq("user_id", user.id)
         .maybeSingle();
       if (cancelled) return;
-      if (profile?.account_type === "employer" || profile?.is_admin) {
+      if (isEmployerAccountType(profile?.account_type) || profile?.is_admin) {
         setAccess("ok");
       } else {
         setAccess("not_permitted");
@@ -128,7 +130,10 @@ export default function EmployerDashboardClient() {
 
   useEffect(() => {
     if (access !== "ok" || !currentUserId) return;
-    void loadData(currentUserId);
+    const timer = window.setTimeout(() => {
+      void loadData(currentUserId);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [access, currentUserId, loadData]);
 
   /* ────────────────────────────────────────────────────────────────────────
@@ -275,6 +280,12 @@ export default function EmployerDashboardClient() {
   const filterOptions = useMemo(() => collectFilterOptions(candidates), [candidates]);
   const activeFilterCount = Object.entries(filters).filter(([k, v]) => k !== "search" && v).length;
 
+  useEffect(() => {
+    if (access === "not_logged_in") {
+      window.location.href = "/login";
+    }
+  }, [access]);
+
   /* ────────────────────────────────────────────────────────────────────────
    * Access gate
    * ──────────────────────────────────────────────────────────────────────── */
@@ -284,7 +295,6 @@ export default function EmployerDashboardClient() {
     );
   }
   if (access === "not_logged_in") {
-    if (typeof window !== "undefined") window.location.href = "/login";
     return null;
   }
   if (access === "not_permitted") {
@@ -295,12 +305,12 @@ export default function EmployerDashboardClient() {
           The Employer Dashboard is available to verified employer accounts and designated admins for QA.
           If you think this is a mistake, contact support from your account page.
         </p>
-        <a
+        <Link
           href="/profile"
           style={{ display: "inline-block", marginTop: 16, background: t.text, color: t.surface, padding: "8px 16px", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: 14 }}
         >
           Back to my account
-        </a>
+        </Link>
       </div>
     );
   }

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import ReportProblemButton from "../../components/ReportProblemButton";
+import { isEmployerAccountType } from "../../lib/accountRoles";
 import PrivacySettingsCard from "../../components/account/PrivacySettingsCard";
 import MemorialFeedPreferencesCard from "../../components/account/MemorialFeedPreferencesCard";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
@@ -102,7 +103,7 @@ type Profile = {
   is_admin: boolean | null;
   account_type: string | null;
   subscription_status: string | null;
-  is_employer: boolean | null;
+  is_employer: boolean | null; // legacy; use isEmployerAccountType(account_type) for recruiting tools
   employer_verified: boolean | null;
   company_website: string | null;
   is_pure_admin: boolean | null;
@@ -138,7 +139,7 @@ export default function MyAccountPage() {
 
     const p = (data as Profile | null) ?? null;
     setProfile(p);
-    if (p?.is_employer) loadEmployerJobs(userId);
+    if (isEmployerAccountType(p?.account_type)) loadEmployerJobs(userId);
     return p;
   }
 
@@ -372,8 +373,8 @@ export default function MyAccountPage() {
         </div>
       )}
 
-      {/* Employer Dashboard */}
-      {profile?.is_employer && (
+      {/* Employer Dashboard — recruiting accounts only */}
+      {isEmployerAccountType(profile?.account_type) && (
         <div style={{ marginTop: 24, ...card }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
             <div style={{ fontSize: 20, fontWeight: 900, color: t.text }}>Your Job Postings</div>

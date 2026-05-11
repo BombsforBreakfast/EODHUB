@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PostLikerBrief } from "../components/PostLikersStack";
+import { isEmployerAccountType, isOrganizationAccountType } from "./accountRoles";
 
 type ProfileRow = {
   user_id: string;
@@ -9,19 +10,23 @@ type ProfileRow = {
   photo_url: string | null;
   service: string | null;
   is_employer: boolean | null;
+  account_type: string | null;
+  company_name: string | null;
 };
 
 function toPostLikerBrief(p: ProfileRow): PostLikerBrief {
   const name =
-    p.display_name?.trim() ||
-    [p.first_name, p.last_name].filter(Boolean).join(" ").trim() ||
-    "Member";
+    (isOrganizationAccountType(p.account_type) && p.company_name?.trim())
+      ? p.company_name.trim()
+      : p.display_name?.trim() ||
+        [p.first_name, p.last_name].filter(Boolean).join(" ").trim() ||
+        "Member";
   return {
     userId: p.user_id,
     name,
     photoUrl: p.photo_url,
     service: p.service,
-    isEmployer: p.is_employer,
+    isEmployer: isEmployerAccountType(p.account_type),
   };
 }
 
@@ -55,7 +60,7 @@ export async function fetchEventAttendeePreviews(
 
   const { data: profs } = await supabase
     .from("profiles")
-    .select("user_id, first_name, last_name, display_name, photo_url, service, is_employer")
+    .select("user_id, first_name, last_name, display_name, photo_url, service, is_employer, account_type, company_name")
     .in("user_id", allIds);
 
   const byId = new Map(

@@ -297,8 +297,8 @@ export default function NavBar() {
     setShowSearchDropdown(true);
     try {
       const [profilesRes, businessesRes, jobsRes, memorialsRes, unitsRes, directoryRes] = await Promise.all([
-        supabase.from("profiles").select("user_id, first_name, last_name, display_name, role")
-          .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%,role.ilike.%${q}%`).limit(5),
+        supabase.from("profiles").select("user_id, first_name, last_name, display_name, role, company_name, account_type")
+          .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%,role.ilike.%${q}%,company_name.ilike.%${q}%`).limit(5),
         supabase.from("business_listings").select("id, business_name, og_title, og_site_name, website_url, custom_blurb")
           .eq("is_approved", true)
           .or(`business_name.ilike.%${q}%,og_title.ilike.%${q}%,og_site_name.ilike.%${q}%,custom_blurb.ilike.%${q}%`).limit(5),
@@ -316,9 +316,16 @@ export default function NavBar() {
 
       const results: SearchResult[] = [];
 
-      ((profilesRes.data ?? []) as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; role: string | null }[]).forEach((p) => {
-        const name = p.display_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || "User";
-        results.push({ type: "user", id: p.user_id, title: name, subtitle: p.role || "EOD Professional", href: `/profile/${p.user_id}`, external: false });
+      ((profilesRes.data ?? []) as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; role: string | null; company_name: string | null; account_type: string | null }[]).forEach((p) => {
+        const name =
+          p.account_type === "organization" && p.company_name?.trim()
+            ? p.company_name.trim()
+            : p.display_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || "User";
+        const subtitle =
+          p.account_type === "organization"
+            ? "Organization"
+            : p.role || "EOD Professional";
+        results.push({ type: "user", id: p.user_id, title: name, subtitle, href: `/profile/${p.user_id}`, external: false });
       });
 
       ((businessesRes.data ?? []) as { id: string; business_name: string | null; og_title: string | null; og_site_name: string | null; website_url: string; custom_blurb: string | null }[]).forEach((b) => {

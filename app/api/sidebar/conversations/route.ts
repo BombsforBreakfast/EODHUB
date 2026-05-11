@@ -17,6 +17,7 @@ type ProfileRow = {
   display_name: string | null;
   photo_url: string | null;
   account_type: string | null;
+  company_name: string | null;
 };
 
 export async function GET(req: NextRequest) {
@@ -69,7 +70,7 @@ export async function GET(req: NextRequest) {
   const [{ data: profileData }, { data: unreadData }] = await Promise.all([
     adminClient
       .from("profiles")
-      .select("user_id, first_name, last_name, display_name, photo_url, account_type")
+      .select("user_id, first_name, last_name, display_name, photo_url, account_type, company_name")
       .in("user_id", otherIds),
     acceptedIds.length > 0
       ? adminClient
@@ -110,9 +111,11 @@ export async function GET(req: NextRequest) {
     const otherId = c.participant_1 === user.id ? c.participant_2 : c.participant_1;
     const profile = profileMap.get(otherId);
     const name =
-      profile?.display_name ||
-      `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() ||
-      "EOD Member";
+      profile?.account_type === "organization" && profile?.company_name?.trim()
+        ? profile.company_name.trim()
+        : profile?.display_name ||
+          `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() ||
+          "EOD Member";
 
     return {
       id: c.id,

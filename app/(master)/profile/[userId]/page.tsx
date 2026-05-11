@@ -45,12 +45,23 @@ import { STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../../../lib/pureAdminAllowlis
 import { getServiceRingColor } from "../../../lib/serviceBranchVisual";
 import { buildLoginReferralUrl } from "../../../lib/referralLink";
 import { ReferralQrModal } from "../../../components/profile/ReferralQrModal";
+import {
+  isEmployerAccountType,
+  isOrganizationAccountType,
+  usesRectangularProfileChrome,
+} from "../../../lib/accountRoles";
 
 type Profile = {
   user_id: string;
   display_name: string | null;
   first_name: string | null;
   last_name: string | null;
+  account_type: string | null;
+  company_name: string | null;
+  organization_contact_name: string | null;
+  organization_contact_email: string | null;
+  organization_phone: string | null;
+  organization_location: string | null;
   bio: string | null;
   photo_url: string | null;
   role: string | null;
@@ -588,6 +599,11 @@ export default function PublicProfilePage() {
   const [editUnitHistoryTags, setEditUnitHistoryTags] = useState<string[]>([]);
   const [draftProfessionalTag, setDraftProfessionalTag] = useState("");
   const [draftUnitHistoryTag, setDraftUnitHistoryTag] = useState("");
+  const [editOrgCompanyName, setEditOrgCompanyName] = useState("");
+  const [editOrgContactName, setEditOrgContactName] = useState("");
+  const [editOrgContactEmail, setEditOrgContactEmail] = useState("");
+  const [editOrgPhone, setEditOrgPhone] = useState("");
+  const [editOrgLocation, setEditOrgLocation] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [lightboxPhoto, setLightboxPhoto] = useState<ProfilePhoto | null>(null);
@@ -634,7 +650,9 @@ export default function PublicProfilePage() {
   const [referralQrOpen, setReferralQrOpen] = useState(false);
   const [showDesktopProfileBack, setShowDesktopProfileBack] = useState(false);
   const [showAllWorkHistoryTags, setShowAllWorkHistoryTags] = useState(false);
-  const canViewEmployerBackNow = (currentUserId === profile?.user_id) || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities);
+  const canViewEmployerBackNow =
+    !isOrganizationAccountType(profile?.account_type) &&
+    ((currentUserId === profile?.user_id) || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities));
   const [uploadingResumeDoc, setUploadingResumeDoc] = useState(false);
   const [uploadingEducationDoc, setUploadingEducationDoc] = useState(false);
   const [uploadingTrainingTag, setUploadingTrainingTag] = useState<string | null>(null);
@@ -820,6 +838,11 @@ export default function PublicProfilePage() {
     setEditUnitHistoryTags(normalizeTagArray(profile.unit_history_tags));
     setDraftProfessionalTag("");
     setDraftUnitHistoryTag("");
+    setEditOrgCompanyName(profile.company_name ?? "");
+    setEditOrgContactName(profile.organization_contact_name ?? "");
+    setEditOrgContactEmail(profile.organization_contact_email ?? "");
+    setEditOrgPhone(profile.organization_phone ?? "");
+    setEditOrgLocation(profile.organization_location ?? "");
     setEditingProfile(true);
   }
 
@@ -827,6 +850,31 @@ export default function PublicProfilePage() {
     if (!currentUserId || !profile || currentUserId !== profile.user_id || !userId) return;
     try {
       setSavingProfile(true);
+      if (isOrganizationAccountType(profile.account_type)) {
+        const contactParts = editOrgContactName.trim().split(/\s+/).filter(Boolean);
+        const { error } = await supabase
+          .from("profiles")
+          .update({
+            company_name: editOrgCompanyName.trim() || null,
+            company_website: editCompanyWebsite.trim() || null,
+            bio: editBio || null,
+            organization_contact_name: editOrgContactName.trim() || null,
+            organization_contact_email: editOrgContactEmail.trim() || null,
+            organization_phone: editOrgPhone.trim() || null,
+            organization_location: editOrgLocation.trim() || null,
+            display_name: editOrgCompanyName.trim() || null,
+            first_name: contactParts[0] || null,
+            last_name: contactParts.slice(1).join(" ") || null,
+          })
+          .eq("user_id", currentUserId);
+        if (error) {
+          alert(error.message);
+          return;
+        }
+        await loadProfile(userId);
+        setEditingProfile(false);
+        return;
+      }
       const { error } = await supabase
         .from("profiles")
         .update({
@@ -1147,7 +1195,7 @@ export default function PublicProfilePage() {
     const { data: commentProfileData } = commentAndLikerIds.length > 0
       ? await supabase
           .from("profiles")
-          .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer")
+          .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, account_type")
           .in("user_id", commentAndLikerIds)
       : { data: [] };
     const commentNameMap = new Map<string, string>();
@@ -1162,6 +1210,7 @@ export default function PublicProfilePage() {
       photo_url: string | null;
       service: string | null;
       is_employer: boolean | null;
+      account_type: string | null;
     }[]).forEach((p) => {
       commentNameMap.set(
         p.user_id,
@@ -1171,7 +1220,10 @@ export default function PublicProfilePage() {
       );
       commentPhotoMap.set(p.user_id, p.photo_url ?? null);
       commentServiceMap.set(p.user_id, p.service ?? null);
-      commentEmployerMap.set(p.user_id, p.is_employer ?? null);
+      commentEmployerMap.set(
+        p.user_id,
+        isEmployerAccountType(p.account_type) || (!!p.is_employer && p.account_type !== "organization"),
+      );
     });
 
     // Build comment map
@@ -2698,10 +2750,20 @@ export default function PublicProfilePage() {
       setCurrentUserId(signedInUserId);
 
       if (signedInUserId) {
-        const { data: nameData } = await supabase.from("profiles").select("first_name, last_name, is_employer, is_admin").eq("user_id", signedInUserId).maybeSingle();
-        const nd = nameData as { first_name: string | null; last_name: string | null; is_employer: boolean | null; is_admin?: boolean | null } | null;
+        const { data: nameData } = await supabase
+          .from("profiles")
+          .select("first_name, last_name, is_employer, is_admin, account_type")
+          .eq("user_id", signedInUserId)
+          .maybeSingle();
+        const nd = nameData as {
+          first_name: string | null;
+          last_name: string | null;
+          is_employer: boolean | null;
+          is_admin?: boolean | null;
+          account_type: string | null;
+        } | null;
         setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
-        setViewerIsEmployer(!!nd?.is_employer);
+        setViewerIsEmployer(isEmployerAccountType(nd?.account_type));
         setViewerIsAdmin(!!nd?.is_admin);
 
         const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
@@ -2949,7 +3011,9 @@ export default function PublicProfilePage() {
   };
 
   const fullName = profile
-    ? profile.display_name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "User"
+    ? isOrganizationAccountType(profile.account_type) && profile.company_name?.trim()
+      ? profile.company_name.trim()
+      : profile.display_name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "User"
     : "";
 
   const techTypesText = profile
@@ -2957,7 +3021,18 @@ export default function PublicProfilePage() {
     : "";
 
   const isOwnWall = currentUserId === profile?.user_id;
-  const canViewEmployerBack = isOwnWall || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities);
+  const useRectChrome = profile ? usesRectangularProfileChrome(profile.account_type) : false;
+  const isOrgProfile = profile ? isOrganizationAccountType(profile.account_type) : false;
+  const isEmployerRecruiter = profile ? isEmployerAccountType(profile.account_type) : false;
+  const rectLogoBorderMobile = useRectChrome
+    ? (isEmployerRecruiter ? "3px solid #d97706" : "3px solid #7c3aed")
+    : (getServiceRingColor(profile?.service ?? null) ? `3px solid ${getServiceRingColor(profile?.service ?? null)}` : undefined);
+  const rectLogoBorderDesktop = useRectChrome
+    ? (isEmployerRecruiter ? "3px solid #d97706" : "4px solid #7c3aed")
+    : (getServiceRingColor(profile?.service ?? null) ? `4px solid ${getServiceRingColor(profile?.service ?? null)}` : undefined);
+  const canViewEmployerBack =
+    !isOrgProfile &&
+    (isOwnWall || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities));
   const professionalTags = normalizeTagArray(profile?.professional_tags);
   const unitHistoryTags = normalizeTagArray(profile?.unit_history_tags);
 
@@ -3363,8 +3438,8 @@ export default function PublicProfilePage() {
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
                   <div
                     onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
-                    title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    title={isOwnWall ? (useRectChrome ? "Click to update logo" : "Click to update photo") : undefined}
+                    style={{ position: "relative", width: useRectChrome ? 120 : 76, height: useRectChrome ? 56 : 76, borderRadius: useRectChrome ? 10 : "50%", overflow: "hidden", background: useRectChrome ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: rectLogoBorderMobile, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url
                       ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -3383,10 +3458,15 @@ export default function PublicProfilePage() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
                     <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                      {isOwnWall ? "My Profile" : "Member Profile"}
-                      {profile.is_employer && (
+                      {isOwnWall ? "My Profile" : isOrgProfile ? "Organization" : "Member Profile"}
+                      {isEmployerRecruiter && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
                           {profile.employer_verified ? "EOD Employer" : "Employer"}
+                        </span>
+                      )}
+                      {isOrgProfile && (
+                        <span style={{ background: "#7c3aed", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
+                          Organization
                         </span>
                       )}
                     </div>
@@ -3456,7 +3536,7 @@ export default function PublicProfilePage() {
                   </div>
                 </div>
 
-                {renderWorkUnitHistorySection(true)}
+                {!isOrgProfile && renderWorkUnitHistorySection(true)}
 
                 {/* Connection buttons */}
                 {!isOwnWall && currentUserId && (
@@ -3501,24 +3581,42 @@ export default function PublicProfilePage() {
                 <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
                   {!showDesktopProfileBack ? (
                     <>
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
-                        <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
-                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
-                          <strong>Service:</strong> <ServiceSealValue service={profile.service} size={50} />
-                        </div>
-                        <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
-                        <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
-                        <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
-                          <strong>Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={52} />
-                        </div>
-                        {profile.is_employer && (
-                          <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
+                      {isOrgProfile ? (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
+                          <div><strong>Website:</strong>{" "}
                             {profile.company_website
                               ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
                               : <span style={{ color: "#9ca3af" }}>Not added yet</span>}
                           </div>
-                        )}
-                      </div>
+                          <div><strong>Contact:</strong> {profile.organization_contact_name || "—"}</div>
+                          <div><strong>Email:</strong>{" "}
+                            {profile.organization_contact_email
+                              ? <a href={`mailto:${profile.organization_contact_email}`} style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.organization_contact_email}</a>
+                              : "—"}
+                          </div>
+                          <div><strong>Phone:</strong> {profile.organization_phone || "—"}</div>
+                          <div><strong>Location:</strong> {profile.organization_location || "—"}</div>
+                        </div>
+                      ) : (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
+                          <div><strong>Current Position:</strong> {isEmployerRecruiter ? "Employer Account" : (profile.role || "Not added yet")}</div>
+                          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
+                            <strong>Service:</strong> <ServiceSealValue service={profile.service} size={50} />
+                          </div>
+                          <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
+                          <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
+                          <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
+                            <strong>Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={52} />
+                          </div>
+                          {isEmployerRecruiter && (
+                            <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
+                              {profile.company_website
+                                ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
+                                : <span style={{ color: "#9ca3af" }}>Not added yet</span>}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {profile.bio?.trim() ? (
                         <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, paddingInline: 8, color: t.textMuted, lineHeight: 1.6 }}>
                           {profile.bio}
@@ -3658,8 +3756,8 @@ export default function PublicProfilePage() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flexShrink: 0, width: 180 }}>
                   <div
                     onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
-                    title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    title={isOwnWall ? (useRectChrome ? "Click to update logo" : "Click to update photo") : undefined}
+                    style={{ position: "relative", width: useRectChrome ? 160 : 120, height: useRectChrome ? 72 : 120, borderRadius: useRectChrome ? 12 : "50%", overflow: "hidden", background: useRectChrome ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: rectLogoBorderDesktop, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url ? (
                       <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -3679,10 +3777,15 @@ export default function PublicProfilePage() {
                   <div style={{ textAlign: "center" }}>
                     <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
                     <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted, display: "flex", gap: 6, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
-                      {isOwnWall ? "My Profile" : "Member Profile"}
-                      {profile.is_employer && (
+                      {isOwnWall ? "My Profile" : isOrgProfile ? "Organization" : "Member Profile"}
+                      {isEmployerRecruiter && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
                           {profile.employer_verified ? "EOD Employer" : "Employer"}
+                        </span>
+                      )}
+                      {isOrgProfile && (
+                        <span style={{ background: "#7c3aed", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
+                          Organization
                         </span>
                       )}
                     </div>
@@ -3752,7 +3855,7 @@ export default function PublicProfilePage() {
                     </div>
                   </div>
 
-                {renderWorkUnitHistorySection(false)}
+                {!isOrgProfile && renderWorkUnitHistorySection(false)}
 
                   {!isOwnWall && currentUserId && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
@@ -3797,8 +3900,25 @@ export default function PublicProfilePage() {
                 <div style={{ flex: 1, minWidth: 0, marginLeft: 20, color: t.textMuted, lineHeight: 1.8 }}>
                   {!showDesktopProfileBack ? (
                     <>
+                      {isOrgProfile ? (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
+                          <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
+                            {profile.company_website
+                              ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
+                              : <span style={{ color: "#9ca3af" }}>Not added yet</span>}
+                          </div>
+                          <div><strong>Contact:</strong> {profile.organization_contact_name || "—"}</div>
+                          <div><strong>Email:</strong>{" "}
+                            {profile.organization_contact_email
+                              ? <a href={`mailto:${profile.organization_contact_email}`} style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.organization_contact_email}</a>
+                              : "—"}
+                          </div>
+                          <div><strong>Phone:</strong> {profile.organization_phone || "—"}</div>
+                          <div style={{ gridColumn: "1 / -1" }}><strong>Location:</strong> {profile.organization_location || "—"}</div>
+                        </div>
+                      ) : (
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
-                        <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
+                        <div><strong>Current Position:</strong> {isEmployerRecruiter ? "Employer Account" : (profile.role || "Not added yet")}</div>
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
                           <strong>Service:</strong> <ServiceSealValue service={profile.service} size={60} />
                         </div>
@@ -3807,7 +3927,7 @@ export default function PublicProfilePage() {
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
                           <strong>Skill Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={64} />
                         </div>
-                        {profile.is_employer && (
+                        {isEmployerRecruiter && (
                           <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
                             {profile.company_website
                               ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
@@ -3815,6 +3935,7 @@ export default function PublicProfilePage() {
                           </div>
                         )}
                       </div>
+                      )}
                       {profile.bio?.trim() ? (
                         <div style={{ marginTop: 14, color: t.textMuted, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14, paddingInline: 8 }}>
                           {profile.bio}
@@ -4086,6 +4207,38 @@ export default function PublicProfilePage() {
                   </button>
                 </div>
                 <div style={{ overflowY: "auto", flex: 1, padding: isMobile ? 16 : 24 }}>
+                  {isOrgProfile ? (
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Organization / business name</label>
+                        <input value={editOrgCompanyName} onChange={(e) => setEditOrgCompanyName(e.target.value)} style={wallEditInputStyle} />
+                      </div>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Website</label>
+                        <input value={editCompanyWebsite} onChange={(e) => setEditCompanyWebsite(e.target.value)} placeholder="https://" style={wallEditInputStyle} />
+                      </div>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Mission / bio</label>
+                        <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} rows={4} style={{ ...wallEditInputStyle, resize: "vertical", fontFamily: "inherit" }} />
+                      </div>
+                      <div>
+                        <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Contact name</label>
+                        <input value={editOrgContactName} onChange={(e) => setEditOrgContactName(e.target.value)} style={wallEditInputStyle} />
+                      </div>
+                      <div>
+                        <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Contact email</label>
+                        <input type="email" value={editOrgContactEmail} onChange={(e) => setEditOrgContactEmail(e.target.value)} style={wallEditInputStyle} />
+                      </div>
+                      <div>
+                        <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Phone</label>
+                        <input value={editOrgPhone} onChange={(e) => setEditOrgPhone(e.target.value)} style={wallEditInputStyle} />
+                      </div>
+                      <div style={{ gridColumn: "1 / -1" }}>
+                        <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Location</label>
+                        <input value={editOrgLocation} onChange={(e) => setEditOrgLocation(e.target.value)} style={wallEditInputStyle} />
+                      </div>
+                    </div>
+                  ) : (
                   <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
                 <div>
                   <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Current Position</label>
@@ -4408,7 +4561,7 @@ export default function PublicProfilePage() {
                     </div>
                   </div>
                 </div>
-                {profile.is_employer && (
+                {isEmployerRecruiter && (
                   <div style={{ gridColumn: "1 / -1" }}>
                     <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Company Website</label>
                     <input value={editCompanyWebsite} onChange={(e) => setEditCompanyWebsite(e.target.value)} placeholder="https://yourcompany.com" style={wallEditInputStyle} />
@@ -4419,6 +4572,7 @@ export default function PublicProfilePage() {
                   <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell people about yourself..." rows={4} style={{ ...wallEditInputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }} />
                 </div>
               </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: isMobile ? "12px 16px" : "16px 24px", borderTop: `1px solid ${t.border}`, flexShrink: 0 }}>
                   <button type="button" onClick={handleSaveWallProfile} disabled={savingProfile} style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 700, cursor: savingProfile ? "not-allowed" : "pointer", opacity: savingProfile ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}>
@@ -5364,9 +5518,9 @@ export default function PublicProfilePage() {
       <ImageCropDialog
         open={wallAvatarCropOpen}
         imageSrc={wallAvatarCropSrc}
-        aspect={profile?.is_employer ? ASPECT_EMPLOYER_LOGO : ASPECT_AVATAR}
-        cropShape={profile?.is_employer ? "rect" : "round"}
-        title={profile?.is_employer ? "Crop employer logo" : "Crop profile photo"}
+        aspect={profile && usesRectangularProfileChrome(profile.account_type) ? ASPECT_EMPLOYER_LOGO : ASPECT_AVATAR}
+        cropShape={profile && usesRectangularProfileChrome(profile.account_type) ? "rect" : "round"}
+        title={profile && usesRectangularProfileChrome(profile.account_type) ? "Crop logo" : "Crop profile photo"}
         onCancel={closeWallAvatarCrop}
         onComplete={async (blob) => {
           await finalizeWallAvatarUpload(blob);
