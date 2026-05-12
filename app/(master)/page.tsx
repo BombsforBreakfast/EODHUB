@@ -35,7 +35,6 @@ import { KangarooCourtVerdictBanner } from "../components/KangarooCourtVerdictBa
 import DesktopLayout from "../components/DesktopLayout";
 import { useMasterShell } from "../components/master/masterShellContext";
 import { sectionTitleLinkZoom } from "../components/master/masterShared";
-import { matchesBizDirectoryKeyword } from "../lib/matchesBizDirectoryKeyword";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../components/StarRating";
@@ -785,7 +784,6 @@ export default function HomePage() {
   const [bizBlurb, setBizBlurb] = useState("");
   const [bizType, setBizType] = useState<BusinessOrgListingType>("business");
   const [bizMobileFilter, setBizMobileFilter] = useState<BizMobileFilter>("all");
-  const [bizPaneKeyword, setBizPaneKeyword] = useState("");
   const [bizOgPreview, setBizOgPreview] = useState<OgPreview | null>(null);
   const [featuredBizBillboardIndex, setFeaturedBizBillboardIndex] = useState(0);
   const [fetchingBizOg, setFetchingBizOg] = useState(false);
@@ -4234,46 +4232,16 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     ? businessOrgListingsPool[featuredBizBillboardIndex % businessOrgListingsPool.length]
     : null;
 
-  const businessListingsMobileByType = useMemo(() => {
-    if (!isMobile) return [];
-    return bizMobileFilter === "all"
-      ? businessListings.filter((b) => normalizeBizListingTypeForListing(b) !== "resource")
-      : businessListings.filter((b) => normalizeBizListingTypeForListing(b) === bizMobileFilter);
-  }, [isMobile, bizMobileFilter, businessListings]);
-
-  const businessListingsForPane = useMemo(() => {
-    if (!isMobile) return [];
-    return businessListingsMobileByType.filter((l) =>
-      matchesBizDirectoryKeyword(l, normalizeBizListingTypeForListing(l), bizPaneKeyword),
-    );
-  }, [isMobile, businessListingsMobileByType, bizPaneKeyword]);
-
-  const bizPaneQuickPicks = useMemo(() => {
-    if (!isMobile) return [] as { id: string; title: string }[];
-    const q = bizPaneKeyword.trim().toLowerCase();
-    if (q.length < 2) return [];
-    const seen = new Set<string>();
-    const out: { id: string; title: string }[] = [];
-    for (const listing of businessListingsForPane) {
-      const title = (listing.og_title || listing.business_name || listing.og_site_name || "").trim();
-      if (!title) continue;
-      const key = title.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ id: listing.id, title });
-      if (out.length >= 8) break;
-    }
-    return out;
-  }, [isMobile, businessListingsForPane, bizPaneKeyword]);
+  const businessListingsForPane = isMobile
+    ? (bizMobileFilter === "all"
+        ? businessListings.filter((b) => normalizeBizListingTypeForListing(b) !== "resource")
+        : businessListings.filter((b) => normalizeBizListingTypeForListing(b) === bizMobileFilter))
+    : [];
 
   const mobileBizPaneListingIdsKey = useMemo(
     () => businessListingsForPane.map((l) => l.id).join("|"),
     [businessListingsForPane]
   );
-
-  useEffect(() => {
-    if (mobileTab !== "businesses") setBizPaneKeyword("");
-  }, [mobileTab]);
 
   const loadBizListingEngagement = React.useCallback(
     async (listingIds: string[]) => {
@@ -5393,10 +5361,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 <React.Fragment key={post.id}>
                 <div
                   id={`feed-post-${post.id}`}
-                  className="surface-card"
                   style={{
+                    border: `1px solid ${t.border}`,
                     borderRadius: 14,
                     padding: FEED_POST_CARD_PADDING,
+                    background: t.surface,
                     minWidth: 0,
                     maxWidth: "100%",
                     boxSizing: "border-box",
@@ -6828,64 +6797,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     </button>
                   );
                 })}
-              </div>
-            )}
-            {isMobile && (
-              <div style={{ width: "100%", marginTop: 2 }}>
-                <input
-                  type="search"
-                  enterKeyHint="search"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  value={bizPaneKeyword}
-                  onChange={(e) => setBizPaneKeyword(e.target.value)}
-                  onInput={(e) => setBizPaneKeyword((e.target as HTMLInputElement).value)}
-                  placeholder="Search name, site, description, tags…"
-                  aria-label="Search business listings"
-                  style={{
-                    width: "100%",
-                    boxSizing: "border-box",
-                    padding: "8px 10px",
-                    borderRadius: 8,
-                    border: `1px solid ${t.inputBorder}`,
-                    background: t.input,
-                    color: t.text,
-                    fontSize: 13,
-                  }}
-                />
-                {bizPaneQuickPicks.length > 0 ? (
-                  <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                      Matching names
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                      {bizPaneQuickPicks.map((row) => (
-                        <button
-                          key={row.id}
-                          type="button"
-                          onClick={() => setBizPaneKeyword(row.title)}
-                          style={{
-                            borderRadius: 999,
-                            border: `1px solid ${t.border}`,
-                            background: t.surface,
-                            color: t.text,
-                            fontSize: 12,
-                            fontWeight: 700,
-                            padding: "5px 10px",
-                            cursor: "pointer",
-                            maxWidth: "100%",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {row.title}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
               </div>
             )}
           </div>

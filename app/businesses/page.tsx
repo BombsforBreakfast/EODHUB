@@ -18,7 +18,6 @@ import {
 } from "../components/master/masterShared";
 import { ASPECT_RESOURCE_LOGO } from "../lib/imageCropTargets";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
-import { matchesBizDirectoryKeyword } from "../lib/matchesBizDirectoryKeyword";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 
@@ -538,6 +537,13 @@ export default function BusinessesPage() {
   }
 
   const visibleListings = useMemo(() => {
+    const needle = filters.keyword.trim().toLowerCase();
+    const terms = needle
+      .split(",")
+      .flatMap((part) => part.trim().split(/\s+/))
+      .map((term) => term.trim())
+      .filter(Boolean);
+
     const filtered = listings.filter((l) => {
       const listingType = normalizeBizListingTypeForListing(l);
       if (listingType === "resource") {
@@ -546,7 +552,23 @@ export default function BusinessesPage() {
       if (filters.listingType !== "all" && listingType !== filters.listingType) {
         return false;
       }
-      return matchesBizDirectoryKeyword(l, listingType, filters.keyword);
+      if (!needle) return true;
+      const tagText = coerceTagsFromDb(l.tags).join(" ");
+      const haystack = [
+        l.business_name ?? "",
+        l.og_title ?? "",
+        l.og_description ?? "",
+        l.og_site_name ?? "",
+        l.custom_blurb ?? "",
+        l.website_url ?? "",
+        listingType,
+        tagText,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      if (haystack.includes(needle)) return true;
+      return terms.some((term) => haystack.includes(term));
     });
 
     return [...filtered].sort((a, b) => {
@@ -565,23 +587,6 @@ export default function BusinessesPage() {
   }, [listings, filters]);
 
   const visibleListingIds = useMemo(() => visibleListings.map((r) => r.id), [visibleListings]);
-
-  const bizSearchQuickPicks = useMemo(() => {
-    const q = filters.keyword.trim().toLowerCase();
-    if (q.length < 2) return [] as { id: string; title: string }[];
-    const seen = new Set<string>();
-    const out: { id: string; title: string }[] = [];
-    for (const listing of visibleListings) {
-      const title = (listing.og_title || listing.business_name || listing.og_site_name || "").trim();
-      if (!title) continue;
-      const key = title.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ id: listing.id, title });
-      if (out.length >= 8) break;
-    }
-    return out;
-  }, [visibleListings, filters.keyword]);
 
   useEffect(() => {
     if (!selectedListing) return;
@@ -751,7 +756,7 @@ export default function BusinessesPage() {
       ) : null}
 
       {showBizForm && (
-        <div ref={bizFormRef} className="surface-card" style={{ marginTop: 4, marginBottom: 14, borderRadius: 12, padding: 14 }}>
+        <div ref={bizFormRef} style={{ marginTop: 4, marginBottom: 14, border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
           {bizSubmitSuccess ? (
             <div style={{ textAlign: "center", padding: "16px 0", color: "#16a34a", fontWeight: 700, fontSize: 14 }}>
               {editingBizId ? "Listing updated." : isAdmin ? "Listing published." : "Submitted! Our team will review and approve your listing."}
@@ -950,7 +955,7 @@ export default function BusinessesPage() {
         </div>
       )}
 
-      <div className="surface-card" style={{ borderRadius: 12, padding: 12, marginBottom: 14 }}>
+      <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: 12, marginBottom: 14 }}>
         <div
           style={{
             display: "grid",
@@ -969,53 +974,13 @@ export default function BusinessesPage() {
           </select>
 
           <input
-            type="search"
-            enterKeyHint="search"
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
+            type="text"
             value={filters.keyword}
             onChange={(e) => setFilters((prev) => ({ ...prev, keyword: e.target.value }))}
-            onInput={(e) => {
-              const v = (e.target as HTMLInputElement).value;
-              setFilters((prev) => (prev.keyword === v ? prev : { ...prev, keyword: v }));
-            }}
             placeholder="Search title, site, description, or tags"
             style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
           />
         </div>
-        {bizSearchQuickPicks.length > 0 ? (
-          <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Matching names
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {bizSearchQuickPicks.map((row) => (
-                <button
-                  key={row.id}
-                  type="button"
-                  onClick={() => setFilters((prev) => ({ ...prev, keyword: row.title }))}
-                  style={{
-                    borderRadius: 999,
-                    border: `1px solid ${t.border}`,
-                    background: t.surface,
-                    color: t.text,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    padding: "5px 10px",
-                    cursor: "pointer",
-                    maxWidth: "100%",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {row.title}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
       </div>
 
       {loading ? (
@@ -1039,7 +1004,6 @@ export default function BusinessesPage() {
             return (
               <article
                 key={listing.id}
-                className="surface-card surface-interactive"
                 onClick={() => setSelectedListing(listing)}
                 role="button"
                 tabIndex={0}
@@ -1050,8 +1014,10 @@ export default function BusinessesPage() {
                   }
                 }}
                 style={{
+                  border: `1px solid ${t.border}`,
                   borderRadius: 14,
                   overflow: "hidden",
+                  background: t.surface,
                   cursor: "pointer",
                 }}
               >

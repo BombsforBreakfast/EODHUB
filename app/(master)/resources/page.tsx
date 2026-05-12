@@ -16,7 +16,6 @@ import {
   type BusinessListingRow,
 } from "../../components/master/masterShared";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../../lib/bizListingTags";
-import { matchesBizDirectoryKeyword } from "../../lib/matchesBizDirectoryKeyword";
 import ImageCropDialog from "../../components/ImageCropDialog";
 import { ASPECT_RESOURCE_LOGO } from "../../lib/imageCropTargets";
 import { useTheme } from "../../lib/ThemeContext";
@@ -426,11 +425,35 @@ export default function ResourcesPage() {
   }
 
   const visibleResources = useMemo(() => {
+    const needle = keyword.trim().toLowerCase();
+    const terms = needle
+      .split(",")
+      .flatMap((part) => part.trim().split(/\s+/))
+      .map((term) => term.trim())
+      .filter(Boolean);
+
     const filtered = listings.filter((listing) => {
       if (normalizeBizListingTypeForListing(listing) !== "resource") {
         return false;
       }
-      return matchesBizDirectoryKeyword(listing, normalizeBizListingTypeForListing(listing), keyword);
+      if (!needle) return true;
+      const tagText = coerceTagsFromDb(listing.tags).join(" ");
+      const haystack = [
+        listing.business_name ?? "",
+        listing.og_title ?? "",
+        listing.og_description ?? "",
+        listing.og_site_name ?? "",
+        listing.custom_blurb ?? "",
+        listing.website_url ?? "",
+        normalizeBizListingTypeForListing(listing),
+        tagText,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      // Match full query phrase OR any keyword token (title/description/site/tags).
+      if (haystack.includes(needle)) return true;
+      return terms.some((term) => haystack.includes(term));
     });
 
     return [...filtered].sort((a, b) => {
@@ -449,23 +472,6 @@ export default function ResourcesPage() {
   }, [listings, keyword]);
 
   const visibleResourceIds = useMemo(() => visibleResources.map((r) => r.id), [visibleResources]);
-
-  const resourceSearchQuickPicks = useMemo(() => {
-    const q = keyword.trim().toLowerCase();
-    if (q.length < 2) return [] as { id: string; title: string }[];
-    const seen = new Set<string>();
-    const out: { id: string; title: string }[] = [];
-    for (const listing of visibleResources) {
-      const title = (listing.og_title || listing.business_name || listing.og_site_name || "").trim();
-      if (!title) continue;
-      const key = title.toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ id: listing.id, title });
-      if (out.length >= 8) break;
-    }
-    return out;
-  }, [visibleResources, keyword]);
 
   useEffect(() => {
     if (!selectedResource) return;
@@ -773,49 +779,12 @@ export default function ResourcesPage() {
       <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: 12, marginBottom: 14 }}>
         <div>
           <input
-            type="search"
-            enterKeyHint="search"
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
+            type="text"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            onInput={(e) => setKeyword((e.target as HTMLInputElement).value)}
             placeholder="Search title, site, description, or tags (e.g. behavioral, suicide prevention, mental health)"
             style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, boxSizing: "border-box" }}
           />
-          {resourceSearchQuickPicks.length > 0 ? (
-            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                Matching names
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {resourceSearchQuickPicks.map((row) => (
-                  <button
-                    key={row.id}
-                    type="button"
-                    onClick={() => setKeyword(row.title)}
-                    style={{
-                      borderRadius: 999,
-                      border: `1px solid ${t.border}`,
-                      background: t.surface,
-                      color: t.text,
-                      fontSize: 12,
-                      fontWeight: 700,
-                      padding: "5px 10px",
-                      cursor: "pointer",
-                      maxWidth: "100%",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {row.title}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ) : null}
         </div>
       </div>
 
