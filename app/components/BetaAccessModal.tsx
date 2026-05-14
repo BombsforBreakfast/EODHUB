@@ -5,6 +5,7 @@
 
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useState,
@@ -23,6 +24,43 @@ const WAITLIST_THANK_YOU =
 
 const BETA_PRICING_FOOTNOTE =
   "EOD Hub is free during beta and for the first 30 days after we go live. After that, a $1.99/month subscription helps us operate, maintain, and improve the site.";
+
+/** May 24 local midnight — this year if still ahead, otherwise next year. */
+function getBetaLaunchTarget(): Date {
+  const now = new Date();
+  const y = now.getFullYear();
+  let target = new Date(y, 4, 24, 0, 0, 0, 0);
+  if (target.getTime() <= now.getTime()) {
+    target = new Date(y + 1, 4, 24, 0, 0, 0, 0);
+  }
+  return target;
+}
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+type CountdownParts = { days: number; hours: number; mins: number; secs: number };
+
+function computeCountdownParts(target: Date, now: Date): CountdownParts {
+  const diff = target.getTime() - now.getTime();
+  const totalSec = Math.floor(Math.max(0, diff) / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  const secs = totalSec % 60;
+  return { days, hours, mins, secs };
+}
+
+const WAITLIST_SERVICE_OPTIONS = [
+  "Army",
+  "Navy",
+  "Marines",
+  "Air Force",
+  "Civil Service",
+  "Federal",
+  "Civilian Bomb Tech",
+] as const;
 
 type WaitlistRow = {
   first_name: string;
@@ -59,6 +97,20 @@ export default function BetaAccessModal() {
     () => (process.env.NEXT_PUBLIC_BETA_ACCESS_CODE ?? "").trim(),
     [],
   );
+
+  const launchTarget = useMemo(() => getBetaLaunchTarget(), []);
+  const [countdown, setCountdown] = useState<CountdownParts>(() =>
+    computeCountdownParts(launchTarget, new Date()),
+  );
+
+  useEffect(() => {
+    const tick = () => {
+      setCountdown(computeCountdownParts(launchTarget, new Date()));
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [launchTarget]);
 
   useLayoutEffect(() => {
     try {
@@ -181,8 +233,32 @@ export default function BetaAccessModal() {
     color: "#0d0f0c",
     fontWeight: 800,
     fontSize: 15,
-    cursor: waitlistSubmitting || codeSubmitting ? "not-allowed" : "pointer",
-    opacity: waitlistSubmitting || codeSubmitting ? 0.65 : 1,
+    cursor: waitlistSubmitting ? "not-allowed" : "pointer",
+    opacity: waitlistSubmitting ? 0.65 : 1,
+  };
+
+  const secondaryBtn: CSSProperties = {
+    width: "100%",
+    padding: "12px 16px",
+    borderRadius: 10,
+    border: "1px solid rgba(160, 175, 150, 0.45)",
+    background: "rgba(10, 12, 14, 0.75)",
+    color: "#e8eae6",
+    fontWeight: 800,
+    fontSize: 15,
+    cursor: codeSubmitting ? "not-allowed" : "pointer",
+    opacity: codeSubmitting ? 0.65 : 1,
+    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.04)",
+  };
+
+  const selectBase: CSSProperties = {
+    ...inputBase,
+    cursor: waitlistSubmitting ? "not-allowed" : "pointer",
+    appearance: "none",
+    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23a8b49a' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`,
+    backgroundRepeat: "no-repeat",
+    backgroundPosition: "right 12px center",
+    paddingRight: 36,
   };
 
   const modalTree = (
@@ -221,6 +297,80 @@ export default function BetaAccessModal() {
         .beta-access-code-eye:disabled {
           cursor: not-allowed;
           opacity: 0.35;
+        }
+        @keyframes betaCountdownPulse {
+          0%, 100% { opacity: 0.32; }
+          50% { opacity: 0.58; }
+        }
+        .beta-countdown-glow {
+          position: absolute;
+          left: 50%;
+          top: 42%;
+          width: min(100%, 340px);
+          height: 76px;
+          transform: translate(-50%, -50%);
+          border-radius: 18px;
+          background: radial-gradient(ellipse at 50% 50%, rgba(212, 196, 92, 0.28) 0%, rgba(212, 196, 92, 0.06) 45%, transparent 72%);
+          filter: blur(16px);
+          animation: betaCountdownPulse 4.8s ease-in-out infinite;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .beta-countdown-row {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          justify-content: center;
+          align-items: stretch;
+          gap: clamp(3px, 1.2vw, 8px);
+          width: 100%;
+          max-width: 100%;
+          box-sizing: border-box;
+          padding: 0 2px;
+        }
+        .beta-countdown-sep {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex: 0 0 auto;
+          font-weight: 900;
+          font-size: clamp(16px, 4.5vw, 22px);
+          color: rgba(200, 210, 195, 0.45);
+          line-height: 1;
+          padding-bottom: 18px;
+          user-select: none;
+        }
+        .beta-countdown-unit {
+          flex: 1 1 0;
+          min-width: 0;
+          text-align: center;
+        }
+        .beta-countdown-digitbox {
+          font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+          font-variant-numeric: tabular-nums;
+          font-weight: 900;
+          font-stretch: condensed;
+          letter-spacing: -0.02em;
+          font-size: clamp(1.05rem, 5vw, 1.55rem);
+          line-height: 1.05;
+          color: #f4f6f0;
+          text-shadow: 0 0 18px rgba(255, 255, 255, 0.12), 0 1px 0 rgba(0, 0, 0, 0.65);
+          padding: clamp(8px, 2vw, 12px) clamp(2px, 1vw, 6px);
+          border-radius: 8px;
+          border: 1px solid rgba(72, 82, 68, 0.65);
+          background: linear-gradient(165deg, #161a18 0%, #050607 100%);
+          box-shadow:
+            inset 0 2px 5px rgba(0, 0, 0, 0.65),
+            inset 0 -1px 0 rgba(255, 255, 255, 0.05),
+            0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+        .beta-countdown-label {
+          margin-top: 6px;
+          font-size: clamp(9px, 2.4vw, 10px);
+          font-weight: 800;
+          letter-spacing: 0.14em;
+          text-transform: uppercase;
+          color: rgba(212, 196, 92, 0.88);
         }
         @media (max-width: 480px) {
           .beta-gate-sticker {
@@ -266,6 +416,7 @@ export default function BetaAccessModal() {
             width: "100%",
             maxWidth: 440,
             maxHeight: "min(calc(100dvh - max(40px, env(safe-area-inset-top) + env(safe-area-inset-bottom))), 900px)",
+            overflowX: "hidden",
             overflowY: "auto",
             borderRadius: 16,
             border: "1px solid rgba(140, 155, 125, 0.35)",
@@ -275,10 +426,16 @@ export default function BetaAccessModal() {
             animation: "betaGatePopIn 380ms ease-out 40ms both",
           }}
         >
-          <div style={{ textAlign: "center", marginBottom: 18 }}>
+          <div style={{ textAlign: "center", marginBottom: 14 }}>
+            <div style={{ marginTop: 0, display: "flex", justifyContent: "center" }}>
+              <div style={{ transform: "scale(0.72)", transformOrigin: "center top" }}>
+                <EodCrabLogo variant="login" priority />
+              </div>
+            </div>
             <div
               className="beta-gate-title"
               style={{
+                marginTop: 2,
                 fontSize: 28,
                 fontWeight: 900,
                 letterSpacing: 2,
@@ -288,9 +445,43 @@ export default function BetaAccessModal() {
             >
               EOD HUB
             </div>
-            <div style={{ marginTop: 10, display: "flex", justifyContent: "center" }}>
-              <div style={{ transform: "scale(0.72)", transformOrigin: "center top" }}>
-                <EodCrabLogo variant="login" priority />
+            <div
+              className="beta-countdown-wrap"
+              style={{ marginTop: 10, marginBottom: 12, width: "100%", maxWidth: "100%", position: "relative" }}
+            >
+              <div className="beta-countdown-glow" aria-hidden />
+              <div
+                className="beta-countdown-row"
+                role="timer"
+                aria-live="polite"
+                aria-atomic="true"
+                aria-label={`Beta launch countdown: ${countdown.days} days, ${countdown.hours} hours, ${countdown.mins} minutes, ${countdown.secs} seconds remaining`}
+              >
+                <div className="beta-countdown-unit">
+                  <div className="beta-countdown-digitbox">{countdown.days}</div>
+                  <div className="beta-countdown-label">Days</div>
+                </div>
+                <div className="beta-countdown-sep" aria-hidden>
+                  :
+                </div>
+                <div className="beta-countdown-unit">
+                  <div className="beta-countdown-digitbox">{pad2(countdown.hours)}</div>
+                  <div className="beta-countdown-label">Hours</div>
+                </div>
+                <div className="beta-countdown-sep" aria-hidden>
+                  :
+                </div>
+                <div className="beta-countdown-unit">
+                  <div className="beta-countdown-digitbox">{pad2(countdown.mins)}</div>
+                  <div className="beta-countdown-label">Mins</div>
+                </div>
+                <div className="beta-countdown-sep" aria-hidden>
+                  :
+                </div>
+                <div className="beta-countdown-unit">
+                  <div className="beta-countdown-digitbox">{pad2(countdown.secs)}</div>
+                  <div className="beta-countdown-label">Secs</div>
+                </div>
               </div>
             </div>
             <div
@@ -298,7 +489,7 @@ export default function BetaAccessModal() {
               className="beta-gate-sticker"
               style={{
                 display: "inline-block",
-                marginTop: 4,
+                marginTop: 2,
                 padding: "10px 22px",
                 background: "#d4c45c",
                 color: "#1a1c14",
@@ -320,83 +511,22 @@ export default function BetaAccessModal() {
               fontSize: 14,
               lineHeight: 1.65,
               color: "rgba(220, 225, 215, 0.92)",
-              marginBottom: 22,
+              marginBottom: 16,
               textAlign: "center",
             }}
           >
-            <p style={{ margin: "0 0 12px" }}>
+            <p style={{ margin: "0 0 10px" }}>
               EOD-HUB is entering Beta.
               <br />
               Access is currently limited.
             </p>
-            <p style={{ margin: 0 }}>
-              If you were issued an early access code, enter it below.
-              <br />
-              Otherwise, join the waitlist and we&apos;ll notify you when access opens.
+            <p style={{ margin: 0, fontWeight: 600, color: "rgba(232, 234, 230, 0.98)" }}>
+              Join the waitlist and be notified when the doors open.
             </p>
           </div>
 
-          <form onSubmit={handleCodeSubmit} style={{ marginBottom: 26 }}>
-            <label htmlFor="beta-access-code" style={labelStyle}>
-              Access Code
-            </label>
-            <div style={{ position: "relative", width: "100%", marginBottom: 6 }}>
-              <input
-                id="beta-access-code"
-                type={showAccessCode ? "text" : "password"}
-                autoComplete="off"
-                spellCheck={false}
-                value={accessCode}
-                onChange={(ev) => {
-                  setAccessCode(ev.target.value);
-                  setCodeError(null);
-                }}
-                disabled={codeSubmitting}
-                style={{
-                  ...inputBase,
-                  width: "100%",
-                  paddingRight: 48,
-                  boxSizing: "border-box",
-                }}
-              />
-              <button
-                type="button"
-                className="beta-access-code-eye"
-                aria-label={showAccessCode ? "Hide access code" : "Show access code"}
-                onClick={() => setShowAccessCode((v) => !v)}
-                disabled={codeSubmitting}
-                style={{
-                  position: "absolute",
-                  right: 4,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  minWidth: 44,
-                  minHeight: 44,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {showAccessCode ? <EyeOff size={18} strokeWidth={2} aria-hidden /> : <Eye size={18} strokeWidth={2} aria-hidden />}
-              </button>
-            </div>
-            {codeError ? (
-              <p style={{ color: "#e8a598", fontSize: 13, margin: "4px 0 10px" }}>{codeError}</p>
-            ) : null}
-            <button type="submit" disabled={codeSubmitting} style={primaryBtn}>
-              Enter
-            </button>
-          </form>
-
-          <div
-            style={{
-              height: 1,
-              background: "linear-gradient(90deg, transparent, rgba(140,155,125,0.4), transparent)",
-              margin: "8px 0 22px",
-            }}
-          />
-
           {!waitlistSubmitted ? (
-            <form onSubmit={handleWaitlistSubmit}>
+            <form onSubmit={handleWaitlistSubmit} style={{ marginBottom: 22 }}>
               <div style={{ display: "grid", gap: 12, marginBottom: 12 }}>
                 <div>
                   <label htmlFor="wait-first" style={labelStyle}>
@@ -443,18 +573,22 @@ export default function BetaAccessModal() {
                 </div>
                 <div>
                   <label htmlFor="wait-service" style={labelStyle}>
-                    Service
+                    Service branch
                   </label>
-                  <input
+                  <select
                     id="wait-service"
-                    type="text"
-                    placeholder="e.g. Army, Navy EOD, Veteran"
-                    autoComplete="organization-title"
                     value={service}
                     onChange={(e) => setService(e.target.value)}
                     disabled={waitlistSubmitting}
-                    style={inputBase}
-                  />
+                    style={selectBase}
+                  >
+                    <option value="">Select branch (optional)</option>
+                    {WAITLIST_SERVICE_OPTIONS.map((opt) => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               {waitlistError ? (
@@ -479,7 +613,8 @@ export default function BetaAccessModal() {
             <div
               style={{
                 textAlign: "center",
-                padding: "16px 12px 8px",
+                padding: "16px 12px 18px",
+                marginBottom: 22,
                 borderRadius: 12,
                 background: "rgba(30, 38, 28, 0.6)",
                 border: "1px solid rgba(140, 155, 125, 0.25)",
@@ -490,6 +625,89 @@ export default function BetaAccessModal() {
               </p>
             </div>
           )}
+
+          <div style={{ margin: "4px 0 18px", width: "100%", maxWidth: "100%" }}>
+            <div
+              style={{
+                height: 1,
+                background: "linear-gradient(90deg, transparent, rgba(140,155,125,0.42), transparent)",
+                marginBottom: 14,
+              }}
+            />
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "rgba(190, 200, 180, 0.9)",
+                textAlign: "center",
+                lineHeight: 1.45,
+              }}
+            >
+              Already have an access code?
+            </p>
+            <div
+              style={{
+                height: 1,
+                background: "linear-gradient(90deg, transparent, rgba(140,155,125,0.42), transparent)",
+                marginTop: 14,
+              }}
+            />
+          </div>
+
+          <form onSubmit={handleCodeSubmit} style={{ marginBottom: 8 }}>
+            <label htmlFor="beta-access-code" style={labelStyle}>
+              Access Code
+            </label>
+            <div style={{ position: "relative", width: "100%", maxWidth: "100%", marginBottom: 6 }}>
+              <input
+                id="beta-access-code"
+                type={showAccessCode ? "text" : "password"}
+                autoComplete="off"
+                spellCheck={false}
+                value={accessCode}
+                onChange={(ev) => {
+                  setAccessCode(ev.target.value);
+                  setCodeError(null);
+                }}
+                disabled={codeSubmitting}
+                style={{
+                  ...inputBase,
+                  width: "100%",
+                  maxWidth: "100%",
+                  paddingRight: 48,
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="button"
+                className="beta-access-code-eye"
+                aria-label={showAccessCode ? "Hide access code" : "Show access code"}
+                onClick={() => setShowAccessCode((v) => !v)}
+                disabled={codeSubmitting}
+                style={{
+                  position: "absolute",
+                  right: 4,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  minWidth: 44,
+                  minHeight: 44,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {showAccessCode ? <EyeOff size={18} strokeWidth={2} aria-hidden /> : <Eye size={18} strokeWidth={2} aria-hidden />}
+              </button>
+            </div>
+            {codeError ? (
+              <p style={{ color: "#e8a598", fontSize: 13, margin: "4px 0 10px" }}>{codeError}</p>
+            ) : null}
+            <button type="submit" disabled={codeSubmitting} style={secondaryBtn}>
+              Enter
+            </button>
+          </form>
           <p
             style={{
               marginTop: 20,

@@ -137,7 +137,19 @@ export function OgCard({ og }: { og: OgPreview }) {
       }}
     >
       {imgUrl ? (
-        <img src={imgUrl} alt={og.title || ""} style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+        <div
+          style={{
+            width: "100%",
+            aspectRatio: "2 / 1",
+            background: "#111827",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={imgUrl} alt={og.title || ""} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+        </div>
       ) : null}
       <div style={{ padding: "10px 14px" }}>
         {og.siteName && (

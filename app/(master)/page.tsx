@@ -629,7 +629,19 @@ function OgCard({ og }: { og: OgPreview }) {
   return (
     <a href={og.url ? httpsAssetUrl(og.url) : "#"} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 12, border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.bg, textDecoration: "none", color: "inherit" }}>
       {imgUrl ? (
-        <img src={imgUrl} alt={og.title || ""} style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+        <div
+          style={{
+            width: "100%",
+            aspectRatio: "2 / 1",
+            background: "#111827",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={imgUrl} alt={og.title || ""} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+        </div>
       ) : null}
       <div style={{ padding: "10px 14px" }}>
         {og.siteName && <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{og.siteName}</div>}
@@ -6908,11 +6920,23 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       style={{ display: "block", textDecoration: "none", color: "inherit" }}
                     >
                       {listing.og_image ? (
-                        <img
-                          src={httpsAssetUrl(listing.og_image)}
-                          alt={displayTitle}
-                          style={{ width: "100%", height: 230, objectFit: "contain", display: "block", background: "#fff" }}
-                        />
+                        <div
+                          style={{
+                            width: "100%",
+                            aspectRatio: "2 / 1",
+                            background: "#111827",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          }}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={httpsAssetUrl(listing.og_image)}
+                            alt={displayTitle}
+                            style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+                          />
+                        </div>
                       ) : null}
                       <div style={{ padding: 16, paddingBottom: 12 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
@@ -6993,11 +7017,23 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 >
                   <div style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                     {listing.og_image ? (
-                      <img
-                        src={httpsAssetUrl(listing.og_image)}
-                        alt={displayTitle}
-                        style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }}
-                      />
+                      <div
+                        style={{
+                          width: "100%",
+                          aspectRatio: "2 / 1",
+                          background: "#111827",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={httpsAssetUrl(listing.og_image)}
+                          alt={displayTitle}
+                          style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+                        />
+                      </div>
                     ) : null}
 
                     <div style={{ padding: 14, paddingBottom: 10 }}>
@@ -7408,11 +7444,24 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               </button>
             </div>
             {mobileBizDetailListing.og_image ? (
-              <img
-                src={httpsAssetUrl(mobileBizDetailListing.og_image)}
-                alt={mobileBizDetailListing.business_name || "Listing"}
-                style={{ width: "100%", maxHeight: 320, objectFit: "cover", display: "block" }}
-              />
+              <div
+                style={{
+                  width: "100%",
+                  aspectRatio: "2 / 1",
+                  maxHeight: 320,
+                  background: "#111827",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={httpsAssetUrl(mobileBizDetailListing.og_image)}
+                  alt={mobileBizDetailListing.business_name || "Listing"}
+                  style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+                />
+              </div>
             ) : null}
             <div style={{ padding: 16 }}>
               <div style={{ fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>

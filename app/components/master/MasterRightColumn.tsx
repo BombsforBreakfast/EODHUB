@@ -794,11 +794,23 @@ export default function MasterRightColumn({
                 >
                   <a href={listing.website_url} target="_blank" rel="noreferrer" style={{ display: "block", textDecoration: "none", color: "inherit" }}>
                     {listing.og_image ? (
-                      <img
-                        src={httpsAssetUrl(listing.og_image)}
-                        alt={displayTitle}
-                        style={{ width: "100%", height: 230, objectFit: "contain", display: "block", background: "#fff" }}
-                      />
+                      <div
+                        style={{
+                          width: "100%",
+                          aspectRatio: "2 / 1",
+                          background: "#111827",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={httpsAssetUrl(listing.og_image)}
+                          alt={displayTitle}
+                          style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+                        />
+                      </div>
                     ) : null}
                     <div style={{ padding: 16, paddingBottom: 12 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
