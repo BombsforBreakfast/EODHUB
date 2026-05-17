@@ -7,6 +7,7 @@ import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetail
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 import { getFeatureAccess } from "../lib/featureAccess";
+import { shouldEnforceMemberPaywall } from "../lib/paywallPaths";
 import {
   applyJobFilters,
   uniqueJobRegions,
@@ -16,7 +17,9 @@ import {
 } from "../lib/jobFilters";
 
 type ProfileRow = {
-  access_tier: string | null;
+  account_type: string | null;
+  subscription_status: string | null;
+  is_admin: boolean | null;
   verification_status: string | null;
 };
 
@@ -220,7 +223,7 @@ export default function JobsPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("access_tier, verification_status")
+        .select("account_type, subscription_status, is_admin, verification_status")
         .eq("user_id", uid)
         .maybeSingle();
 
@@ -230,13 +233,27 @@ export default function JobsPage() {
         return;
       }
 
-      const featureAccess = getFeatureAccess(p.access_tier);
+      const featureAccess = getFeatureAccess({
+        accountType: p.account_type,
+        subscriptionStatus: p.subscription_status,
+        authUserCreatedAtIso: authData.user?.created_at ?? null,
+        isAdmin: p.is_admin,
+      });
+      if (
+        shouldEnforceMemberPaywall() &&
+        !featureAccess.hasFullAccess &&
+        p.account_type !== "employer" &&
+        !p.is_admin
+      ) {
+        window.location.replace("/subscribe");
+        return;
+      }
       if (!mounted) return;
       setUserId(uid);
-      setCanViewFullJobs(featureAccess.canViewFullJobs);
-      setCanUseJobFilters(featureAccess.canUseJobFilters);
+      setCanViewFullJobs(true);
+      setCanUseJobFilters(true);
 
-      const limit = featureAccess.canViewFullJobs ? 500 : 5;
+      const limit = 500;
       const [{ data: jobsData, error }] = await Promise.all([
         supabase
           .from("jobs")

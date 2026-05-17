@@ -98,7 +98,6 @@ export default function OnboardingPage() {
             verification_status: "verified",
             is_approved: true,
             account_type: "admin",
-            access_tier: "master",
             display_name: "EOD HUB",
             first_name: null,
             last_name: null,

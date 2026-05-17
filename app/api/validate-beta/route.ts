@@ -7,7 +7,7 @@ import {
   jsonWithBetaAccessCookie,
 } from "@/app/lib/server/betaAccess";
 import {
-  BETA_EMAIL_NOT_FOUND_MESSAGE,
+  BETA_ACCESS_DENIED_MESSAGE,
   isEmailEligibleForBetaAccess,
 } from "@/app/lib/server/betaEligibility";
 import {
@@ -87,21 +87,19 @@ export async function POST(req: NextRequest) {
       { status: 503 },
     );
   }
-  if (!eligible) {
-    return NextResponse.json(
-      { success: false, message: BETA_EMAIL_NOT_FOUND_MESSAGE },
-      { status: 403 },
-    );
-  }
 
   const expected = getBetaAccessCode();
   if (!expected) {
     return NextResponse.json({ success: false }, { status: 503 });
   }
 
-  if (secretMatches(submittedCode, expected)) {
+  const codeOk = secretMatches(submittedCode, expected);
+  if (eligible && codeOk) {
     return jsonWithBetaAccessCookie({ success: true });
   }
 
-  return NextResponse.json({ success: false }, { status: 401 });
+  return NextResponse.json(
+    { success: false, message: BETA_ACCESS_DENIED_MESSAGE },
+    { status: 401 },
+  );
 }

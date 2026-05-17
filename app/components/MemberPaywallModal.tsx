@@ -7,6 +7,8 @@ type Props = {
   open: boolean;
   onClose: () => void;
   message?: string;
+  /** When true, only Subscribe — used after trial expires (no dismiss). */
+  requireSubscription?: boolean;
   /** Post–onboarding: information + acknowledgement, then continue to verification. No checkout. */
   onboardingAck?: {
     onContinue: () => void | Promise<void>;
@@ -17,14 +19,21 @@ const DEFAULT_MSG =
   "Your free trial has expired. Please subscribe for full access!";
 
 const ONBOARDING_BODY =
-  "EOD-HUB is free during BETA, and for the first 30-days after full launch. After which, new members will have a 10-day free trial period and there will be a membership fee of $1.99 a month. Your subscription helps us to operate, maintain, and improve the site.";
+  "EOD HUB is free during beta. After beta ends, new members receive a free trial period, then membership is $1.99/month unless you subscribe earlier. Your subscription helps us operate, maintain, and improve the site.";
 
-export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MSG, onboardingAck }: Props) {
+export default function MemberPaywallModal({
+  open,
+  onClose,
+  message = DEFAULT_MSG,
+  requireSubscription = false,
+  onboardingAck,
+}: Props) {
   const { t } = useTheme();
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [continuing, setContinuing] = useState(false);
 
   const isOnboarding = !!onboardingAck;
+  const blocking = requireSubscription && !isOnboarding;
 
   useEffect(() => {
     if (!open) {
@@ -33,7 +42,7 @@ export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MS
       return;
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !isOnboarding) onClose();
+      if (e.key === "Escape" && !isOnboarding && !blocking) onClose();
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -61,7 +70,7 @@ export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MS
         justifyContent: "center",
         padding: 16,
       }}
-      onClick={isOnboarding ? undefined : onClose}
+      onClick={isOnboarding || blocking ? undefined : onClose}
     >
       <div
         role="dialog"
@@ -135,22 +144,24 @@ export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MS
             </button>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={onClose}
-                style={{
-                  padding: "10px 16px",
-                  borderRadius: 10,
-                  border: `1px solid ${t.border}`,
-                  background: t.bg,
-                  color: t.text,
-                  fontWeight: 700,
-                  fontSize: 14,
-                  cursor: "pointer",
-                }}
-              >
-                Not now
-              </button>
+              {!blocking && (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  style={{
+                    padding: "10px 16px",
+                    borderRadius: 10,
+                    border: `1px solid ${t.border}`,
+                    background: t.bg,
+                    color: t.text,
+                    fontWeight: 700,
+                    fontSize: 14,
+                    cursor: "pointer",
+                  }}
+                >
+                  Not now
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -165,6 +176,7 @@ export default function MemberPaywallModal({ open, onClose, message = DEFAULT_MS
                   fontWeight: 700,
                   fontSize: 14,
                   cursor: "pointer",
+                  width: blocking ? "100%" : undefined,
                 }}
               >
                 Subscribe

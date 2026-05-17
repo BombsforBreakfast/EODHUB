@@ -15,7 +15,6 @@ import OnlineNowStrip from "../components/OnlineNowStrip";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 import SidebarThreadDrawer from "../components/SidebarThreadDrawer";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
-import { memberHasInteractionAccess } from "../lib/subscriptionAccess";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
@@ -3950,12 +3949,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           subscription_status: string | null;
           referral_code: string | null;
           is_admin: boolean | null;
-          access_tier: string | null;
           is_pure_admin: boolean | null;
           show_memorial_feed_cards: boolean | null;
         }>(supabase, authUser, {
           route: "app/(master)/page.tsx:init",
-          select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, access_tier, is_pure_admin, show_memorial_feed_cards",
+          select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, is_pure_admin, show_memorial_feed_cards",
         });
         if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
@@ -3988,16 +3986,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           return;
         }
 
-        const interactionOk = memberHasInteractionAccess({
+        const featureAccess = getFeatureAccess({
           accountType: profileCheck.account_type,
           subscriptionStatus: profileCheck.subscription_status ?? null,
           authUserCreatedAtIso: authUser.created_at ?? null,
           isAdmin: profileCheck.is_admin,
         });
-        const jobsAccess = getFeatureAccess((profileCheck as { access_tier?: string | null } | null)?.access_tier ?? null);
-        memberInteractionAllowedRef.current = interactionOk;
-        setCanViewFullJobs(jobsAccess.canViewFullJobs);
-        setCanUseJobFilters(jobsAccess.canUseJobFilters);
+        memberInteractionAllowedRef.current = featureAccess.hasFullAccess;
+        setCanViewFullJobs(featureAccess.canViewFullJobs);
+        setCanUseJobFilters(featureAccess.canUseJobFilters);
 
         setUserId(currentUserId);
 
@@ -4033,7 +4030,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         // Desktop shell already has dedicated left/right column loaders; avoid duplicate heavy fetches here.
         if (!inDesktopShell) {
           deferredTasks.push(
-            loadJobs(jobsAccess.canViewFullJobs ? 500 : 5).catch((err) => console.error("loadJobs failed:", err)),
+            loadJobs(featureAccess.canViewFullJobs ? 500 : 5).catch((err) => console.error("loadJobs failed:", err)),
             loadBusinessListings().catch((err) => console.error("loadBusinessListings failed:", err)),
             loadBizLikes(currentUserId).catch((err) => console.error("loadBizLikes failed:", err)),
             loadSavedJobs(currentUserId).catch((err) => console.error("loadSavedJobs failed:", err))

@@ -69,10 +69,8 @@ export async function POST(req: NextRequest) {
   if (error) {
     const dup = error.code === "23505" || /duplicate|unique/i.test(error.message ?? "");
     if (dup) {
-      return NextResponse.json(
-        { ok: false, message: "That email is already on the waitlist." },
-        { status: 409 },
-      );
+      // Same success shape as a new insert — do not confirm email is already registered.
+      return NextResponse.json({ ok: true });
     }
     return NextResponse.json(
       { ok: false, message: "Something went wrong. Please try again in a moment." },

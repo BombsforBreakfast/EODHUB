@@ -1,9 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup";
 
-/** Shown when email is not on waitlist and not an approved member (generic). */
-export const BETA_EMAIL_NOT_FOUND_MESSAGE =
-  "User not found. Please double check your email or join the waitlist.";
+/** Ineligible email or wrong code — same copy/status to prevent enumeration. */
+export const BETA_ACCESS_DENIED_MESSAGE = "Email or access code is incorrect.";
 
 async function emailOnWaitlist(client: SupabaseClient, normalizedEmail: string): Promise<boolean> {
   const { data, error } = await client

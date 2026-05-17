@@ -694,14 +694,19 @@ export default function MasterLeftColumn({
       if (cancelled || !uid) return;
       const { data: profileCheck } = await supabase
         .from("profiles")
-        .select("access_tier")
+        .select("account_type, subscription_status, is_admin")
         .eq("user_id", uid)
         .maybeSingle();
       if (cancelled) return;
-      const jobsAccess = getFeatureAccess((profileCheck as { access_tier?: string | null } | null)?.access_tier ?? null);
-      setCanViewFullJobs(jobsAccess.canViewFullJobs);
+      const featureAccess = getFeatureAccess({
+        accountType: (profileCheck as { account_type?: string | null } | null)?.account_type,
+        subscriptionStatus: (profileCheck as { subscription_status?: string | null } | null)?.subscription_status ?? null,
+        authUserCreatedAtIso: data.user?.created_at ?? null,
+        isAdmin: (profileCheck as { is_admin?: boolean | null } | null)?.is_admin,
+      });
+      setCanViewFullJobs(featureAccess.canViewFullJobs);
       await Promise.all([
-        loadJobs(jobsAccess.canViewFullJobs ? 500 : 5),
+        loadJobs(featureAccess.canViewFullJobs ? 500 : 5),
         loadSavedJobIds(uid),
         loadDesktopSavedEvents(uid),
         loadDesktopSavedJobs(uid),

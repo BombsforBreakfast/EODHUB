@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
+import { isPaywallEnforced, memberHasInteractionAccess } from "../lib/subscriptionAccess";
 
 export default function SubscribePage() {
   const { t } = useTheme();
@@ -12,6 +13,10 @@ export default function SubscribePage() {
 
   useEffect(() => {
     async function gate() {
+      if (!isPaywallEnforced()) {
+        window.location.href = "/";
+        return;
+      }
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         window.location.href = "/login";
@@ -19,7 +24,7 @@ export default function SubscribePage() {
       }
       const { data: p } = await supabase
         .from("profiles")
-        .select("verification_status, account_type, service, company_name")
+        .select("verification_status, account_type, service, company_name, subscription_status, is_admin")
         .eq("user_id", user.id)
         .maybeSingle();
       if (!p || (!p.service && !p.company_name)) {
@@ -32,6 +37,17 @@ export default function SubscribePage() {
       }
       if (p.verification_status !== "verified") {
         window.location.href = "/pending";
+        return;
+      }
+      if (
+        memberHasInteractionAccess({
+          accountType: p.account_type,
+          subscriptionStatus: p.subscription_status ?? null,
+          authUserCreatedAtIso: user.created_at ?? null,
+          isAdmin: p.is_admin,
+        })
+      ) {
+        window.location.href = "/";
         return;
       }
       setGateChecking(false);
@@ -84,7 +100,7 @@ export default function SubscribePage() {
         )}
 
         <div style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 20, padding: 36, marginBottom: 24 }}>
-          <div style={{ fontSize: 48, fontWeight: 900, letterSpacing: -2, lineHeight: 1 }}>$1.99</div>
+          <div style={{ fontSize: 48, fontWeight: 900, letterSpacing: -2, lineHeight: 1 }}>$2</div>
           <div style={{ fontSize: 16, color: t.textMuted, marginTop: 4, fontWeight: 600 }}>/month</div>
           <div style={{ fontSize: 13, color: t.textFaint, marginTop: 12, lineHeight: 1.5 }}>
             Free access through 1 June 2026. After that, new members get a 7-day trial, then billing unless you subscribed earlier.
@@ -128,7 +144,7 @@ export default function SubscribePage() {
             }}
           >
             {loading && <span className="btn-spinner" />}
-            Subscribe for $1.99/month
+            Subscribe for $2/month
           </button>
 
           <div style={{ marginTop: 14, fontSize: 12, color: t.textFaint }}>

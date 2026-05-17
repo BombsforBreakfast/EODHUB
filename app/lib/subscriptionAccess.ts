@@ -1,13 +1,13 @@
+import { isPaywallEnforced } from "./paywallWorkflow";
+
 /**
  * Member subscription / trial access (EOD HUB).
  *
- * Launch: full access until PAYWALL_LAUNCH_END (1 June 2026 00:00 America/New_York).
- * After launch:
- *   - Users who signed up before launch: in-app trial from launch through LEGACY_TRIAL_BILLING_START (8 June 2026 00:00 NY).
- *   - Users who sign up on or after launch: 7 calendar days from signup.
- * Stripe status active/trialing always grants interaction access.
+ * Beta: isPaywallEnforced() === false → all members have full access (no subscription friction).
+ * Launch (PAYWALL_ENFORCED=true): trial windows below, then Stripe active/trialing required.
+ * Employers and admins are always exempt.
  */
-
+export { isPaywallEnforced } from "./paywallWorkflow";
 export const TRIAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** 1 June 2026, 00:00 in America/New_York (EDT → UTC-4) */
@@ -30,14 +30,19 @@ function parseSignup(iso: string | null | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-/** Browsing / tab navigation — always allowed for verified users (handled by auth routes). */
+export function isPaidSubscriptionStatus(status: string | null | undefined): boolean {
+  return status === "active" || status === "trialing";
+}
+
+/** Full member access: paid subscription, in-app trial, launch calendar, admin, or employer. */
 export function memberHasInteractionAccess(input: MemberAccessInput): boolean {
+  if (!isPaywallEnforced()) return true;
+
   const now = input.now ?? new Date();
   if (input.isAdmin) return true;
   if (input.accountType === "employer") return true;
 
-  const status = input.subscriptionStatus ?? null;
-  if (status === "active" || status === "trialing") return true;
+  if (isPaidSubscriptionStatus(input.subscriptionStatus)) return true;
 
   if (now.getTime() < PAYWALL_LAUNCH_END.getTime()) return true;
 
@@ -59,6 +64,8 @@ export function computeStripeTrialEndUnix(
   authUserCreatedAtIso: string,
   now: Date = new Date()
 ): number | undefined {
+  if (!isPaywallEnforced()) return undefined;
+
   const signupAt = parseSignup(authUserCreatedAtIso);
   if (!signupAt) return undefined;
 

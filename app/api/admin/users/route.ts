@@ -38,47 +38,31 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const profileSelectWithMirrorsAndTier =
-    "user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count, access_tier";
   const profileSelectWithMirrors =
     "user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count";
-  const profileSelectWithTier =
-    "user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count, access_tier";
   const profileSelectBase =
     "user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count";
 
   // Fetch profiles and auth users. The mirrored name/email columns are deployed via
   // migration, so keep this compatible with environments that have not run it yet.
-  const [profilesWithTierRes, authUsersRes] = await Promise.all([
+  const [profilesRes, authUsersRes] = await Promise.all([
     adminClient
       .from("profiles")
-      .select(profileSelectWithMirrorsAndTier)
+      .select(profileSelectWithMirrors)
       .order("created_at", { ascending: false }),
     adminClient.auth.admin.listUsers({ perPage: 1000 }),
   ]);
 
-  let profilesRes = profilesWithTierRes as ProfilesQueryResult;
-  if (profilesRes.error) {
-    profilesRes = (await adminClient
-      .from("profiles")
-      .select(profileSelectWithMirrors)
-      .order("created_at", { ascending: false })) as ProfilesQueryResult;
-  }
-  if (profilesRes.error) {
-    profilesRes = (await adminClient
-      .from("profiles")
-      .select(profileSelectWithTier)
-      .order("created_at", { ascending: false })) as ProfilesQueryResult;
-  }
-  if (profilesRes.error) {
-    profilesRes = (await adminClient
+  let profilesQuery = profilesRes as ProfilesQueryResult;
+  if (profilesQuery.error) {
+    profilesQuery = (await adminClient
       .from("profiles")
       .select(profileSelectBase)
       .order("created_at", { ascending: false })) as ProfilesQueryResult;
   }
 
-  if (profilesRes.error) {
-    return NextResponse.json({ error: profilesRes.error.message }, { status: 500 });
+  if (profilesQuery.error) {
+    return NextResponse.json({ error: profilesQuery.error.message }, { status: 500 });
   }
 
   // Build a map of auth user metadata by user_id
@@ -91,7 +75,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Merge: supplement missing profile names from auth metadata
-  const profiles = (profilesRes.data ?? []).map((p) => {
+  const profiles = (profilesQuery.data ?? []).map((p) => {
     const authMeta = authUserMap.get(String(p.user_id));
     const row = p as Record<string, unknown> & { email?: string | null; name?: string | null };
     let first_name = typeof p.first_name === "string" ? p.first_name : null;

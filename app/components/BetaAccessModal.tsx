@@ -181,17 +181,12 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
         const data = (await res.json()) as { success?: boolean; message?: string };
         if (res.ok && data.success) {
           unlockWithBetaCode();
-        } else if (res.status === 403) {
-          setCodeError(
-            data.message ??
-              "User not found. Please double check your email or join the waitlist.",
-          );
         } else if (res.status === 503) {
           setCodeError(
             "Beta access isn't configured on this server. If you're developing locally, restart npm run dev after setting BETA_ACCESS_CODE in .env.local.",
           );
         } else if (res.status === 401) {
-          setCodeError("That code doesn't look right. Check your invite and try again.");
+          setCodeError(data.message ?? "Email or access code is incorrect.");
         } else if (res.status === 429) {
           setCodeError(
             data.message ?? "Too many attempts. Please wait a few minutes and try again.",
@@ -199,7 +194,7 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
         } else if (res.status === 400) {
           setCodeError(data.message ?? "Please check your email and access code.");
         } else {
-          setCodeError("That code doesn't look right. Check your invite and try again.");
+          setCodeError(data.message ?? "Email or access code is incorrect.");
         }
       } catch {
         setCodeError("Something went wrong. Please try again in a moment.");

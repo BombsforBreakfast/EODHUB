@@ -8,6 +8,7 @@ import DesktopLayout from "../DesktopLayout";
 import MemberPaywallModal from "../MemberPaywallModal";
 import SidebarThreadDrawer from "../SidebarThreadDrawer";
 import { supabase } from "../../lib/lib/supabaseClient";
+import { isMemberPaywallExemptPath, isExemptFromMemberPaywall, shouldEnforceMemberPaywall } from "../../lib/paywallPaths";
 import { memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { MasterShellProvider } from "./masterShellContext";
 import { loadActiveProfile } from "../../lib/auth/activeProfile";
@@ -94,12 +95,23 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       }
       const p = profileCheck as { show_memorial_feed_cards?: boolean | null };
       setShowMemorialFeedCards(p.show_memorial_feed_cards !== false);
-      memberInteractionAllowedRef.current = memberHasInteractionAccess({
+      const allowed = memberHasInteractionAccess({
         accountType: profileCheck.account_type,
         subscriptionStatus: profileCheck.subscription_status ?? null,
         authUserCreatedAtIso: user.created_at ?? null,
         isAdmin: profileCheck.is_admin,
       });
+      memberInteractionAllowedRef.current = allowed;
+
+      if (
+        shouldEnforceMemberPaywall() &&
+        !allowed &&
+        !isExemptFromMemberPaywall(profileCheck.account_type, profileCheck.is_admin) &&
+        typeof window !== "undefined" &&
+        !isMemberPaywallExemptPath(window.location.pathname)
+      ) {
+        window.location.replace("/subscribe");
+      }
     }
 
     void loadShellUser();

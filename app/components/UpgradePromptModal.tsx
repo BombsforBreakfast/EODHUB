@@ -13,7 +13,7 @@ type Props = {
 export default function UpgradePromptModal({
   open,
   onClose,
-  ctaLabel = "Upgrade to Senior - $2/month",
+  ctaLabel = "Subscribe — $2/month",
   onUpgradeClick,
 }: Props) {
   const { t } = useTheme();
@@ -68,7 +68,7 @@ export default function UpgradePromptModal({
           Unlock Full Job Access
         </h2>
         <p style={{ margin: "10px 0 0", fontSize: 14, lineHeight: 1.6, color: t.textMuted }}>
-          Upgrade to Senior for full access to the job board and premium tools.
+          Subscribe for full access to the job board and all member features.
         </p>
 
         <ul style={{ margin: "14px 0 0", paddingLeft: 18, color: t.text, lineHeight: 1.7, fontSize: 14 }}>

@@ -7,11 +7,11 @@ import ReportProblemButton from "../../components/ReportProblemButton";
 import PrivacySettingsCard from "../../components/account/PrivacySettingsCard";
 import MemorialFeedPreferencesCard from "../../components/account/MemorialFeedPreferencesCard";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
+import { isPaywallEnforced, memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 
-function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null }) {
+function BillingCard({ hasActiveMembership }: { hasActiveMembership: boolean }) {
   const { t } = useTheme();
   const [loading, setLoading] = useState(false);
-  const isActive = subscriptionStatus === "active" || subscriptionStatus === "trialing";
 
   async function handleSubscribe() {
     setLoading(true);
@@ -41,30 +41,15 @@ function BillingCard({ subscriptionStatus }: { subscriptionStatus: string | null
     } finally { setLoading(false); }
   }
 
-  const statusLabel: Record<string, string> = {
-    active: "Active",
-    trialing: "Trial",
-    past_due: "Past Due",
-    cancelled: "Cancelled",
-  };
-  const statusColor: Record<string, string> = {
-    active: "#16a34a",
-    trialing: "#2563eb",
-    past_due: "#dc2626",
-    cancelled: "#6b7280",
-  };
-  const label = subscriptionStatus ? (statusLabel[subscriptionStatus] ?? subscriptionStatus) : "No subscription";
-  const color = subscriptionStatus ? (statusColor[subscriptionStatus] ?? "#6b7280") : "#6b7280";
-
   return (
     <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: "18px 24px", background: t.surface, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
       <div style={{ flex: 1, minWidth: 200 }}>
         <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Membership</div>
         <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
-          $2/month · <span style={{ fontWeight: 700, color }}>{label}</span>
+          $2/month — full access to EOD HUB
         </div>
       </div>
-      {isActive ? (
+      {hasActiveMembership ? (
         <button
           onClick={handlePortal}
           disabled={loading}
@@ -111,6 +96,7 @@ type Profile = {
 export default function MyAccountPage() {
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [authCreatedAt, setAuthCreatedAt] = useState<string | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [adminPendingCount, setAdminPendingCount] = useState(0);
   const [authProviders, setAuthProviders] = useState<string[]>([]);
@@ -178,6 +164,7 @@ export default function MyAccountPage() {
       }
 
       setCurrentUserId(userId);
+      setAuthCreatedAt(data.user?.created_at ?? null);
       setAuthProviders((data.user?.identities ?? []).map((i: { provider: string }) => i.provider));
       const p = await loadProfile(userId);
       if (p?.is_admin) loadAdminPendingCount();
@@ -365,10 +352,17 @@ export default function MyAccountPage() {
         </div>
       )}
 
-      {/* Billing Card — employers are always free, members/businesses show subscription status */}
-      {!loading && profile?.account_type !== "employer" && (
+      {/* Billing Card — employers are always free; members manage or start subscription here */}
+      {!loading && isPaywallEnforced() && profile?.account_type !== "employer" && (
         <div style={{ marginTop: 16 }}>
-          <BillingCard subscriptionStatus={profile?.subscription_status ?? null} />
+          <BillingCard
+            hasActiveMembership={memberHasInteractionAccess({
+              accountType: profile?.account_type,
+              subscriptionStatus: profile?.subscription_status ?? null,
+              authUserCreatedAtIso: authCreatedAt,
+              isAdmin: profile?.is_admin,
+            })}
+          />
         </div>
       )}
 
