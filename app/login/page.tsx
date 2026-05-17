@@ -33,6 +33,8 @@ export default function LoginPage() {
   const configuredTurnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
   const [signupCount, setSignupCount] = useState<number | null>(null);
   const [countFlash, setCountFlash] = useState(false);
+  const [signupError, setSignupError] = useState<string | null>(null);
+  const [signupAwaitingEmail, setSignupAwaitingEmail] = useState(false);
 
   // Persist ?ref= referral code through signup flow via localStorage
   useEffect(() => {
@@ -184,38 +186,78 @@ export default function LoginPage() {
   }
 
   async function handleSignup() {
+    setSignupError(null);
+    setSignupAwaitingEmail(false);
+
     if (password !== confirmPassword) {
-      alert("Passwords do not match.");
+      setSignupError("Passwords do not match.");
       return;
     }
 
     try {
       setSubmitting(true);
 
+      const validateRes = await fetch("/api/auth/validate-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const validateData = (await validateRes.json()) as { ok?: boolean; message?: string; email?: string };
+      if (!validateRes.ok || !validateData.ok) {
+        setSignupError(
+          validateData.message ??
+            (validateRes.status === 429
+              ? "Too many attempts. Please wait a few minutes and try again."
+              : "Please use a real email address."),
+        );
+        return;
+      }
+
+      const normalizedEmail = validateData.email ?? email.trim().toLowerCase();
+
       if (!await verifyTurnstile()) {
-        alert("Please complete the security check.");
+        setSignupError("Please complete the security check.");
         turnstileRef.current?.reset();
         setTurnstileToken(null);
         return;
       }
 
       clearAppAuthState();
-      const { error: signUpError } = await supabase.auth.signUp({ email, password });
+      const redirectTo = `${window.location.origin}/auth/callback?next=/onboarding`;
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: normalizedEmail,
+        password,
+        options: { emailRedirectTo: redirectTo },
+      });
 
       if (signUpError) {
-        alert("Signup error: " + signUpError.message);
+        setSignupError(signUpError.message);
         return;
       }
 
-      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-
-      if (signInError || !signInData.user) {
-        alert("Sign-in after signup failed: " + (signInError?.message ?? "No user"));
+      if (signUpData.session) {
+        markAppSessionActive(true);
+        window.location.href = "/onboarding";
         return;
       }
 
-      markAppSessionActive(true);
-      window.location.href = "/onboarding";
+      if (signUpData.user) {
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password,
+        });
+
+        if (!signInError && signInData.user) {
+          markAppSessionActive(true);
+          window.location.href = "/onboarding";
+          return;
+        }
+
+        setSignupAwaitingEmail(true);
+        return;
+      }
+
+      setSignupError("Something went wrong. Please try again in a moment.");
     } finally {
       setSubmitting(false);
     }
@@ -424,7 +466,25 @@ export default function LoginPage() {
       )}
 
       {/* ── Login / Signup flow ── */}
-      {mode !== "forgot" && (
+      {mode === "signup" && signupAwaitingEmail && (
+        <div
+          style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 12, padding: 20, textAlign: "center", marginTop: 16 }}
+        >
+          <div style={{ fontWeight: 700, marginBottom: 6, color: "#14532d" }}>Check your email</div>
+          <div style={{ fontSize: 14, color: "#166534" }}>
+            We sent a confirmation link to <strong>{email.trim().toLowerCase()}</strong>. Click the link to continue setting up your account.
+          </div>
+          <button
+            type="button"
+            onClick={() => { setSignupAwaitingEmail(false); setMode("login"); }}
+            style={{ ...buttonSecondary, marginTop: 14, width: "100%" }}
+          >
+            Back to Login
+          </button>
+        </div>
+      )}
+
+      {mode !== "forgot" && !(mode === "signup" && signupAwaitingEmail) && (
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -440,7 +500,10 @@ export default function LoginPage() {
             type="email"
             placeholder="Email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              setSignupError(null);
+            }}
             style={inputStyle}
           />
 
@@ -526,6 +589,11 @@ export default function LoginPage() {
             </>
           ) : (
             <>
+              {signupError && (
+                <div style={{ fontSize: 14, color: "#b91c1c", lineHeight: 1.4 }} role="alert">
+                  {signupError}
+                </div>
+              )}
               <button
                 type="submit"
                 disabled={submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError)}

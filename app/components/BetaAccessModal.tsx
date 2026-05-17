@@ -6,18 +6,22 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useState,
   type CSSProperties,
   type FormEvent,
 } from "react";
-import { createPortal } from "react-dom";
 import { Eye, EyeOff } from "lucide-react";
-import { supabase } from "@/app/lib/lib/supabaseClient";
 import EodCrabLogo from "@/app/components/EodCrabLogo";
+import { validateEmailForRegistration } from "@/app/lib/email-validation";
 
 const STORAGE_KEY = "beta_access_granted";
+
+export type BetaGatePhase = "checking" | "blocked" | "granted";
+
+type BetaAccessModalProps = {
+  onPhaseChange?: (phase: BetaGatePhase) => void;
+};
 
 const WAITLIST_THANK_YOU =
   "Thanks — you're on the waitlist. You'll receive an email when the doors open.";
@@ -62,23 +66,9 @@ const WAITLIST_SERVICE_OPTIONS = [
   "Civilian Bomb Tech",
 ] as const;
 
-type WaitlistRow = {
-  first_name: string;
-  last_name: string;
-  email: string;
-  service: string;
-};
-
-function isValidEmail(value: string): boolean {
-  const v = value.trim();
-  if (!v) return false;
-  // Practical check without going overboard
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
-}
-
-export default function BetaAccessModal() {
-  /** null = not yet read localStorage; true = gate blocking login; false = unlocked (valid code was used before). */
-  const [showModal, setShowModal] = useState<boolean | null>(null);
+export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps) {
+  const [phase, setPhase] = useState<BetaGatePhase>("checking");
+  const [accessEmail, setAccessEmail] = useState("");
   const [accessCode, setAccessCode] = useState("");
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -107,44 +97,107 @@ export default function BetaAccessModal() {
     return () => window.clearInterval(id);
   }, [launchTarget]);
 
-  useLayoutEffect(() => {
-    try {
-      const granted = window.localStorage.getItem(STORAGE_KEY) === "true";
-      setShowModal(!granted);
-    } catch {
-      setShowModal(true);
-    }
-  }, []);
+  const setPhaseAndNotify = useCallback(
+    (next: BetaGatePhase) => {
+      setPhase(next);
+      onPhaseChange?.(next);
+    },
+    [onPhaseChange],
+  );
 
-  /** Only valid beta code may persist and hide the modal. */
+  useEffect(() => {
+    let cancelled = false;
+
+    async function resolveGrant() {
+      setPhaseAndNotify("checking");
+      try {
+        const res = await fetch("/api/validate-beta", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+        if (cancelled) return;
+        const data = (await res.json()) as { granted?: boolean };
+        if (data.granted === true) {
+          try {
+            window.localStorage.setItem(STORAGE_KEY, "true");
+          } catch {
+            /* ignore */
+          }
+          setPhaseAndNotify("granted");
+          return;
+        }
+        try {
+          if (window.localStorage.getItem(STORAGE_KEY) === "true") {
+            window.localStorage.removeItem(STORAGE_KEY);
+          }
+        } catch {
+          /* ignore */
+        }
+        setPhaseAndNotify("blocked");
+      } catch {
+        if (!cancelled) setPhaseAndNotify("blocked");
+      }
+    }
+
+    void resolveGrant();
+    return () => {
+      cancelled = true;
+    };
+  }, [setPhaseAndNotify]);
+
+  /** Only after successful POST /api/validate-beta (httpOnly cookie + local mirror). */
   const unlockWithBetaCode = useCallback(() => {
     try {
       window.localStorage.setItem(STORAGE_KEY, "true");
     } catch {
       /* ignore quota / private mode */
     }
-    setShowModal(false);
-  }, []);
+    setPhaseAndNotify("granted");
+  }, [setPhaseAndNotify]);
 
   const handleCodeSubmit = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       setCodeError(null);
-      const entered = accessCode.trim();
-      if (!entered) {
-        setCodeError("That code doesn't look right. Check your invite and try again.");
+      const enteredEmail = accessEmail.trim();
+      const enteredCode = accessCode.trim();
+      if (!enteredEmail) {
+        setCodeError("Please enter your email address.");
+        return;
+      }
+      if (!enteredCode) {
+        setCodeError("Please enter an access code.");
         return;
       }
       setCodeSubmitting(true);
       try {
         const res = await fetch("/api/validate-beta", {
           method: "POST",
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: entered }),
+          body: JSON.stringify({ email: enteredEmail, code: enteredCode }),
         });
-        const data = (await res.json()) as { success?: boolean };
+        const data = (await res.json()) as { success?: boolean; message?: string };
         if (res.ok && data.success) {
           unlockWithBetaCode();
+        } else if (res.status === 403) {
+          setCodeError(
+            data.message ??
+              "User not found. Please double check your email or join the waitlist.",
+          );
+        } else if (res.status === 503) {
+          setCodeError(
+            "Beta access isn't configured on this server. If you're developing locally, restart npm run dev after setting BETA_ACCESS_CODE in .env.local.",
+          );
+        } else if (res.status === 401) {
+          setCodeError("That code doesn't look right. Check your invite and try again.");
+        } else if (res.status === 429) {
+          setCodeError(
+            data.message ?? "Too many attempts. Please wait a few minutes and try again.",
+          );
+        } else if (res.status === 400) {
+          setCodeError(data.message ?? "Please check your email and access code.");
         } else {
           setCodeError("That code doesn't look right. Check your invite and try again.");
         }
@@ -154,33 +207,38 @@ export default function BetaAccessModal() {
         setCodeSubmitting(false);
       }
     },
-    [accessCode, unlockWithBetaCode],
+    [accessEmail, accessCode, unlockWithBetaCode],
   );
 
   const handleWaitlistSubmit = useCallback(
     async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       setWaitlistError(null);
-      const em = email.trim();
-      if (!isValidEmail(em)) {
-        setWaitlistError("Please enter a valid email address.");
+      const clientCheck = validateEmailForRegistration(email);
+      if (!clientCheck.ok) {
+        setWaitlistError(clientCheck.message);
         return;
       }
       setWaitlistSubmitting(true);
       try {
-        const row: WaitlistRow = {
-          first_name: firstName.trim(),
-          last_name: lastName.trim(),
-          email: em,
-          service: service.trim(),
-        };
-        const { error } = await supabase.from("waitlist_signups").insert(row);
-        if (error) {
-          const dup = error.code === "23505" || /duplicate|unique/i.test(error.message ?? "");
-          const msg = dup
-            ? "That email is already on the waitlist."
-            : "Something went wrong. Please try again in a moment.";
-          setWaitlistError(msg);
+        const res = await fetch("/api/waitlist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: clientCheck.email,
+            first_name: firstName.trim(),
+            last_name: lastName.trim(),
+            service: service.trim(),
+          }),
+        });
+        const data = (await res.json()) as { ok?: boolean; message?: string };
+        if (!res.ok || !data.ok) {
+          setWaitlistError(
+            data.message ??
+              (res.status === 429
+                ? "Too many attempts. Please wait a few minutes and try again."
+                : "Something went wrong. Please try again in a moment."),
+          );
           return;
         }
         setFirstName("");
@@ -197,9 +255,11 @@ export default function BetaAccessModal() {
     [email, firstName, lastName, service],
   );
 
-  if (showModal === null || !showModal) {
+  if (phase === "granted") {
     return null;
   }
+
+  const isChecking = phase === "checking";
 
   const inputBase: CSSProperties = {
     width: "100%",
@@ -422,9 +482,24 @@ export default function BetaAccessModal() {
             boxShadow: "0 24px 80px rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.06)",
             background: "linear-gradient(165deg, rgba(22, 26, 22, 0.98) 0%, rgba(10, 12, 14, 0.99) 100%)",
             padding: "28px 24px 26px",
-            animation: "betaGatePopIn 380ms ease-out 40ms both",
+            animation: isChecking ? undefined : "betaGatePopIn 380ms ease-out 40ms both",
           }}
         >
+          {isChecking ? (
+            <div
+              style={{
+                textAlign: "center",
+                padding: "48px 24px",
+                color: "rgba(220, 225, 215, 0.92)",
+                fontSize: 15,
+                fontWeight: 600,
+              }}
+              aria-live="polite"
+            >
+              One moment…
+            </div>
+          ) : (
+          <>
           <div style={{ textAlign: "center", marginBottom: 14 }}>
             <div style={{ marginTop: 0, display: "flex", justifyContent: "center" }}>
               <div style={{ transform: "scale(0.72)", transformOrigin: "center top" }}>
@@ -657,6 +732,22 @@ export default function BetaAccessModal() {
           </div>
 
           <form onSubmit={handleCodeSubmit} style={{ marginBottom: 8 }}>
+            <label htmlFor="beta-access-email" style={labelStyle}>
+              Email address
+            </label>
+            <input
+              id="beta-access-email"
+              type="email"
+              autoComplete="email"
+              placeholder="Enter your email address"
+              value={accessEmail}
+              onChange={(ev) => {
+                setAccessEmail(ev.target.value);
+                setCodeError(null);
+              }}
+              disabled={codeSubmitting}
+              style={{ ...inputBase, marginBottom: 12 }}
+            />
             <label htmlFor="beta-access-code" style={labelStyle}>
               Access Code
             </label>
@@ -721,10 +812,12 @@ export default function BetaAccessModal() {
           >
             {BETA_PRICING_FOOTNOTE}
           </p>
+          </>
+          )}
         </div>
       </div>
     </>
   );
 
-  return createPortal(modalTree, document.body);
+  return modalTree;
 }

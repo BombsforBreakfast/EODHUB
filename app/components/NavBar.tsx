@@ -63,6 +63,7 @@ export default function NavBar() {
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isFounder, setIsFounder] = useState(false);
   const [isEmployer, setIsEmployer] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
   const [adminPendingTotal, setAdminPendingTotal] = useState(0);
@@ -78,7 +79,7 @@ export default function NavBar() {
   const [showNotifPanel, setShowNotifPanel] = useState(false);
 
   /** In-app notifications (not DMs — those stay on Sidebars). */
-  const notificationsV2Enabled = getNotificationsV2Enabled(currentUserId);
+  const notificationsV2Enabled = getNotificationsV2Enabled(isFounder);
   const unreadNotifCount = notificationsV2Enabled
     ? notifications.filter((n) => !n.read_at && !n.archived_at).length
     : notifications.length;
@@ -164,10 +165,28 @@ export default function NavBar() {
       setUserInitial("?");
       setAvatarPhotoUrl(null);
       setIsAdmin(false);
+      setIsFounder(false);
       setIsEmployer(false);
       setVerificationStatus(null);
       setAdminPendingTotal(0);
       setGroupPendingTotal(0);
+    }
+
+    async function loadFounderStatus(accessToken: string) {
+      try {
+        const res = await fetch("/api/me/is-founder", {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!mounted) return;
+        if (!res.ok) {
+          setIsFounder(false);
+          return;
+        }
+        const data = (await res.json()) as { isFounder?: boolean };
+        setIsFounder(data.isFounder === true);
+      } catch {
+        if (mounted) setIsFounder(false);
+      }
     }
 
     async function loadNavProfile(user: User) {
@@ -213,6 +232,9 @@ export default function NavBar() {
       if (uid && session?.user) {
         await loadNavProfile(session.user);
         await loadNotifications(uid);
+        if (session.access_token) {
+          void loadFounderStatus(session.access_token);
+        }
         // Load group pending count for any logged-in user (not just site admins)
         const { data: { session: s } } = await supabase.auth.getSession();
         if (s?.access_token) {
@@ -241,6 +263,9 @@ export default function NavBar() {
       if (uid && session?.user) {
         void loadNavProfile(session.user);
         void loadNotifications(uid);
+        if (session.access_token) {
+          void loadFounderStatus(session.access_token);
+        }
       } else {
         setUserInitial("?");
       }
