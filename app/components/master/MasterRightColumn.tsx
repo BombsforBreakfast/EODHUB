@@ -641,6 +641,34 @@ export default function MasterRightColumn({
         </div>
       </div>
 
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 14, marginBottom: 6 }}>
+          <Link
+            href="/lemon-lot"
+            {...sectionTitleLinkZoom}
+            style={{
+              fontSize: 15,
+              fontWeight: 900,
+              color: t.text,
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+              display: "inline-block",
+              transform: "scale(1)",
+              transition: "transform 0.15s ease",
+              cursor: "pointer",
+            }}
+          >
+            Lemon Lot
+          </Link>
+          <a href="/lemon-lot" style={{ color: "#2563eb", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}>
+            Browse →
+          </a>
+        </div>
+        <p style={{ margin: 0, fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
+          Classifieds — housing, PCS, vehicles, services. 30-day listings; contact opens Sidebars.
+        </p>
+      </div>
+
       {/* Featured / business */}
       <div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 14, marginBottom: 10 }}>

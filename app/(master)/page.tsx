@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import React, { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import React, { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
@@ -35,6 +36,9 @@ import { KangarooCourtVerdictBanner } from "../components/KangarooCourtVerdictBa
 import DesktopLayout from "../components/DesktopLayout";
 import { useMasterShell } from "../components/master/masterShellContext";
 import { sectionTitleLinkZoom } from "../components/master/masterShared";
+import { LemonLotMarketplaceView } from "../components/lemonLot/LemonLotMarketplaceView";
+
+const MasterLeftColumnMobile = dynamic(() => import("../components/master/MasterLeftColumn"), { ssr: true });
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../components/StarRating";
@@ -771,13 +775,23 @@ export default function HomePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const { isDesktopShell, openSidebarPeer, showMemorialFeedCards, setShowMemorialFeedCards } = useMasterShell();
-  const [mobileTab, setMobileTab] = useState<"feed" | "jobs" | "businesses">(() => {
+  const [mobileTab, setMobileTab] = useState<"feed" | "dashboard" | "jobs" | "businesses" | "lemonlot">(() => {
     if (typeof window !== "undefined") {
       const p = new URLSearchParams(window.location.search).get("tab");
-      if (p === "jobs" || p === "businesses") return p;
+      if (p === "jobs" || p === "businesses" || p === "lemonlot" || p === "dashboard") return p;
     }
     return "feed";
   });
+
+  const goMobileMasterTab = useCallback((tab: "feed" | "dashboard" | "jobs" | "businesses" | "lemonlot") => {
+    setMobileTab(tab);
+    if (typeof window === "undefined") return;
+    const u = new URL(window.location.href);
+    if (tab === "feed") u.searchParams.delete("tab");
+    else u.searchParams.set("tab", tab);
+    const qs = u.searchParams.toString();
+    window.history.replaceState(null, "", `${u.pathname}${qs ? `?${qs}` : ""}${u.hash}`);
+  }, []);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [currentUserHasPhoto, setCurrentUserHasPhoto] = useState<boolean>(true);
   const [photoNudgeDismissed, setPhotoNudgeDismissed] = useState<boolean>(() =>
@@ -958,6 +972,17 @@ export default function HomePage() {
     check();
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
+  }, []);
+
+  useEffect(() => {
+    function onPopState() {
+      const p = new URLSearchParams(window.location.search).get("tab");
+      const next =
+        p === "jobs" || p === "businesses" || p === "lemonlot" || p === "dashboard" ? p : "feed";
+      setMobileTab(next);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   useEffect(() => {
@@ -2647,17 +2672,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       typeof window !== "undefined" && window.localStorage?.getItem("eod_debug_kc") === "1";
     const { data: kcAuth } = await supabase.auth.getSession();
     const kcViewerId = kcAuth.session?.user?.id ?? null;
-
-    if (kcDebug) {
-      console.info("[KC loadPosts] auth snapshot", {
-        sessionUserId: session?.user?.id,
-        kcViewerIdFresh: kcViewerId,
-        currentUserIdArg: currentUserId,
-        closureUserId: userId,
-        effectiveUserId,
-        postIdsCount: postIds.length,
-      });
-    }
 
     if (postIds.length > 0) {
       const { data: courtsRaw, error: courtsErr } = await supabase
@@ -4428,7 +4442,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
   const renderFeedCenter = () => (
         <main
           style={{
-            display: isMobile ? (mobileTab === "feed" ? "block" : "none") : undefined,
+            display: isMobile
+              ? mobileTab === "feed" || mobileTab === "lemonlot" || mobileTab === "dashboard"
+                ? "block"
+                : "none"
+              : undefined,
             minWidth: 0,
             width: "100%",
             maxWidth: "100%",
@@ -4436,7 +4454,21 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             boxSizing: "border-box",
           }}
         >
-
+          {isMobile && mobileTab === "dashboard" ? (
+            <div style={{ maxHeight: "calc(100vh - 160px)", overflowY: "auto", paddingBottom: 16 }}>
+              <MasterLeftColumnMobile
+                userId={userId}
+                memberInteractionAllowedRef={memberInteractionAllowedRef}
+                onMemberPaywall={() => setMemberPaywallOpen(true)}
+                railState="expanded"
+                onToggleRail={() => {}}
+                sideRailsReady
+              />
+            </div>
+          ) : isMobile && mobileTab === "lemonlot" ? (
+            <LemonLotMarketplaceView variant="embedded" />
+          ) : (
+            <>
           {/* Pending Members ΓÇö community vouching */}
           {userId && pendingMembers.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
@@ -6442,6 +6474,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               );
             })}
           </div>
+            </>
+          )}
         </main>
   );
 
@@ -6461,6 +6495,54 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         color: t.text,
       }}
     >
+      {isMobile && !isDesktopShell && (
+        <nav
+          aria-label="Home sections"
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "nowrap",
+            overflowX: "auto",
+            marginBottom: 14,
+            paddingBottom: 10,
+            borderBottom: `1px solid ${t.border}`,
+            WebkitOverflowScrolling: "touch",
+          }}
+        >
+          {(
+            [
+              { id: "feed" as const, label: "Feed" },
+              { id: "dashboard" as const, label: "Dashboard" },
+              { id: "jobs" as const, label: "Jobs" },
+              { id: "businesses" as const, label: "Biz" },
+              { id: "lemonlot" as const, label: "Lemon Lot" },
+            ] as const
+          ).map((tab) => {
+            const active = mobileTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => goMobileMasterTab(tab.id)}
+                style={{
+                  flex: "0 0 auto",
+                  padding: "8px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${active ? t.text : t.border}`,
+                  background: active ? t.text : t.surface,
+                  color: active ? t.bg : t.text,
+                  fontWeight: 800,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </nav>
+      )}
 
       <DesktopLayout
         isMobile={isMobile}

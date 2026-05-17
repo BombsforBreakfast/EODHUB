@@ -12,6 +12,29 @@ import UrlPreviewCard from "../components/UrlPreviewCard";
 import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
 import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
+import {
+  displayListingDescription,
+  displayListingImage,
+  displayListingTitle,
+  parseLemonLotListingId,
+  stripLemonLotListingUrl,
+  type MarketplaceListingRow,
+} from "../lib/lemonLot";
+
+type LemonLotShareSnapshot = {
+  id: string;
+  title: string;
+  description: string | null;
+  manual_notes: string | null;
+  price: string | null;
+  location: string | null;
+  og_image: string | null;
+  og_title: string | null;
+  og_description: string | null;
+  listing_mode: string;
+  external_url: string | null;
+  gallery_images: string[] | null;
+};
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -126,6 +149,7 @@ export default function SidebarPage() {
   const [flaggingId, setFlaggingId] = useState<string | null>(null);
   const [urlPreviews, setUrlPreviews] = useState<Record<string, UrlPreview | null>>({});
   const [eventInviteMeta, setEventInviteMeta] = useState<Record<string, EventInviteMeta>>({});
+  const [listingShareMeta, setListingShareMeta] = useState<Record<string, LemonLotShareSnapshot>>({});
   const [selectedInviteEventId, setSelectedInviteEventId] = useState<string | null>(null);
   const previewFetchesRef = useRef<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -156,6 +180,33 @@ export default function SidebarPage() {
       const n = profile as { first_name: string | null; last_name: string | null; display_name: string | null } | null;
       setMyName(n?.display_name || `${n?.first_name ?? ""} ${n?.last_name ?? ""}`.trim() || "Someone");
       const convs = await loadConversations(user.id);
+      try {
+        const pending = sessionStorage.getItem("eod_sidebar_pending_conv");
+        if (pending) {
+          sessionStorage.removeItem("eod_sidebar_pending_conv");
+          const exists = convs.some((c) => c.id === pending);
+          if (exists) {
+            setActiveConvId(pending);
+            await loadMessages(pending);
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session?.access_token) {
+              await fetch("/api/mark-messages-read", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${session.access_token}`,
+                },
+                body: JSON.stringify({ conversation_id: pending }),
+              });
+            }
+            setConversations((prev) => prev.map((c) => (c.id === pending ? { ...c, unread_count: 0 } : c)));
+            subscribeToMessages(pending);
+            if (typeof window !== "undefined" && window.innerWidth <= 900) setMobileView("thread");
+          }
+        }
+      } catch {
+        /* ignore */
+      }
       // Auto-show Requests tab if there are pending requests and no ?with= pre-selects a thread
       const params = new URLSearchParams(window.location.search);
       if (!params.get("with")) {
@@ -193,8 +244,8 @@ export default function SidebarPage() {
       return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
     });
 
-    setConversations(sorted);
-    return sorted;
+      setConversations(sorted);
+      return sorted;
   }
 
   async function openOrCreateConversation(otherId: string) {
@@ -481,6 +532,31 @@ export default function SidebarPage() {
 
     void loadEventInvites();
   }, [messages, userId]);
+
+  useEffect(() => {
+    const listingIds = Array.from(
+      new Set(messages.map((msg) => parseLemonLotListingId(msg.content || "")).filter((id): id is string => Boolean(id))),
+    );
+    if (listingIds.length === 0) return;
+
+    void (async () => {
+      const { data, error } = await supabase
+        .from("marketplace_listings")
+        .select("id, title, description, manual_notes, price, location, og_image, og_title, og_description, listing_mode, external_url, gallery_images")
+        .in("id", listingIds);
+      if (error) {
+        console.error("Lemon Lot share cards load error:", error);
+        return;
+      }
+      setListingShareMeta((prev) => {
+        const next = { ...prev };
+        ((data ?? []) as LemonLotShareSnapshot[]).forEach((row) => {
+          next[row.id] = row;
+        });
+        return next;
+      });
+    })();
+  }, [messages]);
 
   async function toggleInviteEventAttendance(eventId: string, status: "interested" | "going") {
     if (!userId) return;
@@ -892,8 +968,12 @@ export default function SidebarPage() {
         const isEditing = editingMsgId === msg.id;
         const isConfirm = confirmDeleteId === msg.id;
         const inviteEventId = parseEventInviteId(msg.content || "");
+        const lemonLotListingId = parseLemonLotListingId(msg.content || "");
         const inviteMeta = inviteEventId ? eventInviteMeta[inviteEventId] : null;
-        const visibleMessageContent = inviteEventId ? stripEventInviteUrl(msg.content || "") : msg.content;
+        const lemonRow = lemonLotListingId ? listingShareMeta[lemonLotListingId] : null;
+        let visibleMessageContent = msg.content || "";
+        if (inviteEventId) visibleMessageContent = stripEventInviteUrl(visibleMessageContent);
+        else if (lemonLotListingId) visibleMessageContent = stripLemonLotListingUrl(visibleMessageContent);
         return (
           <div
             key={msg.id}
@@ -950,7 +1030,7 @@ export default function SidebarPage() {
               </div>
             ) : !isConfirm && (
               <div style={{
-                maxWidth: inviteEventId ? "min(360px, 86%)" : extractFirstUrl(msg.content || "") ? "60%" : "72%",
+                maxWidth: inviteEventId || lemonLotListingId ? "min(360px, 86%)" : extractFirstUrl(msg.content || "") ? "60%" : "72%",
                 padding: msg.gif_url && !msg.content ? "4px" : "10px 14px",
                 borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
                 background: isMe ? "#111" : t.badgeBg,
@@ -983,7 +1063,47 @@ export default function SidebarPage() {
                     </div>
                   </button>
                 )}
-                {msg.content && !inviteEventId && (() => {
+                {lemonRow ? (
+                  <a
+                    href={`/lemon-lot?listing=${lemonRow.id}`}
+                    style={{
+                      marginTop: visibleMessageContent ? 8 : 0,
+                      width: "100%",
+                      textAlign: "left",
+                      border: `1px solid ${isMe ? "rgba(255,255,255,0.22)" : t.border}`,
+                      borderRadius: 14,
+                      padding: 0,
+                      overflow: "hidden",
+                      background: isMe ? "rgba(255,255,255,0.08)" : t.surface,
+                      color: isMe ? "#fff" : t.text,
+                      cursor: "pointer",
+                      textDecoration: "none",
+                      display: "block",
+                    }}
+                  >
+                    {displayListingImage(lemonRow as MarketplaceListingRow) ? (
+                      <img
+                        src={displayListingImage(lemonRow as MarketplaceListingRow)!}
+                        alt=""
+                        style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover", display: "block" }}
+                      />
+                    ) : null}
+                    <div style={{ padding: 12 }}>
+                      <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.8, textTransform: "uppercase", opacity: 0.75 }}>Lemon Lot</div>
+                      <div style={{ marginTop: 3, fontWeight: 900, lineHeight: 1.25 }}>{displayListingTitle(lemonRow as MarketplaceListingRow)}</div>
+                      <div style={{ marginTop: 5, fontSize: 12, opacity: 0.78 }}>
+                        {[lemonRow.price, lemonRow.location].filter(Boolean).join(" · ")}
+                      </div>
+                      {displayListingDescription(lemonRow as MarketplaceListingRow) ? (
+                        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.82, lineHeight: 1.4 }}>
+                          {(displayListingDescription(lemonRow as MarketplaceListingRow) ?? "").slice(0, 160)}
+                          {(displayListingDescription(lemonRow as MarketplaceListingRow) ?? "").length > 160 ? "…" : ""}
+                        </div>
+                      ) : null}
+                    </div>
+                  </a>
+                ) : null}
+                {msg.content && !inviteEventId && !lemonLotListingId && (() => {
                   const url = extractFirstUrl(msg.content);
                   const preview = url ? urlPreviews[url] : null;
                   return preview ? (

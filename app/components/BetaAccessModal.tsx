@@ -93,11 +93,6 @@ export default function BetaAccessModal() {
   /** After a successful waitlist insert: thank-you only (does NOT unlock the gate). */
   const [waitlistSubmitted, setWaitlistSubmitted] = useState(false);
 
-  const expectedCode = useMemo(
-    () => (process.env.NEXT_PUBLIC_BETA_ACCESS_CODE ?? "").trim(),
-    [],
-  );
-
   const launchTarget = useMemo(() => getBetaLaunchTarget(), []);
   const [countdown, setCountdown] = useState<CountdownParts>(() =>
     computeCountdownParts(launchTarget, new Date()),
@@ -132,7 +127,7 @@ export default function BetaAccessModal() {
   }, []);
 
   const handleCodeSubmit = useCallback(
-    (e: FormEvent<HTMLFormElement>) => {
+    async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       setCodeError(null);
       const entered = accessCode.trim();
@@ -140,22 +135,26 @@ export default function BetaAccessModal() {
         setCodeError("That code doesn't look right. Check your invite and try again.");
         return;
       }
-      if (!expectedCode) {
-        setCodeError("That code doesn't look right. Check your invite and try again.");
-        return;
-      }
       setCodeSubmitting(true);
       try {
-        if (entered === expectedCode) {
+        const res = await fetch("/api/validate-beta", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: entered }),
+        });
+        const data = (await res.json()) as { success?: boolean };
+        if (res.ok && data.success) {
           unlockWithBetaCode();
         } else {
           setCodeError("That code doesn't look right. Check your invite and try again.");
         }
+      } catch {
+        setCodeError("Something went wrong. Please try again in a moment.");
       } finally {
         setCodeSubmitting(false);
       }
     },
-    [accessCode, expectedCode, unlockWithBetaCode],
+    [accessCode, unlockWithBetaCode],
   );
 
   const handleWaitlistSubmit = useCallback(

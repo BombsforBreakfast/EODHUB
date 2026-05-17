@@ -24,6 +24,7 @@ import {
   memorialTheme,
 } from "../components/memorial/memorialModalShared";
 import { isMarinesService, MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
+import { displayListingTitle, LEMON_LOT_CATEGORIES, type MarketplaceListingRow } from "../lib/lemonLot";
 
 type BusinessListing = {
   id: string;
@@ -168,6 +169,18 @@ function downloadWaitlistCsv(rows: WaitlistSignupRow[]): void {
   URL.revokeObjectURL(url);
 }
 
+function isoToDatetimeLocalValue(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function datetimeLocalValueToIso(local: string): string {
+  const d = new Date(local);
+  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
 type Tab =
   | "businesses"
   | "jobs"
@@ -179,7 +192,8 @@ type Tab =
   | "directory"
   | "engagement"
   | "news"
-  | "waitlist";
+  | "waitlist"
+  | "lemon_lot";
 
 type NewsIntakeDebugPayload = {
   provider: string;
@@ -667,6 +681,23 @@ export default function AdminPage() {
     if (!q) return waitlistRows;
     return waitlistRows.filter((r) => waitlistHaystack(r).includes(q));
   }, [waitlistRows, waitlistSearch]);
+
+  const [lemonLotRows, setLemonLotRows] = useState<MarketplaceListingRow[]>([]);
+  const [lemonLotLoading, setLemonLotLoading] = useState(false);
+  const [lemonLotError, setLemonLotError] = useState<string | null>(null);
+  const [lemonLotSearch, setLemonLotSearch] = useState("");
+  const [lemonLotSellerLabels, setLemonLotSellerLabels] = useState<Record<string, string>>({});
+  const [lemonLotModalRow, setLemonLotModalRow] = useState<MarketplaceListingRow | null>(null);
+
+  const filteredLemonLotRows = useMemo(() => {
+    const q = lemonLotSearch.trim().toLowerCase();
+    if (!q) return lemonLotRows;
+    return lemonLotRows.filter((r) => {
+      const label = lemonLotSellerLabels[r.user_id] ?? "";
+      const blob = [r.id, r.title, r.category, r.description ?? "", r.location ?? "", label].join(" ").toLowerCase();
+      return blob.includes(q);
+    });
+  }, [lemonLotRows, lemonLotSearch, lemonLotSellerLabels]);
 
   const [pendingCounts, setPendingCounts] = useState({
     biz: 0,
@@ -1478,6 +1509,7 @@ export default function AdminPage() {
     if (activeTab === "engagement") void loadEngagement(engagementRange);
     if (activeTab === "news") void loadNews(newsFilter);
     if (activeTab === "waitlist") void loadWaitlist();
+    if (activeTab === "lemon_lot") void loadLemonLot();
   }, [pendingOnly, activeTab, authorized, engagementRange, newsFilter, bugsFilter]);
 
   useEffect(() => {
@@ -2082,6 +2114,104 @@ export default function AdminPage() {
     });
   }
 
+  async function loadLemonLot() {
+    setLemonLotLoading(true);
+    setLemonLotError(null);
+    try {
+      const { data, error } = await supabase
+        .from("marketplace_listings")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(500);
+      if (error) {
+        setLemonLotError(error.message);
+        setLemonLotRows([]);
+        return;
+      }
+      const rows = (data ?? []) as MarketplaceListingRow[];
+      setLemonLotRows(rows);
+      const ids = [...new Set(rows.map((r) => r.user_id))];
+      if (ids.length === 0) {
+        setLemonLotSellerLabels({});
+        return;
+      }
+      const { data: profs, error: perr } = await supabase
+        .from("profiles")
+        .select("user_id, display_name, first_name, last_name")
+        .in("user_id", ids);
+      if (perr) {
+        console.warn("loadLemonLot profiles", perr.message);
+      }
+      const map: Record<string, string> = {};
+      for (const p of (profs ?? []) as { user_id: string; display_name: string | null; first_name: string | null; last_name: string | null }[]) {
+        const uid = p.user_id;
+        const n =
+          p.display_name?.trim() ||
+          `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() ||
+          uid.slice(0, 8);
+        map[uid] = n;
+      }
+      setLemonLotSellerLabels(map);
+    } catch (e: unknown) {
+      setLemonLotError(e instanceof Error ? e.message : String(e));
+      setLemonLotRows([]);
+    } finally {
+      setLemonLotLoading(false);
+    }
+  }
+
+  function deleteLemonLotListing(id: string, label: string) {
+    askConfirm(`Delete Lemon Lot listing “${label}”?`, async () => {
+      const key = `lemonlot-${id}`;
+      setActionLoading(key);
+      try {
+        const { error } = await supabase.from("marketplace_listings").delete().eq("id", id);
+        if (error) {
+          alert(error.message);
+          return;
+        }
+        showToast("Listing deleted.");
+        if (lemonLotModalRow?.id === id) setLemonLotModalRow(null);
+        await loadLemonLot();
+      } finally {
+        setActionLoading(null);
+      }
+    });
+  }
+
+  async function saveLemonLotModal() {
+    if (!lemonLotModalRow) return;
+    const key = `lemonlot-save-${lemonLotModalRow.id}`;
+    setActionLoading(key);
+    try {
+      const r = lemonLotModalRow;
+      const { error } = await supabase
+        .from("marketplace_listings")
+        .update({
+          title: r.title.trim(),
+          category: r.category,
+          subcategory: r.subcategory?.trim() || null,
+          description: r.description?.trim() || null,
+          price: r.price?.trim() || null,
+          location: r.location?.trim() || null,
+          status: r.status,
+          approved: r.approved,
+          featured: r.featured,
+          expires_at: r.expires_at,
+        })
+        .eq("id", r.id);
+      if (error) {
+        alert(error.message);
+        return;
+      }
+      showToast("Listing updated.");
+      setLemonLotModalRow(null);
+      await loadLemonLot();
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
   async function updateBugReportStatus(id: string, status: BugReportStatus) {
     setActionLoading(id + "-status");
     try {
@@ -2630,6 +2760,177 @@ export default function AdminPage() {
         </div>
       )}
 
+      {lemonLotModalRow && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            zIndex: 10002,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div
+            style={{
+              background: t.surface,
+              borderRadius: 16,
+              padding: "24px 28px",
+              maxWidth: 520,
+              width: "100%",
+              boxShadow: "0 8px 40px rgba(0,0,0,0.2)",
+              maxHeight: "90vh",
+              overflow: "auto",
+            }}
+          >
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 6, color: t.text }}>Edit Lemon Lot listing</div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14 }}>
+              <span style={{ fontFamily: "monospace" }}>{lemonLotModalRow.id}</span>
+              {" · "}
+              <Link href={`/profile/${lemonLotModalRow.user_id}`} style={{ color: "#2563eb", fontWeight: 700 }}>
+                {lemonLotSellerLabels[lemonLotModalRow.user_id] ?? "Seller profile"}
+              </Link>
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Title</label>
+              <input
+                value={lemonLotModalRow.title}
+                onChange={(e) => setLemonLotModalRow({ ...lemonLotModalRow, title: e.target.value })}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Category</label>
+              <input
+                list="lemon-lot-admin-categories"
+                value={lemonLotModalRow.category}
+                onChange={(e) => setLemonLotModalRow({ ...lemonLotModalRow, category: e.target.value })}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <datalist id="lemon-lot-admin-categories">
+                {LEMON_LOT_CATEGORIES.map((c) => (
+                  <option key={c.id} value={c.id} />
+                ))}
+              </datalist>
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Subcategory (optional)</label>
+              <input
+                value={lemonLotModalRow.subcategory ?? ""}
+                onChange={(e) => setLemonLotModalRow({ ...lemonLotModalRow, subcategory: e.target.value || null })}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Description</label>
+              <textarea
+                value={lemonLotModalRow.description ?? ""}
+                onChange={(e) => setLemonLotModalRow({ ...lemonLotModalRow, description: e.target.value || null })}
+                rows={4}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14, resize: "vertical" }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Price</label>
+              <input
+                value={lemonLotModalRow.price ?? ""}
+                onChange={(e) => setLemonLotModalRow({ ...lemonLotModalRow, price: e.target.value || null })}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Location</label>
+              <input
+                value={lemonLotModalRow.location ?? ""}
+                onChange={(e) => setLemonLotModalRow({ ...lemonLotModalRow, location: e.target.value || null })}
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Status</label>
+              <select
+                value={lemonLotModalRow.status}
+                onChange={(e) =>
+                  setLemonLotModalRow({
+                    ...lemonLotModalRow,
+                    status: e.target.value as MarketplaceListingRow["status"],
+                  })
+                }
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              >
+                <option value="active">active</option>
+                <option value="expired">expired</option>
+                <option value="removed">removed</option>
+              </select>
+              <label style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Expires (local)</label>
+              <input
+                type="datetime-local"
+                value={isoToDatetimeLocalValue(lemonLotModalRow.expires_at)}
+                onChange={(e) =>
+                  setLemonLotModalRow({ ...lemonLotModalRow, expires_at: datetimeLocalValueToIso(e.target.value) })
+                }
+                style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.input, color: t.text, fontSize: 14 }}
+              />
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: t.text, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={lemonLotModalRow.approved}
+                  onChange={(e) => setLemonLotModalRow({ ...lemonLotModalRow, approved: e.target.checked })}
+                />
+                Approved (public when active and not expired)
+              </label>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: t.text, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={lemonLotModalRow.featured}
+                  onChange={(e) => setLemonLotModalRow({ ...lemonLotModalRow, featured: e.target.checked })}
+                />
+                Featured
+              </label>
+              <div style={{ fontSize: 12, color: t.textMuted, paddingTop: 4 }}>
+                Listing mode: <strong style={{ color: t.text }}>{lemonLotModalRow.listing_mode}</strong>
+                {lemonLotModalRow.external_url ? (
+                  <>
+                    {" · "}
+                    <a href={lemonLotModalRow.external_url} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", wordBreak: "break-all" }}>
+                      {lemonLotModalRow.external_url}
+                    </a>
+                  </>
+                ) : null}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap", marginTop: 20 }}>
+              <button
+                type="button"
+                onClick={() =>
+                  deleteLemonLotListing(lemonLotModalRow.id, displayListingTitle(lemonLotModalRow).slice(0, 80))
+                }
+                disabled={actionLoading === `lemonlot-${lemonLotModalRow.id}`}
+                style={{ ...actionBtn("#ef4444"), marginRight: "auto" }}
+              >
+                {actionLoading === `lemonlot-${lemonLotModalRow.id}` ? "…" : "Delete listing"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setLemonLotModalRow(null)}
+                disabled={actionLoading === `lemonlot-save-${lemonLotModalRow.id}`}
+                style={{ padding: "10px 20px", borderRadius: 10, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, cursor: "pointer", fontSize: 14 }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveLemonLotModal()}
+                disabled={actionLoading === `lemonlot-save-${lemonLotModalRow.id}` || !lemonLotModalRow.title.trim()}
+                style={{
+                  padding: "10px 20px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#1d4ed8",
+                  color: "white",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontSize: 14,
+                  opacity: actionLoading === `lemonlot-save-${lemonLotModalRow.id}` ? 0.7 : 1,
+                }}
+              >
+                {actionLoading === `lemonlot-save-${lemonLotModalRow.id}` ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ maxWidth: 1000, width: "100%", minWidth: 0, margin: "0 auto", boxSizing: "border-box" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 20, flexWrap: "wrap" }}>
           <h1 style={{ fontSize: 32, fontWeight: 900, margin: 0, color: t.text, display: "flex", alignItems: "center", gap: 10 }}>
@@ -2681,6 +2982,9 @@ export default function AdminPage() {
           </button>
           <button type="button" style={tabStyle("waitlist")} onClick={() => setActiveTab("waitlist")}>
             Waitlist
+          </button>
+          <button type="button" style={tabStyle("lemon_lot")} onClick={() => setActiveTab("lemon_lot")}>
+            Lemon Lot
           </button>
 
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: t.textMuted }}>
@@ -4770,6 +5074,201 @@ export default function AdminPage() {
             )}
 
             {!waitlistLoading && waitlistRows.length > 0 && filteredWaitlistRows.length === 0 && (
+              <div style={{ color: t.textMuted, fontSize: 14, padding: 12 }}>No rows match your search.</div>
+            )}
+          </div>
+        )}
+
+        {/* ── LEMON LOT TAB ── */}
+        {activeTab === "lemon_lot" && (
+          <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                alignItems: "center",
+                gap: 12,
+                justifyContent: "space-between",
+                border: `1px solid ${t.border}`,
+                borderRadius: 12,
+                padding: "14px 16px",
+                background: t.surface,
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>Lemon Lot (marketplace)</div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: t.text, marginTop: 2 }}>
+                  {lemonLotLoading ? "…" : `${lemonLotRows.length.toLocaleString()} listings`}
+                  {lemonLotSearch.trim() ? (
+                    <span style={{ fontSize: 14, fontWeight: 600, color: t.textMuted, marginLeft: 8 }}>
+                      ({filteredLemonLotRows.length} shown)
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", flex: 1, justifyContent: "flex-end", minWidth: 0 }}>
+                <input
+                  type="search"
+                  value={lemonLotSearch}
+                  onChange={(e) => setLemonLotSearch(e.target.value)}
+                  placeholder="Search title, seller, category, id…"
+                  aria-label="Filter Lemon Lot listings"
+                  style={{
+                    minWidth: 200,
+                    maxWidth: 360,
+                    flex: "1 1 200px",
+                    padding: "10px 12px",
+                    borderRadius: 10,
+                    border: `1px solid ${t.inputBorder}`,
+                    background: t.input,
+                    color: t.text,
+                    fontSize: 14,
+                    boxSizing: "border-box",
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => void loadLemonLot()}
+                  disabled={lemonLotLoading}
+                  style={{ ...actionBtn("#111"), opacity: lemonLotLoading ? 0.7 : 1 }}
+                >
+                  {lemonLotLoading ? "…" : "↻ Refresh"}
+                </button>
+              </div>
+            </div>
+
+            {lemonLotError && (
+              <div
+                style={{
+                  border: "1px solid #fca5a5",
+                  borderRadius: 12,
+                  padding: 14,
+                  background: isDark ? "#2a1515" : "#fff5f5",
+                  color: "#b91c1c",
+                  fontSize: 14,
+                  fontWeight: 600,
+                }}
+              >
+                {lemonLotError}
+              </div>
+            )}
+
+            {!lemonLotLoading && !lemonLotError && lemonLotRows.length === 0 && (
+              <div style={{ color: t.textFaint, fontSize: 14, padding: 16, border: `1px dashed ${t.border}`, borderRadius: 12 }}>
+                No marketplace listings yet.
+              </div>
+            )}
+
+            {lemonLotLoading && lemonLotRows.length === 0 && !lemonLotError && (
+              <div style={{ color: t.textMuted, fontSize: 14, padding: 16 }}>Loading listings…</div>
+            )}
+
+            {filteredLemonLotRows.length > 0 && !isMobile && (
+              <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface }}>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14, minWidth: 720 }}>
+                    <thead>
+                      <tr style={{ background: t.badgeBg, color: t.text, textAlign: "left" }}>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}` }}>Title</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}` }}>Seller</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}` }}>Category</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}` }}>Status</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}`, whiteSpace: "nowrap" }}>Approved</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}`, whiteSpace: "nowrap" }}>Created</th>
+                        <th style={{ padding: "12px 14px", fontWeight: 800, borderBottom: `1px solid ${t.border}`, width: 160, textAlign: "right" }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredLemonLotRows.map((r) => {
+                        const title = displayListingTitle(r);
+                        return (
+                          <tr key={r.id} style={{ borderBottom: `1px solid ${t.border}` }}>
+                            <td style={{ padding: "12px 14px", fontWeight: 600, color: t.text, verticalAlign: "top", maxWidth: 220 }}>
+                              <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+                              <span style={{ fontSize: 11, color: t.textFaint, fontFamily: "monospace" }}>{r.id.slice(0, 8)}…</span>
+                            </td>
+                            <td style={{ padding: "12px 14px", color: t.text, verticalAlign: "top" }}>
+                              <Link href={`/profile/${r.user_id}`} style={{ color: "#2563eb", fontWeight: 600 }}>
+                                {lemonLotSellerLabels[r.user_id] ?? r.user_id.slice(0, 8)}
+                              </Link>
+                            </td>
+                            <td style={{ padding: "12px 14px", color: t.textMuted, verticalAlign: "top" }}>{r.category}</td>
+                            <td style={{ padding: "12px 14px", color: t.textMuted, verticalAlign: "top" }}>{r.status}</td>
+                            <td style={{ padding: "12px 14px", color: t.textMuted, verticalAlign: "top" }}>{r.approved ? "Yes" : "No"}</td>
+                            <td style={{ padding: "12px 14px", color: t.textMuted, whiteSpace: "nowrap", verticalAlign: "top" }}>
+                              {new Date(r.created_at).toLocaleString()}
+                            </td>
+                            <td style={{ padding: "12px 14px", textAlign: "right", verticalAlign: "top" }}>
+                              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setLemonLotModalRow({ ...r })}
+                                  disabled={actionLoading === `lemonlot-save-${r.id}`}
+                                  style={{ ...actionBtn("#1d4ed8"), fontSize: 12, padding: "6px 12px" }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => deleteLemonLotListing(r.id, title.slice(0, 120))}
+                                  disabled={actionLoading === `lemonlot-${r.id}`}
+                                  style={{ ...actionBtn("#ef4444"), fontSize: 12, padding: "6px 12px" }}
+                                >
+                                  {actionLoading === `lemonlot-${r.id}` ? "…" : "Delete"}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {filteredLemonLotRows.length > 0 && isMobile && (
+              <div style={{ display: "grid", gap: 10 }}>
+                {filteredLemonLotRows.map((r) => {
+                  const title = displayListingTitle(r);
+                  return (
+                    <div key={r.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
+                      <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{title}</div>
+                      <div style={{ fontSize: 12, color: t.textFaint, marginTop: 4, fontFamily: "monospace" }}>{r.id}</div>
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 8 }}>
+                        Seller:{" "}
+                        <Link href={`/profile/${r.user_id}`} style={{ color: "#2563eb", fontWeight: 600 }}>
+                          {lemonLotSellerLabels[r.user_id] ?? r.user_id.slice(0, 8)}
+                        </Link>
+                      </div>
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
+                        {r.category} · {r.status} · {r.approved ? "approved" : "not approved"}
+                      </div>
+                      <div style={{ fontSize: 12, color: t.textFaint, marginTop: 8 }}>{new Date(r.created_at).toLocaleString()}</div>
+                      <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          type="button"
+                          onClick={() => setLemonLotModalRow({ ...r })}
+                          style={{ ...actionBtn("#1d4ed8"), fontSize: 12, padding: "6px 12px" }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => deleteLemonLotListing(r.id, title.slice(0, 120))}
+                          disabled={actionLoading === `lemonlot-${r.id}`}
+                          style={{ ...actionBtn("#ef4444"), fontSize: 12, padding: "6px 12px" }}
+                        >
+                          {actionLoading === `lemonlot-${r.id}` ? "…" : "Delete"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {!lemonLotLoading && lemonLotRows.length > 0 && filteredLemonLotRows.length === 0 && (
               <div style={{ color: t.textMuted, fontSize: 14, padding: 12 }}>No rows match your search.</div>
             )}
           </div>
