@@ -141,8 +141,17 @@ export async function POST(
     poc_phone?: string | null;
   } | null;
 
-  const title = body?.title?.trim();
-  const date = body?.date?.trim();
+  const title = typeof body?.title === "string" ? body.title.trim() : null;
+  const date = typeof body?.date === "string" ? body.date.trim() : null;
+  const description = typeof body?.description === "string" ? body.description.trim() : null;
+  const organization = typeof body?.organization === "string" ? body.organization.trim() : null;
+  const signup_url = typeof body?.signup_url === "string" ? body.signup_url.trim() : null;
+  const image_url = typeof body?.image_url === "string" ? body.image_url.trim() : null;
+  const location = typeof body?.location === "string" ? body.location.trim() : null;
+  const event_time = typeof body?.event_time === "string" ? body.event_time.trim() : null;
+  const poc_name = typeof body?.poc_name === "string" ? body.poc_name.trim() : null;
+  const poc_phone = typeof body?.poc_phone === "string" ? body.poc_phone.trim() : null;
+
   if (!title || !date) {
     return NextResponse.json({ error: "Title and date are required." }, { status: 400 });
   }
@@ -151,15 +160,15 @@ export async function POST(
   const insertRow = {
     user_id: userId,
     title,
-    description: body?.description?.trim() || null,
+    description: description || null,
     date,
-    organization: body?.organization?.trim() || unit.name,
-    signup_url: body?.signup_url?.trim() || null,
-    image_url: body?.image_url?.trim() || null,
-    location: body?.location?.trim() || null,
-    event_time: body?.event_time?.trim() || null,
-    poc_name: body?.poc_name?.trim() || null,
-    poc_phone: body?.poc_phone?.trim() || null,
+    organization: organization || unit.name,
+    signup_url: signup_url || null,
+    image_url: image_url || null,
+    location: location || null,
+    event_time: event_time || null,
+    poc_name: poc_name || null,
+    poc_phone: poc_phone || null,
     unit_id: unit.id,
     visibility: "group",
   };
@@ -179,9 +188,9 @@ export async function POST(
   });
   const wallPostContent = [
     `Added a group event: ${title}`,
-    body?.event_time?.trim() ? `Time: ${body.event_time.trim()}` : null,
+    event_time ? `Time: ${event_time}` : null,
     `Date: ${formattedDate}`,
-    body?.location?.trim() ? `Location: ${body.location.trim()}` : null,
+    location ? `Location: ${location}` : null,
   ].filter(Boolean).join(" · ");
 
   await adminClient.from("unit_posts").insert({
@@ -189,7 +198,7 @@ export async function POST(
     user_id: userId,
     post_type: "post",
     content: wallPostContent,
-    photo_url: body?.image_url?.trim() || null,
+    photo_url: image_url || null,
     meta: { source: "group_event_create", event_id: data.id },
   });
 
