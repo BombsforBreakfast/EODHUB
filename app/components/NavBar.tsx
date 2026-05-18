@@ -929,31 +929,12 @@ export default function NavBar() {
                 <div className="nav-hub-modal-grid">
                   {[
                     { label: "Feed", href: "/", emoji: "🏠", badge: 0, onNav: null },
-                    {
-                      label: "Dashboard",
-                      href: isNarrowViewport ? "/?tab=dashboard" : "/",
-                      emoji: "📊",
-                      badge: 0,
-                      onNav: null,
-                    },
                     { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤", badge: 0, onNav: null },
-                    {
-                      label: "Jobs",
-                      href: isNarrowViewport ? "/?tab=jobs" : "/jobs",
-                      emoji: "💼",
-                      badge: 0,
-                      onNav: null,
-                    },
-                    {
-                      label: "Businesses/Orgs",
-                      href: isNarrowViewport ? "/?tab=businesses" : "/businesses",
-                      emoji: "🏢",
-                      badge: 0,
-                      onNav: null,
-                    },
+                    { label: "Jobs", href: "/jobs", emoji: "💼", badge: 0, onNav: null },
+                    { label: "Businesses/Orgs", href: "/businesses", emoji: "🏢", badge: 0, onNav: null },
                     { label: "Resources", href: "/resources", emoji: "📚", badge: 0, onNav: null },
                     { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
-                    { label: "Lemon Lot", href: isNarrowViewport ? "/?tab=lemonlot" : "/lemon-lot", emoji: "🍋", badge: 0, onNav: null },
+                    { label: "Lemon Lot", href: "/lemon-lot", emoji: "🍋", badge: 0, onNav: null },
                     { label: "Groups", href: "/units", emoji: "🪖", badge: groupPendingTotal, onNav: null },
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
                     ...(canAccessRabbithole

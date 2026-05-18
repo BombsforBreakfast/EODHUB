@@ -35,9 +35,7 @@ import { KangarooCourtVerdictBanner } from "../components/KangarooCourtVerdictBa
 import DesktopLayout from "../components/DesktopLayout";
 import { useMasterShell } from "../components/master/masterShellContext";
 import { sectionTitleLinkZoom } from "../components/master/masterShared";
-import { LemonLotMarketplaceView } from "../components/lemonLot/LemonLotMarketplaceView";
 
-const MasterLeftColumnMobile = dynamic(() => import("../components/master/MasterLeftColumn"), { ssr: true });
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../components/StarRating";
@@ -774,23 +772,6 @@ export default function HomePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const { isDesktopShell, openSidebarPeer, showMemorialFeedCards, setShowMemorialFeedCards } = useMasterShell();
-  const [mobileTab, setMobileTab] = useState<"feed" | "dashboard" | "jobs" | "businesses" | "lemonlot">(() => {
-    if (typeof window !== "undefined") {
-      const p = new URLSearchParams(window.location.search).get("tab");
-      if (p === "jobs" || p === "businesses" || p === "lemonlot" || p === "dashboard") return p;
-    }
-    return "feed";
-  });
-
-  const goMobileMasterTab = useCallback((tab: "feed" | "dashboard" | "jobs" | "businesses" | "lemonlot") => {
-    setMobileTab(tab);
-    if (typeof window === "undefined") return;
-    const u = new URL(window.location.href);
-    if (tab === "feed") u.searchParams.delete("tab");
-    else u.searchParams.set("tab", tab);
-    const qs = u.searchParams.toString();
-    window.history.replaceState(null, "", `${u.pathname}${qs ? `?${qs}` : ""}${u.hash}`);
-  }, []);
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [currentUserHasPhoto, setCurrentUserHasPhoto] = useState<boolean>(true);
   const [photoNudgeDismissed, setPhotoNudgeDismissed] = useState<boolean>(() =>
@@ -973,15 +954,23 @@ export default function HomePage() {
     return () => window.removeEventListener("resize", check);
   }, []);
 
+  /** Legacy mobile ?tab= links → dedicated routes (no in-page section tabs on mobile). */
   useEffect(() => {
-    function onPopState() {
-      const p = new URLSearchParams(window.location.search).get("tab");
-      const next =
-        p === "jobs" || p === "businesses" || p === "lemonlot" || p === "dashboard" ? p : "feed";
-      setMobileTab(next);
-    }
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (!tab || tab === "feed") return;
+    const dest: Record<string, string> = {
+      jobs: "/jobs",
+      businesses: "/businesses",
+      lemonlot: "/lemon-lot",
+      dashboard: "/",
+    };
+    const path = dest[tab];
+    if (!path) return;
+    const u = new URL(window.location.href);
+    u.searchParams.delete("tab");
+    const qs = u.searchParams.toString();
+    const target = path === "/" ? `/${qs ? `?${qs}` : ""}` : path;
+    window.location.replace(target);
   }, []);
 
   useEffect(() => {
@@ -4439,11 +4428,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
   const renderFeedCenter = () => (
         <main
           style={{
-            display: isMobile
-              ? mobileTab === "feed" || mobileTab === "lemonlot" || mobileTab === "dashboard"
-                ? "block"
-                : "none"
-              : undefined,
             minWidth: 0,
             width: "100%",
             maxWidth: "100%",
@@ -4451,20 +4435,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             boxSizing: "border-box",
           }}
         >
-          {isMobile && mobileTab === "dashboard" ? (
-            <div style={{ maxHeight: "calc(100vh - 160px)", overflowY: "auto", paddingBottom: 16 }}>
-              <MasterLeftColumnMobile
-                userId={userId}
-                memberInteractionAllowedRef={memberInteractionAllowedRef}
-                onMemberPaywall={() => setMemberPaywallOpen(true)}
-                railState="expanded"
-                onToggleRail={() => {}}
-                sideRailsReady
-              />
-            </div>
-          ) : isMobile && mobileTab === "lemonlot" ? (
-            <LemonLotMarketplaceView variant="embedded" />
-          ) : (
             <>
           {/* Pending Members ΓÇö community vouching */}
           {userId && pendingMembers.length > 0 && (
@@ -6472,7 +6442,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             })}
           </div>
             </>
-          )}
         </main>
   );
 
@@ -6492,55 +6461,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         color: t.text,
       }}
     >
-      {isMobile && !isDesktopShell && (
-        <nav
-          aria-label="Home sections"
-          style={{
-            display: "flex",
-            gap: 6,
-            flexWrap: "nowrap",
-            overflowX: "auto",
-            marginBottom: 14,
-            paddingBottom: 10,
-            borderBottom: `1px solid ${t.border}`,
-            WebkitOverflowScrolling: "touch",
-          }}
-        >
-          {(
-            [
-              { id: "feed" as const, label: "Feed" },
-              { id: "dashboard" as const, label: "Dashboard" },
-              { id: "jobs" as const, label: "Jobs" },
-              { id: "businesses" as const, label: "Biz" },
-              { id: "lemonlot" as const, label: "Lemon Lot" },
-            ] as const
-          ).map((tab) => {
-            const active = mobileTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => goMobileMasterTab(tab.id)}
-                style={{
-                  flex: "0 0 auto",
-                  padding: "8px 14px",
-                  borderRadius: 10,
-                  border: `1px solid ${active ? t.text : t.border}`,
-                  background: active ? t.text : t.surface,
-                  color: active ? t.bg : t.text,
-                  fontWeight: 800,
-                  fontSize: 13,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
-      )}
-
       <DesktopLayout
         isMobile={isMobile}
         mobileStyle={{ marginTop: 12, width: "100%", maxWidth: "100%", minWidth: 0, overflowX: "clip", boxSizing: "border-box" }}
@@ -6549,7 +6469,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         left={
         <aside
           style={{
-            display: isMobile ? (mobileTab === "jobs" ? "block" : "none") : "block",
+            display: isMobile ? "none" : "block",
             position: isMobile ? "static" : "sticky",
             top: 20,
             height: isMobile ? undefined : "calc(100vh - 80px)",
@@ -6816,7 +6736,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       right={
         <aside
           style={{
-            display: isMobile ? (mobileTab === "businesses" ? "block" : "none") : undefined,
+            display: isMobile ? "none" : undefined,
             position: isMobile ? "static" : "sticky",
             top: 20,
           }}
