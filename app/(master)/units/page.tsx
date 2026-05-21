@@ -7,6 +7,8 @@ import { useTheme } from "../../lib/ThemeContext";
 import { useMasterShell } from "../../components/master/masterShellContext";
 import ImageCropDialog from "../../components/ImageCropDialog";
 import { ASPECT_UNIT_COVER } from "../../lib/imageCropTargets";
+import { prepareCroppedImageBlob } from "../../lib/prepareUploadFile";
+import { validateImagePick } from "../../lib/uploadLimits";
 
 type UnitMemberPreview = {
   user_id: string;
@@ -232,7 +234,9 @@ export default function UnitsPage() {
     setUploadingCover(true);
     setCreateError(null);
     try {
-      const file = new File([blob], "cover.jpg", { type: "image/jpeg" });
+      const prepared = await prepareCroppedImageBlob(blob, "cover.jpg");
+      if (!prepared.ok) throw new Error(prepared.error);
+      const file = prepared.file;
       const path = `unit-covers/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.jpg`;
       const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
       if (error) throw new Error(error.message);
@@ -774,12 +778,9 @@ export default function UnitsPage() {
                     const f = e.target.files?.[0];
                     e.target.value = "";
                     if (!f) return;
-                    if (!f.type.startsWith("image/")) {
-                      setCreateError("Please choose an image file.");
-                      return;
-                    }
-                    if (f.size > 8 * 1024 * 1024) {
-                      setCreateError("Cover image must be under 8 MB.");
+                    const pickError = validateImagePick(f);
+                    if (pickError) {
+                      setCreateError(pickError);
                       return;
                     }
                     if (coverCropSrc) URL.revokeObjectURL(coverCropSrc);

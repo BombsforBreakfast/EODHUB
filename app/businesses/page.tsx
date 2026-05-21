@@ -20,6 +20,8 @@ import { ASPECT_RESOURCE_LOGO } from "../lib/imageCropTargets";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
+import { prepareImageUploadFile } from "../lib/prepareUploadFile";
+import { validateImagePick } from "../lib/uploadLimits";
 
 type BusinessOrgListingType = "business" | "organization";
 
@@ -305,13 +307,21 @@ export default function BusinessesPage() {
   function onPickBizPhoto(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     e.target.value = "";
-    if (!f || !f.type.startsWith("image/")) return;
+    if (!f) return;
+    const pickError = validateImagePick(f);
+    if (pickError) {
+      alert(pickError);
+      return;
+    }
     if (bizCropSrc) URL.revokeObjectURL(bizCropSrc);
     setBizCropSrc(URL.createObjectURL(f));
     setBizCropOpen(true);
   }
 
   async function uploadBizImage(file: File): Promise<string> {
+    const prepared = await prepareImageUploadFile(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    file = prepared.file;
     const safeFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
     const path = `biz-listing-images/${safeFileName}`;
     const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });

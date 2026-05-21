@@ -4,6 +4,8 @@ import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import ImageCropDialog from "../components/ImageCropDialog";
 import { ASPECT_AVATAR } from "../lib/imageCropTargets";
+import { prepareCroppedImageBlob } from "../lib/prepareUploadFile";
+import { validateImagePick } from "../lib/uploadLimits";
 
 const US_STATES = [
   "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut",
@@ -154,7 +156,9 @@ export default function DirectoryPage() {
   async function uploadDirectoryPhotoBlob(blob: Blob) {
     setPhotoUploading(true);
     try {
-      const file = new File([blob], "directory-unit.jpg", { type: "image/jpeg" });
+      const prepared = await prepareCroppedImageBlob(blob, "directory-unit.jpg");
+      if (!prepared.ok) throw new Error(prepared.error);
+      const file = prepared.file;
       const path = `unit-directory/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.jpg`;
       const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
       if (error) throw new Error(error.message);
@@ -171,7 +175,12 @@ export default function DirectoryPage() {
   function onPickDirectoryPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     e.target.value = "";
-    if (!f || !f.type.startsWith("image/")) return;
+    if (!f) return;
+    const pickError = validateImagePick(f);
+    if (pickError) {
+      alert(pickError);
+      return;
+    }
     if (dirCropSrc) URL.revokeObjectURL(dirCropSrc);
     setDirCropSrc(URL.createObjectURL(f));
     setDirCropOpen(true);

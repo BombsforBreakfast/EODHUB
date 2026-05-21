@@ -1,14 +1,14 @@
+import { UPLOAD_LIMITS, uploadTooLargeMessage } from "../../lib/uploadLimits";
+
 /** Allowed screenshot MIME types for beta bug reports */
 export const BUG_REPORT_IMAGE_ACCEPT =
   "image/png,image/jpeg,image/webp,.png,.jpg,.jpeg,.webp";
 
 const ALLOWED_MIME = new Set(["image/png", "image/jpeg", "image/webp"]);
 
-const MAX_BYTES = 8 * 1024 * 1024;
-
 export function validateBugReportImage(file: File): string | null {
-  if (file.size > MAX_BYTES) {
-    return "Image must be 8 MB or smaller.";
+  if (file.size > UPLOAD_LIMITS.image) {
+    return uploadTooLargeMessage(file, UPLOAD_LIMITS.image, "image");
   }
   const nameOk = /\.(png|jpe?g|webp)$/i.test(file.name);
   const mimeOk = file.type === "" || ALLOWED_MIME.has(file.type);

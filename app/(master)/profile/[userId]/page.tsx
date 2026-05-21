@@ -17,6 +17,8 @@ import EventFeedActions from "../../../components/EventFeedActions";
 import { ExternalSiteLink } from "../../../components/ExternalSiteEmbedModal";
 import FeedPostHeader from "../../../components/FeedPostHeader";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
+import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
+import { validateFeedAttachmentPick, validateImagePick, UPLOAD_LIMITS, formatUploadBytes } from "../../../lib/uploadLimits";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
 import { postNotifyJson } from "../../../lib/postNotifyClient";
 import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
@@ -693,9 +695,14 @@ export default function PublicProfilePage() {
 
   async function finalizeWallAvatarUpload(blob: Blob) {
     if (!currentUserId || currentUserId !== userId) return;
-    const file = new File([blob], "avatar.jpg", { type: "image/jpeg" });
     try {
       setUploadingAvatar(true);
+      const prepared = await prepareCroppedImageBlob(blob, "avatar.jpg");
+      if (!prepared.ok) {
+        alert(prepared.error);
+        return;
+      }
+      const file = prepared.file;
       const safeName = `${Date.now()}-avatar.jpg`;
       const filePath = `${currentUserId}/${safeName}`;
       const { error: uploadError } = await supabase.storage.from("profile-photos").upload(filePath, file, { upsert: true });
@@ -717,12 +724,9 @@ export default function PublicProfilePage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      alert("Please select an image file.");
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      alert("Photo must be under 8 MB.");
+    const pickError = validateImagePick(file);
+    if (pickError) {
+      alert(pickError);
       return;
     }
     if (wallAvatarCropSrc) URL.revokeObjectURL(wallAvatarCropSrc);
@@ -732,6 +736,9 @@ export default function PublicProfilePage() {
 
   async function uploadEmployerDocument(file: File, folder: string): Promise<string> {
     if (!currentUserId || currentUserId !== userId) throw new Error("Not authorized");
+    const prepared = await prepareEmployerDocumentUpload(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    file = prepared.file;
     const ext = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "bin";
     const safeExt = ext && /^[a-z0-9]+$/.test(ext) ? ext : "bin";
     const filePath = `${currentUserId}/${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
@@ -2278,10 +2285,9 @@ export default function PublicProfilePage() {
   }
 
   async function uploadWallImage(file: File, postId: string): Promise<string> {
-    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
-      throw new Error("Only image or video files are allowed.");
-    }
-    if (file.size > 50 * 1024 * 1024) throw new Error("File must be under 50 MB.");
+    const prepared = await prepareFeedUploadFile(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    file = prepared.file;
     const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `${currentUserId}/posts/${postId}/${safeName}`;
     const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
@@ -4771,10 +4777,9 @@ export default function PublicProfilePage() {
                   onChange={(e) => {
                     const files = Array.from(e.target.files ?? []);
                     if (files.length === 0) return;
-                    const MAX_VIDEO_BYTES = 200 * 1024 * 1024;
-                    const oversized = files.filter((f) => f.type.startsWith("video/") && f.size > MAX_VIDEO_BYTES);
-                    if (oversized.length > 0) {
-                      alert(`Video files must be under 200 MB. "${oversized[0].name}" is too large.`);
+                    const pickError = validateFeedAttachmentPick(files);
+                    if (pickError) {
+                      alert(pickError);
                       if (postImageInputRef.current) postImageInputRef.current.value = "";
                       return;
                     }
@@ -4825,7 +4830,12 @@ export default function PublicProfilePage() {
                       </button>
                     )}
                   </div>
-                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
+                    Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
+                    Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~2 min).
+                    For longer video, paste a YouTube or Vimeo link in your post.
+                  </p>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8 }}>
                     <button
                       type="button"
                       onClick={() => postImageInputRef.current?.click()}

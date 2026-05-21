@@ -25,6 +25,8 @@ import {
 } from "../components/memorial/memorialModalShared";
 import { isMarinesService, MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
 import { displayListingTitle, LEMON_LOT_CATEGORIES, type MarketplaceListingRow } from "../lib/lemonLot";
+import { prepareImageUploadFile } from "../lib/prepareUploadFile";
+import { validateImagePick } from "../lib/uploadLimits";
 
 type BusinessListing = {
   id: string;
@@ -902,6 +904,9 @@ export default function AdminPage() {
   }
 
   async function uploadNewsThumbnail(file: File): Promise<string> {
+    const prepared = await prepareImageUploadFile(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    file = prepared.file;
     const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
     const path = `news-overrides/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
@@ -911,8 +916,9 @@ export default function AdminPage() {
 
   async function handleNewsThumbnailPick(newsId: string, file: File | null) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      showToast("Please choose an image file.");
+    const pickError = validateImagePick(file);
+    if (pickError) {
+      showToast(pickError);
       return;
     }
     setNewsThumbnailUploadingId(newsId);
@@ -1861,6 +1867,13 @@ export default function AdminPage() {
 
   async function handleImageUpload(file: File) {
     setUploadingImage(true);
+    const prepared = await prepareImageUploadFile(file);
+    if (!prepared.ok) {
+      alert(prepared.error);
+      setUploadingImage(false);
+      return;
+    }
+    file = prepared.file;
     const ext = file.name.split(".").pop() || "jpg";
     const path = `biz-${Date.now()}.${ext}`;
     const { error } = await supabase.storage.from("business-images").upload(path, file, { upsert: true });
@@ -2359,6 +2372,9 @@ export default function AdminPage() {
   }
 
   async function uploadMemorialPhoto(file: File): Promise<string> {
+    const prepared = await prepareImageUploadFile(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    file = prepared.file;
     const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
     const path = `memorials/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
@@ -2368,8 +2384,9 @@ export default function AdminPage() {
 
   async function handleMemorialAddWizPhotoPick(file: File | null) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      alert("Please choose an image file.");
+    const pickError = validateImagePick(file);
+    if (pickError) {
+      alert(pickError);
       return;
     }
     setMemWizPhotoUploading(true);
@@ -2387,6 +2404,11 @@ export default function AdminPage() {
   async function handleMemorialPhotoPick(file: File | null) {
     if (!file) return;
     if (!editingMemorial) return;
+    const pickError = validateImagePick(file);
+    if (pickError) {
+      alert(pickError);
+      return;
+    }
     try {
       setMemPhotoUploading(true);
       const publicUrl = await uploadMemorialPhoto(file);
@@ -2400,9 +2422,9 @@ export default function AdminPage() {
   }
 
   async function uploadEventImage(file: File): Promise<string> {
-    // Mirrors uploadMemorialPhoto + the events page's `event-covers/` prefix so
-    // every event cover (whether created from /events or edited from /admin)
-    // lands in the same bucket/folder.
+    const prepared = await prepareImageUploadFile(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    file = prepared.file;
     const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
     const path = `event-covers/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
     const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
@@ -2413,6 +2435,11 @@ export default function AdminPage() {
   async function handleEventPhotoPick(file: File | null) {
     if (!file) return;
     if (!editingEvent) return;
+    const pickError = validateImagePick(file);
+    if (pickError) {
+      alert(pickError);
+      return;
+    }
     try {
       setEventPhotoUploading(true);
       const publicUrl = await uploadEventImage(file);

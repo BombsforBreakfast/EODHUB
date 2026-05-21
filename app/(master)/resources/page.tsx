@@ -20,6 +20,8 @@ import ImageCropDialog from "../../components/ImageCropDialog";
 import { ASPECT_RESOURCE_LOGO } from "../../lib/imageCropTargets";
 import { useTheme } from "../../lib/ThemeContext";
 import { supabase } from "../../lib/lib/supabaseClient";
+import { prepareImageUploadFile } from "../../lib/prepareUploadFile";
+import { validateImagePick } from "../../lib/uploadLimits";
 
 type BusinessListing = BusinessListingRow;
 
@@ -268,13 +270,21 @@ export default function ResourcesPage() {
   function onPickResourcePhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     e.target.value = "";
-    if (!f || !f.type.startsWith("image/")) return;
+    if (!f) return;
+    const pickError = validateImagePick(f);
+    if (pickError) {
+      alert(pickError);
+      return;
+    }
     if (resourceCropSrc) URL.revokeObjectURL(resourceCropSrc);
     setResourceCropSrc(URL.createObjectURL(f));
     setResourceCropOpen(true);
   }
 
   async function uploadResourceImage(file: File): Promise<string> {
+    const prepared = await prepareImageUploadFile(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    file = prepared.file;
     const safeFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
     const path = `resource-images/${safeFileName}`;
     const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });

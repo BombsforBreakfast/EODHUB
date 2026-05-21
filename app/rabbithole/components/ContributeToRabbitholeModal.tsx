@@ -11,6 +11,7 @@ import {
   fetchRabbitholeTopics,
 } from "../lib/dataClient";
 import { uploadRabbitholeAsset } from "../lib/storageService";
+import { validateFileOnPick, UPLOAD_LIMITS, formatUploadBytes } from "../../lib/uploadLimits";
 import type { RabbitholeContentType, RabbitholeTopic } from "../lib/types";
 
 type Props = {
@@ -456,13 +457,22 @@ export default function ContributeToRabbitholeModal({ onClose, onCreated }: Prop
                   multiple
                   onChange={(e) => {
                     const nextFiles = Array.from(e.target.files ?? []);
+                    for (const f of nextFiles) {
+                      const err = validateFileOnPick(f);
+                      if (err) {
+                        setError(err);
+                        e.target.value = "";
+                        return;
+                      }
+                    }
+                    setError(null);
                     setFiles(nextFiles);
                   }}
                   style={inputStyle(t)}
                 />
                 <span style={{ fontSize: 11, color: t.textMuted }}>
                   {files.length === 0
-                    ? "No files selected"
+                    ? `Photos up to ${formatUploadBytes(UPLOAD_LIMITS.image)}, documents up to ${formatUploadBytes(UPLOAD_LIMITS.document)}.`
                     : `${files.length} file${files.length === 1 ? "" : "s"} selected`}
                 </span>
               </label>

@@ -18,6 +18,8 @@ import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRow
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
 import EventScrapbookPreview from "../components/events/EventScrapbookPreview";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
+import { prepareCroppedImageBlob, prepareImageUploadFile } from "../lib/prepareUploadFile";
+import { validateImagePick } from "../lib/uploadLimits";
 import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import type { PostLikerBrief } from "../components/PostLikersStack";
 import { ReactionLeaderboard, ReactionPickerTrigger } from "../components/ReactionBar";
@@ -925,7 +927,9 @@ function EventsPageInner() {
   async function uploadEventCoverBlob(blob: Blob) {
     setUploadingEventCover(true);
     try {
-      const file = new File([blob], "event-cover.jpg", { type: "image/jpeg" });
+      const prepared = await prepareCroppedImageBlob(blob, "event-cover.jpg");
+      if (!prepared.ok) throw new Error(prepared.error);
+      const file = prepared.file;
       const path = `event-covers/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.jpg`;
       const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
       if (error) throw new Error(error.message);
@@ -987,6 +991,9 @@ function EventsPageInner() {
   }
 
   async function uploadMemorialPhoto(file: File): Promise<string> {
+    const prepared = await prepareImageUploadFile(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    file = prepared.file;
     const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
     const path = `memorials/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}.${ext}`;
     const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
@@ -996,8 +1003,9 @@ function EventsPageInner() {
 
   async function handleMemorialPhotoPick(file: File | null) {
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      alert("Please choose an image file.");
+    const pickError = validateImagePick(file);
+    if (pickError) {
+      alert(pickError);
       return;
     }
     setMemWizPhotoUploading(true);

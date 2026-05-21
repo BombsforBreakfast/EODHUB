@@ -20,6 +20,8 @@ import {
   type MarketplaceListingRow,
 } from "@/app/lib/lemonLot";
 import { postNotifyJson } from "@/app/lib/postNotifyClient";
+import { prepareImageUploadFile } from "@/app/lib/prepareUploadFile";
+import { validateImagePick } from "@/app/lib/uploadLimits";
 
 const THIRTY_DAYS_MS = 30 * 86400000;
 
@@ -286,11 +288,14 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
         out.push(e.url);
         continue;
       }
-      const ext = extFromFile(e.file);
+      const prepared = await prepareImageUploadFile(e.file);
+      if (!prepared.ok) throw new Error(prepared.error);
+      const file = prepared.file;
+      const ext = extFromFile(file);
       const path = `lemon-lot/${uid}/${crypto.randomUUID()}.${ext}`;
-      const { error } = await supabase.storage.from("feed-images").upload(path, e.file, {
+      const { error } = await supabase.storage.from("feed-images").upload(path, file, {
         upsert: false,
-        contentType: e.file.type || undefined,
+        contentType: file.type || undefined,
       });
       if (error) throw new Error(error.message);
       const { data } = supabase.storage.from("feed-images").getPublicUrl(path);
@@ -326,6 +331,14 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
     const picked = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith("image/"));
     e.target.value = "";
     if (picked.length === 0) return;
+    for (const f of picked) {
+      const err = validateImagePick(f);
+      if (err) {
+        setFormErr(err);
+        return;
+      }
+    }
+    setFormErr(null);
     setGalleryEntries((prev) => {
       const next = [...prev];
       for (const f of picked) {

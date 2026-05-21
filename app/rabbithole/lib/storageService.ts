@@ -2,6 +2,8 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RabbitholeAsset } from "./types";
+import { prepareDocumentUploadFile, prepareImageUploadFile } from "../../lib/prepareUploadFile";
+import { isDocumentFile, isImageFile } from "../../lib/uploadLimits";
 
 export const RABBITHOLE_STORAGE_PROVIDER = "supabase" as const;
 export const RABBITHOLE_BUCKET = "rabbithole-assets";
@@ -37,15 +39,23 @@ export async function uploadRabbitholeAsset(
     uploaderUserId: string;
   },
 ): Promise<{ ok: true; locator: RabbitholeStorageLocator } | { ok: false; error: string }> {
+  const prepared = isDocumentFile(input.file)
+    ? prepareDocumentUploadFile(input.file)
+    : isImageFile(input.file)
+      ? await prepareImageUploadFile(input.file)
+      : { ok: false as const, error: `"${input.file.name}" is not a supported file type.` };
+  if (!prepared.ok) return prepared;
+
+  const file = prepared.file;
   const objectKey = buildRabbitholeObjectKey({
     contributionId: input.contributionId,
     uploaderUserId: input.uploaderUserId,
-    originalFilename: input.file.name,
+    originalFilename: file.name,
   });
 
-  const { error } = await supabase.storage.from(RABBITHOLE_BUCKET).upload(objectKey, input.file, {
+  const { error } = await supabase.storage.from(RABBITHOLE_BUCKET).upload(objectKey, file, {
     upsert: false,
-    contentType: input.file.type || undefined,
+    contentType: file.type || undefined,
   });
 
   if (error) return { ok: false, error: error.message || "Upload failed." };

@@ -13,6 +13,8 @@ import { useMasterShell } from "../../../components/master/masterShellContext";
 import AddToRabbitholeModal from "../../../rabbithole/components/AddToRabbitholeModal";
 import { MurphyRabbitholeBanner } from "../../../components/MurphyRabbitholeBanner";
 import FeedPostHeader from "../../../components/FeedPostHeader";
+import { prepareImageUploadFile } from "../../../lib/prepareUploadFile";
+import { validateImagePick } from "../../../lib/uploadLimits";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
 import { ensureSavedEventForUser } from "../../../lib/ensureSavedEventForUser";
 import type { Theme } from "../../../lib/theme";
@@ -777,6 +779,9 @@ export default function UnitPage() {
   // ── Wall posts ───────────────────────────────────────────────────────────
 
   async function uploadUnitPhoto(file: File): Promise<string> {
+    const prepared = await prepareImageUploadFile(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    file = prepared.file;
     const safeFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
     const filePath = `unit-posts/${safeFileName}`;
     const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
@@ -1010,11 +1015,15 @@ export default function UnitPage() {
 
     let uploadedImageUrl: string | null = null;
     if (imageFile && currentUserId) {
-      const path = `unit-comments/${currentUserId}/${postId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      const { error: upErr } = await supabase.storage.from("feed-images").upload(path, imageFile, { upsert: false });
-      if (!upErr) {
-        const { data } = supabase.storage.from("feed-images").getPublicUrl(path);
-        uploadedImageUrl = data.publicUrl;
+      const prepared = await prepareImageUploadFile(imageFile);
+      if (prepared.ok) {
+        const file = prepared.file;
+        const path = `unit-comments/${currentUserId}/${postId}/${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+        const { error: upErr } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
+        if (!upErr) {
+          const { data } = supabase.storage.from("feed-images").getPublicUrl(path);
+          uploadedImageUrl = data.publicUrl;
+        }
       }
     }
 
@@ -1367,6 +1376,12 @@ export default function UnitPage() {
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
+                      const pickError = validateImagePick(file);
+                      if (pickError) {
+                        alert(pickError);
+                        e.target.value = "";
+                        return;
+                      }
                       setPostPhotoFile(file);
                       setPostPhotoPreview(URL.createObjectURL(file));
                       setPostGif(null);

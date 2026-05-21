@@ -15,6 +15,8 @@ import OnlineNowStrip from "../components/OnlineNowStrip";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 import SidebarThreadDrawer from "../components/SidebarThreadDrawer";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
+import { prepareFeedUploadFile } from "../lib/prepareUploadFile";
+import { validateFeedAttachmentPick, validateImagePick } from "../lib/uploadLimits";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
@@ -2964,10 +2966,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         alert("Only the first images were added. Max is 10 per post.");
       }
 
-      const MAX_VIDEO_BYTES = 200 * 1024 * 1024; // 200 MB
-      const oversized = filesToAdd.filter((f) => f.type.startsWith("video/") && f.size > MAX_VIDEO_BYTES);
-      if (oversized.length > 0) {
-        alert(`Video files must be under 200 MB. "${oversized[0].name}" is too large.`);
+      const pickError = validateFeedAttachmentPick(filesToAdd);
+      if (pickError) {
+        alert(pickError);
         return prev;
       }
 
@@ -3046,6 +3047,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const pickError = validateImagePick(file);
+    if (pickError) {
+      alert(pickError);
+      if (commentImageInputRefs.current[postId]) {
+        commentImageInputRefs.current[postId]!.value = "";
+      }
+      return;
+    }
+
     setSelectedCommentImages((prev) => {
       const existing = prev[postId];
       if (existing) {
@@ -3088,12 +3098,10 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     file: File,
     pathPrefix: string
   ): Promise<string> {
-    if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
-      throw new Error("Only image or video files are allowed.");
-    }
-    if (file.size > 50 * 1024 * 1024) {
-      throw new Error("File must be under 50 MB.");
-    }
+    const prepared = await prepareFeedUploadFile(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    file = prepared.file;
+
     const safeFileName = `${Date.now()}-${Math.random()
       .toString(36)
       .slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;

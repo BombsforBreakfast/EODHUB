@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/app/lib/lib/supabaseClient";
 import type { MemorialScrapbookTheme } from "./types";
 import type { ScrapbookItemType } from "./types";
+import { prepareScrapbookUploadFile } from "@/app/lib/prepareUploadFile";
 
 const SUCCESS_MSG_REVIEW =
   "Thanks for contributing. Your scrapbook item has been submitted for admin review.";
@@ -110,6 +111,9 @@ export function AddScrapbookItemModal({
   }
 
   async function uploadFile(f: File, uid: string): Promise<string> {
+    const prepared = await prepareScrapbookUploadFile(f);
+    if (!prepared.ok) throw new Error(prepared.error);
+    f = prepared.file;
     const ext = (f.name.split(".").pop() || "bin").toLowerCase().slice(0, 8);
     const safeExt = ext.replace(/[^a-z0-9]/g, "") || "bin";
     const path = `${resolvedTargetId}/${uid}/${crypto.randomUUID()}.${safeExt}`;
