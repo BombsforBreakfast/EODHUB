@@ -77,6 +77,10 @@ import { MemorialDisclaimer } from "../components/memorial/MemorialDisclaimer";
 import { memorialTheme } from "../components/memorial/memorialModalShared";
 import { getServiceRingColor } from "../lib/serviceBranchVisual";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
+import {
+  hasFullPlatformAccess,
+  needsEmailVerification,
+} from "../lib/verificationAccess";
 
 const EODWF_DONATION_URL = "https://eod-wf.org/?form=supportEODWF";
 const BTMF_DONATION_URL = "https://www.paypal.com/ncp/payment/SMU4NWRW55V6L";
@@ -1691,7 +1695,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const { data: pending } = await supabase
       .from("profiles")
       .select("user_id, first_name, last_name, display_name, photo_url, service, created_at")
-      .eq("verification_status", "pending")
+      .eq("email_verified", true)
+      .in("verification_status", ["awaiting_admin_review", "pending_admin_review", "pending"])
       .eq("account_type", "member")
       .neq("user_id", currentUserId)
       .not("first_name", "is", null)
@@ -1759,7 +1764,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
         body: JSON.stringify({ userId: targetUserId }),
       });
-      if (res.ok) setPendingMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
+      if (res.ok) {
+        const json = (await res.json().catch(() => ({}))) as { emailSent?: boolean; emailSkippedReason?: string };
+        if (process.env.NODE_ENV === "development") {
+          console.debug("[auth:admin-approve-feed]", { userId: targetUserId, ...json });
+        }
+        setPendingMembers((prev) => prev.filter((m) => m.user_id !== targetUserId));
+      }
     } finally {
       setActingOnUser(null);
     }
@@ -3929,6 +3940,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           last_name: string | null;
           photo_url: string | null;
           verification_status: string | null;
+          email_verified: boolean | null;
+          admin_verified: boolean | null;
           service: string | null;
           status: string | null;
           professional_tags: string[] | null;
@@ -3942,7 +3955,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           show_memorial_feed_cards: boolean | null;
         }>(supabase, authUser, {
           route: "app/(master)/page.tsx:init",
-          select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, is_pure_admin, show_memorial_feed_cards",
+          select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, is_pure_admin, show_memorial_feed_cards",
         });
         if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
@@ -3970,8 +3983,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           return;
         }
 
-        if (profileCheck.verification_status !== "verified") {
-          window.location.href = "/pending";
+        if (!hasFullPlatformAccess(profileCheck)) {
+          window.location.href = needsEmailVerification(profileCheck) ? "/verify-email" : "/pending";
           return;
         }
 

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { Resend } from "resend";
 import { assertMemberInteractionAllowed } from "../../lib/memberSubscriptionServer";
 import { createNotification } from "../../lib/notificationsServer";
+import { approveUserAccount } from "../../lib/server/approveUserAccount";
+import { devAuthLog } from "../../lib/auth/signupErrors";
 
 const VOUCHES_NEEDED = 3;
 
@@ -50,12 +51,17 @@ export async function POST(req: NextRequest) {
   // Check vouchee is actually pending
   const { data: vouchee } = await adminClient
     .from("profiles")
-    .select("first_name, last_name, display_name, verification_status, account_type")
+    .select("first_name, last_name, display_name, verification_status, account_type, email_verified")
     .eq("user_id", vouchee_user_id)
     .maybeSingle();
 
   if (!vouchee) return NextResponse.json({ error: "User not found" }, { status: 404 });
-  if (vouchee.verification_status !== "pending") {
+  const awaitingAdmin =
+    vouchee.email_verified &&
+    (vouchee.verification_status === "awaiting_admin_review" ||
+      vouchee.verification_status === "pending_admin_review" ||
+      vouchee.verification_status === "pending");
+  if (!awaitingAdmin) {
     return NextResponse.json({ error: "User is not awaiting community verification" }, { status: 409 });
   }
   if (vouchee.account_type === "employer") {
@@ -81,16 +87,12 @@ export async function POST(req: NextRequest) {
   const totalVouches = count ?? 0;
   let approved = false;
 
+  let emailSent = false;
   if (totalVouches >= VOUCHES_NEEDED) {
-    await adminClient
-      .from("profiles")
-      .update({ is_approved: true, verification_status: "verified" })
-      .eq("user_id", vouchee_user_id);
     approved = true;
 
     const voucherName = voucher.display_name || `${voucher.first_name ?? ""} ${voucher.last_name ?? ""}`.trim() || "A member";
 
-    // In-app notification
     await createNotification(adminClient, {
       recipientUserId: vouchee_user_id,
       actorUserId: user.id,
@@ -104,58 +106,27 @@ export async function POST(req: NextRequest) {
       metadata: { vouchee_user_id },
     });
 
-    // Verification email
-    const { data: authUser } = await adminClient.auth.admin.getUserById(vouchee_user_id);
-    const email = authUser?.user?.email;
-    const firstName = vouchee.first_name || "EOD Member";
-
-    // Fetch their referral code for the email
-    const { data: voucheeProfile } = await adminClient
-      .from("profiles")
-      .select("referral_code")
-      .eq("user_id", vouchee_user_id)
-      .maybeSingle();
-    const referralCode = (voucheeProfile as { referral_code: string | null } | null)?.referral_code;
-
-    if (email && process.env.RESEND_API_KEY) {
-      const resend = new Resend(process.env.RESEND_API_KEY);
-
-      const referralSection = referralCode ? `
-        <div style="margin-top: 32px; border-top: 1px solid #e5e7eb; padding-top: 24px;">
-          <p style="font-size: 15px; font-weight: 700; color: #111; margin: 0 0 8px;">Invite 5 colleagues, earn a Recruiter Badge</p>
-          <p style="font-size: 14px; color: #555; line-height: 1.6; margin: 0 0 14px;">
-            Share your personal invite link with fellow EOD professionals. When 5 of them join and get verified, you earn your Bronze Recruiter badge on your profile.
-          </p>
-          <div style="background: #f3f4f6; border-radius: 8px; padding: 12px 16px; font-size: 14px; font-weight: 700; word-break: break-all; color: #111;">
-            https://eod-hub.com/login?ref=${referralCode}
-          </div>
-        </div>
-      ` : "";
-
-      await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL ?? "EOD HUB <noreply@resend.dev>",
-        to: email,
-        subject: "EOD Verification Complete",
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 32px 24px;">
-            <div style="font-size: 32px; font-weight: 900; letter-spacing: -1px; margin-bottom: 24px;">EOD HUB</div>
-            <p style="font-size: 16px; color: #222; line-height: 1.7; margin: 0 0 24px;">
-              Good news, ${firstName} — you're verified!<br><br>
-              3 members of the community vouched for you. Navigate to the link below to sign in to EOD HUB.
-            </p>
-            <a href="https://eod-hub.com/login"
-               style="display: inline-block; background: black; color: white; padding: 14px 28px; border-radius: 10px; text-decoration: none; font-weight: 700; font-size: 16px;">
-              Sign In to EOD HUB
-            </a>
-            ${referralSection}
-            <p style="font-size: 13px; color: #999; margin-top: 32px;">
-              Built for EOD Techs, by an EOD Tech.
-            </p>
-          </div>
-        `,
+    const origin = req.nextUrl.origin;
+    try {
+      const approvalResult = await approveUserAccount(
+        adminClient,
+        vouchee_user_id,
+        origin,
+        "vouch",
+      );
+      emailSent = approvalResult.emailSent;
+      devAuthLog("profile-vouch", {
+        step: "approved",
+        vouchee_user_id,
+        emailSent,
+        emailSkippedReason: approvalResult.emailSkippedReason,
       });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("profile-vouch approveUserAccount:", msg);
+      devAuthLog("profile-vouch", { step: "approve_failed", vouchee_user_id, error: msg });
     }
   }
 
-  return NextResponse.json({ success: true, vouches: totalVouches, approved });
+  return NextResponse.json({ success: true, vouches: totalVouches, approved, emailSent });
 }

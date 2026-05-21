@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { clearAppAuthState } from "../lib/auth/sessionState";
+import {
+  hasFullPlatformAccess,
+  needsEmailVerification,
+} from "../lib/verificationAccess";
 
 const VOUCHES_NEEDED = 3;
 
@@ -42,14 +46,23 @@ export default function PendingPage() {
         last_name: string | null;
         photo_url: string | null;
         verification_status: string | null;
+        email_verified: boolean | null;
+        admin_verified: boolean | null;
         referral_code: string | null;
         is_pure_admin?: boolean | null;
       }>(supabase, user, {
         route: "app/pending/page.tsx:check",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, referral_code, is_pure_admin",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, referral_code, is_pure_admin",
       });
 
-      const profileRow = profile as { verification_status: string | null; first_name: string | null; referral_code: string | null; is_pure_admin?: boolean | null } | null;
+      const profileRow = profile as {
+        verification_status: string | null;
+        email_verified: boolean | null;
+        admin_verified: boolean | null;
+        first_name: string | null;
+        referral_code: string | null;
+        is_pure_admin?: boolean | null;
+      } | null;
 
       if (!profileRow) {
         window.location.href = "/onboarding";
@@ -75,7 +88,12 @@ export default function PendingPage() {
         }).eq("user_id", user.id);
       }
 
-      if (profile?.verification_status === "verified") {
+      if (profileRow && needsEmailVerification(profileRow)) {
+        window.location.href = "/verify-email";
+        return;
+      }
+
+      if (profileRow && hasFullPlatformAccess(profileRow)) {
         window.location.href = "/";
         return;
       }
@@ -96,10 +114,10 @@ export default function PendingPage() {
     const interval = setInterval(async () => {
       const { data: profile } = await supabase
         .from("profiles")
-        .select("verification_status")
+        .select("verification_status, email_verified, admin_verified")
         .eq("user_id", userId)
         .maybeSingle();
-      if (profile?.verification_status === "verified") {
+      if (profile && hasFullPlatformAccess(profile)) {
         window.location.href = "/";
       }
     }, 30000);
@@ -141,10 +159,10 @@ export default function PendingPage() {
               ⏳
             </div>
             <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 12px", color: "#6b7280" }}>
-              Awaiting Verification
+              Awaiting Administrative Review
             </h2>
             <p style={{ fontSize: 15, color: "#555", lineHeight: 1.7, margin: "0 0 8px" }}>
-              Your account is pending review. Once verified, you&apos;ll receive a confirmation email and can access EOD HUB.
+              Your email has been verified and your account is now pending administrative review. Once approved — or validated through the community verification system — you&apos;ll receive a confirmation email and can access EOD HUB.
             </p>
             {email && (
               <p style={{ fontSize: 14, color: "#888", margin: "0 0 28px" }}>

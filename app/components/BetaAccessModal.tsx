@@ -14,6 +14,12 @@ import {
 import { Eye, EyeOff } from "lucide-react";
 import EodCrabLogo from "@/app/components/EodCrabLogo";
 import { validateEmailForRegistration } from "@/app/lib/email-validation";
+import {
+  codeFromValidateEmailResponse,
+  mapEmailValidationCode,
+  userMessageForSignupCode,
+  type ValidateEmailApiBody,
+} from "@/app/lib/auth/signupErrors";
 
 const STORAGE_KEY = "beta_access_granted";
 
@@ -211,7 +217,7 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
       setWaitlistError(null);
       const clientCheck = validateEmailForRegistration(email);
       if (!clientCheck.ok) {
-        setWaitlistError(clientCheck.message);
+        setWaitlistError(userMessageForSignupCode(mapEmailValidationCode(clientCheck.code)));
         return;
       }
       setWaitlistSubmitting(true);
@@ -226,14 +232,10 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
             service: service.trim(),
           }),
         });
-        const data = (await res.json()) as { ok?: boolean; message?: string };
+        const data = (await res.json()) as ValidateEmailApiBody;
         if (!res.ok || !data.ok) {
-          setWaitlistError(
-            data.message ??
-              (res.status === 429
-                ? "Too many attempts. Please wait a few minutes and try again."
-                : "Something went wrong. Please try again in a moment."),
-          );
+          const code = codeFromValidateEmailResponse(res, data);
+          setWaitlistError(userMessageForSignupCode(code));
           return;
         }
         setFirstName("");
@@ -242,7 +244,7 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
         setService("");
         setWaitlistSubmitted(true);
       } catch {
-        setWaitlistError("Something went wrong. Please try again in a moment.");
+        setWaitlistError(userMessageForSignupCode("generic"));
       } finally {
         setWaitlistSubmitting(false);
       }

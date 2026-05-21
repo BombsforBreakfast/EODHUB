@@ -17,7 +17,11 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
     client.from("business_listings").select("*", { count: "exact", head: true }).neq("is_approved", true),
     client.from("business_listing_claims").select("*", { count: "exact", head: true }).eq("status", "pending"),
     client.from("jobs").select("*", { count: "exact", head: true }).neq("is_approved", true),
-    client.from("profiles").select("*", { count: "exact", head: true }).eq("verification_status", "pending"),
+    client
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("email_verified", true)
+      .in("verification_status", ["awaiting_admin_review", "pending_admin_review", "pending"]),
     client.from("flags").select("*", { count: "exact", head: true }).eq("reviewed", false),
     client.from("bug_reports").select("*", { count: "exact", head: true }).eq("status", "new"),
     client.from("unit_directory").select("*", { count: "exact", head: true }).eq("is_approved", false),

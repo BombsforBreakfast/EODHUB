@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateEmailForRegistration } from "@/app/lib/email-validation";
 import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup";
-import { domainHasMxRecords } from "@/app/lib/server/emailMxCheck";
+import { logMxCheckTelemetry } from "@/app/lib/server/emailMxCheck";
+import {
+  devAuthLog,
+  mapEmailValidationCode,
+  userMessageForSignupCode,
+  type SignupErrorCode,
+} from "@/app/lib/auth/signupErrors";
 import {
   checkRateLimit,
   getClientIp,
-  rateLimitResponse,
 } from "@/app/lib/server/rateLimit";
 
 export const dynamic = "force-dynamic";
@@ -18,44 +23,46 @@ function clampOptionalString(value: unknown, max: number): string {
   return value.trim().slice(0, max);
 }
 
+function errorResponse(code: SignupErrorCode, status: number) {
+  return NextResponse.json(
+    { ok: false, code, message: userMessageForSignupCode(code) },
+    { status },
+  );
+}
+
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
   const limited = checkRateLimit(`waitlist:${ip}`, { limit: 5, windowMs: 15 * 60 * 1000 });
   if (!limited.allowed) {
-    return NextResponse.json(rateLimitResponse(limited.retryAfterSec), { status: 429 });
+    return errorResponse("rate_limited", 429);
   }
 
   let body: Record<string, unknown>;
   try {
     const parsed = await req.json();
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return NextResponse.json({ ok: false, message: "Invalid request." }, { status: 400 });
+      return errorResponse("generic", 400);
     }
     body = parsed as Record<string, unknown>;
   } catch {
-    return NextResponse.json({ ok: false, message: "Invalid request." }, { status: 400 });
+    return errorResponse("generic", 400);
   }
 
   const emailRaw = typeof body.email === "string" ? body.email : "";
   const validated = validateEmailForRegistration(emailRaw);
   if (!validated.ok) {
-    return NextResponse.json({ ok: false, message: validated.message }, { status: 400 });
+    const code = mapEmailValidationCode(validated.code);
+    return errorResponse(code, 400);
   }
 
   const domain = validated.email.split("@")[1];
-  if (domain && !(await domainHasMxRecords(domain))) {
-    return NextResponse.json(
-      { ok: false, message: "Please use a real email address." },
-      { status: 400 },
-    );
+  if (domain) {
+    logMxCheckTelemetry(domain);
   }
 
   const { client, error: envErr } = createSupabaseServiceRoleClient();
   if (envErr || !client) {
-    return NextResponse.json(
-      { ok: false, message: "Something went wrong. Please try again in a moment." },
-      { status: 503 },
-    );
+    return errorResponse("generic", 503);
   }
 
   const row = {
@@ -69,14 +76,12 @@ export async function POST(req: NextRequest) {
   if (error) {
     const dup = error.code === "23505" || /duplicate|unique/i.test(error.message ?? "");
     if (dup) {
-      // Same success shape as a new insert — do not confirm email is already registered.
       return NextResponse.json({ ok: true });
     }
-    return NextResponse.json(
-      { ok: false, message: "Something went wrong. Please try again in a moment." },
-      { status: 500 },
-    );
+    devAuthLog("waitlist", { step: "insert_failed" });
+    return errorResponse("generic", 500);
   }
 
+  devAuthLog("waitlist", { step: "ok", domain });
   return NextResponse.json({ ok: true });
 }

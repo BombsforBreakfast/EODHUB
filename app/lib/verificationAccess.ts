@@ -1,0 +1,68 @@
+import {
+  isAwaitingAdminStatus,
+  isAwaitingEmailStatus,
+  isLegacyPendingAdmin,
+  VERIFICATION,
+} from "./verificationStatus";
+
+export type VerificationProfile = {
+  email_verified?: boolean | null;
+  admin_verified?: boolean | null;
+  verification_status?: string | null;
+};
+
+export function hasFullPlatformAccess(p: VerificationProfile): boolean {
+  return Boolean(
+    p.email_verified &&
+      p.admin_verified &&
+      p.verification_status === VERIFICATION.VERIFIED,
+  );
+}
+
+/** Email confirmed; waiting on admin or community approval. */
+export function isInAdminReviewQueue(p: VerificationProfile): boolean {
+  const status = p.verification_status;
+  if (!p.email_verified) return false;
+  if (isAwaitingAdminStatus(status)) return true;
+  if (isLegacyPendingAdmin(status, !!p.email_verified)) return true;
+  return false;
+}
+
+/** Must click Resend verification link before admin queue. */
+export function needsEmailVerification(p: VerificationProfile): boolean {
+  if (p.email_verified) return false;
+  const status = p.verification_status;
+  if (isAwaitingEmailStatus(status)) return true;
+  // Incomplete onboarding / legacy: in admin-ish state but email not verified
+  if (isAwaitingAdminStatus(status) && !p.email_verified) return true;
+  if (status === VERIFICATION.LEGACY_PENDING && !p.email_verified) return true;
+  return !p.email_verified && !!status && status !== VERIFICATION.VERIFIED && status !== VERIFICATION.DENIED;
+}
+
+/** @deprecated use isInAdminReviewQueue */
+export function isPendingOrAdminReview(p: VerificationProfile): boolean {
+  return isInAdminReviewQueue(p);
+}
+
+/** Only pure Google OAuth signups skip Resend (provider-trusted email). */
+export function isOAuthOnlyGoogleUser(user: {
+  app_metadata?: { provider?: string };
+  identities?: { provider?: string }[] | null;
+}): boolean {
+  const identities = user.identities ?? [];
+  if (identities.length === 0) {
+    return user.app_metadata?.provider === "google";
+  }
+  if (identities.length === 1) {
+    return identities[0]?.provider === "google";
+  }
+  return false;
+}
+
+/** @deprecated use isOAuthOnlyGoogleUser */
+export function isOAuthGoogleUser(user: {
+  app_metadata?: { provider?: string };
+  identities?: { provider?: string }[] | null;
+}): boolean {
+  return isOAuthOnlyGoogleUser(user);
+}

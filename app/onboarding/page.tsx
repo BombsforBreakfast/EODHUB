@@ -12,6 +12,14 @@ import {
 import { isPureAdminEmail, STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../lib/pureAdminAllowlist";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { clearAppAuthState } from "../lib/auth/sessionState";
+import {
+  hasFullPlatformAccess,
+  isInAdminReviewQueue,
+  isOAuthOnlyGoogleUser,
+  needsEmailVerification,
+} from "../lib/verificationAccess";
+import { devAuthLog } from "../lib/auth/signupErrors";
+import { VERIFICATION } from "../lib/verificationStatus";
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
 const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
@@ -96,6 +104,9 @@ export default function OnboardingPage() {
             is_pure_admin: true,
             is_admin: true,
             verification_status: "verified",
+            email_verified: true,
+            admin_verified: true,
+            email_verified_at: new Date().toISOString(),
             is_approved: true,
             account_type: "admin",
             display_name: "EOD HUB",
@@ -155,14 +166,25 @@ export default function OnboardingPage() {
         company_name: string | null;
         account_type: "member" | "employer" | "admin" | null;
         verification_status: string | null;
+        email_verified: boolean | null;
+        admin_verified: boolean | null;
         subscription_terms_acknowledged_at: string | null;
       }>(supabase, user, {
         route: "app/onboarding/page.tsx:check",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, service, company_name, account_type, verification_status, subscription_terms_acknowledged_at",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, service, company_name, account_type, verification_status, email_verified, admin_verified, subscription_terms_acknowledged_at",
       });
 
-      if (profile?.verification_status === "verified" && (profile?.service || profile?.company_name)) {
+      if (
+        profile &&
+        hasFullPlatformAccess(profile) &&
+        (profile.service || profile.company_name)
+      ) {
         window.location.href = "/";
+        return;
+      }
+
+      if (profile && needsEmailVerification(profile) && (profile.service || profile.company_name)) {
+        window.location.href = "/verify-email";
         return;
       }
 
@@ -181,8 +203,18 @@ export default function OnboardingPage() {
       }
 
       if (profile?.service || profile?.company_name) {
-        window.location.href = "/pending";
-        return;
+        if (needsEmailVerification(profile)) {
+          window.location.href = "/verify-email";
+          return;
+        }
+        if (isInAdminReviewQueue(profile) || (!hasFullPlatformAccess(profile) && profile.email_verified)) {
+          window.location.href = "/pending";
+          return;
+        }
+        if (!hasFullPlatformAccess(profile)) {
+          window.location.href = "/verify-email";
+          return;
+        }
       }
 
       // Pre-fill name from existing profile if available
@@ -201,8 +233,36 @@ export default function OnboardingPage() {
     check();
   }, []);
 
+  async function redirectAfterOnboarding(isGoogle: boolean) {
+    if (isGoogle) {
+      devAuthLog("onboarding", { step: "redirect_pending_oauth", userId });
+      window.location.href = "/pending";
+      return;
+    }
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      const sendRes = await fetch("/api/auth/send-verification-email", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (process.env.NODE_ENV === "development") {
+        devAuthLog("onboarding", {
+          step: "send_verification_email",
+          status: sendRes.status,
+          ok: sendRes.ok,
+        });
+      }
+    } else {
+      devAuthLog("onboarding", { step: "send_verification_skipped_no_session", userId });
+    }
+    window.location.href = "/verify-email";
+  }
+
   async function handleSubmit() {
     if (!userId || !accountType) return;
+
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const isGoogle = authUser ? isOAuthOnlyGoogleUser(authUser) : false;
 
     if (accountType === "member") {
       if (!firstName.trim()) return markMissingField("field-member-first-name");
@@ -224,6 +284,22 @@ export default function OnboardingPage() {
 
     setSubmitting(true);
     try {
+      const verificationFields = isGoogle
+        ? {
+            verification_status: VERIFICATION.AWAITING_ADMIN,
+            email_verified: true,
+            email_verified_at: new Date().toISOString(),
+            admin_verified: false,
+            is_approved: false,
+          }
+        : {
+            verification_status: VERIFICATION.AWAITING_EMAIL,
+            email_verified: false,
+            email_verified_at: null,
+            admin_verified: false,
+            is_approved: false,
+          };
+
       const updates =
         accountType === "member"
           ? {
@@ -234,8 +310,7 @@ export default function OnboardingPage() {
               status: status || null,
               skill_badge: skillBadge || null,
               years_experience: yearsExperience || null,
-              verification_status: "pending",
-              is_approved: false,
+              ...verificationFields,
             }
           : {
               account_type: "employer",
@@ -243,7 +318,7 @@ export default function OnboardingPage() {
               first_name: empFirstName,
               last_name: empLastName,
               company_name: companyName,
-              verification_status: "pending",
+              ...verificationFields,
             };
 
       const finalUpdates = referralInput.trim()
@@ -255,7 +330,18 @@ export default function OnboardingPage() {
         .update(finalUpdates)
         .eq("user_id", userId);
 
-      if (error) { alert("Error saving profile: " + error.message); return; }
+      if (error) {
+        devAuthLog("onboarding", { step: "profile_update_failed", userId });
+        alert("Error saving profile: " + error.message);
+        return;
+      }
+
+      devAuthLog("onboarding", {
+        step: "profile_updated",
+        userId,
+        verification_status: verificationFields.verification_status,
+        isGoogle,
+      });
 
       // Generate referral code for this user
       const { data: { session } } = await supabase.auth.getSession();
@@ -270,8 +356,9 @@ export default function OnboardingPage() {
 
       if (accountType === "member") {
         setMemberPaywallOpen(true);
+        // Member redirect happens in completeMemberSubscriptionAck
       } else {
-        window.location.href = "/pending";
+        await redirectAfterOnboarding(isGoogle);
       }
     } finally {
       setSubmitting(false);
@@ -289,7 +376,9 @@ export default function OnboardingPage() {
       return;
     }
     setMemberPaywallOpen(false);
-    window.location.href = "/pending";
+    const { data: { user: authUser } } = await supabase.auth.getUser();
+    const isGoogle = authUser ? isOAuthOnlyGoogleUser(authUser) : false;
+    await redirectAfterOnboarding(isGoogle);
   }
 
   const inputStyle: React.CSSProperties = {

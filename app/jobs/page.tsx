@@ -8,6 +8,7 @@ import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 import { getFeatureAccess } from "../lib/featureAccess";
 import { shouldEnforceMemberPaywall } from "../lib/paywallPaths";
+import { hasFullPlatformAccess, needsEmailVerification } from "../lib/verificationAccess";
 import {
   applyJobFilters,
   uniqueJobRegions,
@@ -21,6 +22,8 @@ type ProfileRow = {
   subscription_status: string | null;
   is_admin: boolean | null;
   verification_status: string | null;
+  email_verified: boolean | null;
+  admin_verified: boolean | null;
 };
 
 type SavedJobRow = {
@@ -223,13 +226,13 @@ export default function JobsPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("account_type, subscription_status, is_admin, verification_status")
+        .select("account_type, subscription_status, is_admin, verification_status, email_verified, admin_verified")
         .eq("user_id", uid)
         .maybeSingle();
 
       const p = (profile ?? null) as ProfileRow | null;
-      if (!p || p.verification_status !== "verified") {
-        window.location.href = "/pending";
+      if (!p || !hasFullPlatformAccess(p)) {
+        window.location.href = p && needsEmailVerification(p) ? "/verify-email" : "/pending";
         return;
       }
 

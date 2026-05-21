@@ -39,9 +39,9 @@ export async function GET(req: NextRequest) {
   );
 
   const profileSelectWithMirrors =
-    "user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count";
+    "user_id, first_name, last_name, display_name, name, email, role, service, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count";
   const profileSelectBase =
-    "user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at, community_flag_count";
+    "user_id, first_name, last_name, display_name, role, service, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count";
 
   // Fetch profiles and auth users. The mirrored name/email columns are deployed via
   // migration, so keep this compatible with environments that have not run it yet.

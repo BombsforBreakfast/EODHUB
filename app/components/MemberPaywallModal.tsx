@@ -19,7 +19,7 @@ const DEFAULT_MSG =
   "Your free trial has expired. Please subscribe for full access!";
 
 const ONBOARDING_BODY =
-  "EOD HUB is free during beta. After beta ends, new members receive a free trial period, then membership is $1.99/month unless you subscribe earlier. Your subscription helps us operate, maintain, and improve the site.";
+  "EOD HUB is free during beta. After beta ends, new members receive a free trial period, then membership is $1.99/month. Your subscription helps us operate, maintain, and improve the site.";
 
 export default function MemberPaywallModal({
   open,

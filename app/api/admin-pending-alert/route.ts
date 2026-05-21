@@ -29,7 +29,8 @@ export async function GET(req: NextRequest) {
   const { data: pending } = await supabase
     .from("profiles")
     .select("user_id, first_name, last_name, display_name, created_at")
-    .eq("verification_status", "pending")
+    .eq("email_verified", true)
+    .in("verification_status", ["awaiting_admin_review", "pending_admin_review", "pending"])
     .order("created_at", { ascending: true });
 
   if (!pending || pending.length === 0) {

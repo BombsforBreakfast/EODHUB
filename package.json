@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/fetch-disposable-domains.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:news": "tsx app/lib/news/goldenLasd.verify.ts"
+    "test:news": "tsx app/lib/news/goldenLasd.verify.ts",
+    "refresh:disposable": "node scripts/fetch-disposable-domains.mjs"
   },
   "dependencies": {
     "@emoji-mart/data": "^1.2.1",

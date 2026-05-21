@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import { isPaywallEnforced, memberHasInteractionAccess } from "../lib/subscriptionAccess";
+import { hasFullPlatformAccess, needsEmailVerification } from "../lib/verificationAccess";
 
 export default function SubscribePage() {
   const { t } = useTheme();
@@ -24,7 +25,7 @@ export default function SubscribePage() {
       }
       const { data: p } = await supabase
         .from("profiles")
-        .select("verification_status, account_type, service, company_name, subscription_status, is_admin")
+        .select("verification_status, email_verified, admin_verified, account_type, service, company_name, subscription_status, is_admin")
         .eq("user_id", user.id)
         .maybeSingle();
       if (!p || (!p.service && !p.company_name)) {
@@ -35,8 +36,8 @@ export default function SubscribePage() {
         window.location.href = "/";
         return;
       }
-      if (p.verification_status !== "verified") {
-        window.location.href = "/pending";
+      if (!hasFullPlatformAccess(p)) {
+        window.location.href = needsEmailVerification(p) ? "/verify-email" : "/pending";
         return;
       }
       if (

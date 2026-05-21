@@ -80,6 +80,7 @@ type UserProfile = {
   role: string | null;
   service: string | null;
   verification_status: string | null;
+  email_verified?: boolean | null;
   is_admin: boolean | null;
   is_employer: boolean | null;
   employer_verified: boolean | null;
@@ -1758,12 +1759,25 @@ export default function AdminPage() {
           },
           body: JSON.stringify({ userId }),
         });
-        let json: { error?: string } = {};
+        let json: {
+          error?: string;
+          emailSent?: boolean;
+          emailSkippedReason?: string;
+          wasAlreadyApproved?: boolean;
+        } = {};
         try { json = await res.json(); } catch { /* ignore */ }
         if (!res.ok) {
           alert(json.error ?? "Verification failed");
+        } else if (json.emailSent) {
+          showToast("User approved — approval email sent.");
+          await Promise.all([loadUsers(), loadPendingCounts()]);
+        } else if (json.emailSkippedReason === "already_sent") {
+          showToast("User approved — approval email was already sent.");
+          await Promise.all([loadUsers(), loadPendingCounts()]);
         } else {
-          showToast("User verified — email sent!");
+          showToast(
+            `User approved, but email was not sent${json.emailSkippedReason ? ` (${json.emailSkippedReason})` : ""}. Check server logs.`,
+          );
           await Promise.all([loadUsers(), loadPendingCounts()]);
         }
       } else {
@@ -3518,7 +3532,16 @@ export default function AdminPage() {
                     {f.charAt(0).toUpperCase() + f.slice(1)}
                     {" "}
                     <span style={{ opacity: 0.7 }}>
-                      ({users.filter((u) => f === "all" || u.verification_status === f).length})
+                      ({users.filter((u) =>
+                        f === "all"
+                          ? true
+                          : f === "pending"
+                            ? (u.verification_status === "awaiting_admin_review" ||
+                              u.verification_status === "pending_admin_review" ||
+                              u.verification_status === "pending") &&
+                              !!u.email_verified
+                            : u.verification_status === f,
+                      ).length})
                     </span>
                   </button>
                 ))}
@@ -3526,14 +3549,29 @@ export default function AdminPage() {
               <button onClick={loadUsers} style={actionBtn("#374151")}>↻ Refresh</button>
             </div>
             <div style={{ display: "grid", gap: 10 }}>
-              {users.filter((u) => userFilter === "all" || u.verification_status === userFilter).map((u) => {
+              {users
+                .filter((u) =>
+                  userFilter === "all"
+                    ? true
+                    : userFilter === "pending"
+                      ? (u.verification_status === "awaiting_admin_review" ||
+                          u.verification_status === "pending_admin_review" ||
+                          u.verification_status === "pending") &&
+                        !!u.email_verified
+                      : u.verification_status === userFilter,
+                )
+                .map((u) => {
                 const name =
                   u.display_name ||
                   u.name ||
                   `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
                   "Unnamed User";
                 const isVerified = u.verification_status === "verified";
-                const isPending = u.verification_status === "pending";
+                const isPending =
+                  !!u.email_verified &&
+                  (u.verification_status === "awaiting_admin_review" ||
+                    u.verification_status === "pending_admin_review" ||
+                    u.verification_status === "pending");
                 const isDenied = u.verification_status === "denied";
                 return (
                   <div key={u.user_id} style={{ border: `1px solid ${isDenied ? "#fca5a5" : t.border}`, borderRadius: 12, padding: "12px 16px", background: isDenied ? "#fff5f5" : t.surface, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>

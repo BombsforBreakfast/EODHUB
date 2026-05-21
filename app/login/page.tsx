@@ -8,6 +8,22 @@ import type { TurnstileInstance } from "@marsidev/react-turnstile";
 import { useTheme } from "../lib/ThemeContext";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { clearAppAuthState, markAppSessionActive } from "../lib/auth/sessionState";
+import {
+  hasFullPlatformAccess,
+  needsEmailVerification,
+} from "../lib/verificationAccess";
+import {
+  mapSupabaseAuthError,
+  SIGNUP_USER_MESSAGES,
+  userMessageForSignupCode,
+  type SignupErrorCode,
+} from "../lib/auth/signupErrors";
+
+function devClientAuthLog(tag: string, data: Record<string, unknown>) {
+  if (process.env.NODE_ENV === "development") {
+    console.debug(`[auth:${tag}]`, data);
+  }
+}
 
 
 export default function LoginPage() {
@@ -34,6 +50,7 @@ export default function LoginPage() {
   const [signupCount, setSignupCount] = useState<number | null>(null);
   const [countFlash, setCountFlash] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
+  const [loginMessage, setLoginMessage] = useState<string | null>(null);
   const [signupAwaitingEmail, setSignupAwaitingEmail] = useState(false);
 
   // Persist ?ref= referral code through signup flow via localStorage
@@ -130,6 +147,7 @@ export default function LoginPage() {
   }
 
   async function handleLogin() {
+    setLoginMessage(null);
     try {
       setSubmitting(true);
 
@@ -144,7 +162,14 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
-        alert("Login error: " + error.message);
+        const mapped = mapSupabaseAuthError(error.message);
+        devClientAuthLog("login", { step: "signInWithPassword_error", code: mapped });
+        // Do not reveal whether the email exists or password was wrong.
+        setLoginMessage(
+          mapped === "duplicate_account"
+            ? userMessageForSignupCode("duplicate_account")
+            : SIGNUP_USER_MESSAGES.pending_verification,
+        );
         turnstileRef.current?.reset();
         setTurnstileToken(null);
         return;
@@ -153,7 +178,7 @@ export default function LoginPage() {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session) {
-        alert("Login succeeded, but no session was found yet. Please try again.");
+        setLoginMessage(SIGNUP_USER_MESSAGES.generic);
         return;
       }
 
@@ -168,18 +193,36 @@ export default function LoginPage() {
         last_name: string | null;
         photo_url: string | null;
         verification_status: string | null;
+        email_verified: boolean | null;
+        admin_verified: boolean | null;
       }>(supabase, session.user, {
         route: "app/login/page.tsx:handleLogin",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified",
       });
 
-      if (profile?.verification_status === "verified") {
+      devClientAuthLog("login", {
+        step: "profile_loaded",
+        verification_status: profile?.verification_status ?? null,
+        email_verified: profile?.email_verified ?? null,
+        admin_verified: profile?.admin_verified ?? null,
+      });
+
+      if (profile && hasFullPlatformAccess(profile)) {
         window.location.href = "/";
-      } else if (!profile) {
-        window.location.href = "/onboarding";
-      } else {
-        window.location.href = "/pending";
+        return;
       }
+
+      if (!profile) {
+        window.location.href = "/onboarding";
+        return;
+      }
+
+      if (needsEmailVerification(profile)) {
+        window.location.href = "/verify-email";
+        return;
+      }
+
+      window.location.href = "/pending";
     } finally {
       setSubmitting(false);
     }
@@ -197,67 +240,60 @@ export default function LoginPage() {
     try {
       setSubmitting(true);
 
-      const validateRes = await fetch("/api/auth/validate-email", {
+      clearAppAuthState();
+      const signupRes = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, password, turnstileToken }),
       });
-      const validateData = (await validateRes.json()) as { ok?: boolean; message?: string; email?: string };
-      if (!validateRes.ok || !validateData.ok) {
-        setSignupError(
-          validateData.message ??
-            (validateRes.status === 429
-              ? "Too many attempts. Please wait a few minutes and try again."
-              : "Please use a real email address."),
-        );
-        return;
-      }
+      const signupData = (await signupRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        email?: string;
+        code?: SignupErrorCode;
+      };
+      devClientAuthLog("signup", {
+        step: "server-signup",
+        status: signupRes.status,
+        ok: signupData.ok,
+        code: signupData.code,
+      });
 
-      const normalizedEmail = validateData.email ?? email.trim().toLowerCase();
-
-      if (!await verifyTurnstile()) {
-        setSignupError("Please complete the security check.");
+      if (!signupRes.ok || !signupData.ok) {
+        setSignupError(userMessageForSignupCode(signupData.code));
         turnstileRef.current?.reset();
         setTurnstileToken(null);
         return;
       }
 
-      clearAppAuthState();
-      const redirectTo = `${window.location.origin}/auth/callback?next=/onboarding`;
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+      const normalizedEmail = signupData.email ?? email.trim().toLowerCase();
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: normalizedEmail,
         password,
-        options: { emailRedirectTo: redirectTo },
       });
 
-      if (signUpError) {
-        setSignupError(signUpError.message);
-        return;
-      }
-
-      if (signUpData.session) {
-        markAppSessionActive(true);
-        window.location.href = "/onboarding";
-        return;
-      }
-
-      if (signUpData.user) {
-        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
-          email: normalizedEmail,
-          password,
+      if (signInError || !signInData.user) {
+        devClientAuthLog("signup", {
+          step: "signIn_after_server_signup",
+          code: signInError ? mapSupabaseAuthError(signInError.message) : "generic",
         });
-
-        if (!signInError && signInData.user) {
-          markAppSessionActive(true);
-          window.location.href = "/onboarding";
-          return;
-        }
-
-        setSignupAwaitingEmail(true);
+        setSignupError(
+          signInError
+            ? userMessageForSignupCode(mapSupabaseAuthError(signInError.message))
+            : SIGNUP_USER_MESSAGES.generic,
+        );
+        turnstileRef.current?.reset();
+        setTurnstileToken(null);
         return;
       }
 
-      setSignupError("Something went wrong. Please try again in a moment.");
+      devClientAuthLog("signup", {
+        step: "server_signup_signIn_ok",
+        hasSession: !!signInData.session,
+        hasUser: !!signInData.user,
+      });
+
+      markAppSessionActive(true);
+      window.location.href = "/onboarding";
     } finally {
       setSubmitting(false);
     }
@@ -561,6 +597,11 @@ export default function LoginPage() {
 
           {mode === "login" ? (
             <>
+              {loginMessage && (
+                <div style={{ fontSize: 14, color: "#b91c1c", lineHeight: 1.4 }} role="alert">
+                  {loginMessage}
+                </div>
+              )}
               <button
                 type="submit"
                 disabled={submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError)}

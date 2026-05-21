@@ -5,6 +5,7 @@ export const MEMBER_PAYWALL_EXEMPT_PATHS = [
   "/subscribe",
   "/profile",
   "/pending",
+  "/verify-email",
   "/onboarding",
   "/login",
   "/privacy",
