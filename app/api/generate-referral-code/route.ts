@@ -6,8 +6,10 @@ const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 function makeCode(length = 8): string {
   let code = "";
+  const randomValues = new Uint8Array(length);
+  crypto.getRandomValues(randomValues);
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    code += CHARS[randomValues[i] % CHARS.length];
   }
   return code;
 }
