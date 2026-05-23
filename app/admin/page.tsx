@@ -221,6 +221,7 @@ type AdminNewsItem = {
   canonical_url: string | null;
   summary: string | null;
   thumbnail_url: string | null;
+  admin_manual_image_url: string | null;
   published_at: string | null;
   ingested_at: string;
   tags: string[];
@@ -649,8 +650,8 @@ export default function AdminPage() {
   const [newsFilter, setNewsFilter] = useState<NewsTabFilter>("pending");
   const [newsLoading, setNewsLoading] = useState(false);
   const [newsActingId, setNewsActingId] = useState<string | null>(null);
-  const [newsThumbnailSavingId, setNewsThumbnailSavingId] = useState<string | null>(null);
-  const [newsThumbnailUploadingId, setNewsThumbnailUploadingId] = useState<string | null>(null);
+  const [newsManualImageSavingId, setNewsManualImageSavingId] = useState<string | null>(null);
+  const [newsManualImageUploadingId, setNewsManualImageUploadingId] = useState<string | null>(null);
   const [newsPendingCount, setNewsPendingCount] = useState(0);
   const [newsRunStats, setNewsRunStats] = useState<string | null>(null);
   const [newsRunning, setNewsRunning] = useState(false);
@@ -667,7 +668,7 @@ export default function AdminPage() {
   const [previewBulkSending, setPreviewBulkSending] = useState(false);
   const [newsSelected, setNewsSelected] = useState<Set<string>>(new Set());
   const [newsBulkBusy, setNewsBulkBusy] = useState(false);
-  const [newsThumbnailOverrides, setNewsThumbnailOverrides] = useState<Record<string, string>>({});
+  const [newsManualImageOverrides, setNewsManualImageOverrides] = useState<Record<string, string>>({});
   const [manualNewsUrl, setManualNewsUrl] = useState("");
   const [manualNewsHeadline, setManualNewsHeadline] = useState("");
   const [manualNewsSummary, setManualNewsSummary] = useState("");
@@ -766,9 +767,9 @@ export default function AdminPage() {
       const json = await res.json();
       const items = (json.items ?? []) as AdminNewsItem[];
       setNewsItems(items);
-      setNewsThumbnailOverrides(
+      setNewsManualImageOverrides(
         items.reduce<Record<string, string>>((acc, item) => {
-          acc[item.id] = item.thumbnail_url ?? "";
+          acc[item.id] = item.admin_manual_image_url ?? "";
           return acc;
         }, {})
       );
@@ -841,7 +842,7 @@ export default function AdminPage() {
     setNewsActingId(id);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const thumbnailOverride = (newsThumbnailOverrides[id] ?? "").trim();
+      const manualImageOverride = (newsManualImageOverrides[id] ?? "").trim();
       const res = await fetch(`/api/admin/news`, {
         method: "POST",
         headers: {
@@ -851,7 +852,7 @@ export default function AdminPage() {
         body: JSON.stringify({
           id,
           action,
-          thumbnail_url: thumbnailOverride.length > 0 ? thumbnailOverride : null,
+          admin_manual_image_url: manualImageOverride.length > 0 ? manualImageOverride : null,
         }),
       });
       if (!res.ok) {
@@ -873,11 +874,11 @@ export default function AdminPage() {
     }
   }
 
-  async function saveNewsThumbnailOverride(id: string) {
-    setNewsThumbnailSavingId(id);
+  async function saveNewsManualImageOverride(id: string) {
+    setNewsManualImageSavingId(id);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const thumbnailOverride = (newsThumbnailOverrides[id] ?? "").trim();
+      const manualImageOverride = (newsManualImageOverrides[id] ?? "").trim();
       const res = await fetch(`/api/admin/news`, {
         method: "PATCH",
         headers: {
@@ -886,20 +887,20 @@ export default function AdminPage() {
         },
         body: JSON.stringify({
           id,
-          thumbnail_url: thumbnailOverride.length > 0 ? thumbnailOverride : null,
+          admin_manual_image_url: manualImageOverride.length > 0 ? manualImageOverride : null,
         }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
-        showToast(`Photo update failed: ${j.error || res.status}`);
+        showToast(`Image override failed: ${j.error || res.status}`);
         return;
       }
       setNewsItems((prev) =>
-        prev.map((item) => (item.id === id ? { ...item, thumbnail_url: j.thumbnail_url ?? null } : item))
+        prev.map((item) => (item.id === id ? { ...item, admin_manual_image_url: j.admin_manual_image_url ?? null } : item))
       );
-      showToast("OG photo updated");
+      showToast(j.admin_manual_image_url ? "Manual image override saved" : "Manual image override cleared");
     } finally {
-      setNewsThumbnailSavingId(null);
+      setNewsManualImageSavingId(null);
     }
   }
 
@@ -921,16 +922,16 @@ export default function AdminPage() {
       showToast(pickError);
       return;
     }
-    setNewsThumbnailUploadingId(newsId);
+    setNewsManualImageUploadingId(newsId);
     try {
       const publicUrl = await uploadNewsThumbnail(file);
-      setNewsThumbnailOverrides((prev) => ({ ...prev, [newsId]: publicUrl }));
-      showToast("Photo uploaded. Click save to apply.");
+      setNewsManualImageOverrides((prev) => ({ ...prev, [newsId]: publicUrl }));
+      showToast("Image uploaded. Click save to apply.");
     } catch (err) {
       const msg = (err as { message?: string } | null)?.message || "Failed to upload photo.";
       showToast(msg);
     } finally {
-      setNewsThumbnailUploadingId(null);
+      setNewsManualImageUploadingId(null);
     }
   }
 
@@ -4807,11 +4808,11 @@ export default function AdminPage() {
                       style={{ marginTop: 4, cursor: "pointer" }}
                       aria-label="Select item"
                     />
-                    {(newsThumbnailOverrides[n.id]?.trim() || n.thumbnail_url) && (
+                    {(newsManualImageOverrides[n.id]?.trim() || n.thumbnail_url) && (
                       <a href={n.source_url} target="_blank" rel="noreferrer noopener">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
-                          src={(newsThumbnailOverrides[n.id]?.trim() || n.thumbnail_url) ?? ""}
+                          src={(newsManualImageOverrides[n.id]?.trim() || n.thumbnail_url) ?? ""}
                           alt=""
                           style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 8, flexShrink: 0 }}
                         />
@@ -4864,8 +4865,24 @@ export default function AdminPage() {
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ display: "grid", gap: 5 }}>
                         <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
-                          OG photo override (optional)
+                          Manual feed image URL (optional)
                         </label>
+                        <input
+                          type="url"
+                          value={newsManualImageOverrides[n.id] ?? ""}
+                          onChange={(e) => setNewsManualImageOverrides((prev) => ({ ...prev, [n.id]: e.target.value }))}
+                          placeholder={n.thumbnail_url ? "Leave blank to use OG image" : "Paste image URL"}
+                          style={{
+                            width: "100%",
+                            boxSizing: "border-box",
+                            border: `1px solid ${t.border}`,
+                            borderRadius: 8,
+                            padding: "8px 10px",
+                            background: t.bg,
+                            color: t.text,
+                            fontSize: 13,
+                          }}
+                        />
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                           <label
                             style={{
@@ -4876,16 +4893,16 @@ export default function AdminPage() {
                               color: "white",
                               fontWeight: 700,
                               fontSize: 12,
-                              cursor: newsThumbnailUploadingId === n.id ? "default" : "pointer",
-                              opacity: newsThumbnailUploadingId === n.id ? 0.7 : 1,
+                              cursor: newsManualImageUploadingId === n.id ? "default" : "pointer",
+                              opacity: newsManualImageUploadingId === n.id ? 0.7 : 1,
                             }}
                           >
-                            {newsThumbnailUploadingId === n.id ? "Uploading…" : "Upload photo"}
+                            {newsManualImageUploadingId === n.id ? "Uploading…" : "Upload image"}
                             <input
                               type="file"
                               accept="image/*"
                               style={{ display: "none" }}
-                              disabled={newsThumbnailUploadingId === n.id}
+                              disabled={newsManualImageUploadingId === n.id}
                               onChange={(e) => {
                                 const file = e.target.files?.[0] ?? null;
                                 void handleNewsThumbnailPick(n.id, file);
@@ -4893,23 +4910,33 @@ export default function AdminPage() {
                               }}
                             />
                           </label>
-                          {(newsThumbnailOverrides[n.id] ?? "").trim().length > 0 && (
+                          {(newsManualImageOverrides[n.id] ?? "").trim().length > 0 && (
                             <button
                               type="button"
-                              onClick={() => setNewsThumbnailOverrides((prev) => ({ ...prev, [n.id]: "" }))}
+                              onClick={() => setNewsManualImageOverrides((prev) => ({ ...prev, [n.id]: "" }))}
                               style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 12, cursor: "pointer" }}
                             >
-                              Remove photo
+                              Clear override
                             </button>
                           )}
                           <span style={{ fontSize: 11, color: t.textMuted }}>
-                            {newsThumbnailOverrides[n.id]?.trim()
-                              ? "Override selected"
-                              : "Using current OG image"}
+                            {newsManualImageOverrides[n.id]?.trim()
+                              ? "Manual image takes priority over OG"
+                              : n.thumbnail_url
+                                ? "Using scraped OG image"
+                                : "No image; feed will show text-only card"}
                           </span>
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                        <button
+                          type="button"
+                          onClick={() => void saveNewsManualImageOverride(n.id)}
+                          disabled={newsManualImageSavingId === n.id}
+                          style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#1d4ed8", color: "white", fontWeight: 700, fontSize: 13, cursor: newsManualImageSavingId === n.id ? "default" : "pointer", opacity: newsManualImageSavingId === n.id ? 0.7 : 1 }}
+                        >
+                          {newsManualImageSavingId === n.id ? "Saving…" : "Save image override"}
+                        </button>
                         {newsFilter === "pending" && (
                           <>
                             <button
@@ -4929,16 +4956,6 @@ export default function AdminPage() {
                               {newsActingId === n.id ? "Saving…" : "Approve to feed"}
                             </button>
                           </>
-                        )}
-                        {newsFilter === "published" && (
-                          <button
-                            type="button"
-                            onClick={() => void saveNewsThumbnailOverride(n.id)}
-                            disabled={newsThumbnailSavingId === n.id}
-                            style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#1d4ed8", color: "white", fontWeight: 700, fontSize: 13, cursor: newsThumbnailSavingId === n.id ? "default" : "pointer", opacity: newsThumbnailSavingId === n.id ? 0.7 : 1 }}
-                          >
-                            {newsThumbnailSavingId === n.id ? "Saving…" : "Save photo override"}
-                          </button>
                         )}
                       </div>
                     </div>

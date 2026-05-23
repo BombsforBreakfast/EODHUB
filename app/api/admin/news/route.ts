@@ -33,6 +33,7 @@ type PublishedNewsRow = {
   source_url: string;
   canonical_url: string | null;
   thumbnail_url: string | null;
+  admin_manual_image_url: string | null;
   relevance_score: number | null;
   published_at: string | null;
   ingested_at: string;
@@ -117,7 +118,7 @@ async function ensurePublishedNewsPosts(supabase: ReturnType<typeof adminClient>
   const idOrder = new Map(newsItemIds.map((id, idx) => [id, idx]));
   const { data: newsRows, error: newsErr } = await supabase
     .from("news_items")
-    .select("id, headline, summary, source_name, source_url, canonical_url, thumbnail_url, relevance_score, published_at, ingested_at, approved_at, release_at")
+    .select("id, headline, summary, source_name, source_url, canonical_url, thumbnail_url, admin_manual_image_url, relevance_score, published_at, ingested_at, approved_at, release_at")
     .in("id", newsItemIds)
     .eq("status", "published");
   if (newsErr) throw new Error(newsErr.message);
@@ -258,7 +259,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await supabase
     .from("news_items")
     .select(
-      "id, headline, source_name, source_url, canonical_url, summary, thumbnail_url, published_at, ingested_at, approved_at, release_at, tags, relevance_score, is_satire, status, created_at, reviewed_at, raw_payload"
+      "id, headline, source_name, source_url, canonical_url, summary, thumbnail_url, admin_manual_image_url, published_at, ingested_at, approved_at, release_at, tags, relevance_score, is_satire, status, created_at, reviewed_at, raw_payload"
     )
     .eq("status", status)
     .order(status === "pending" ? "relevance_score" : "created_at", { ascending: false })
@@ -276,12 +277,12 @@ type ActionBody = {
   scope?: "all";
   status?: Status;
   action?: "approve" | "reject" | "delete";
-  thumbnail_url?: string | null;
+  admin_manual_image_url?: string | null;
 };
 
 type PatchBody = {
   id?: string;
-  thumbnail_url?: string | null;
+  admin_manual_image_url?: string | null;
 };
 
 export async function POST(req: NextRequest) {
@@ -345,13 +346,13 @@ export async function POST(req: NextRequest) {
 
   // Single id (legacy shape).
   if (body.id) {
-    const thumbnail_url =
-      typeof body.thumbnail_url === "string"
-        ? body.thumbnail_url.trim() || null
-        : body.thumbnail_url === null
+    const admin_manual_image_url =
+      typeof body.admin_manual_image_url === "string"
+        ? body.admin_manual_image_url.trim() || null
+        : body.admin_manual_image_url === null
           ? null
           : undefined;
-    const singlePatch = thumbnail_url !== undefined ? { ...patch, thumbnail_url } : patch;
+    const singlePatch = admin_manual_image_url !== undefined ? { ...patch, admin_manual_image_url } : patch;
     const { error } = await supabase.from("news_items").update(singlePatch).eq("id", body.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     try {
@@ -444,15 +445,15 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "id is required" }, { status: 400 });
   }
 
-  const thumbnail_url =
-    typeof body.thumbnail_url === "string"
-      ? body.thumbnail_url.trim() || null
-      : body.thumbnail_url === null
+  const admin_manual_image_url =
+    typeof body.admin_manual_image_url === "string"
+      ? body.admin_manual_image_url.trim() || null
+      : body.admin_manual_image_url === null
         ? null
         : undefined;
 
-  if (thumbnail_url === undefined) {
-    return NextResponse.json({ error: "thumbnail_url must be string or null" }, { status: 400 });
+  if (admin_manual_image_url === undefined) {
+    return NextResponse.json({ error: "admin_manual_image_url must be string or null" }, { status: 400 });
   }
 
   const supabase = adminClient();
@@ -466,17 +467,9 @@ export async function PATCH(req: NextRequest) {
 
   const { error: newsErr } = await supabase
     .from("news_items")
-    .update({ thumbnail_url })
+    .update({ admin_manual_image_url })
     .eq("id", id);
   if (newsErr) return NextResponse.json({ error: newsErr.message }, { status: 500 });
 
-  if ((row as { status: Status }).status === "published") {
-    const { error: postErr } = await supabase
-      .from("posts")
-      .update({ og_image: thumbnail_url })
-      .eq("news_item_id", id);
-    if (postErr) return NextResponse.json({ error: postErr.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true, id, thumbnail_url });
+  return NextResponse.json({ ok: true, id, admin_manual_image_url });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
@@ -13,6 +13,7 @@ import { useMasterShell } from "../../../components/master/masterShellContext";
 import AddToRabbitholeModal from "../../../rabbithole/components/AddToRabbitholeModal";
 import { MurphyRabbitholeBanner } from "../../../components/MurphyRabbitholeBanner";
 import FeedPostHeader from "../../../components/FeedPostHeader";
+import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { prepareImageUploadFile } from "../../../lib/prepareUploadFile";
 import { validateImagePick } from "../../../lib/uploadLimits";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
@@ -153,15 +154,35 @@ function isHiddenInviteAccount(user: Pick<InviteUser, "user_id" | "display_name"
   );
 }
 
-function getYouTubeId(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname === "youtu.be") return parsed.pathname.slice(1).split("?")[0];
-    if (parsed.hostname.includes("youtube.com")) return parsed.searchParams.get("v");
-  } catch {
-    return null;
+const UNIT_URL_PATTERN_G =
+  /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
+
+function renderUnitText(text: string): ReactNode[] {
+  const parts: ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(UNIT_URL_PATTERN_G)) {
+    if (match.index === undefined) continue;
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+
+    const raw = match[0].replace(/[.,)>]+$/, "");
+    const href = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    parts.push(
+      <a
+        key={`url-${match.index}`}
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}
+      >
+        {raw}
+      </a>,
+    );
+    lastIndex = match.index + match[0].length;
   }
-  return null;
+
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts;
 }
 
 function timeAgo(dateString: string) {
@@ -1861,7 +1882,20 @@ export default function UnitPage() {
                       <div key={c.id} style={{ display: "flex", gap: 8 }}>
                         <Avatar photo={c.author_photo} name={c.author_name} size={28} />
                         <div style={{ minWidth: 0, flex: 1 }}>
-                          <div style={{ fontSize: 13, color: t.text }}><strong>{c.author_name}</strong> {c.content}</div>
+                          <div style={{ fontSize: 13, color: t.text }}>
+                            <strong>{c.author_name}</strong> {renderUnitText(c.content)}
+                          </div>
+                          {(() => {
+                            const youtubeUrl = firstYouTubeUrlFromText(c.content);
+                            return youtubeUrl ? (
+                              <YouTubeEmbed
+                                url={youtubeUrl}
+                                title="Group comment YouTube video"
+                                maxWidth="min(360px, 100%)"
+                                marginTop={8}
+                              />
+                            ) : null;
+                          })()}
                           <div
                             style={{
                               display: "flex",
@@ -2396,24 +2430,22 @@ function PostCard({
         </div>
       )}
       {post.content && (
-        <div style={{ fontSize: 15, lineHeight: 1.6, marginBottom: post.photo_url ? 12 : 0, color: t.text }}>{post.content}</div>
+        <div style={{ fontSize: 15, lineHeight: 1.6, marginBottom: post.photo_url ? 12 : 0, color: t.text }}>{renderUnitText(post.content)}</div>
       )}
+
+      {post.content && (() => {
+        const youtubeUrl = firstYouTubeUrlFromText(post.content);
+        const ogUrl = post.rabbithole_contribution_id ? post.meta?.og?.url : null;
+        if (!youtubeUrl || sameYouTubeVideo(youtubeUrl, ogUrl)) return null;
+        return <YouTubeEmbed url={youtubeUrl} title="Group post YouTube video" marginTop={10} maxWidth={520} />;
+      })()}
 
       {post.rabbithole_contribution_id && post.meta?.og?.url && (() => {
         const og = post.meta?.og;
         if (!og?.url) return null;
-        const ytId = getYouTubeId(og.url);
+        const ytId = getYouTubeVideoId(og.url);
         if (ytId) {
-          return (
-            <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", aspectRatio: "16/9", maxWidth: 520 }}>
-              <iframe
-                src={`https://www.youtube.com/embed/${ytId}`}
-                style={{ width: "100%", height: "100%", border: "none", display: "block" }}
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              />
-            </div>
-          );
+          return <YouTubeEmbed videoId={ytId} title="Group post YouTube video" marginTop={10} maxWidth={520} />;
         }
         return (
           <a
@@ -2550,7 +2582,22 @@ function PostCard({
               <Avatar photo={c.author_photo} name={c.author_name} size={28} />
               <div style={{ background: t.badgeBg, borderRadius: 10, padding: "7px 12px", flex: 1 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 2 }}>{c.author_name}</div>
-                {c.content && <div style={{ fontSize: 13, color: t.text, lineHeight: 1.45 }}>{c.content}</div>}
+                {c.content && (
+                  <>
+                    <div style={{ fontSize: 13, color: t.text, lineHeight: 1.45 }}>{renderUnitText(c.content)}</div>
+                    {(() => {
+                      const youtubeUrl = firstYouTubeUrlFromText(c.content);
+                      return youtubeUrl ? (
+                        <YouTubeEmbed
+                          url={youtubeUrl}
+                          title="Group comment YouTube video"
+                          maxWidth="min(360px, 100%)"
+                          marginTop={8}
+                        />
+                      ) : null;
+                    })()}
+                  </>
+                )}
                 {c.image_url && (
                   <div style={{ marginTop: 8, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
                     <img src={c.image_url} alt="Comment image" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />

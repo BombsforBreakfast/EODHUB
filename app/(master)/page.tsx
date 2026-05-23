@@ -30,6 +30,7 @@ import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
 import FeedPostHeader from "../components/FeedPostHeader";
+import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../components/YouTubeEmbed";
 import KangarooCourtFeedSection from "../components/KangarooCourtFeedSection";
 import AddToRabbitholeModal from "../rabbithole/components/AddToRabbitholeModal";
 import { MurphyRabbitholeBanner } from "../components/MurphyRabbitholeBanner";
@@ -403,6 +404,7 @@ type FeedPost = RankedPostRow & {
   og_title: string | null;
   og_description: string | null;
   og_image: string | null;
+  admin_manual_image_url: string | null;
   og_site_name: string | null;
   event_id: string | null;
   feed_event: FeedEventSnapshot | null;
@@ -464,15 +466,6 @@ function formatEventDisplayDate(dateIso: string | null | undefined) {
 
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
-}
-
-function getYouTubeId(url: string): string | null {
-  try {
-    const u = new URL(url);
-    if (u.hostname === "youtu.be") return u.pathname.slice(1).split("?")[0];
-    if (u.hostname.includes("youtube.com")) return u.searchParams.get("v");
-  } catch { /* ignore */ }
-  return null;
 }
 
 function extractLegacyEventTitle(content: string | null | undefined): string | null {
@@ -632,7 +625,9 @@ function httpsAssetUrl(url: string | null | undefined): string {
 
 function OgCard({ og }: { og: OgPreview }) {
   const { t } = useTheme();
-  const imgUrl = og.image ? httpsAssetUrl(og.image) : "";
+  const candidateImgUrl = og.image ? httpsAssetUrl(og.image) : "";
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const imgUrl = candidateImgUrl && failedImageUrl !== candidateImgUrl ? candidateImgUrl : "";
   return (
     <a href={og.url ? httpsAssetUrl(og.url) : "#"} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 12, border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.bg, textDecoration: "none", color: "inherit" }}>
       {imgUrl ? (
@@ -647,10 +642,15 @@ function OgCard({ og }: { og: OgPreview }) {
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={imgUrl} alt={og.title || ""} style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }} />
+          <img
+            src={imgUrl}
+            alt={og.title || ""}
+            onError={() => setFailedImageUrl(imgUrl)}
+            style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+          />
         </div>
       ) : null}
-      <div style={{ padding: "10px 14px" }}>
+      <div style={{ padding: imgUrl ? "10px 14px" : "12px 14px" }}>
         {og.siteName && <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{og.siteName}</div>}
         {og.title && <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.3, color: t.text }}>{og.title}</div>}
         {og.description && <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>{og.description}</div>}
@@ -2249,6 +2249,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         og_title: null,
         og_description: null,
         og_image: null,
+        admin_manual_image_url: null,
         og_site_name: null,
         event_id: null,
         feed_event: null,
@@ -2370,6 +2371,28 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         news_item_id: row.news_item_id ?? null,
       });
     });
+
+    const newsItemIdsForPosts = [
+      ...new Set(
+        Array.from(postMetaMap.values())
+          .map((meta) => meta.news_item_id)
+          .filter((id): id is string => Boolean(id))
+      ),
+    ];
+    const newsManualImageById = new Map<string, string | null>();
+    if (newsItemIdsForPosts.length > 0) {
+      const { data: newsImageRows, error: newsImageError } = await supabase
+        .from("news_items")
+        .select("id, admin_manual_image_url")
+        .in("id", newsItemIdsForPosts);
+      if (newsImageError) {
+        console.error("News manual image override load error:", newsImageError);
+      } else {
+        ((newsImageRows ?? []) as Array<{ id: string; admin_manual_image_url: string | null }>).forEach((row) => {
+          newsManualImageById.set(row.id, row.admin_manual_image_url ?? null);
+        });
+      }
+    }
 
     // Legacy resilience: older event feed posts can exist without posts.event_id.
     // Infer linkage by matching "📅 New Event: <title>" + same author.
@@ -2849,6 +2872,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         og_title: ogData?.og_title ?? null,
         og_description: ogData?.og_description ?? null,
         og_image: ogData?.og_image ?? null,
+        admin_manual_image_url: postMeta?.news_item_id
+          ? newsManualImageById.get(postMeta.news_item_id) ?? null
+          : null,
         og_site_name: ogData?.og_site_name ?? null,
         event_id: eid,
         feed_event: feedEvent,
@@ -5535,34 +5561,21 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         !(
                           (post.content_type === "news" || post.user_id === RUMINT_USER_ID) &&
                           post.og_url &&
-                          (post.og_title || post.og_image)
+                          (post.og_title || post.admin_manual_image_url || post.og_image)
                         ) && (
                         <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>
                       )}
 
+                      {post.content && (() => {
+                        const youtubeUrl = firstYouTubeUrlFromText(post.content);
+                        if (!youtubeUrl || sameYouTubeVideo(youtubeUrl, post.og_url)) return null;
+                        return <YouTubeEmbed url={youtubeUrl} title="Post YouTube video" />;
+                      })()}
+
                       {post.og_url && (() => {
-                        const ytId = getYouTubeId(post.og_url);
-                        if (ytId) return (
-                          <div
-                            style={{
-                              marginTop: 12,
-                              borderRadius: 12,
-                              overflow: "hidden",
-                              aspectRatio: "16/9",
-                              width: "100%",
-                              maxWidth: FEED_POST_EMBED_MAX_WIDTH,
-                              boxSizing: "border-box",
-                            }}
-                          >
-                            <iframe
-                              src={`https://www.youtube.com/embed/${ytId}`}
-                              style={{ width: "100%", height: "100%", border: "none", display: "block" }}
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                            />
-                          </div>
-                        );
-                        if (post.og_title || post.og_image) {
+                        const ytId = getYouTubeVideoId(post.og_url);
+                        if (ytId) return <YouTubeEmbed videoId={ytId} title="Post YouTube video" />;
+                        if (post.og_title || post.admin_manual_image_url || post.og_image) {
                           const rumintStyle = post.content_type === "news" || post.user_id === RUMINT_USER_ID;
                           return (
                             <OgCard
@@ -5572,7 +5585,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                 description: rumintStyle
                                   ? sanitizeRumintOgDescription(post.og_description)
                                   : post.og_description,
-                                image: post.og_image,
+                                image: post.admin_manual_image_url || post.og_image,
                                 siteName: post.og_site_name,
                               }}
                             />
@@ -6152,6 +6165,18 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                       )}
                                     </div>
                                   )}
+
+                                  {comment.content && (() => {
+                                    const youtubeUrl = firstYouTubeUrlFromText(comment.content);
+                                    return youtubeUrl ? (
+                                      <YouTubeEmbed
+                                        url={youtubeUrl}
+                                        title="Comment YouTube video"
+                                        maxWidth="min(360px, 100%)"
+                                        marginTop={8}
+                                      />
+                                    ) : null;
+                                  })()}
 
                                   {comment.image_url && (
                                     <div

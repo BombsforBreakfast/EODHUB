@@ -19,6 +19,7 @@ import FeedPostHeader from "../../../components/FeedPostHeader";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
 import { validateFeedAttachmentPick, validateImagePick, UPLOAD_LIMITS, formatUploadBytes } from "../../../lib/uploadLimits";
+import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
 import { postNotifyJson } from "../../../lib/postNotifyClient";
 import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
@@ -267,17 +268,6 @@ type KnowStatus = "none" | "pending_outgoing" | "pending_incoming" | "accepted";
 
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
-}
-
-function getYouTubeId(url: string): string | null {
-  try {
-    const parsed = new URL(url);
-    if (parsed.hostname === "youtu.be") return parsed.pathname.slice(1).split("?")[0];
-    if (parsed.hostname.includes("youtube.com")) return parsed.searchParams.get("v");
-  } catch {
-    return null;
-  }
-  return null;
 }
 
 function httpsAssetUrl(url: string | null | undefined): string {
@@ -4972,6 +4962,12 @@ export default function PublicProfilePage() {
                       <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>
                     )}
 
+                    {post.content && (() => {
+                      const youtubeUrl = firstYouTubeUrlFromText(post.content);
+                      if (!youtubeUrl || sameYouTubeVideo(youtubeUrl, post.og_url)) return null;
+                      return <YouTubeEmbed url={youtubeUrl} title="Wall post YouTube video" marginTop={10} />;
+                    })()}
+
                     {post.gif_url && (
                       <div style={{ marginTop: 10 }}>
                         <img src={post.gif_url} alt="GIF" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 12, display: "block" }} />
@@ -4979,18 +4975,9 @@ export default function PublicProfilePage() {
                     )}
 
                     {post.og_url && (() => {
-                      const ytId = getYouTubeId(post.og_url);
+                      const ytId = getYouTubeVideoId(post.og_url);
                       if (ytId) {
-                        return (
-                          <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", aspectRatio: "16/9", maxWidth: 520 }}>
-                            <iframe
-                              src={`https://www.youtube.com/embed/${ytId}`}
-                              style={{ width: "100%", height: "100%", border: "none", display: "block" }}
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                            />
-                          </div>
-                        );
+                        return <YouTubeEmbed videoId={ytId} title="Wall post YouTube video" marginTop={10} maxWidth={520} />;
                       }
                       if (post.og_title || post.og_image) {
                         const rumintStyle = post.user_id === RUMINT_USER_ID;
@@ -5232,6 +5219,17 @@ export default function PublicProfilePage() {
                                   )}
                                 </div>
                               )}
+                              {comment.content && (() => {
+                                const youtubeUrl = firstYouTubeUrlFromText(comment.content);
+                                return youtubeUrl ? (
+                                  <YouTubeEmbed
+                                    url={youtubeUrl}
+                                    title="Wall comment YouTube video"
+                                    maxWidth="min(360px, 100%)"
+                                    marginTop={8}
+                                  />
+                                ) : null;
+                              })()}
                               {comment.image_url && (
                                 <div style={{ marginTop: 4, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
                                   <img src={comment.image_url} alt="Comment image" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
