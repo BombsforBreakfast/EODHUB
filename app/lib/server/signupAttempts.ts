@@ -146,7 +146,15 @@ export const VELOCITY_LIMITS = {
   ipPerDay: 20,
   /** Max attempts against one email address in the last 24h, any IP. */
   emailPerDay: 3,
+  /** Same cap when Turnstile token was not provided (in-app browsers). */
+  emailPerDayNoTurnstile: 3,
 } as const;
+
+/**
+ * Old hard Turnstile gate logged `turnstile_missing` for legitimate users
+ * (Facebook in-app browser, etc.). Those rows must not count toward velocity.
+ */
+const VELOCITY_COUNT_FILTER = "reason.is.null,reason.neq.turnstile_missing";
 
 /**
  * Check whether the current signup attempt is within velocity limits.
@@ -158,9 +166,14 @@ export const VELOCITY_LIMITS = {
 export async function checkSignupVelocity(args: {
   ip: string | null;
   email: string | null;
+  /** When true, apply a tighter per-email daily cap (no Turnstile token). */
+  noTurnstileToken?: boolean;
 }): Promise<VelocityResult> {
   const ip = clamp(args.ip, MAX_IP);
   const emailHash = hashEmail(args.email);
+  const emailPerDayLimit = args.noTurnstileToken
+    ? VELOCITY_LIMITS.emailPerDayNoTurnstile
+    : VELOCITY_LIMITS.emailPerDay;
 
   if (isSignupRateLimitExemptEmail(args.email)) {
     devAuthLog("signup-velocity", { step: "exempt_email" });
@@ -185,7 +198,8 @@ export async function checkSignupVelocity(args: {
       .from("signup_attempts")
       .select("id", { count: "exact", head: true })
       .eq("ip", ip)
-      .gte("created_at", oneHourAgo);
+      .gte("created_at", oneHourAgo)
+      .or(VELOCITY_COUNT_FILTER);
     if (hourErr) {
       devAuthLog("signup-velocity", { step: "ip_hour_query_error", error: hourErr.message });
     } else if ((hourCount ?? 0) >= VELOCITY_LIMITS.ipPerHour) {
@@ -196,7 +210,8 @@ export async function checkSignupVelocity(args: {
       .from("signup_attempts")
       .select("id", { count: "exact", head: true })
       .eq("ip", ip)
-      .gte("created_at", oneDayAgo);
+      .gte("created_at", oneDayAgo)
+      .or(VELOCITY_COUNT_FILTER);
     if (dayErr) {
       devAuthLog("signup-velocity", { step: "ip_day_query_error", error: dayErr.message });
     } else if ((dayCount ?? 0) >= VELOCITY_LIMITS.ipPerDay) {
@@ -209,10 +224,11 @@ export async function checkSignupVelocity(args: {
       .from("signup_attempts")
       .select("id", { count: "exact", head: true })
       .eq("email_hash", emailHash)
-      .gte("created_at", oneDayAgo);
+      .gte("created_at", oneDayAgo)
+      .or(VELOCITY_COUNT_FILTER);
     if (error) {
       devAuthLog("signup-velocity", { step: "email_day_query_error", error: error.message });
-    } else if ((count ?? 0) >= VELOCITY_LIMITS.emailPerDay) {
+    } else if ((count ?? 0) >= emailPerDayLimit) {
       return { ok: false, reason: "rate_limited_velocity_email_day" };
     }
   }

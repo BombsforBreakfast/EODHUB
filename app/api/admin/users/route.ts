@@ -74,8 +74,35 @@ export async function GET(req: NextRequest) {
     });
   }
 
+  // Merge profiles with auth users that have no profile row (incomplete signups).
+  const profileUserIds = new Set(
+    (profilesQuery.data ?? []).map((p) => String((p as { user_id: string }).user_id)),
+  );
+  const incompleteSignups = (authUsersRes.data?.users ?? [])
+    .filter((authUser) => !profileUserIds.has(authUser.id))
+    .map((authUser) => ({
+      user_id: authUser.id,
+      first_name: null,
+      last_name: null,
+      display_name: null,
+      name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || null,
+      email: authUser.email ?? null,
+      role: null,
+      service: null,
+      verification_status: null,
+      email_verified: false,
+      is_admin: false,
+      is_employer: false,
+      employer_verified: false,
+      created_at: authUser.created_at ?? null,
+      community_flag_count: 0,
+      signup_incomplete: true,
+    }));
+
   // Merge: supplement missing profile names from auth metadata
-  const profiles = (profilesQuery.data ?? []).map((p) => {
+  const profiles = [
+    ...incompleteSignups,
+    ...(profilesQuery.data ?? []).map((p) => {
     const authMeta = authUserMap.get(String(p.user_id));
     const row = p as Record<string, unknown> & { email?: string | null; name?: string | null };
     let first_name = typeof p.first_name === "string" ? p.first_name : null;
@@ -94,7 +121,8 @@ export async function GET(req: NextRequest) {
       email: row.email ?? authMeta?.email ?? null,
       name: row.name ?? authMeta?.full_name ?? null,
     };
-  });
+  }),
+  ];
 
   return NextResponse.json({ users: profiles });
 }

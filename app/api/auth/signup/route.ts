@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateEmailForRegistration } from "@/app/lib/email-validation";
-import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup";
+import {
+  createSupabaseServiceRoleClient,
+  findAuthUsersByEmail,
+} from "@/app/lib/auth/adminAuthLookup";
+import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
 import { logMxCheckTelemetry } from "@/app/lib/server/emailMxCheck";
 import { verifyTurnstileToken } from "@/app/lib/server/turnstile";
 import {
@@ -81,27 +85,36 @@ export async function POST(req: NextRequest) {
   }
 
   // --- 3. Turnstile ---------------------------------------------------------
-  // Authoritative server-side verification — even if the client skipped the
-  // widget or hit this endpoint directly, the production gate is enforced.
-  const turnstile = await verifyTurnstileToken(turnstileToken, ip);
-  if (!turnstile.ok) {
-    void logBlocked({
-      ip,
-      userAgent,
-      email: emailRaw,
-      domain: null,
-      reason:
-        turnstile.reason === "missing_token"
-          ? "turnstile_missing"
-          : turnstile.reason === "missing_secret"
-            ? "config_error"
-            : "turnstile_failed",
-    });
-    if (turnstile.reason === "missing_secret") {
-      // Misconfigured production: fail closed.
-      return errorResponse("generic", 503);
+  // Verify when a token is present (widget loaded). When absent — common in
+  // in-app browsers (Facebook, Instagram) — skip and rely on velocity +
+  // disposable-email checks instead.
+  const turnstileTokenTrimmed = turnstileToken.trim();
+  let noTurnstileToken = !turnstileTokenTrimmed;
+
+  if (turnstileTokenTrimmed) {
+    const turnstile = await verifyTurnstileToken(turnstileTokenTrimmed, ip);
+    if (!turnstile.ok) {
+      if (turnstile.reason === "missing_secret") {
+        void logBlocked({
+          ip,
+          userAgent,
+          email: emailRaw,
+          domain: null,
+          reason: "config_error",
+        });
+        return errorResponse("generic", 503);
+      }
+      void logBlocked({
+        ip,
+        userAgent,
+        email: emailRaw,
+        domain: null,
+        reason: "turnstile_failed",
+      });
+      return errorResponse("security_check_failed", 403);
     }
-    return errorResponse("generic", 403);
+  } else {
+    devAuthLog("signup-route", { step: "turnstile_skipped_no_token" });
   }
 
   // --- 4. Email syntax + disposable + manual blocklist ---------------------
@@ -125,7 +138,11 @@ export async function POST(req: NextRequest) {
   const domain = normalizedEmail.split("@")[1] ?? null;
 
   // --- 5. Persisted velocity check (IP + email over rolling windows) -------
-  const velocity = await checkSignupVelocity({ ip, email: normalizedEmail });
+  const velocity = await checkSignupVelocity({
+    ip,
+    email: normalizedEmail,
+    noTurnstileToken,
+  });
   if (!velocity.ok) {
     void logBlocked({
       ip,
@@ -168,6 +185,23 @@ export async function POST(req: NextRequest) {
       step: "admin_create_failed",
       code: mapped,
     });
+
+    if (mapped === "duplicate_account") {
+      const { users } = await findAuthUsersByEmail(client, normalizedEmail);
+      const existingUserId = users[0]?.id;
+      if (existingUserId) {
+        await ensureProfileStubForUser(client, existingUserId, normalizedEmail);
+        void logBlocked({
+          ip,
+          userAgent,
+          email: normalizedEmail,
+          domain,
+          reason: "supabase_duplicate_account",
+        });
+        return errorResponse("account_exists_login", 400);
+      }
+    }
+
     void logBlocked({
       ip,
       userAgent,
@@ -178,6 +212,18 @@ export async function POST(req: NextRequest) {
     // 400 for duplicate / invalid; 429 for upstream rate limit.
     const status = mapped === "rate_limited" ? 429 : 400;
     return errorResponse(mapped, status);
+  }
+
+  const newUserId = data.user?.id ?? null;
+  if (newUserId) {
+    const stub = await ensureProfileStubForUser(client, newUserId, normalizedEmail);
+    if (!stub.ok) {
+      devAuthLog("signup-route", {
+        step: "profile_stub_failed",
+        userId: newUserId,
+        error: stub.error,
+      });
+    }
   }
 
   // --- 7. Allowed: log + telemetry, return success -------------------------

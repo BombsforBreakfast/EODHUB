@@ -13,6 +13,7 @@ import {
   needsEmailVerification,
 } from "../lib/verificationAccess";
 import {
+  LOGIN_FAILED_MESSAGE,
   mapSupabaseAuthError,
   SIGNUP_USER_MESSAGES,
   userMessageForSignupCode,
@@ -23,6 +24,12 @@ function devClientAuthLog(tag: string, data: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
     console.debug(`[auth:${tag}]`, data);
   }
+}
+
+function isInAppBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return /FBAN|FBAV|FB_IAB|Instagram|Line\//i.test(ua);
 }
 
 
@@ -41,6 +48,7 @@ export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileError, setTurnstileError] = useState(false);
+  const [inAppBrowser, setInAppBrowser] = useState(false);
   const [turnstileSiteKey, setTurnstileSiteKey] = useState("");
   const turnstileRef = useRef<TurnstileInstance>(null);
   // Skip Turnstile entirely in local dev — the production site key is only
@@ -54,6 +62,10 @@ export default function LoginPage() {
   const [signupAwaitingEmail, setSignupAwaitingEmail] = useState(false);
 
   // Persist ?ref= referral code through signup flow via localStorage
+  useEffect(() => {
+    setInAppBrowser(isInAppBrowser());
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get("ref");
@@ -166,9 +178,9 @@ export default function LoginPage() {
         devClientAuthLog("login", { step: "signInWithPassword_error", code: mapped });
         // Do not reveal whether the email exists or password was wrong.
         setLoginMessage(
-          mapped === "duplicate_account"
-            ? userMessageForSignupCode("duplicate_account")
-            : SIGNUP_USER_MESSAGES.pending_verification,
+          mapped === "rate_limited"
+            ? userMessageForSignupCode("rate_limited")
+            : LOGIN_FAILED_MESSAGE,
         );
         turnstileRef.current?.reset();
         setTurnstileToken(null);
@@ -259,7 +271,14 @@ export default function LoginPage() {
       });
 
       if (!signupRes.ok || !signupData.ok) {
-        setSignupError(userMessageForSignupCode(signupData.code));
+        const msg = userMessageForSignupCode(signupData.code);
+        if (signupData.code === "account_exists_login") {
+          setLoginMessage(msg);
+          setSignupError(null);
+          setMode("login");
+        } else {
+          setSignupError(msg);
+        }
         turnstileRef.current?.reset();
         setTurnstileToken(null);
         return;
@@ -630,6 +649,23 @@ export default function LoginPage() {
             </>
           ) : (
             <>
+              {turnstileSiteKey && (turnstileError || inAppBrowser) && (
+                <div
+                  style={{
+                    fontSize: 14,
+                    color: "#1e40af",
+                    background: "#eff6ff",
+                    border: "1px solid #bfdbfe",
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    lineHeight: 1.45,
+                  }}
+                  role="status"
+                >
+                  Security check couldn&apos;t load in this browser. You can still sign up below, or use{" "}
+                  <strong>Sign up with Google</strong>. For best results, open eod-hub.com in Safari or Chrome.
+                </div>
+              )}
               {signupError && (
                 <div style={{ fontSize: 14, color: "#b91c1c", lineHeight: 1.4 }} role="alert">
                   {signupError}
@@ -667,7 +703,7 @@ export default function LoginPage() {
             <Turnstile
               ref={turnstileRef}
               siteKey={turnstileSiteKey}
-              onSuccess={(token) => setTurnstileToken(token)}
+              onSuccess={(token) => { setTurnstileToken(token); setTurnstileError(false); }}
               onExpire={() => setTurnstileToken(null)}
               onError={() => { setTurnstileToken(null); setTurnstileError(true); }}
               options={{ theme: "light", size: "normal" }}
