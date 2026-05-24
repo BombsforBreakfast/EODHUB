@@ -9,6 +9,8 @@ import ImageCropDialog from "../../components/ImageCropDialog";
 import { ASPECT_UNIT_COVER } from "../../lib/imageCropTargets";
 import { prepareCroppedImageBlob } from "../../lib/prepareUploadFile";
 import { validateImagePick } from "../../lib/uploadLimits";
+import { usePageTracking } from "../../hooks/usePageTracking";
+import { PAGE_TRACKING } from "../../lib/pageTrackingPaths";
 
 type UnitMemberPreview = {
   user_id: string;
@@ -58,6 +60,7 @@ function unitMatchesLocalFilter(unit: Unit, raw: string): boolean {
 }
 
 export default function UnitsPage() {
+  usePageTracking(PAGE_TRACKING.groups);
   const { t, isDark } = useTheme();
   const router = useRouter();
   const { isDesktopShell } = useMasterShell();

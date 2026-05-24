@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 
@@ -9,10 +9,17 @@ const PASSWORD_MAX = 128;
 
 type Props = {
   hasEmailPassword: boolean;
+  mustChangePassword?: boolean;
   onProvidersChange?: (providers: string[]) => void;
+  onPasswordChanged?: () => void;
 };
 
-export default function ChangePasswordSection({ hasEmailPassword, onProvidersChange }: Props) {
+export default function ChangePasswordSection({
+  hasEmailPassword,
+  mustChangePassword = false,
+  onProvidersChange,
+  onPasswordChanged,
+}: Props) {
   const { t } = useTheme();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -21,6 +28,10 @@ export default function ChangePasswordSection({ hasEmailPassword, onProvidersCha
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (mustChangePassword) setExpanded(true);
+  }, [mustChangePassword]);
 
   const inputStyle: React.CSSProperties = {
     padding: "10px 12px",
@@ -42,6 +53,21 @@ export default function ChangePasswordSection({ hasEmailPassword, onProvidersCha
       return "New password must be different from your current password.";
     }
     return null;
+  }
+
+  async function clearMustChangePasswordFlag() {
+    // Direct profile UPDATE is blocked by the guard_provisioned_profile_flags
+    // trigger; we go through the service-role route so the flag can only be
+    // cleared after a server-side check that the caller is the row owner.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
+    const res = await fetch("/api/account/clear-temp-password-flag", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (res.ok) {
+      onPasswordChanged?.();
+    }
   }
 
   async function refreshProviders() {
@@ -76,6 +102,7 @@ export default function ChangePasswordSection({ hasEmailPassword, onProvidersCha
       }
 
       await refreshProviders();
+      await clearMustChangePasswordFlag();
       setSuccessMessage("Password added — you can now sign in with email.");
       setNewPassword("");
       setConfirmPassword("");
@@ -124,6 +151,7 @@ export default function ChangePasswordSection({ hasEmailPassword, onProvidersCha
         return;
       }
 
+      await clearMustChangePasswordFlag();
       setSuccessMessage("Password updated successfully.");
       setCurrentPassword("");
       setNewPassword("");
@@ -189,6 +217,23 @@ export default function ChangePasswordSection({ hasEmailPassword, onProvidersCha
           }}
         >
           {successMessage}
+        </div>
+      )}
+
+      {mustChangePassword && !successMessage && (
+        <div
+          style={{
+            background: "rgba(245, 158, 11, 0.12)",
+            border: "1px solid rgba(245, 158, 11, 0.45)",
+            borderRadius: 10,
+            padding: "10px 14px",
+            fontSize: 13,
+            color: "#fbbf24",
+            fontWeight: 700,
+            marginBottom: 12,
+          }}
+        >
+          You are using a temporary password. Please choose a new password below.
         </div>
       )}
 

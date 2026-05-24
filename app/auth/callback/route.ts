@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
 
 /**
  * Server-side OAuth callback handler (Supabase PKCE flow).
@@ -45,6 +46,20 @@ export async function GET(request: NextRequest) {
     if (!error) {
       return redirectResponse;
     }
+    void logFailedAuthAttempt({
+      failureReason: "SERVER_ERROR",
+      errorCode: "oauth_exchange_failed",
+      rawErrorMessage: error.message,
+      sourceRoute: "/auth/callback",
+      request,
+    });
+  } else {
+    void logFailedAuthAttempt({
+      failureReason: "SERVER_ERROR",
+      errorCode: "oauth_missing_code",
+      sourceRoute: "/auth/callback",
+      request,
+    });
   }
 
   // Code missing or exchange failed — send back to login with an error flag.

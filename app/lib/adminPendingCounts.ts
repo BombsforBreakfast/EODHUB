@@ -10,10 +10,29 @@ export type AdminPendingBreakdown = {
   dir: number;
   locReq: number;
   scrapbook: number;
+  failedAuth: number;
 };
 
+const FAILED_AUTH_REVIEW_WINDOW_DAYS = 30;
+
 export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promise<AdminPendingBreakdown> {
-  const [bizRes, bizClaimsRes, jobRes, userRes, flagRes, reportRes, dirRes, locRes, memorialScrapbookRes, eventScrapbookRes] = await Promise.all([
+  const failedAuthCutoffIso = new Date(
+    Date.now() - FAILED_AUTH_REVIEW_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+  ).toISOString();
+
+  const [
+    bizRes,
+    bizClaimsRes,
+    jobRes,
+    userRes,
+    flagRes,
+    reportRes,
+    dirRes,
+    locRes,
+    memorialScrapbookRes,
+    eventScrapbookRes,
+    failedAuthRes,
+  ] = await Promise.all([
     client.from("business_listings").select("*", { count: "exact", head: true }).neq("is_approved", true),
     client.from("business_listing_claims").select("*", { count: "exact", head: true }).eq("status", "pending"),
     client.from("jobs").select("*", { count: "exact", head: true }).neq("is_approved", true),
@@ -28,8 +47,33 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
     client.from("location_requests").select("*", { count: "exact", head: true }).eq("reviewed", false),
     client.from("memorial_scrapbook_items").select("*", { count: "exact", head: true }).in("status", ["pending", "flagged"]),
     client.from("event_scrapbook_items").select("*", { count: "exact", head: true }).in("status", ["pending", "flagged"]),
+    // Failed auth reports: count distinct emails with unresolved attempts in
+    // the last 30 days. The select returns plain rows (no count) so we can
+    // dedupe by normalized_email client-side — Supabase has no DISTINCT count.
+    client
+      .from("failed_auth_reports")
+      .select("normalized_email")
+      .is("admin_decision", null)
+      .gte("created_at", failedAuthCutoffIso)
+      .limit(2000),
   ]);
   const claimsPending = bizClaimsRes.error ? 0 : (bizClaimsRes.count ?? 0);
+
+  let failedAuth = 0;
+  if (!failedAuthRes.error && Array.isArray(failedAuthRes.data)) {
+    const uniqueEmails = new Set<string>();
+    let nullEmailReports = 0;
+    for (const row of failedAuthRes.data as Array<{ normalized_email: string | null }>) {
+      const email = row.normalized_email?.trim().toLowerCase();
+      if (email) {
+        uniqueEmails.add(email);
+      } else {
+        nullEmailReports += 1;
+      }
+    }
+    failedAuth = uniqueEmails.size + nullEmailReports;
+  }
+
   return {
     biz: (bizRes.count ?? 0) + claimsPending,
     jobs: jobRes.count ?? 0,
@@ -41,11 +85,22 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
     scrapbook:
       (memorialScrapbookRes.error ? 0 : (memorialScrapbookRes.count ?? 0)) +
       (eventScrapbookRes.error ? 0 : (eventScrapbookRes.count ?? 0)),
+    failedAuth,
   };
 }
 
 export function sumAdminPending(b: AdminPendingBreakdown): number {
-  return b.biz + b.jobs + b.users + b.flags + b.bugs + b.dir + b.locReq + b.scrapbook;
+  return (
+    b.biz +
+    b.jobs +
+    b.users +
+    b.flags +
+    b.bugs +
+    b.dir +
+    b.locReq +
+    b.scrapbook +
+    b.failedAuth
+  );
 }
 
 /** Same cap style as NavBar notification badges */

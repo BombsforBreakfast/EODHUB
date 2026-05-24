@@ -23,6 +23,8 @@ import { validateImagePick } from "../lib/uploadLimits";
 import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import type { PostLikerBrief } from "../components/PostLikersStack";
 import { ReactionLeaderboard, ReactionPickerTrigger } from "../components/ReactionBar";
+import { usePageTracking } from "../hooks/usePageTracking";
+import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import {
   aggregatesBySubjectId,
   applyContentReaction,
@@ -226,6 +228,7 @@ function EventsPageInner() {
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [selectedMemorial, setSelectedMemorial] = useState<Memorial | null>(null);
+  usePageTracking(selectedMemorial ? PAGE_TRACKING.memorials : PAGE_TRACKING.events);
   /** YYYY-MM-DD: month grid “+N more” opens a scrollable list of all events for that day */
   const [dayEventsListModal, setDayEventsListModal] = useState<string | null>(null);
 

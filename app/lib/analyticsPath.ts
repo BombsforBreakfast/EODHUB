@@ -34,6 +34,25 @@ export function normalizeAnalyticsPath(rawPath: string): string {
   return trimmed.replace(UUID_RE, "[id]");
 }
 
+/** Auth, onboarding, and static pages excluded from time-on-page comparisons. */
+const PAGE_TIME_ANALYTICS_EXCLUDED = new Set([
+  "/login",
+  "/onboarding",
+  "/verify-email",
+  "/email-verified",
+  "/reset-password",
+  "/pending",
+  "/subscribe",
+  "/terms",
+  "/privacy",
+  "/guidelines",
+]);
+
+export function isExcludedFromPageTimeAnalytics(rawPath: string): boolean {
+  if (!rawPath) return true;
+  return PAGE_TIME_ANALYTICS_EXCLUDED.has(normalizeAnalyticsPath(rawPath));
+}
+
 // Coarse user-agent bucket (no fingerprinting). Used for "device mix" cards.
 export function summarizeUserAgent(ua: string | null | undefined): string {
   if (!ua) return "unknown";

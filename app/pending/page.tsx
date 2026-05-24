@@ -50,9 +50,10 @@ export default function PendingPage() {
         admin_verified: boolean | null;
         referral_code: string | null;
         is_pure_admin?: boolean | null;
+        must_complete_onboarding: boolean | null;
       }>(supabase, user, {
         route: "app/pending/page.tsx:check",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, referral_code, is_pure_admin",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, referral_code, is_pure_admin, must_complete_onboarding",
       });
 
       const profileRow = profile as {
@@ -62,9 +63,15 @@ export default function PendingPage() {
         first_name: string | null;
         referral_code: string | null;
         is_pure_admin?: boolean | null;
+        must_complete_onboarding: boolean | null;
       } | null;
 
       if (!profileRow) {
+        window.location.href = "/onboarding";
+        return;
+      }
+
+      if (profileRow.must_complete_onboarding) {
         window.location.href = "/onboarding";
         return;
       }

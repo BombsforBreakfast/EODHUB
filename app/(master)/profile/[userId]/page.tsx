@@ -48,6 +48,8 @@ import { STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../../../lib/pureAdminAllowlis
 import { getServiceRingColor } from "../../../lib/serviceBranchVisual";
 import { buildLoginReferralUrl } from "../../../lib/referralLink";
 import { ReferralQrModal } from "../../../components/profile/ReferralQrModal";
+import { usePageTracking } from "../../../hooks/usePageTracking";
+import { PAGE_TRACKING } from "../../../lib/pageTrackingPaths";
 
 type Profile = {
   user_id: string;
@@ -473,6 +475,7 @@ function timeAgoShort(dateString: string) {
 }
 
 export default function PublicProfilePage() {
+  usePageTracking(PAGE_TRACKING.profile);
   const params = useParams();
 
   const rawUserId = params?.userId;

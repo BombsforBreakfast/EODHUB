@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { isExcludedFromPageTimeAnalytics } from "../lib/analyticsPath";
 import { supabase } from "../lib/lib/supabaseClient";
 
 // Owns client-side engagement tracking. Mounted once in the root layout.
@@ -42,6 +43,7 @@ function shouldSkip(path: string | null | undefined): boolean {
   if (!path) return true;
   if (path.startsWith("/admin")) return true;
   if (path.startsWith("/api/")) return true;
+  if (isExcludedFromPageTimeAnalytics(path)) return true;
   return false;
 }
 

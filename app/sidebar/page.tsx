@@ -7,6 +7,8 @@ import EmojiPickerButton from "../components/EmojiPickerButton";
 import GifPickerButton from "../components/GifPickerButton";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
+import { usePageTracking } from "../hooks/usePageTracking";
+import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { postNotifyJson } from "../lib/postNotifyClient";
 import UrlPreviewCard from "../components/UrlPreviewCard";
 import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
@@ -125,6 +127,7 @@ function timeAgo(dateString: string) {
 }
 
 export default function SidebarPage() {
+  usePageTracking(PAGE_TRACKING.sidebar);
   const [userId, setUserId] = useState<string | null>(null);
   const [myName, setMyName] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);

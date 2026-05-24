@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isExcludedFromPageTimeAnalytics } from "../../../lib/analyticsPath";
 
 // Engagement KPIs for the admin "Engagement" tab.
 //
@@ -153,6 +154,7 @@ export async function GET(req: NextRequest) {
   type PageAgg = { path: string; total_ms: number; visits: number };
   const pageMap = new Map<string, PageAgg>();
   for (const row of (pageViewsAggRes.data ?? []) as Array<{ path: string; active_ms: number | null }>) {
+    if (isExcludedFromPageTimeAnalytics(row.path)) continue;
     const existing = pageMap.get(row.path);
     if (existing) {
       existing.total_ms += row.active_ms ?? 0;

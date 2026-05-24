@@ -8,6 +8,7 @@ export type SignupErrorCode =
   | "disposable_domain"
   | "duplicate_account"
   | "account_exists_login"
+  | "oauth_account_exists"
   | "pending_verification"
   | "security_check_failed"
   | "rate_limited"
@@ -24,6 +25,8 @@ export const SIGNUP_USER_MESSAGES: Record<
   duplicate_account: "An account with this email already exists.",
   account_exists_login:
     "An account with this email already exists. Please log in to continue setting up your account.",
+  oauth_account_exists:
+    "This email is already linked to a Google account. Use \"Sign in with Google\" to continue, or tap \"Email me a setup link\" below to add a password — both methods sign you into the same account.",
   pending_verification:
     "Your account is currently pending verification and approval.",
   security_check_failed:
@@ -31,6 +34,22 @@ export const SIGNUP_USER_MESSAGES: Record<
   rate_limited: "Too many attempts. Please wait a few minutes and try again.",
   generic: "Unable to create account. Please try again.",
 };
+
+/**
+ * Build the provider-specific message for an existing OAuth account.
+ * Falls back to the generic Google copy when providers is empty/unknown.
+ */
+export function oauthAccountExistsMessage(providers: string[] | null | undefined): string {
+  const labels = (providers ?? [])
+    .filter((p): p is string => typeof p === "string" && p.length > 0 && p !== "email")
+    .map((p) => (p === "google" ? "Google" : p.charAt(0).toUpperCase() + p.slice(1)));
+  if (labels.length === 0) return SIGNUP_USER_MESSAGES.oauth_account_exists;
+  const list = labels.length === 1 ? labels[0] : labels.slice(0, -1).join(", ") + " or " + labels[labels.length - 1];
+  return (
+    `This email is already linked to a ${list} account. Use "Sign in with ${list}" to continue, ` +
+    `or tap "Email me a setup link" below to add a password — both methods sign you into the same account.`
+  );
+}
 
 /** Support email shown in failure-state helper text. */
 export const SUPPORT_EMAIL = "murphy@eod-hub.com";
@@ -63,6 +82,7 @@ export function userMessageForSignupCode(code: SignupErrorCode | string | undefi
   if (code === "invalid_syntax") return SIGNUP_USER_MESSAGES.invalid_syntax;
   if (code === "duplicate_account") return SIGNUP_USER_MESSAGES.duplicate_account;
   if (code === "account_exists_login") return SIGNUP_USER_MESSAGES.account_exists_login;
+  if (code === "oauth_account_exists") return SIGNUP_USER_MESSAGES.oauth_account_exists;
   if (code === "pending_verification") return SIGNUP_USER_MESSAGES.pending_verification;
   if (code === "security_check_failed") return SIGNUP_USER_MESSAGES.security_check_failed;
   if (code === "rate_limited") return SIGNUP_USER_MESSAGES.rate_limited;
@@ -84,6 +104,10 @@ export function mapSupabaseAuthError(message: string): SignupErrorCode {
     m.includes("already exists") ||
     m.includes("user already registered") ||
     m.includes("email address is already") ||
+    m.includes("address has already been registered") ||
+    m.includes("identity already exists") ||
+    m.includes("different identity") ||
+    m.includes("user with email") ||
     m.includes("duplicate")
   ) {
     return "duplicate_account";
@@ -119,6 +143,7 @@ function isSignupErrorCode(code: string): code is SignupErrorCode {
     code === "disposable_domain" ||
     code === "duplicate_account" ||
     code === "account_exists_login" ||
+    code === "oauth_account_exists" ||
     code === "pending_verification" ||
     code === "security_check_failed" ||
     code === "rate_limited" ||

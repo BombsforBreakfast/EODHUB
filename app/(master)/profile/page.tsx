@@ -93,6 +93,7 @@ type Profile = {
   employer_verified: boolean | null;
   company_website: string | null;
   is_pure_admin: boolean | null;
+  must_change_password: boolean | null;
 };
 
 export default function MyAccountPage() {
@@ -293,7 +294,11 @@ export default function MyAccountPage() {
               </div>
               <ChangePasswordSection
                 hasEmailPassword={authProviders.includes("email")}
+                mustChangePassword={!!profile?.must_change_password}
                 onProvidersChange={setAuthProviders}
+                onPasswordChanged={() => {
+                  setProfile((prev) => (prev ? { ...prev, must_change_password: false } : prev));
+                }}
               />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

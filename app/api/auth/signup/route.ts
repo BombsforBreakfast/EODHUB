@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateEmailForRegistration } from "@/app/lib/email-validation";
 import {
+  collectIdentityProviders,
   createSupabaseServiceRoleClient,
   findAuthUsersByEmail,
 } from "@/app/lib/auth/adminAuthLookup";
@@ -24,6 +25,11 @@ import {
   userMessageForSignupCode,
   type SignupErrorCode,
 } from "@/app/lib/auth/signupErrors";
+import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
+import {
+  getActiveAuthAccessOverride,
+  type ActiveAuthAccessOverride,
+} from "@/app/lib/server/authAccessOverrides";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +65,19 @@ export async function POST(req: NextRequest) {
     typeof body.turnstileToken === "string" ? body.turnstileToken : "";
   const isRateLimitExempt = isSignupRateLimitExemptEmail(emailRaw);
 
+  // Admin overrides are only consulted lazily — when a block actually
+  // triggers — so the common (no-override) signup path stays a single round
+  // trip. `loadAccessOverride()` memoizes the lookup for the request.
+  let accessOverrideCache: { value: ActiveAuthAccessOverride | null } | null = null;
+  async function loadAccessOverride(): Promise<ActiveAuthAccessOverride | null> {
+    if (!accessOverrideCache) {
+      accessOverrideCache = {
+        value: await getActiveAuthAccessOverride(emailRaw, ip),
+      };
+    }
+    return accessOverrideCache.value;
+  }
+
   // --- 2. Per-process burst limit ------------------------------------------
   // Cheap in-memory check to keep a single instance honest before we touch
   // any external services. Persisted velocity check below catches scripted
@@ -67,7 +86,9 @@ export async function POST(req: NextRequest) {
     limit: 3,
     windowMs: 10 * 60 * 1000,
   });
-  if (!isRateLimitExempt && !burst.allowed) {
+  const burstOverride =
+    !isRateLimitExempt && !burst.allowed ? await loadAccessOverride() : null;
+  if (!isRateLimitExempt && !burstOverride && !burst.allowed) {
     void logBlocked({
       ip,
       userAgent,
@@ -75,10 +96,24 @@ export async function POST(req: NextRequest) {
       domain: null,
       reason: "rate_limited_burst",
     });
+    void logFailedAuthAttempt({
+      emailAttempted: emailRaw,
+      failureReason: "RATE_LIMITED",
+      errorCode: "rate_limited_burst",
+      sourceRoute: "/api/auth/signup",
+      request: req,
+    });
     return errorResponse("rate_limited", 429);
   }
 
   if (!password || password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
+    void logFailedAuthAttempt({
+      emailAttempted: emailRaw,
+      failureReason: "CLIENT_VALIDATION_FAILED",
+      errorCode: "bad_password_length",
+      sourceRoute: "/api/auth/signup",
+      request: req,
+    });
     // Don't leak which field — single generic message.
     return errorResponse("generic", 400);
   }
@@ -90,7 +125,15 @@ export async function POST(req: NextRequest) {
   const noTurnstileToken = true;
 
   // --- 4. Email syntax + disposable + manual blocklist ---------------------
-  const validated = validateEmailForRegistration(emailRaw);
+  let validated = validateEmailForRegistration(emailRaw);
+  if (!validated.ok) {
+    // Only consult the override on the failure path — the common path
+    // (valid email) never touches the override table.
+    const override = await loadAccessOverride();
+    if (override?.scope === "full") {
+      validated = { ok: true as const, email: emailRaw.trim().toLowerCase() };
+    }
+  }
   if (!validated.ok) {
     const reason = reasonFromValidationCode(validated.code);
     const domainGuess = emailRaw.includes("@")
@@ -103,6 +146,13 @@ export async function POST(req: NextRequest) {
       email: emailRaw,
       domain: domainGuess,
       reason,
+    });
+    void logFailedAuthAttempt({
+      emailAttempted: emailRaw,
+      failureReason: "EMAIL_VALIDATION_FAILED",
+      errorCode: reason,
+      sourceRoute: "/api/auth/signup",
+      request: req,
     });
     return errorResponse(mapEmailValidationCode(validated.code), 400);
   }
@@ -123,6 +173,13 @@ export async function POST(req: NextRequest) {
       domain,
       reason: velocity.reason,
     });
+    void logFailedAuthAttempt({
+      emailAttempted: normalizedEmail,
+      failureReason: "RATE_LIMITED",
+      errorCode: velocity.reason,
+      sourceRoute: "/api/auth/signup",
+      request: req,
+    });
     return errorResponse("rate_limited", 429);
   }
 
@@ -136,6 +193,13 @@ export async function POST(req: NextRequest) {
       email: normalizedEmail,
       domain,
       reason: "config_error",
+    });
+    void logFailedAuthAttempt({
+      emailAttempted: normalizedEmail,
+      failureReason: "SERVER_ERROR",
+      errorCode: "missing_service_role",
+      sourceRoute: "/api/auth/signup",
+      request: req,
     });
     return errorResponse("generic", 503);
   }
@@ -158,28 +222,90 @@ export async function POST(req: NextRequest) {
       code: mapped,
     });
 
-    if (mapped === "duplicate_account") {
-      const { users } = await findAuthUsersByEmail(client, normalizedEmail);
-      const existingUserId = users[0]?.id;
-      if (existingUserId) {
-        await ensureProfileStubForUser(client, existingUserId, normalizedEmail);
+    // For any createUser failure (not just mapped duplicates), look up whether
+    // the email already exists. Supabase OAuth-conflict errors often slip past
+    // mapSupabaseAuthError as "generic" — provider lookup catches those and
+    // distinguishes email/password duplicates from OAuth-only accounts.
+    const { users } = await findAuthUsersByEmail(client, normalizedEmail);
+    const existingUser = users[0] ?? null;
+
+    if (existingUser) {
+      const providers = collectIdentityProviders(existingUser);
+      const hasEmailIdentity = providers.includes("email");
+      const oauthProviders = providers.filter((p) => p !== "email");
+
+      await ensureProfileStubForUser(client, existingUser.id, normalizedEmail);
+
+      if (!hasEmailIdentity && oauthProviders.length > 0) {
+        // OAuth-only account — user should sign in with the existing provider
+        // or use the consolidation flow (reset-password email) to add a password.
         void logBlocked({
           ip,
           userAgent,
           email: normalizedEmail,
           domain,
-          reason: "supabase_duplicate_account",
+          reason: "oauth_account_exists",
         });
-        return errorResponse("account_exists_login", 400);
+        void logFailedAuthAttempt({
+          emailAttempted: normalizedEmail,
+          failureReason: "OAUTH_ACCOUNT_EXISTS",
+          errorCode: `oauth_${oauthProviders.join("_")}`,
+          rawErrorMessage: createErr.message ?? null,
+          sourceRoute: "/api/auth/signup",
+          request: req,
+          userExistsInAuth: true,
+          userExistsInProfiles: true,
+        });
+        return NextResponse.json(
+          {
+            ok: false,
+            code: "oauth_account_exists" as SignupErrorCode,
+            message: userMessageForSignupCode("oauth_account_exists"),
+            providers: oauthProviders,
+          },
+          { status: 400 },
+        );
       }
+
+      // Email/password identity already exists — point them at login.
+      void logBlocked({
+        ip,
+        userAgent,
+        email: normalizedEmail,
+        domain,
+        reason: "supabase_duplicate_account",
+      });
+      void logFailedAuthAttempt({
+        emailAttempted: normalizedEmail,
+        failureReason: "ACCOUNT_CREATION_FAILED",
+        errorCode: "account_exists_login",
+        rawErrorMessage: createErr.message ?? null,
+        sourceRoute: "/api/auth/signup",
+        request: req,
+        userExistsInAuth: true,
+        userExistsInProfiles: true,
+      });
+      return errorResponse("account_exists_login", 400);
     }
 
+    // No existing user → genuine creation failure (rate limited upstream,
+    // invalid input we didn't catch, server config drift, etc.).
     void logBlocked({
       ip,
       userAgent,
       email: normalizedEmail,
       domain,
       reason: `supabase_${mapped}` as SignupAttemptReason,
+    });
+    void logFailedAuthAttempt({
+      emailAttempted: normalizedEmail,
+      failureReason: "ACCOUNT_CREATION_FAILED",
+      errorCode: `supabase_${mapped}`,
+      rawErrorMessage: createErr.message ?? null,
+      sourceRoute: "/api/auth/signup",
+      request: req,
+      userExistsInAuth: false,
+      userExistsInProfiles: false,
     });
     // 400 for duplicate / invalid; 429 for upstream rate limit.
     const status = mapped === "rate_limited" ? 429 : 400;
@@ -194,6 +320,16 @@ export async function POST(req: NextRequest) {
         step: "profile_stub_failed",
         userId: newUserId,
         error: stub.error,
+      });
+      void logFailedAuthAttempt({
+        emailAttempted: normalizedEmail,
+        failureReason: "PROFILE_CREATION_FAILED",
+        errorCode: "ensure_profile_stub_failed",
+        rawErrorMessage: stub.error,
+        sourceRoute: "/api/auth/signup",
+        request: req,
+        userExistsInAuth: true,
+        userExistsInProfiles: false,
       });
     }
   }

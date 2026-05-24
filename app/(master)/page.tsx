@@ -4142,9 +4142,10 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           is_admin: boolean | null;
           is_pure_admin: boolean | null;
           show_memorial_feed_cards: boolean | null;
+          must_complete_onboarding: boolean | null;
         }>(supabase, authUser, {
           route: "app/(master)/page.tsx:init",
-          select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, is_pure_admin, show_memorial_feed_cards",
+          select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, is_pure_admin, show_memorial_feed_cards, must_complete_onboarding",
         });
         if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
@@ -4161,6 +4162,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         }
 
         if (!profileCheck) {
+          window.location.href = "/onboarding";
+          return;
+        }
+
+        if (profileCheck.must_complete_onboarding) {
           window.location.href = "/onboarding";
           return;
         }

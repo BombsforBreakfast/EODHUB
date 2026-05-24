@@ -13,15 +13,50 @@ import {
 import {
   loginFailureMessage,
   mapSupabaseAuthError,
+  oauthAccountExistsMessage,
   SIGNUP_USER_MESSAGES,
   SUPPORT_EMAIL,
   userMessageForSignupCode,
   type SignupErrorCode,
 } from "../lib/auth/signupErrors";
+import {
+  mapSupabaseLoginError,
+  type FailedAuthReason,
+} from "../lib/auth/failedAuthReasons";
 
 function devClientAuthLog(tag: string, data: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
     console.debug(`[auth:${tag}]`, data);
+  }
+}
+
+/**
+ * Fire-and-forget client → server failure report. Never throws; never blocks
+ * the login/signup flow. Used so admins can see bad-password attempts, unknown
+ * emails, OAuth-existing confusion, etc. in the Failed Auth tab.
+ */
+function reportAuthFailure(payload: {
+  email?: string | null;
+  failureReason: FailedAuthReason;
+  errorCode?: string | null;
+  rawErrorMessage?: string | null;
+  sourceRoute?: string;
+}): void {
+  try {
+    void fetch("/api/auth/report-failure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        email: payload.email ?? undefined,
+        failureReason: payload.failureReason,
+        errorCode: payload.errorCode ?? undefined,
+        rawErrorMessage: payload.rawErrorMessage ?? undefined,
+        sourceRoute: payload.sourceRoute ?? "/login",
+      }),
+    }).catch(() => {});
+  } catch {
+    // Reporting must never throw.
   }
 }
 
@@ -47,6 +82,15 @@ export default function LoginPage() {
   const [signupError, setSignupError] = useState<string | null>(null);
   const [loginMessage, setLoginMessage] = useState<string | null>(null);
   const [signupAwaitingEmail, setSignupAwaitingEmail] = useState(false);
+  /**
+   * Populated when /api/auth/signup returns oauth_account_exists. The login
+   * page shows two action buttons (Google + Email me a setup link) so the
+   * user can either sign in with the linked OAuth provider or add a password
+   * to their existing account via the standard reset-password flow.
+   */
+  const [oauthExistsProviders, setOauthExistsProviders] = useState<string[] | null>(null);
+  const [oauthSetupSent, setOauthSetupSent] = useState(false);
+  const [oauthSetupSubmitting, setOauthSetupSubmitting] = useState(false);
 
   // Persist ?ref= referral code through signup flow via localStorage
   useEffect(() => {
@@ -134,6 +178,13 @@ export default function LoginPage() {
             ? userMessageForSignupCode("rate_limited")
             : loginFailureMessage(error.message),
         );
+        reportAuthFailure({
+          email,
+          failureReason: mapSupabaseLoginError(error.message),
+          errorCode: mapped,
+          rawErrorMessage: error.message,
+          sourceRoute: "/login",
+        });
         return;
       }
 
@@ -141,6 +192,12 @@ export default function LoginPage() {
 
       if (!session) {
         setLoginMessage(SIGNUP_USER_MESSAGES.generic);
+        reportAuthFailure({
+          email,
+          failureReason: "SERVER_ERROR",
+          errorCode: "no_session_after_signin",
+          sourceRoute: "/login",
+        });
         return;
       }
 
@@ -157,9 +214,10 @@ export default function LoginPage() {
         verification_status: string | null;
         email_verified: boolean | null;
         admin_verified: boolean | null;
+        must_complete_onboarding: boolean | null;
       }>(supabase, session.user, {
         route: "app/login/page.tsx:handleLogin",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, must_complete_onboarding",
       });
 
       devClientAuthLog("login", {
@@ -171,6 +229,11 @@ export default function LoginPage() {
 
       if (profile && hasFullPlatformAccess(profile)) {
         window.location.href = "/";
+        return;
+      }
+
+      if (profile?.must_complete_onboarding) {
+        window.location.href = "/onboarding";
         return;
       }
 
@@ -193,9 +256,17 @@ export default function LoginPage() {
   async function handleSignup() {
     setSignupError(null);
     setSignupAwaitingEmail(false);
+    setOauthExistsProviders(null);
+    setOauthSetupSent(false);
 
     if (password !== confirmPassword) {
       setSignupError("Passwords do not match.");
+      reportAuthFailure({
+        email,
+        failureReason: "CLIENT_VALIDATION_FAILED",
+        errorCode: "password_mismatch",
+        sourceRoute: "/login",
+      });
       return;
     }
 
@@ -212,6 +283,7 @@ export default function LoginPage() {
         ok?: boolean;
         email?: string;
         code?: SignupErrorCode;
+        providers?: string[];
       };
       devClientAuthLog("signup", {
         step: "server-signup",
@@ -221,6 +293,13 @@ export default function LoginPage() {
       });
 
       if (!signupRes.ok || !signupData.ok) {
+        if (signupData.code === "oauth_account_exists") {
+          // Existing OAuth-only account — show consolidation options.
+          const providers = signupData.providers ?? [];
+          setOauthExistsProviders(providers);
+          setSignupError(oauthAccountExistsMessage(providers));
+          return;
+        }
         const msg = userMessageForSignupCode(signupData.code);
         if (signupData.code === "account_exists_login") {
           setLoginMessage(msg);
@@ -248,6 +327,13 @@ export default function LoginPage() {
             ? userMessageForSignupCode(mapSupabaseAuthError(signInError.message))
             : SIGNUP_USER_MESSAGES.generic,
         );
+        reportAuthFailure({
+          email: normalizedEmail,
+          failureReason: signInError ? mapSupabaseLoginError(signInError.message) : "ACCOUNT_CREATION_FAILED",
+          errorCode: "signin_after_signup_failed",
+          rawErrorMessage: signInError?.message,
+          sourceRoute: "/login",
+        });
         return;
       }
 
@@ -261,6 +347,50 @@ export default function LoginPage() {
       window.location.href = "/onboarding";
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  /**
+   * Send a Supabase password-reset email to an existing OAuth-only account so
+   * the user can ADD a password identity to their account. Because Supabase
+   * auto-links identities by verified email, the result is a single user_id
+   * with both Google and email/password sign-in working — same profile, same
+   * posts, no duplicate row.
+   *
+   * Safe to call for an OAuth-existing email: the email goes to the legitimate
+   * owner, and the new password is only set after they click the link.
+   */
+  async function requestAddPasswordLink() {
+    const target = email.trim();
+    if (!target) return;
+    setOauthSetupSubmitting(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(target, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (error) {
+        setSignupError(`Couldn't send the setup link: ${error.message}`);
+        reportAuthFailure({
+          email: target,
+          failureReason: "SERVER_ERROR",
+          errorCode: "oauth_consolidation_reset_failed",
+          rawErrorMessage: error.message,
+          sourceRoute: "/login",
+        });
+        return;
+      }
+      setOauthSetupSent(true);
+    } catch (err) {
+      setSignupError("Couldn't send the setup link. Please try again.");
+      reportAuthFailure({
+        email: target,
+        failureReason: "NETWORK_ERROR",
+        errorCode: "oauth_consolidation_network_error",
+        rawErrorMessage: err instanceof Error ? err.message : String(err),
+        sourceRoute: "/login",
+      });
+    } finally {
+      setOauthSetupSubmitting(false);
     }
   }
 
@@ -504,6 +634,8 @@ export default function LoginPage() {
             onChange={(e) => {
               setEmail(e.target.value);
               setSignupError(null);
+              setOauthExistsProviders(null);
+              setOauthSetupSent(false);
             }}
             style={inputStyle}
           />
@@ -612,6 +744,55 @@ export default function LoginPage() {
                   <div style={{ fontSize: 14, color: "#b91c1c", lineHeight: 1.4 }}>
                     {signupError}
                   </div>
+                  {oauthExistsProviders && oauthExistsProviders.length > 0 ? (
+                    oauthSetupSent ? (
+                      <div
+                        style={{
+                          marginTop: 4,
+                          padding: 12,
+                          borderRadius: 10,
+                          background: "#f0fdf4",
+                          border: "1px solid #bbf7d0",
+                          color: "#166534",
+                          fontSize: 13,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        We sent a password setup link to <strong>{email.trim().toLowerCase()}</strong>. Click it to add a
+                        password to your account — once set, both sign-in methods will work.
+                      </div>
+                    ) : (
+                      <div style={{ display: "grid", gap: 8, marginTop: 6 }}>
+                        <button
+                          type="button"
+                          onClick={() => signInWithGoogleOAuth()}
+                          disabled={submitting || oauthSetupSubmitting}
+                          style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+                        >
+                          <GoogleIcon />
+                          Sign in with Google
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => requestAddPasswordLink()}
+                          disabled={submitting || oauthSetupSubmitting || !email.trim()}
+                          style={{
+                            ...buttonSecondary,
+                            opacity: oauthSetupSubmitting ? 0.7 : 1,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            gap: 7,
+                          }}
+                        >
+                          {oauthSetupSubmitting && (
+                            <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />
+                          )}
+                          Email me a setup link
+                        </button>
+                      </div>
+                    )
+                  ) : null}
                   <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.4 }}>
                     Need help? Email{" "}
                     <a

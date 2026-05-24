@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
@@ -17,6 +17,8 @@ import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
 import SupabaseUsagePanel from "../components/admin/SupabaseUsagePanel";
+import { usePageTracking } from "../hooks/usePageTracking";
+import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { coerceTagsFromDb, normalizeBizTagsInput } from "../lib/bizListingTags";
 import {
@@ -28,6 +30,9 @@ import { isMarinesService, MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serv
 import { displayListingTitle, LEMON_LOT_CATEGORIES, type MarketplaceListingRow } from "../lib/lemonLot";
 import { prepareImageUploadFile } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
+
+// Lazy-loaded — only loaded when the admin opens the Failed Auth tab.
+const FailedAuthPanel = lazy(() => import("../components/admin/FailedAuthPanel"));
 
 type BusinessListing = {
   id: string;
@@ -89,7 +94,46 @@ type UserProfile = {
   employer_verified: boolean | null;
   created_at: string | null;
   community_flag_count?: number | null;
+  signup_incomplete?: boolean;
 };
+
+function adminUserDisplayName(u: UserProfile): string {
+  return (
+    u.display_name ||
+    u.name ||
+    `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
+    "Unnamed User"
+  );
+}
+
+function userMatchesStatusFilter(u: UserProfile, filter: "all" | "pending" | "verified" | "denied"): boolean {
+  if (filter === "all") return true;
+  if (filter === "pending") {
+    if (u.signup_incomplete) return true;
+    return (
+      (u.verification_status === "awaiting_admin_review" ||
+        u.verification_status === "pending_admin_review" ||
+        u.verification_status === "pending") &&
+      !!u.email_verified
+    );
+  }
+  return u.verification_status === filter;
+}
+
+function userMatchesSearchQuery(u: UserProfile, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [
+    adminUserDisplayName(u),
+    u.email ?? "",
+    u.service ?? "",
+    u.role ?? "",
+    u.user_id,
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(q);
+}
 
 type UsersFallbackQueryResult = {
   data: Array<Record<string, unknown>> | null;
@@ -197,7 +241,8 @@ type Tab =
   | "infrastructure"
   | "news"
   | "waitlist"
-  | "lemon_lot";
+  | "lemon_lot"
+  | "failed_auth";
 
 type NewsIntakeDebugPayload = {
   provider: string;
@@ -326,6 +371,21 @@ type EngagementSummary = {
     display_name: string | null;
     total_ms: number;
     sessions: number;
+  }>;
+};
+
+type PageAnalyticsRange = "24h" | "7d" | "30d" | "all";
+
+type PageAnalyticsSummary = {
+  range: PageAnalyticsRange;
+  generated_at: string;
+  pages: Array<{
+    page_path: string;
+    total_visits: number;
+    unique_users: number;
+    total_seconds: number;
+    avg_seconds: number;
+    most_recent_visit: string;
   }>;
 };
 
@@ -547,6 +607,7 @@ function KpiCard({
 }
 
 export default function AdminPage() {
+  usePageTracking(PAGE_TRACKING.admin);
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   /** Logged-in admin user id (scrapbook manage UI); set once on admin gate — avoids per-preview auth locks. */
@@ -564,6 +625,15 @@ export default function AdminPage() {
 
   const [pendingOnly, setPendingOnly] = useState(true);
   const [userFilter, setUserFilter] = useState<"all" | "pending" | "verified" | "denied">("pending");
+  const [userSearch, setUserSearch] = useState("");
+
+  const filteredAdminUsers = useMemo(
+    () =>
+      users.filter(
+        (u) => userMatchesStatusFilter(u, userFilter) && userMatchesSearchQuery(u, userSearch),
+      ),
+    [users, userFilter, userSearch],
+  );
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
@@ -647,6 +717,9 @@ export default function AdminPage() {
   const [engagement, setEngagement] = useState<EngagementSummary | null>(null);
   const [engagementLoading, setEngagementLoading] = useState(false);
   const [engagementRange, setEngagementRange] = useState<EngagementRange>("7d");
+  const [pageAnalytics, setPageAnalytics] = useState<PageAnalyticsSummary | null>(null);
+  const [pageAnalyticsLoading, setPageAnalyticsLoading] = useState(false);
+  const [pageAnalyticsRange, setPageAnalyticsRange] = useState<PageAnalyticsRange>("7d");
 
   const [newsItems, setNewsItems] = useState<AdminNewsItem[]>([]);
   const [newsFilter, setNewsFilter] = useState<NewsTabFilter>("pending");
@@ -713,6 +786,7 @@ export default function AdminPage() {
     dir: 0,
     locReq: 0,
     scrapbook: 0,
+    failedAuth: 0,
   });
 
   /** When true, Events tab shows the scrapbook moderation queue instead of calendars/memorials. */
@@ -751,6 +825,26 @@ export default function AdminPage() {
       console.error("loadEngagement failed", err);
     } finally {
       setEngagementLoading(false);
+    }
+  }
+
+  async function loadPageAnalytics(range: PageAnalyticsRange = pageAnalyticsRange) {
+    setPageAnalyticsLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/page-analytics?range=${range}`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (!res.ok) {
+        console.error("loadPageAnalytics error", res.status);
+        return;
+      }
+      const json = (await res.json()) as PageAnalyticsSummary;
+      setPageAnalytics(json);
+    } catch (err) {
+      console.error("loadPageAnalytics failed", err);
+    } finally {
+      setPageAnalyticsLoading(false);
     }
   }
 
@@ -1515,11 +1609,14 @@ export default function AdminPage() {
     }
     if (activeTab === "bugs") loadBugReports();
     if (activeTab === "directory") loadDirectory();
-    if (activeTab === "engagement") void loadEngagement(engagementRange);
+    if (activeTab === "engagement") {
+      void loadEngagement(engagementRange);
+      void loadPageAnalytics(pageAnalyticsRange);
+    }
     if (activeTab === "news") void loadNews(newsFilter);
     if (activeTab === "waitlist") void loadWaitlist();
     if (activeTab === "lemon_lot") void loadLemonLot();
-  }, [pendingOnly, activeTab, authorized, engagementRange, newsFilter, bugsFilter]);
+  }, [pendingOnly, activeTab, authorized, engagementRange, pageAnalyticsRange, newsFilter, bugsFilter]);
 
   useEffect(() => {
     if (!authorized) return;
@@ -2957,6 +3054,9 @@ export default function AdminPage() {
             {tabNotifyBadge(adminTotalPending)}
           </h1>
           <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5 }}>Admin Only</span>
+          <a href="/admin/digests" style={{ color: t.textMuted, fontSize: 13, fontWeight: 800, textDecoration: "underline", textUnderlineOffset: 3 }}>
+            Digest logs
+          </a>
         </div>
 
         {/* Tabs */}
@@ -3007,6 +3107,10 @@ export default function AdminPage() {
           </button>
           <button type="button" style={tabStyle("lemon_lot")} onClick={() => setActiveTab("lemon_lot")}>
             Lemon Lot
+          </button>
+          <button type="button" style={tabStyle("failed_auth")} onClick={() => setActiveTab("failed_auth")}>
+            Failed Auth
+            {tabNotifyBadge(pendingCounts.failedAuth)}
           </button>
 
           <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8, fontSize: 14, fontWeight: 600, cursor: "pointer", color: t.textMuted }}>
@@ -3565,46 +3669,62 @@ export default function AdminPage() {
                     {f.charAt(0).toUpperCase() + f.slice(1)}
                     {" "}
                     <span style={{ opacity: 0.7 }}>
-                      ({users.filter((u) =>
-                        f === "all"
-                          ? true
-                          : f === "pending"
-                            ? (u.verification_status === "awaiting_admin_review" ||
-                              u.verification_status === "pending_admin_review" ||
-                              u.verification_status === "pending") &&
-                              !!u.email_verified
-                            : u.verification_status === f,
-                      ).length})
+                      ({users.filter((u) => userMatchesStatusFilter(u, f)).length})
                     </span>
                   </button>
                 ))}
               </div>
-              <button onClick={loadUsers} style={actionBtn("#374151")}>↻ Refresh</button>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                <input
+                  type="search"
+                  value={userSearch}
+                  onChange={(e) => setUserSearch(e.target.value)}
+                  placeholder="Search name, email, service…"
+                  aria-label="Search users"
+                  style={{
+                    border: `1px solid ${t.inputBorder}`,
+                    borderRadius: 10,
+                    padding: "8px 12px",
+                    background: t.input,
+                    color: t.text,
+                    minWidth: 220,
+                    fontSize: 13,
+                  }}
+                />
+                {userSearch.trim() && (
+                  <button type="button" style={actionBtn("#6b7280")} onClick={() => setUserSearch("")}>
+                    Clear
+                  </button>
+                )}
+                <button type="button" onClick={() => void loadUsers()} style={actionBtn("#374151")}>↻ Refresh</button>
+              </div>
             </div>
+            {filteredAdminUsers.length === 0 && (
+              <div
+                style={{
+                  padding: 32,
+                  textAlign: "center",
+                  color: t.textFaint,
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 14,
+                  background: t.surface,
+                  marginBottom: 10,
+                }}
+              >
+                {userSearch.trim() ? "No users match your search." : "No users in this filter."}
+              </div>
+            )}
             <div style={{ display: "grid", gap: 10 }}>
-              {users
-                .filter((u) =>
-                  userFilter === "all"
-                    ? true
-                    : userFilter === "pending"
-                      ? (u.verification_status === "awaiting_admin_review" ||
-                          u.verification_status === "pending_admin_review" ||
-                          u.verification_status === "pending") &&
-                        !!u.email_verified
-                      : u.verification_status === userFilter,
-                )
-                .map((u) => {
-                const name =
-                  u.display_name ||
-                  u.name ||
-                  `${u.first_name || ""} ${u.last_name || ""}`.trim() ||
-                  "Unnamed User";
+              {filteredAdminUsers.map((u) => {
+                const name = adminUserDisplayName(u);
+                const isIncompleteSignup = !!u.signup_incomplete;
                 const isVerified = u.verification_status === "verified";
                 const isPending =
-                  !!u.email_verified &&
+                  isIncompleteSignup ||
+                  (!!u.email_verified &&
                   (u.verification_status === "awaiting_admin_review" ||
                     u.verification_status === "pending_admin_review" ||
-                    u.verification_status === "pending");
+                    u.verification_status === "pending"));
                 const isDenied = u.verification_status === "denied";
                 return (
                   <div key={u.user_id} style={{ border: `1px solid ${isDenied ? "#fca5a5" : t.border}`, borderRadius: 12, padding: "12px 16px", background: isDenied ? "#fff5f5" : t.surface, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
@@ -3619,8 +3739,9 @@ export default function AdminPage() {
                         ) : (
                           <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Member</span>
                         )}
+                        {isIncompleteSignup && <span style={{ background: "#ffedd5", color: "#c2410c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Incomplete signup</span>}
                         {isVerified && <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Verified</span>}
-                        {isPending && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
+                        {isPending && !isIncompleteSignup && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
                         {isDenied && <span style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Denied</span>}
                       </div>
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
@@ -4213,6 +4334,157 @@ export default function AdminPage() {
                 </div>
               </>
             )}
+
+            {/* Page Analytics — authenticated time-on-page by major app section */}
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface, padding: 16, minWidth: 0 }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  justifyContent: "space-between",
+                  marginBottom: 12,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>Page Analytics</div>
+                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
+                    Time spent on major app pages (signed-in users only).
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                    {(
+                      [
+                        ["24h", "Last 24 hours"],
+                        ["7d", "Last 7 days"],
+                        ["30d", "Last 30 days"],
+                        ["all", "All time"],
+                      ] as const
+                    ).map(([r, label]) => {
+                      const active = pageAnalyticsRange === r;
+                      return (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setPageAnalyticsRange(r)}
+                          style={{
+                            padding: "7px 14px",
+                            borderRadius: 8,
+                            border: "none",
+                            fontWeight: 700,
+                            fontSize: 13,
+                            cursor: "pointer",
+                            background: active ? "#111" : t.badgeBg,
+                            color: active ? "white" : t.text,
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {pageAnalytics?.generated_at && (
+                    <span style={{ fontSize: 12, color: t.textMuted }}>
+                      Updated {new Date(pageAnalytics.generated_at).toLocaleTimeString()}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void loadPageAnalytics(pageAnalyticsRange)}
+                    disabled={pageAnalyticsLoading}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: `1px solid ${t.border}`,
+                      background: t.surface,
+                      color: t.text,
+                      fontWeight: 600,
+                      fontSize: 12,
+                      cursor: pageAnalyticsLoading ? "default" : "pointer",
+                      opacity: pageAnalyticsLoading ? 0.6 : 1,
+                    }}
+                  >
+                    {pageAnalyticsLoading ? "Refreshing…" : "Refresh"}
+                  </button>
+                </div>
+              </div>
+
+              {pageAnalyticsLoading && !pageAnalytics && (
+                <div style={{ fontSize: 13, color: t.textMuted, padding: "8px 0" }}>
+                  Loading page analytics…
+                </div>
+              )}
+
+              {!pageAnalyticsLoading && pageAnalytics && pageAnalytics.pages.length === 0 && (
+                <div style={{ fontSize: 13, color: t.textFaint }}>No page session data yet.</div>
+              )}
+
+              {pageAnalytics && pageAnalytics.pages.length > 0 && (
+                <div style={{ display: "grid", gap: 8, overflowX: "auto" }}>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile
+                        ? "minmax(120px, 1fr) 56px 56px 72px 72px"
+                        : "minmax(140px, 1.2fr) 72px 72px 88px 88px minmax(120px, 1fr)",
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: t.textMuted,
+                      paddingBottom: 6,
+                      borderBottom: `1px solid ${t.borderLight}`,
+                      minWidth: isMobile ? 480 : 640,
+                    }}
+                  >
+                    <div>Page path</div>
+                    <div style={{ textAlign: "right" }}>Visits</div>
+                    <div style={{ textAlign: "right" }}>Users</div>
+                    <div style={{ textAlign: "right" }}>Total time</div>
+                    <div style={{ textAlign: "right" }}>Avg visit</div>
+                    {!isMobile && <div style={{ textAlign: "right" }}>Most recent</div>}
+                  </div>
+                  {pageAnalytics.pages.map((row) => (
+                    <div
+                      key={row.page_path}
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: isMobile
+                          ? "minmax(120px, 1fr) 56px 56px 72px 72px"
+                          : "minmax(140px, 1.2fr) 72px 72px 88px 88px minmax(120px, 1fr)",
+                        fontSize: 13,
+                        alignItems: "center",
+                        color: t.text,
+                        padding: "4px 0",
+                        minWidth: isMobile ? 480 : 640,
+                      }}
+                    >
+                      <div
+                        style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", paddingRight: 6 }}
+                        title={row.page_path}
+                      >
+                        {row.page_path}
+                      </div>
+                      <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{row.total_visits}</div>
+                      <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: t.textMuted }}>
+                        {row.unique_users}
+                      </div>
+                      <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                        {formatDuration(row.total_seconds * 1000)}
+                      </div>
+                      <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", color: t.textMuted }}>
+                        {formatDuration(row.avg_seconds * 1000)}
+                      </div>
+                      {!isMobile && (
+                        <div style={{ textAlign: "right", fontSize: 12, color: t.textMuted }}>
+                          {new Date(row.most_recent_visit).toLocaleString()}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -6379,6 +6651,21 @@ export default function AdminPage() {
               <AdminScrapbookReview t={t} showToast={showToast} onQueueChanged={() => void loadPendingCounts()} />
             )}
 
+          </div>
+        )}
+
+        {/* ── FAILED AUTH TAB ── */}
+        {activeTab === "failed_auth" && (
+          <div style={{ marginTop: 20 }}>
+            <Suspense
+              fallback={
+                <div style={{ padding: 24, color: t.textMuted, fontSize: 14, textAlign: "center" }}>
+                  Loading Failed Auth reports…
+                </div>
+              }
+            >
+              <FailedAuthPanel />
+            </Suspense>
           </div>
         )}
 

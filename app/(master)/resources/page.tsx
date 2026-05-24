@@ -22,6 +22,8 @@ import { useTheme } from "../../lib/ThemeContext";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { prepareImageUploadFile } from "../../lib/prepareUploadFile";
 import { validateImagePick } from "../../lib/uploadLimits";
+import { usePageTracking } from "../../hooks/usePageTracking";
+import { PAGE_TRACKING } from "../../lib/pageTrackingPaths";
 
 type BusinessListing = BusinessListingRow;
 
@@ -60,6 +62,7 @@ type ResourceComment = ResourceCommentRow & {
 };
 
 export default function ResourcesPage() {
+  usePageTracking(PAGE_TRACKING.resources);
   const { t } = useTheme();
   const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);

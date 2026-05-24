@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup";
 import { devAuthLog } from "@/app/lib/auth/signupErrors";
+import { hasAnyAuthAccessOverride } from "@/app/lib/server/authAccessOverrides";
 
 /**
  * Persisted signup attempt logging + velocity rate limiting.
@@ -21,6 +22,7 @@ export type SignupAttemptReason =
   | "rate_limited_velocity_email_day"
   | "turnstile_failed"
   | "turnstile_missing"
+  | "oauth_account_exists"
   | `supabase_${string}`
   | "config_error"
   | "unknown_error";
@@ -153,8 +155,12 @@ export const VELOCITY_LIMITS = {
 /**
  * Old hard Turnstile gate logged `turnstile_missing` for legitimate users
  * (Facebook in-app browser, etc.). Those rows must not count toward velocity.
+ * `oauth_account_exists` also excluded — that's a legit user hitting signup
+ * when they should use Sign in with Google; we don't want to compound the
+ * confusion by rate-limiting them out of the consolidation flow.
  */
-const VELOCITY_COUNT_FILTER = "reason.is.null,reason.neq.turnstile_missing";
+const VELOCITY_COUNT_FILTER =
+  "reason.is.null,reason.not.in.(turnstile_missing,oauth_account_exists)";
 
 /**
  * Check whether the current signup attempt is within velocity limits.
@@ -180,6 +186,21 @@ export async function checkSignupVelocity(args: {
     return { ok: true };
   }
 
+  // Override check is lazy — only consulted on the block path below. The
+  // common (allowed) signup never queries auth_access_overrides.
+  let overrideChecked = false;
+  let hasOverride = false;
+  const isOverridden = async (): Promise<boolean> => {
+    if (!overrideChecked) {
+      hasOverride = await hasAnyAuthAccessOverride(args.email, ip);
+      overrideChecked = true;
+      if (hasOverride) {
+        devAuthLog("signup-velocity", { step: "admin_override" });
+      }
+    }
+    return hasOverride;
+  };
+
   const { client, error: envErr } = createSupabaseServiceRoleClient();
   if (envErr || !client) {
     // Fail open if env is misconfigured — we don't want to lock out signups,
@@ -203,7 +224,9 @@ export async function checkSignupVelocity(args: {
     if (hourErr) {
       devAuthLog("signup-velocity", { step: "ip_hour_query_error", error: hourErr.message });
     } else if ((hourCount ?? 0) >= VELOCITY_LIMITS.ipPerHour) {
-      return { ok: false, reason: "rate_limited_velocity_ip_hour" };
+      if (!(await isOverridden())) {
+        return { ok: false, reason: "rate_limited_velocity_ip_hour" };
+      }
     }
 
     const { count: dayCount, error: dayErr } = await client
@@ -215,7 +238,9 @@ export async function checkSignupVelocity(args: {
     if (dayErr) {
       devAuthLog("signup-velocity", { step: "ip_day_query_error", error: dayErr.message });
     } else if ((dayCount ?? 0) >= VELOCITY_LIMITS.ipPerDay) {
-      return { ok: false, reason: "rate_limited_velocity_ip_day" };
+      if (!(await isOverridden())) {
+        return { ok: false, reason: "rate_limited_velocity_ip_day" };
+      }
     }
   }
 
@@ -229,7 +254,9 @@ export async function checkSignupVelocity(args: {
     if (error) {
       devAuthLog("signup-velocity", { step: "email_day_query_error", error: error.message });
     } else if ((count ?? 0) >= emailPerDayLimit) {
-      return { ok: false, reason: "rate_limited_velocity_email_day" };
+      if (!(await isOverridden())) {
+        return { ok: false, reason: "rate_limited_velocity_email_day" };
+      }
     }
   }
 

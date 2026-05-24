@@ -32,6 +32,10 @@ export default function OnboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
   const [duplicateProviders, setDuplicateProviders] = useState<string[] | null>(null);
+  // True when this user landed on /onboarding because an admin set
+  // must_complete_onboarding=true (the temp-password / failed-auth flow).
+  // We only need to call the server route to clear that flag in that case.
+  const [wasProvisioned, setWasProvisioned] = useState(false);
 
   // Member fields
   const [firstName, setFirstName] = useState("");
@@ -185,10 +189,24 @@ export default function OnboardingPage() {
         email_verified: boolean | null;
         admin_verified: boolean | null;
         subscription_terms_acknowledged_at: string | null;
+        must_complete_onboarding: boolean | null;
       }>(supabase, user, {
         route: "app/onboarding/page.tsx:check",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, service, company_name, account_type, verification_status, email_verified, admin_verified, subscription_terms_acknowledged_at",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, service, company_name, account_type, verification_status, email_verified, admin_verified, subscription_terms_acknowledged_at, must_complete_onboarding",
       });
+
+      if (profile?.must_complete_onboarding) {
+        setWasProvisioned(true);
+        if (profile.first_name) {
+          setFirstName(profile.first_name);
+          setEmpFirstName(profile.first_name);
+        }
+        const params = new URLSearchParams(window.location.search);
+        const ref = params.get("ref") || localStorage.getItem("eod_ref") || "";
+        if (ref) setReferralInput(ref.toUpperCase());
+        setChecking(false);
+        return;
+      }
 
       if (
         profile &&
@@ -359,9 +377,28 @@ export default function OnboardingPage() {
         isGoogle,
       });
 
-      // Generate referral code for this user
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.access_token) {
+        // Only provisioned users actually need the flag cleared (it starts
+        // false for every normal signup, so the trigger never sees a
+        // change). For everyone else this call is a no-op — we still fire
+        // it best-effort but never block onboarding completion on it.
+        if (wasProvisioned) {
+          const clearRes = await fetch("/api/account/complete-onboarding", {
+            method: "POST",
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          });
+          if (!clearRes.ok) {
+            devAuthLog("onboarding", {
+              step: "clear_onboarding_flag_failed",
+              userId,
+              status: clearRes.status,
+            });
+            alert("Onboarding saved but could not finalize. Please refresh and try again.");
+            return;
+          }
+        }
+
         await fetch("/api/generate-referral-code", {
           method: "POST",
           headers: { Authorization: `Bearer ${session.access_token}` },

@@ -10,6 +10,7 @@ import {
   getClientIp,
   rateLimitResponse,
 } from "@/app/lib/server/rateLimit";
+import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,12 @@ export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
   const limited = checkRateLimit(`validate-beta:${ip}`, { limit: 10, windowMs: 15 * 60 * 1000 });
   if (!limited.allowed) {
+    void logFailedAuthAttempt({
+      failureReason: "RATE_LIMITED",
+      errorCode: "validate_beta_rate_limited",
+      sourceRoute: "/api/validate-beta",
+      request: req,
+    });
     return NextResponse.json(
       { success: false, message: rateLimitResponse(limited.retryAfterSec).message },
       { status: 429 },
@@ -59,6 +66,12 @@ export async function POST(req: NextRequest) {
     return jsonWithBetaAccessCookie({ success: true });
   }
 
+  void logFailedAuthAttempt({
+    failureReason: "BETA_DENIED",
+    errorCode: "wrong_code",
+    sourceRoute: "/api/validate-beta",
+    request: req,
+  });
   return NextResponse.json(
     { success: false, message: "Access code is incorrect." },
     { status: 401 },
