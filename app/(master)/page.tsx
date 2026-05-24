@@ -20,7 +20,7 @@ import { validateFeedAttachmentPick, validateImagePick } from "../lib/uploadLimi
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
-import JobImage from "../components/jobs/JobImage";
+import JobFeedCard from "../components/jobs/JobFeedCard";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
 import EventFeedActions from "../components/EventFeedActions";
 import EventPostCard from "../components/EventPostCard";
@@ -6863,78 +6863,16 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             )}
 
             {jobsLoaded && jobsForPane.map((job) => (
-              <div
+              <JobFeedCard
                 key={job.id}
-                style={{
-                  border: `1px solid ${t.border}`,
-                  borderRadius: 12,
-                  overflow: "hidden",
-                  background: t.surface,
-                }}
-              >
-                <JobImage
-                  src={httpsAssetUrl(job.og_image)}
-                  alt={job.title || job.og_title || "Job preview"}
-                  height={120}
-                />
-
-                <div style={{ padding: 12 }}>
-                  <div style={{ fontWeight: 800, lineHeight: 1.3 }}>
-                    {job.title || job.og_title || "Untitled Job"}
-                  </div>
-
-                  <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>
-                    {job.company_name || job.og_site_name || "Unknown Company"}
-                  </div>
-
-                  <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted }}>
-                    {job.location || "Location not listed"}
-                  </div>
-
-                  <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <span>{job.category || "General"}</span>
-                    {job.created_at && <span>• {new Date(job.created_at).toLocaleDateString()}</span>}
-                    {job.source_type === "community" && (
-                      <span style={{ background: "#dcfce7", color: "#15803d", borderRadius: 20, padding: "1px 7px", fontSize: 11, fontWeight: 800, whiteSpace: "nowrap" }}>
-                        Community
-                      </span>
-                    )}
-                  </div>
-                  {job.source_type === "community" && !job.anonymous && jobSubmitters.get(job.user_id ?? "") && (
-                    <div style={{ marginTop: 3, fontSize: 11, color: t.textFaint }}>
-                      posted by {jobSubmitters.get(job.user_id ?? "")}
-                    </div>
-                  )}
-
-                  {job.og_description && (
-                    <div
-                      style={{
-                        marginTop: 8,
-                        fontSize: 13,
-                        color: t.textMuted,
-                        lineHeight: 1.4,
-                        display: "-webkit-box",
-                        WebkitLineClamp: 4,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
-                      }}
-                    >
-                      {job.og_description}
-                    </div>
-                  )}
-
-                  <div style={{ marginTop: 10 }}>
-                    <JobCardActions
-                      job={job as JobModalData}
-                      onOpenDetails={setJobDetailsModal}
-                      saved={savedJobIds.has(job.id)}
-                      canSave={!!userId}
-                      isTogglingSave={togglingJobSaveFor === job.id}
-                      onToggleSave={(j) => toggleSaveJob(j.id)}
-                    />
-                  </div>
-                </div>
-              </div>
+                job={job}
+                onOpenDetails={setJobDetailsModal}
+                saved={savedJobIds.has(job.id)}
+                canSave={!!userId}
+                isTogglingSave={togglingJobSaveFor === job.id}
+                onToggleSave={(j) => toggleSaveJob(j.id)}
+                posterName={jobSubmitters.get(job.user_id ?? "") ?? null}
+              />
             ))}
           </div>
           <div style={{ marginTop: 12 }}>

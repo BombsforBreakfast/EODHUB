@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
-import JobImage from "../components/jobs/JobImage";
+import JobGridCard from "../components/jobs/JobGridCard";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 import { getFeatureAccess } from "../lib/featureAccess";
@@ -522,65 +522,19 @@ export default function JobsPage() {
               gap: 12,
             }}
           >
-            {visibleJobs.map((job) => {
-              const hasSalary = job.pay_min !== null || job.pay_max !== null;
-              return (
-                <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface, display: "flex", flexDirection: "column" }}>
-                  <JobImage src={job.og_image} alt={job.title || "Job preview"} height={150} />
-                  <div style={{ padding: 12, display: "flex", flexDirection: "column", flex: 1 }}>
-                    <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3 }}>{job.title || job.og_title || "Untitled Job"}</div>
-                    <div style={{ marginTop: 5, color: t.textMuted, fontSize: 14 }}>{job.company_name || job.og_site_name || "Unknown Company"}</div>
-                    <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
-                      {(job.location || "Location not listed") + " · " + (job.category || "General")}
-                    </div>
-
-                    {hasSalary ? (
-                      <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
-                        {formatPay(job.pay_min, job.pay_max)}
-                      </div>
-                    ) : (
-                      <div style={{ marginTop: 6, color: t.textFaint, fontSize: 12, fontStyle: "italic" }}>
-                        * Salary information not listed
-                      </div>
-                    )}
-
-                    {job.description && (
-                      <div style={{ marginTop: 8, color: t.textMuted, fontSize: 13, lineHeight: 1.45, display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                        {job.description}
-                      </div>
-                    )}
-
-                    <div style={{ flex: 1 }} />
-
-                    <div style={{ marginTop: 12 }}>
-                      <JobCardActions
-                        job={job as JobModalData}
-                        onOpenDetails={setDetailsJob}
-                        saved={savedJobIds.has(job.id)}
-                        canSave={!!userId}
-                        isTogglingSave={togglingJobId === job.id}
-                        onToggleSave={toggleSaveJob}
-                      />
-                    </div>
-
-                    {/* Source label */}
-                    <div
-                      style={{
-                        marginTop: 10,
-                        paddingTop: 8,
-                        borderTop: `1px solid ${t.border}`,
-                        fontSize: 11,
-                        color: t.textFaint,
-                        fontWeight: 600,
-                        letterSpacing: 0.3,
-                      }}
-                    >
-                      Via {formatSource(job.source_type)}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {visibleJobs.map((job) => (
+              <JobGridCard
+                key={job.id}
+                job={job}
+                onOpenDetails={setDetailsJob}
+                saved={savedJobIds.has(job.id)}
+                canSave={!!userId}
+                isTogglingSave={togglingJobId === job.id}
+                onToggleSave={toggleSaveJob}
+                formatPay={formatPay}
+                formatSource={formatSource}
+              />
+            ))}
           </div>
         </>
       )}

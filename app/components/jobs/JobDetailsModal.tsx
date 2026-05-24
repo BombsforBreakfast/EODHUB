@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useTheme } from "../../lib/ThemeContext";
 import JobImage from "./JobImage";
@@ -65,7 +66,7 @@ export default function JobDetailsModal({
     };
   }, [open, onClose]);
 
-  if (!open || !job) return null;
+  if (!open || !job || typeof document === "undefined") return null;
 
   const title = job.title || job.og_title || "Untitled Job";
   const company = job.company_name || job.og_site_name || "Unknown Company";
@@ -84,14 +85,14 @@ export default function JobDetailsModal({
           ? `Up to $${job.pay_max}`
           : null;
 
-  return (
+  return createPortal(
     <div
       role="presentation"
       onClick={onClose}
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 10080,
+        zIndex: 10100,
         background: "rgba(0,0,0,0.55)",
         display: "flex",
         alignItems: "center",
@@ -236,6 +237,7 @@ export default function JobDetailsModal({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
