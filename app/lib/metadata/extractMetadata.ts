@@ -81,6 +81,60 @@ async function assertSafePublicHttpUrl(websiteUrl: string): Promise<URL> {
   return parsed;
 }
 
+/** True when HTTP headers indicate the page cannot be embedded in a cross-origin iframe. */
+export function headersBlockIframeEmbedding(headers: Headers): boolean {
+  const xfo = headers.get("x-frame-options")?.trim().toLowerCase() ?? "";
+  if (xfo.includes("deny") || xfo.includes("sameorigin")) return true;
+
+  const csp = headers.get("content-security-policy") ?? "";
+  if (!csp) return false;
+
+  for (const part of csp.split(";")) {
+    const directive = part.trim().toLowerCase();
+    if (!directive.startsWith("frame-ancestors")) continue;
+    if (directive.includes("'none'")) return true;
+    const value = directive.slice("frame-ancestors".length).trim();
+    if (!value) continue;
+    if (value.includes("'self'") && !value.includes("*")) return true;
+    if (!value.includes("*")) return true;
+  }
+  return false;
+}
+
+export async function checkUrlEmbeddable(websiteUrl: string): Promise<{ embeddable: boolean }> {
+  const parsedUrl = await assertSafePublicHttpUrl(websiteUrl);
+  const safeUrl = parsedUrl.toString();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    let response = await fetch(safeUrl, {
+      method: "HEAD",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; EODZoneBot/1.0)" },
+    });
+
+    if (response.status === 405 || response.status === 501) {
+      response = await fetch(safeUrl, {
+        method: "GET",
+        redirect: "follow",
+        signal: controller.signal,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; EODZoneBot/1.0)",
+          Accept: "text/html,application/xhtml+xml",
+        },
+      });
+    }
+
+    return { embeddable: !headersBlockIframeEmbedding(response.headers) };
+  } catch {
+    return { embeddable: true };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function decodeHtmlEntities(value: string): string {
   return value
     .replace(/&amp;/g, "&")

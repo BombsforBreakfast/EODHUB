@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { supabase } from "@/app/lib/lib/supabaseClient";
 
 type GiphyGif = {
   id: string;
@@ -24,7 +25,39 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
   const [isMobile, setIsMobile] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const apiKey = process.env.NEXT_PUBLIC_GIPHY_API_KEY;
+
+  async function fetchGiphy(mode: "trending" | "search", q?: string) {
+    const { data: { session } } = await supabase.auth.getSession();
+    const params = new URLSearchParams({ mode });
+    if (mode === "search" && q) params.set("q", q);
+    const res = await fetch(`/api/giphy?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+    });
+    if (!res.ok) {
+      throw new Error("GIPHY request failed");
+    }
+    return res.json() as Promise<{ data?: GiphyGif[] }>;
+  }
+
+  async function loadTrending() {
+    setLoading(true);
+    try {
+      const data = await fetchGiphy("trending");
+      setGifs(data.data ?? []);
+    } catch { /* ignore */ } finally {
+      setLoading(false);
+    }
+  }
+
+  async function searchGifs(q: string) {
+    setLoading(true);
+    try {
+      const data = await fetchGiphy("search", q);
+      setGifs(data.data ?? []);
+    } catch { /* ignore */ } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 768);
@@ -66,32 +99,6 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query]);
-
-  async function loadTrending() {
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `https://api.giphy.com/v1/gifs/trending?api_key=${apiKey}&limit=20&rating=g`
-      );
-      const data = await res.json();
-      setGifs(data.data ?? []);
-    } catch { /* ignore */ } finally {
-      setLoading(false);
-    }
-  }
-
-  async function searchGifs(q: string) {
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `https://api.giphy.com/v1/gifs/search?api_key=${apiKey}&q=${encodeURIComponent(q)}&limit=20&rating=g`
-      );
-      const data = await res.json();
-      setGifs(data.data ?? []);
-    } catch { /* ignore */ } finally {
-      setLoading(false);
-    }
-  }
 
   function handleSelect(gif: GiphyGif) {
     onSelect(gif.images.original.url);

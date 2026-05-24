@@ -16,6 +16,7 @@ import { FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
+import SupabaseUsagePanel from "../components/admin/SupabaseUsagePanel";
 import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { coerceTagsFromDb, normalizeBizTagsInput } from "../lib/bizListingTags";
 import {
@@ -193,6 +194,7 @@ type Tab =
   | "bugs"
   | "directory"
   | "engagement"
+  | "infrastructure"
   | "news"
   | "waitlist"
   | "lemon_lot";
@@ -2993,6 +2995,9 @@ export default function AdminPage() {
           <button type="button" style={tabStyle("engagement")} onClick={() => setActiveTab("engagement")}>
             Engagement
           </button>
+          <button type="button" style={tabStyle("infrastructure")} onClick={() => setActiveTab("infrastructure")}>
+            Infrastructure
+          </button>
           <button type="button" style={tabStyle("news")} onClick={() => setActiveTab("news")}>
             News
             {tabNotifyBadge(newsPendingCount)}
@@ -4209,6 +4214,10 @@ export default function AdminPage() {
               </>
             )}
           </div>
+        )}
+
+        {activeTab === "infrastructure" && (
+          <SupabaseUsagePanel t={t} isDark={isDark} />
         )}
 
         {/* ── NEWS TAB ── */}

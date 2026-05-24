@@ -7,6 +7,7 @@ import {
   scrapbookHttpsUrl,
   youtubeVideoIdFromUrl,
 } from "./scrapbookHelpers";
+import { ArticleStageEmbed } from "./ArticleStageEmbed";
 import type { MemorialScrapbookTheme } from "./types";
 import type { ScrapbookItemWithAuthor } from "./types";
 
@@ -344,73 +345,19 @@ export function ScrapbookItemCard({ item, t, accentColor, variant = "stage" }: P
                     );
                   }
 
-                  /** Fills the scrapbook modal width; page scrolls inside the iframe (strip thumbnails use OG image). */
-                  const embedFrame: CSSProperties = {
-                    width: "100%",
-                    maxWidth: "100%",
-                    margin: 0,
-                    height: "min(78dvh, 900px)",
-                    minHeight: "min(420px, 55dvh)",
-                    borderRadius: 10,
-                    overflow: "hidden",
-                    background: "#0a0a0a",
-                    border: `1px solid ${t.border}`,
-                    boxSizing: "border-box",
-                  };
-
-                  const { site } = articleLinkThumbParts(ext);
                   return (
-                    <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10, alignItems: "stretch" }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          alignItems: "flex-start",
-                          gap: 10,
-                          justifyContent: "space-between",
-                          columnGap: 16,
-                        }}
-                      >
-                        <p style={{ margin: 0, fontSize: 12, color: t.textFaint, lineHeight: 1.45, flex: "1 1 200px" }}>
-                          Scroll inside the page below. Some sites block embedding—if it stays blank, use Open in new tab.
-                        </p>
-                        <a
-                          href={ext}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{
-                            fontSize: 13,
-                            color: DASHBOARD_NAV_LINK_BLUE,
-                            fontWeight: 700,
-                            textDecoration: "none",
-                            flexShrink: 0,
-                            paddingTop: 1,
-                          }}
-                        >
-                          Open in new tab
-                        </a>
-                      </div>
-                      <div style={embedFrame}>
-                        <iframe
-                          src={ext}
-                          title={site || "Linked article"}
-                          referrerPolicy="no-referrer-when-downgrade"
-                          loading="eager"
-                          style={{
-                            border: "none",
-                            width: "100%",
-                            height: "100%",
-                            display: "block",
-                          }}
-                        />
-                      </div>
-                    </div>
+                    <ArticleStageEmbed
+                      externalUrl={ext}
+                      thumbnailUrl={thumb}
+                      caption={item.caption}
+                      t={t}
+                    />
                   );
                 })()
               ) : (
                 <div style={{ fontSize: 14, color: t.textMuted, padding: 16 }}>Article</div>
               )}
-              {ext ? (
+              {ext && youtubeVideoIdFromUrl(ext) ? (
                 <a
                   href={ext}
                   target="_blank"
