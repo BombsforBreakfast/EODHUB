@@ -4694,7 +4694,7 @@ export default function PublicProfilePage() {
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontSize: 16, fontWeight: 900 }}>{showAllModal === "photos" ? "All Pinned Photos" : "All My Groups"}</div>
-                  <button type="button" onClick={() => setShowAllModal(null)} style={{ border: "none", background: "none", fontSize: 20, lineHeight: 1, cursor: "pointer", color: t.textMuted }}>├ù</button>
+                  <button type="button" onClick={() => setShowAllModal(null)} style={{ border: "none", background: "none", fontSize: 20, lineHeight: 1, cursor: "pointer", color: t.textMuted }}>×</button>
                 </div>
                 {showAllModal === "photos" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
@@ -4746,7 +4746,7 @@ export default function PublicProfilePage() {
                 {selectedPostGif && (
                   <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
                     <img src={selectedPostGif} alt="Selected GIF" style={{ maxWidth: 200, borderRadius: 10, display: "block" }} />
-                    <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>├ù</button>
+                    <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
                   </div>
                 )}
 
@@ -4754,7 +4754,7 @@ export default function PublicProfilePage() {
                 {ogPreview && (
                   <div style={{ position: "relative" }}>
                     <OgCard og={ogPreview} />
-                    <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>├ù</button>
+                    <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
                   </div>
                 )}
 
@@ -4802,7 +4802,7 @@ export default function PublicProfilePage() {
                           type="button"
                           onClick={() => setSelectedPostImages((prev) => { URL.revokeObjectURL(prev[i].previewUrl); return prev.filter((_, idx) => idx !== i); })}
                           style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}
-                        >├ù</button>
+                        >×</button>
                       </div>
                     ))}
                   </div>
@@ -5829,7 +5829,7 @@ export default function PublicProfilePage() {
             <div style={{ fontWeight: 900, fontSize: 17 }}>
               {connListOpen === "know" ? "Know" : "Recruited"}
             </div>
-            <button type="button" onClick={() => setConnListOpen(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>├ù</button>
+            <button type="button" onClick={() => setConnListOpen(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>×</button>
           </div>
           <div style={{ overflowY: "auto", flex: 1 }}>
             {connListLoading ? (

@@ -869,6 +869,11 @@ export default function HomePage() {
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
   const [discoverVisible, setDiscoverVisible] = useState<DiscoverProfile[]>([]);
   const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Ephemeral confirmation shown after a successful Know request from the
+  // People You May Know carousel. Holds the requested member's display name
+  // so we can phrase the toast ("Know request sent to Jane Doe").
+  const [discoverKnowToast, setDiscoverKnowToast] = useState<string | null>(null);
+  const discoverKnowToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pendingMembers, setPendingMembers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null; vouch_count: number; user_vouched: boolean }[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const memberInteractionAllowedRef = useRef(true);
@@ -1661,9 +1666,12 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           .map((c) => c.target_user_id)
       );
     } else {
+      // Exclude anyone we already have a row with — accepted, pending, or
+      // denied. The (least, greatest) unique-pair index would reject a new
+      // pending insert anyway, and re-suggesting someone who denied a
+      // previous request is bad UX.
       connectedUserIds = new Set(
         ((connsV2 ?? []) as { requester_user_id: string; target_user_id: string; status: string }[])
-          .filter((c) => c.status === "accepted" || c.status === "pending")
           .map((c) => (c.requester_user_id === currentUserId ? c.target_user_id : c.requester_user_id))
           .filter((id) => allIds.includes(id))
       );
@@ -1800,14 +1808,157 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const profile = discoverProfiles.find((p) => p.user_id === targetUserId);
     if (!profile) return;
     if (profile.knowStatus === "pending_outgoing") return;
-    await supabase.from("profile_connections").insert([
-      { requester_user_id: userId, target_user_id: targetUserId, status: "pending", worked_with: false },
-    ]);
-    void notify(targetUserId, `${currentUserName?.trim() || "Someone"} says they know you`, targetUserId);
-    const updater = (prev: DiscoverProfile[]): DiscoverProfile[] =>
+
+    // Snapshot so we can revert the optimistic UI update if the insert fails
+    // (RLS rejection, unique-pair conflict, network error, etc).
+    const prevDiscoverProfiles = discoverProfiles;
+    const prevDiscoverVisible = discoverVisible;
+
+    const removeTarget = (prev: DiscoverProfile[]): DiscoverProfile[] =>
       prev.filter((p) => p.user_id !== targetUserId);
-    setDiscoverProfiles(updater);
-    setDiscoverVisible(updater);
+    setDiscoverProfiles(removeTarget);
+    setDiscoverVisible(removeTarget);
+
+    const restoreUi = () => {
+      setDiscoverProfiles(prevDiscoverProfiles);
+      setDiscoverVisible(prevDiscoverVisible);
+    };
+
+    try {
+      // Preflight target's privacy_who_can_request so we can show a friendly
+      // message instead of a raw RLS rejection from the
+      // profile_connections_request_gate restrictive policy. Mirrors the
+      // profile page's requestKnow handler.
+      const { data: targetPrivacy, error: privacyError } = await supabase
+        .from("profiles")
+        .select("privacy_who_can_request")
+        .eq("user_id", targetUserId)
+        .maybeSingle();
+      if (privacyError) {
+        console.warn(
+          "[know] privacy preflight failed; relying on RLS:",
+          privacyError,
+        );
+      }
+      const policy =
+        (targetPrivacy as { privacy_who_can_request?: string } | null)
+          ?.privacy_who_can_request ?? "everyone";
+      console.debug("[know] preflight", { targetUserId, policy });
+
+      if (policy === "nobody") {
+        // They don't want requests at all — leaving them removed from the
+        // carousel is the right call, no need to restore.
+        alert(
+          "This member's privacy setting is set to 'Nobody can send me connection requests'. If this is your own test account, change it under Account → Privacy.",
+        );
+        return;
+      }
+      if (policy === "connections") {
+        const { data: shared } = await supabase.rpc(
+          "users_share_accepted_connection",
+          { a: userId, b: targetUserId },
+        );
+        if (shared !== true) {
+          alert(
+            "This member only accepts requests from people you both already know.",
+          );
+          restoreUi();
+          return;
+        }
+      }
+
+      const { error } = await supabase.from("profile_connections").insert([
+        {
+          requester_user_id: userId,
+          target_user_id: targetUserId,
+          status: "pending",
+          worked_with: false,
+        },
+      ]);
+
+      if (error) {
+        console.error("[know] insert failed", {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+        });
+
+        if (isConnV2MissingColumnError(error)) {
+          const { error: legacyErr } = await supabase
+            .from("profile_connections")
+            .insert([
+              {
+                requester_user_id: userId,
+                target_user_id: targetUserId,
+                connection_type: "know",
+              },
+            ]);
+          if (legacyErr) {
+            console.error(
+              "[know] legacy insert failed:",
+              legacyErr,
+            );
+            restoreUi();
+            alert(legacyErr.message);
+            return;
+          }
+        } else if (
+          error.code === "23505" ||
+          /duplicate key value/i.test(error.message ?? "")
+        ) {
+          console.warn(
+            "[know] pair row already exists; leaving out of discovery",
+            { targetUserId },
+          );
+          return;
+        } else if (
+          error.code === "42501" ||
+          /row-level security/i.test(error.message ?? "")
+        ) {
+          // The RESTRICTIVE profile_connections_request_gate rejected us.
+          // This generally means the target's privacy_who_can_request is
+          // 'nobody' or 'connections' (server-side authoritative value
+          // differs from what we read client-side, e.g. a race or stale
+          // value).
+          alert(
+            "The server blocked this Know request (the member's privacy setting prevents it). See devtools console for the underlying database error.",
+          );
+          return;
+        } else {
+          restoreUi();
+          alert(
+            `Couldn't send Know request: ${error.message || "unknown error"}`,
+          );
+          return;
+        }
+      }
+
+      void notify(
+        targetUserId,
+        `${currentUserName?.trim() || "Someone"} says they know you`,
+        targetUserId,
+      );
+
+      // Confirm the click landed. The avatar disappearing on its own isn't
+      // a clear enough signal — this toast tells the user the request was
+      // actually sent. Auto-clears after 3.5s.
+      const targetName =
+        `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
+        "this member";
+      if (discoverKnowToastTimerRef.current) {
+        clearTimeout(discoverKnowToastTimerRef.current);
+      }
+      setDiscoverKnowToast(`Know request sent to ${targetName}`);
+      discoverKnowToastTimerRef.current = setTimeout(() => {
+        setDiscoverKnowToast(null);
+        discoverKnowToastTimerRef.current = null;
+      }, 3500);
+    } catch (err) {
+      console.error("[know] unexpected error:", err);
+      restoreUi();
+      alert("Failed to send Know request. Please try again.");
+    }
   }
 
   async function loadSavedJobs(currentUserId: string) {
@@ -4151,6 +4302,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (discoverKnowToastTimerRef.current) {
+        clearTimeout(discoverKnowToastTimerRef.current);
+        discoverKnowToastTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (discoverProfiles.length === 0) return;
     discoverIntervalRef.current = setInterval(() => shuffleDiscover(), 7000);
     return () => {
@@ -5015,8 +5175,31 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           {/* People You May Know ΓÇö verified members only; below composer so vouch cards stay above */}
           {discoverVisible.length > 0 && (
             <div style={{ marginTop: 16, marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
-              <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6, marginBottom: 12 }}>
-                People You May Know
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, minHeight: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                  People You May Know
+                </div>
+                {discoverKnowToast && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 700,
+                      color: t.text,
+                      background: t.badgeBg,
+                      border: `1px solid ${t.border}`,
+                      borderRadius: 999,
+                      padding: "3px 10px",
+                      whiteSpace: "nowrap",
+                      maxWidth: "60%",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {discoverKnowToast}
+                  </div>
+                )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <button
