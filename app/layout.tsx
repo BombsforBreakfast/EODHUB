@@ -9,6 +9,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { MemorialNavModalProvider } from "./components/memorial/MemorialNavModalProvider";
 import BetaAccessGate from "./components/BetaAccessGate";
 import BugReportGate from "./components/BugReportGate";
+import { OnlinePresenceProvider } from "./components/OnlinePresenceProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -44,6 +45,7 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <MemorialNavModalProvider>
+          <OnlinePresenceProvider>
           <SessionGuard />
           <BetaAccessGate>
             <BugReportGate />
@@ -108,6 +110,7 @@ export default function RootLayout({
               </>
             ) : null}
           </BetaAccessGate>
+          </OnlinePresenceProvider>
           </MemorialNavModalProvider>
         </ThemeProvider>
       </body>

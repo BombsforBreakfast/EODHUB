@@ -6,8 +6,8 @@ import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import { LikerAvatar } from "./PostLikersStack";
+import { useOnlinePresence } from "./OnlinePresenceProvider";
 
-const PRESENCE_CHANNEL = "eod_home_online";
 const AVATAR = 22;
 const AVATAR_OVERLAP = 5;
 const AVATAR_STEP = AVATAR - AVATAR_OVERLAP;
@@ -30,18 +30,6 @@ function displayName(p: ProfileRow): string {
     || "Member";
 }
 
-function presenceUserIds(state: Record<string, unknown[]>): Set<string> {
-  const ids = new Set<string>();
-  for (const [presenceKey, arr] of Object.entries(state)) {
-    if (presenceKey) ids.add(presenceKey);
-    for (const raw of arr) {
-      const p = raw as { user_id?: string };
-      if (p.user_id) ids.add(p.user_id);
-    }
-  }
-  return ids;
-}
-
 function widthForNStacked(n: number): number {
   if (n <= 0) return 0;
   return AVATAR + (n - 1) * AVATAR_STEP;
@@ -53,7 +41,7 @@ type OnlineNowStripProps = {
 
 export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
   const { t } = useTheme();
-  const [onlineIds, setOnlineIds] = useState<string[]>([]);
+  const { onlineUserIds } = useOnlinePresence();
   const [profiles, setProfiles] = useState<Map<string, ProfileRow>>(new Map());
   const [visibleCount, setVisibleCount] = useState(12);
   const [listOpen, setListOpen] = useState(false);
@@ -61,7 +49,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
 
   const previewRows = useMemo(() => {
     if (!currentUserId) return [];
-    const others = onlineIds.filter((id) => id !== currentUserId);
+    const others = onlineUserIds.filter((id) => id !== currentUserId);
     if (others.length === 0) return [];
     // Defense-in-depth: even if a user with privacy_show_online=false leaks
     // a presence broadcast (stale tab from before they toggled, etc), drop
@@ -73,7 +61,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     // Don't show placeholder dots for ids whose profiles haven't loaded yet —
     // we don't yet know if they've opted out. They'll appear on the next sync.
     return ordered;
-  }, [currentUserId, onlineIds, profiles]);
+  }, [currentUserId, onlineUserIds, profiles]);
 
   const syncProfiles = useCallback(async (ids: string[]) => {
     if (ids.length === 0) {
@@ -91,70 +79,9 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
   }, []);
 
   useEffect(() => {
-    if (!currentUserId) {
-      setOnlineIds([]);
-      setProfiles(new Map());
-      return;
-    }
-
-    let cancelled = false;
-    let cleanup: (() => void) | null = null;
-
-    (async () => {
-      // Read the user's own privacy_show_online before subscribing. If they
-      // opted out we still subscribe (so they can see who else is online),
-      // but we don't broadcast our own presence.
-      const { data: meRow } = await supabase
-        .from("profiles")
-        .select("privacy_show_online")
-        .eq("user_id", currentUserId)
-        .maybeSingle();
-      if (cancelled) return;
-      const broadcastSelf = meRow?.privacy_show_online !== false;
-
-      const channel = supabase.channel(PRESENCE_CHANNEL, {
-        config: { presence: { key: currentUserId } },
-      });
-
-      channel
-        .on("presence", { event: "sync" }, () => {
-          const ids = [...presenceUserIds(channel.presenceState())];
-          ids.sort();
-          setOnlineIds(ids);
-        })
-        .on("presence", { event: "join" }, () => {
-          const ids = [...presenceUserIds(channel.presenceState())];
-          ids.sort();
-          setOnlineIds(ids);
-        })
-        .on("presence", { event: "leave" }, () => {
-          const ids = [...presenceUserIds(channel.presenceState())];
-          ids.sort();
-          setOnlineIds(ids);
-        });
-
-      channel.subscribe(async (status) => {
-        if (status !== "SUBSCRIBED") return;
-        if (!broadcastSelf) return;
-        await channel.track({ user_id: currentUserId, online_at: new Date().toISOString() });
-      });
-
-      cleanup = () => {
-        if (broadcastSelf) void channel.untrack();
-        supabase.removeChannel(channel);
-      };
-    })();
-
-    return () => {
-      cancelled = true;
-      if (cleanup) cleanup();
-    };
-  }, [currentUserId]);
-
-  useEffect(() => {
-    if (onlineIds.length === 0) return;
-    void syncProfiles(onlineIds);
-  }, [onlineIds, syncProfiles]);
+    if (onlineUserIds.length === 0) return;
+    void syncProfiles(onlineUserIds);
+  }, [onlineUserIds, syncProfiles]);
 
   useLayoutEffect(() => {
     const el = measureRef.current;
