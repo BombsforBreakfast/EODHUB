@@ -7,6 +7,7 @@ import ReportProblemButton from "../../components/ReportProblemButton";
 import PrivacySettingsCard from "../../components/account/PrivacySettingsCard";
 import MemorialFeedPreferencesCard from "../../components/account/MemorialFeedPreferencesCard";
 import NotificationPreferencesCard from "../../components/account/NotificationPreferencesCard";
+import ChangePasswordSection from "../../components/account/ChangePasswordSection";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
 import { isPaywallEnforced, memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 
@@ -290,6 +291,10 @@ export default function MyAccountPage() {
                   <span style={{ fontSize: 12, color: t.textFaint }}>Not linked</span>
                 )}
               </div>
+              <ChangePasswordSection
+                hasEmailPassword={authProviders.includes("email")}
+                onProvidersChange={setAuthProviders}
+              />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 16 }}>G</span>
