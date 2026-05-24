@@ -74,7 +74,6 @@ const WAITLIST_SERVICE_OPTIONS = [
 
 export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps) {
   const [phase, setPhase] = useState<BetaGatePhase>("checking");
-  const [accessEmail, setAccessEmail] = useState("");
   const [accessCode, setAccessCode] = useState("");
   const [showAccessCode, setShowAccessCode] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
@@ -166,12 +165,7 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
     async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       setCodeError(null);
-      const enteredEmail = accessEmail.trim();
       const enteredCode = accessCode.trim();
-      if (!enteredEmail) {
-        setCodeError("Please enter your email address.");
-        return;
-      }
       if (!enteredCode) {
         setCodeError("Please enter an access code.");
         return;
@@ -182,7 +176,7 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
           method: "POST",
           credentials: "include",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: enteredEmail, code: enteredCode }),
+          body: JSON.stringify({ code: enteredCode }),
         });
         const data = (await res.json()) as { success?: boolean; message?: string };
         if (res.ok && data.success) {
@@ -192,15 +186,15 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
             "Beta access isn't configured on this server. If you're developing locally, restart npm run dev after setting BETA_ACCESS_CODE in .env.local.",
           );
         } else if (res.status === 401) {
-          setCodeError(data.message ?? "Email or access code is incorrect.");
+          setCodeError(data.message ?? "Access code is incorrect.");
         } else if (res.status === 429) {
           setCodeError(
             data.message ?? "Too many attempts. Please wait a few minutes and try again.",
           );
         } else if (res.status === 400) {
-          setCodeError(data.message ?? "Please check your email and access code.");
+          setCodeError(data.message ?? "Please enter an access code.");
         } else {
-          setCodeError(data.message ?? "Email or access code is incorrect.");
+          setCodeError(data.message ?? "Access code is incorrect.");
         }
       } catch {
         setCodeError("Something went wrong. Please try again in a moment.");
@@ -208,7 +202,7 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
         setCodeSubmitting(false);
       }
     },
-    [accessEmail, accessCode, unlockWithBetaCode],
+    [accessCode, unlockWithBetaCode],
   );
 
   const handleWaitlistSubmit = useCallback(
@@ -591,13 +585,105 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
               <br />
               Access is currently limited.
             </p>
-            <p style={{ margin: 0, fontWeight: 600, color: "rgba(232, 234, 230, 0.98)" }}>
-              Join the waitlist and be notified when the doors open.
+          </div>
+
+          <form onSubmit={handleCodeSubmit} style={{ marginBottom: 8 }}>
+            <label htmlFor="beta-access-code" style={labelStyle}>
+              Access Code
+            </label>
+            <div style={{ position: "relative", width: "100%", maxWidth: "100%", marginBottom: 6 }}>
+              <input
+                id="beta-access-code"
+                type={showAccessCode ? "text" : "password"}
+                autoComplete="off"
+                spellCheck={false}
+                value={accessCode}
+                onChange={(ev) => {
+                  setAccessCode(ev.target.value);
+                  setCodeError(null);
+                }}
+                disabled={codeSubmitting}
+                style={{
+                  ...inputBase,
+                  width: "100%",
+                  maxWidth: "100%",
+                  paddingRight: 48,
+                  boxSizing: "border-box",
+                }}
+              />
+              <button
+                type="button"
+                className="beta-access-code-eye"
+                aria-label={showAccessCode ? "Hide access code" : "Show access code"}
+                onClick={() => setShowAccessCode((v) => !v)}
+                disabled={codeSubmitting}
+                style={{
+                  position: "absolute",
+                  right: 4,
+                  top: "50%",
+                  transform: "translateY(-50%)",
+                  minWidth: 44,
+                  minHeight: 44,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                {showAccessCode ? <EyeOff size={18} strokeWidth={2} aria-hidden /> : <Eye size={18} strokeWidth={2} aria-hidden />}
+              </button>
+            </div>
+            {codeError ? (
+              <p style={{ color: "#e8a598", fontSize: 13, margin: "4px 0 10px" }}>{codeError}</p>
+            ) : null}
+            <button type="submit" disabled={codeSubmitting} style={secondaryBtn}>
+              Enter
+            </button>
+          </form>
+
+          <div style={{ margin: "20px 0 18px", width: "100%", maxWidth: "100%" }}>
+            <div
+              style={{
+                height: 1,
+                background: "linear-gradient(90deg, transparent, rgba(140,155,125,0.42), transparent)",
+                marginBottom: 14,
+              }}
+            />
+            <p
+              style={{
+                margin: 0,
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: "0.12em",
+                textTransform: "uppercase",
+                color: "rgba(190, 200, 180, 0.9)",
+                textAlign: "center",
+                lineHeight: 1.45,
+              }}
+            >
+              Don&apos;t have an access code yet?
             </p>
+            <p
+              style={{
+                margin: "6px 0 0",
+                fontSize: 13,
+                fontWeight: 700,
+                color: "rgba(232, 234, 230, 0.98)",
+                textAlign: "center",
+                lineHeight: 1.45,
+              }}
+            >
+              Join the waitlist
+            </p>
+            <div
+              style={{
+                height: 1,
+                background: "linear-gradient(90deg, transparent, rgba(140,155,125,0.42), transparent)",
+                marginTop: 14,
+              }}
+            />
           </div>
 
           {!waitlistSubmitted ? (
-            <form onSubmit={handleWaitlistSubmit} style={{ marginBottom: 22 }}>
+            <form onSubmit={handleWaitlistSubmit} style={{ marginBottom: 8 }}>
               <div style={{ display: "grid", gap: 12, marginBottom: 12 }}>
                 <div>
                   <label htmlFor="wait-first" style={labelStyle}>
@@ -685,7 +771,7 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
               style={{
                 textAlign: "center",
                 padding: "16px 12px 18px",
-                marginBottom: 22,
+                marginBottom: 8,
                 borderRadius: 12,
                 background: "rgba(30, 38, 28, 0.6)",
                 border: "1px solid rgba(140, 155, 125, 0.25)",
@@ -696,105 +782,23 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
               </p>
             </div>
           )}
-
-          <div style={{ margin: "4px 0 18px", width: "100%", maxWidth: "100%" }}>
-            <div
-              style={{
-                height: 1,
-                background: "linear-gradient(90deg, transparent, rgba(140,155,125,0.42), transparent)",
-                marginBottom: 14,
-              }}
-            />
-            <p
-              style={{
-                margin: 0,
-                fontSize: 12,
-                fontWeight: 800,
-                letterSpacing: "0.12em",
-                textTransform: "uppercase",
-                color: "rgba(190, 200, 180, 0.9)",
-                textAlign: "center",
-                lineHeight: 1.45,
-              }}
+          <p
+            style={{
+              margin: "14px 0 0",
+              fontSize: 12,
+              lineHeight: 1.5,
+              color: "rgba(190, 200, 180, 0.86)",
+              textAlign: "center",
+            }}
+          >
+            If you experience any login issues please email{" "}
+            <a
+              href="mailto:hello@eod-hub.com"
+              style={{ color: "#d4c45c", fontWeight: 700, textDecoration: "none" }}
             >
-              Already have an access code?
-            </p>
-            <div
-              style={{
-                height: 1,
-                background: "linear-gradient(90deg, transparent, rgba(140,155,125,0.42), transparent)",
-                marginTop: 14,
-              }}
-            />
-          </div>
-
-          <form onSubmit={handleCodeSubmit} style={{ marginBottom: 8 }}>
-            <label htmlFor="beta-access-email" style={labelStyle}>
-              Email address
-            </label>
-            <input
-              id="beta-access-email"
-              type="email"
-              autoComplete="email"
-              placeholder="Enter your email address"
-              value={accessEmail}
-              onChange={(ev) => {
-                setAccessEmail(ev.target.value);
-                setCodeError(null);
-              }}
-              disabled={codeSubmitting}
-              style={{ ...inputBase, marginBottom: 12 }}
-            />
-            <label htmlFor="beta-access-code" style={labelStyle}>
-              Access Code
-            </label>
-            <div style={{ position: "relative", width: "100%", maxWidth: "100%", marginBottom: 6 }}>
-              <input
-                id="beta-access-code"
-                type={showAccessCode ? "text" : "password"}
-                autoComplete="off"
-                spellCheck={false}
-                value={accessCode}
-                onChange={(ev) => {
-                  setAccessCode(ev.target.value);
-                  setCodeError(null);
-                }}
-                disabled={codeSubmitting}
-                style={{
-                  ...inputBase,
-                  width: "100%",
-                  maxWidth: "100%",
-                  paddingRight: 48,
-                  boxSizing: "border-box",
-                }}
-              />
-              <button
-                type="button"
-                className="beta-access-code-eye"
-                aria-label={showAccessCode ? "Hide access code" : "Show access code"}
-                onClick={() => setShowAccessCode((v) => !v)}
-                disabled={codeSubmitting}
-                style={{
-                  position: "absolute",
-                  right: 4,
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  minWidth: 44,
-                  minHeight: 44,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {showAccessCode ? <EyeOff size={18} strokeWidth={2} aria-hidden /> : <Eye size={18} strokeWidth={2} aria-hidden />}
-              </button>
-            </div>
-            {codeError ? (
-              <p style={{ color: "#e8a598", fontSize: 13, margin: "4px 0 10px" }}>{codeError}</p>
-            ) : null}
-            <button type="submit" disabled={codeSubmitting} style={secondaryBtn}>
-              Enter
-            </button>
-          </form>
+              hello@eod-hub.com
+            </a>
+          </p>
           <p
             style={{
               marginTop: 20,
