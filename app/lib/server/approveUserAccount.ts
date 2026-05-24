@@ -90,6 +90,42 @@ export async function approveUserAccount(
     adminApprovedAt: profile.admin_approved_at ?? now,
   });
 
+  // Look up the user's auth email once. We use it for both waitlist cleanup
+  // (below) and, if applicable, the approval email further down.
+  const { data: userData, error: userError } = await adminClient.auth.admin.getUserById(userId);
+  const email = userData?.user?.email ?? null;
+
+  // Now that the user has full platform access, remove any matching
+  // pre-signup waitlist entry so they don't show up in the admin waitlist
+  // tab. Idempotent — a no-op if they were never on the waitlist or were
+  // already cleaned up by a prior approval call. Failures are logged but
+  // do not block approval.
+  if (email) {
+    // Waitlist inserts go through validateEmailForRegistration which trims
+    // and lowercases, so an exact match on the lowercased auth email is
+    // safe and avoids ILIKE wildcard pitfalls (e.g. `_` / `%` in the local
+    // part of an email matching unrelated rows).
+    const normalizedEmail = email.trim().toLowerCase();
+    const { error: waitlistDeleteError } = await adminClient
+      .from("waitlist_signups")
+      .delete()
+      .eq("email", normalizedEmail);
+    if (waitlistDeleteError) {
+      devAuthLog("approve-user", {
+        step: "waitlist_cleanup_failed",
+        userId,
+        source,
+        error: waitlistDeleteError.message,
+      });
+    } else {
+      devAuthLog("approve-user", {
+        step: "waitlist_cleanup",
+        userId,
+        source,
+      });
+    }
+  }
+
   if (profile.approval_email_sent_at) {
     devAuthLog("approve-user", { step: "email_skipped", userId, source, reason: "already_sent" });
     return {
@@ -111,8 +147,6 @@ export async function approveUserAccount(
     };
   }
 
-  const { data: userData, error: userError } = await adminClient.auth.admin.getUserById(userId);
-  const email = userData?.user?.email;
   if (userError || !email) {
     devAuthLog("approve-user", { step: "email_skipped", userId, source, reason: "no_email" });
     return {

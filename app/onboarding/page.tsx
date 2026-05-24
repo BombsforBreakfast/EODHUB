@@ -123,6 +123,22 @@ export default function OnboardingPage() {
         if (promoteErr) {
           console.error("Pure admin auto-promote failed:", promoteErr);
         }
+        // Staff allowlist accounts now have full access — remove any matching
+        // pre-signup waitlist entry. Authorized by the just-applied is_admin
+        // flag (see waitlist_signups_delete_admin RLS policy).
+        if (user.email) {
+          // Waitlist emails are stored lowercase/trimmed by the insert API,
+          // so use an exact match against the normalized form rather than
+          // ILIKE (avoids `_` / `%` wildcard pitfalls in email local parts).
+          const normalizedEmail = user.email.trim().toLowerCase();
+          const { error: waitlistDeleteErr } = await supabase
+            .from("waitlist_signups")
+            .delete()
+            .eq("email", normalizedEmail);
+          if (waitlistDeleteErr) {
+            console.error("Pure admin waitlist cleanup failed:", waitlistDeleteErr);
+          }
+        }
         window.location.href = "/";
         return;
       }
