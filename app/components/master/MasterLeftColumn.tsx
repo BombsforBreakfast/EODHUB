@@ -10,6 +10,7 @@ import { getFeatureAccess } from "../../lib/featureAccess";
 import { postNotifyJson } from "../../lib/postNotifyClient";
 import UpgradePromptModal from "../UpgradePromptModal";
 import JobCardActions from "../jobs/JobCardActions";
+import JobImage from "../jobs/JobImage";
 import JobDetailsModal, { type JobModalData } from "../jobs/JobDetailsModal";
 import EventAttendeeAvatarRows from "../events/EventAttendeeAvatarRows";
 import { EventAttendeesListModal } from "../events/EventAttendeesListModal";
@@ -1626,18 +1627,11 @@ export default function MasterLeftColumn({
                   background: t.surface,
                 }}
               >
-                {job.og_image && (
-                  <img
-                    src={httpsAssetUrl(job.og_image)}
-                    alt={job.title || job.og_title || "Job preview"}
-                    style={{
-                      width: "100%",
-                      height: 120,
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
-                )}
+                <JobImage
+                  src={httpsAssetUrl(job.og_image)}
+                  alt={job.title || job.og_title || "Job preview"}
+                  height={120}
+                />
 
                 <div style={{ padding: 12 }}>
                   <div style={{ fontWeight: 800, lineHeight: 1.3 }}>{job.title || job.og_title || "Untitled Job"}</div>

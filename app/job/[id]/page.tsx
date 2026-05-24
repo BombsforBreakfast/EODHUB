@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { supabase } from "../../lib/lib/supabaseClient";
 import NavBar from "../../components/NavBar";
 import { useTheme } from "../../lib/ThemeContext";
+import JobImage from "../../components/jobs/JobImage";
 
 type Job = {
   id: string;
@@ -185,14 +186,13 @@ export default function JobDetailPage() {
             )}
           </div>
 
-          {job.og_image && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={job.og_image}
-              alt={job.title || "Job preview"}
-              style={{ width: "100%", maxHeight: 260, objectFit: "cover", display: "block", borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}
-            />
-          )}
+          <JobImage
+            src={job.og_image}
+            alt={job.title || "Job preview"}
+            height={260}
+            borderTop={`1px solid ${t.border}`}
+            borderBottom={`1px solid ${t.border}`}
+          />
 
           <div style={{ padding: "18px 24px 4px" }}>
             <h2 style={{ margin: 0, fontSize: 18, fontWeight: 900 }}>Job Description</h2>

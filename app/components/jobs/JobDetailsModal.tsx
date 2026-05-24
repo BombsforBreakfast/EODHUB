@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { X } from "lucide-react";
 import { useTheme } from "../../lib/ThemeContext";
+import JobImage from "./JobImage";
 
 export type JobModalData = {
   id: string;
@@ -158,13 +159,14 @@ export default function JobDetailsModal({
           </button>
         </div>
 
-        {job.og_image && (
-          <img
-            src={job.og_image}
-            alt={title}
-            style={{ width: "100%", maxHeight: 220, objectFit: "cover", display: "block", borderTop: `1px solid ${t.border}`, borderBottom: `1px solid ${t.border}` }}
-          />
-        )}
+        <JobImage
+          src={job.og_image}
+          alt={title}
+          height={220}
+          borderTop={`1px solid ${t.border}`}
+          borderBottom={`1px solid ${t.border}`}
+        />
+
 
         <div style={{ padding: "14px 20px 4px", overflowY: "auto", flex: 1, minHeight: 0 }}>
           <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: t.text }}>Job Description</h3>

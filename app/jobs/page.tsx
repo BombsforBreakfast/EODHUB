@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
+import JobImage from "../components/jobs/JobImage";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 import { getFeatureAccess } from "../lib/featureAccess";
@@ -16,6 +17,8 @@ import {
   type JobListItem,
   type SalaryMin,
 } from "../lib/jobFilters";
+import { usePageTracking } from "../hooks/usePageTracking";
+import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 
 type ProfileRow = {
   account_type: string | null;
@@ -93,6 +96,7 @@ function formatSource(sourceType: string | null): string {
 }
 
 export default function JobsPage() {
+  usePageTracking(PAGE_TRACKING.jobs);
   const { t } = useTheme();
   const [loading, setLoading] = useState(true);
   const [jobs, setJobs] = useState<JobListItem[]>([]);
@@ -522,10 +526,7 @@ export default function JobsPage() {
               const hasSalary = job.pay_min !== null || job.pay_max !== null;
               return (
                 <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface, display: "flex", flexDirection: "column" }}>
-                  {job.og_image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={job.og_image} alt={job.title || "Job preview"} style={{ width: "100%", height: 150, objectFit: "cover", display: "block" }} />
-                  ) : null}
+                  <JobImage src={job.og_image} alt={job.title || "Job preview"} height={150} />
                   <div style={{ padding: 12, display: "flex", flexDirection: "column", flex: 1 }}>
                     <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.3 }}>{job.title || job.og_title || "Untitled Job"}</div>
                     <div style={{ marginTop: 5, color: t.textMuted, fontSize: 14 }}>{job.company_name || job.og_site_name || "Unknown Company"}</div>

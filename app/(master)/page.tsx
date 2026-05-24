@@ -20,6 +20,7 @@ import { validateFeedAttachmentPick, validateImagePick } from "../lib/uploadLimi
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
+import JobImage from "../components/jobs/JobImage";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
 import EventFeedActions from "../components/EventFeedActions";
 import EventPostCard from "../components/EventPostCard";
@@ -37,6 +38,8 @@ import { MurphyRabbitholeBanner } from "../components/MurphyRabbitholeBanner";
 import { KangarooCourtVerdictBanner } from "../components/KangarooCourtVerdictBanner";
 import DesktopLayout from "../components/DesktopLayout";
 import { useMasterShell } from "../components/master/masterShellContext";
+import { usePageTracking } from "../hooks/usePageTracking";
+import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { sectionTitleLinkZoom } from "../components/master/masterShared";
 
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
@@ -744,6 +747,7 @@ function Avatar({
 }
 
 export default function HomePage() {
+  usePageTracking(PAGE_TRACKING.feed);
   const { t, isDark } = useTheme();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
@@ -6868,18 +6872,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   background: t.surface,
                 }}
               >
-                {job.og_image && (
-                  <img
-                    src={httpsAssetUrl(job.og_image)}
-                    alt={job.title || job.og_title || "Job preview"}
-                    style={{
-                      width: "100%",
-                      height: 120,
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
-                )}
+                <JobImage
+                  src={httpsAssetUrl(job.og_image)}
+                  alt={job.title || job.og_title || "Job preview"}
+                  height={120}
+                />
 
                 <div style={{ padding: 12 }}>
                   <div style={{ fontWeight: 800, lineHeight: 1.3 }}>
