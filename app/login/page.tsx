@@ -1,10 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "../components/EodCrabLogo";
-import { Turnstile } from "@marsidev/react-turnstile";
-import type { TurnstileInstance } from "@marsidev/react-turnstile";
 import { useTheme } from "../lib/ThemeContext";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { clearAppAuthState, markAppSessionActive } from "../lib/auth/sessionState";
@@ -13,9 +11,10 @@ import {
   needsEmailVerification,
 } from "../lib/verificationAccess";
 import {
-  LOGIN_FAILED_MESSAGE,
+  loginFailureMessage,
   mapSupabaseAuthError,
   SIGNUP_USER_MESSAGES,
+  SUPPORT_EMAIL,
   userMessageForSignupCode,
   type SignupErrorCode,
 } from "../lib/auth/signupErrors";
@@ -24,12 +23,6 @@ function devClientAuthLog(tag: string, data: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
     console.debug(`[auth:${tag}]`, data);
   }
-}
-
-function isInAppBrowser(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const ua = navigator.userAgent;
-  return /FBAN|FBAV|FB_IAB|Instagram|Line\//i.test(ua);
 }
 
 
@@ -46,15 +39,9 @@ export default function LoginPage() {
   const [forgotSent, setForgotSent] = useState(false);
   const [isGoogleAccount, setIsGoogleAccount] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  const [turnstileError, setTurnstileError] = useState(false);
-  const [inAppBrowser, setInAppBrowser] = useState(false);
-  const [turnstileSiteKey, setTurnstileSiteKey] = useState("");
-  const turnstileRef = useRef<TurnstileInstance>(null);
-  // Skip Turnstile entirely in local dev — the production site key is only
-  // allow-listed for the real domains, so on localhost the widget errors out
-  // with 400020 and never returns a token, which would lock the Login button.
-  const configuredTurnstileSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
+  // Turnstile temporarily disabled (May 2026) — was blocking legitimate users
+  // in in-app browsers (Facebook, Instagram). We rely on velocity limits and
+  // disposable-email checks instead.
   const [signupCount, setSignupCount] = useState<number | null>(null);
   const [countFlash, setCountFlash] = useState(false);
   const [signupError, setSignupError] = useState<string | null>(null);
@@ -63,24 +50,10 @@ export default function LoginPage() {
 
   // Persist ?ref= referral code through signup flow via localStorage
   useEffect(() => {
-    setInAppBrowser(isInAppBrowser());
-  }, []);
-
-  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get("ref");
     if (ref) localStorage.setItem("eod_ref", ref.toUpperCase());
   }, []);
-
-  useEffect(() => {
-    if (process.env.NODE_ENV !== "production") {
-      setTurnstileSiteKey("");
-      return;
-    }
-    const host = window.location.hostname.toLowerCase();
-    const allowlistedHosts = new Set(["eod-hub.com", "www.eod-hub.com"]);
-    setTurnstileSiteKey(allowlistedHosts.has(host) ? configuredTurnstileSiteKey : "");
-  }, [configuredTurnstileSiteKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,45 +118,22 @@ export default function LoginPage() {
     return supabase.auth.signInWithOAuth({ provider: "google", options });
   }
 
-  async function verifyTurnstile(): Promise<boolean> {
-    if (!turnstileSiteKey) return true; // not configured/allowlisted — allow through
-    if (turnstileError) return true; // widget failed to load — allow through
-    if (!turnstileToken) return false;
-    const res = await fetch("/api/verify-turnstile", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: turnstileToken }),
-    });
-    const data = await res.json() as { success: boolean };
-    return data.success;
-  }
-
   async function handleLogin() {
     setLoginMessage(null);
     try {
       setSubmitting(true);
-
-      if (!await verifyTurnstile()) {
-        alert("Please complete the security check.");
-        turnstileRef.current?.reset();
-        setTurnstileToken(null);
-        return;
-      }
 
       clearAppAuthState();
       const { error } = await supabase.auth.signInWithPassword({ email, password });
 
       if (error) {
         const mapped = mapSupabaseAuthError(error.message);
-        devClientAuthLog("login", { step: "signInWithPassword_error", code: mapped });
-        // Do not reveal whether the email exists or password was wrong.
+        devClientAuthLog("login", { step: "signInWithPassword_error", code: mapped, rawMessage: error.message });
         setLoginMessage(
           mapped === "rate_limited"
             ? userMessageForSignupCode("rate_limited")
-            : LOGIN_FAILED_MESSAGE,
+            : loginFailureMessage(error.message),
         );
-        turnstileRef.current?.reset();
-        setTurnstileToken(null);
         return;
       }
 
@@ -256,7 +206,7 @@ export default function LoginPage() {
       const signupRes = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password, turnstileToken }),
+        body: JSON.stringify({ email, password }),
       });
       const signupData = (await signupRes.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -279,8 +229,6 @@ export default function LoginPage() {
         } else {
           setSignupError(msg);
         }
-        turnstileRef.current?.reset();
-        setTurnstileToken(null);
         return;
       }
 
@@ -300,8 +248,6 @@ export default function LoginPage() {
             ? userMessageForSignupCode(mapSupabaseAuthError(signInError.message))
             : SIGNUP_USER_MESSAGES.generic,
         );
-        turnstileRef.current?.reset();
-        setTurnstileToken(null);
         return;
       }
 
@@ -617,14 +563,26 @@ export default function LoginPage() {
           {mode === "login" ? (
             <>
               {loginMessage && (
-                <div style={{ fontSize: 14, color: "#b91c1c", lineHeight: 1.4 }} role="alert">
-                  {loginMessage}
+                <div style={{ display: "grid", gap: 6 }} role="alert">
+                  <div style={{ fontSize: 14, color: "#b91c1c", lineHeight: 1.4 }}>
+                    {loginMessage}
+                  </div>
+                  <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.4 }}>
+                    Still stuck? Email{" "}
+                    <a
+                      href={`mailto:${SUPPORT_EMAIL}?subject=EOD%20Hub%20login%20help`}
+                      style={{ color: t.textMuted, textDecoration: "underline" }}
+                    >
+                      {SUPPORT_EMAIL}
+                    </a>{" "}
+                    and we&apos;ll get you in.
+                  </div>
                 </div>
               )}
               <button
                 type="submit"
-                disabled={submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError)}
-                style={{ ...buttonPrimary, opacity: submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
+                disabled={submitting}
+                style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
                 Login
@@ -649,32 +607,27 @@ export default function LoginPage() {
             </>
           ) : (
             <>
-              {turnstileSiteKey && (turnstileError || inAppBrowser) && (
-                <div
-                  style={{
-                    fontSize: 14,
-                    color: "#1e40af",
-                    background: "#eff6ff",
-                    border: "1px solid #bfdbfe",
-                    borderRadius: 12,
-                    padding: "12px 14px",
-                    lineHeight: 1.45,
-                  }}
-                  role="status"
-                >
-                  Security check couldn&apos;t load in this browser. You can still sign up below, or use{" "}
-                  <strong>Sign up with Google</strong>. For best results, open eod-hub.com in Safari or Chrome.
-                </div>
-              )}
               {signupError && (
-                <div style={{ fontSize: 14, color: "#b91c1c", lineHeight: 1.4 }} role="alert">
-                  {signupError}
+                <div style={{ display: "grid", gap: 6 }} role="alert">
+                  <div style={{ fontSize: 14, color: "#b91c1c", lineHeight: 1.4 }}>
+                    {signupError}
+                  </div>
+                  <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.4 }}>
+                    Need help? Email{" "}
+                    <a
+                      href={`mailto:${SUPPORT_EMAIL}?subject=EOD%20Hub%20signup%20help`}
+                      style={{ color: t.textMuted, textDecoration: "underline" }}
+                    >
+                      {SUPPORT_EMAIL}
+                    </a>
+                    .
+                  </div>
                 </div>
               )}
               <button
                 type="submit"
-                disabled={submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError)}
-                style={{ ...buttonPrimary, opacity: submitting || (!!turnstileSiteKey && !turnstileToken && !turnstileError) ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
+                disabled={submitting}
+                style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
                 Complete Signup
@@ -699,16 +652,6 @@ export default function LoginPage() {
             </>
           )}
 
-          {turnstileSiteKey && (
-            <Turnstile
-              ref={turnstileRef}
-              siteKey={turnstileSiteKey}
-              onSuccess={(token) => { setTurnstileToken(token); setTurnstileError(false); }}
-              onExpire={() => setTurnstileToken(null)}
-              onError={() => { setTurnstileToken(null); setTurnstileError(true); }}
-              options={{ theme: "light", size: "normal" }}
-            />
-          )}
         </form>
       )}
     </div>

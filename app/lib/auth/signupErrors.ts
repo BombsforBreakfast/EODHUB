@@ -32,9 +32,31 @@ export const SIGNUP_USER_MESSAGES: Record<
   generic: "Unable to create account. Please try again.",
 };
 
-/** Shown when sign-in fails — does not reveal whether the email is registered. */
+/** Support email shown in failure-state helper text. */
+export const SUPPORT_EMAIL = "murphy@eod-hub.com";
+
+/** Generic sign-in failure shown when we can't classify the error. */
 export const LOGIN_FAILED_MESSAGE =
-  "Unable to sign in. Check your email and password, or create an account.";
+  "Email or password is incorrect. If you signed up with Google, use Sign in with Google. If you forgot your password, use Forgot password.";
+
+/** Map a Supabase sign-in error to an honest, user-actionable message. */
+export function loginFailureMessage(rawMessage: string | undefined | null): string {
+  const m = (rawMessage ?? "").toLowerCase();
+
+  if (m.includes("email not confirmed") || m.includes("email_not_confirmed")) {
+    return "Your email isn't verified yet. Check your inbox for the verification link, or use Forgot password to receive a new one.";
+  }
+  if (m.includes("invalid login credentials") || m.includes("invalid_grant") || m.includes("invalid credentials")) {
+    return LOGIN_FAILED_MESSAGE;
+  }
+  if (m.includes("user not found")) {
+    return "No account found with that email. Tap Sign Up to create one, or try Sign in with Google if you registered that way.";
+  }
+  if (m.includes("rate limit") || m.includes("too many")) {
+    return "Too many attempts. Please wait a few minutes and try again.";
+  }
+  return LOGIN_FAILED_MESSAGE;
+}
 
 /** Public message for a signup/auth error code. */
 export function userMessageForSignupCode(code: SignupErrorCode | string | undefined): string {

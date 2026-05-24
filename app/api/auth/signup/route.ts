@@ -6,7 +6,6 @@ import {
 } from "@/app/lib/auth/adminAuthLookup";
 import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
 import { logMxCheckTelemetry } from "@/app/lib/server/emailMxCheck";
-import { verifyTurnstileToken } from "@/app/lib/server/turnstile";
 import {
   logAllowed,
   logBlocked,
@@ -84,38 +83,11 @@ export async function POST(req: NextRequest) {
     return errorResponse("generic", 400);
   }
 
-  // --- 3. Turnstile ---------------------------------------------------------
-  // Verify when a token is present (widget loaded). When absent — common in
-  // in-app browsers (Facebook, Instagram) — skip and rely on velocity +
-  // disposable-email checks instead.
-  const turnstileTokenTrimmed = turnstileToken.trim();
-  let noTurnstileToken = !turnstileTokenTrimmed;
-
-  if (turnstileTokenTrimmed) {
-    const turnstile = await verifyTurnstileToken(turnstileTokenTrimmed, ip);
-    if (!turnstile.ok) {
-      if (turnstile.reason === "missing_secret") {
-        void logBlocked({
-          ip,
-          userAgent,
-          email: emailRaw,
-          domain: null,
-          reason: "config_error",
-        });
-        return errorResponse("generic", 503);
-      }
-      void logBlocked({
-        ip,
-        userAgent,
-        email: emailRaw,
-        domain: null,
-        reason: "turnstile_failed",
-      });
-      return errorResponse("security_check_failed", 403);
-    }
-  } else {
-    devAuthLog("signup-route", { step: "turnstile_skipped_no_token" });
-  }
+  // --- 3. Turnstile (temporarily disabled) ---------------------------------
+  // Was blocking legitimate users (Facebook in-app browser, etc.). Velocity
+  // limits + disposable-email checks below remain the active abuse defense.
+  void turnstileToken; // tolerate clients still sending the field
+  const noTurnstileToken = true;
 
   // --- 4. Email syntax + disposable + manual blocklist ---------------------
   const validated = validateEmailForRegistration(emailRaw);
