@@ -7,6 +7,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+const MIN_CRON_SECRET_LENGTH = 32;
+
 function constantTimeEquals(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let mismatch = 0;
@@ -22,6 +24,9 @@ async function authorize(req: NextRequest): Promise<NextResponse | null> {
   const secret = process.env.DIGEST_CRON_SECRET;
   if (!secret) {
     return NextResponse.json({ error: "DIGEST_CRON_SECRET not configured" }, { status: 500 });
+  }
+  if (secret.length < MIN_CRON_SECRET_LENGTH) {
+    return NextResponse.json({ error: "DIGEST_CRON_SECRET must be at least 32 characters" }, { status: 500 });
   }
 
   const auth = req.headers.get("authorization") ?? "";
