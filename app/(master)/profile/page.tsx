@@ -6,6 +6,7 @@ import { useTheme } from "../../lib/ThemeContext";
 import ReportProblemButton from "../../components/ReportProblemButton";
 import PrivacySettingsCard from "../../components/account/PrivacySettingsCard";
 import MemorialFeedPreferencesCard from "../../components/account/MemorialFeedPreferencesCard";
+import NotificationPreferencesCard from "../../components/account/NotificationPreferencesCard";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
 import { isPaywallEnforced, memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 
@@ -321,6 +322,9 @@ export default function MyAccountPage() {
 
           {/* Privacy */}
           {currentUserId && <PrivacySettingsCard userId={currentUserId} />}
+
+          {/* Email notifications */}
+          {currentUserId && <NotificationPreferencesCard userId={currentUserId} />}
 
           {/* Home feed: memorial anniversary post cards (calendars unchanged) */}
           {currentUserId && <MemorialFeedPreferencesCard userId={currentUserId} />}
