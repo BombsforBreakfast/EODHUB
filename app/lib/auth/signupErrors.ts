@@ -58,6 +58,74 @@ export const SUPPORT_EMAIL = "murphy@eod-hub.com";
 export const LOGIN_FAILED_MESSAGE =
   "Email or password is incorrect. If you signed up with Google, use Sign in with Google. If you forgot your password, use Forgot password.";
 
+/** Login-only helper copy when the email has no auth account yet. */
+export const LOGIN_EMAIL_NOT_FOUND_TITLE = "Email not found";
+export const LOGIN_EMAIL_NOT_FOUND_BODY =
+  "We couldn't find an account associated with that email. Please create an account below to continue.";
+
+/**
+ * True only when Supabase reports a missing user — not wrong password, rate limits,
+ * or the generic "invalid login credentials" anti-enumeration response.
+ */
+export function isLoginEmailNotFoundError(
+  rawMessage: string | undefined | null,
+  errorCode?: string | null,
+): boolean {
+  const code = (errorCode ?? "").toLowerCase().replace(/-/g, "_");
+  if (code === "email_not_found" || code === "user_not_found") {
+    return true;
+  }
+
+  const m = (rawMessage ?? "").toLowerCase();
+  if (
+    m.includes("invalid login credentials") ||
+    m.includes("invalid_grant") ||
+    m.includes("invalid credentials")
+  ) {
+    return false;
+  }
+  if (m.includes("email not confirmed") || m.includes("email_not_confirmed")) {
+    return false;
+  }
+  if (m.includes("rate limit") || m.includes("too many")) {
+    return false;
+  }
+
+  return (
+    m.includes("user not found") ||
+    m.includes("email not found") ||
+    m.includes("email_not_found")
+  );
+}
+
+/**
+ * Supabase often returns this for both wrong password and unknown email.
+ * Used to decide when a server-side auth lookup is allowed after login failure.
+ */
+export function isLoginCredentialMismatchError(
+  rawMessage: string | undefined | null,
+  errorCode?: string | null,
+): boolean {
+  if (isLoginEmailNotFoundError(rawMessage, errorCode)) return false;
+
+  const m = (rawMessage ?? "").toLowerCase();
+  const code = (errorCode ?? "").toLowerCase().replace(/-/g, "_");
+
+  if (m.includes("email not confirmed") || m.includes("email_not_confirmed")) {
+    return false;
+  }
+  if (m.includes("rate limit") || m.includes("too many")) {
+    return false;
+  }
+
+  return (
+    m.includes("invalid login credentials") ||
+    m.includes("invalid_grant") ||
+    m.includes("invalid credentials") ||
+    code === "invalid_credentials"
+  );
+}
+
 /** Map a Supabase sign-in error to an honest, user-actionable message. */
 export function loginFailureMessage(rawMessage: string | undefined | null): string {
   const m = (rawMessage ?? "").toLowerCase();

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Eye, EyeOff } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "../components/EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
@@ -12,6 +13,10 @@ import {
 } from "../lib/verificationAccess";
 import {
   loginFailureMessage,
+  isLoginEmailNotFoundError,
+  isLoginCredentialMismatchError,
+  LOGIN_EMAIL_NOT_FOUND_BODY,
+  LOGIN_EMAIL_NOT_FOUND_TITLE,
   mapSupabaseAuthError,
   oauthAccountExistsMessage,
   SIGNUP_USER_MESSAGES,
@@ -91,6 +96,21 @@ export default function LoginPage() {
   const [oauthExistsProviders, setOauthExistsProviders] = useState<string[] | null>(null);
   const [oauthSetupSent, setOauthSetupSent] = useState(false);
   const [oauthSetupSubmitting, setOauthSetupSubmitting] = useState(false);
+  const [emailNotFoundGuidance, setEmailNotFoundGuidance] = useState(false);
+  const [highlightSignupCta, setHighlightSignupCta] = useState(false);
+  const [signupCtaReducedMotion, setSignupCtaReducedMotion] = useState(false);
+  const signupCtaRef = useRef<HTMLButtonElement>(null);
+
+  function clearEmailNotFoundGuidance() {
+    setEmailNotFoundGuidance(false);
+    setHighlightSignupCta(false);
+  }
+
+  function guideToSignupAfterEmailNotFound() {
+    setLoginMessage(null);
+    setEmailNotFoundGuidance(true);
+    setMode("signup");
+  }
 
   // Persist ?ref= referral code through signup flow via localStorage
   useEffect(() => {
@@ -151,6 +171,46 @@ export default function LoginPage() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!emailNotFoundGuidance || mode !== "signup") return;
+
+    let cancelled = false;
+    const reducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setSignupCtaReducedMotion(reducedMotion);
+
+    const run = async () => {
+      await new Promise((resolve) => window.setTimeout(resolve, 80));
+      if (cancelled) return;
+
+      const el = signupCtaRef.current;
+      if (el) {
+        el.scrollIntoView({
+          behavior: reducedMotion ? "auto" : "smooth",
+          block: "center",
+          inline: "nearest",
+        });
+      }
+
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, reducedMotion ? 0 : 480),
+      );
+      if (cancelled) return;
+
+      setHighlightSignupCta(true);
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, reducedMotion ? 5000 : 4700),
+      );
+      if (!cancelled) setHighlightSignupCta(false);
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [emailNotFoundGuidance, mode]);
+
   function signInWithGoogleOAuth() {
     clearAppAuthState();
     const redirectTo = `${window.location.origin}/auth/callback?next=/onboarding`;
@@ -162,8 +222,42 @@ export default function LoginPage() {
     return supabase.auth.signInWithOAuth({ provider: "google", options });
   }
 
+  async function shouldGuideToSignupAfterLoginFailure(
+    rawMessage: string,
+    authErrorCode: string | null,
+  ): Promise<boolean> {
+    if (isLoginEmailNotFoundError(rawMessage, authErrorCode)) {
+      return true;
+    }
+
+    if (!isLoginCredentialMismatchError(rawMessage, authErrorCode)) {
+      return false;
+    }
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail.includes("@")) {
+      return false;
+    }
+
+    try {
+      const res = await fetch("/api/auth/login-guidance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmedEmail }),
+      });
+      if (!res.ok) return false;
+      const data = (await res.json().catch(() => ({}))) as {
+        suggestCreateAccount?: boolean;
+      };
+      return data.suggestCreateAccount === true;
+    } catch {
+      return false;
+    }
+  }
+
   async function handleLogin() {
     setLoginMessage(null);
+    clearEmailNotFoundGuidance();
     try {
       setSubmitting(true);
 
@@ -173,6 +267,24 @@ export default function LoginPage() {
       if (error) {
         const mapped = mapSupabaseAuthError(error.message);
         devClientAuthLog("login", { step: "signInWithPassword_error", code: mapped, rawMessage: error.message });
+
+        const authErrorCode =
+          typeof (error as { code?: unknown }).code === "string"
+            ? (error as { code: string }).code
+            : null;
+
+        if (await shouldGuideToSignupAfterLoginFailure(error.message, authErrorCode)) {
+          guideToSignupAfterEmailNotFound();
+          reportAuthFailure({
+            email,
+            failureReason: "EMAIL_NOT_FOUND",
+            errorCode: authErrorCode ?? "email_not_found",
+            rawErrorMessage: error.message,
+            sourceRoute: "/login",
+          });
+          return;
+        }
+
         setLoginMessage(
           mapped === "rate_limited"
             ? userMessageForSignupCode("rate_limited")
@@ -616,6 +728,29 @@ export default function LoginPage() {
       )}
 
       {mode !== "forgot" && !(mode === "signup" && signupAwaitingEmail) && (
+        <>
+          {emailNotFoundGuidance && mode === "signup" && (
+            <div
+              role="alert"
+              style={{
+                marginTop: 8,
+                marginBottom: 4,
+                padding: "14px 16px",
+                borderRadius: 12,
+                border: `1px solid ${isDark ? "rgba(147, 197, 253, 0.35)" : "rgba(59, 130, 246, 0.28)"}`,
+                background: isDark ? "rgba(59, 130, 246, 0.12)" : "rgba(239, 246, 255, 0.95)",
+                textAlign: "center",
+              }}
+            >
+              <div style={{ fontSize: 16, fontWeight: 800, color: t.text, lineHeight: 1.35 }}>
+                {LOGIN_EMAIL_NOT_FOUND_TITLE}
+              </div>
+              <div style={{ marginTop: 8, fontSize: 14, lineHeight: 1.55, color: t.text }}>
+                {LOGIN_EMAIL_NOT_FOUND_BODY}
+              </div>
+            </div>
+          )}
+
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -636,38 +771,31 @@ export default function LoginPage() {
               setSignupError(null);
               setOauthExistsProviders(null);
               setOauthSetupSent(false);
+              clearEmailNotFoundGuidance();
             }}
             style={inputStyle}
           />
 
-          <input
+          <PasswordInput
             placeholder="Password"
-            type={showPassword ? "text" : "password"}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            style={inputStyle}
+            showPassword={showPassword}
+            onToggleShow={() => setShowPassword((prev) => !prev)}
+            inputStyle={inputStyle}
+            textMuted={t.textMuted}
           />
 
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: -4 }}>
-            <button
-              type="button"
-              onClick={() => setShowPassword((prev) => !prev)}
-              style={{ background: "none", border: "none", padding: 0, fontSize: 13, color: t.textMuted, cursor: "pointer", textDecoration: "underline" }}
-            >
-              {showPassword ? "Hide password" : "Show password"}
-            </button>
-          </div>
-
           {mode === "signup" && (
-            <input
+            <PasswordInput
               placeholder="Confirm Password"
-              type={showPassword ? "text" : "password"}
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              style={{
-                ...inputStyle,
-                borderColor: confirmPassword && confirmPassword !== password ? "#ef4444" : undefined,
-              }}
+              showPassword={showPassword}
+              onToggleShow={() => setShowPassword((prev) => !prev)}
+              inputStyle={inputStyle}
+              textMuted={t.textMuted}
+              borderColor={confirmPassword && confirmPassword !== password ? "#ef4444" : undefined}
             />
           )}
 
@@ -733,7 +861,7 @@ export default function LoginPage() {
                 <GoogleIcon />
                 Sign in with Google
               </button>
-              <button type="button" onClick={() => setMode("signup")} disabled={submitting} style={buttonSecondary}>
+              <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("signup"); }} disabled={submitting} style={buttonSecondary}>
                 Need an account? Sign Up
               </button>
             </>
@@ -805,9 +933,34 @@ export default function LoginPage() {
                   </div>
                 </div>
               )}
+              {highlightSignupCta && (
+                <div
+                  style={{
+                    textAlign: "center",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: t.textMuted,
+                    letterSpacing: 0.2,
+                  }}
+                  aria-hidden
+                >
+                  ↓ Create your account here
+                </div>
+              )}
               <button
+                ref={signupCtaRef}
                 type="submit"
                 disabled={submitting}
+                className={[
+                  "login-signup-cta-target",
+                  highlightSignupCta
+                    ? signupCtaReducedMotion
+                      ? "login-signup-cta-highlight-static"
+                      : "login-signup-cta-highlight"
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 style={{ ...buttonPrimary, opacity: submitting ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}
               >
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
@@ -827,13 +980,14 @@ export default function LoginPage() {
                 <GoogleIcon />
                 Sign up with Google
               </button>
-              <button type="button" onClick={() => setMode("login")} disabled={submitting} style={buttonSecondary}>
+              <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("login"); }} disabled={submitting} style={buttonSecondary}>
                 Back to Login
               </button>
             </>
           )}
 
         </form>
+        </>
       )}
     </div>
   );
@@ -847,6 +1001,72 @@ function GoogleIcon() {
       <path fill="#4CAF50" d="M24 44c5.2 0 9.9-1.9 13.5-5l-6.2-5.2C29.4 35.6 26.8 36 24 36c-5.2 0-9.6-2.9-11.3-7l-6.5 5C9.8 40 16.4 44 24 44z"/>
       <path fill="#1976D2" d="M43.6 20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.6l6.2 5.2C41 35.5 44 30.2 44 24c0-1.3-.1-2.7-.4-4z"/>
     </svg>
+  );
+}
+
+function PasswordInput({
+  placeholder,
+  value,
+  onChange,
+  showPassword,
+  onToggleShow,
+  inputStyle,
+  textMuted,
+  borderColor,
+  autoComplete,
+}: {
+  placeholder: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  showPassword: boolean;
+  onToggleShow: () => void;
+  inputStyle: React.CSSProperties;
+  textMuted: string;
+  borderColor?: string;
+  autoComplete?: string;
+}) {
+  return (
+    <div style={{ position: "relative" }}>
+      <input
+        placeholder={placeholder}
+        type={showPassword ? "text" : "password"}
+        value={value}
+        onChange={onChange}
+        autoComplete={autoComplete}
+        style={{
+          ...inputStyle,
+          paddingRight: 48,
+          borderColor,
+        }}
+      />
+      <button
+        type="button"
+        aria-label={showPassword ? "Hide password" : "Show password"}
+        onClick={onToggleShow}
+        style={{
+          position: "absolute",
+          right: 4,
+          top: "50%",
+          transform: "translateY(-50%)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minWidth: 44,
+          minHeight: 44,
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          color: textMuted,
+          padding: 0,
+        }}
+      >
+        {showPassword ? (
+          <EyeOff size={18} strokeWidth={2} aria-hidden />
+        ) : (
+          <Eye size={18} strokeWidth={2} aria-hidden />
+        )}
+      </button>
+    </div>
   );
 }
 

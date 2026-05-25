@@ -148,6 +148,50 @@ button:active, a.nav-btn:active {
   border-radius: 12px;
 }
 
+/* Login page — guide new users to signup after email-not-found */
+@keyframes login-signup-cta-glow {
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 0 rgba(147, 197, 253, 0),
+      0 4px 14px rgba(15, 23, 42, 0.08);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow:
+      0 0 0 4px rgba(147, 197, 253, 0.38),
+      0 8px 28px rgba(59, 130, 246, 0.22);
+    transform: scale(1.02);
+  }
+}
+
+.login-signup-cta-target {
+  scroll-margin-top: max(24px, env(safe-area-inset-top, 0px));
+  scroll-margin-bottom: max(80px, env(safe-area-inset-bottom, 0px));
+}
+
+.login-signup-cta-highlight {
+  animation: login-signup-cta-glow 1.55s ease-in-out 3;
+  border-radius: 14px;
+}
+
+.login-signup-cta-highlight-static {
+  box-shadow:
+    0 0 0 3px rgba(147, 197, 253, 0.42),
+    0 6px 20px rgba(59, 130, 246, 0.18);
+  border-radius: 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-signup-cta-highlight {
+    animation: none;
+    box-shadow:
+      0 0 0 3px rgba(147, 197, 253, 0.42),
+      0 6px 20px rgba(59, 130, 246, 0.18);
+    transform: none;
+  }
+}
+
 /* Desktop defaults — mobile-only elements hidden */
 .nav-units-mobile { display: none; }
 .nav-hub-panel    { display: none; }
