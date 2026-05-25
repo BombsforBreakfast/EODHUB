@@ -337,15 +337,23 @@ export default function JobsPage() {
               : "Previewing the 5 most recent approved jobs."}
           </div>
         </div>
-        {!canViewFullJobs && (
-          <button
-            type="button"
-            onClick={() => setShowUpgradePrompt(true)}
-            style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <a
+            href="/post-job"
+            style={{ background: "#111", color: "white", border: "1px solid rgba(255,255,255,0.65)", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 14, textDecoration: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", whiteSpace: "nowrap" }}
           >
-            See All Jobs
-          </button>
-        )}
+            Post Job
+          </a>
+          {!canViewFullJobs && (
+            <button
+              type="button"
+              onClick={() => setShowUpgradePrompt(true)}
+              style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+            >
+              See All Jobs
+            </button>
+          )}
+        </div>
       </div>
 
       {canUseJobFilters && (
