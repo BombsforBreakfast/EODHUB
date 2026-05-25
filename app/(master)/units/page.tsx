@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
@@ -84,6 +85,24 @@ export default function UnitsPage() {
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [coverCropOpen, setCoverCropOpen] = useState(false);
   const [coverCropSrc, setCoverCropSrc] = useState<string | null>(null);
+
+  const closeCreateModal = useCallback(() => {
+    setShowCreate(false);
+  }, []);
+
+  useEffect(() => {
+    if (!showCreate) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !coverCropOpen) closeCreateModal();
+    };
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [showCreate, coverCropOpen, closeCreateModal]);
 
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
@@ -731,102 +750,166 @@ export default function UnitsPage() {
 
       </div>
 
-      {/* Create Unit Modal */}
-      {showCreate && (
+      {/* Create Unit Modal — portaled with scrollable body + sticky footer for mobile */}
+      {showCreate && typeof document !== "undefined" && createPortal(
         <div
-          onClick={(e) => { if (e.target === e.currentTarget) setShowCreate(false); }}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500, padding: 16 }}
+          role="presentation"
+          onClick={(e) => { if (e.target === e.currentTarget) closeCreateModal(); }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 2500,
+            padding: "max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))",
+          }}
         >
-          <div style={{ background: t.surface, borderRadius: 20, padding: 28, width: "100%", maxWidth: 480, border: `1px solid ${t.border}` }}>
-            <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 20 }}>Create a Unit</div>
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-unit-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: t.surface,
+              borderRadius: 20,
+              width: "100%",
+              maxWidth: 480,
+              border: `1px solid ${t.border}`,
+              boxShadow: "0 16px 48px rgba(0,0,0,0.28)",
+              maxHeight: "calc(100dvh - 32px)",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+          >
+            <div style={{ padding: "22px 24px 12px", flexShrink: 0, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <div id="create-unit-title" style={{ fontSize: 20, fontWeight: 900 }}>Create a Unit</div>
+              <button
+                type="button"
+                onClick={closeCreateModal}
+                aria-label="Close"
+                style={{ background: "transparent", border: "none", color: t.textMuted, fontSize: 22, cursor: "pointer", lineHeight: 1, padding: 4 }}
+              >
+                ×
+              </button>
+            </div>
 
-            <div style={{ display: "grid", gap: 14 }}>
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 5 }}>Unit Name *</label>
-                <input
-                  value={createName}
-                  onChange={(e) => setCreateName(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && createUnit()}
-                  placeholder="e.g. 795th OD Company Alumni"
-                  style={inputStyle}
-                />
-              </div>
+            <div
+              style={{
+                padding: "0 24px 16px",
+                overflowY: "auto",
+                flex: 1,
+                minHeight: 0,
+                WebkitOverflowScrolling: "touch",
+                overscrollBehavior: "contain",
+              }}
+            >
+              <div style={{ display: "grid", gap: 14 }}>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 5 }}>Unit Name *</label>
+                  <input
+                    value={createName}
+                    onChange={(e) => setCreateName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && createUnit()}
+                    placeholder="e.g. 795th OD Company Alumni"
+                    style={inputStyle}
+                  />
+                </div>
 
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 5 }}>Type</label>
-                <select value={createType} onChange={(e) => setCreateType(e.target.value)} style={{ ...inputStyle }}>
-                  {UNIT_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-              </div>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 5 }}>Type</label>
+                  <select value={createType} onChange={(e) => setCreateType(e.target.value)} style={{ ...inputStyle }}>
+                    {UNIT_TYPES.map((ut) => <option key={ut.value} value={ut.value}>{ut.label}</option>)}
+                  </select>
+                </div>
 
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 5 }}>Description</label>
-                <textarea
-                  value={createDesc}
-                  onChange={(e) => setCreateDesc(e.target.value)}
-                  placeholder="What's this unit about?"
-                  rows={3}
-                  style={{ ...inputStyle, resize: "vertical" }}
-                />
-              </div>
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 5 }}>Description</label>
+                  <textarea
+                    value={createDesc}
+                    onChange={(e) => setCreateDesc(e.target.value)}
+                    placeholder="What's this unit about?"
+                    rows={3}
+                    style={{ ...inputStyle, resize: "vertical" }}
+                  />
+                </div>
 
-              <div>
-                <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 8 }}>Cover Photo <span style={{ fontWeight: 400 }}>(optional)</span></label>
-                <input
-                  ref={coverInputRef}
-                  type="file"
-                  accept="image/*"
-                  style={{ display: "none" }}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    e.target.value = "";
-                    if (!f) return;
-                    const pickError = validateImagePick(f);
-                    if (pickError) {
-                      setCreateError(pickError);
-                      return;
-                    }
-                    if (coverCropSrc) URL.revokeObjectURL(coverCropSrc);
-                    setCoverCropSrc(URL.createObjectURL(f));
-                    setCoverCropOpen(true);
-                  }}
-                />
-                {createCoverPreview ? (
-                  <div style={{ position: "relative", display: "inline-block", width: "100%", maxWidth: 200 }}>
-                    <img src={createCoverPreview} alt="Cover" style={{ width: "100%", aspectRatio: "3 / 4", objectFit: "cover", borderRadius: 10, display: "block" }} />
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 8 }}>Cover Photo <span style={{ fontWeight: 400 }}>(optional)</span></label>
+                  <input
+                    ref={coverInputRef}
+                    type="file"
+                    accept="image/*"
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = "";
+                      if (!f) return;
+                      const pickError = validateImagePick(f);
+                      if (pickError) {
+                        setCreateError(pickError);
+                        return;
+                      }
+                      if (coverCropSrc) URL.revokeObjectURL(coverCropSrc);
+                      setCoverCropSrc(URL.createObjectURL(f));
+                      setCoverCropOpen(true);
+                    }}
+                  />
+                  {createCoverPreview ? (
+                    <div style={{ position: "relative", width: "100%", maxWidth: 200, maxHeight: 180, borderRadius: 10, overflow: "hidden" }}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={createCoverPreview} alt="Cover" style={{ width: "100%", height: "100%", maxHeight: 180, objectFit: "cover", display: "block" }} />
+                      <button
+                        type="button"
+                        onClick={() => { setCreateCover(""); setCreateCoverPreview(null); if (coverInputRef.current) coverInputRef.current.value = ""; }}
+                        style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
                     <button
-                      onClick={() => { setCreateCover(""); setCreateCoverPreview(null); if (coverInputRef.current) coverInputRef.current.value = ""; }}
-                      style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center" }}
-                    >×</button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => coverInputRef.current?.click()}
-                    disabled={uploadingCover}
-                    style={{ background: t.badgeBg, color: t.text, border: `1px dashed ${t.border}`, borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-                  >
-                    {uploadingCover && <span className="btn-spinner btn-spinner-dark" />}
-                    📷  Add Cover Photo
-                  </button>
+                      type="button"
+                      onClick={() => coverInputRef.current?.click()}
+                      disabled={uploadingCover}
+                      style={{ background: t.badgeBg, color: t.text, border: `1px dashed ${t.border}`, borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                    >
+                      {uploadingCover && <span className="btn-spinner btn-spinner-dark" />}
+                      📷  Add Cover Photo
+                    </button>
+                  )}
+                </div>
+
+                {createError && (
+                  <div style={{ color: "#ef4444", fontSize: 13, fontWeight: 600 }}>{createError}</div>
                 )}
               </div>
+            </div>
 
-              {createError && (
-                <div style={{ color: "#ef4444", fontSize: 13, fontWeight: 600 }}>{createError}</div>
-              )}
-
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
-                <button onClick={() => setShowCreate(false)} style={{ background: t.badgeBg, color: t.text, border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-                  Cancel
-                </button>
-                <button onClick={createUnit} disabled={creating} style={{ background: creating ? t.badgeBg : "#111", color: creating ? t.textMuted : "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: creating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                  {creating && <span className="btn-spinner btn-spinner-dark" />}
-                  Create Unit
-                </button>
-              </div>
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                justifyContent: "flex-end",
+                padding: "12px 24px max(16px, env(safe-area-inset-bottom))",
+                borderTop: `1px solid ${t.border}`,
+                background: t.surface,
+                flexShrink: 0,
+              }}
+            >
+              <button type="button" onClick={closeCreateModal} style={{ background: t.badgeBg, color: t.text, border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button type="button" onClick={createUnit} disabled={creating} style={{ background: creating ? t.badgeBg : "#111", color: creating ? t.textMuted : "#fff", border: "none", borderRadius: 10, padding: "10px 20px", fontWeight: 800, fontSize: 14, cursor: creating ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                {creating && <span className="btn-spinner btn-spinner-dark" />}
+                Create Unit
+              </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {/* ── Admin Inbox Modal: pending requests for a specific group ── */}
