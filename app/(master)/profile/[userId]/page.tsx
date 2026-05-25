@@ -268,6 +268,35 @@ const CLEARANCE_STATUSES = ["Active", "Expired"];
 
 type KnowStatus = "none" | "pending_outgoing" | "pending_incoming" | "accepted";
 
+type KnownPreviewUser = {
+  user_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  photo_url: string | null;
+  worked_with: boolean;
+  viewer_worked_with?: boolean;
+};
+
+type ProfileConnectionsResponse = {
+  knowCount: number;
+  knownPreviewUsers: KnownPreviewUser[];
+  relation: {
+    id: string;
+    status: "pending" | "accepted" | "denied";
+    knowStatus: KnowStatus;
+    workedWith: boolean;
+    viewerWorkedWith: boolean;
+  } | null;
+};
+
+type ConnectionActionResponse = {
+  ok: boolean;
+  state?: KnowStatus | "denied";
+  connectionId?: string;
+  workedWith?: boolean;
+  error?: string;
+};
+
 function isVideoUrl(url: string): boolean {
   return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
 }
@@ -522,9 +551,7 @@ export default function PublicProfilePage() {
   const commentRawsRef = useRef<Record<string, string>>({});
 
   const [knowCount, setKnowCount] = useState(0);
-  const [knownPreviewUsers, setKnownPreviewUsers] = useState<
-    { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; worked_with: boolean }[]
-  >([]);
+  const [knownPreviewUsers, setKnownPreviewUsers] = useState<KnownPreviewUser[]>([]);
   const [currentUserWorkedWith, setCurrentUserWorkedWith] = useState(false);
   const [currentUserKnowStatus, setCurrentUserKnowStatus] = useState<KnowStatus>("none");
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
@@ -601,7 +628,7 @@ export default function PublicProfilePage() {
 
   type ConnListType = "know" | "recruited";
   const [connListOpen, setConnListOpen] = useState<ConnListType | null>(null);
-  const [connListUsers, setConnListUsers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null; worked_with?: boolean }[]>([]);
+  const [connListUsers, setConnListUsers] = useState<(KnownPreviewUser & { service?: string | null })[]>([]);
   const [connListLoading, setConnListLoading] = useState(false);
 
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
@@ -909,59 +936,28 @@ export default function PublicProfilePage() {
           .select("user_id, first_name, last_name, photo_url, service")
           .eq("referred_by", profile.referral_code)
           .eq("verification_status", "verified");
-        setConnListUsers(data ?? []);
-      } else {
-        const targetId = userId as string;
-        const { data: rows, error: rowsErr } = await supabase
-          .from("profile_connections")
-          .select("requester_user_id, target_user_id, worked_with")
-          .eq("status", "accepted")
-          .or(`requester_user_id.eq.${targetId},target_user_id.eq.${targetId}`);
-
-        if (rowsErr && isConnV2MissingColumnError(rowsErr)) {
-          const { data: legacyRows } = await supabase
-            .from("profile_connections")
-            .select("target_user_id, connection_type")
-            .eq("requester_user_id", targetId)
-            .in("connection_type", ["know", "worked_with"]);
-          const mappedLegacy = (legacyRows ?? []) as { target_user_id: string; connection_type: "know" | "worked_with" }[];
-          const idsLegacy = mappedLegacy.map((r) => r.target_user_id);
-          if (idsLegacy.length === 0) { setConnListLoading(false); return; }
-          const { data: legacyProfiles } = await supabase
-            .from("profiles")
-            .select("user_id, first_name, last_name, photo_url, service")
-            .in("user_id", idsLegacy);
-          const legacyWorked = new Map<string, boolean>();
-          mappedLegacy.forEach((m) => legacyWorked.set(m.target_user_id, m.connection_type === "worked_with"));
-          setConnListUsers(
-            ((legacyProfiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null }[])
-              .map((u) => ({ ...u, worked_with: legacyWorked.get(u.user_id) ?? false }))
-          );
-          return;
-        }
-
-        const mapped = ((rows ?? []) as {
-          requester_user_id: string;
-          target_user_id: string;
-          worked_with: boolean;
-        }[]).map((r) => ({
-          user_id: r.requester_user_id === targetId ? r.target_user_id : r.requester_user_id,
-          worked_with: !!r.worked_with,
-        }));
-
-        const ids = mapped.map((r) => r.user_id);
-        if (ids.length === 0) { setConnListLoading(false); return; }
-        const { data } = await supabase
-          .from("profiles")
-          .select("user_id, first_name, last_name, photo_url, service")
-          .in("user_id", ids);
-
-        const workedMap = new Map<string, boolean>();
-        mapped.forEach((m) => workedMap.set(m.user_id, m.worked_with));
         setConnListUsers(
           ((data ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null }[])
-            .map((u) => ({ ...u, worked_with: workedMap.get(u.user_id) ?? false }))
+            .map((u) => ({ ...u, worked_with: false })),
         );
+      } else {
+        const targetId = userId as string;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          setConnListUsers([]);
+          return;
+        }
+        const res = await fetch(`/api/profile-connections?targetUserId=${encodeURIComponent(targetId)}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (!res.ok) {
+          console.error("Connection list load error:", await res.text().catch(() => res.statusText));
+          return;
+        }
+        const connectionData = (await res.json()) as ProfileConnectionsResponse & {
+          connections?: (KnownPreviewUser & { service?: string | null })[];
+        };
+        setConnListUsers(connectionData.connections ?? connectionData.knownPreviewUsers ?? []);
       }
     } finally {
       setConnListLoading(false);
@@ -2158,52 +2154,24 @@ export default function PublicProfilePage() {
 
   async function loadConnections(targetUserId: string, signedInUserId?: string | null) {
     const effectiveCurrentUserId = signedInUserId ?? currentUserId;
-    const { data: acceptedRows, error } = await supabase
-      .from("profile_connections")
-      .select("requester_user_id, target_user_id, worked_with, updated_at")
-      .eq("status", "accepted")
-      .or(`requester_user_id.eq.${targetUserId},target_user_id.eq.${targetUserId}`)
-      .order("updated_at", { ascending: false });
-
-    if (error) {
-      if (isConnV2MissingColumnError(error)) {
-        await loadConnectionsLegacy(targetUserId, effectiveCurrentUserId);
-        return;
-      }
-      console.error("Profile connections load error:", error);
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      await loadConnectionsLegacy(targetUserId, effectiveCurrentUserId);
       return;
     }
 
-    const pairRows = (acceptedRows ?? []) as {
-      requester_user_id: string;
-      target_user_id: string;
-      worked_with: boolean;
-      updated_at?: string | null;
-    }[];
-
-    const knownIds = pairRows.map((r) => (r.requester_user_id === targetUserId ? r.target_user_id : r.requester_user_id));
-    setKnowCount(knownIds.length);
-
-    if (knownIds.length > 0) {
-      const previewIds = knownIds.slice(0, 6);
-      const { data: previewProfiles } = await supabase
-        .from("profiles")
-        .select("user_id, first_name, last_name, photo_url")
-        .in("user_id", previewIds);
-      const workedMap = new Map<string, boolean>();
-      pairRows.forEach((r) => {
-        const otherId = r.requester_user_id === targetUserId ? r.target_user_id : r.requester_user_id;
-        workedMap.set(otherId, !!r.worked_with);
-      });
-      setKnownPreviewUsers(
-        ((previewProfiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null }[])
-          .map((u) => ({ ...u, worked_with: workedMap.get(u.user_id) ?? false }))
-      );
-    } else {
-      setKnownPreviewUsers([]);
+    const res = await fetch(`/api/profile-connections?targetUserId=${encodeURIComponent(targetUserId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (!res.ok) {
+      console.error("Profile connections load error:", await res.text().catch(() => res.statusText));
+      return;
     }
+    const data = (await res.json()) as ProfileConnectionsResponse;
+    setKnowCount(data.knowCount);
+    setKnownPreviewUsers(data.knownPreviewUsers ?? []);
 
-    if (!effectiveCurrentUserId || effectiveCurrentUserId === targetUserId) {
+    if (!effectiveCurrentUserId || effectiveCurrentUserId === targetUserId || !data.relation) {
       setCurrentUserWorkedWith(false);
       setCurrentUserKnowStatus("none");
       setActiveConnectionId(null);
@@ -2211,24 +2179,7 @@ export default function PublicProfilePage() {
       return;
     }
 
-    const { data: relation } = await supabase
-      .from("profile_connections")
-      .select("id, status, worked_with, requester_user_id, target_user_id")
-      .or(
-        `and(requester_user_id.eq.${effectiveCurrentUserId},target_user_id.eq.${targetUserId}),` +
-        `and(requester_user_id.eq.${targetUserId},target_user_id.eq.${effectiveCurrentUserId})`
-      )
-      .maybeSingle();
-
-    const rel = relation as {
-      id: string;
-      status: "pending" | "accepted" | "denied";
-      worked_with: boolean;
-      requester_user_id: string;
-      target_user_id: string;
-    } | null;
-
-    if (!rel || rel.status === "denied") {
+    if (data.relation.status === "denied") {
       setCurrentUserKnowStatus("none");
       setCurrentUserWorkedWith(false);
       setActiveConnectionId(null);
@@ -2236,18 +2187,10 @@ export default function PublicProfilePage() {
       return;
     }
 
-    setActiveConnectionId(rel.id);
-    setCurrentUserWorkedWith(!!rel.worked_with && rel.status === "accepted");
-    if (rel.status === "accepted") {
-      setCurrentUserKnowStatus("accepted");
-      setIsMutualConnection(true);
-    } else if (rel.status === "pending" && rel.target_user_id === effectiveCurrentUserId) {
-      setCurrentUserKnowStatus("pending_incoming");
-      setIsMutualConnection(false);
-    } else {
-      setCurrentUserKnowStatus("pending_outgoing");
-      setIsMutualConnection(false);
-    }
+    setActiveConnectionId(data.relation.id);
+    setCurrentUserWorkedWith(data.relation.viewerWorkedWith);
+    setCurrentUserKnowStatus(data.relation.knowStatus);
+    setIsMutualConnection(data.relation.knowStatus === "accepted");
   }
 
   function handlePostContentChange(value: string) {
@@ -2393,58 +2336,11 @@ export default function PublicProfilePage() {
     if (!userId || currentUserId === userId) return;
     try {
       setTogglingConnection("know");
-
-      // Preflight: check the target's privacy_who_can_request so we can show
-      // a friendly message instead of a raw RLS rejection. RLS is the
-      // authoritative gate; this is just UX.
-      const { data: targetPrivacy } = await supabase
-        .from("profiles")
-        .select("privacy_who_can_request")
-        .eq("user_id", userId)
-        .maybeSingle();
-      const policy = targetPrivacy?.privacy_who_can_request ?? "everyone";
-      if (policy === "nobody") {
-        alert("This member isn't accepting new connection requests.");
+      const result = await postConnectionAction("know");
+      if (!result.ok) {
+        alert(result.error || "Failed to update connection");
         return;
       }
-      if (policy === "connections") {
-        const { data: shared } = await supabase.rpc(
-          "users_share_accepted_connection",
-          { a: currentUserId, b: userId }
-        );
-        if (shared !== true) {
-          alert("This member only accepts requests from people they know in common with you.");
-          return;
-        }
-      }
-
-      const { error } = await supabase.from("profile_connections").insert([{
-        requester_user_id: currentUserId,
-        target_user_id: userId,
-        status: "pending",
-        worked_with: false,
-      }]);
-      if (error) {
-        if (isConnV2MissingColumnError(error)) {
-          const { error: legacyErr } = await supabase.from("profile_connections").insert([{
-            requester_user_id: currentUserId,
-            target_user_id: userId,
-            connection_type: "know",
-          }]);
-          if (legacyErr) { alert(legacyErr.message); return; }
-        } else {
-          // Catch the case where privacy flipped to 'nobody' between preflight
-          // and insert — RLS will reject and we surface a clean message.
-          const msg = (error.message || "").toLowerCase();
-          if (msg.includes("row-level security") || msg.includes("violates")) {
-            alert("This member isn't accepting new connection requests.");
-            return;
-          }
-          alert(error.message);
-          return;
-        }
-      }
-      await notify(userId, `${currentUserName} wants to connect (Know)`, currentUserId, { type: "connection_request" });
       await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Request know error:", err);
@@ -2454,17 +2350,38 @@ export default function PublicProfilePage() {
     }
   }
 
+  async function postConnectionAction(
+    action: "know" | "confirm" | "deny" | "cancel" | "worked_with",
+    workedWith?: boolean,
+  ): Promise<ConnectionActionResponse> {
+    if (!userId) return { ok: false, error: "Missing profile user" };
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return { ok: false, error: "Please sign in again." };
+
+    const res = await fetch("/api/profile-connections/action", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ action, targetUserId: userId, workedWith }),
+    });
+    const result = await res.json().catch(() => null) as ConnectionActionResponse | null;
+    if (!res.ok || !result) {
+      return { ok: false, error: result?.error || "Connection action failed" };
+    }
+    return result;
+  }
+
   async function cancelKnowRequest() {
     if (!currentUserId || !userId || currentUserId === userId) return;
     try {
       setTogglingConnection("know");
-      const { error } = await supabase
-        .from("profile_connections")
-        .delete()
-        .eq("requester_user_id", currentUserId)
-        .eq("target_user_id", userId)
-        .eq("status", "pending");
-      if (error) { alert(error.message); return; }
+      const result = await postConnectionAction("cancel");
+      if (!result.ok) {
+        alert(result.error || "Failed to update connection");
+        return;
+      }
       await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Cancel know request error:", err);
@@ -2475,33 +2392,13 @@ export default function PublicProfilePage() {
   }
 
   async function respondToKnowRequest(accept: boolean) {
-    if (!currentUserId || !userId || !activeConnectionId) return;
+    if (!currentUserId || !userId) return;
     try {
       setTogglingConnection(accept ? "confirm" : "deny");
-      const { data: relRow } = await supabase
-        .from("profile_connections")
-        .select("requester_user_id, target_user_id")
-        .eq("id", activeConnectionId)
-        .single();
-      const { error } = await supabase
-        .from("profile_connections")
-        .update({
-          status: accept ? "accepted" : "denied",
-          worked_with: accept ? currentUserWorkedWith : false,
-          responded_at: new Date().toISOString(),
-          responded_by_user_id: currentUserId,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", activeConnectionId);
-      if (error) { alert(error.message); return; }
-      const rel = relRow as { requester_user_id: string; target_user_id: string } | null;
-      if (rel) {
-        const requesterId = rel.requester_user_id;
-        if (accept) {
-          await notify(requesterId, `${currentUserName} accepted your Know request`, currentUserId, { type: "connection_accepted" });
-        } else {
-          await notify(requesterId, `${currentUserName} declined your Know request`, currentUserId, { type: "connection_denied" });
-        }
+      const result = await postConnectionAction(accept ? "confirm" : "deny");
+      if (!result.ok) {
+        alert(result.error || "Failed to update connection");
+        return;
       }
       await loadConnections(userId, currentUserId);
     } catch (err) {
@@ -2515,58 +2412,13 @@ export default function PublicProfilePage() {
   async function toggleWorkedWith() {
     if (!currentUserId || !userId) return;
     if (currentUserKnowStatus !== "accepted") return;
-    if (!activeConnectionId) {
-      // Legacy fallback before status/worked_with migration is applied.
-      try {
-        setTogglingConnection("worked_with");
-        if (currentUserWorkedWith) {
-          await supabase
-            .from("profile_connections")
-            .delete()
-            .eq("requester_user_id", currentUserId)
-            .eq("target_user_id", userId)
-            .eq("connection_type", "worked_with");
-          await supabase.from("profile_connections").insert([{
-            requester_user_id: currentUserId,
-            target_user_id: userId,
-            connection_type: "know",
-          }]);
-        } else {
-          await supabase
-            .from("profile_connections")
-            .delete()
-            .eq("requester_user_id", currentUserId)
-            .eq("target_user_id", userId)
-            .eq("connection_type", "know");
-          await supabase.from("profile_connections").insert([{
-            requester_user_id: currentUserId,
-            target_user_id: userId,
-            connection_type: "worked_with",
-          }]);
-        }
-        await loadConnections(userId, currentUserId);
-      } catch (err) {
-        console.error("Legacy toggle worked_with error:", err);
-        alert("Failed to update connection");
-      } finally {
-        setTogglingConnection(null);
-      }
-      return;
-    }
     try {
       setTogglingConnection("worked_with");
       const turningOn = !currentUserWorkedWith;
-      const { error } = await supabase
-        .from("profile_connections")
-        .update({
-          worked_with: !currentUserWorkedWith,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", activeConnectionId)
-        .eq("status", "accepted");
-      if (error) { alert(error.message); return; }
-      if (turningOn && userId) {
-        await notify(userId, `${currentUserName} marked you as worked with`, currentUserId, { type: "worked_with" });
+      const result = await postConnectionAction("worked_with", turningOn);
+      if (!result.ok) {
+        alert(result.error || "Failed to update connection");
+        return;
       }
       await loadConnections(userId, currentUserId);
     } catch (err) {

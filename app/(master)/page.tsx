@@ -246,7 +246,7 @@ type DiscoverProfile = {
   unit_history_tags: string[] | null;
   affinityScore: number;
   affinityReasons: string[];
-  knowStatus: "none" | "pending_outgoing" | "accepted";
+  knowStatus: "none" | "pending_outgoing" | "pending_incoming" | "accepted";
 };
 
 type DiscoverAffinitySource = {
@@ -257,6 +257,25 @@ type DiscoverAffinitySource = {
 };
 
 const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
+
+/** Max candidates kept in the People You May Know pool (reshuffled on each page load). */
+const DISCOVER_POOL_MAX = 50;
+/** How many avatars show per "page" on desktop before clicking the arrows. */
+const DISCOVER_PAGE_SIZE = 5;
+/** Avatar diameter in the People You May Know strip (was 44px; +25%). */
+const DISCOVER_AVATAR_SIZE = 55;
+const DISCOVER_CARD_WIDTH = 125;
+/** How many verified profiles to fetch before filtering out existing connections. */
+const DISCOVER_FETCH_LIMIT = 500;
+
+function shuffleArray<T>(items: T[]): T[] {
+  const arr = [...items];
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
 
 function isConnV2MissingColumnError(error: unknown): boolean {
   const msg = (error as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
@@ -871,8 +890,7 @@ export default function HomePage() {
   const [deletingMemorialCommentId, setDeletingMemorialCommentId] = useState<string | null>(null);
   const [donateModal, setDonateModal] = useState<ReturnType<typeof memorialDonationConfig> | null>(null);
   const [discoverProfiles, setDiscoverProfiles] = useState<DiscoverProfile[]>([]);
-  const [discoverVisible, setDiscoverVisible] = useState<DiscoverProfile[]>([]);
-  const discoverIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [discoverPageIndex, setDiscoverPageIndex] = useState(0);
   // Ephemeral confirmation shown after a successful Know request from the
   // People You May Know carousel. Holds the requested member's display name
   // so we can phrase the toast ("Know request sent to Jane Doe").
@@ -1615,23 +1633,6 @@ export default function HomePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, showMemorialFeedCards]);
 
-  function pickDiscoverSlice(pool: DiscoverProfile[]): DiscoverProfile[] {
-    if (pool.length === 0) return [];
-  // Keep rotation diverse while still biasing toward the highest affinity candidates.
-  const rankedWindow = pool.slice(0, Math.min(pool.length, 15));
-  const arr = [...rankedWindow];
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr.slice(0, 5);
-  }
-
-  function shuffleDiscover(pool?: DiscoverProfile[]) {
-    const source = pool ?? discoverProfiles;
-    setDiscoverVisible(pickDiscoverSlice(source));
-  }
-
 async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: DiscoverAffinitySource) {
     const { data } = await supabase
       .from("profiles")
@@ -1643,14 +1644,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       // Respect "Show me in suggestions" privacy toggle. neq null-tolerant so
       // existing rows (default true) still appear.
       .not("privacy_discoverable", "is", false)
-      .limit(40);
+      .limit(DISCOVER_FETCH_LIMIT);
 
     if (!data || data.length === 0) return;
 
-    // Fetch relationships for the full pool upfront so shuffles need no network calls.
-    // Any existing connection (pending/accepted, either direction) is excluded from discovery.
-    const allIds = data.map((p) => p.user_id);
-    let connectedUserIds = new Set<string>();
+    // Relationship state for the viewer. Accepted/denied rows are excluded
+    // from discovery; pending rows stay visible with the appropriate button
+    // state so users can see Request Sent or Know Back.
+    const relationshipByUserId = new Map<string, DiscoverProfile["knowStatus"]>();
 
     const { data: connsV2, error: connsV2Error } = await supabase
       .from("profile_connections")
@@ -1662,35 +1663,36 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       const { data: connsLegacy } = await supabase
         .from("profile_connections")
         .select("requester_user_id, target_user_id, connection_type")
-        .eq("requester_user_id", currentUserId)
-        .in("target_user_id", allIds);
+        .eq("requester_user_id", currentUserId);
 
-      connectedUserIds = new Set(
-        ((connsLegacy ?? []) as { target_user_id: string }[])
-          .map((c) => c.target_user_id)
-      );
+      ((connsLegacy ?? []) as { target_user_id: string }[])
+        .forEach((c) => relationshipByUserId.set(c.target_user_id, "accepted"));
     } else {
-      // Exclude anyone we already have a row with — accepted, pending, or
-      // denied. The (least, greatest) unique-pair index would reject a new
-      // pending insert anyway, and re-suggesting someone who denied a
-      // previous request is bad UX.
-      connectedUserIds = new Set(
-        ((connsV2 ?? []) as { requester_user_id: string; target_user_id: string; status: string }[])
-          .map((c) => (c.requester_user_id === currentUserId ? c.target_user_id : c.requester_user_id))
-          .filter((id) => allIds.includes(id))
-      );
+      ((connsV2 ?? []) as { requester_user_id: string; target_user_id: string; status: string }[])
+        .forEach((c) => {
+          const otherId = c.requester_user_id === currentUserId ? c.target_user_id : c.requester_user_id;
+          if (c.status === "accepted") relationshipByUserId.set(otherId, "accepted");
+          else if (c.status === "pending") {
+            relationshipByUserId.set(
+              otherId,
+              c.requester_user_id === currentUserId ? "pending_outgoing" : "pending_incoming",
+            );
+          } else if (c.status === "denied") {
+            relationshipByUserId.set(otherId, "accepted");
+          }
+        });
     }
 
   const basePool = data
-      .filter((p) => !connectedUserIds.has(p.user_id))
+      .filter((p) => relationshipByUserId.get(p.user_id) !== "accepted")
       .map((p) => ({
         ...p,
       affinityScore: 0,
       affinityReasons: [],
-        knowStatus: "none" as const,
+        knowStatus: relationshipByUserId.get(p.user_id) ?? "none",
       })) as DiscoverProfile[];
 
-  const pool = sourceProfile
+  let pool = sourceProfile
     ? basePool
       .map((candidate) => {
         const scored = scoreDiscoverProfileAffinity(candidate, sourceProfile);
@@ -1699,9 +1701,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       .sort((a, b) => b.affinityScore - a.affinityScore || a.user_id.localeCompare(b.user_id))
     : basePool;
 
+    // Randomize order on each page load. When we have affinity scores, shuffle
+    // within the top candidates so suggestions stay relevant but don't feel static.
+    const shuffleSource = sourceProfile
+      ? pool.slice(0, Math.min(pool.length, 100))
+      : pool;
+    pool = shuffleArray(shuffleSource).slice(0, DISCOVER_POOL_MAX);
+
     setDiscoverProfiles(pool);
-    const initial = pickDiscoverSlice(pool);
-    setDiscoverVisible(initial);
+    setDiscoverPageIndex(0);
   }
 
   async function loadPendingMembers(currentUserId: string) {
@@ -1811,137 +1819,53 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     if (blockMemberInteraction()) return;
     const profile = discoverProfiles.find((p) => p.user_id === targetUserId);
     if (!profile) return;
-    if (profile.knowStatus === "pending_outgoing") return;
+    if (profile.knowStatus === "pending_outgoing" || profile.knowStatus === "accepted") return;
 
-    // Snapshot so we can revert the optimistic UI update if the insert fails
-    // (RLS rejection, unique-pair conflict, network error, etc).
     const prevDiscoverProfiles = discoverProfiles;
-    const prevDiscoverVisible = discoverVisible;
-
-    const removeTarget = (prev: DiscoverProfile[]): DiscoverProfile[] =>
-      prev.filter((p) => p.user_id !== targetUserId);
-    setDiscoverProfiles(removeTarget);
-    setDiscoverVisible(removeTarget);
+    const prevDiscoverPageIndex = discoverPageIndex;
 
     const restoreUi = () => {
       setDiscoverProfiles(prevDiscoverProfiles);
-      setDiscoverVisible(prevDiscoverVisible);
+      setDiscoverPageIndex(prevDiscoverPageIndex);
     };
 
     try {
-      // Preflight target's privacy_who_can_request so we can show a friendly
-      // message instead of a raw RLS rejection from the
-      // profile_connections_request_gate restrictive policy. Mirrors the
-      // profile page's requestKnow handler.
-      const { data: targetPrivacy, error: privacyError } = await supabase
-        .from("profiles")
-        .select("privacy_who_can_request")
-        .eq("user_id", targetUserId)
-        .maybeSingle();
-      if (privacyError) {
-        console.warn(
-          "[know] privacy preflight failed; relying on RLS:",
-          privacyError,
-        );
-      }
-      const policy =
-        (targetPrivacy as { privacy_who_can_request?: string } | null)
-          ?.privacy_who_can_request ?? "everyone";
-      console.debug("[know] preflight", { targetUserId, policy });
+      setDiscoverProfiles((prev) =>
+        prev.map((p) =>
+          p.user_id === targetUserId
+            ? { ...p, knowStatus: p.knowStatus === "pending_incoming" ? "accepted" : "pending_outgoing" }
+            : p,
+        ),
+      );
 
-      if (policy === "nobody") {
-        // They don't want requests at all — leaving them removed from the
-        // carousel is the right call, no need to restore.
-        alert(
-          "This member's privacy setting is set to 'Nobody can send me connection requests'. If this is your own test account, change it under Account → Privacy.",
-        );
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        restoreUi();
+        alert("Please sign in again to send a Know request.");
         return;
       }
-      if (policy === "connections") {
-        const { data: shared } = await supabase.rpc(
-          "users_share_accepted_connection",
-          { a: userId, b: targetUserId },
-        );
-        if (shared !== true) {
-          alert(
-            "This member only accepts requests from people you both already know.",
-          );
-          restoreUi();
-          return;
-        }
-      }
 
-      const { error } = await supabase.from("profile_connections").insert([
-        {
-          requester_user_id: userId,
-          target_user_id: targetUserId,
-          status: "pending",
-          worked_with: false,
+      const res = await fetch("/api/profile-connections/action", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
         },
-      ]);
-
-      if (error) {
-        console.error("[know] insert failed", {
-          code: error.code,
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-        });
-
-        if (isConnV2MissingColumnError(error)) {
-          const { error: legacyErr } = await supabase
-            .from("profile_connections")
-            .insert([
-              {
-                requester_user_id: userId,
-                target_user_id: targetUserId,
-                connection_type: "know",
-              },
-            ]);
-          if (legacyErr) {
-            console.error(
-              "[know] legacy insert failed:",
-              legacyErr,
-            );
-            restoreUi();
-            alert(legacyErr.message);
-            return;
-          }
-        } else if (
-          error.code === "23505" ||
-          /duplicate key value/i.test(error.message ?? "")
-        ) {
-          console.warn(
-            "[know] pair row already exists; leaving out of discovery",
-            { targetUserId },
-          );
-          return;
-        } else if (
-          error.code === "42501" ||
-          /row-level security/i.test(error.message ?? "")
-        ) {
-          // The RESTRICTIVE profile_connections_request_gate rejected us.
-          // This generally means the target's privacy_who_can_request is
-          // 'nobody' or 'connections' (server-side authoritative value
-          // differs from what we read client-side, e.g. a race or stale
-          // value).
-          alert(
-            "The server blocked this Know request (the member's privacy setting prevents it). See devtools console for the underlying database error.",
-          );
-          return;
-        } else {
-          restoreUi();
-          alert(
-            `Couldn't send Know request: ${error.message || "unknown error"}`,
-          );
-          return;
-        }
+        body: JSON.stringify({ action: "know", targetUserId }),
+      });
+      const result = await res.json().catch(() => null) as
+        | { ok?: boolean; state?: DiscoverProfile["knowStatus"]; error?: string }
+        | null;
+      if (!res.ok || result?.ok !== true) {
+        restoreUi();
+        alert(result?.error || "Failed to send Know request. Please try again.");
+        return;
       }
 
-      void notify(
-        targetUserId,
-        `${currentUserName?.trim() || "Someone"} says they know you`,
-        targetUserId,
+      setDiscoverProfiles((prev) =>
+        result.state === "accepted"
+          ? prev.filter((p) => p.user_id !== targetUserId)
+          : prev.map((p) => (p.user_id === targetUserId ? { ...p, knowStatus: result.state ?? "pending_outgoing" } : p)),
       );
 
       // Confirm the click landed. The avatar disappearing on its own isn't
@@ -1953,7 +1877,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       if (discoverKnowToastTimerRef.current) {
         clearTimeout(discoverKnowToastTimerRef.current);
       }
-      setDiscoverKnowToast(`Know request sent to ${targetName}`);
+      setDiscoverKnowToast(
+        result.state === "accepted"
+          ? `You and ${targetName} now know each other`
+          : `Know request sent to ${targetName}`,
+      );
       discoverKnowToastTimerRef.current = setTimeout(() => {
         setDiscoverKnowToast(null);
         discoverKnowToastTimerRef.current = null;
@@ -3047,22 +2975,35 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const authorAffinityBoost = new Map<string, number>();
     if (effectiveUserId) {
       // Confirmed Know relationships increase mutual feed visibility.
-      // Worked-with is a stronger trust signal and gets extra weighting.
-      const { data: acceptedConnections } = await supabase
+      // Worked-with is stronger only when the viewer marked that specific author.
+      const affinityResult = await supabase
         .from("profile_connections")
-        .select("requester_user_id, target_user_id, worked_with")
+        .select("requester_user_id, target_user_id, requester_worked_with_target, target_worked_with_requester")
         .eq("status", "accepted")
         .or(`requester_user_id.eq.${effectiveUserId},target_user_id.eq.${effectiveUserId}`);
-      ((acceptedConnections ?? []) as {
+      const acceptedConnections = affinityResult.error &&
+        String(affinityResult.error.message ?? "").toLowerCase().includes("requester_worked_with_target")
+        ? await supabase
+          .from("profile_connections")
+          .select("requester_user_id, target_user_id, worked_with")
+          .eq("status", "accepted")
+          .or(`requester_user_id.eq.${effectiveUserId},target_user_id.eq.${effectiveUserId}`)
+        : affinityResult;
+      ((acceptedConnections.data ?? []) as {
         requester_user_id: string;
         target_user_id: string;
-        worked_with: boolean;
+        worked_with?: boolean | null;
+        requester_worked_with_target?: boolean | null;
+        target_worked_with_requester?: boolean | null;
       }[]).forEach((row) => {
         const otherId =
           row.requester_user_id === effectiveUserId
             ? row.target_user_id
             : row.requester_user_id;
-        authorAffinityBoost.set(otherId, row.worked_with ? 1.45 : 1.25);
+        const viewerWorkedWithAuthor = row.requester_user_id === effectiveUserId
+          ? row.requester_worked_with_target === true
+          : row.target_worked_with_requester === true;
+        authorAffinityBoost.set(otherId, viewerWorkedWithAuthor || row.worked_with === true ? 1.45 : 1.25);
       });
     }
 
@@ -4096,7 +4037,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       setLikedBizIds(new Set());
       setSavedJobIds(new Set());
       setDiscoverProfiles([]);
-      setDiscoverVisible([]);
+      setDiscoverPageIndex(0);
       setPendingMembers([]);
       memberInteractionAllowedRef.current = false;
     }
@@ -4321,15 +4262,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
   }, []);
 
   useEffect(() => {
-    if (discoverProfiles.length === 0) return;
-    discoverIntervalRef.current = setInterval(() => shuffleDiscover(), 7000);
-    return () => {
-      if (discoverIntervalRef.current) clearInterval(discoverIntervalRef.current);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [discoverProfiles]);
-
-  useEffect(() => {
     if (!postsLoaded) return;
     const params = new URLSearchParams(window.location.search);
     const postId = params.get("postId");
@@ -4385,6 +4317,22 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       if (timeoutId != null) window.clearTimeout(timeoutId);
     };
   }, [postsLoaded, posts, deepLinkPostUnavailable]);
+
+  const discoverMaxPageIndex = useMemo(
+    () => Math.max(0, Math.ceil(discoverProfiles.length / DISCOVER_PAGE_SIZE) - 1),
+    [discoverProfiles.length],
+  );
+
+  /** Desktop: one page of avatars. Mobile: full pool in a horizontal scroll strip. */
+  const discoverVisible = useMemo(() => {
+    if (isMobile) return discoverProfiles;
+    const start = discoverPageIndex * DISCOVER_PAGE_SIZE;
+    return discoverProfiles.slice(start, start + DISCOVER_PAGE_SIZE);
+  }, [discoverProfiles, discoverPageIndex, isMobile]);
+
+  useEffect(() => {
+    setDiscoverPageIndex((i) => Math.min(i, discoverMaxPageIndex));
+  }, [discoverMaxPageIndex]);
 
   const sortedJobs = useMemo(() => {
     if (jobs.length === 0) return jobs;
@@ -5183,7 +5131,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           </div>
 
           {/* People You May Know ΓÇö verified members only; below composer so vouch cards stay above */}
-          {discoverVisible.length > 0 && (
+          {discoverProfiles.length > 0 && (
             <div style={{ marginTop: 16, marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, minHeight: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
@@ -5212,28 +5160,66 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 )}
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={() => shuffleDiscover()}
-                  title="Previous"
-                  style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                >{"<"}</button>
-                <div style={{ display: "flex", gap: 16, overflowX: "auto", paddingBottom: 4, flex: 1 }}>
+                {!isMobile && (
+                  <button
+                    type="button"
+                    onClick={() => setDiscoverPageIndex((i) => Math.max(0, i - 1))}
+                    disabled={discoverPageIndex <= 0}
+                    title="Previous"
+                    aria-label="Previous suggestions"
+                    style={{
+                      flexShrink: 0,
+                      background: "none",
+                      border: `1px solid ${t.border}`,
+                      borderRadius: "50%",
+                      width: 28,
+                      height: 28,
+                      cursor: discoverPageIndex <= 0 ? "default" : "pointer",
+                      color: t.textMuted,
+                      fontSize: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      opacity: discoverPageIndex <= 0 ? 0.35 : 1,
+                    }}
+                  >{"<"}</button>
+                )}
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 16,
+                    overflowX: isMobile ? "auto" : "hidden",
+                    WebkitOverflowScrolling: "touch",
+                    paddingBottom: 4,
+                    flex: 1,
+                    scrollSnapType: isMobile ? "x mandatory" : undefined,
+                  }}
+                >
                 {discoverVisible.map((p) => {
                   const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
                   const ringColor = getServiceRingColor(p.service);
                   const isPendingKnow = p.knowStatus === "pending_outgoing";
+                  const isIncomingKnow = p.knowStatus === "pending_incoming";
                   const affinityHint = p.affinityReasons[0] || (p.service ? `Service: ${p.service}` : "Community member");
                   return (
                     <div
                       key={p.user_id}
-                      style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, width: 100 }}
+                      style={{
+                        flexShrink: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 6,
+                        width: DISCOVER_CARD_WIDTH,
+                        scrollSnapAlign: isMobile ? "start" : undefined,
+                      }}
                     >
                       <a
                         href={`/profile/${p.user_id}`}
                         style={{ textDecoration: "none", color: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}
                       >
-                        <div style={{ width: 44, height: 44, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 16, boxSizing: "border-box", border: ringColor ? `3px solid ${ringColor}` : `2px solid ${t.border}` }}>
+                        <div style={{ width: DISCOVER_AVATAR_SIZE, height: DISCOVER_AVATAR_SIZE, borderRadius: "50%", overflow: "hidden", background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 20, boxSizing: "border-box", border: ringColor ? `3px solid ${ringColor}` : `2px solid ${t.border}` }}>
                           {p.photo_url
                             ? <img src={p.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                             : (fullName[0] || "U").toUpperCase()
@@ -5268,13 +5254,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                               borderRadius: 6,
                               border: "none",
                               cursor: isPendingKnow ? "default" : "pointer",
-                              background: isPendingKnow ? t.text : t.badgeBg,
-                              color: isPendingKnow ? t.surface : t.textMuted,
+                              background: isPendingKnow ? t.text : isIncomingKnow ? "#1d4ed8" : t.badgeBg,
+                              color: isPendingKnow || isIncomingKnow ? "#fff" : t.textMuted,
                               opacity: isPendingKnow ? 0.75 : 1,
                               width: "100%",
                             }}
                           >
-                            {isPendingKnow ? "Request Sent" : "Know"}
+                            {isPendingKnow ? "Request Sent" : isIncomingKnow ? "Know Back" : "Know"}
                           </button>
                         </div>
                       )}
@@ -5282,12 +5268,31 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   );
                 })}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => shuffleDiscover()}
-                  title="Next"
-                  style={{ flexShrink: 0, background: "none", border: `1px solid ${t.border}`, borderRadius: "50%", width: 28, height: 28, cursor: "pointer", color: t.textMuted, fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                >{">"}</button>
+                {!isMobile && (
+                  <button
+                    type="button"
+                    onClick={() => setDiscoverPageIndex((i) => Math.min(discoverMaxPageIndex, i + 1))}
+                    disabled={discoverPageIndex >= discoverMaxPageIndex}
+                    title="Next"
+                    aria-label="Next suggestions"
+                    style={{
+                      flexShrink: 0,
+                      background: "none",
+                      border: `1px solid ${t.border}`,
+                      borderRadius: "50%",
+                      width: 28,
+                      height: 28,
+                      cursor: discoverPageIndex >= discoverMaxPageIndex ? "default" : "pointer",
+                      color: t.textMuted,
+                      fontSize: 14,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      opacity: discoverPageIndex >= discoverMaxPageIndex ? 0.35 : 1,
+                    }}
+                  >{">"}</button>
+                )}
               </div>
             </div>
           )}

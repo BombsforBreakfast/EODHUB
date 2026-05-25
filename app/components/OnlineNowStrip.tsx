@@ -1,17 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import { LikerAvatar } from "./PostLikersStack";
 import { useOnlinePresence } from "./OnlinePresenceProvider";
 
-const AVATAR = 22;
-const AVATAR_OVERLAP = 5;
+const AVATAR = 28; // 25% larger than the previous 22px strip avatars
+const AVATAR_OVERLAP = 6;
 const AVATAR_STEP = AVATAR - AVATAR_OVERLAP;
 const SEE_ALL_MIN_W = 96;
+const POPOVER_CLOSE_DELAY_MS = 120;
 
 type ProfileRow = {
   user_id: string;
@@ -44,22 +44,20 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
   const { onlineUserIds } = useOnlinePresence();
   const [profiles, setProfiles] = useState<Map<string, ProfileRow>>(new Map());
   const [visibleCount, setVisibleCount] = useState(12);
-  const [listOpen, setListOpen] = useState(false);
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [prefersHover, setPrefersHover] = useState(false);
   const measureRef = useRef<HTMLDivElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const previewRows = useMemo(() => {
     if (!currentUserId) return [];
     const others = onlineUserIds.filter((id) => id !== currentUserId);
     if (others.length === 0) return [];
-    // Defense-in-depth: even if a user with privacy_show_online=false leaks
-    // a presence broadcast (stale tab from before they toggled, etc), drop
-    // them from the strip on the client side.
     const ordered = others
       .map((id) => profiles.get(id))
       .filter((p): p is ProfileRow => !!p && p.privacy_show_online !== false)
       .sort((a, b) => displayName(a).localeCompare(displayName(b)));
-    // Don't show placeholder dots for ids whose profiles haven't loaded yet —
-    // we don't yet know if they've opted out. They'll appear on the next sync.
     return ordered;
   }, [currentUserId, onlineUserIds, profiles]);
 
@@ -82,6 +80,14 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     if (onlineUserIds.length === 0) return;
     void syncProfiles(onlineUserIds);
   }, [onlineUserIds, syncProfiles]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const apply = () => setPrefersHover(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   useLayoutEffect(() => {
     const el = measureRef.current;
@@ -118,204 +124,211 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     return () => ro.disconnect();
   }, [previewRows.length]);
 
+  const cancelCloseTimer = useCallback(() => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleClose = useCallback(() => {
+    cancelCloseTimer();
+    closeTimerRef.current = setTimeout(() => {
+      setPopoverOpen(false);
+      closeTimerRef.current = null;
+    }, POPOVER_CLOSE_DELAY_MS);
+  }, [cancelCloseTimer]);
+
+  const openPopover = useCallback(() => {
+    cancelCloseTimer();
+    setPopoverOpen(true);
+  }, [cancelCloseTimer]);
+
   useEffect(() => {
-    if (!listOpen) return;
+    if (!popoverOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setListOpen(false);
+      if (e.key === "Escape") setPopoverOpen(false);
+    };
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (popoverRef.current?.contains(target)) return;
+      setPopoverOpen(false);
     };
     window.addEventListener("keydown", onKey);
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    window.addEventListener("mousedown", onPointerDown);
     return () => {
       window.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prev;
+      window.removeEventListener("mousedown", onPointerDown);
     };
-  }, [listOpen]);
+  }, [popoverOpen]);
+
+  useEffect(() => {
+    return () => cancelCloseTimer();
+  }, [cancelCloseTimer]);
 
   if (!currentUserId) return null;
 
   const hasOthers = previewRows.length > 0;
-  const hasOverflow = previewRows.length > visibleCount;
-  const visibleRows = hasOverflow ? previewRows.slice(0, visibleCount) : previewRows;
+  const visibleRows = previewRows.slice(0, visibleCount);
+  const hiddenCount = Math.max(0, previewRows.length - visibleRows.length);
 
   return (
-    <>
-      <div
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        marginBottom: 12,
+        minHeight: AVATAR + 8,
+      }}
+    >
+      <span
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          marginBottom: 12,
-          minHeight: 32,
+          fontSize: 11,
+          fontWeight: 800,
+          color: t.textFaint,
+          textTransform: "uppercase",
+          letterSpacing: 0.6,
+          flexShrink: 0,
         }}
       >
-        <span
-          style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: t.textFaint,
-            textTransform: "uppercase",
-            letterSpacing: 0.6,
-            flexShrink: 0,
-          }}
-        >
-          Online now
+        Online now
+      </span>
+      {!hasOthers ? (
+        <span style={{ fontSize: 13, fontWeight: 600, color: t.textMuted, lineHeight: 1.3 }}>
+          Nobody else on the feed right now.
         </span>
-        {!hasOthers ? (
-          <span style={{ fontSize: 13, fontWeight: 600, color: t.textMuted, lineHeight: 1.3 }}>
-            Nobody else on the feed right now.
-          </span>
-        ) : (
+      ) : (
         <div ref={measureRef} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
-            {visibleRows.map((p, i) => (
-              <Link
-                key={p.user_id}
-                href={`/profile/${p.user_id}`}
-                title={displayName(p)}
+          <div
+            ref={popoverRef}
+            style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
+            onMouseEnter={prefersHover ? openPopover : undefined}
+            onMouseLeave={prefersHover ? scheduleClose : undefined}
+          >
+            <button
+              type="button"
+              aria-expanded={popoverOpen}
+              aria-haspopup="true"
+              aria-label={`${previewRows.length} member${previewRows.length === 1 ? "" : "s"} online. Show list.`}
+              onClick={() => setPopoverOpen((open) => !open)}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                flexShrink: 0,
+                background: "none",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                borderRadius: 999,
+              }}
+            >
+              {visibleRows.map((p, i) => (
+                <span
+                  key={p.user_id}
+                  title={displayName(p)}
+                  style={{
+                    marginLeft: i === 0 ? 0 : -AVATAR_OVERLAP,
+                    position: "relative",
+                    zIndex: visibleRows.length - i,
+                    lineHeight: 0,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <LikerAvatar
+                    photoUrl={p.photo_url}
+                    name={displayName(p)}
+                    size={AVATAR}
+                    service={p.service}
+                    isEmployer={p.is_employer}
+                  />
+                </span>
+              ))}
+              {hiddenCount > 0 && (
+                <span
+                  style={{
+                    marginLeft: 6,
+                    flexShrink: 0,
+                    background: t.bg,
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 999,
+                    padding: "4px 10px",
+                    color: t.textMuted,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    whiteSpace: "nowrap",
+                    pointerEvents: "none",
+                  }}
+                >
+                  +{hiddenCount}
+                </span>
+              )}
+            </button>
+
+            {popoverOpen && (
+              <div
+                role="menu"
+                aria-label="Online members"
+                onMouseEnter={prefersHover ? cancelCloseTimer : undefined}
+                onMouseLeave={prefersHover ? scheduleClose : undefined}
                 style={{
-                  marginLeft: i === 0 ? 0 : -AVATAR_OVERLAP,
-                  position: "relative",
-                  zIndex: visibleRows.length - i,
-                  textDecoration: "none",
-                  lineHeight: 0,
-                }}
-              >
-                <LikerAvatar
-                  photoUrl={p.photo_url}
-                  name={displayName(p)}
-                  size={AVATAR}
-                  service={p.service}
-                  isEmployer={p.is_employer}
-                />
-              </Link>
-            ))}
-            {hasOverflow && (
-              <button
-                type="button"
-                onClick={() => setListOpen(true)}
-                style={{
-                  marginLeft: 6,
-                  flexShrink: 0,
-                  background: t.bg,
+                  position: "absolute",
+                  top: "calc(100% + 8px)",
+                  left: 0,
+                  zIndex: 10050,
+                  minWidth: 220,
+                  maxWidth: 320,
+                  maxHeight: "min(320px, 50vh)",
+                  overflowY: "auto",
+                  background: t.surface,
                   border: `1px solid ${t.border}`,
-                  borderRadius: 999,
-                  padding: "4px 12px",
-                  cursor: "pointer",
-                  color: t.textMuted,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  whiteSpace: "nowrap",
+                  borderRadius: 12,
+                  boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+                  padding: 3,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
                 }}
               >
-                … see all
-              </button>
+                {previewRows.map((p) => (
+                  <Link
+                    key={p.user_id}
+                    href={`/profile/${p.user_id}`}
+                    role="menuitem"
+                    onClick={() => setPopoverOpen(false)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 5,
+                      padding: "4px 5px",
+                      borderRadius: 6,
+                      border: "none",
+                      textDecoration: "none",
+                      color: t.text,
+                      background: "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = t.badgeBg;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    <LikerAvatar
+                      photoUrl={p.photo_url}
+                      name={displayName(p)}
+                      size={32}
+                      service={p.service}
+                      isEmployer={p.is_employer}
+                    />
+                    <span style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>{displayName(p)}</span>
+                  </Link>
+                ))}
+              </div>
             )}
           </div>
         </div>
-        )}
-      </div>
-
-      {listOpen && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              role="presentation"
-              style={{
-                position: "fixed",
-                inset: 0,
-                zIndex: 10050,
-                background: "rgba(0,0,0,0.45)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                padding: 16,
-                paddingBottom: "max(16px, env(safe-area-inset-bottom, 0px))",
-              }}
-              onClick={() => setListOpen(false)}
-            >
-              <div
-                role="dialog"
-                aria-modal="true"
-                aria-label="Online now"
-                onClick={(e) => e.stopPropagation()}
-                style={{
-                  background: t.surface,
-                  borderRadius: 14,
-                  border: `1px solid ${t.border}`,
-                  maxWidth: 400,
-                  width: "100%",
-                  maxHeight: "min(80vh, 560px)",
-                  overflow: "hidden",
-                  display: "flex",
-                  flexDirection: "column",
-                  boxShadow: "0 16px 48px rgba(0,0,0,0.2)",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "14px 16px",
-                    borderBottom: `1px solid ${t.border}`,
-                    flexShrink: 0,
-                  }}
-                >
-                  <span style={{ fontWeight: 800, fontSize: 16, color: t.text }}>Online now</span>
-                  <button
-                    type="button"
-                    aria-label="Close"
-                    onClick={() => setListOpen(false)}
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 10,
-                      border: `1px solid ${t.border}`,
-                      background: t.bg,
-                      color: t.text,
-                      fontSize: 22,
-                      lineHeight: 1,
-                      cursor: "pointer",
-                      padding: 0,
-                    }}
-                  >
-                    ×
-                  </button>
-                </div>
-                <div style={{ overflowY: "auto", padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
-                  {previewRows.map((p) => (
-                    <Link
-                      key={p.user_id}
-                      href={`/profile/${p.user_id}`}
-                      onClick={() => setListOpen(false)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 12,
-                        padding: "10px 12px",
-                        borderRadius: 10,
-                        border: `1px solid ${t.border}`,
-                        textDecoration: "none",
-                        color: t.text,
-                        background: t.bg,
-                      }}
-                    >
-                      <LikerAvatar
-                        photoUrl={p.photo_url}
-                        name={displayName(p)}
-                        size={40}
-                        service={p.service}
-                        isEmployer={p.is_employer}
-                      />
-                      <span style={{ fontWeight: 700, fontSize: 14 }}>{displayName(p)}</span>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
-    </>
+      )}
+    </div>
   );
 }
