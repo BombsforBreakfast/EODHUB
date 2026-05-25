@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import ShareListingToFeedModal from "../../components/ShareListingToFeedModal";
 import { BizListingTagsField } from "../../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../../components/biz/BizListingTagChips";
 import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../../components/StarRating";
@@ -24,6 +25,7 @@ import { prepareImageUploadFile } from "../../lib/prepareUploadFile";
 import { validateImagePick } from "../../lib/uploadLimits";
 import { usePageTracking } from "../../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../../lib/pageTrackingPaths";
+import { shareListingToFeed } from "../../lib/shareListingToFeed";
 
 type BusinessListing = BusinessListingRow;
 
@@ -95,6 +97,9 @@ export default function ResourcesPage() {
   const [resourceCommentRatings, setResourceCommentRatings] = useState<Record<string, number | null>>({});
   const [submittingResourceCommentFor, setSubmittingResourceCommentFor] = useState<string | null>(null);
   const [selectedResource, setSelectedResource] = useState<BusinessListing | null>(null);
+  const [sharingResourceId, setSharingResourceId] = useState<string | null>(null);
+  const [shareComposerResource, setShareComposerResource] = useState<BusinessListing | null>(null);
+  const [resourceNotice, setResourceNotice] = useState<string | null>(null);
   const resourceFormRef = useRef<HTMLDivElement | null>(null);
   const resourceOgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resourceMetadataRequestRef = useRef(0);
@@ -494,11 +499,16 @@ export default function ResourcesPage() {
 
   useEffect(() => {
     function onEsc(ev: KeyboardEvent) {
-      if (ev.key === "Escape") setSelectedResource(null);
+      if (ev.key !== "Escape") return;
+      if (shareComposerResource) {
+        setShareComposerResource(null);
+        return;
+      }
+      setSelectedResource(null);
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, []);
+  }, [shareComposerResource]);
 
   async function loadResourceEngagement(resourceIds: string[]) {
     if (resourceIds.length === 0) {
@@ -579,6 +589,38 @@ export default function ResourcesPage() {
     }
   }
 
+  function openShareComposer(resource: BusinessListing) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    setShareComposerResource(resource);
+  }
+
+  async function handleShareResource(resource: BusinessListing, content: string) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    if (sharingResourceId === resource.id) return;
+    setSharingResourceId(resource.id);
+    setResourceNotice(null);
+    try {
+      const result = await shareListingToFeed(supabase, resource.id, content);
+      if (!result.ok) {
+        setResourceNotice(result.error ?? "Could not share to the feed.");
+        return;
+      }
+      setResourceNotice("Resource shared to the feed.");
+      setShareComposerResource(null);
+    } catch {
+      setResourceNotice("Could not share to the feed.");
+    } finally {
+      setSharingResourceId(null);
+      window.setTimeout(() => setResourceNotice(null), 4500);
+    }
+  }
+
   const suggestedResourceImage = resourceOgPreview?.image ?? null;
   const displayedResourceFormImage = resourceImagePreview ?? suggestedResourceImage;
   const hasManualResourceImage = Boolean(resourceImagePreview);
@@ -606,6 +648,18 @@ export default function ResourcesPage() {
           closeResourceCrop();
         }}
       />
+      <ShareListingToFeedModal
+        key={shareComposerResource?.id ?? "closed"}
+        listing={shareComposerResource}
+        label="Resource"
+        submitting={Boolean(shareComposerResource && sharingResourceId === shareComposerResource.id)}
+        onClose={() => {
+          if (!sharingResourceId) setShareComposerResource(null);
+        }}
+        onSubmit={(content) => {
+          if (shareComposerResource) void handleShareResource(shareComposerResource, content);
+        }}
+      />
       <div style={{ marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>Resources</h1>
@@ -627,6 +681,25 @@ export default function ResourcesPage() {
           Browse approved community resources, foundations, tools, and support links.
         </div>
       </div>
+
+      {resourceNotice ? (
+        <div
+          role="status"
+          style={{
+            marginBottom: 14,
+            padding: "11px 14px",
+            borderRadius: 10,
+            background: "#ecfdf5",
+            color: "#065f46",
+            fontWeight: 700,
+            fontSize: 14,
+            lineHeight: 1.45,
+            border: "1px solid #6ee7b7",
+          }}
+        >
+          {resourceNotice}
+        </div>
+      ) : null}
 
       {showResourceForm && (
         <div ref={resourceFormRef} style={{ marginTop: 4, marginBottom: 14, border: `1px solid ${t.border}`, borderRadius: 12, padding: 14, background: t.surface }}>
@@ -885,28 +958,51 @@ export default function ResourcesPage() {
                 <div style={{ padding: "0 14px 8px" }}>
                   <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} maxVisible={3} />
                 </div>
-                <div style={{ padding: "0 14px 12px", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setSelectedResource(listing);
-                    }}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      padding: 0,
-                      display: "inline-flex",
-                      gap: 5,
-                      alignItems: "center",
-                      color: t.text,
-                      cursor: "pointer",
-                    }}
-                  >
-                    <span style={{ fontSize: 13, fontWeight: 700 }}>Comment</span>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>{comments.length}</span>
-                  </button>
+                <div style={{ padding: "0 14px 12px", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <div style={{ display: "inline-flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setSelectedResource(listing);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        display: "inline-flex",
+                        gap: 5,
+                        alignItems: "center",
+                        color: t.text,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>Comment</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>{comments.length}</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={sharingResourceId === listing.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openShareComposer(listing);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#2563eb",
+                        cursor: sharingResourceId === listing.id ? "wait" : "pointer",
+                        opacity: sharingResourceId === listing.id ? 0.65 : 1,
+                      }}
+                    >
+                      {sharingResourceId === listing.id ? "Sharing..." : "Share"}
+                    </button>
+                  </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     {averageRounded === null ? (
                       <span style={{ fontSize: 12, color: t.textMuted }}>No ratings yet</span>
@@ -1032,6 +1128,24 @@ export default function ResourcesPage() {
                   >
                     Visit Website
                   </a>
+                  <button
+                    type="button"
+                    disabled={sharingResourceId === selectedResource.id}
+                    onClick={() => openShareComposer(selectedResource)}
+                    style={{
+                      background: "#ecfdf5",
+                      color: "#047857",
+                      border: "1px solid #a7f3d0",
+                      borderRadius: 8,
+                      padding: "7px 12px",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: sharingResourceId === selectedResource.id ? "wait" : "pointer",
+                      opacity: sharingResourceId === selectedResource.id ? 0.65 : 1,
+                    }}
+                  >
+                    {sharingResourceId === selectedResource.id ? "Sharing..." : "Share to feed"}
+                  </button>
                   {isAdmin && (
                     <button
                       type="button"

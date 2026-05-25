@@ -2,6 +2,7 @@
 
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import ImageCropDialog from "../components/ImageCropDialog";
+import ShareListingToFeedModal from "../components/ShareListingToFeedModal";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../components/StarRating";
@@ -24,6 +25,7 @@ import { prepareImageUploadFile } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
+import { shareListingToFeed } from "../lib/shareListingToFeed";
 
 type BusinessOrgListingType = "business" | "organization";
 
@@ -137,6 +139,8 @@ export default function BusinessesPage() {
   const [claimSubmittingFor, setClaimSubmittingFor] = useState<string | null>(null);
   const [claimConfirmListing, setClaimConfirmListing] = useState<BusinessListing | null>(null);
   const [bizNotice, setBizNotice] = useState<string | null>(null);
+  const [sharingListingId, setSharingListingId] = useState<string | null>(null);
+  const [shareComposerListing, setShareComposerListing] = useState<BusinessListing | null>(null);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 900);
@@ -614,11 +618,15 @@ export default function BusinessesPage() {
         setClaimConfirmListing(null);
         return;
       }
+      if (shareComposerListing) {
+        setShareComposerListing(null);
+        return;
+      }
       setSelectedListing(null);
     }
     window.addEventListener("keydown", onEsc);
     return () => window.removeEventListener("keydown", onEsc);
-  }, [claimConfirmListing]);
+  }, [claimConfirmListing, shareComposerListing]);
 
   async function loadListingEngagement(listingIds: string[]) {
     if (listingIds.length === 0) {
@@ -699,6 +707,39 @@ export default function BusinessesPage() {
     }
   }
 
+  function openShareComposer(listing: BusinessListing) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    setShareComposerListing(listing);
+  }
+
+  async function handleShareListing(listing: BusinessListing, content: string) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    if (sharingListingId === listing.id) return;
+    setSharingListingId(listing.id);
+    setBizNotice(null);
+    try {
+      const result = await shareListingToFeed(supabase, listing.id, content);
+      if (!result.ok) {
+        setBizNotice(result.error ?? "Could not share to the feed.");
+        return;
+      }
+      const type = normalizeBizListingTypeForListing(listing);
+      setBizNotice(`${type === "organization" ? "Organization" : "Business"} shared to the feed.`);
+      setShareComposerListing(null);
+    } catch {
+      setBizNotice("Could not share to the feed.");
+    } finally {
+      setSharingListingId(null);
+      window.setTimeout(() => setBizNotice(null), 4500);
+    }
+  }
+
   const suggestedBizImage = bizOgPreview?.image ?? null;
   const displayedBizFormImage = bizImagePreview ?? suggestedBizImage;
   const hasManualBizImage = Boolean(bizImagePreview);
@@ -724,6 +765,18 @@ export default function BusinessesPage() {
           setBizImageFile(file);
           setBizImagePreview(URL.createObjectURL(file));
           closeBizCrop();
+        }}
+      />
+      <ShareListingToFeedModal
+        key={shareComposerListing?.id ?? "closed"}
+        listing={shareComposerListing}
+        label={shareComposerListing ? (normalizeBizListingTypeForListing(shareComposerListing) === "organization" ? "Organization" : "Business") : "Listing"}
+        submitting={Boolean(shareComposerListing && sharingListingId === shareComposerListing.id)}
+        onClose={() => {
+          if (!sharingListingId) setShareComposerListing(null);
+        }}
+        onSubmit={(content) => {
+          if (shareComposerListing) void handleShareListing(shareComposerListing, content);
         }}
       />
 
@@ -1101,6 +1154,27 @@ export default function BusinessesPage() {
                       <span style={{ fontSize: 13, fontWeight: 700 }}>Comment</span>
                       <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>{comments.length}</span>
                     </button>
+                    <button
+                      type="button"
+                      disabled={sharingListingId === listing.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        openShareComposer(listing);
+                      }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        padding: 0,
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: "#2563eb",
+                        cursor: sharingListingId === listing.id ? "wait" : "pointer",
+                        opacity: sharingListingId === listing.id ? 0.65 : 1,
+                      }}
+                    >
+                      {sharingListingId === listing.id ? "Sharing..." : "Share"}
+                    </button>
                     {userId && listingEligibleForClaim(listing) ? (
                       pendingClaimListingIds.has(listing.id) ? (
                         <span style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Claim pending</span>
@@ -1338,6 +1412,24 @@ export default function BusinessesPage() {
                   >
                     Visit Website
                   </a>
+                  <button
+                    type="button"
+                    disabled={sharingListingId === selectedListing.id}
+                    onClick={() => openShareComposer(selectedListing)}
+                    style={{
+                      background: "#ecfdf5",
+                      color: "#047857",
+                      border: "1px solid #a7f3d0",
+                      borderRadius: 8,
+                      padding: "7px 12px",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: sharingListingId === selectedListing.id ? "wait" : "pointer",
+                      opacity: sharingListingId === selectedListing.id ? 0.65 : 1,
+                    }}
+                  >
+                    {sharingListingId === selectedListing.id ? "Sharing..." : "Share to feed"}
+                  </button>
                   {userId && listingEligibleForClaim(selectedListing) ? (
                     pendingClaimListingIds.has(selectedListing.id) ? (
                       <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>Claim pending review</span>
