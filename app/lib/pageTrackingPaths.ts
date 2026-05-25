@@ -10,6 +10,7 @@ export const PAGE_TRACKING = {
   profile: "/profile",
   sidebar: "/sidebar",
   admin: "/admin",
+  userDirectory: "/user-directory",
 } as const;
 
 export type PageTrackingPath = (typeof PAGE_TRACKING)[keyof typeof PAGE_TRACKING];

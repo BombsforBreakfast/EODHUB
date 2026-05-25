@@ -937,6 +937,7 @@ export default function NavBar() {
                     { label: "Lemon Lot", href: "/lemon-lot", emoji: "🍋", badge: 0, onNav: null },
                     { label: "Groups", href: "/units", emoji: "🪖", badge: groupPendingTotal, onNav: null },
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
+                    { label: "User Directory", href: "/user-directory", emoji: "👥", badge: 0, onNav: null },
                     ...(canAccessRabbithole
                       ? [{ label: "Rabbithole", href: "/rabbithole", emoji: "🐇", badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
