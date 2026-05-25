@@ -266,6 +266,7 @@ declare
   v_body text;
   n_closed int := 0;
   v_post_owner uuid;
+  v_recipient uuid;
 begin
   for v_court in
     select k.id, k.feed_post_id, k.total_votes, k.opened_by
