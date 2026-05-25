@@ -318,15 +318,23 @@ export default function OnboardingPage() {
 
     setSubmitting(true);
     try {
-      const verificationFields = isGoogle
+      const verificationFields = wasProvisioned
         ? {
+            verification_status: VERIFICATION.VERIFIED,
+            email_verified: true,
+            email_verified_at: new Date().toISOString(),
+            admin_verified: true,
+            is_approved: true,
+          }
+        : isGoogle
+          ? {
             verification_status: VERIFICATION.AWAITING_ADMIN,
             email_verified: true,
             email_verified_at: new Date().toISOString(),
             admin_verified: false,
             is_approved: false,
           }
-        : {
+          : {
             verification_status: VERIFICATION.AWAITING_EMAIL,
             email_verified: false,
             email_verified_at: null,

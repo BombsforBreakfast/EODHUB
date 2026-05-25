@@ -36,7 +36,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    if (
+      !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+      !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+      !process.env.SUPABASE_SERVICE_ROLE_KEY
+    ) {
       return NextResponse.json({ error: "Server misconfiguration" }, { status: 503 });
     }
 
@@ -190,6 +194,17 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("failed-auth-reports/resolve:", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+
+    const adminMessage = msg.startsWith("Auth create failed:") ||
+      msg.startsWith("Auth update failed:") ||
+      msg.startsWith("Profile upsert failed:") ||
+      msg.startsWith("Resend email failed:") ||
+      msg.startsWith("Approval blocked:") ||
+      msg.startsWith("No unresolved failed-login reports found") ||
+      msg.startsWith("A valid email address is required")
+      ? msg
+      : "Failed to approve access. Check server logs for details.";
+
+    return NextResponse.json({ error: adminMessage }, { status: 500 });
   }
 }

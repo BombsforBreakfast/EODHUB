@@ -1,17 +1,20 @@
 import { randomBytes } from "crypto";
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { Resend } from "resend";
 import {
   findAuthUsersByEmail,
 } from "@/app/lib/auth/adminAuthLookup";
-import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
+import {
+  classifyFailedLoginAttempt,
+  type FailedLoginClassification,
+  type FailedLoginWaitlistStatus,
+} from "@/app/lib/auth/failedAuthReasons";
 import { devAuthLog } from "@/app/lib/auth/signupErrors";
 import {
   buildLoginUrl,
   buildTemporaryPasswordEmailHtml,
   TEMP_PASSWORD_EMAIL_SUBJECT,
 } from "@/app/lib/email/temporaryPasswordEmail";
-import { hasFullPlatformAccess } from "@/app/lib/verificationAccess";
 import { VERIFICATION } from "@/app/lib/verificationStatus";
 import { createAuthAccessOverride } from "@/app/lib/server/authAccessOverrides";
 
@@ -33,6 +36,15 @@ export type DismissResult = {
   resolvedReportIds: string[];
 };
 
+type FailedAuthReportForProvision = {
+  id: string;
+  failure_reason: string;
+  risk_level: "LOW" | "MEDIUM" | "HIGH";
+  attempt_count: number | null;
+  user_exists_in_auth: boolean | null;
+  user_exists_in_profiles: boolean | null;
+};
+
 function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -46,6 +58,177 @@ function clampNotes(notes: string | null | undefined): string | null {
   const trimmed = notes.trim();
   if (!trimmed) return null;
   return trimmed.slice(0, 1000);
+}
+
+function isDuplicateAuthUserError(message: string | undefined): boolean {
+  const m = (message ?? "").toLowerCase();
+  return (
+    m.includes("already registered") ||
+    m.includes("already been registered") ||
+    m.includes("already exists") ||
+    m.includes("user already")
+  );
+}
+
+async function getWaitlistStatus(
+  adminClient: SupabaseClient,
+  normalizedEmail: string,
+): Promise<FailedLoginWaitlistStatus> {
+  const { data, error } = await adminClient
+    .from("waitlist_signups")
+    .select("id")
+    .ilike("email", normalizedEmail)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) return "unknown";
+  return data ? "in_waitlist" : "not_in_waitlist";
+}
+
+async function loadUnresolvedReportsForProvision(
+  adminClient: SupabaseClient,
+  args: { reportId?: string; normalizedEmail?: string },
+): Promise<FailedAuthReportForProvision[]> {
+  let query = adminClient
+    .from("failed_auth_reports")
+    .select(
+      "id, failure_reason, risk_level, attempt_count, user_exists_in_auth, user_exists_in_profiles",
+    )
+    .is("admin_decision", null);
+
+  if (args.reportId) {
+    query = query.eq("id", args.reportId);
+  } else if (args.normalizedEmail) {
+    query = query.eq("normalized_email", args.normalizedEmail);
+  } else {
+    throw new Error("reportId or normalizedEmail required");
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error("Could not load failed-login reports for review.");
+  }
+
+  return (data ?? []) as FailedAuthReportForProvision[];
+}
+
+function classifyReportsForProvision(
+  reports: FailedAuthReportForProvision[],
+  waitlistStatus: FailedLoginWaitlistStatus,
+): FailedLoginClassification[] {
+  return reports.map((report) =>
+    classifyFailedLoginAttempt({
+      reason: report.failure_reason,
+      waitlistStatus,
+      authExists: report.user_exists_in_auth,
+      profileExists: report.user_exists_in_profiles,
+      attemptCount: report.attempt_count,
+      riskLevel: report.risk_level,
+    }),
+  );
+}
+
+async function findAuthUserFromProfile(
+  adminClient: SupabaseClient,
+  normalizedEmail: string,
+): Promise<User | null> {
+  const { data: profile, error } = await adminClient
+    .from("profiles")
+    .select("user_id")
+    .ilike("email", normalizedEmail)
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !profile?.user_id) return null;
+
+  const { data, error: authError } = await adminClient.auth.admin.getUserById(
+    profile.user_id as string,
+  );
+  if (authError || !data.user) return null;
+  return data.user;
+}
+
+async function findExistingAuthUser(
+  adminClient: SupabaseClient,
+  normalizedEmail: string,
+): Promise<{ user: User | null; lookupError: string | null }> {
+  const profileUser = await findAuthUserFromProfile(adminClient, normalizedEmail);
+  if (profileUser) {
+    return { user: profileUser, lookupError: null };
+  }
+
+  const { users, listError } = await findAuthUsersByEmail(adminClient, normalizedEmail);
+  if (listError) {
+    return { user: null, lookupError: listError };
+  }
+  if (users.length > 1) {
+    throw new Error(
+      "Auth update failed: multiple auth accounts share this email. Resolve duplicate accounts before approving.",
+    );
+  }
+
+  return { user: users[0] ?? null, lookupError: null };
+}
+
+async function updateTemporaryPassword(
+  adminClient: SupabaseClient,
+  userId: string,
+  tempPassword: string,
+): Promise<void> {
+  const { error } = await adminClient.auth.admin.updateUserById(userId, {
+    password: tempPassword,
+    email_confirm: true,
+  });
+
+  if (error) {
+    throw new Error("Auth update failed: " + error.message);
+  }
+}
+
+async function createOrRecoverAuthUser(
+  adminClient: SupabaseClient,
+  normalizedEmail: string,
+  tempPassword: string,
+): Promise<{ userId: string; createdAuthUser: boolean; lookupError: string | null }> {
+  const existing = await findExistingAuthUser(adminClient, normalizedEmail);
+  if (existing.lookupError) {
+    devAuthLog("failed-auth-resolve", {
+      step: "auth_lookup_failed_continuing_to_create",
+      email: normalizedEmail,
+      error: existing.lookupError,
+    });
+  }
+
+  if (existing.user) {
+    await updateTemporaryPassword(adminClient, existing.user.id, tempPassword);
+    return { userId: existing.user.id, createdAuthUser: false, lookupError: existing.lookupError };
+  }
+
+  const { data: created, error: createError } = await adminClient.auth.admin.createUser({
+    email: normalizedEmail,
+    password: tempPassword,
+    email_confirm: true,
+    user_metadata: { created_by_admin_override: true },
+  });
+
+  if (!createError && created.user) {
+    return { userId: created.user.id, createdAuthUser: true, lookupError: existing.lookupError };
+  }
+
+  if (isDuplicateAuthUserError(createError?.message)) {
+    const recovered = await findExistingAuthUser(adminClient, normalizedEmail);
+    if (recovered.user) {
+      await updateTemporaryPassword(adminClient, recovered.user.id, tempPassword);
+      return {
+        userId: recovered.user.id,
+        createdAuthUser: false,
+        lookupError: recovered.lookupError ?? existing.lookupError,
+      };
+    }
+    throw new Error("Auth update failed: user already exists but could not be located for update.");
+  }
+
+  throw new Error("Auth create failed: " + (createError?.message ?? "Failed to create auth user"));
 }
 
 /**
@@ -112,115 +295,102 @@ export async function provisionUserAccessFromFailedAuth(
   }
   const notes = clampNotes(args.notes);
 
-  // 1. Claim the report(s) atomically. Bail if nothing to claim (race
-  //    condition: another admin already resolved them).
-  const resolvedReportIds = await claimReports(adminClient, {
-    adminUserId: args.adminUserId,
-    decision: "provisioned",
-    notes,
+  const target = {
     reportId: "reportId" in args ? args.reportId : undefined,
     normalizedEmail: "reportId" in args ? undefined : normalizedEmail,
-  });
+  };
+  const reports = await loadUnresolvedReportsForProvision(adminClient, target);
+  const unresolvedReportIds = reports.map((report) => report.id);
 
-  if (resolvedReportIds.length === 0) {
+  if (unresolvedReportIds.length === 0) {
     throw new Error(
-      "No unresolved failed-auth reports found for this email — another admin may have already acted.",
+      "No unresolved failed-login reports found for this email. Another admin may have already acted.",
     );
   }
 
-  // The first claimed report id is what we use to link the override row.
-  const linkedReportId = resolvedReportIds[0]!;
+  const linkedReportId = unresolvedReportIds[0]!;
+  const waitlistStatus = await getWaitlistStatus(adminClient, normalizedEmail);
+  const classifications = classifyReportsForProvision(reports, waitlistStatus);
+  const blockedClassification = classifications.find((classification) => !classification.adminCanOverride);
 
-  // Track work so we can roll back the claim on failure.
-  let rollbackOnFailure = true;
+  devAuthLog("failed-auth-resolve", {
+    step: "classification",
+    email: normalizedEmail,
+    waitlistStatus,
+    classifications,
+    reportIds: unresolvedReportIds,
+  });
+
+  if (blockedClassification) {
+    throw new Error("Approval blocked: " + blockedClassification.displayReason);
+  }
+
   try {
-    // 2. Create or update the auth user.
     const tempPassword = generateTemporaryPassword();
-    const { users, listError } = await findAuthUsersByEmail(adminClient, normalizedEmail);
-    if (listError) {
-      throw new Error("Could not look up auth user: " + listError);
-    }
+    const now = new Date().toISOString();
 
-    let userId: string;
-    let createdAuthUser = false;
+    devAuthLog("failed-auth-resolve", {
+      step: "auth_lookup",
+      email: normalizedEmail,
+      reportIds: unresolvedReportIds,
+    });
 
-    if (users.length === 0) {
-      const { data: created, error: createError } = await adminClient.auth.admin.createUser({
-        email: normalizedEmail,
-        password: tempPassword,
-        email_confirm: true,
-      });
-      if (createError || !created.user) {
-        throw new Error(createError?.message ?? "Failed to create auth user");
-      }
-      userId = created.user.id;
-      createdAuthUser = true;
-    } else if (users.length > 1) {
-      throw new Error(
-        "Multiple auth accounts share this email. Resolve duplicate accounts before provisioning.",
-      );
-    } else {
-      userId = users[0]!.id;
-      const { error: updateError } = await adminClient.auth.admin.updateUserById(userId, {
-        password: tempPassword,
-      });
-      if (updateError) {
-        throw new Error("Failed to set temporary password: " + updateError.message);
-      }
-    }
+    const authResult = await createOrRecoverAuthUser(
+      adminClient,
+      normalizedEmail,
+      tempPassword,
+    );
 
-    // 3. Ensure profile stub exists and inspect existing state.
-    const stub = await ensureProfileStubForUser(adminClient, userId, normalizedEmail);
-    if (!stub.ok) {
-      throw new Error(stub.error ?? "Failed to ensure profile");
-    }
+    devAuthLog("failed-auth-resolve", {
+      step: authResult.createdAuthUser ? "auth_created" : "auth_updated",
+      email: normalizedEmail,
+      userId: authResult.userId,
+      lookupError: authResult.lookupError,
+    });
 
-    const { data: profile, error: profileError } = await adminClient
+    const { data: existingProfile, error: profileReadError } = await adminClient
       .from("profiles")
-      .select(
-        "verification_status, email_verified, admin_verified, service, company_name",
-      )
-      .eq("user_id", userId)
+      .select("service, company_name")
+      .eq("user_id", authResult.userId)
       .maybeSingle();
 
-    if (profileError) {
-      throw new Error("Failed to load profile: " + profileError.message);
+    if (profileReadError) {
+      throw new Error("Profile upsert failed: " + profileReadError.message);
     }
 
     const forceOnboarding =
-      !profile ||
-      !hasFullPlatformAccess(profile) ||
-      profile.verification_status === VERIFICATION.DENIED ||
-      (!profile.service && !profile.company_name);
+      !existingProfile || (!existingProfile.service && !existingProfile.company_name);
 
-    const now = new Date().toISOString();
-    const profileUpdate: Record<string, unknown> = {
-      email: normalizedEmail,
-      must_change_password: true,
-      admin_provisioned_at: now,
-    };
-
-    if (forceOnboarding) {
-      profileUpdate.must_complete_onboarding = true;
-      profileUpdate.verification_status = VERIFICATION.AWAITING_EMAIL;
-      profileUpdate.email_verified = false;
-      profileUpdate.email_verified_at = null;
-      profileUpdate.admin_verified = false;
-      profileUpdate.is_approved = false;
-    }
-
-    const { error: profileUpdateError } = await adminClient
+    const { error: profileUpsertError } = await adminClient
       .from("profiles")
-      .update(profileUpdate)
-      .eq("user_id", userId);
+      .upsert(
+        {
+          user_id: authResult.userId,
+          email: normalizedEmail,
+          verification_status: VERIFICATION.VERIFIED,
+          email_verified: true,
+          email_verified_at: now,
+          admin_verified: true,
+          is_approved: true,
+          admin_approved_at: now,
+          must_change_password: true,
+          must_complete_onboarding: forceOnboarding,
+          admin_provisioned_at: now,
+        },
+        { onConflict: "user_id" },
+      );
 
-    if (profileUpdateError) {
-      throw new Error("Failed to update profile: " + profileUpdateError.message);
+    if (profileUpsertError) {
+      throw new Error("Profile upsert failed: " + profileUpsertError.message);
     }
 
-    // 4. NOW that auth + profile are committed, create the override.
-    //    This way, if any earlier step fails, we don't leak a 7-day full
-    //    bypass for an email that wasn't actually provisioned.
+    devAuthLog("failed-auth-resolve", {
+      step: "profile_upserted",
+      userId: authResult.userId,
+      email: normalizedEmail,
+      forceOnboarding,
+    });
+
     await createAuthAccessOverride(adminClient, {
       normalizedEmail,
       ipAddress: args.ipAddress,
@@ -229,87 +399,89 @@ export async function provisionUserAccessFromFailedAuth(
       failedAuthReportId: linkedReportId,
       reason: "Admin provisioned temp password from Failed Auth report",
     });
-
-    // 5. Send the email last so a Resend hiccup doesn't take down the rest.
-    //    A failed email leaves the admin to communicate the password manually,
-    //    but the user is still provisioned and the report is still resolved.
-    let emailSent = false;
-    let emailSkippedReason: ProvisionUserAccessResult["emailSkippedReason"];
+    devAuthLog("failed-auth-resolve", {
+      step: "access_override_created",
+      email: normalizedEmail,
+      reportId: linkedReportId,
+    });
 
     if (!process.env.RESEND_API_KEY) {
-      emailSkippedReason = "no_resend_key";
-    } else {
-      const loginUrl = buildLoginUrl(args.origin);
-      const html = buildTemporaryPasswordEmailHtml({
-        loginUrl,
-        email: normalizedEmail,
-        temporaryPassword: tempPassword,
-      });
-
-      const resend = new Resend(process.env.RESEND_API_KEY);
-      const { error: emailError } = await resend.emails.send({
-        from: process.env.RESEND_FROM_EMAIL ?? "EOD HUB <noreply@resend.dev>",
-        to: normalizedEmail,
-        subject: TEMP_PASSWORD_EMAIL_SUBJECT,
-        html,
-      });
-
-      if (emailError) {
-        emailSkippedReason = "resend_error";
-        devAuthLog("failed-auth-resolve", {
-          step: "temp_password_email_failed",
-          reportId: linkedReportId,
-          userId,
-          error: emailError.message,
-        });
-      } else {
-        emailSent = true;
-        await adminClient
-          .from("profiles")
-          .update({ temp_password_email_sent_at: now })
-          .eq("user_id", userId);
-      }
+      throw new Error("Resend email failed: RESEND_API_KEY is not configured.");
     }
 
-    // Past this point, do NOT roll back the claim — the side effects are done.
-    rollbackOnFailure = false;
+    const loginUrl = buildLoginUrl(args.origin);
+    const html = buildTemporaryPasswordEmailHtml({
+      loginUrl,
+      email: normalizedEmail,
+      temporaryPassword: tempPassword,
+    });
 
     devAuthLog("failed-auth-resolve", {
-      step: "provisioned",
+      step: "resend_send",
+      email: normalizedEmail,
+      userId: authResult.userId,
+    });
+
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    const { error: emailError } = await resend.emails.send({
+      from: process.env.RESEND_FROM_EMAIL ?? "EOD HUB <noreply@resend.dev>",
+      to: normalizedEmail,
+      subject: TEMP_PASSWORD_EMAIL_SUBJECT,
+      html,
+    });
+
+    if (emailError) {
+      throw new Error("Resend email failed: " + emailError.message);
+    }
+
+    const { error: sentAtError } = await adminClient
+      .from("profiles")
+      .update({ temp_password_email_sent_at: now })
+      .eq("user_id", authResult.userId);
+    if (sentAtError) {
+      devAuthLog("failed-auth-resolve", {
+        step: "temp_password_sent_at_update_failed",
+        userId: authResult.userId,
+        error: sentAtError.message,
+      });
+    }
+
+    devAuthLog("failed-auth-resolve", {
+      step: "resend_sent",
+      email: normalizedEmail,
+      userId: authResult.userId,
+    });
+
+    const resolvedReportIds = await claimReports(adminClient, {
+      adminUserId: args.adminUserId,
+      decision: "provisioned",
+      notes,
+      reportId: "reportId" in args ? args.reportId : undefined,
+      normalizedEmail: "reportId" in args ? undefined : normalizedEmail,
+    });
+
+    devAuthLog("failed-auth-resolve", {
+      step: "reports_resolved",
       reportIds: resolvedReportIds,
-      userId,
-      emailSent,
-      forceOnboarding,
-      createdAuthUser,
+      originallyUnresolvedReportIds: unresolvedReportIds,
+      userId: authResult.userId,
     });
 
     return {
-      userId,
+      userId: authResult.userId,
       email: normalizedEmail,
-      emailSent,
-      emailSkippedReason,
-      createdAuthUser,
+      emailSent: true,
+      createdAuthUser: authResult.createdAuthUser,
       forceOnboarding,
-      resolvedReportIds,
+      resolvedReportIds: resolvedReportIds.length > 0 ? resolvedReportIds : unresolvedReportIds,
     };
   } catch (err) {
-    if (rollbackOnFailure && resolvedReportIds.length > 0) {
-      // Best-effort rollback so the admin can retry without "already resolved".
-      await adminClient
-        .from("failed_auth_reports")
-        .update({
-          admin_decision: null,
-          admin_decided_at: null,
-          admin_decided_by: null,
-          admin_notes: null,
-        })
-        .in("id", resolvedReportIds);
-      devAuthLog("failed-auth-resolve", {
-        step: "provision_rolled_back",
-        reportIds: resolvedReportIds,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+    devAuthLog("failed-auth-resolve", {
+      step: "provision_failed",
+      email: normalizedEmail,
+      reportIds: unresolvedReportIds,
+      error: err instanceof Error ? err.message : String(err),
+    });
     throw err;
   }
 }

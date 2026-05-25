@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   FAILED_AUTH_REASONS,
+  classifyFailedLoginAttempt,
   isFailedAuthReason,
+  type FailedLoginClassification,
+  type FailedLoginWaitlistStatus,
 } from "@/app/lib/auth/failedAuthReasons";
 
 export const runtime = "nodejs";
@@ -100,6 +103,8 @@ export type FailedAuthReportGroup = {
   adminDecidedAt: string | null;
   adminDecidedBy: string | null;
   adminNotes: string | null;
+  waitlistStatus: FailedLoginWaitlistStatus;
+  classification: FailedLoginClassification;
   reportIds: string[];
   reports: FailedAuthReportRow[];
 };
@@ -120,6 +125,30 @@ export type FailedAuthApiResponse = {
 const GROUP_WINDOW_DAYS = 30;
 const GROUP_REPORT_LIMIT = 1000;
 const GROUP_KEY_NO_EMAIL = "(no-email)";
+
+function maxAttemptCount(rows: FailedAuthReportRow[]): number | null {
+  let max: number | null = null;
+  for (const row of rows) {
+    if (typeof row.attempt_count !== "number") continue;
+    max = max === null ? row.attempt_count : Math.max(max, row.attempt_count);
+  }
+  return max;
+}
+
+function classifyGroup(
+  group: Omit<FailedAuthReportGroup, "waitlistStatus" | "classification">,
+  waitlistStatus: FailedLoginWaitlistStatus,
+): FailedLoginClassification {
+  return classifyFailedLoginAttempt({
+    email: group.normalizedEmail,
+    reason: group.latestReason,
+    waitlistStatus,
+    authExists: group.userExistsInAuth,
+    profileExists: group.userExistsInProfiles,
+    riskLevel: group.latestRiskLevel,
+    attemptCount: maxAttemptCount(group.reports) ?? group.attemptCount,
+  });
+}
 
 function buildGroups(rows: FailedAuthReportRow[]): FailedAuthReportGroup[] {
   const map = new Map<string, FailedAuthReportGroup>();
@@ -179,16 +208,70 @@ function buildGroups(rows: FailedAuthReportRow[]): FailedAuthReportGroup[] {
         adminDecidedAt: row.admin_decided_at,
         adminDecidedBy: row.admin_decided_by,
         adminNotes: row.admin_notes,
+        waitlistStatus: "unknown",
+        classification: {
+          reviewable: true,
+          suspicious: false,
+          severity: "low",
+          adminCanOverride: true,
+          displayReason: "Review the failed sign-in context before taking action.",
+        },
         reportIds: [row.id],
         reports: [row],
       });
     }
   }
 
-  return [...map.values()].sort(
+  const groups = [...map.values()].map((group) => ({
+    ...group,
+    classification: classifyGroup(group, "unknown"),
+  }));
+
+  return groups.sort(
     (a, b) =>
       new Date(b.latestCreatedAt).getTime() - new Date(a.latestCreatedAt).getTime(),
   );
+}
+
+async function addWaitlistContext(
+  admin: SupabaseClient,
+  groups: FailedAuthReportGroup[],
+): Promise<FailedAuthReportGroup[]> {
+  const emails = groups
+    .map((group) => group.normalizedEmail?.trim().toLowerCase())
+    .filter((email): email is string => !!email);
+
+  if (emails.length === 0) return groups;
+
+  const { data, error } = await admin
+    .from("waitlist_signups")
+    .select("email")
+    .limit(10000);
+
+  if (error) {
+    return groups.map((group) => ({
+      ...group,
+      waitlistStatus: "unknown",
+      classification: classifyGroup(group, "unknown"),
+    }));
+  }
+
+  const waitlisted = new Set(
+    ((data ?? []) as Array<{ email: string | null }>)
+      .map((row) => row.email?.trim().toLowerCase())
+      .filter((email): email is string => !!email),
+  );
+
+  return groups.map((group) => {
+    const waitlistStatus: FailedLoginWaitlistStatus = group.normalizedEmail
+      ? waitlisted.has(group.normalizedEmail) ? "in_waitlist" : "not_in_waitlist"
+      : "unknown";
+    return {
+      ...group,
+      waitlistStatus,
+      classification: classifyGroup(group, waitlistStatus),
+    };
+  });
 }
 
 export async function GET(req: NextRequest) {
@@ -343,7 +426,7 @@ export async function GET(req: NextRequest) {
 
   const groups = groupError
     ? []
-    : buildGroups((groupRows ?? []) as FailedAuthReportRow[]);
+    : await addWaitlistContext(admin, buildGroups((groupRows ?? []) as FailedAuthReportRow[]));
 
   const response: FailedAuthApiResponse = {
     summary,

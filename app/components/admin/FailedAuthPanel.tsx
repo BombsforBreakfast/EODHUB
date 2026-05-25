@@ -66,6 +66,12 @@ function formatDate(iso: string): string {
   }
 }
 
+function formatWaitlistStatus(status: FailedAuthReportGroup["waitlistStatus"]): string {
+  if (status === "in_waitlist") return "yes";
+  if (status === "not_in_waitlist") return "no";
+  return "unknown";
+}
+
 function truncate(value: string | null | undefined, max: number): string {
   if (!value) return "—";
   if (value.length <= max) return value;
@@ -172,11 +178,7 @@ export default function FailedAuthPanel() {
         const count = json.resolvedCount ?? group.attemptCount;
         const noun = `${count} attempt${count === 1 ? "" : "s"}`;
         if (action === "provision_temp_password") {
-          setActionMessage(
-            json.emailSent
-              ? `Temporary password emailed to ${group.displayEmail}. Resolved ${noun}.`
-              : `Provisioned ${group.displayEmail} but email was not sent (${json.emailSkippedReason ?? "unknown"}). Resolved ${noun}.`,
-          );
+          setActionMessage(`User approved and temporary password email sent. Resolved ${noun}.`);
         } else {
           setActionMessage(`Dismissed ${noun}.`);
         }
@@ -551,6 +553,7 @@ function GroupCard({
 
   const displayEmail = group.displayEmail ?? group.normalizedEmail ?? "(no email captured)";
   const hasEmail = Boolean(group.normalizedEmail);
+  const canApprove = hasEmail && group.classification.adminCanOverride;
 
   return (
     <div
@@ -601,6 +604,9 @@ function GroupCard({
           <strong style={{ color: t.text }}>Latest reason:</strong> {group.latestReason}
           {group.latestErrorCode && <span> · {group.latestErrorCode}</span>}
         </div>
+        <div style={{ color: group.classification.suspicious ? "#fca5a5" : t.textMuted }}>
+          <strong style={{ color: t.text }}>Review:</strong> {group.classification.displayReason}
+        </div>
         {group.failureReasons.length > 1 && (
           <div style={{ fontSize: 12, color: t.textFaint }}>
             Other reasons in window: {group.failureReasons.filter((r) => r !== group.latestReason).join(", ")}
@@ -615,6 +621,10 @@ function GroupCard({
           <span>
             <span style={{ color: t.textFaint }}>Exists (auth / profile):</span>{" "}
             {formatBool(group.userExistsInAuth)} / {formatBool(group.userExistsInProfiles)}
+          </span>
+          <span>
+            <span style={{ color: t.textFaint }}>Waitlist:</span>{" "}
+            {formatWaitlistStatus(group.waitlistStatus)}
           </span>
           {group.verificationStatus && (
             <span>
@@ -640,7 +650,7 @@ function GroupCard({
           <ActionButton
             t={t}
             label={resolving ? "Working…" : "Approve & email temp password"}
-            disabled={!hasEmail || resolving}
+            disabled={!canApprove || resolving}
             primary
             onClick={() => {
               const ok = window.confirm(
@@ -687,6 +697,11 @@ function GroupCard({
         {!hasEmail && (
           <div style={{ fontSize: 12, color: t.textFaint }}>
             Approve requires an email on the report. Dismiss is still available.
+          </div>
+        )}
+        {hasEmail && !group.classification.adminCanOverride && (
+          <div style={{ fontSize: 12, color: "#fca5a5" }}>
+            Approval is blocked for this classification. Dismiss or investigate the suspicious signal first.
           </div>
         )}
       </div>
