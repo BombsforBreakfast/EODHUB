@@ -64,6 +64,17 @@ type BizListingClaimPending = {
   claimant_label: string;
 };
 
+type JobImportMetadata = {
+  matched_keywords?: string[];
+  matched_queries?: string[];
+  strong_match?: boolean;
+  source_url?: string | null;
+  deadline?: string | null;
+  posted_at?: string | null;
+  organization?: string | null;
+  countries?: string[];
+};
+
 type Job = {
   id: string;
   created_at: string | null;
@@ -75,7 +86,18 @@ type Job = {
   apply_url: string | null;
   is_approved: boolean | null;
   source_type: string | null;
+  reliefweb_job_id?: string | null;
+  relevance_score?: number | null;
+  import_metadata?: JobImportMetadata | null;
 };
+
+function formatJobSourceBadge(sourceType: string | null): string {
+  if (!sourceType) return "community";
+  if (sourceType.toLowerCase() === "reliefweb") return "ReliefWeb";
+  if (sourceType.toLowerCase() === "usajobs") return "USAJOBS";
+  if (sourceType.toLowerCase() === "adzuna") return "Adzuna";
+  return sourceType;
+}
 
 type UserProfile = {
   user_id: string;
@@ -3460,9 +3482,37 @@ export default function AdminPage() {
                         )}
                         <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint, display: "flex", gap: 12, flexWrap: "wrap" }}>
                           {job.apply_url && <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8" }}>View posting ↗</a>}
+                          {job.source_type?.toLowerCase() === "reliefweb" && (job.import_metadata?.source_url || job.apply_url) && (
+                            <a href={job.import_metadata?.source_url || job.apply_url || "#"} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8" }}>View on ReliefWeb ↗</a>
+                          )}
                           <span>{job.created_at ? new Date(job.created_at).toLocaleDateString() : ""}</span>
-                          <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "1px 8px" }}>{job.source_type || "community"}</span>
+                          <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "1px 8px" }}>{formatJobSourceBadge(job.source_type)}</span>
+                          {job.source_type?.toLowerCase() === "reliefweb" && job.relevance_score != null && (
+                            <span style={{ background: job.import_metadata?.strong_match ? "#dcfce7" : t.badgeBg, color: job.import_metadata?.strong_match ? "#15803d" : t.badgeText, borderRadius: 20, padding: "1px 8px", fontWeight: 700 }}>
+                              Score: {job.relevance_score}{job.import_metadata?.strong_match ? " · Strong match" : ""}
+                            </span>
+                          )}
                         </div>
+                        {job.source_type?.toLowerCase() === "reliefweb" && (
+                          <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>
+                            {job.import_metadata?.organization && (
+                              <div><strong>Organization:</strong> {job.import_metadata.organization}</div>
+                            )}
+                            {job.import_metadata?.countries && job.import_metadata.countries.length > 0 && (
+                              <div><strong>Countries:</strong> {job.import_metadata.countries.join(", ")}</div>
+                            )}
+                            {job.import_metadata?.deadline && (
+                              <div><strong>Deadline:</strong> {new Date(job.import_metadata.deadline).toLocaleDateString()}</div>
+                            )}
+                            {job.import_metadata?.matched_keywords && job.import_metadata.matched_keywords.length > 0 && (
+                              <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {job.import_metadata.matched_keywords.slice(0, 12).map((kw) => (
+                                  <span key={kw} style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 12, padding: "2px 8px", fontSize: 11 }}>{kw}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>

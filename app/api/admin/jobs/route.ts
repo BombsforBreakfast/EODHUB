@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
 
   let query = adminClient
     .from("jobs")
-    .select("id, created_at, title, company_name, location, category, description, apply_url, is_approved, source_type")
+    .select("id, created_at, title, company_name, location, category, description, apply_url, is_approved, source_type, reliefweb_job_id, relevance_score, import_metadata")
     .order("created_at", { ascending: false });
 
   if (pendingOnly) {

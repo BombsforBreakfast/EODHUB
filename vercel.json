@@ -9,6 +9,10 @@
       "schedule": "30 6 * * *"
     },
     {
+      "path": "/api/import-reliefweb",
+      "schedule": "0 7 * * *"
+    },
+    {
       "path": "/api/admin-pending-alert",
       "schedule": "0 8 * * *"
     },

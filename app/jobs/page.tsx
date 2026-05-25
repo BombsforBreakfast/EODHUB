@@ -87,6 +87,7 @@ function formatSource(sourceType: string | null): string {
   switch (sourceType.toLowerCase()) {
     case "usajobs": return "USAJOBS";
     case "adzuna": return "Adzuna";
+    case "reliefweb": return "ReliefWeb";
     case "indeed": return "Indeed";
     case "linkedin": return "LinkedIn";
     case "ziprecruiter": return "ZipRecruiter";

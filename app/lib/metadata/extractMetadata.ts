@@ -11,6 +11,7 @@ export type ExtractedMetadata = {
 };
 
 const METADATA_FETCH_TIMEOUT_MS = 8000;
+export const MAX_HTML_BYTES = 1_500_000;
 
 function isPrivateIpv4(ip: string): boolean {
   const parts = ip.split(".").map((part) => Number.parseInt(part, 10));
@@ -219,7 +220,27 @@ function normalizeImageUrl(imageUrl: string | null): string | null {
   return imageUrl;
 }
 
-export async function extractMetadata(websiteUrl: string): Promise<ExtractedMetadata> {
+async function readLimitedResponseText(response: Response, maxBytes: number): Promise<string> {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength) {
+    const length = Number.parseInt(contentLength, 10);
+    if (Number.isFinite(length) && length > maxBytes) {
+      throw new Error("Response too large");
+    }
+  }
+
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > maxBytes) {
+    throw new Error("Response too large");
+  }
+
+  return new TextDecoder("utf-8", { fatal: false }).decode(buffer);
+}
+
+export async function fetchSafePageHtml(
+  websiteUrl: string,
+  maxBytes = MAX_HTML_BYTES,
+): Promise<{ safeUrl: string; html: string }> {
   const parsedUrl = await assertSafePublicHttpUrl(websiteUrl);
   const safeUrl = parsedUrl.toString();
   const controller = new AbortController();
@@ -244,8 +265,11 @@ export async function extractMetadata(websiteUrl: string): Promise<ExtractedMeta
     throw new Error(`Failed to fetch website: ${response.status}`);
   }
 
-  const html = await response.text();
+  const html = await readLimitedResponseText(response, maxBytes);
+  return { safeUrl, html };
+}
 
+export function parseHtmlMetadata(html: string, safeUrl: string): ExtractedMetadata {
   const title =
     extractMetaTag(html, "og:title") ||
     extractMetaTag(html, "twitter:title") ||
@@ -264,8 +288,8 @@ export async function extractMetadata(websiteUrl: string): Promise<ExtractedMeta
     absolutizeUrl(
       extractLinkTag(html, ["icon", "shortcut icon", "apple-touch-icon", "apple-touch-icon-precomposed"]) ||
         null,
-      safeUrl
-    )
+      safeUrl,
+    ),
   );
   const image = normalizeImageUrl(absolutizeUrl(rawImage, safeUrl)) ?? favicon;
 
@@ -281,4 +305,9 @@ export async function extractMetadata(websiteUrl: string): Promise<ExtractedMeta
     favicon,
     url: safeUrl,
   };
+}
+
+export async function extractMetadata(websiteUrl: string): Promise<ExtractedMetadata> {
+  const { safeUrl, html } = await fetchSafePageHtml(websiteUrl);
+  return parseHtmlMetadata(html, safeUrl);
 }
