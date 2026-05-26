@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Circle, ArrowRight, X, Info } from "lucide-react";
+import { CheckCircle2, Circle, ArrowRight, Info } from "lucide-react";
 import { useTheme } from "@/app/lib/ThemeContext";
 import {
   getNextIncompleteTask,
@@ -115,22 +115,21 @@ export function PlankHolderChallengeCard({ challenge, userId, onCtaClick, hidden
               type="button"
               onClick={onHide}
               aria-label="Hide challenge card for this session"
-              title="Hide for this session"
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 justifyContent: "center",
-                width: 28,
-                height: 28,
                 borderRadius: 999,
                 background: "transparent",
                 border: `1px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(14,116,144,0.22)"}`,
                 color: isDark ? "#a5f3fc" : "#0e7490",
                 cursor: "pointer",
-                padding: 0,
+                padding: "5px 10px",
+                fontSize: 12,
+                fontWeight: 800,
               }}
             >
-              <X size={14} />
+              hide
             </button>
           )}
         </div>
