@@ -9,22 +9,24 @@ type Props = {
   open: boolean;
   referralUrl: string;
   onClose: () => void;
+  onInviteAction?: () => void;
 };
 
-export function ReferralQrModal({ open, referralUrl, onClose }: Props) {
+export function ReferralQrModal({ open, referralUrl, onClose, onInviteAction }: Props) {
   const { t, isDark } = useTheme();
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!open) setCopied(false);
-  }, [open]);
+    if (open) onInviteAction?.();
+  }, [onInviteAction, open]);
 
   const copyLink = useCallback(() => {
     void navigator.clipboard.writeText(referralUrl).then(() => {
       setCopied(true);
+      onInviteAction?.();
       window.setTimeout(() => setCopied(false), 2000);
     });
-  }, [referralUrl]);
+  }, [onInviteAction, referralUrl]);
 
   useEffect(() => {
     if (!open) return;

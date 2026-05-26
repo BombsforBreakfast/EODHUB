@@ -41,12 +41,16 @@ import { useMasterShell } from "../components/master/masterShellContext";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { sectionTitleLinkZoom } from "../components/master/masterShared";
+import { PlankHolderChallengeCard } from "../components/challenges/PlankHolderChallengeCard";
+import { PlankHolderFeedBanner } from "../components/challenges/PlankHolderFeedBanner";
+import { PlankHolderEarnedModal } from "../components/challenges/PlankHolderEarnedModal";
+import { PlankHolderChallengeToast } from "../components/challenges/PlankHolderChallengeToast";
 
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../components/StarRating";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
-import { Award, UserCircle2, Play, Medal } from "lucide-react";
+import { Award, Play, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
 import { applyJobFilters, uniqueJobRegions, type JobFilterState } from "../lib/jobFilters";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
@@ -83,10 +87,21 @@ import { MemorialDisclaimer } from "../components/memorial/MemorialDisclaimer";
 import { memorialTheme } from "../components/memorial/memorialModalShared";
 import { getServiceRingColor } from "../lib/serviceBranchVisual";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
+import { ensureWelcomeSidebarOnce } from "../lib/welcomeSidebarClient";
 import {
   hasFullPlatformAccess,
   needsEmailVerification,
 } from "../lib/verificationAccess";
+import {
+  dismissPlankHolderModal,
+  fetchPlankHolderProgress,
+  newlyCompletedTasks,
+  PLANK_HOLDER_TASK_LABELS,
+  recordPlankHolderInvite,
+  trackPlankHolderEvent,
+  type PlankHolderResponse,
+  type PlankHolderToastState,
+} from "../lib/plankHolderChallengeClient";
 
 const EODWF_DONATION_URL = "https://eod-wf.org/?form=supportEODWF";
 const BTMF_DONATION_URL = "https://www.paypal.com/ncp/payment/SMU4NWRW55V6L";
@@ -802,15 +817,20 @@ export default function HomePage() {
   const [isMobile, setIsMobile] = useState(false);
   const { isDesktopShell, openSidebarPeer, showMemorialFeedCards, setShowMemorialFeedCards } = useMasterShell();
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
-  const [currentUserHasPhoto, setCurrentUserHasPhoto] = useState<boolean>(true);
-  const [photoNudgeDismissed, setPhotoNudgeDismissed] = useState<boolean>(() =>
-    typeof window !== "undefined" && localStorage.getItem("eod_photo_nudge_dismissed") === "1"
-  );
   const [currentUserReferralCode, setCurrentUserReferralCode] = useState<string | null>(null);
   const [referralNudgeDismissed, setReferralNudgeDismissed] = useState<boolean>(() =>
     typeof window !== "undefined" && localStorage.getItem("eod_referral_nudge_dismissed") === "1"
   );
   const [referralCopied, setReferralCopied] = useState(false);
+  const [plankHolderChallenge, setPlankHolderChallenge] = useState<PlankHolderResponse | null>(null);
+  const plankHolderChallengeRef = useRef<PlankHolderResponse | null>(null);
+  const plankHolderInitializedRef = useRef(false);
+  const plankHolderViewedRef = useRef(false);
+  const plankHolderToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [plankHolderToast, setPlankHolderToast] = useState<PlankHolderToastState>(null);
+  const [plankHolderModalOpen, setPlankHolderModalOpen] = useState(false);
+  // Hidden state lives in sessionStorage so it resets on each new login/tab session.
+  const [plankHolderCardHidden, setPlankHolderCardHidden] = useState<boolean>(false);
 
   // Biz/Org submission form
   const [showBizForm, setShowBizForm] = useState(false);
@@ -972,6 +992,130 @@ export default function HomePage() {
   >({});
   const postsRef = useRef<FeedPost[]>([]);
 
+  const applyPlankHolderResponse = useCallback((next: PlankHolderResponse | null) => {
+    if (!next) return;
+    const previous = plankHolderChallengeRef.current;
+    const completed = newlyCompletedTasks(previous?.progress, next.progress);
+
+    plankHolderChallengeRef.current = next;
+    setPlankHolderChallenge(next);
+
+    if (plankHolderInitializedRef.current && completed.length > 0) {
+      const task = completed[0];
+      setPlankHolderToast({
+        title: "⚓ Challenge Updated",
+        detail: `${PLANK_HOLDER_TASK_LABELS[task]} Complete`,
+        progress: `${next.progress.completedCount} / ${next.progress.total} Complete`,
+      });
+      trackPlankHolderEvent("challenge_task_completed", {
+        task,
+        completedCount: next.progress.completedCount,
+        claimedCount: next.claimedCount,
+        remainingSpots: next.remainingSpots,
+      });
+      if (plankHolderToastTimerRef.current) clearTimeout(plankHolderToastTimerRef.current);
+      plankHolderToastTimerRef.current = setTimeout(() => setPlankHolderToast(null), 3200);
+    }
+
+    if (next.awarded && !next.seenModal) {
+      setPlankHolderModalOpen(true);
+      trackPlankHolderEvent("challenge_awarded", {
+        completedCount: next.progress.completedCount,
+        claimedCount: next.claimedCount,
+        remainingSpots: next.remainingSpots,
+      });
+    }
+
+    plankHolderInitializedRef.current = true;
+  }, []);
+
+  const refreshPlankHolderChallenge = useCallback(async () => {
+    try {
+      const next = await fetchPlankHolderProgress();
+      applyPlankHolderResponse(next);
+    } catch (error) {
+      console.error("plank holder challenge refresh failed:", error);
+    }
+  }, [applyPlankHolderResponse]);
+
+  const handlePlankHolderCta = useCallback((href: string) => {
+    const challenge = plankHolderChallengeRef.current;
+    trackPlankHolderEvent("challenge_cta_clicked", {
+      completedCount: challenge?.progress.completedCount,
+      claimedCount: challenge?.claimedCount,
+      remainingSpots: challenge?.remainingSpots,
+    });
+
+    if (href === "/") {
+      postTextareaRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      postTextareaRef.current?.focus();
+      return;
+    }
+
+    window.location.href = href;
+  }, []);
+
+  const plankHolderCardHiddenKey = useCallback(
+    (uid: string | null) => (uid ? `eod_plank_holder_card_hidden:${uid}` : null),
+    [],
+  );
+
+  const hidePlankHolderCard = useCallback(() => {
+    setPlankHolderCardHidden(true);
+    if (typeof window === "undefined") return;
+    const key = plankHolderCardHiddenKey(userId);
+    if (key) {
+      try { window.sessionStorage.setItem(key, "1"); } catch {}
+    }
+  }, [plankHolderCardHiddenKey, userId]);
+
+  const revealPlankHolderCard = useCallback(() => {
+    setPlankHolderCardHidden(false);
+    if (typeof window === "undefined") return;
+    const key = plankHolderCardHiddenKey(userId);
+    if (key) {
+      try { window.sessionStorage.removeItem(key); } catch {}
+    }
+  }, [plankHolderCardHiddenKey, userId]);
+
+  const handlePlankHolderBannerClick = useCallback(() => {
+    const challenge = plankHolderChallengeRef.current;
+    trackPlankHolderEvent("challenge_cta_clicked", {
+      completedCount: challenge?.progress.completedCount,
+      claimedCount: challenge?.claimedCount,
+      remainingSpots: challenge?.remainingSpots,
+    });
+    revealPlankHolderCard();
+    requestAnimationFrame(() => {
+      document.getElementById("plank-holder-challenge")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [revealPlankHolderCard]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = plankHolderCardHiddenKey(userId);
+    if (!key) {
+      setPlankHolderCardHidden(false);
+      return;
+    }
+    try {
+      setPlankHolderCardHidden(window.sessionStorage.getItem(key) === "1");
+    } catch {
+      setPlankHolderCardHidden(false);
+    }
+  }, [userId, plankHolderCardHiddenKey]);
+
+  const closePlankHolderModal = useCallback(() => {
+    setPlankHolderModalOpen(false);
+    setPlankHolderChallenge((prev) => prev ? { ...prev, seenModal: true } : prev);
+    plankHolderChallengeRef.current = plankHolderChallengeRef.current
+      ? { ...plankHolderChallengeRef.current, seenModal: true }
+      : null;
+    void dismissPlankHolderModal().catch((error) => {
+      console.error("plank holder modal dismiss failed:", error);
+    });
+  }, []);
+
   useEffect(() => {
     selectedPostImagesRef.current = selectedPostImages;
   }, [selectedPostImages]);
@@ -986,6 +1130,22 @@ export default function HomePage() {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (plankHolderToastTimerRef.current) clearTimeout(plankHolderToastTimerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!plankHolderChallenge?.eligible || plankHolderViewedRef.current) return;
+    plankHolderViewedRef.current = true;
+    trackPlankHolderEvent("challenge_viewed", {
+      completedCount: plankHolderChallenge.progress.completedCount,
+      claimedCount: plankHolderChallenge.claimedCount,
+      remainingSpots: plankHolderChallenge.remainingSpots,
+    });
+  }, [plankHolderChallenge]);
 
   /** Legacy mobile ?tab= links → dedicated routes (no in-page section tabs on mobile). */
   useEffect(() => {
@@ -1102,12 +1262,13 @@ export default function HomePage() {
       const eventId = custom.detail?.eventId;
       if (!eventId) return;
       void refreshFeedEventAttendance(eventId);
+      void refreshPlankHolderChallenge();
     };
     window.addEventListener("eod:saved-events-changed", handleSavedEventsChanged as EventListener);
     return () => {
       window.removeEventListener("eod:saved-events-changed", handleSavedEventsChanged as EventListener);
     };
-  }, [refreshFeedEventAttendance]);
+  }, [refreshFeedEventAttendance, refreshPlankHolderChallenge]);
 
   useEffect(() => {
     if (!selectedFeedEvent) {
@@ -1269,6 +1430,7 @@ export default function HomePage() {
         if (typeof window !== "undefined") {
           window.dispatchEvent(new CustomEvent("eod:saved-events-changed", { detail: { eventId: selectedFeedEvent.id } }));
         }
+        void refreshPlankHolderChallenge();
       } catch (err) {
         console.error("feed event RSVP failed:", err);
         alert(err instanceof Error ? err.message : "Could not update your RSVP.");
@@ -1277,7 +1439,7 @@ export default function HomePage() {
       }
       await refreshFeedEventAttendance(selectedFeedEvent.id);
     },
-    [refreshFeedEventAttendance, selectedFeedEvent, userId]
+    [refreshFeedEventAttendance, refreshPlankHolderChallenge, selectedFeedEvent, userId]
   );
 
   async function loadBusinessListings() {
@@ -3335,6 +3497,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         resetKcComposer();
         setSubmittingPost(false);
         void loadPosts();
+        void refreshPlankHolderChallenge();
         return;
       }
 
@@ -3434,6 +3597,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       setSubmittingPost(false);
 
       void loadPosts();
+      void refreshPlankHolderChallenge();
     } catch (err) {
       console.error("submitPost crashed:", err);
       alert(
@@ -3587,6 +3751,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       }
 
       await loadPosts();
+      void refreshPlankHolderChallenge();
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : "Could not save reaction");
@@ -3639,6 +3804,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       }
 
       await loadPosts();
+      void refreshPlankHolderChallenge();
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : "Could not save reaction");
@@ -3795,6 +3961,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
       setSubmittingCommentFor(null);
       void loadPosts();
+      void refreshPlankHolderChallenge();
     } catch (err) {
       console.error("submitComment crashed:", err);
       alert(
@@ -4029,8 +4196,12 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
     function resetActiveProfileState() {
       setCurrentUserName(null);
-      setCurrentUserHasPhoto(true);
       setCurrentUserReferralCode(null);
+      setPlankHolderChallenge(null);
+      plankHolderChallengeRef.current = null;
+      plankHolderInitializedRef.current = false;
+      plankHolderViewedRef.current = false;
+      setPlankHolderCardHidden(false);
       setIsAdmin(false);
       setCanViewFullJobs(true);
       setCanUseJobFilters(true);
@@ -4124,6 +4295,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           return;
         }
 
+        ensureWelcomeSidebarOnce(supabase);
+
         const featureAccess = getFeatureAccess({
           accountType: profileCheck.account_type,
           subscriptionStatus: profileCheck.subscription_status ?? null,
@@ -4139,13 +4312,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null; is_admin: boolean | null } | null;
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
-          setCurrentUserHasPhoto(!!nd?.photo_url);
           setCurrentUserReferralCode(nd?.referral_code ?? null);
           setIsAdmin(!!nd?.is_admin);
           setShowMemorialFeedCards(
             (profileCheck as { show_memorial_feed_cards?: boolean | null } | null)?.show_memorial_feed_cards !== false
           );
         }
+
+        void refreshPlankHolderChallenge();
 
         // Prioritize feed readiness: render as soon as posts are loaded, then hydrate secondary data.
         await loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err));
@@ -4668,6 +4842,20 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             </div>
           )}
 
+          <PlankHolderFeedBanner
+            challenge={plankHolderChallenge}
+            onViewChallenge={handlePlankHolderBannerClick}
+            profileHref={userId ? `/profile/${userId}` : "/profile"}
+          />
+
+          <PlankHolderChallengeCard
+            challenge={plankHolderChallenge}
+            userId={userId}
+            onCtaClick={handlePlankHolderCta}
+            hidden={plankHolderCardHidden}
+            onHide={hidePlankHolderCard}
+          />
+
           {currentUserReferralCode && !referralNudgeDismissed && (
             <div className="referral-nudge" style={{
               marginBottom: 12,
@@ -4695,42 +4883,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${currentUserReferralCode}`);
                     setReferralCopied(true);
                     setTimeout(() => setReferralCopied(false), 1500);
+                    void recordPlankHolderInvite()
+                      .then(applyPlankHolderResponse)
+                      .catch((error) => console.error("plank holder invite tracking failed:", error));
                   }}
                   style={{ padding: "7px 14px", borderRadius: 10, background: referralCopied ? "#16a34a" : "#6366f1", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", border: "none", transition: "background 0.2s" }}
                 >
                   {referralCopied ? "Copied!" : "Copy Link"}
                 </button>
                 <button type="button" onClick={() => { setReferralNudgeDismissed(true); localStorage.setItem("eod_referral_nudge_dismissed", "1"); }} style={{ padding: "7px 10px", borderRadius: 10, background: "transparent", border: `1px solid #6366f1`, color: isDark ? "#a5b4fc" : "#4338ca", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
-                  Dismiss
-                </button>
-              </div>
-            </div>
-          )}
-
-          {!currentUserHasPhoto && !photoNudgeDismissed && (
-            <div style={{
-              marginBottom: 12,
-              border: `1px solid #fbbf24`,
-              borderRadius: 14,
-              padding: "14px 16px",
-              background: isDark ? "#2a1f00" : "#fffbeb",
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              flexWrap: "wrap",
-            }}>
-              <UserCircle2 size={22} color={isDark ? "#fbbf24" : "#92400e"} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, color: isDark ? "#fbbf24" : "#92400e" }}>Add a profile photo</div>
-                <div style={{ fontSize: 13, color: isDark ? "#d97706" : "#b45309", marginTop: 2 }}>
-                  Help the EOD community put a face to your name.
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-                <a href={`/profile/${userId}`} style={{ padding: "7px 14px", borderRadius: 10, background: "#f59e0b", color: "white", fontWeight: 700, fontSize: 13, textDecoration: "none" }}>
-                  Add Photo
-                </a>
-                <button type="button" onClick={() => { setPhotoNudgeDismissed(true); localStorage.setItem("eod_photo_nudge_dismissed", "1"); }} style={{ padding: "7px 10px", borderRadius: 10, background: "transparent", border: `1px solid #fbbf24`, color: isDark ? "#fbbf24" : "#92400e", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                   Dismiss
                 </button>
               </div>
@@ -6003,7 +6164,10 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     postId={post.id}
                     userId={userId}
                     bundle={post.kangaroo ?? null}
-                    onAfterChange={() => void loadPosts()}
+                    onAfterChange={() => {
+                      void loadPosts();
+                      void refreshPlankHolderChallenge();
+                    }}
                     mode="card-only"
                     suppressVerdictFooter={
                       post.kangaroo?.court?.status === "closed" && Boolean(post.kangaroo?.verdict)
@@ -6029,7 +6193,10 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         postId={post.id}
                         userId={userId}
                         bundle={post.kangaroo ?? null}
-                        onAfterChange={() => void loadPosts()}
+                        onAfterChange={() => {
+                          void loadPosts();
+                          void refreshPlankHolderChallenge();
+                        }}
                         mode="trigger-inline"
                       />
 
@@ -8029,6 +8196,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           peerUserId={sidebarDrawer.peerId}
         />
       )}
+      <PlankHolderEarnedModal
+        open={plankHolderModalOpen}
+        number={plankHolderChallenge?.plankHolderNumber}
+        profileHref={userId ? `/profile/${userId}` : "/profile"}
+        onClose={closePlankHolderModal}
+      />
+      <PlankHolderChallengeToast toast={plankHolderToast} />
     </>
   );
 }

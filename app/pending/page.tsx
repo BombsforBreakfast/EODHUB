@@ -8,6 +8,7 @@ import {
   hasFullPlatformAccess,
   needsEmailVerification,
 } from "../lib/verificationAccess";
+import { recordPlankHolderInvite } from "../lib/plankHolderChallengeClient";
 
 const VOUCHES_NEEDED = 3;
 
@@ -220,6 +221,9 @@ export default function PendingPage() {
                   navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${referralCode}`);
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
+                  void recordPlankHolderInvite().catch((error) => {
+                    console.error("plank holder invite tracking failed:", error);
+                  });
                 }}
                 style={{ background: "#6366f1", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer", flexShrink: 0 }}
               >

@@ -504,6 +504,10 @@ a.rabbithole-brand-link:focus-visible {
     flex-shrink: unset !important;
   }
 
+  .plank-holder-banner {
+    top: 0 !important;
+  }
+
   /* Home feed (non–master-shell): keep content within the viewport width */
   .feed-page-shell {
     max-width: 100% !important;

@@ -1,7 +1,7 @@
 ﻿"use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { useParams } from "next/navigation";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/lib/supabaseClient";
 import DesktopLayout from "../../../components/DesktopLayout";
@@ -50,6 +50,19 @@ import { buildLoginReferralUrl } from "../../../lib/referralLink";
 import { ReferralQrModal } from "../../../components/profile/ReferralQrModal";
 import { usePageTracking } from "../../../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../../../lib/pageTrackingPaths";
+import { PlankHolderBadge } from "../../../components/challenges/PlankHolderBadge";
+import { PlankHolderEarnedModal } from "../../../components/challenges/PlankHolderEarnedModal";
+import { PlankHolderChallengeToast } from "../../../components/challenges/PlankHolderChallengeToast";
+import {
+  dismissPlankHolderModal,
+  fetchPlankHolderProgress,
+  newlyCompletedTasks,
+  PLANK_HOLDER_TASK_LABELS,
+  recordPlankHolderInvite,
+  trackPlankHolderEvent,
+  type PlankHolderResponse,
+  type PlankHolderToastState,
+} from "../../../lib/plankHolderChallengeClient";
 
 type Profile = {
   user_id: string;
@@ -67,6 +80,9 @@ type Profile = {
   years_experience: string | null;
   skill_badge: string | null;
   referral_code: string | null;
+  plank_holder_awarded: boolean | null;
+  plank_holder_number: number | null;
+  plank_holder_seen_modal: boolean | null;
   is_employer: boolean | null;
   employer_verified: boolean | null;
   company_website: string | null;
@@ -506,6 +522,7 @@ function timeAgoShort(dateString: string) {
 export default function PublicProfilePage() {
   usePageTracking(PAGE_TRACKING.profile);
   const params = useParams();
+  const searchParams = useSearchParams();
 
   const rawUserId = params?.userId;
   const userId =
@@ -649,11 +666,19 @@ export default function PublicProfilePage() {
   const [wallAvatarCropOpen, setWallAvatarCropOpen] = useState(false);
   const [wallAvatarCropSrc, setWallAvatarCropSrc] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const bioTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const resumeFileInputRef = useRef<HTMLInputElement | null>(null);
   const educationFileInputRef = useRef<HTMLInputElement | null>(null);
   const trainingFileInputRef = useRef<HTMLInputElement | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [referralQrOpen, setReferralQrOpen] = useState(false);
+  const [plankHolderChallenge, setPlankHolderChallenge] = useState<PlankHolderResponse | null>(null);
+  const plankHolderChallengeRef = useRef<PlankHolderResponse | null>(null);
+  const plankHolderInitializedRef = useRef(false);
+  const handledChallengeParamRef = useRef<string | null>(null);
+  const plankHolderToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [plankHolderToast, setPlankHolderToast] = useState<PlankHolderToastState>(null);
+  const [plankHolderModalOpen, setPlankHolderModalOpen] = useState(false);
   const [showDesktopProfileBack, setShowDesktopProfileBack] = useState(false);
   const [showAllWorkHistoryTags, setShowAllWorkHistoryTags] = useState(false);
   const canViewEmployerBackNow = (currentUserId === profile?.user_id) || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities);
@@ -707,6 +732,75 @@ export default function PublicProfilePage() {
     };
   }, [currentUserId]);
 
+  const applyPlankHolderResponse = useCallback((next: PlankHolderResponse | null) => {
+    if (!next) return;
+    const previous = plankHolderChallengeRef.current;
+    const completed = newlyCompletedTasks(previous?.progress, next.progress);
+
+    plankHolderChallengeRef.current = next;
+    setPlankHolderChallenge(next);
+
+    if (plankHolderInitializedRef.current && completed.length > 0) {
+      const task = completed[0];
+      setPlankHolderToast({
+        title: "⚓ Challenge Updated",
+        detail: `${PLANK_HOLDER_TASK_LABELS[task]} Complete`,
+        progress: `${next.progress.completedCount} / ${next.progress.total} Complete`,
+      });
+      trackPlankHolderEvent("challenge_task_completed", {
+        task,
+        completedCount: next.progress.completedCount,
+        claimedCount: next.claimedCount,
+        remainingSpots: next.remainingSpots,
+      });
+      if (plankHolderToastTimerRef.current) clearTimeout(plankHolderToastTimerRef.current);
+      plankHolderToastTimerRef.current = setTimeout(() => setPlankHolderToast(null), 3200);
+    }
+
+    if (next.awarded && !next.seenModal) {
+      setPlankHolderModalOpen(true);
+      trackPlankHolderEvent("challenge_awarded", {
+        completedCount: next.progress.completedCount,
+        claimedCount: next.claimedCount,
+        remainingSpots: next.remainingSpots,
+      });
+    }
+
+    plankHolderInitializedRef.current = true;
+  }, []);
+
+  const refreshPlankHolderChallenge = useCallback(async () => {
+    try {
+      const next = await fetchPlankHolderProgress();
+      applyPlankHolderResponse(next);
+    } catch (error) {
+      console.error("plank holder challenge refresh failed:", error);
+    }
+  }, [applyPlankHolderResponse]);
+
+  const recordInviteForPlankHolder = useCallback(() => {
+    void recordPlankHolderInvite()
+      .then(applyPlankHolderResponse)
+      .catch((error) => console.error("plank holder invite tracking failed:", error));
+  }, [applyPlankHolderResponse]);
+
+  const closePlankHolderModal = useCallback(() => {
+    setPlankHolderModalOpen(false);
+    setPlankHolderChallenge((prev) => prev ? { ...prev, seenModal: true } : prev);
+    plankHolderChallengeRef.current = plankHolderChallengeRef.current
+      ? { ...plankHolderChallengeRef.current, seenModal: true }
+      : null;
+    void dismissPlankHolderModal().catch((error) => {
+      console.error("plank holder modal dismiss failed:", error);
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (plankHolderToastTimerRef.current) clearTimeout(plankHolderToastTimerRef.current);
+    };
+  }, []);
+
   function closeWallAvatarCrop() {
     if (wallAvatarCropSrc) URL.revokeObjectURL(wallAvatarCropSrc);
     setWallAvatarCropSrc(null);
@@ -731,6 +825,7 @@ export default function PublicProfilePage() {
       const { error: updateError } = await supabase.from("profiles").update({ photo_url: data.publicUrl }).eq("user_id", currentUserId);
       if (updateError) throw updateError;
       await loadProfile(userId);
+      void refreshPlankHolderChallenge();
     } catch (err) {
       console.error(err);
       alert(`Photo upload failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -892,6 +987,7 @@ export default function PublicProfilePage() {
         return;
       }
       await loadProfile(userId);
+      void refreshPlankHolderChallenge();
       setEditingProfile(false);
     } finally {
       setSavingProfile(false);
@@ -2547,6 +2643,9 @@ export default function PublicProfilePage() {
 
       const signedInUserId = data.user?.id ?? null;
       setCurrentUserId(signedInUserId);
+      plankHolderChallengeRef.current = null;
+      plankHolderInitializedRef.current = false;
+      setPlankHolderChallenge(null);
 
       if (signedInUserId) {
         const { data: nameData } = await supabase.from("profiles").select("first_name, last_name, is_employer, is_admin").eq("user_id", signedInUserId).maybeSingle();
@@ -2585,6 +2684,9 @@ export default function PublicProfilePage() {
         setViewerIsAdmin(false);
       }
       await loadPhotoInteractions((photoResults ?? []).map((p) => p.id), signedInUserId);
+      if (signedInUserId && signedInUserId === userId) {
+        void refreshPlankHolderChallenge();
+      }
 
       setLoading(false);
     }
@@ -2629,6 +2731,30 @@ export default function PublicProfilePage() {
       });
     });
   }, [currentUserId, profile?.user_id, profile?.referral_code]);
+
+  useEffect(() => {
+    const challengeTarget = searchParams.get("challenge");
+    if (!challengeTarget || !profile || !currentUserId || currentUserId !== profile.user_id) return;
+    const marker = `${profile.user_id}:${challengeTarget}`;
+    if (handledChallengeParamRef.current === marker) return;
+    handledChallengeParamRef.current = marker;
+
+    if (challengeTarget === "bio") {
+      openWallEditProfile();
+      window.setTimeout(() => bioTextareaRef.current?.focus(), 150);
+      return;
+    }
+
+    if (challengeTarget === "invite") {
+      setReferralQrOpen(true);
+      recordInviteForPlankHolder();
+      return;
+    }
+
+    if (challengeTarget === "photo") {
+      document.getElementById("profile-wall-avatar")?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [currentUserId, profile, recordInviteForPlankHolder, searchParams]);
 
   useEffect(() => {
     if (!userId || userId === "undefined") return;
@@ -3213,6 +3339,7 @@ export default function PublicProfilePage() {
                 {/* Top row: avatar + name + stats */}
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
                   <div
+                    id="profile-wall-avatar"
                     onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
                     title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
                     style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
@@ -3244,6 +3371,11 @@ export default function PublicProfilePage() {
                     {referralBadge && (
                       <div style={{ display: "inline-block", marginTop: 4, background: referralBadge.bg, color: referralBadge.color, fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, border: `1px solid ${referralBadge.color}33` }}>
                         {referralBadge.label}
+                      </div>
+                    )}
+                    {profile.plank_holder_awarded && (
+                      <div style={{ marginTop: 4 }}>
+                        <PlankHolderBadge number={profile.plank_holder_number} />
                       </div>
                     )}
                     <div style={{ display: "flex", gap: 14, marginTop: 8, alignItems: "flex-start" }}>
@@ -3424,6 +3556,7 @@ export default function PublicProfilePage() {
                               navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code!));
                               setCopiedReferral(true);
                               setTimeout(() => setCopiedReferral(false), 2000);
+                              recordInviteForPlankHolder();
                             }}
                             style={{
                               background: copiedReferral ? "#16a34a" : "#111",
@@ -3508,6 +3641,7 @@ export default function PublicProfilePage() {
                 {/* Identity: photo + name + stats + buttons */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flexShrink: 0, width: 180 }}>
                   <div
+                    id="profile-wall-avatar"
                     onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
                     title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
                     style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
@@ -3540,6 +3674,11 @@ export default function PublicProfilePage() {
                     {referralBadge && (
                       <div style={{ display: "inline-block", marginTop: 6, background: referralBadge.bg, color: referralBadge.color, fontSize: 11, fontWeight: 800, padding: "3px 10px", borderRadius: 20, border: `1px solid ${referralBadge.color}33` }}>
                         {referralBadge.label}
+                      </div>
+                    )}
+                    {profile.plank_holder_awarded && (
+                      <div style={{ marginTop: 6 }}>
+                        <PlankHolderBadge number={profile.plank_holder_number} />
                       </div>
                     )}
                   </div>
@@ -3833,6 +3972,7 @@ export default function PublicProfilePage() {
                             navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code!));
                             setCopiedReferral(true);
                             setTimeout(() => setCopiedReferral(false), 2000);
+                            recordInviteForPlankHolder();
                           }}
                           style={{
                             background: copiedReferral ? "#16a34a" : "#111",
@@ -4267,7 +4407,10 @@ export default function PublicProfilePage() {
                 )}
                 <div style={{ gridColumn: "1 / -1" }}>
                   <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Bio</label>
-                  <textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell people about yourself..." rows={4} style={{ ...wallEditInputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }} />
+                  <textarea ref={bioTextareaRef} value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell people about yourself..." rows={4} style={{ ...wallEditInputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }} />
+                  <div style={{ marginTop: 5, fontSize: 12, fontWeight: 700, color: editBio.trim().length >= 50 ? "#16a34a" : t.textMuted }}>
+                    {editBio.trim().length} / 50 characters
+                  </div>
                 </div>
               </div>
                 </div>
@@ -5783,8 +5926,16 @@ export default function PublicProfilePage() {
         open={referralQrOpen}
         onClose={() => setReferralQrOpen(false)}
         referralUrl={buildLoginReferralUrl(profile.referral_code!)}
+        onInviteAction={recordInviteForPlankHolder}
       />
     ) : null}
+    <PlankHolderEarnedModal
+      open={plankHolderModalOpen}
+      number={plankHolderChallenge?.plankHolderNumber}
+      profileHref={currentUserId ? `/profile/${currentUserId}` : "/profile"}
+      onClose={closePlankHolderModal}
+    />
+    <PlankHolderChallengeToast toast={plankHolderToast} />
     </>
   );
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createNotification } from "@/app/lib/notificationsServer";
+import { awardPlankHolderIfEligible } from "@/app/lib/server/plankHolderChallenge";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -203,6 +204,13 @@ export async function POST(req: NextRequest) {
     const actorName = displayName(actorProfile);
     const existing = await loadRelationship(auth.admin, auth.caller.id, targetUserId);
     const now = new Date().toISOString();
+    const tryAwardActor = async () => {
+      try {
+        await awardPlankHolderIfEligible(auth.admin, auth.caller.id);
+      } catch (error) {
+        console.error("plank holder connection award check failed:", error);
+      }
+    };
 
     if (action === "know") {
       if (!existing) {
@@ -227,15 +235,18 @@ export async function POST(req: NextRequest) {
           message: `${actorName} marked that they know you.`,
           connectionId: row.id,
         });
+        await tryAwardActor();
         return NextResponse.json({ ok: true, state: "pending_outgoing", connectionId: row.id });
       }
 
       if (existing.status === "accepted") {
+        await tryAwardActor();
         return NextResponse.json({ ok: true, state: "accepted", connectionId: existing.id, confirmed: false });
       }
 
       if (existing.status === "pending") {
         if (existing.requester_user_id === auth.caller.id) {
+          await tryAwardActor();
           return NextResponse.json({ ok: true, state: "pending_outgoing", connectionId: existing.id });
         }
 
@@ -259,6 +270,7 @@ export async function POST(req: NextRequest) {
           message: `${actorName} confirmed that they know you too.`,
           connectionId: row.id,
         });
+        await tryAwardActor();
         return NextResponse.json({ ok: true, state: "accepted", connectionId: row.id, confirmed: true });
       }
 
@@ -298,6 +310,7 @@ export async function POST(req: NextRequest) {
         message: `${actorName} marked that they know you.`,
         connectionId: row.id,
       });
+      await tryAwardActor();
       return NextResponse.json({ ok: true, state: "pending_outgoing", connectionId: row.id });
     }
 
@@ -326,6 +339,7 @@ export async function POST(req: NextRequest) {
         message: `${actorName} confirmed that they know you too.`,
         connectionId: existing.id,
       });
+      await tryAwardActor();
       return NextResponse.json({ ok: true, state: "accepted", connectionId: existing.id, confirmed: true });
     }
 
