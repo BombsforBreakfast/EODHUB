@@ -8,6 +8,7 @@ import GifPickerButton from "../../components/GifPickerButton";
 import EmojiPickerButton from "../../components/EmojiPickerButton";
 import { ReactionLeaderboard, ReactionPickerTrigger } from "../../components/ReactionBar";
 import { applyContentReaction, type ReactionType } from "../../lib/reactions";
+import ExpandableText from "../../components/ExpandableText";
 import { fetchIsolatedFeedPost, fetchIsolatedUnitPost } from "../lib/dataClient";
 import type { IsolatedComment, IsolatedPost as IsolatedPostData } from "../lib/types";
 
@@ -304,17 +305,14 @@ export default function IsolatedPost({ sourceType, sourcePostId, viewerUserId, c
         {/* Post content */}
         <div style={{ padding: "0 16px" }}>
           {post.content && (
-            <div
-              style={{
-                fontSize: 15,
-                lineHeight: 1.65,
-                color: t.text,
-                whiteSpace: "pre-wrap",
-                marginBottom: 12,
-              }}
+            <ExpandableText
+              textLength={post.content.length}
+              style={{ fontSize: 15, lineHeight: 1.65, color: t.text }}
+              wrapperStyle={{ marginBottom: 12 }}
+              toggleColor={t.textMuted ?? "#94a3b8"}
             >
               {renderContent(post.content)}
-            </div>
+            </ExpandableText>
           )}
 
           {post.imageUrl && (

@@ -27,6 +27,7 @@ import EventPostCard from "../components/EventPostCard";
 import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
 import EventScrapbookPreview from "../components/events/EventScrapbookPreview";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
+import ExpandableText from "../components/ExpandableText";
 import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
@@ -5950,7 +5951,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           post.og_url &&
                           (post.og_title || post.admin_manual_image_url || post.og_image)
                         ) && (
-                        <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>
+                        <ExpandableText
+                          textLength={post.content.length}
+                          wrapperStyle={{ marginTop: 10 }}
+                          toggleColor={t.textMuted}
+                        >
+                          {renderContent(post.content)}
+                        </ExpandableText>
                       )}
 
                       {post.content && (() => {

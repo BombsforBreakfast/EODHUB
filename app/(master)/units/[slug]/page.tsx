@@ -13,6 +13,7 @@ import { useMasterShell } from "../../../components/master/masterShellContext";
 import AddToRabbitholeModal from "../../../rabbithole/components/AddToRabbitholeModal";
 import { MurphyRabbitholeBanner } from "../../../components/MurphyRabbitholeBanner";
 import FeedPostHeader from "../../../components/FeedPostHeader";
+import ExpandableText from "../../../components/ExpandableText";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { prepareImageUploadFile } from "../../../lib/prepareUploadFile";
 import { validateImagePick } from "../../../lib/uploadLimits";
@@ -2430,7 +2431,14 @@ function PostCard({
         </div>
       )}
       {post.content && (
-        <div style={{ fontSize: 15, lineHeight: 1.6, marginBottom: post.photo_url ? 12 : 0, color: t.text }}>{renderUnitText(post.content)}</div>
+        <ExpandableText
+          textLength={post.content.length}
+          style={{ fontSize: 15, color: t.text }}
+          wrapperStyle={{ marginBottom: post.photo_url ? 12 : 0 }}
+          toggleColor={t.textMuted}
+        >
+          {renderUnitText(post.content)}
+        </ExpandableText>
       )}
 
       {post.content && (() => {

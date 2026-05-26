@@ -16,6 +16,7 @@ import { useMasterShell } from "../../../components/master/masterShellContext";
 import EventFeedActions from "../../../components/EventFeedActions";
 import { ExternalSiteLink } from "../../../components/ExternalSiteEmbedModal";
 import FeedPostHeader from "../../../components/FeedPostHeader";
+import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
 import { validateFeedAttachmentPick, validateImagePick, UPLOAD_LIMITS, formatUploadBytes } from "../../../lib/uploadLimits";
@@ -4957,7 +4958,13 @@ export default function PublicProfilePage() {
                         post.og_url &&
                         (post.og_title || post.og_image)
                       ) && (
-                      <div style={{ marginTop: 10, lineHeight: 1.5 }}>{renderContent(post.content)}</div>
+                      <ExpandableText
+                        textLength={post.content.length}
+                        wrapperStyle={{ marginTop: 10 }}
+                        toggleColor={t.textMuted}
+                      >
+                        {renderContent(post.content)}
+                      </ExpandableText>
                     )}
 
                     {post.content && (() => {
