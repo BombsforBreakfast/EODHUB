@@ -16,6 +16,7 @@ import FeedPostHeader from "../../../components/FeedPostHeader";
 import ExpandableText from "../../../components/ExpandableText";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { prepareImageUploadFile } from "../../../lib/prepareUploadFile";
+import { FEED_MEDIA_FRAME_BG, feedContainedImageStyle } from "../../../lib/feedLayout";
 import { validateImagePick } from "../../../lib/uploadLimits";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
 import { ensureSavedEventForUser } from "../../../lib/ensureSavedEventForUser";
@@ -1380,8 +1381,12 @@ export default function UnitPage() {
                   )}
 
                   {postPhotoPreview && (
-                    <div style={{ marginTop: 8, position: "relative", display: "inline-block", width: 200, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}` }}>
-                      <img src={postPhotoPreview} alt="preview" style={{ width: "100%", height: 200, objectFit: "cover", display: "block" }} />
+                    <div style={{ marginTop: 8, position: "relative", display: "inline-block", width: 200, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
+                      <img
+                        src={postPhotoPreview}
+                        alt="preview"
+                        style={{ ...feedContainedImageStyle, width: "100%", height: 200 }}
+                      />
                       <button
                         type="button"
                         onClick={() => { setPostPhotoPreview(null); setPostPhotoFile(null); if (postPhotoInputRef.current) postPhotoInputRef.current.value = ""; }}
@@ -2482,10 +2487,23 @@ function PostCard({
         );
       })()}
 
-      {/* Photo — square aspect ratio matching feed */}
+      {/* Photo — fixed frame; full image visible via contain */}
       {post.photo_url && (
-        <div style={{ marginTop: 10, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "1 / 1", maxWidth: 420 }}>
-          <img src={post.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+        <div
+          style={{
+            marginTop: 10,
+            borderRadius: 12,
+            overflow: "hidden",
+            border: `1px solid ${t.border}`,
+            aspectRatio: "1 / 1",
+            maxWidth: 420,
+            background: FEED_MEDIA_FRAME_BG,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <img src={post.photo_url} alt="" style={feedContainedImageStyle} />
         </div>
       )}
 
@@ -2607,8 +2625,8 @@ function PostCard({
                   </>
                 )}
                 {c.image_url && (
-                  <div style={{ marginTop: 8, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
-                    <img src={c.image_url} alt="Comment image" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+                  <div style={{ marginTop: 8, maxWidth: 180, height: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <img src={c.image_url} alt="Comment image" style={feedContainedImageStyle} />
                   </div>
                 )}
                 {c.gif_url && (
@@ -2681,8 +2699,8 @@ function PostCard({
 
             {/* Image preview */}
             {commentImage && (
-              <div style={{ marginTop: 8, position: "relative", display: "inline-block", width: 120, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
-                <img src={commentImage.previewUrl} alt="" style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }} />
+              <div style={{ marginTop: 8, position: "relative", display: "inline-block", width: 120, height: 120, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
+                <img src={commentImage.previewUrl} alt="" style={feedContainedImageStyle} />
                 <button type="button" onClick={() => { if (commentImage) URL.revokeObjectURL(commentImage.previewUrl); setCommentImage(null); if (commentImageInputRef.current) commentImageInputRef.current.value = ""; }} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.75)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "#fff", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
               </div>
             )}

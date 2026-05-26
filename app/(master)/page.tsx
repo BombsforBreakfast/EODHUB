@@ -70,9 +70,11 @@ import {
   KC_DURATION_HOURS,
 } from "../lib/kangarooCourt";
 import {
+  FEED_MEDIA_FRAME_BG,
   FEED_POST_CARD_PADDING,
   FEED_POST_EMBED_MAX_WIDTH,
   FEED_POST_IMAGES_MAX_WIDTH,
+  feedContainedImageStyle,
 } from "../lib/feedLayout";
 import { sanitizeRumintOgDescription } from "../lib/sanitizeRumintOgDescription";
 import { ReactionLeaderboard, ReactionPickerTrigger } from "../components/ReactionBar";
@@ -5004,19 +5006,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       borderRadius: 12,
                       overflow: "hidden",
                       border: `1px solid ${t.border}`,
-                      background: t.bg,
+                      background: FEED_MEDIA_FRAME_BG,
                       aspectRatio: "1 / 1",
                     }}
                   >
                     <img
                       src={item.previewUrl}
                       alt={`Selected post image ${index + 1}`}
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        objectFit: "cover",
-                        display: "block",
-                      }}
+                      style={feedContainedImageStyle}
                     />
 
                     <button
@@ -5515,11 +5512,27 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           </div>
                         )}
                         {p.photo_url && (
-                          <img
-                            src={httpsAssetUrl(p.photo_url)}
-                            alt="Group post"
-                            style={{ marginTop: 10, width: "100%", borderRadius: 10, border: `1px solid ${t.border}`, maxHeight: 420, objectFit: "cover" }}
-                          />
+                          <div
+                            style={{
+                              marginTop: 10,
+                              width: "100%",
+                              maxWidth: 420,
+                              aspectRatio: "1 / 1",
+                              borderRadius: 10,
+                              overflow: "hidden",
+                              border: `1px solid ${t.border}`,
+                              background: FEED_MEDIA_FRAME_BG,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <img
+                              src={httpsAssetUrl(p.photo_url)}
+                              alt="Group post"
+                              style={feedContainedImageStyle}
+                            />
+                          </div>
                         )}
                         <div style={{ marginTop: 9, fontSize: 12, color: t.textMuted }}>
                           {p.like_count} likes · {p.comment_count} comments
@@ -6023,7 +6036,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                       borderRadius: 12,
                                       overflow: "hidden",
                                       border: `1px solid ${t.border}`,
-                                      background: t.bg,
+                                      background: FEED_MEDIA_FRAME_BG,
                                       aspectRatio: "1 / 1",
                                       padding: 0,
                                       cursor: "pointer",
@@ -6036,7 +6049,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                           preload="metadata"
                                           muted
                                           playsInline
-                                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                          style={feedContainedImageStyle}
                                         />
                                         {!showOverlay && (
                                           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
@@ -6050,7 +6063,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                       <img
                                         src={url}
                                         alt={`Post image ${index + 1}`}
-                                        style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }}
+                                        style={feedContainedImageStyle}
                                       />
                                     )}
 
@@ -6584,21 +6597,21 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                         marginTop: 10,
                                         width: "100%",
                                         maxWidth: "min(180px, 100%)",
+                                        height: 180,
                                         borderRadius: 10,
                                         overflow: "hidden",
                                         border: `1px solid ${t.border}`,
+                                        background: FEED_MEDIA_FRAME_BG,
                                         boxSizing: "border-box",
+                                        display: "flex",
+                                        alignItems: "center",
+                                        justifyContent: "center",
                                       }}
                                     >
                                       <img
                                         src={comment.image_url}
                                         alt="Comment image"
-                                        style={{
-                                          width: "100%",
-                                          height: 180,
-                                          display: "block",
-                                          objectFit: "cover",
-                                        }}
+                                        style={feedContainedImageStyle}
                                       />
                                     </div>
                                   )}
@@ -6778,21 +6791,18 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                               style={{
                                 position: "relative",
                                 width: 120,
+                                height: 120,
                                 maxWidth: "100%",
                                 borderRadius: 10,
                                 overflow: "hidden",
                                 border: `1px solid ${t.border}`,
+                                background: FEED_MEDIA_FRAME_BG,
                               }}
                             >
                               <img
                                 src={selectedCommentImage.previewUrl}
                                 alt="Selected comment image"
-                                style={{
-                                  width: "100%",
-                                  height: 120,
-                                  display: "block",
-                                  objectFit: "cover",
-                                }}
+                                style={feedContainedImageStyle}
                               />
 
                               <button

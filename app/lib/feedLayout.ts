@@ -15,3 +15,15 @@ export const FEED_POST_EMBED_MAX_WIDTH = "min(480px, 100%)" as const;
 
 /** Post card padding scales slightly on narrow viewports */
 export const FEED_POST_CARD_PADDING = "clamp(12px, 3.2vw, 16px)" as const;
+
+/** Letterbox background behind contained feed / wall post media */
+export const FEED_MEDIA_FRAME_BG = "#111827" as const;
+
+/** Image inside a fixed-ratio frame — preserves natural aspect ratio */
+export const feedContainedImageStyle = {
+  width: "100%",
+  height: "100%",
+  objectFit: "contain",
+  objectPosition: "center",
+  display: "block",
+} as const;

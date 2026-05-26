@@ -26,6 +26,7 @@ import { postNotifyJson } from "../../../lib/postNotifyClient";
 import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
 import { KangarooCourtVerdictBanner } from "../../../components/KangarooCourtVerdictBanner";
 import { Gem, Medal, Camera, FileText, Play, Check, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { FEED_MEDIA_FRAME_BG, feedContainedImageStyle } from "../../../lib/feedLayout";
 import { SkillBadgeValue } from "../../../lib/skillBadges";
 import type {
   FeedKangarooBundle,
@@ -4786,16 +4787,16 @@ export default function PublicProfilePage() {
                 {selectedPostImages.length > 0 && (
                   <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
                     {selectedPostImages.map((item, i) => (
-                      <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: t.bg }}>
+                      <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
                         {item.file.type.startsWith("video/") ? (
-                          <video src={item.previewUrl} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          <video src={item.previewUrl} style={feedContainedImageStyle} />
                         ) : item.file.type === "application/pdf" ? (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: t.textMuted }}>
                             <FileText size={28} color={t.textMuted} />
                             <span style={{ textAlign: "center", padding: "0 4px", wordBreak: "break-all" }}>{item.file.name}</span>
                           </div>
                         ) : (
-                          <img src={item.previewUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          <img src={item.previewUrl} alt="" style={feedContainedImageStyle} />
                         )}
                         <button
                           type="button"
@@ -5010,10 +5011,10 @@ export default function PublicProfilePage() {
                       return (
                         <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: visible.length === 1 ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 8, maxWidth: 420 }}>
                           {visible.map((url, i) => (
-                            <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: t.bg }}>
+                            <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
                               {isVideoUrl(url) ? (
                                 <>
-                                  <video src={url} preload="metadata" muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                                  <video src={url} preload="metadata" muted playsInline style={feedContainedImageStyle} />
                                   {!(i === 2 && remaining > 0) && (
                                     <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
                                       <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -5023,7 +5024,7 @@ export default function PublicProfilePage() {
                                   )}
                                 </>
                               ) : (
-                                <img src={url} alt={`Post image ${i + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                                <img src={url} alt={`Post image ${i + 1}`} style={feedContainedImageStyle} />
                               )}
                               {i === 2 && remaining > 0 && (
                                 <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 24, fontWeight: 800 }}>
@@ -5236,8 +5237,8 @@ export default function PublicProfilePage() {
                                 ) : null;
                               })()}
                               {comment.image_url && (
-                                <div style={{ marginTop: 4, maxWidth: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}` }}>
-                                  <img src={comment.image_url} alt="Comment image" style={{ width: "100%", height: 180, objectFit: "cover", display: "block" }} />
+                                <div style={{ marginTop: 4, maxWidth: 180, height: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                  <img src={comment.image_url} alt="Comment image" style={feedContainedImageStyle} />
                                 </div>
                               )}
                               <div
