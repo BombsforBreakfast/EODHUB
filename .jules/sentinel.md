@@ -1,0 +1,4 @@
+## 2026-05-26 - [Insecure Randomness in Token Generation]
+**Vulnerability:** Found `Math.random()` being used to generate referral codes in `app/api/generate-referral-code/route.ts`. `Math.random()` is not cryptographically secure and its outputs can be predicted, allowing an attacker to guess future referral codes.
+**Learning:** For any code that generates secrets, tokens, identifiers, or random IDs used in security contexts (like referral codes), a cryptographically secure pseudo-random number generator (CSPRNG) must be used instead of a standard PRNG.
+**Prevention:** Use `crypto.getRandomValues()` or `crypto.randomUUID()` available in the Web Crypto API or Node.js crypto module instead of `Math.random()` across the entire codebase for generating random strings or codes.
