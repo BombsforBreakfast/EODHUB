@@ -114,7 +114,7 @@ interface USAJobsItem {
 async function fetchUSAJobsPage(
   keyword: string,
   page: number
-): Promise<USAJobsItem[]> {
+): Promise<{ items: USAJobsItem[]; error?: string }> {
   const params = new URLSearchParams({
     Keyword: keyword,
     ResultsPerPage: "25",
@@ -132,10 +132,15 @@ async function fetchUSAJobsPage(
     }
   );
 
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    return { items: [], error: `${res.status}: ${text}` };
+  }
 
   const data = await res.json();
-  return (data?.SearchResult?.SearchResultItems as USAJobsItem[]) ?? [];
+  return {
+    items: (data?.SearchResult?.SearchResultItems as USAJobsItem[]) ?? [],
+  };
 }
 
 export async function GET(req: NextRequest) {
@@ -179,10 +184,15 @@ export async function GET(req: NextRequest) {
   let refreshed = 0;
   let skipped = 0;
   const importedTitles: string[] = [];
+  const errors: string[] = [];
 
   for (const keyword of EOD_KEYWORDS) {
     for (let page = 1; page <= MAX_PAGES_PER_KEYWORD; page++) {
-    const items = await fetchUSAJobsPage(keyword, page);
+    const { items, error: fetchErr } = await fetchUSAJobsPage(keyword, page);
+    if (fetchErr) {
+      errors.push(`[${keyword} p${page}] ${fetchErr}`);
+      break;
+    }
     if (items.length === 0) break;
 
     for (const item of items) {
@@ -214,11 +224,17 @@ export async function GET(req: NextRequest) {
       }
 
       // Check if already in database (by stable PositionURI)
-      const { data: existing } = await supabase
+      const { data: existing, error: selectErr } = await supabase
         .from("jobs")
         .select("id, is_rejected")
+        .eq("source_type", "usajobs")
         .eq("apply_url", positionURI)
         .maybeSingle();
+
+      if (selectErr) {
+        errors.push(`[select usajobs ${positionURI}] ${selectErr.message}`);
+        continue;
+      }
 
       if (existing) {
         // Never re-import a job an admin has rejected
@@ -227,16 +243,20 @@ export async function GET(req: NextRequest) {
           continue;
         }
         // Job still active — refresh last_seen_at to reset the 30-day clock
-        await supabase
+        const { error: upErr } = await supabase
           .from("jobs")
           .update({ last_seen_at: new Date().toISOString() })
           .eq("id", existing.id);
+        if (upErr) {
+          errors.push(`[update usajobs ${positionURI}] ${upErr.message}`);
+          continue;
+        }
         refreshed++;
         continue;
       }
 
       // New job — insert as pending
-      const { error } = await supabase.from("jobs").insert({
+      const { error: insErr } = await supabase.from("jobs").insert({
         title,
         company_name: orgName,
         location,
@@ -250,10 +270,12 @@ export async function GET(req: NextRequest) {
         last_seen_at: new Date().toISOString(),
       });
 
-      if (!error) {
-        imported++;
-        importedTitles.push(title);
+      if (insErr) {
+        errors.push(`[insert usajobs ${positionURI}] ${insErr.message}`);
+        continue;
       }
+      imported++;
+      importedTitles.push(title);
     }
     if (items.length < 25) break; // fewer than a full page = last page
     } // end page loop
@@ -265,5 +287,6 @@ export async function GET(req: NextRequest) {
     purged: purged ?? 0,
     skipped,
     sample: importedTitles.slice(0, 10),
+    errors: errors.length > 0 ? errors : undefined,
   });
 }

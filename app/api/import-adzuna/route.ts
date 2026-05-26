@@ -82,6 +82,12 @@ function detectCategory(title: string): string {
   return "EOD";
 }
 
+/** jobs.pay_min / pay_max are integer columns; Adzuna often returns fractional USD amounts. */
+function roundSalary(value: number | undefined): number | null {
+  if (value == null || !Number.isFinite(value)) return null;
+  return Math.round(value);
+}
+
 interface AdzunaJob {
   id: string;
   title: string;
@@ -221,8 +227,8 @@ export async function GET(req: NextRequest) {
               location: job.location.display_name,
               description: job.description,
               og_description: job.description,
-              pay_min: job.salary_min ?? null,
-              pay_max: job.salary_max ?? null,
+              pay_min: roundSalary(job.salary_min),
+              pay_max: roundSalary(job.salary_max),
               category: detectCategory(job.title),
             })
             .eq("id", existing.id);
@@ -243,8 +249,8 @@ export async function GET(req: NextRequest) {
           description: job.description,
           og_description: job.description,
           og_site_name: "Adzuna",
-          pay_min: job.salary_min ?? null,
-          pay_max: job.salary_max ?? null,
+          pay_min: roundSalary(job.salary_min),
+          pay_max: roundSalary(job.salary_max),
           category: detectCategory(job.title),
           is_approved: false,
           source_type: "adzuna",
