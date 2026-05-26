@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, X } from "lucide-react";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { PLANK_HOLDER_CAP, type PlankHolderResponse } from "@/app/lib/plankHolderChallengeClient";
 
@@ -8,11 +8,20 @@ type Props = {
   challenge: PlankHolderResponse | null;
   onViewChallenge: () => void;
   profileHref: string;
+  earnedBannerDismissed?: boolean;
+  onDismissEarnedBanner?: () => void;
 };
 
-export function PlankHolderFeedBanner({ challenge, onViewChallenge, profileHref }: Props) {
+export function PlankHolderFeedBanner({
+  challenge,
+  onViewChallenge,
+  profileHref,
+  earnedBannerDismissed,
+  onDismissEarnedBanner,
+}: Props) {
   const { isDark } = useTheme();
   if (!challenge || !challenge.eligible) return null;
+  if (challenge.awarded && earnedBannerDismissed) return null;
 
   const lowRemaining = !challenge.awarded && challenge.remainingSpots > 0 && challenge.remainingSpots <= 10;
   const closedBeforeEarned = challenge.alreadyClosed && !challenge.awarded;
@@ -52,21 +61,47 @@ export function PlankHolderFeedBanner({ challenge, onViewChallenge, profileHref 
           </div>
         </div>
         {challenge.awarded ? (
-          <a
-            href={profileHref}
-            style={{
-              borderRadius: 11,
-              background: "#0f172a",
-              color: "white",
-              padding: "8px 12px",
-              fontWeight: 900,
-              fontSize: 13,
-              textDecoration: "none",
-              whiteSpace: "nowrap",
-            }}
-          >
-            View Profile
-          </a>
+          <>
+            <a
+              href={profileHref}
+              style={{
+                borderRadius: 11,
+                background: "#0f172a",
+                color: "white",
+                padding: "8px 12px",
+                fontWeight: 900,
+                fontSize: 13,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+              }}
+            >
+              View Profile
+            </a>
+            {onDismissEarnedBanner && (
+              <button
+                type="button"
+                onClick={onDismissEarnedBanner}
+                aria-label="Dismiss Plank Holder banner"
+                title="Dismiss"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 28,
+                  height: 28,
+                  borderRadius: 999,
+                  background: "transparent",
+                  border: `1px solid ${isDark ? "rgba(255,255,255,0.18)" : "rgba(14,116,144,0.22)"}`,
+                  color: isDark ? "#a5f3fc" : "#0e7490",
+                  cursor: "pointer",
+                  padding: 0,
+                  flexShrink: 0,
+                }}
+              >
+                <X size={14} />
+              </button>
+            )}
+          </>
         ) : (
           !closedBeforeEarned && (
             <button

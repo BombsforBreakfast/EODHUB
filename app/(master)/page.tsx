@@ -97,6 +97,7 @@ import {
   fetchPlankHolderProgress,
   newlyCompletedTasks,
   PLANK_HOLDER_TASK_LABELS,
+  plankHolderBannerDismissedKey,
   recordPlankHolderInvite,
   trackPlankHolderEvent,
   type PlankHolderResponse,
@@ -831,6 +832,8 @@ export default function HomePage() {
   const [plankHolderModalOpen, setPlankHolderModalOpen] = useState(false);
   // Hidden state lives in sessionStorage so it resets on each new login/tab session.
   const [plankHolderCardHidden, setPlankHolderCardHidden] = useState<boolean>(false);
+  // Earned banner dismiss is permanent (localStorage) — badge remains on profile.
+  const [plankHolderBannerDismissed, setPlankHolderBannerDismissed] = useState<boolean>(false);
 
   // Biz/Org submission form
   const [showBizForm, setShowBizForm] = useState(false);
@@ -1078,6 +1081,15 @@ export default function HomePage() {
     }
   }, [plankHolderCardHiddenKey, userId]);
 
+  const dismissPlankHolderEarnedBanner = useCallback(() => {
+    if (!userId) return;
+    setPlankHolderBannerDismissed(true);
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(plankHolderBannerDismissedKey(userId), "1");
+    } catch {}
+  }, [userId]);
+
   const handlePlankHolderBannerClick = useCallback(() => {
     const challenge = plankHolderChallengeRef.current;
     trackPlankHolderEvent("challenge_cta_clicked", {
@@ -1104,6 +1116,20 @@ export default function HomePage() {
       setPlankHolderCardHidden(false);
     }
   }, [userId, plankHolderCardHiddenKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !userId) {
+      setPlankHolderBannerDismissed(false);
+      return;
+    }
+    try {
+      setPlankHolderBannerDismissed(
+        window.localStorage.getItem(plankHolderBannerDismissedKey(userId)) === "1",
+      );
+    } catch {
+      setPlankHolderBannerDismissed(false);
+    }
+  }, [userId]);
 
   const closePlankHolderModal = useCallback(() => {
     setPlankHolderModalOpen(false);
@@ -4846,6 +4872,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             challenge={plankHolderChallenge}
             onViewChallenge={handlePlankHolderBannerClick}
             profileHref={userId ? `/profile/${userId}` : "/profile"}
+            earnedBannerDismissed={plankHolderBannerDismissed}
+            onDismissEarnedBanner={dismissPlankHolderEarnedBanner}
           />
 
           <PlankHolderChallengeCard

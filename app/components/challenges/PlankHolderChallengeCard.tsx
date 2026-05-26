@@ -27,52 +27,12 @@ export function PlankHolderChallengeCard({ challenge, userId, onCtaClick, hidden
 
   if (!challenge || !challenge.eligible) return null;
   if (hidden && !challenge.awarded) return null;
+  if (challenge.awarded) return null;
 
   const nextTask = getNextIncompleteTask(challenge.progress);
   const ctaHref = getTaskCtaHref(nextTask, userId);
-  const lowRemaining = !challenge.awarded && challenge.remainingSpots > 0 && challenge.remainingSpots <= 10;
-  const closedBeforeEarned = challenge.alreadyClosed && !challenge.awarded;
-
-  if (challenge.awarded) {
-    return (
-      <section
-        id="plank-holder-challenge"
-        style={{
-          marginBottom: 12,
-          border: `1px solid ${isDark ? "rgba(34,211,238,0.35)" : "rgba(14,116,144,0.25)"}`,
-          borderRadius: 16,
-          padding: 16,
-          background: isDark ? "rgba(8,47,73,0.55)" : "#ecfeff",
-          color: t.text,
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontSize: 16, fontWeight: 950, color: isDark ? "#67e8f9" : "#155e75" }}>
-              ⚓ Plank Holder #{challenge.plankHolderNumber}
-            </div>
-            <div style={{ fontSize: 13, color: isDark ? "#a5f3fc" : "#0e7490", marginTop: 2 }}>
-              Founding status secured. {challenge.claimedCount} / {PLANK_HOLDER_CAP} claimed.
-            </div>
-          </div>
-          <a
-            href={userId ? `/profile/${userId}` : "/profile"}
-            style={{
-              borderRadius: 12,
-              background: "#0f172a",
-              color: "white",
-              padding: "9px 14px",
-              fontWeight: 900,
-              fontSize: 13,
-              textDecoration: "none",
-            }}
-          >
-            View Profile
-          </a>
-        </div>
-      </section>
-    );
-  }
+  const lowRemaining = challenge.remainingSpots > 0 && challenge.remainingSpots <= 10;
+  const closedBeforeEarned = challenge.alreadyClosed;
 
   return (
     <section

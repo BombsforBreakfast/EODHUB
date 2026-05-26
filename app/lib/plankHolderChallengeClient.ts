@@ -5,6 +5,11 @@ import { supabase } from "./lib/supabaseClient";
 
 export const PLANK_HOLDER_CAP = 50;
 
+/** localStorage key — earned-state feed banner stays dismissed permanently per user. */
+export function plankHolderBannerDismissedKey(userId: string): string {
+  return `eod_plank_holder_banner_dismissed:${userId}`;
+}
+
 export type PlankHolderTaskKey = "profilePhoto" | "bio" | "contribution" | "connection" | "invite";
 
 export type PlankHolderProgress = Record<PlankHolderTaskKey, boolean> & {
