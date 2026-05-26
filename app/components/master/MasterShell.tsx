@@ -12,6 +12,8 @@ import { isMemberPaywallExemptPath, isExemptFromMemberPaywall, shouldEnforceMemb
 import { memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { MasterShellProvider } from "./masterShellContext";
 import { loadActiveProfile } from "../../lib/auth/activeProfile";
+import { hasFullPlatformAccess } from "../../lib/verificationAccess";
+import { ensureWelcomeSidebarOnce } from "../../lib/welcomeSidebarClient";
 
 const MasterLeftColumn = dynamic(() => import("./MasterLeftColumn"), { ssr: true });
 const MasterRightColumn = dynamic(() => import("./MasterRightColumn"), { ssr: true });
@@ -83,9 +85,12 @@ export default function MasterShell({ children }: { children: React.ReactNode })
         subscription_status: string | null;
         is_admin: boolean | null;
         show_memorial_feed_cards: boolean | null;
+        email_verified: boolean | null;
+        admin_verified: boolean | null;
+        verification_status: string | null;
       }>(supabase, user, {
         route: "app/components/master/MasterShell.tsx:loadShellUser",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, account_type, subscription_status, is_admin, show_memorial_feed_cards",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, account_type, subscription_status, is_admin, show_memorial_feed_cards, email_verified, admin_verified, verification_status",
       });
       if (cancelled) return;
       if (!profileCheck) {
@@ -102,6 +107,10 @@ export default function MasterShell({ children }: { children: React.ReactNode })
         isAdmin: profileCheck.is_admin,
       });
       memberInteractionAllowedRef.current = allowed;
+
+      if (hasFullPlatformAccess(profileCheck)) {
+        ensureWelcomeSidebarOnce(supabase);
+      }
 
       if (
         shouldEnforceMemberPaywall() &&

@@ -7,6 +7,7 @@ import {
   buildLoginUrl,
 } from "@/app/lib/email/approvalEmail";
 import { VERIFICATION } from "@/app/lib/verificationStatus";
+import { ensureWelcomeSidebarMessage } from "@/app/lib/server/ensureWelcomeSidebarMessage";
 
 export type ApproveUserSource = "admin" | "vouch";
 
@@ -88,6 +89,10 @@ export async function approveUserAccount(
     source,
     toStatus: VERIFICATION.VERIFIED,
     adminApprovedAt: profile.admin_approved_at ?? now,
+  });
+
+  void ensureWelcomeSidebarMessage(adminClient, userId).catch((err) => {
+    console.error("approveUserAccount: welcome sidebar ensure failed", err);
   });
 
   // Look up the user's auth email once. We use it for both waitlist cleanup
