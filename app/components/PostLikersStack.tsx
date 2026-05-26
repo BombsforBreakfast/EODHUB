@@ -69,6 +69,9 @@ export function LikerAvatar({
 }
 
 const PEEK_LIKERS = 3;
+/** Overlapping liker faces in the post action bar (2× prior 22px). */
+const TOOLBAR_AVATAR_SIZE = 44;
+const TOOLBAR_AVATAR_OVERLAP = -10;
 
 export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
   const { t } = useTheme();
@@ -107,7 +110,7 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
             href={`/profile/${liker.userId}`}
             title={liker.name}
             style={{
-              marginLeft: i === 0 ? 0 : -5,
+              marginLeft: i === 0 ? 0 : TOOLBAR_AVATAR_OVERLAP,
               position: "relative",
               zIndex: PEEK_LIKERS - i,
               textDecoration: "none",
@@ -117,7 +120,7 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
             <LikerAvatar
               photoUrl={liker.photoUrl}
               name={liker.name}
-              size={22}
+              size={TOOLBAR_AVATAR_SIZE}
               service={liker.service}
               isEmployer={liker.isEmployer}
             />
@@ -129,18 +132,18 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
             aria-label="Show everyone who liked this post"
             onClick={() => setOpen(true)}
             style={{
-              marginLeft: 4,
+              marginLeft: 8,
               background: t.bg,
               border: `1px solid ${t.border}`,
               borderRadius: 999,
-              width: 26,
-              height: 22,
+              minWidth: 52,
+              height: TOOLBAR_AVATAR_SIZE,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
               cursor: "pointer",
               color: t.textMuted,
-              fontSize: 14,
+              fontSize: 16,
               fontWeight: 800,
               lineHeight: 1,
               flexShrink: 0,
