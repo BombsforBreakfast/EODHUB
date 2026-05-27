@@ -50,6 +50,7 @@ import { STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../../../lib/pureAdminAllowlis
 import { getServiceRingColor } from "../../../lib/serviceBranchVisual";
 import { buildLoginReferralUrl } from "../../../lib/referralLink";
 import { ReferralQrModal } from "../../../components/profile/ReferralQrModal";
+import { ReferralCopiedHelpModal } from "../../../components/profile/ReferralCopiedHelpModal";
 import { usePageTracking } from "../../../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../../../lib/pageTrackingPaths";
 import { PlankHolderBadge } from "../../../components/challenges/PlankHolderBadge";
@@ -676,6 +677,7 @@ export default function PublicProfilePage() {
   const trainingFileInputRef = useRef<HTMLInputElement | null>(null);
   const [copiedReferral, setCopiedReferral] = useState(false);
   const [referralQrOpen, setReferralQrOpen] = useState(false);
+  const [referralCopiedHelpOpen, setReferralCopiedHelpOpen] = useState(false);
   const [plankHolderChallenge, setPlankHolderChallenge] = useState<PlankHolderResponse | null>(null);
   const plankHolderChallengeRef = useRef<PlankHolderResponse | null>(null);
   const plankHolderInitializedRef = useRef(false);
@@ -787,6 +789,15 @@ export default function PublicProfilePage() {
       .then(applyPlankHolderResponse)
       .catch((error) => console.error("plank holder invite tracking failed:", error));
   }, [applyPlankHolderResponse]);
+
+  const handleCopyReferralLink = useCallback(() => {
+    if (!profile?.referral_code) return;
+    void navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code));
+    setCopiedReferral(true);
+    setReferralCopiedHelpOpen(true);
+    window.setTimeout(() => setCopiedReferral(false), 2000);
+    recordInviteForPlankHolder();
+  }, [profile?.referral_code, recordInviteForPlankHolder]);
 
   const closePlankHolderModal = useCallback(() => {
     setPlankHolderModalOpen(false);
@@ -3566,12 +3577,7 @@ export default function PublicProfilePage() {
                         <>
                           <button
                             type="button"
-                            onClick={() => {
-                              navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code!));
-                              setCopiedReferral(true);
-                              setTimeout(() => setCopiedReferral(false), 2000);
-                              recordInviteForPlankHolder();
-                            }}
+                            onClick={handleCopyReferralLink}
                             style={{
                               background: copiedReferral ? "#16a34a" : "#111",
                               color: "white",
@@ -3992,12 +3998,7 @@ export default function PublicProfilePage() {
                       <>
                         <button
                           type="button"
-                          onClick={() => {
-                            navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code!));
-                            setCopiedReferral(true);
-                            setTimeout(() => setCopiedReferral(false), 2000);
-                            recordInviteForPlankHolder();
-                          }}
+                          onClick={handleCopyReferralLink}
                           style={{
                             background: copiedReferral ? "#16a34a" : "#111",
                             color: "white",
@@ -6063,8 +6064,13 @@ export default function PublicProfilePage() {
         onClose={() => setReferralQrOpen(false)}
         referralUrl={buildLoginReferralUrl(profile.referral_code!)}
         onInviteAction={recordInviteForPlankHolder}
+        onLinkCopied={() => setReferralCopiedHelpOpen(true)}
       />
     ) : null}
+    <ReferralCopiedHelpModal
+      open={referralCopiedHelpOpen}
+      onClose={() => setReferralCopiedHelpOpen(false)}
+    />
     <PlankHolderEarnedModal
       open={plankHolderModalOpen}
       number={plankHolderChallenge?.plankHolderNumber}
