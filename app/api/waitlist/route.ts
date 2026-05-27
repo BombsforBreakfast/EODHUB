@@ -65,11 +65,18 @@ export async function POST(req: NextRequest) {
     return errorResponse("generic", 503);
   }
 
+  const firstName = clampOptionalString(body.first_name, MAX_NAME);
+  const lastName = clampOptionalString(body.last_name, MAX_NAME);
+  const service = clampOptionalString(body.service, MAX_SERVICE);
+  if (!firstName || !lastName || !service) {
+    return errorResponse("generic", 400);
+  }
+
   const row = {
     email: validated.email,
-    first_name: clampOptionalString(body.first_name, MAX_NAME) || null,
-    last_name: clampOptionalString(body.last_name, MAX_NAME) || null,
-    service: clampOptionalString(body.service, MAX_SERVICE) || null,
+    first_name: firstName,
+    last_name: lastName,
+    service,
   };
 
   const { error } = await client.from("waitlist_signups").insert(row);

@@ -6,7 +6,6 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
   useState,
   type CSSProperties,
   type FormEvent,
@@ -35,33 +34,6 @@ const WAITLIST_THANK_YOU =
 const BETA_PRICING_FOOTNOTE =
   "EOD Hub is free during beta and for the first 30 days after we go live. After that, a $1.99/month subscription helps us operate, maintain, and improve the site.";
 
-/** May 24 local midnight — this year if still ahead, otherwise next year. */
-function getBetaLaunchTarget(): Date {
-  const now = new Date();
-  const y = now.getFullYear();
-  let target = new Date(y, 4, 24, 0, 0, 0, 0);
-  if (target.getTime() <= now.getTime()) {
-    target = new Date(y + 1, 4, 24, 0, 0, 0, 0);
-  }
-  return target;
-}
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : String(n);
-}
-
-type CountdownParts = { days: number; hours: number; mins: number; secs: number };
-
-function computeCountdownParts(target: Date, now: Date): CountdownParts {
-  const diff = target.getTime() - now.getTime();
-  const totalSec = Math.floor(Math.max(0, diff) / 1000);
-  const days = Math.floor(totalSec / 86400);
-  const hours = Math.floor((totalSec % 86400) / 3600);
-  const mins = Math.floor((totalSec % 3600) / 60);
-  const secs = totalSec % 60;
-  return { days, hours, mins, secs };
-}
-
 const WAITLIST_SERVICE_OPTIONS = [
   "Army",
   "Navy",
@@ -87,20 +59,6 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
   const [waitlistError, setWaitlistError] = useState<string | null>(null);
   /** After a successful waitlist insert: thank-you only (does NOT unlock the gate). */
   const [waitlistSubmitted, setWaitlistSubmitted] = useState(false);
-
-  const launchTarget = useMemo(() => getBetaLaunchTarget(), []);
-  const [countdown, setCountdown] = useState<CountdownParts>(() =>
-    computeCountdownParts(launchTarget, new Date()),
-  );
-
-  useEffect(() => {
-    const tick = () => {
-      setCountdown(computeCountdownParts(launchTarget, new Date()));
-    };
-    tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, [launchTarget]);
 
   const setPhaseAndNotify = useCallback(
     (next: BetaGatePhase) => {
@@ -209,6 +167,14 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
     async (e: FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       setWaitlistError(null);
+      if (!firstName.trim() || !lastName.trim()) {
+        setWaitlistError("First name and last name are required.");
+        return;
+      }
+      if (!service.trim()) {
+        setWaitlistError("Service branch is required.");
+        return;
+      }
       const clientCheck = validateEmailForRegistration(email);
       if (!clientCheck.ok) {
         setWaitlistError(userMessageForSignupCode(mapEmailValidationCode(clientCheck.code)));
@@ -348,80 +314,6 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
           cursor: not-allowed;
           opacity: 0.35;
         }
-        @keyframes betaCountdownPulse {
-          0%, 100% { opacity: 0.32; }
-          50% { opacity: 0.58; }
-        }
-        .beta-countdown-glow {
-          position: absolute;
-          left: 50%;
-          top: 42%;
-          width: min(100%, 340px);
-          height: 76px;
-          transform: translate(-50%, -50%);
-          border-radius: 18px;
-          background: radial-gradient(ellipse at 50% 50%, rgba(212, 196, 92, 0.28) 0%, rgba(212, 196, 92, 0.06) 45%, transparent 72%);
-          filter: blur(16px);
-          animation: betaCountdownPulse 4.8s ease-in-out infinite;
-          pointer-events: none;
-          z-index: 0;
-        }
-        .beta-countdown-row {
-          position: relative;
-          z-index: 1;
-          display: flex;
-          justify-content: center;
-          align-items: stretch;
-          gap: clamp(3px, 1.2vw, 8px);
-          width: 100%;
-          max-width: 100%;
-          box-sizing: border-box;
-          padding: 0 2px;
-        }
-        .beta-countdown-sep {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex: 0 0 auto;
-          font-weight: 900;
-          font-size: clamp(16px, 4.5vw, 22px);
-          color: rgba(200, 210, 195, 0.45);
-          line-height: 1;
-          padding-bottom: 18px;
-          user-select: none;
-        }
-        .beta-countdown-unit {
-          flex: 1 1 0;
-          min-width: 0;
-          text-align: center;
-        }
-        .beta-countdown-digitbox {
-          font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
-          font-variant-numeric: tabular-nums;
-          font-weight: 900;
-          font-stretch: condensed;
-          letter-spacing: -0.02em;
-          font-size: clamp(1.05rem, 5vw, 1.55rem);
-          line-height: 1.05;
-          color: #f4f6f0;
-          text-shadow: 0 0 18px rgba(255, 255, 255, 0.12), 0 1px 0 rgba(0, 0, 0, 0.65);
-          padding: clamp(8px, 2vw, 12px) clamp(2px, 1vw, 6px);
-          border-radius: 8px;
-          border: 1px solid rgba(72, 82, 68, 0.65);
-          background: linear-gradient(165deg, #161a18 0%, #050607 100%);
-          box-shadow:
-            inset 0 2px 5px rgba(0, 0, 0, 0.65),
-            inset 0 -1px 0 rgba(255, 255, 255, 0.05),
-            0 1px 0 rgba(255, 255, 255, 0.03);
-        }
-        .beta-countdown-label {
-          margin-top: 6px;
-          font-size: clamp(9px, 2.4vw, 10px);
-          font-weight: 800;
-          letter-spacing: 0.14em;
-          text-transform: uppercase;
-          color: rgba(212, 196, 92, 0.88);
-        }
         @media (max-width: 480px) {
           .beta-gate-sticker {
             font-size: 22px !important;
@@ -508,53 +400,14 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
                 lineHeight: 1.1,
               }}
             >
-              EOD HUB
-            </div>
-            <div
-              className="beta-countdown-wrap"
-              style={{ marginTop: 10, marginBottom: 12, width: "100%", maxWidth: "100%", position: "relative" }}
-            >
-              <div className="beta-countdown-glow" aria-hidden />
-              <div
-                className="beta-countdown-row"
-                role="timer"
-                aria-live="polite"
-                aria-atomic="true"
-                aria-label={`Beta launch countdown: ${countdown.days} days, ${countdown.hours} hours, ${countdown.mins} minutes, ${countdown.secs} seconds remaining`}
-              >
-                <div className="beta-countdown-unit">
-                  <div className="beta-countdown-digitbox">{countdown.days}</div>
-                  <div className="beta-countdown-label">Days</div>
-                </div>
-                <div className="beta-countdown-sep" aria-hidden>
-                  :
-                </div>
-                <div className="beta-countdown-unit">
-                  <div className="beta-countdown-digitbox">{pad2(countdown.hours)}</div>
-                  <div className="beta-countdown-label">Hours</div>
-                </div>
-                <div className="beta-countdown-sep" aria-hidden>
-                  :
-                </div>
-                <div className="beta-countdown-unit">
-                  <div className="beta-countdown-digitbox">{pad2(countdown.mins)}</div>
-                  <div className="beta-countdown-label">Mins</div>
-                </div>
-                <div className="beta-countdown-sep" aria-hidden>
-                  :
-                </div>
-                <div className="beta-countdown-unit">
-                  <div className="beta-countdown-digitbox">{pad2(countdown.secs)}</div>
-                  <div className="beta-countdown-label">Secs</div>
-                </div>
-              </div>
+              EOD-HUB
             </div>
             <div
               id="beta-gate-heading"
               className="beta-gate-sticker"
               style={{
                 display: "inline-block",
-                marginTop: 2,
+                marginTop: 10,
                 padding: "10px 22px",
                 background: "#d4c45c",
                 color: "#1a1c14",
@@ -567,7 +420,7 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
                 textTransform: "none",
               }}
             >
-              It&apos;s Coming
+              Is in Beta!!!
             </div>
           </div>
 
@@ -581,16 +434,26 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
             }}
           >
             <p style={{ margin: "0 0 10px" }}>
-              EOD-HUB is entering Beta.
+              EOD-HUB is currently in Beta.
               <br />
-              Access is currently limited.
+              Access is limited.
             </p>
           </div>
 
           <form onSubmit={handleCodeSubmit} style={{ marginBottom: 8 }}>
             <label htmlFor="beta-access-code" style={labelStyle}>
-              Access Code
+              Beta Access Code
             </label>
+            <p
+              style={{
+                margin: "0 0 8px",
+                fontSize: 11,
+                lineHeight: 1.45,
+                color: "rgba(200, 210, 195, 0.65)",
+              }}
+            >
+              This block is not for user referral codes.
+            </p>
             <div style={{ position: "relative", width: "100%", maxWidth: "100%", marginBottom: 6 }}>
               <input
                 id="beta-access-code"
@@ -687,12 +550,13 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
               <div style={{ display: "grid", gap: 12, marginBottom: 12 }}>
                 <div>
                   <label htmlFor="wait-first" style={labelStyle}>
-                    First Name
+                    First Name (required)
                   </label>
                   <input
                     id="wait-first"
                     type="text"
                     autoComplete="given-name"
+                    required
                     value={firstName}
                     onChange={(e) => setFirstName(e.target.value)}
                     disabled={waitlistSubmitting}
@@ -701,12 +565,13 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
                 </div>
                 <div>
                   <label htmlFor="wait-last" style={labelStyle}>
-                    Last Name
+                    Last Name (required)
                   </label>
                   <input
                     id="wait-last"
                     type="text"
                     autoComplete="family-name"
+                    required
                     value={lastName}
                     onChange={(e) => setLastName(e.target.value)}
                     disabled={waitlistSubmitting}
@@ -730,16 +595,17 @@ export default function BetaAccessModal({ onPhaseChange }: BetaAccessModalProps)
                 </div>
                 <div>
                   <label htmlFor="wait-service" style={labelStyle}>
-                    Service branch
+                    Service branch (required)
                   </label>
                   <select
                     id="wait-service"
+                    required
                     value={service}
                     onChange={(e) => setService(e.target.value)}
                     disabled={waitlistSubmitting}
                     style={selectBase}
                   >
-                    <option value="">Select branch (optional)</option>
+                    <option value="">Select branch</option>
                     {WAITLIST_SERVICE_OPTIONS.map((opt) => (
                       <option key={opt} value={opt}>
                         {opt}
