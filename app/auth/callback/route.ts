@@ -1,5 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
+import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup";
+import { clearFailedAuthReportsOnSuccessfulLogin } from "@/app/lib/server/clearFailedAuthReportsOnLogin";
 import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
 
 /**
@@ -42,8 +44,15 @@ export async function GET(request: NextRequest) {
       }
     );
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data: sessionData, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      const { client: adminClient } = createSupabaseServiceRoleClient();
+      if (adminClient) {
+        void clearFailedAuthReportsOnSuccessfulLogin(
+          adminClient,
+          sessionData.user?.email,
+        );
+      }
       return redirectResponse;
     }
     void logFailedAuthAttempt({

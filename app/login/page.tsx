@@ -28,6 +28,7 @@ import {
   mapSupabaseLoginError,
   type FailedAuthReason,
 } from "../lib/auth/failedAuthReasons";
+import { clearFailedAuthReportsAfterLogin } from "../lib/auth/clearFailedAuthReportsOnLogin";
 
 function devClientAuthLog(tag: string, data: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
@@ -315,6 +316,7 @@ export default function LoginPage() {
 
       // Remember me logic — mark whether this session should persist past browser close
       markAppSessionActive(rememberMe);
+      clearFailedAuthReportsAfterLogin(session.access_token);
 
       const { profile } = await loadActiveProfile<{
         user_id: string;
@@ -456,6 +458,7 @@ export default function LoginPage() {
       });
 
       markAppSessionActive(true);
+      clearFailedAuthReportsAfterLogin(signInData.session?.access_token);
       window.location.href = "/onboarding";
     } finally {
       setSubmitting(false);
