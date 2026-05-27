@@ -426,9 +426,6 @@ export default function MasterRightColumn({
       setLikedBizIds((prev) => new Set(prev).add(bizId));
       setBusinessListings((prev) => prev.map((b) => (b.id === bizId ? { ...b, like_count: (b.like_count ?? 0) + 1 } : b)));
     }
-    const { count } = await supabase.from("business_likes").select("*", { count: "exact", head: true }).eq("business_id", bizId);
-    await supabase.from("business_listings").update({ like_count: count ?? 0 }).eq("id", bizId);
-
     setTogglingBizLikeFor(null);
   }
 

@@ -1203,7 +1203,28 @@ export default function BusinessesPage() {
                       )
                     ) : null}
                     {userManagesListing(listing, userId) ? (
-                      <span style={{ fontSize: 12, fontWeight: 700, color: "#15803d" }}>You manage this</span>
+                      <>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: "#15803d" }}>You manage this</span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            beginEditBizListing(listing);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "#2563eb",
+                            cursor: "pointer",
+                          }}
+                        >
+                          Edit listing
+                        </button>
+                      </>
                     ) : null}
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
