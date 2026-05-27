@@ -76,6 +76,7 @@ import {
   FEED_POST_IMAGES_MAX_WIDTH,
   feedContainedImageStyle,
 } from "../lib/feedLayout";
+import { compareFeedPosts } from "../lib/feedRanking";
 import { sanitizeRumintOgDescription } from "../lib/sanitizeRumintOgDescription";
 import { ReactionLeaderboard, ReactionPickerTrigger } from "../components/ReactionBar";
 import {
@@ -3198,32 +3199,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       });
     }
 
-    // Rank: fresh posts float to top by default; engagement fights time decay.
-    // Connection affinity adds a mild social boost once Know is mutually accepted.
-    const now = Date.now();
-    function verdictBoost(at: string | null | undefined): number {
-      if (!at) return 1;
-      const ms = now - new Date(at).getTime();
-      if (ms < 0) return 1;
-      const hours = ms / 3_600_000;
-      if (hours >= 48) return 1;
-      return 1 + 0.2 * (1 - hours / 48);
-    }
-
-    if (isInitialProgressiveLoad) {
-      const initialOrder = new Map(rawPosts.map((post, idx) => [post.id, idx]));
-      mergedPosts.sort((a, b) => (initialOrder.get(a.id) ?? 9_999) - (initialOrder.get(b.id) ?? 9_999));
-    } else {
-      mergedPosts.sort((a, b) => {
-        const ageA = (now - new Date(a.created_at).getTime()) / 3_600_000;
-        const ageB = (now - new Date(b.created_at).getTime()) / 3_600_000;
-        const baseA = (a.likeCount + a.commentCount * 2 + 1) / Math.pow(ageA + 2, 1.5);
-        const baseB = (b.likeCount + b.commentCount * 2 + 1) / Math.pow(ageB + 2, 1.5);
-        const scoreA = baseA * (authorAffinityBoost.get(a.user_id) ?? 1) * verdictBoost(a.court_verdict_at);
-        const scoreB = baseB * (authorAffinityBoost.get(b.user_id) ?? 1) * verdictBoost(b.court_verdict_at);
-        return scoreB - scoreA;
-      });
-    }
+    // Rank: fresh posts float to top; EOD HUB staff posts soft-pin for ~2h then stay boosted.
+    const feedSortOpts = { nowMs: Date.now(), authorAffinityBoost };
+    mergedPosts.sort((a, b) => compareFeedPosts(a, b, feedSortOpts));
 
     setPosts(mergedPosts);
     setPostsLoaded(true);
@@ -6592,7 +6570,10 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                   })()}
 
                                   {comment.image_url && (
-                                    <div
+                                    <button
+                                      type="button"
+                                      onClick={() => openGallery([comment.image_url!], 0)}
+                                      aria-label="View comment image full size"
                                       style={{
                                         marginTop: 10,
                                         width: "100%",
@@ -6606,6 +6587,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                         display: "flex",
                                         alignItems: "center",
                                         justifyContent: "center",
+                                        padding: 0,
+                                        cursor: "pointer",
                                       }}
                                     >
                                       <img
@@ -6613,7 +6596,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                         alt="Comment image"
                                         style={feedContainedImageStyle}
                                       />
-                                    </div>
+                                    </button>
                                   )}
 
                                   {comment.gif_url && (

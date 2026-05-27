@@ -2343,6 +2343,7 @@ function PostCard({
   const [submittingComment, setSubmittingComment] = useState(false);
   const [commentGif, setCommentGif] = useState<string | null>(null);
   const [commentImage, setCommentImage] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [expandedCommentImageUrl, setExpandedCommentImageUrl] = useState<string | null>(null);
   const commentImageInputRef = useRef<HTMLInputElement | null>(null);
 
   function clearCommentMedia() {
@@ -2625,9 +2626,27 @@ function PostCard({
                   </>
                 )}
                 {c.image_url && (
-                  <div style={{ marginTop: 8, maxWidth: 180, height: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedCommentImageUrl(c.image_url!)}
+                    aria-label="View comment image full size"
+                    style={{
+                      marginTop: 8,
+                      maxWidth: 180,
+                      height: 180,
+                      borderRadius: 10,
+                      overflow: "hidden",
+                      border: `1px solid ${t.border}`,
+                      background: FEED_MEDIA_FRAME_BG,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      cursor: "pointer",
+                    }}
+                  >
                     <img src={c.image_url} alt="Comment image" style={feedContainedImageStyle} />
-                  </div>
+                  </button>
                 )}
                 {c.gif_url && (
                   <div style={{ marginTop: 8 }}>
@@ -2737,6 +2756,50 @@ function PostCard({
                 Send
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {expandedCommentImageUrl && (
+        <div
+          onClick={() => setExpandedCommentImageUrl(null)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.86)",
+            zIndex: 1000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 24,
+          }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", maxWidth: "min(980px, 100%)", width: "100%" }}>
+            <button
+              type="button"
+              onClick={() => setExpandedCommentImageUrl(null)}
+              aria-label="Close image"
+              style={{
+                position: "absolute",
+                top: -10,
+                right: 0,
+                background: "rgba(255,255,255,0.14)",
+                color: "white",
+                border: "1px solid rgba(255,255,255,0.25)",
+                borderRadius: 999,
+                width: 42,
+                height: 42,
+                fontSize: 24,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              x
+            </button>
+            <img
+              src={expandedCommentImageUrl}
+              alt="Comment image"
+              style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12, display: "block", margin: "0 auto" }}
+            />
           </div>
         </div>
       )}

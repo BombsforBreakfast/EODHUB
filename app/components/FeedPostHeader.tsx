@@ -92,9 +92,9 @@ export default function FeedPostHeader({
       >
         {!hideAvatar && (
           disableProfileLink ? (
-            <div>{avatar}</div>
+            <div style={{ flexShrink: 0, lineHeight: 0 }}>{avatar}</div>
           ) : (
-            <Link href={profileHref} style={{ textDecoration: "none" }}>
+            <Link href={profileHref} style={{ textDecoration: "none", flexShrink: 0, lineHeight: 0 }}>
               {avatar}
             </Link>
           )

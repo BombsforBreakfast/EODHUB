@@ -632,6 +632,8 @@ export default function PublicProfilePage() {
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [lightboxPhoto, setLightboxPhoto] = useState<ProfilePhoto | null>(null);
+  const [expandedCommentImageUrl, setExpandedCommentImageUrl] = useState<string | null>(null);
+  const [expandedProfilePhotoUrl, setExpandedProfilePhotoUrl] = useState<string | null>(null);
   const [photoLikes, setPhotoLikes] = useState<Record<string, { count: number; likedByMe: boolean }>>({});
   const postsRef = useRef<Post[]>([]);
   const photoLikesRef = useRef<Record<string, { count: number; likedByMe: boolean }>>({});
@@ -3342,15 +3344,25 @@ export default function PublicProfilePage() {
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
                   <div
                     id="profile-wall-avatar"
-                    onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
-                    title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    onClick={() => {
+                      if (profile.photo_url) {
+                        setExpandedProfilePhotoUrl(profile.photo_url);
+                      } else if (isOwnWall && !uploadingAvatar) {
+                        photoInputRef.current?.click();
+                      }
+                    }}
+                    title={profile.photo_url ? "View full photo" : isOwnWall ? (profile.is_employer ? "Add logo" : "Add photo") : undefined}
+                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: profile.photo_url || isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url
                       ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       : fullName[0]?.toUpperCase()}
                     {isOwnWall && (
                       <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!uploadingAvatar) photoInputRef.current?.click();
+                        }}
                         style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, opacity: uploadingAvatar ? 1 : 0, transition: "opacity 0.2s" }}
                         onMouseEnter={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "1"; }}
                         onMouseLeave={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "0"; }}
@@ -3644,15 +3656,25 @@ export default function PublicProfilePage() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flexShrink: 0, width: 180 }}>
                   <div
                     id="profile-wall-avatar"
-                    onClick={() => isOwnWall && !uploadingAvatar && photoInputRef.current?.click()}
-                    title={isOwnWall ? (profile.is_employer ? "Click to update logo" : "Click to update photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    onClick={() => {
+                      if (profile.photo_url) {
+                        setExpandedProfilePhotoUrl(profile.photo_url);
+                      } else if (isOwnWall && !uploadingAvatar) {
+                        photoInputRef.current?.click();
+                      }
+                    }}
+                    title={profile.photo_url ? "View full photo" : isOwnWall ? (profile.is_employer ? "Add logo" : "Add photo") : undefined}
+                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: profile.photo_url || isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url ? (
                       <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     ) : ("Photo")}
                     {isOwnWall && (
                       <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!uploadingAvatar) photoInputRef.current?.click();
+                        }}
                         style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 4, opacity: uploadingAvatar ? 1 : 0, transition: "opacity 0.2s" }}
                         onMouseEnter={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "1"; }}
                         onMouseLeave={(e) => { if (!uploadingAvatar) e.currentTarget.style.opacity = "0"; }}
@@ -5237,9 +5259,27 @@ export default function PublicProfilePage() {
                                 ) : null;
                               })()}
                               {comment.image_url && (
-                                <div style={{ marginTop: 4, maxWidth: 180, height: 180, borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedCommentImageUrl(comment.image_url!)}
+                                  aria-label="View comment image full size"
+                                  style={{
+                                    marginTop: 4,
+                                    maxWidth: 180,
+                                    height: 180,
+                                    borderRadius: 10,
+                                    overflow: "hidden",
+                                    border: `1px solid ${t.border}`,
+                                    background: FEED_MEDIA_FRAME_BG,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    padding: 0,
+                                    cursor: "pointer",
+                                  }}
+                                >
                                   <img src={comment.image_url} alt="Comment image" style={feedContainedImageStyle} />
-                                </div>
+                                </button>
                               )}
                               <div
                                 style={{
@@ -5821,6 +5861,94 @@ export default function PublicProfilePage() {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    )}
+    {expandedProfilePhotoUrl && (
+      <div
+        onClick={() => setExpandedProfilePhotoUrl(null)}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.86)",
+          zIndex: 1000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", maxWidth: "min(980px, 100%)", width: "100%" }}>
+          <button
+            type="button"
+            onClick={() => setExpandedProfilePhotoUrl(null)}
+            aria-label="Close photo"
+            style={{
+              position: "absolute",
+              top: -10,
+              right: 0,
+              background: "rgba(255,255,255,0.14)",
+              color: "white",
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: 999,
+              width: 42,
+              height: 42,
+              fontSize: 24,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            x
+          </button>
+          <img
+            src={expandedProfilePhotoUrl}
+            alt={fullName}
+            style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12, display: "block", margin: "0 auto" }}
+          />
+        </div>
+      </div>
+    )}
+    {expandedCommentImageUrl && (
+      <div
+        onClick={() => setExpandedCommentImageUrl(null)}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.86)",
+          zIndex: 1000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", maxWidth: "min(980px, 100%)", width: "100%" }}>
+          <button
+            type="button"
+            onClick={() => setExpandedCommentImageUrl(null)}
+            aria-label="Close image"
+            style={{
+              position: "absolute",
+              top: -10,
+              right: 0,
+              background: "rgba(255,255,255,0.14)",
+              color: "white",
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: 999,
+              width: 42,
+              height: 42,
+              fontSize: 24,
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            x
+          </button>
+          <img
+            src={expandedCommentImageUrl}
+            alt="Comment image"
+            style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12, display: "block", margin: "0 auto" }}
+          />
         </div>
       </div>
     )}
