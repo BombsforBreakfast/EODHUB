@@ -23,7 +23,51 @@ export function isVideoFile(file: File): boolean {
 }
 
 export function isDocumentFile(file: File): boolean {
-  return file.type === "application/pdf" || /\.pdf$/i.test(file.name);
+  return (
+    file.type === "application/pdf"
+    || /\.pdf$/i.test(file.name)
+  );
+}
+
+/** File input accept string for profile resume/education/training pickers (MIME first for iOS). */
+export const EMPLOYER_DOCUMENT_ACCEPT =
+  "application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,text/plain,.txt,application/rtf,.rtf,application/vnd.oasis.opendocument.text,.odt,image/*";
+
+const EXTENSION_MIME: Record<string, string> = {
+  pdf: "application/pdf",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  txt: "text/plain",
+  rtf: "application/rtf",
+  odt: "application/vnd.oasis.opendocument.text",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  gif: "image/gif",
+  heic: "image/heic",
+  heif: "image/heif",
+};
+
+/** iOS often sends PDFs as application/octet-stream or an empty type — infer before storage upload. */
+export function inferEmployerDocumentContentType(file: File): string {
+  const trimmedType = file.type?.trim() ?? "";
+  if (trimmedType && trimmedType !== "application/octet-stream") return trimmedType;
+
+  const ext = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
+  if (ext && EXTENSION_MIME[ext]) return EXTENSION_MIME[ext];
+  if (isDocumentFile(file)) return "application/pdf";
+  if (isImageFile(file)) return "image/jpeg";
+  return trimmedType || "application/octet-stream";
+}
+
+export function normalizeEmployerDocumentFile(file: File): File {
+  const contentType = inferEmployerDocumentContentType(file);
+  if (file.type === contentType) return file;
+  return new File([file], file.name || "document", {
+    type: contentType,
+    lastModified: file.lastModified,
+  });
 }
 
 export function isImageFile(file: File): boolean {

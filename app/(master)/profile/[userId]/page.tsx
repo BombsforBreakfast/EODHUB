@@ -19,6 +19,7 @@ import FeedPostHeader from "../../../components/FeedPostHeader";
 import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
+import { EMPLOYER_DOCUMENT_ACCEPT, inferEmployerDocumentContentType } from "../../../lib/uploadLimits";
 import { validateFeedAttachmentPick, validateImagePick, UPLOAD_LIMITS, formatUploadBytes } from "../../../lib/uploadLimits";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
@@ -872,7 +873,11 @@ export default function PublicProfilePage() {
     const ext = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "bin";
     const safeExt = ext && /^[a-z0-9]+$/.test(ext) ? ext : "bin";
     const filePath = `${currentUserId}/${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
-    const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: true });
+    const contentType = inferEmployerDocumentContentType(file);
+    const { error } = await supabase.storage.from("feed-images").upload(filePath, file, {
+      upsert: true,
+      contentType,
+    });
     if (error) throw error;
     const { data } = supabase.storage.from("feed-images").getPublicUrl(filePath);
     return data.publicUrl;
@@ -3343,9 +3348,9 @@ export default function PublicProfilePage() {
             {isOwnWall && (
               <>
                 <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} aria-hidden />
-                <input ref={resumeFileInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.odt,image/*" onChange={handleResumeFilePick} style={{ display: "none" }} aria-hidden />
-                <input ref={educationFileInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.odt,image/*" onChange={handleEducationFilePick} style={{ display: "none" }} aria-hidden />
-                <input ref={trainingFileInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.rtf,.odt,image/*" onChange={handleTrainingFilePick} style={{ display: "none" }} aria-hidden />
+                <input ref={resumeFileInputRef} type="file" accept={EMPLOYER_DOCUMENT_ACCEPT} onChange={handleResumeFilePick} style={{ display: "none" }} aria-hidden />
+                <input ref={educationFileInputRef} type="file" accept={EMPLOYER_DOCUMENT_ACCEPT} onChange={handleEducationFilePick} style={{ display: "none" }} aria-hidden />
+                <input ref={trainingFileInputRef} type="file" accept={EMPLOYER_DOCUMENT_ACCEPT} onChange={handleTrainingFilePick} style={{ display: "none" }} aria-hidden />
               </>
             )}
             {isMobile ? (

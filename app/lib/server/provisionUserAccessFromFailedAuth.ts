@@ -244,6 +244,7 @@ async function claimReports(
     decision: FailedAuthAdminDecision;
     notes: string | null;
     reportId?: string;
+    reportIds?: string[];
     normalizedEmail?: string;
   },
 ): Promise<string[]> {
@@ -257,12 +258,14 @@ async function claimReports(
     })
     .is("admin_decision", null);
 
-  if (args.reportId) {
+  if (args.reportIds && args.reportIds.length > 0) {
+    query = query.in("id", args.reportIds);
+  } else if (args.reportId) {
     query = query.eq("id", args.reportId);
   } else if (args.normalizedEmail) {
     query = query.eq("normalized_email", args.normalizedEmail);
   } else {
-    throw new Error("claimReports requires reportId or normalizedEmail");
+    throw new Error("claimReports requires reportIds, reportId, or normalizedEmail");
   }
 
   const { data, error } = await query.select("id");
@@ -492,6 +495,7 @@ export async function dismissFailedAuthReports(
     adminUserId: string;
     notes?: string | null;
     reportId?: string;
+    reportIds?: string[];
     normalizedEmail?: string;
   },
 ): Promise<DismissResult> {
@@ -501,6 +505,7 @@ export async function dismissFailedAuthReports(
     decision: "dismissed",
     notes,
     reportId: args.reportId,
+    reportIds: args.reportIds,
     normalizedEmail: args.normalizedEmail,
   });
 

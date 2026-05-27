@@ -4,6 +4,7 @@ import {
   isDocumentFile,
   isImageFile,
   isVideoFile,
+  normalizeEmployerDocumentFile,
   uploadTooLargeMessage,
   validateDocumentPick,
   validateFileOnPick,
@@ -114,7 +115,7 @@ export async function prepareEmployerDocumentUpload(file: File): Promise<Prepare
       error: uploadTooLargeMessage(file, UPLOAD_LIMITS.document, "document"),
     };
   }
-  return { ok: true, file };
+  return { ok: true, file: normalizeEmployerDocumentFile(file) };
 }
 
 /** Prepare any image or document for memorial scrapbook uploads. */

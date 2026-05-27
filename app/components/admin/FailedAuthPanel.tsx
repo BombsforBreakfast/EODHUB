@@ -125,10 +125,9 @@ export default function FailedAuthPanel() {
   }, [load]);
 
   /**
-   * Resolve a group (or single report). The server accepts either reportId
-   * or normalizedEmail; we always prefer normalizedEmail when we have one
-   * because a single approve/dismiss should clear every unresolved attempt
-   * from that email in one shot.
+   * Resolve a group (or single report). Email groups use normalizedEmail so
+   * every unresolved attempt for that address clears in one shot. No-email
+   * groups send all reportIds in the batch.
    */
   const resolveGroup = useCallback(
     async (
@@ -141,17 +140,14 @@ export default function FailedAuthPanel() {
       setActionMessage(null);
       setError(null);
       try {
-        const body: Record<string, string> = { action };
+        const body: Record<string, string | string[]> = { action };
         if (group.normalizedEmail) {
           body.normalizedEmail = group.normalizedEmail;
+        } else if (group.reportIds.length > 0) {
+          body.reportIds = group.reportIds;
         } else {
-          // No email captured — fall back to first report id.
-          const firstId = group.reportIds[0];
-          if (!firstId) {
-            setError("Group has no reports to resolve.");
-            return;
-          }
-          body.reportId = firstId;
+          setError("Group has no reports to resolve.");
+          return;
         }
         if (notes) body.notes = notes;
 

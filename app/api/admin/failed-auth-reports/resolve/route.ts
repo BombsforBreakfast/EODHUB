@@ -67,6 +67,7 @@ export async function POST(req: NextRequest) {
 
     let body: {
       reportId?: unknown;
+      reportIds?: unknown;
       normalizedEmail?: unknown;
       action?: unknown;
       notes?: unknown;
@@ -78,14 +79,19 @@ export async function POST(req: NextRequest) {
     }
 
     const reportId = typeof body.reportId === "string" ? body.reportId.trim() : "";
+    const reportIds = Array.isArray(body.reportIds)
+      ? body.reportIds
+          .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+          .map((id) => id.trim())
+      : [];
     const rawNormalizedEmail =
       typeof body.normalizedEmail === "string" ? body.normalizedEmail.trim() : "";
     const action = typeof body.action === "string" ? body.action.trim() : "";
     const notes = typeof body.notes === "string" ? body.notes : undefined;
 
-    if (!reportId && !rawNormalizedEmail) {
+    if (!reportId && reportIds.length === 0 && !rawNormalizedEmail) {
       return NextResponse.json(
-        { error: "reportId or normalizedEmail required" },
+        { error: "reportId, reportIds, or normalizedEmail required" },
         { status: 400 },
       );
     }
@@ -143,8 +149,10 @@ export async function POST(req: NextRequest) {
       const result = await dismissFailedAuthReports(adminClient, {
         adminUserId: caller.id,
         notes,
-        reportId: reportId || undefined,
-        normalizedEmail: reportId ? undefined : normalizedEmail,
+        reportIds: reportIds.length > 0 ? reportIds : undefined,
+        reportId: reportIds.length > 0 ? undefined : reportId || undefined,
+        normalizedEmail:
+          reportIds.length > 0 || reportId ? undefined : normalizeEmail(rawNormalizedEmail) || undefined,
       });
       return NextResponse.json({
         success: true,
