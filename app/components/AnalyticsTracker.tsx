@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import { isExcludedAnalyticsUser } from "../lib/analyticsExclusions";
 import { isExcludedFromPageTimeAnalytics } from "../lib/analyticsPath";
 import { supabase } from "../lib/lib/supabaseClient";
 
@@ -45,6 +46,15 @@ function shouldSkip(path: string | null | undefined): boolean {
   if (path.startsWith("/api/")) return true;
   if (isExcludedFromPageTimeAnalytics(path)) return true;
   return false;
+}
+
+async function isCurrentUserExcludedFromAnalytics(): Promise<boolean> {
+  try {
+    const { data } = await supabase.auth.getUser();
+    return isExcludedAnalyticsUser(data.user);
+  } catch {
+    return false;
+  }
 }
 
 async function getAuthHeader(): Promise<HeadersInit> {
@@ -94,6 +104,7 @@ export default function AnalyticsTracker() {
 
     let cancelled = false;
     void (async () => {
+      if (await isCurrentUserExcludedFromAnalytics()) return;
       const headers = await getAuthHeader();
       try {
         const res = await fetch(TRACK_URL, {
@@ -107,8 +118,12 @@ export default function AnalyticsTracker() {
           keepalive: true,
         });
         if (!res.ok) return;
-        const json = (await res.json()) as { session_id?: string; page_view_id?: string };
-        if (cancelled) return;
+        const json = (await res.json()) as {
+          session_id?: string;
+          page_view_id?: string;
+          skipped?: boolean;
+        };
+        if (cancelled || json.skipped) return;
         if (json.session_id && json.page_view_id) {
           sessionIdRef.current = json.session_id;
           pageViewIdRef.current = json.page_view_id;

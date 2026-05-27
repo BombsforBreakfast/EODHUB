@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isExcludedAnalyticsUser } from "../../../lib/analyticsExclusions";
 import { normalizeAnalyticsPath, summarizeUserAgent } from "../../../lib/analyticsPath";
 
 // Single endpoint for all client-side analytics writes. Discriminated by `action`.
@@ -38,7 +39,9 @@ function clampPath(raw: unknown): string {
   return normalizeAnalyticsPath(raw).slice(0, MAX_PATH_LEN);
 }
 
-async function resolveUserId(req: NextRequest): Promise<string | null> {
+async function resolveAnalyticsUser(
+  req: NextRequest,
+): Promise<{ id: string; email: string | null } | null> {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7);
@@ -50,7 +53,9 @@ async function resolveUserId(req: NextRequest): Promise<string | null> {
       { global: { headers: { Authorization: `Bearer ${token}` } } }
     );
     const { data } = await userClient.auth.getUser();
-    return data?.user?.id ?? null;
+    const user = data?.user;
+    if (!user?.id) return null;
+    return { id: user.id, email: user.email ?? null };
   } catch {
     return null;
   }
@@ -80,7 +85,11 @@ export async function POST(req: NextRequest) {
   const supabase = adminClient();
 
   if (body.action === "start") {
-    const userId = await resolveUserId(req);
+    const analyticsUser = await resolveAnalyticsUser(req);
+    if (isExcludedAnalyticsUser(analyticsUser)) {
+      return NextResponse.json({ skipped: true });
+    }
+    const userId = analyticsUser?.id ?? null;
     const path = clampPath(body.path);
     const ua = req.headers.get("user-agent");
     const anonId =
@@ -158,7 +167,11 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === "navigate") {
-    const userId = await resolveUserId(req);
+    const analyticsUser = await resolveAnalyticsUser(req);
+    if (isExcludedAnalyticsUser(analyticsUser)) {
+      return NextResponse.json({ skipped: true });
+    }
+    const userId = analyticsUser?.id ?? null;
     const newPath = clampPath(body.path);
     // Close the previous page_view.
     await supabase

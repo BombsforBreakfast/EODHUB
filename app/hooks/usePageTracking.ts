@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { isExcludedAnalyticsUser } from "../lib/analyticsExclusions";
 import { supabase } from "../lib/lib/supabaseClient";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
@@ -85,7 +86,7 @@ export function usePageTracking(pagePath: string): void {
         const {
           data: { user },
         } = await supabase.auth.getUser();
-        if (!user || cancelled) return;
+        if (!user || cancelled || isExcludedAnalyticsUser(user)) return;
 
         const { data, error } = await supabase
           .from("page_sessions")

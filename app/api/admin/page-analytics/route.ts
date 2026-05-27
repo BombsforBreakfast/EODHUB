@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { loadAnalyticsExcludedUserIds } from "../../../lib/analyticsExclusions";
 import { isExcludedFromPageTimeAnalytics } from "../../../lib/analyticsPath";
 
 export const runtime = "nodejs";
@@ -67,6 +68,7 @@ export async function GET(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+  const excludedUserIds = await loadAnalyticsExcludedUserIds(supabase);
 
   const since = rangeStart(range);
   let query = supabase
@@ -95,6 +97,7 @@ export async function GET(req: NextRequest) {
   const byPath = new Map<string, Agg>();
 
   for (const raw of (data ?? []) as SessionRow[]) {
+    if (raw.user_id && excludedUserIds.has(raw.user_id)) continue;
     const path = raw.page_path || "/";
     if (isExcludedFromPageTimeAnalytics(path)) continue;
     const duration = rowDurationSeconds(raw, nowMs);

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { loadAnalyticsExcludedUserIds } from "../../../lib/analyticsExclusions";
 import { isExcludedFromPageTimeAnalytics } from "../../../lib/analyticsPath";
 
 // Engagement KPIs for the admin "Engagement" tab.
@@ -37,7 +38,8 @@ async function countDistinct(
   table: string,
   column: string,
   sinceCol: string,
-  since: Date
+  since: Date,
+  excludedUserIds: Set<string>,
 ): Promise<number> {
   // Postgres has no JS-friendly distinct-count via PostgREST; we page through
   // ids and dedupe in JS. For our scale (<1M rows) this is fine; if traffic
@@ -52,7 +54,9 @@ async function countDistinct(
   const seen = new Set<string>();
   for (const row of data as Array<Record<string, unknown>>) {
     const v = row[column];
-    if (typeof v === "string") seen.add(v);
+    if (typeof v !== "string") continue;
+    if (column === "user_id" && excludedUserIds.has(v)) continue;
+    seen.add(v);
   }
   return seen.size;
 }
@@ -88,6 +92,7 @@ export async function GET(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+  const excludedUserIds = await loadAnalyticsExcludedUserIds(supabase);
 
   const since = rangeStart(range);
   const prevSince = previousRangeStart(range);
@@ -116,13 +121,15 @@ export async function GET(req: NextRequest) {
       .lt("created_at", sinceIso),
     supabase
       .from("analytics_sessions")
-      .select("id", { count: "exact", head: true })
-      .gte("started_at", sinceIso),
+      .select("id, user_id")
+      .gte("started_at", sinceIso)
+      .limit(50000),
     supabase
       .from("analytics_sessions")
-      .select("id", { count: "exact", head: true })
+      .select("id, user_id")
       .gte("started_at", prevSinceIso)
-      .lt("started_at", sinceIso),
+      .lt("started_at", sinceIso)
+      .limit(50000),
     // Pull active_ms for sessions in range so we can compute sum + avg in JS
     // (PostgREST doesn't give us aggregate functions directly).
     supabase
@@ -132,12 +139,20 @@ export async function GET(req: NextRequest) {
       .limit(50000),
     supabase
       .from("analytics_page_views")
-      .select("path, active_ms")
+      .select("path, active_ms, user_id")
       .gte("started_at", sinceIso)
       .limit(100000),
   ]);
 
-  const sessionsRows = (sessionsAggRes.data ?? []) as Array<{ active_ms: number | null; user_id: string | null }>;
+  const sessionsCurRows = (sessionsCurRes.data ?? []) as Array<{ id: string; user_id: string | null }>;
+  const sessionsPrevRows = (sessionsPrevRes.data ?? []) as Array<{ id: string; user_id: string | null }>;
+  const visits =
+    sessionsCurRows.filter((row) => !row.user_id || !excludedUserIds.has(row.user_id)).length;
+  const visitsPrev =
+    sessionsPrevRows.filter((row) => !row.user_id || !excludedUserIds.has(row.user_id)).length;
+
+  const sessionsRows = ((sessionsAggRes.data ?? []) as Array<{ active_ms: number | null; user_id: string | null }>)
+    .filter((row) => !row.user_id || !excludedUserIds.has(row.user_id));
   const totalActiveMs = sessionsRows.reduce((acc, r) => acc + (r.active_ms ?? 0), 0);
   const sessionsWithTime = sessionsRows.filter((r) => (r.active_ms ?? 0) > 0);
   const avgSessionMs =
@@ -153,7 +168,8 @@ export async function GET(req: NextRequest) {
   // ── Top pages ──────────────────────────────────────────────────────────────
   type PageAgg = { path: string; total_ms: number; visits: number };
   const pageMap = new Map<string, PageAgg>();
-  for (const row of (pageViewsAggRes.data ?? []) as Array<{ path: string; active_ms: number | null }>) {
+  for (const row of (pageViewsAggRes.data ?? []) as Array<{ path: string; active_ms: number | null; user_id: string | null }>) {
+    if (row.user_id && excludedUserIds.has(row.user_id)) continue;
     if (isExcludedFromPageTimeAnalytics(row.path)) continue;
     const existing = pageMap.get(row.path);
     if (existing) {
@@ -228,9 +244,9 @@ export async function GET(req: NextRequest) {
   const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
   const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
   const [dau, wau, mau] = await Promise.all([
-    countDistinct(supabase, "analytics_sessions", "user_id", "started_at", dayAgo),
-    countDistinct(supabase, "analytics_sessions", "user_id", "started_at", weekAgo),
-    countDistinct(supabase, "analytics_sessions", "user_id", "started_at", monthAgo),
+    countDistinct(supabase, "analytics_sessions", "user_id", "started_at", dayAgo, excludedUserIds),
+    countDistinct(supabase, "analytics_sessions", "user_id", "started_at", weekAgo, excludedUserIds),
+    countDistinct(supabase, "analytics_sessions", "user_id", "started_at", monthAgo, excludedUserIds),
   ]);
 
   return NextResponse.json({
@@ -240,8 +256,8 @@ export async function GET(req: NextRequest) {
       total_users: totalUsersRes.count ?? 0,
       new_signups: newSignupsRes.count ?? 0,
       new_signups_prev: prevNewSignupsRes.count ?? 0,
-      visits: sessionsCurRes.count ?? 0,
-      visits_prev: sessionsPrevRes.count ?? 0,
+      visits,
+      visits_prev: visitsPrev,
       unique_visitors_in_range: uniqueVisitorsInRange.size,
       avg_session_ms: avgSessionMs,
       total_active_ms: totalActiveMs,
