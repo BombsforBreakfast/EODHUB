@@ -725,6 +725,48 @@ function isMissingColumnError(error: unknown, columnName: string) {
   return combined.includes(columnName.toLowerCase());
 }
 
+function memorialDismissStorageKey(userId: string): string {
+  return `eodhub.dismissedMemorialIds:${userId}`;
+}
+
+/** Local calendar day (YYYY-MM-DD) — dismissals reset after midnight in the user's timezone. */
+function localCalendarDateKey(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+type MemorialDismissStore = { date: string; ids: string[] };
+
+function readDayDismissedMemorialIds(userId: string): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(memorialDismissStorageKey(userId));
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as MemorialDismissStore;
+    if (parsed?.date !== localCalendarDateKey()) return new Set();
+    return new Set(
+      Array.isArray(parsed.ids) ? parsed.ids.filter((id): id is string => typeof id === "string") : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function persistDayDismissedMemorialIds(userId: string, ids: Set<string>): void {
+  if (typeof window === "undefined") return;
+  try {
+    const payload: MemorialDismissStore = {
+      date: localCalendarDateKey(),
+      ids: Array.from(ids),
+    };
+    localStorage.setItem(memorialDismissStorageKey(userId), JSON.stringify(payload));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 function Avatar({
   photoUrl,
   name,
@@ -905,6 +947,7 @@ export default function HomePage() {
     { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string; category?: "military" | "leo_fed" | null; service?: string | null; source_url?: string | null }[]
   >([]);
   const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
+  const dismissedMemorialIdsRef = useRef<Set<string>>(new Set());
   const [expandedMemorialCards, setExpandedMemorialCards] = useState<Record<string, boolean>>({});
   const [memorialLikes, setMemorialLikes] = useState<Record<string, string[]>>({});
   const [memorialComments, setMemorialComments] = useState<Record<string, MemorialComment[]>>({});
@@ -1199,6 +1242,17 @@ export default function HomePage() {
   useEffect(() => {
     selectedCommentImagesRef.current = selectedCommentImages;
   }, [selectedCommentImages]);
+
+  useEffect(() => {
+    if (!userId) {
+      dismissedMemorialIdsRef.current = new Set();
+      setDismissedMemorialIds(new Set());
+      return;
+    }
+    const stored = readDayDismissedMemorialIds(userId);
+    dismissedMemorialIdsRef.current = stored;
+    setDismissedMemorialIds(stored);
+  }, [userId]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -1623,7 +1677,6 @@ export default function HomePage() {
       setMemorialCommentInputs({});
       setMemorialCommentsOpen({});
       setExpandedMemorialCards({});
-      setDismissedMemorialIds(new Set());
       return;
     }
 
@@ -1655,26 +1708,21 @@ export default function HomePage() {
     setTodayMemorials(anniversaryList);
     void loadMemorialInteractions(anniversaryList.map(m => m.id));
 
-    // Restore dismissals for today
-    const todayStr = new Date().toISOString().slice(0, 10);
-    try {
-      const stored = JSON.parse(localStorage.getItem("eod_dismissed_memorials") || "null");
-      if (stored?.date === todayStr && Array.isArray(stored.ids)) {
-        setDismissedMemorialIds(new Set(stored.ids));
-      }
-    } catch { /* ignore */ }
+    // Re-apply today's dismissals after reloads (navigation, pref refresh, etc.).
+    const storedToday = readDayDismissedMemorialIds(forUserId);
+    setDismissedMemorialIds((prev) => {
+      const merged = new Set([...prev, ...storedToday, ...dismissedMemorialIdsRef.current]);
+      dismissedMemorialIdsRef.current = merged;
+      return merged;
+    });
   }
 
   function dismissMemorial(id: string) {
-    setDismissedMemorialIds(prev => {
+    setDismissedMemorialIds((prev) => {
       const next = new Set(prev);
       next.add(id);
-      const todayStr = new Date().toISOString().slice(0, 10);
-      try {
-        const stored = JSON.parse(localStorage.getItem("eod_dismissed_memorials") || "null");
-        const existingIds: string[] = stored?.date === todayStr ? stored.ids : [];
-        localStorage.setItem("eod_dismissed_memorials", JSON.stringify({ date: todayStr, ids: [...existingIds, id] }));
-      } catch { /* ignore */ }
+      dismissedMemorialIdsRef.current = next;
+      if (userId) persistDayDismissedMemorialIds(userId, next);
       return next;
     });
   }
@@ -1817,7 +1865,6 @@ export default function HomePage() {
       setMemorialCommentInputs({});
       setMemorialCommentsOpen({});
       setExpandedMemorialCards({});
-      setDismissedMemorialIds(new Set());
       return;
     }
     void loadTodayMemorials(userId);
