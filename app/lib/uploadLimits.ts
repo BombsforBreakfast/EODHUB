@@ -6,6 +6,8 @@ export const UPLOAD_LIMITS = {
   video: 50 * 1024 * 1024,
   /** PDFs and document attachments. */
   document: 25 * 1024 * 1024,
+  /** Messenger photo attachments after automatic resize/compression. */
+  messageImage: 5 * 1024 * 1024,
   /** Supabase feed-images bucket hard cap (video or pre-compress images). */
   feedBucket: 50 * 1024 * 1024,
 } as const;

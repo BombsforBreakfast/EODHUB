@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import EmojiPickerButton from "../components/EmojiPickerButton";
@@ -14,6 +14,7 @@ import UrlPreviewCard from "../components/UrlPreviewCard";
 import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
 import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
+import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
 import {
   displayListingDescription,
   displayListingImage,
@@ -63,6 +64,7 @@ type Message = {
   is_read: boolean;
   created_at: string;
   gif_url: string | null;
+  image_url: string | null;
 };
 
 type EventInviteSnapshot = {
@@ -142,6 +144,8 @@ export default function SidebarPage() {
   const [requestTarget, setRequestTarget] = useState<{ userId: string; name: string; photo: string | null } | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
   const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
+  const [selectedPhoto, setSelectedPhoto] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
   const [hoveredMsgId, setHoveredMsgId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -160,6 +164,7 @@ export default function SidebarPage() {
   const editInputRef = useRef<HTMLTextAreaElement | null>(null);
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const messageInputRef = useRef<HTMLInputElement | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const { t, isDark } = useTheme();
   const { blockIfNeeded, paywallOpen, setPaywallOpen } = useMemberSubscriptionGate();
 
@@ -369,7 +374,7 @@ export default function SidebarPage() {
   async function loadMessages(convId: string) {
     const { data } = await supabase
       .from("messages")
-      .select("id, conversation_id, sender_id, content, is_read, created_at, gif_url")
+      .select("id, conversation_id, sender_id, content, is_read, created_at, gif_url, image_url")
       .eq("conversation_id", convId)
       .order("created_at", { ascending: true });
     setMessages((data ?? []) as Message[]);
@@ -404,6 +409,7 @@ export default function SidebarPage() {
         const msg = payload.new as Message;
         setMessages((prev) => {
           // Remove any optimistic message with same content/sender before adding real one
+          if (prev.some((m) => m.id === msg.id)) return prev;
           const filtered = prev.filter((m) => !(m.id.startsWith("optimistic-") && m.content === msg.content && m.sender_id === msg.sender_id));
           return [...filtered, msg];
         });
@@ -438,6 +444,39 @@ export default function SidebarPage() {
   useEffect(() => {
     return () => { if (realtimeRef.current) supabase.removeChannel(realtimeRef.current); };
   }, []);
+
+  useEffect(() => {
+    return () => {
+      if (selectedPhoto) URL.revokeObjectURL(selectedPhoto.previewUrl);
+    };
+  }, [selectedPhoto]);
+
+  function setMessagePhoto(file: File) {
+    if (!file.type.startsWith("image/")) {
+      alert("Please choose a photo.");
+      return;
+    }
+    setSelectedPhoto((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return { file, previewUrl: URL.createObjectURL(file) };
+    });
+  }
+
+  function clearMessagePhoto() {
+    setSelectedPhoto((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  }
+
+  function handlePhotoDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsDraggingPhoto(false);
+    if (!activeConvId || sending) return;
+    const image = Array.from(e.dataTransfer.files).find((file) => file.type.startsWith("image/"));
+    if (image) setMessagePhoto(image);
+  }
 
   async function ensurePreview(url: string) {
     if (!url || previewFetchesRef.current.has(url) || Object.prototype.hasOwnProperty.call(urlPreviews, url)) return;
@@ -603,49 +642,66 @@ export default function SidebarPage() {
 
   async function sendMessage() {
     const gif = selectedGifUrl;
-    if (!newMessage.trim() && !gif) return;
+    const photo = selectedPhoto;
+    if (!newMessage.trim() && !gif && !photo) return;
     if (!activeConvId || !userId || sending) return;
     if (blockIfNeeded()) return;
     setSending(true);
     const content = newMessage.trim();
     setNewMessage("");
     setSelectedGifUrl(null);
-    // Optimistic update — show immediately without waiting for DB
-    const optimisticMsg: Message = {
-      id: `optimistic-${Date.now()}`,
-      conversation_id: activeConvId,
-      sender_id: userId,
-      content,
-      is_read: false,
-      created_at: new Date().toISOString(),
-      gif_url: gif ?? null,
-    };
-    setMessages((prev) => [...prev, optimisticMsg]);
-    const { data: insertedMessage } = await supabase
-      .from("messages")
-      .insert({ conversation_id: activeConvId, sender_id: userId, content, gif_url: gif ?? null })
-      .select("id")
-      .single();
-    await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", activeConvId);
-    if (activeConv?.other_user_id) {
-      await postNotifyJson(supabase, {
-        user_id: activeConv.other_user_id,
-        actor_name: myName,
-        post_owner_id: userId,
-        type: "message_received",
-        category: "message",
-        entity_type: "thread",
-        entity_id: activeConvId,
-        parent_entity_type: "message",
-        parent_entity_id: insertedMessage?.id ?? null,
-        message: `${myName} sent you a message`,
-        link: "/sidebar",
-        group_key: `thread:${activeConvId}:messages`,
-        dedupe_key: insertedMessage?.id ? `message_received:${insertedMessage.id}` : null,
-        metadata: { conversation_id: activeConvId },
-      });
+    if (photo) clearMessagePhoto();
+
+    try {
+      const imageUrl = photo
+        ? await uploadMessagePhoto(supabase, photo.file, { userId, conversationId: activeConvId })
+        : null;
+      const optimisticId = `optimistic-${Date.now()}`;
+      const optimisticMsg: Message = {
+        id: optimisticId,
+        conversation_id: activeConvId,
+        sender_id: userId,
+        content,
+        is_read: false,
+        created_at: new Date().toISOString(),
+        gif_url: gif ?? null,
+        image_url: imageUrl,
+      };
+      setMessages((prev) => [...prev, optimisticMsg]);
+      const { data: insertedMessage } = await supabase
+        .from("messages")
+        .insert({ conversation_id: activeConvId, sender_id: userId, content, gif_url: gif ?? null, image_url: imageUrl })
+        .select("id, conversation_id, sender_id, content, is_read, created_at, gif_url, image_url")
+        .single();
+      if (insertedMessage) {
+        setMessages((prev) => prev.map((msg) => (msg.id === optimisticId ? (insertedMessage as Message) : msg)));
+      }
+      await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", activeConvId);
+      if (activeConv?.other_user_id) {
+        await postNotifyJson(supabase, {
+          user_id: activeConv.other_user_id,
+          actor_name: myName,
+          post_owner_id: userId,
+          type: "message_received",
+          category: "message",
+          entity_type: "thread",
+          entity_id: activeConvId,
+          parent_entity_type: "message",
+          parent_entity_id: insertedMessage?.id ?? null,
+          message: imageUrl && !content ? `${myName} sent you a photo` : `${myName} sent you a message`,
+          link: "/sidebar",
+          group_key: `thread:${activeConvId}:messages`,
+          dedupe_key: insertedMessage?.id ? `message_received:${insertedMessage.id}` : null,
+          metadata: { conversation_id: activeConvId },
+        });
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not send your message.");
+      setNewMessage(content);
+      if (photo) setMessagePhoto(photo.file);
+    } finally {
+      setSending(false);
     }
-    setSending(false);
   }
 
   const activeConv = conversations.find((c) => c.id === activeConvId);
@@ -1041,6 +1097,20 @@ export default function SidebarPage() {
                 fontSize: 14, lineHeight: 1.5,
               }}>
                 {visibleMessageContent && <div>{renderMessageTextWithLinks(visibleMessageContent)}</div>}
+                {msg.image_url ? (
+                  <a
+                    href={msg.image_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: "block", marginTop: visibleMessageContent ? 8 : 0 }}
+                  >
+                    <img
+                      src={msg.image_url}
+                      alt="Message attachment"
+                      style={{ display: "block", maxWidth: 260, maxHeight: 320, borderRadius: 12, objectFit: "cover" }}
+                    />
+                  </a>
+                ) : null}
                 {inviteMeta && (
                   <button
                     type="button"
@@ -1255,7 +1325,31 @@ export default function SidebarPage() {
             </div>
           )}
           {activeConvId && (
-            <div style={{ padding: "12px 16px", borderTop: `1px solid ${t.border}` }}>
+            <div
+              onDragOver={(e) => {
+                if (isMobile) return;
+                e.preventDefault();
+                setIsDraggingPhoto(true);
+              }}
+              onDragLeave={() => setIsDraggingPhoto(false)}
+              onDrop={handlePhotoDrop}
+              style={{
+                padding: "12px 16px",
+                borderTop: `1px solid ${isDraggingPhoto ? "#60a5fa" : t.border}`,
+                background: isDraggingPhoto ? (isDark ? "rgba(96,165,250,0.12)" : "rgba(96,165,250,0.1)") : undefined,
+              }}
+            >
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setMessagePhoto(file);
+                  e.currentTarget.value = "";
+                }}
+                style={{ display: "none" }}
+              />
               {selectedGifUrl && (
                 <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
                   <img src={selectedGifUrl} alt="GIF" style={{ maxHeight: 120, maxWidth: 220, borderRadius: 10, display: "block" }} />
@@ -1264,6 +1358,21 @@ export default function SidebarPage() {
                     onClick={() => setSelectedGifUrl(null)}
                     style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
                   >×</button>
+                </div>
+              )}
+              {selectedPhoto && (
+                <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
+                  <img src={selectedPhoto.previewUrl} alt="Selected attachment" style={{ maxHeight: 140, maxWidth: 240, borderRadius: 10, display: "block" }} />
+                  <button
+                    type="button"
+                    onClick={clearMessagePhoto}
+                    style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                  >×</button>
+                </div>
+              )}
+              {isDraggingPhoto && !isMobile && (
+                <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 10, border: "1px dashed #60a5fa", color: "#60a5fa", fontSize: 12, fontWeight: 800 }}>
+                  Drop photo to attach
                 </div>
               )}
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -1281,14 +1390,23 @@ export default function SidebarPage() {
                   inputRef={messageInputRef}
                   theme={isDark ? "dark" : "light"}
                 />
+                <button
+                  type="button"
+                  onClick={() => photoInputRef.current?.click()}
+                  disabled={sending}
+                  title="Add photo"
+                  style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: "50%", width: 34, height: 34, cursor: sending ? "default" : "pointer", fontWeight: 900, opacity: sending ? 0.6 : 1 }}
+                >
+                  +
+                </button>
                 <GifPickerButton
                   onSelect={(url) => setSelectedGifUrl(url)}
                   theme={isDark ? "dark" : "light"}
                 />
                 <button
                   onClick={() => sendMessage()}
-                  disabled={(!newMessage.trim() && !selectedGifUrl) || sending}
-                  style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: (!newMessage.trim() && !selectedGifUrl) || sending ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
+                  disabled={(!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending}
+                  style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: (!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
                 >
                   {sending && <span className="btn-spinner" />}
                   Send

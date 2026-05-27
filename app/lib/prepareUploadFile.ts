@@ -66,6 +66,30 @@ export async function prepareImageUploadFile(file: File): Promise<PrepareUploadR
   }
 }
 
+/** Prepare a messenger photo attachment: smaller cap and dimensions for fast chat sends. */
+export async function prepareMessagePhotoUploadFile(file: File): Promise<PrepareUploadResult> {
+  if (!isImageFile(file)) {
+    return { ok: false, error: "Please choose a photo." };
+  }
+
+  if (file.size > UPLOAD_LIMITS.feedBucket) {
+    return {
+      ok: false,
+      error: uploadTooLargeMessage(file, UPLOAD_LIMITS.feedBucket, "image"),
+    };
+  }
+
+  try {
+    const compressed = await compressImageFile(file, UPLOAD_LIMITS.messageImage, 1600);
+    return { ok: true, file: compressed };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Could not resize photo.",
+    };
+  }
+}
+
 /** Prepare a JPEG blob from a crop dialog for upload. */
 export async function prepareCroppedImageBlob(blob: Blob, filename: string): Promise<PrepareUploadResult> {
   const file = new File([blob], filename, { type: blob.type || "image/jpeg" });

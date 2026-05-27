@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import UrlPreviewCard from "./UrlPreviewCard";
 import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
+import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -15,6 +16,7 @@ type MessageRow = {
   content: string;
   created_at: string;
   gif_url: string | null;
+  image_url: string | null;
   is_read?: boolean;
 };
 
@@ -35,9 +37,12 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
   const [urlPreviews, setUrlPreviews] = useState<Record<string, UrlPreview | null>>({});
   const previewFetchesRef = useRef<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
@@ -93,7 +98,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
 
       const { data: msgs } = await supabase
         .from("messages")
-        .select("id, conversation_id, sender_id, content, created_at, gif_url, is_read")
+        .select("id, conversation_id, sender_id, content, created_at, gif_url, image_url, is_read")
         .eq("conversation_id", cid)
         .order("created_at", { ascending: true });
       if (!cancelled) setMessages((msgs ?? []) as MessageRow[]);
@@ -116,6 +121,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
           (payload) => {
             const msg = payload.new as MessageRow;
             setMessages((prev) => {
+              if (prev.some((m) => m.id === msg.id)) return prev;
               const stripped = prev.filter(
                 (m) => !(m.id.startsWith("optimistic-") && m.sender_id === msg.sender_id && m.content === msg.content),
               );
@@ -158,6 +164,39 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
     const el = listRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages]);
+
+  useEffect(() => {
+    return () => {
+      if (selectedPhoto) URL.revokeObjectURL(selectedPhoto.previewUrl);
+    };
+  }, [selectedPhoto]);
+
+  function setMessagePhoto(file: File) {
+    if (!file.type.startsWith("image/")) {
+      alert("Please choose a photo.");
+      return;
+    }
+    setSelectedPhoto((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return { file, previewUrl: URL.createObjectURL(file) };
+    });
+  }
+
+  function clearMessagePhoto() {
+    setSelectedPhoto((prev) => {
+      if (prev) URL.revokeObjectURL(prev.previewUrl);
+      return null;
+    });
+    if (photoInputRef.current) photoInputRef.current.value = "";
+  }
+
+  function handlePhotoDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setIsDraggingPhoto(false);
+    if (!conversationId || sending) return;
+    const image = Array.from(e.dataTransfer.files).find((file) => file.type.startsWith("image/"));
+    if (image) setMessagePhoto(image);
+  }
 
   async function ensurePreview(url: string) {
     if (!url || previewFetchesRef.current.has(url) || Object.prototype.hasOwnProperty.call(urlPreviews, url)) return;
@@ -219,26 +258,48 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
 
   async function send() {
     const text = draft.trim();
-    if (!text || !conversationId || sending) return;
+    const photo = selectedPhoto;
+    if ((!text && !photo) || !conversationId || sending) return;
     setSending(true);
     setDraft("");
-    const optimistic: MessageRow = {
-      id: `optimistic-${Date.now()}`,
-      conversation_id: conversationId,
-      sender_id: currentUserId,
-      content: text,
-      created_at: new Date().toISOString(),
-      gif_url: null,
-    };
-    setMessages((prev) => [...prev, optimistic]);
-    await supabase.from("messages").insert({
-      conversation_id: conversationId,
-      sender_id: currentUserId,
-      content: text,
-      gif_url: null,
-    });
-    await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conversationId);
-    setSending(false);
+    if (photo) clearMessagePhoto();
+    try {
+      const imageUrl = photo
+        ? await uploadMessagePhoto(supabase, photo.file, { userId: currentUserId, conversationId })
+        : null;
+      const optimisticId = `optimistic-${Date.now()}`;
+      const optimistic: MessageRow = {
+        id: optimisticId,
+        conversation_id: conversationId,
+        sender_id: currentUserId,
+        content: text,
+        created_at: new Date().toISOString(),
+        gif_url: null,
+        image_url: imageUrl,
+      };
+      setMessages((prev) => [...prev, optimistic]);
+      const { data: inserted } = await supabase
+        .from("messages")
+        .insert({
+          conversation_id: conversationId,
+          sender_id: currentUserId,
+          content: text,
+          gif_url: null,
+          image_url: imageUrl,
+        })
+        .select("id, conversation_id, sender_id, content, created_at, gif_url, image_url, is_read")
+        .single();
+      if (inserted) {
+        setMessages((prev) => prev.map((msg) => (msg.id === optimisticId ? (inserted as MessageRow) : msg)));
+      }
+      await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conversationId);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Could not send your message.");
+      setDraft(text);
+      if (photo) setMessagePhoto(photo.file);
+    } finally {
+      setSending(false);
+    }
   }
 
   function renderMessageTextWithLinks(text: string) {
@@ -374,6 +435,20 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
               }}
             >
               {m.content ? <div>{renderMessageTextWithLinks(m.content)}</div> : null}
+              {m.image_url ? (
+                <a
+                  href={m.image_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ display: "block", marginTop: m.content ? 8 : 0 }}
+                >
+                  <img
+                    src={m.image_url}
+                    alt="Message attachment"
+                    style={{ display: "block", maxWidth: 240, maxHeight: 300, borderRadius: 12, objectFit: "cover" }}
+                  />
+                </a>
+              ) : null}
               {m.content && (() => {
                 const url = extractFirstUrl(m.content);
                 const preview = url ? urlPreviews[url] : null;
@@ -393,7 +468,47 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
         })}
       </div>
 
-      <div style={{ padding: 12, borderTop: `1px solid ${t.border}`, flexShrink: 0 }}>
+      <div
+        onDragOver={(e) => {
+          if (isMobile) return;
+          e.preventDefault();
+          setIsDraggingPhoto(true);
+        }}
+        onDragLeave={() => setIsDraggingPhoto(false)}
+        onDrop={handlePhotoDrop}
+        style={{
+          padding: 12,
+          borderTop: `1px solid ${isDraggingPhoto ? "#60a5fa" : t.border}`,
+          flexShrink: 0,
+          background: isDraggingPhoto ? (isDark ? "rgba(96,165,250,0.12)" : "rgba(96,165,250,0.1)") : undefined,
+        }}
+      >
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) setMessagePhoto(file);
+            e.currentTarget.value = "";
+          }}
+          style={{ display: "none" }}
+        />
+        {selectedPhoto && (
+          <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
+            <img src={selectedPhoto.previewUrl} alt="Selected attachment" style={{ maxHeight: 130, maxWidth: 220, borderRadius: 10, display: "block" }} />
+            <button
+              type="button"
+              onClick={clearMessagePhoto}
+              style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+            >×</button>
+          </div>
+        )}
+        {isDraggingPhoto && !isMobile && (
+          <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 10, border: "1px dashed #60a5fa", color: "#60a5fa", fontSize: 12, fontWeight: 800 }}>
+            Drop photo to attach
+          </div>
+        )}
         <div style={{ display: "flex", gap: 8 }}>
           <input
             ref={inputRef}
@@ -419,8 +534,26 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
           />
           <button
             type="button"
+            onClick={() => photoInputRef.current?.click()}
+            disabled={sending || loading}
+            title="Add photo"
+            style={{
+              border: `1px solid ${t.border}`,
+              background: t.surface,
+              color: t.text,
+              borderRadius: 10,
+              width: 40,
+              fontWeight: 900,
+              cursor: sending || loading ? "not-allowed" : "pointer",
+              opacity: sending || loading ? 0.7 : 1,
+            }}
+          >
+            +
+          </button>
+          <button
+            type="button"
             onClick={() => void send()}
-            disabled={!draft.trim() || !conversationId || sending || loading}
+            disabled={(!draft.trim() && !selectedPhoto) || !conversationId || sending || loading}
             style={{
               border: "none",
               borderRadius: 10,

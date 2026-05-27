@@ -94,15 +94,15 @@ export async function GET(req: NextRequest) {
   const previewScanLimit = Math.min(6000, Math.max(600, conversations.length * 25));
   const { data: previewRows } = await adminClient
     .from("messages")
-    .select("conversation_id, content, created_at")
+    .select("conversation_id, content, image_url, created_at")
     .in("conversation_id", conversations.map((c) => c.id))
     .order("created_at", { ascending: false })
     .limit(previewScanLimit);
 
   const previewMap = new Map<string, string>();
-  for (const row of (previewRows ?? []) as { conversation_id: string; content: string }[]) {
+  for (const row of (previewRows ?? []) as { conversation_id: string; content: string | null; image_url: string | null }[]) {
     if (!previewMap.has(row.conversation_id)) {
-      previewMap.set(row.conversation_id, row.content);
+      previewMap.set(row.conversation_id, row.content?.trim() || (row.image_url ? "[Photo]" : ""));
     }
   }
 
