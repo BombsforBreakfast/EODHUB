@@ -102,8 +102,14 @@ import { getServiceRingColor } from "../lib/serviceBranchVisual";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { ensureWelcomeSidebarOnce } from "../lib/welcomeSidebarClient";
 import {
+  ONBOARDING_GATE_PROFILE_SELECT,
+  onboardingRedirectUrl,
+  resolvePreAccessRedirectPath,
+  shouldRedirectToOnboarding,
+  type OnboardingGateProfile,
+} from "../lib/onboardingGate";
+import {
   hasFullPlatformAccess,
-  needsEmailVerification,
 } from "../lib/verificationAccess";
 import {
   dismissPlankHolderModal,
@@ -4291,31 +4297,23 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         }
 
         // Check verification status ΓÇö unverified users go to /pending
-        const { profile: profileCheck } = await loadActiveProfile<{
-          user_id: string;
-          email: string | null;
-          display_name: string | null;
-          first_name: string | null;
-          last_name: string | null;
-          photo_url: string | null;
-          verification_status: string | null;
-          email_verified: boolean | null;
-          admin_verified: boolean | null;
-          service: string | null;
-          status: string | null;
-          professional_tags: string[] | null;
-          unit_history_tags: string[] | null;
-          company_name: string | null;
-          account_type: string | null;
-          subscription_status: string | null;
-          referral_code: string | null;
-          is_admin: boolean | null;
-          is_pure_admin: boolean | null;
-          show_memorial_feed_cards: boolean | null;
-          must_complete_onboarding: boolean | null;
-        }>(supabase, authUser, {
+        const { profile: profileCheck } = await loadActiveProfile<
+          OnboardingGateProfile & {
+            user_id: string;
+            email: string | null;
+            display_name: string | null;
+            photo_url: string | null;
+            status: string | null;
+            professional_tags: string[] | null;
+            unit_history_tags: string[] | null;
+            subscription_status: string | null;
+            referral_code: string | null;
+            is_admin: boolean | null;
+            show_memorial_feed_cards: boolean | null;
+          }
+        >(supabase, authUser, {
           route: "app/(master)/page.tsx:init",
-          select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, service, status, professional_tags, unit_history_tags, company_name, account_type, subscription_status, referral_code, is_admin, is_pure_admin, show_memorial_feed_cards, must_complete_onboarding",
+          select: `${ONBOARDING_GATE_PROFILE_SELECT}, email, display_name, photo_url, status, professional_tags, unit_history_tags, subscription_status, referral_code, is_admin, show_memorial_feed_cards, verification_status, email_verified, admin_verified`,
         });
         if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
@@ -4332,24 +4330,17 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         }
 
         if (!profileCheck) {
-          window.location.href = "/onboarding";
+          window.location.href = onboardingRedirectUrl(false);
           return;
         }
 
-        if (profileCheck.must_complete_onboarding) {
-          window.location.href = "/onboarding";
-          return;
-        }
-
-        // If profile not yet set up, send to onboarding
-        // (pure admins have neither service nor company_name by design — skip)
-        if (!isPureAdminProfile && !profileCheck.service && !profileCheck.company_name) {
-          window.location.href = "/onboarding";
+        if (shouldRedirectToOnboarding(profileCheck)) {
+          window.location.href = onboardingRedirectUrl(true);
           return;
         }
 
         if (!hasFullPlatformAccess(profileCheck)) {
-          window.location.href = needsEmailVerification(profileCheck) ? "/verify-email" : "/pending";
+          window.location.href = resolvePreAccessRedirectPath(profileCheck);
           return;
         }
 

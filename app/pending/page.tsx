@@ -8,11 +8,13 @@ import {
   hasFullPlatformAccess,
   needsEmailVerification,
 } from "../lib/verificationAccess";
+import { useOnboardingGate } from "../hooks/useOnboardingGate";
 import { recordPlankHolderInvite } from "../lib/plankHolderChallengeClient";
 
 const VOUCHES_NEEDED = 3;
 
 export default function PendingPage() {
+  useOnboardingGate("app/pending/page.tsx");
   const [email, setEmail] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [vouchCount, setVouchCount] = useState<number>(0);

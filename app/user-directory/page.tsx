@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import UserDirectoryCard from "../components/userDirectory/UserDirectoryCard";
 import { useMasterShell } from "../components/master/masterShellContext";
 import { usePageTracking } from "../hooks/usePageTracking";
+import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
@@ -25,6 +26,7 @@ const PROFILE_COLUMNS =
   "user_id, first_name, last_name, display_name, photo_url, service, skill_badge";
 
 export default function UserDirectoryPage() {
+  useRequireFullAccess("app/user-directory/page.tsx");
   usePageTracking(PAGE_TRACKING.userDirectory);
   const { t } = useTheme();
   const { openSidebarPeer, isDesktopShell } = useMasterShell();

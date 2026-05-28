@@ -21,8 +21,13 @@ import {
 import { devAuthLog } from "../lib/auth/signupErrors";
 import { VERIFICATION } from "../lib/verificationStatus";
 
-const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
-const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
+import {
+  MEMBER_SERVICE_OPTIONS,
+  MEMBER_STATUS_OPTIONS,
+} from "../lib/profileCompleteness";
+import { ONBOARDING_REQUIRED_FIELDS_MESSAGE } from "../lib/onboardingGate";
+const SERVICE_OPTIONS = [...MEMBER_SERVICE_OPTIONS];
+const STATUS_OPTIONS = [...MEMBER_STATUS_OPTIONS];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "LEO/FED", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
 
@@ -202,6 +207,9 @@ export default function OnboardingPage() {
           setEmpFirstName(profile.first_name);
         }
         const params = new URLSearchParams(window.location.search);
+        if (params.get("notice") === "required" || params.get("error") === "incomplete") {
+          setShowRequiredHelper(true);
+        }
         const ref = params.get("ref") || localStorage.getItem("eod_ref") || "";
         if (ref) setReferralInput(ref.toUpperCase());
         setChecking(false);
@@ -259,6 +267,9 @@ export default function OnboardingPage() {
 
       // Pre-fill referral code from URL param or localStorage
       const params = new URLSearchParams(window.location.search);
+      if (params.get("notice") === "required" || params.get("error") === "incomplete") {
+        setShowRequiredHelper(true);
+      }
       const ref = params.get("ref") || localStorage.getItem("eod_ref") || "";
       if (ref) setReferralInput(ref.toUpperCase());
 
@@ -296,7 +307,6 @@ export default function OnboardingPage() {
     if (!userId || !accountType) return;
 
     const { data: { user: authUser } } = await supabase.auth.getUser();
-    const isGoogle = authUser ? isOAuthOnlyGoogleUser(authUser) : false;
 
     if (accountType === "member") {
       if (!firstName.trim()) return markMissingField("field-member-first-name");
@@ -318,100 +328,72 @@ export default function OnboardingPage() {
 
     setSubmitting(true);
     try {
-      const verificationFields = wasProvisioned
-        ? {
-            verification_status: VERIFICATION.VERIFIED,
-            email_verified: true,
-            email_verified_at: new Date().toISOString(),
-            admin_verified: true,
-            is_approved: true,
-          }
-        : isGoogle
-          ? {
-            verification_status: VERIFICATION.AWAITING_ADMIN,
-            email_verified: true,
-            email_verified_at: new Date().toISOString(),
-            admin_verified: false,
-            is_approved: false,
-          }
-          : {
-            verification_status: VERIFICATION.AWAITING_EMAIL,
-            email_verified: false,
-            email_verified_at: null,
-            admin_verified: false,
-            is_approved: false,
-          };
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        alert("Session expired. Please sign in again.");
+        window.location.href = "/login";
+        return;
+      }
 
-      const updates =
-        accountType === "member"
-          ? {
-              account_type: "member",
-              first_name: firstName,
-              last_name: lastName,
-              service: service || null,
-              status: status || null,
-              skill_badge: skillBadge || null,
-              years_experience: yearsExperience || null,
-              ...verificationFields,
-            }
-          : {
-              account_type: "employer",
-              is_employer: true,
-              first_name: empFirstName,
-              last_name: empLastName,
-              company_name: companyName,
-              ...verificationFields,
-            };
+      const saveRes = await fetch("/api/account/save-onboarding", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          accountType,
+          firstName: accountType === "member" ? firstName : empFirstName,
+          lastName: accountType === "member" ? lastName : empLastName,
+          service,
+          status,
+          skillBadge,
+          yearsExperience,
+          companyName,
+          referralInput,
+        }),
+      });
 
-      const finalUpdates = referralInput.trim()
-        ? { ...updates, referred_by: referralInput.trim().toUpperCase() }
-        : updates;
+      const saveJson = (await saveRes.json().catch(() => ({}))) as {
+        error?: string;
+        verification_status?: string;
+        wasProvisioned?: boolean;
+        isGoogle?: boolean;
+      };
 
-      const { error } = await supabase
-        .from("profiles")
-        .update(finalUpdates)
-        .eq("user_id", userId);
-
-      if (error) {
-        devAuthLog("onboarding", { step: "profile_update_failed", userId });
-        alert("Error saving profile: " + error.message);
+      if (!saveRes.ok) {
+        devAuthLog("onboarding", { step: "profile_update_failed", userId, status: saveRes.status });
+        alert(saveJson.error ?? "Error saving profile.");
         return;
       }
 
       devAuthLog("onboarding", {
         step: "profile_updated",
         userId,
-        verification_status: verificationFields.verification_status,
-        isGoogle,
+        verification_status: saveJson.verification_status,
+        isGoogle: saveJson.isGoogle,
       });
 
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        // Only provisioned users actually need the flag cleared (it starts
-        // false for every normal signup, so the trigger never sees a
-        // change). For everyone else this call is a no-op — we still fire
-        // it best-effort but never block onboarding completion on it.
-        if (wasProvisioned) {
-          const clearRes = await fetch("/api/account/complete-onboarding", {
-            method: "POST",
-            headers: { Authorization: `Bearer ${session.access_token}` },
-          });
-          if (!clearRes.ok) {
-            devAuthLog("onboarding", {
-              step: "clear_onboarding_flag_failed",
-              userId,
-              status: clearRes.status,
-            });
-            alert("Onboarding saved but could not finalize. Please refresh and try again.");
-            return;
-          }
-        }
-
-        await fetch("/api/generate-referral-code", {
+      if (saveJson.wasProvisioned) {
+        const clearRes = await fetch("/api/account/complete-onboarding", {
           method: "POST",
           headers: { Authorization: `Bearer ${session.access_token}` },
         });
+        if (!clearRes.ok) {
+          devAuthLog("onboarding", {
+            step: "clear_onboarding_flag_failed",
+            userId,
+            status: clearRes.status,
+          });
+          alert("Onboarding saved but could not finalize. Please refresh and try again.");
+          return;
+        }
       }
+
+      await fetch("/api/generate-referral-code", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
 
       localStorage.removeItem("eod_ref");
 
@@ -419,7 +401,7 @@ export default function OnboardingPage() {
         setMemberPaywallOpen(true);
         // Member redirect happens in completeMemberSubscriptionAck
       } else {
-        await redirectAfterOnboarding(isGoogle);
+        await redirectAfterOnboarding(!!saveJson.isGoogle);
       }
     } finally {
       setSubmitting(false);
@@ -537,6 +519,23 @@ export default function OnboardingPage() {
             Tell us who you are. Your account will be reviewed before access is granted.
           </p>
 
+          {showRequiredHelper && (
+            <div
+              style={{
+                borderRadius: 10,
+                border: "1px solid #10b981",
+                background: "#ecfdf5",
+                color: "#065f46",
+                padding: "10px 12px",
+                fontSize: 13,
+                fontWeight: 700,
+                marginBottom: 20,
+              }}
+            >
+              {ONBOARDING_REQUIRED_FIELDS_MESSAGE}
+            </div>
+          )}
+
           {/* Account type selector */}
           {!accountType ? (
             <div style={{ display: "grid", gap: 14 }}>
@@ -589,21 +588,6 @@ export default function OnboardingPage() {
               <div style={{ padding: "10px 14px", borderRadius: 10, background: accountType === "employer" ? "#dbeafe" : "#f3f4f6", fontSize: 13, fontWeight: 800, color: accountType === "employer" ? "#1d4ed8" : "#111827" }}>
                 {accountType === "employer" ? "Employer Account" : "EOD Community Member"}
               </div>
-              {showRequiredHelper && (
-                <div
-                  style={{
-                    borderRadius: 10,
-                    border: "1px solid #10b981",
-                    background: "#ecfdf5",
-                    color: "#065f46",
-                    padding: "10px 12px",
-                    fontSize: 13,
-                    fontWeight: 700,
-                  }}
-                >
-                  Please fill out all required fields.
-                </div>
-              )}
 
               {/* MEMBER FORM */}
               {accountType === "member" && (

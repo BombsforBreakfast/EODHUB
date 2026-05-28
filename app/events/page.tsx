@@ -24,6 +24,7 @@ import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import type { PostLikerBrief } from "../components/PostLikersStack";
 import { ReactionLeaderboard, ReactionPickerTrigger } from "../components/ReactionBar";
 import { usePageTracking } from "../hooks/usePageTracking";
+import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import {
   aggregatesBySubjectId,
@@ -195,6 +196,7 @@ export default function EventsPage() {
 }
 
 function EventsPageInner() {
+  useRequireFullAccess("app/events/page.tsx");
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();

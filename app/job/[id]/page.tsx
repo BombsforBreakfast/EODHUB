@@ -7,6 +7,7 @@ import NavBar from "../../components/NavBar";
 import { useTheme } from "../../lib/ThemeContext";
 import JobImage from "../../components/jobs/JobImage";
 import { isJobListingExpired } from "../../lib/jobRetention";
+import { useRequireFullAccess } from "../../hooks/useRequireFullAccess";
 
 type Job = {
   id: string;
@@ -31,6 +32,7 @@ function formatExternalUrl(url: string | null | undefined): string | null {
 }
 
 export default function JobDetailPage() {
+  useRequireFullAccess("app/job/[id]/page.tsx");
   const params = useParams();
   const jobId = params.id as string;
   const { t } = useTheme();

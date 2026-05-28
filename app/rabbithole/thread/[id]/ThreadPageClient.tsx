@@ -16,8 +16,10 @@ import { fetchRabbitholeThreadDetail } from "../../lib/dataClient";
 import type { KangarooCourtVerdictRow } from "../../../lib/kangarooCourt";
 import type { RabbitholeThread } from "../../lib/types";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
+import { useRequireFullAccess } from "../../../hooks/useRequireFullAccess";
 
 export default function ThreadPageClient() {
+  useRequireFullAccess("app/rabbithole/thread/[id]/page.tsx");
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const searchParams = useSearchParams();

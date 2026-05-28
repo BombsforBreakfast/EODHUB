@@ -18,9 +18,16 @@ import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
 import SupabaseUsagePanel from "../components/admin/SupabaseUsagePanel";
 import { usePageTracking } from "../hooks/usePageTracking";
+import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { coerceTagsFromDb, normalizeBizTagsInput } from "../lib/bizListingTags";
+import {
+  blocksSignupApproval,
+  hasRequiredSignupNames,
+  isGrandfatheredSignupProfile,
+  signupProfileMissingFields,
+} from "@/app/lib/profileCompleteness";
 import {
   MEMORIAL_LEO_COLOR,
   MEMORIAL_MILITARY_COLOR,
@@ -107,6 +114,9 @@ type UserProfile = {
   /** Mirrored from Auth / onboarding for admin + Table Editor visibility (after migration). */
   name?: string | null;
   email: string | null;
+  company_name?: string | null;
+  account_type?: string | null;
+  is_pure_admin?: boolean | null;
   role: string | null;
   service: string | null;
   verification_status: string | null;
@@ -629,6 +639,7 @@ function KpiCard({
 }
 
 export default function AdminPage() {
+  useRequireFullAccess("app/admin/page.tsx");
   usePageTracking(PAGE_TRACKING.admin);
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
@@ -1877,6 +1888,12 @@ export default function AdminPage() {
     setActionLoading(userId + "-verify");
     try {
       if (status === "verified") {
+        const target = users.find((u) => u.user_id === userId);
+        if (target && blocksSignupApproval(target)) {
+          alert("Cannot verify: new signup must finish onboarding with first and last name.");
+          return;
+        }
+
         // Use API route — updates DB + sends verification email
         const { data: { session } } = await supabase.auth.getSession();
         const res = await fetch("/api/admin/verify-user", {
@@ -3767,7 +3784,11 @@ export default function AdminPage() {
             <div style={{ display: "grid", gap: 10 }}>
               {filteredAdminUsers.map((u) => {
                 const name = adminUserDisplayName(u);
-                const isIncompleteSignup = !!u.signup_incomplete;
+                const isGrandfathered = isGrandfatheredSignupProfile(u);
+                const isIncompleteSignup = !!u.signup_incomplete || blocksSignupApproval(u);
+                const missingSignupFields =
+                  !hasRequiredSignupNames(u) ? signupProfileMissingFields(u).filter((f) => f === "first name" || f === "last name") : [];
+                const canVerify = !blocksSignupApproval(u);
                 const isVerified = u.verification_status === "verified";
                 const isPending =
                   isIncompleteSignup ||
@@ -3789,7 +3810,8 @@ export default function AdminPage() {
                         ) : (
                           <span style={{ background: "#f3f4f6", color: "#6b7280", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Member</span>
                         )}
-                        {isIncompleteSignup && <span style={{ background: "#ffedd5", color: "#c2410c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Incomplete signup</span>}
+                        {isIncompleteSignup && !isGrandfathered && <span style={{ background: "#ffedd5", color: "#c2410c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Incomplete signup</span>}
+                        {isIncompleteSignup && isGrandfathered && <span style={{ background: "#e5e7eb", color: "#4b5563", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Legacy profile</span>}
                         {isVerified && <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Verified</span>}
                         {isPending && !isIncompleteSignup && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
                         {isDenied && <span style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Denied</span>}
@@ -3798,14 +3820,25 @@ export default function AdminPage() {
                         {[u.role, u.service].filter(Boolean).join(" · ")}
                         {u.email && <span style={{ color: t.textFaint, marginLeft: u.role || u.service ? 6 : 0 }}>{u.role || u.service ? "· " : ""}{u.email}</span>}
                       </div>
+                      {missingSignupFields.length > 0 && (
+                        <div style={{ fontSize: 12, color: isGrandfathered ? t.textMuted : "#c2410c", marginTop: 4, fontWeight: 600 }}>
+                          {isGrandfathered ? "Legacy — missing " : "Missing: "}
+                          {missingSignupFields.join(", ")}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {/* Verification */}
                       {!isVerified && (
                         <button
-                          style={actionBtn("#16a34a")}
-                          disabled={actionLoading === u.user_id + "-verify"}
+                          style={actionBtn(canVerify ? "#16a34a" : "#9ca3af")}
+                          disabled={actionLoading === u.user_id + "-verify" || !canVerify}
+                          title={
+                            !canVerify
+                              ? "New signup must finish onboarding with first and last name"
+                              : undefined
+                          }
                           onClick={() => setVerification(u.user_id, "verified")}
                         >
                           {actionLoading === u.user_id + "-verify" ? "..." : "Verify"}

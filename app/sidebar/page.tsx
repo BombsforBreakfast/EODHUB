@@ -15,6 +15,7 @@ import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
 import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
 import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
+import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import {
   displayListingDescription,
   displayListingImage,
@@ -129,6 +130,7 @@ function timeAgo(dateString: string) {
 }
 
 export default function SidebarPage() {
+  useRequireFullAccess("app/sidebar/page.tsx");
   usePageTracking(PAGE_TRACKING.sidebar);
   const [userId, setUserId] = useState<string | null>(null);
   const [myName, setMyName] = useState("");

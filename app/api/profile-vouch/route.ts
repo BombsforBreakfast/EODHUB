@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { blocksSignupApproval } from "@/app/lib/profileCompleteness";
 import { assertMemberInteractionAllowed } from "../../lib/memberSubscriptionServer";
 import { createNotification } from "../../lib/notificationsServer";
 import { approveUserAccount } from "../../lib/server/approveUserAccount";
@@ -51,11 +52,19 @@ export async function POST(req: NextRequest) {
   // Check vouchee is actually pending
   const { data: vouchee } = await adminClient
     .from("profiles")
-    .select("first_name, last_name, display_name, verification_status, account_type, email_verified")
+    .select(
+      "first_name, last_name, display_name, verification_status, account_type, email_verified, service, company_name, is_pure_admin",
+    )
     .eq("user_id", vouchee_user_id)
     .maybeSingle();
 
   if (!vouchee) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  if (blocksSignupApproval(vouchee)) {
+    return NextResponse.json(
+      { error: "User must complete onboarding (first and last name) before vouching." },
+      { status: 409 },
+    );
+  }
   const awaitingAdmin =
     vouchee.email_verified &&
     (vouchee.verification_status === "awaiting_admin_review" ||

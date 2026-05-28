@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { blocksSignupApproval, hasRequiredSignupNames } from "@/app/lib/profileCompleteness";
 
 type ProfilesQueryResult = {
   data: Array<Record<string, unknown>> | null;
@@ -39,9 +40,9 @@ export async function GET(req: NextRequest) {
   );
 
   const profileSelectWithMirrors =
-    "user_id, first_name, last_name, display_name, name, email, role, service, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count";
+    "user_id, first_name, last_name, display_name, name, email, role, service, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count";
   const profileSelectBase =
-    "user_id, first_name, last_name, display_name, role, service, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count";
+    "user_id, first_name, last_name, display_name, role, service, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count";
 
   // Fetch profiles and auth users. The mirrored name/email columns are deployed via
   // migration, so keep this compatible with environments that have not run it yet.
@@ -120,6 +121,15 @@ export async function GET(req: NextRequest) {
       last_name,
       email: row.email ?? authMeta?.email ?? null,
       name: row.name ?? authMeta?.full_name ?? null,
+      signup_incomplete: blocksSignupApproval({
+        first_name,
+        last_name,
+        service: typeof p.service === "string" ? p.service : null,
+        company_name: typeof row.company_name === "string" ? row.company_name : null,
+        account_type: typeof row.account_type === "string" ? row.account_type : null,
+        is_pure_admin: row.is_pure_admin === true,
+        created_at: typeof row.created_at === "string" ? row.created_at : null,
+      }),
     };
   }),
   ];

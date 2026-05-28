@@ -3,6 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 import { consumeVerificationToken } from "@/app/lib/server/emailVerificationTokens";
 import { getAppOrigin } from "@/app/lib/email/verificationEmail";
 import { devAuthLog } from "@/app/lib/auth/signupErrors";
+import {
+  hasRequiredSignupNames,
+  isGrandfatheredSignupProfile,
+} from "@/app/lib/profileCompleteness";
 import { isAwaitingEmailStatus, VERIFICATION } from "@/app/lib/verificationStatus";
 
 export const dynamic = "force-dynamic";
@@ -35,13 +39,28 @@ export async function GET(req: NextRequest) {
 
   const { data: existing } = await adminClient
     .from("profiles")
-    .select("email_verified, verification_status")
+    .select(
+      "email_verified, verification_status, first_name, last_name, created_at, is_pure_admin",
+    )
     .eq("user_id", result.userId)
     .maybeSingle();
 
   if (existing?.email_verified) {
     devAuthLog("verify-email-click", { step: "already_verified", userId: result.userId });
     return NextResponse.redirect(new URL("/email-verified", origin));
+  }
+
+  if (
+    existing &&
+    !isGrandfatheredSignupProfile(existing) &&
+    !hasRequiredSignupNames(existing)
+  ) {
+    devAuthLog("verify-email-click", { step: "incomplete_profile", userId: result.userId });
+    return NextResponse.redirect(new URL("/onboarding?notice=required", origin));
+  }
+
+  if (!existing) {
+    return NextResponse.redirect(new URL("/onboarding?notice=required", origin));
   }
 
   const now = new Date().toISOString();

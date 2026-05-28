@@ -17,6 +17,7 @@ import { resolveRabbitholeAssetUrl } from "../../lib/storageService";
 import type { RabbitholeAsset, RabbitholeContribution, RabbitholeContributionComment } from "../../lib/types";
 import { supabase } from "../../../lib/lib/supabaseClient";
 import { linkifyPlainText } from "../../lib/linkifyPlainText";
+import { useRequireFullAccess } from "../../../hooks/useRequireFullAccess";
 
 type ShareDestinationType = "feed" | "user_wall" | "unit_wall";
 type ShareUserResult = { id: string; name: string; photoUrl: string | null };
@@ -56,6 +57,7 @@ function youtubeEmbedUrl(sourceUrl?: string | null, metadata?: Record<string, un
 }
 
 export default function ContributionPageClient() {
+  useRequireFullAccess("app/rabbithole/contribution/[id]/page.tsx");
   const params = useParams<{ id: string }>();
   const router = useRouter();
 

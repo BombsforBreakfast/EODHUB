@@ -12,6 +12,7 @@ import { linkifyPlainText } from "./lib/linkifyPlainText";
 import { fetchRabbitholeContributions, fetchRabbitholeThreads, fetchRabbitholeTopics } from "./lib/dataClient";
 import type { RabbitholeContentType, RabbitholeContribution, RabbitholeThread, RabbitholeTopic } from "./lib/types";
 import { httpsAssetUrl } from "../lib/urlPreview";
+import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 
 type FilterState = {
   keyword: string;
@@ -46,6 +47,7 @@ function contentTypeLabel(type: RabbitholeContentType): string {
 }
 
 export default function RabbitholeHomePageClient() {
+  useRequireFullAccess("app/rabbithole/page.tsx");
   const { t } = useTheme();
   const router = useRouter();
   const searchParams = useSearchParams();

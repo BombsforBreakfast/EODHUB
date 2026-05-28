@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { useTheme } from "../../lib/ThemeContext";
 import { supabase } from "../../lib/lib/supabaseClient";
+import { useRequireFullAccess } from "../../hooks/useRequireFullAccess";
 
 type DigestLog = {
   id: string;
@@ -29,6 +30,7 @@ function formatDate(value: string): string {
 }
 
 export default function AdminDigestLogsPage() {
+  useRequireFullAccess("app/admin/digests/page.tsx");
   const { t } = useTheme();
   const [logs, setLogs] = useState<DigestLog[]>([]);
   const [loading, setLoading] = useState(true);

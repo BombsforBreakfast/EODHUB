@@ -12,6 +12,13 @@ import { isMemberPaywallExemptPath, isExemptFromMemberPaywall, shouldEnforceMemb
 import { memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { MasterShellProvider } from "./masterShellContext";
 import { loadActiveProfile } from "../../lib/auth/activeProfile";
+import {
+  ONBOARDING_GATE_PROFILE_SELECT,
+  onboardingRedirectUrl,
+  resolvePreAccessRedirectPath,
+  shouldRedirectToOnboarding,
+  type OnboardingGateProfile,
+} from "../../lib/onboardingGate";
 import { hasFullPlatformAccess } from "../../lib/verificationAccess";
 import { ensureWelcomeSidebarOnce } from "../../lib/welcomeSidebarClient";
 
@@ -74,28 +81,29 @@ export default function MasterShell({ children }: { children: React.ReactNode })
         memberInteractionAllowedRef.current = false;
         return;
       }
-      const { profile: profileCheck } = await loadActiveProfile<{
-        user_id: string;
-        email: string | null;
-        display_name: string | null;
-        first_name: string | null;
-        last_name: string | null;
-        photo_url: string | null;
-        account_type: string | null;
-        subscription_status: string | null;
-        is_admin: boolean | null;
-        show_memorial_feed_cards: boolean | null;
-        email_verified: boolean | null;
-        admin_verified: boolean | null;
-        verification_status: string | null;
-      }>(supabase, user, {
+      const { profile: profileCheck } = await loadActiveProfile<
+        OnboardingGateProfile & {
+          account_type: string | null;
+          subscription_status: string | null;
+          is_admin: boolean | null;
+          show_memorial_feed_cards: boolean | null;
+        }
+      >(supabase, user, {
         route: "app/components/master/MasterShell.tsx:loadShellUser",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, account_type, subscription_status, is_admin, show_memorial_feed_cards, email_verified, admin_verified, verification_status",
+        select: `${ONBOARDING_GATE_PROFILE_SELECT}, display_name, photo_url, account_type, subscription_status, is_admin, show_memorial_feed_cards, verification_status, email_verified, admin_verified`,
       });
       if (cancelled) return;
+      if (shouldRedirectToOnboarding(profileCheck)) {
+        window.location.replace(onboardingRedirectUrl(true));
+        return;
+      }
       if (!profileCheck) {
         setShowMemorialFeedCards(true);
         memberInteractionAllowedRef.current = false;
+        return;
+      }
+      if (!hasFullPlatformAccess(profileCheck)) {
+        window.location.replace(resolvePreAccessRedirectPath(profileCheck));
         return;
       }
       const p = profileCheck as { show_memorial_feed_cards?: boolean | null };

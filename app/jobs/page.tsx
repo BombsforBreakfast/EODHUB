@@ -9,7 +9,13 @@ import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 import { getFeatureAccess } from "../lib/featureAccess";
 import { shouldEnforceMemberPaywall } from "../lib/paywallPaths";
-import { hasFullPlatformAccess, needsEmailVerification } from "../lib/verificationAccess";
+import { useOnboardingGate } from "../hooks/useOnboardingGate";
+import {
+  ONBOARDING_GATE_PROFILE_SELECT,
+  resolvePreAccessRedirectPath,
+  type OnboardingGateProfile,
+} from "../lib/onboardingGate";
+import { hasFullPlatformAccess } from "../lib/verificationAccess";
 import {
   applyJobFilters,
   uniqueJobRegionOptions,
@@ -98,6 +104,7 @@ function formatSource(sourceType: string | null): string {
 }
 
 export default function JobsPage() {
+  useOnboardingGate("app/jobs/page.tsx");
   usePageTracking(PAGE_TRACKING.jobs);
   const { t } = useTheme();
   const [loading, setLoading] = useState(true);
@@ -232,13 +239,13 @@ export default function JobsPage() {
 
       const { data: profile } = await supabase
         .from("profiles")
-        .select("account_type, subscription_status, is_admin, verification_status, email_verified, admin_verified")
+        .select(ONBOARDING_GATE_PROFILE_SELECT + ", subscription_status, is_admin")
         .eq("user_id", uid)
         .maybeSingle();
 
-      const p = (profile ?? null) as ProfileRow | null;
+      const p = (profile ?? null) as (OnboardingGateProfile & ProfileRow) | null;
       if (!p || !hasFullPlatformAccess(p)) {
-        window.location.href = p && needsEmailVerification(p) ? "/verify-email" : "/pending";
+        window.location.href = p ? resolvePreAccessRedirectPath(p) : "/onboarding";
         return;
       }
 

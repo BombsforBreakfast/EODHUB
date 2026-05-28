@@ -6,6 +6,10 @@ import {
   buildApprovalEmailHtml,
   buildLoginUrl,
 } from "@/app/lib/email/approvalEmail";
+import {
+  blocksSignupApproval,
+  signupProfileMissingFields,
+} from "@/app/lib/profileCompleteness";
 import { VERIFICATION } from "@/app/lib/verificationStatus";
 import { ensureWelcomeSidebarMessage } from "@/app/lib/server/ensureWelcomeSidebarMessage";
 
@@ -45,7 +49,7 @@ export async function approveUserAccount(
   const { data: profile, error: profileError } = await adminClient
     .from("profiles")
     .select(
-      "first_name, referral_code, email_verified, admin_verified, verification_status, approval_email_sent_at, admin_approved_at",
+      "first_name, last_name, service, company_name, account_type, is_pure_admin, created_at, referral_code, email_verified, admin_verified, verification_status, approval_email_sent_at, admin_approved_at",
     )
     .eq("user_id", userId)
     .maybeSingle();
@@ -53,6 +57,16 @@ export async function approveUserAccount(
   if (profileError || !profile) {
     devAuthLog("approve-user", { step: "no_profile", userId, source, error: profileError?.message });
     throw new Error(profileError?.message ?? "Profile not found");
+  }
+
+  if (blocksSignupApproval(profile)) {
+    const missing = signupProfileMissingFields(profile).filter((field) =>
+      field === "first name" || field === "last name",
+    );
+    devAuthLog("approve-user", { step: "incomplete_profile", userId, source, missing });
+    throw new Error(
+      `Cannot approve: new signup is missing ${missing.join(" and ") || "first and last name"}. User must finish onboarding first.`,
+    );
   }
 
   const wasAlreadyApproved = isFullyApproved(profile);

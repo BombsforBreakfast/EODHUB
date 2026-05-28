@@ -6,6 +6,7 @@ import ImageCropDialog from "../components/ImageCropDialog";
 import { ASPECT_AVATAR } from "../lib/imageCropTargets";
 import { prepareCroppedImageBlob } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
+import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 
 const US_STATES = [
   "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut",
@@ -58,6 +59,7 @@ function isValidPhone(phone: string): boolean {
 }
 
 export default function DirectoryPage() {
+  useRequireFullAccess("app/directory/page.tsx");
   const { t } = useTheme();
   const [entries, setEntries] = useState<DirectoryEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);

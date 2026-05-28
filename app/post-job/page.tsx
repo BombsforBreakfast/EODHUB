@@ -6,6 +6,7 @@ import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
+import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import type { ScrapedJobData } from "../lib/metadata/extractJobMetadata";
 
 type ScrapeStatus = "idle" | "loading" | "success" | "error";
@@ -34,6 +35,7 @@ function fillIfBlank(current: string, next: string | undefined | null): string {
 }
 
 export default function PostJobPage() {
+  useRequireFullAccess("app/post-job/page.tsx");
   const { t } = useTheme();
   const { blockIfNeeded, paywallOpen, setPaywallOpen } = useMemberSubscriptionGate();
   const [title, setTitle] = useState("");

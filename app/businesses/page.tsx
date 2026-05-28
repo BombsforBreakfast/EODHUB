@@ -24,6 +24,7 @@ import { supabase } from "../lib/lib/supabaseClient";
 import { prepareImageUploadFile } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
 import { usePageTracking } from "../hooks/usePageTracking";
+import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { shareListingToFeed } from "../lib/shareListingToFeed";
 
@@ -94,6 +95,7 @@ function canEditBizListing(listing: BusinessListing, uid: string | null, admin: 
 }
 
 export default function BusinessesPage() {
+  useRequireFullAccess("app/businesses/page.tsx");
   usePageTracking(PAGE_TRACKING.businesses);
   const { t } = useTheme();
   const [loading, setLoading] = useState(true);

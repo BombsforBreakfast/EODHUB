@@ -6,8 +6,10 @@ import { useEffect, useState } from "react";
 import NotificationPreferencesCard from "../../components/account/NotificationPreferencesCard";
 import { useTheme } from "../../lib/ThemeContext";
 import { supabase } from "../../lib/lib/supabaseClient";
+import { useRequireFullAccess } from "../../hooks/useRequireFullAccess";
 
 export default function NotificationSettingsPage() {
+  useRequireFullAccess("app/account/notifications/page.tsx");
   const { t } = useTheme();
   const [userId, setUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);

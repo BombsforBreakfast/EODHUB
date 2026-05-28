@@ -11,8 +11,10 @@ import { appendToTrail, parseTrail } from "../lib/helpers";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { fetchRabbitholeThreads, fetchRabbitholeTopics } from "../lib/dataClient";
 import type { RabbitholeThread, RabbitholeTopic } from "../lib/types";
+import { useRequireFullAccess } from "../../hooks/useRequireFullAccess";
 
 export default function TopicPageClient() {
+  useRequireFullAccess("app/rabbithole/[topic]/page.tsx");
   const params = useParams<{ topic: string }>();
   const searchParams = useSearchParams();
   const topicSlug = params.topic;

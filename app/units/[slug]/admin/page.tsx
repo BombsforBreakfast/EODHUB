@@ -6,6 +6,7 @@ import Link from "next/link";
 import { supabase } from "../../../lib/lib/supabaseClient";
 import { useTheme } from "../../../lib/ThemeContext";
 import NavBar from "../../../components/NavBar";
+import { useRequireFullAccess } from "../../../hooks/useRequireFullAccess";
 
 type UnitInfo = {
   id: string;
@@ -86,6 +87,7 @@ function Avatar({ name, photo, size = 36 }: { name: string; photo: string | null
 }
 
 export default function UnitAdminPage() {
+  useRequireFullAccess("app/units/[slug]/admin/page.tsx");
   const { slug } = useParams() as { slug: string };
   const { t } = useTheme();
   const [data, setData] = useState<AdminData | null>(null);

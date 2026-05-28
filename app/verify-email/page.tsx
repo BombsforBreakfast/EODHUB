@@ -6,6 +6,7 @@ import { supabase } from "../lib/lib/supabaseClient";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import EodCrabLogo from "../components/EodCrabLogo";
+import { useOnboardingGate } from "../hooks/useOnboardingGate";
 import {
   hasFullPlatformAccess,
   isInAdminReviewQueue,
@@ -13,6 +14,7 @@ import {
 } from "../lib/verificationAccess";
 
 function VerifyEmailContent() {
+  useOnboardingGate("app/verify-email/page.tsx");
   const searchParams = useSearchParams();
   const linkError = searchParams.get("error") === "invalid";
 
@@ -55,7 +57,7 @@ function VerifyEmailContent() {
       });
 
       if (!profile?.service && !profile?.company_name) {
-        window.location.href = "/onboarding";
+        window.location.href = "/onboarding?notice=required";
         return;
       }
 
@@ -70,7 +72,7 @@ function VerifyEmailContent() {
       }
 
       if (!needsEmailVerification(profile)) {
-        window.location.href = "/onboarding";
+        window.location.href = "/onboarding?notice=required";
         return;
       }
 

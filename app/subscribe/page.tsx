@@ -4,9 +4,16 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import { isPaywallEnforced, memberHasInteractionAccess } from "../lib/subscriptionAccess";
-import { hasFullPlatformAccess, needsEmailVerification } from "../lib/verificationAccess";
+import { useOnboardingGate } from "../hooks/useOnboardingGate";
+import {
+  ONBOARDING_GATE_PROFILE_SELECT,
+  resolvePreAccessRedirectPath,
+  type OnboardingGateProfile,
+} from "../lib/onboardingGate";
+import { hasFullPlatformAccess } from "../lib/verificationAccess";
 
 export default function SubscribePage() {
+  useOnboardingGate("app/subscribe/page.tsx");
   const { t } = useTheme();
   const [loading, setLoading] = useState(false);
   const [gateChecking, setGateChecking] = useState(true);
@@ -25,27 +32,28 @@ export default function SubscribePage() {
       }
       const { data: p } = await supabase
         .from("profiles")
-        .select("verification_status, email_verified, admin_verified, account_type, service, company_name, subscription_status, is_admin")
+        .select(`${ONBOARDING_GATE_PROFILE_SELECT}, subscription_status, is_admin, verification_status, email_verified, admin_verified`)
         .eq("user_id", user.id)
         .maybeSingle();
-      if (!p || (!p.service && !p.company_name)) {
+      const profile = (p ?? null) as OnboardingGateProfile | null;
+      if (!profile) {
         window.location.href = "/onboarding";
         return;
       }
-      if (p.account_type === "employer") {
+      if (profile.account_type === "employer") {
         window.location.href = "/";
         return;
       }
-      if (!hasFullPlatformAccess(p)) {
-        window.location.href = needsEmailVerification(p) ? "/verify-email" : "/pending";
+      if (!hasFullPlatformAccess(profile)) {
+        window.location.href = resolvePreAccessRedirectPath(profile);
         return;
       }
       if (
         memberHasInteractionAccess({
-          accountType: p.account_type,
-          subscriptionStatus: p.subscription_status ?? null,
+          accountType: profile.account_type,
+          subscriptionStatus: profile.subscription_status ?? null,
           authUserCreatedAtIso: user.created_at ?? null,
-          isAdmin: p.is_admin,
+          isAdmin: profile.is_admin,
         })
       ) {
         window.location.href = "/";

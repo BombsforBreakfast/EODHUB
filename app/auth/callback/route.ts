@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup";
+import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
 import { clearFailedAuthReportsOnSuccessfulLogin } from "@/app/lib/server/clearFailedAuthReportsOnLogin";
 import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
 
@@ -48,10 +49,11 @@ export async function GET(request: NextRequest) {
     if (!error) {
       const { client: adminClient } = createSupabaseServiceRoleClient();
       if (adminClient) {
-        void clearFailedAuthReportsOnSuccessfulLogin(
-          adminClient,
-          sessionData.user?.email,
-        );
+        const oauthEmail = sessionData.user?.email;
+        if (sessionData.user?.id && oauthEmail) {
+          void ensureProfileStubForUser(adminClient, sessionData.user.id, oauthEmail);
+        }
+        void clearFailedAuthReportsOnSuccessfulLogin(adminClient, oauthEmail);
       }
       return redirectResponse;
     }
