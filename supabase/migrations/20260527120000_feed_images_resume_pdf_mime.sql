@@ -20,5 +20,4 @@ set allowed_mime_types = (
   )
 )
 where id = 'feed-images'
-  and allowed_mime_types is not null
-  and not ('application/pdf' = any(allowed_mime_types));
+  and allowed_mime_types is not null;
