@@ -24,7 +24,7 @@ export default function RabbitholeLayout({ children }: { children: React.ReactNo
       // they would be after sign-in if they hadn't completed verification).
       const { data: profile } = await supabase
         .from("profiles")
-        .select("verification_status, email_verified, admin_verified")
+        .select("verification_status, email_verified, admin_verified, is_pure_admin")
         .eq("user_id", uid)
         .maybeSingle();
       if (!mounted) return;

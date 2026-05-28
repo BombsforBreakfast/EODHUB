@@ -124,7 +124,7 @@ export default function PendingPage() {
     const interval = setInterval(async () => {
       const { data: profile } = await supabase
         .from("profiles")
-        .select("verification_status, email_verified, admin_verified")
+        .select("verification_status, email_verified, admin_verified, is_pure_admin")
         .eq("user_id", userId)
         .maybeSingle();
       if (profile && hasFullPlatformAccess(profile)) {

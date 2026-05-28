@@ -331,7 +331,7 @@ export default function LoginPage() {
         must_complete_onboarding: boolean | null;
       }>(supabase, session.user, {
         route: "app/login/page.tsx:handleLogin",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, must_complete_onboarding",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, must_complete_onboarding, is_pure_admin",
       });
 
       devClientAuthLog("login", {

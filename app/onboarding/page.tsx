@@ -197,7 +197,7 @@ export default function OnboardingPage() {
         must_complete_onboarding: boolean | null;
       }>(supabase, user, {
         route: "app/onboarding/page.tsx:check",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, service, company_name, account_type, verification_status, email_verified, admin_verified, subscription_terms_acknowledged_at, must_complete_onboarding",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, service, company_name, account_type, verification_status, email_verified, admin_verified, subscription_terms_acknowledged_at, must_complete_onboarding, is_pure_admin",
       });
 
       if (profile?.must_complete_onboarding) {

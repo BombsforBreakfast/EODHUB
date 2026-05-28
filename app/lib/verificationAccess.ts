@@ -9,9 +9,13 @@ export type VerificationProfile = {
   email_verified?: boolean | null;
   admin_verified?: boolean | null;
   verification_status?: string | null;
+  is_pure_admin?: boolean | null;
 };
 
 export function hasFullPlatformAccess(p: VerificationProfile): boolean {
+  // Pure admins always have full access — they never go through the user
+  // verification queue and must not be bounced by the new gate.
+  if (p.is_pure_admin) return true;
   return Boolean(
     p.email_verified &&
       p.admin_verified &&

@@ -53,7 +53,7 @@ function VerifyEmailContent() {
         admin_verified: boolean | null;
       }>(supabase, user, {
         route: "app/verify-email/page.tsx:check",
-        select: "user_id, service, company_name, verification_status, email_verified, admin_verified",
+        select: "user_id, service, company_name, verification_status, email_verified, admin_verified, is_pure_admin",
       });
 
       if (!profile?.service && !profile?.company_name) {
