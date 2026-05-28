@@ -30,6 +30,10 @@ export function shouldRedirectToOnboarding(
 ): boolean {
   if (!profile) return true;
   if (profile.is_pure_admin) return false;
+  // Admin-approved users (verified + admin_verified + email_verified) keep
+  // platform access even if their profile fields are sparse. Admin approval
+  // is the ultimate trust signal and overrides the completeness check.
+  if (hasFullPlatformAccess(profile)) return false;
   if (profile.must_complete_onboarding) return true;
   if (isSignupProfileComplete(profile)) return false;
   if (isGrandfatheredSignupProfile(profile)) return false;

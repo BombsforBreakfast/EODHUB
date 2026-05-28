@@ -59,14 +59,38 @@ export async function approveUserAccount(
     throw new Error(profileError?.message ?? "Profile not found");
   }
 
+  // Look up the user's auth record (email + identity providers) once. Used
+  // both for the trusted-auth admin override below and for the approval
+  // email send further down.
+  const { data: userData, error: userError } = await adminClient.auth.admin.getUserById(userId);
+  const authUser = userData?.user ?? null;
+  const email = authUser?.email ?? null;
+  const identityProviders = (authUser?.identities ?? [])
+    .map((i) => i.provider)
+    .filter((p): p is string => typeof p === "string");
+  // A user is "auth-trusted" if they signed up with email/password OR via
+  // Google OAuth. This is the rule we use to let an admin force-verify an
+  // otherwise-incomplete account (no stub / OAuth-only-with-no-identity).
+  const hasTrustedAuth = identityProviders.some(
+    (p) => p === "email" || p === "google",
+  );
+
   if (blocksSignupApproval(profile)) {
-    const missing = signupProfileMissingFields(profile).filter((field) =>
-      field === "first name" || field === "last name",
-    );
-    devAuthLog("approve-user", { step: "incomplete_profile", userId, source, missing });
-    throw new Error(
-      `Cannot approve: new signup is missing ${missing.join(" and ") || "first and last name"}. User must finish onboarding first.`,
-    );
+    if (source === "admin" && hasTrustedAuth) {
+      devAuthLog("approve-user", {
+        step: "admin_override_incomplete_profile",
+        userId,
+        providers: identityProviders,
+      });
+    } else {
+      const missing = signupProfileMissingFields(profile).filter((field) =>
+        field === "first name" || field === "last name",
+      );
+      devAuthLog("approve-user", { step: "incomplete_profile", userId, source, missing });
+      throw new Error(
+        `Cannot approve: new signup is missing ${missing.join(" and ") || "first and last name"}. User must finish onboarding first.`,
+      );
+    }
   }
 
   const wasAlreadyApproved = isFullyApproved(profile);
@@ -108,11 +132,6 @@ export async function approveUserAccount(
   void ensureWelcomeSidebarMessage(adminClient, userId).catch((err) => {
     console.error("approveUserAccount: welcome sidebar ensure failed", err);
   });
-
-  // Look up the user's auth email once. We use it for both waitlist cleanup
-  // (below) and, if applicable, the approval email further down.
-  const { data: userData, error: userError } = await adminClient.auth.admin.getUserById(userId);
-  const email = userData?.user?.email ?? null;
 
   // Now that the user has full platform access, remove any matching
   // pre-signup waitlist entry so they don't show up in the admin waitlist
