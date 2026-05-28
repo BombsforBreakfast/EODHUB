@@ -2,14 +2,14 @@
 export const UPLOAD_LIMITS = {
   /** Photos, avatars, covers, listing images. */
   image: 8 * 1024 * 1024,
-  /** Short in-app video clips (~2 min). */
-  video: 50 * 1024 * 1024,
+  /** Short in-app video clips (~3–4 min). */
+  video: 100 * 1024 * 1024,
   /** PDFs and document attachments. */
   document: 25 * 1024 * 1024,
   /** Messenger photo attachments after automatic resize/compression. */
   messageImage: 5 * 1024 * 1024,
   /** Supabase feed-images bucket hard cap (video or pre-compress images). */
-  feedBucket: 50 * 1024 * 1024,
+  feedBucket: 100 * 1024 * 1024,
 } as const;
 
 export type UploadFileKind = "video" | "image" | "document" | "other";
@@ -34,6 +34,14 @@ export function isDocumentFile(file: File): boolean {
 /** File input accept string for profile resume/education/training pickers (MIME first for iOS). */
 export const EMPLOYER_DOCUMENT_ACCEPT =
   "application/pdf,.pdf,application/msword,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,text/plain,.txt,application/rtf,.rtf,application/vnd.oasis.opendocument.text,.odt,image/*";
+
+/** Feed, wall, and group post attachment pickers (MIME first for iOS). */
+export const FEED_ATTACHMENT_ACCEPT =
+  "image/*,video/*,.pdf,application/pdf,.mp4,.mov,.webm,.m4v";
+
+export function isVideoUrl(url: string): boolean {
+  return /\.(mp4|webm|mov|m4v|avi|mkv|ogv)(\?|$)/i.test(url);
+}
 
 const EXTENSION_MIME: Record<string, string> = {
   pdf: "application/pdf",
@@ -93,7 +101,7 @@ export function uploadTooLargeMessage(
 
   if (kind === "video") {
     return (
-      `"${file.name}" is too large (${sizeLabel}). Direct video uploads must be under ${limitLabel} (~2 minutes). ` +
+      `"${file.name}" is too large (${sizeLabel}). Direct video uploads must be under ${limitLabel} (~3–4 minutes). ` +
       "For longer or higher-quality video, paste a YouTube or Vimeo link in your post instead."
     );
   }

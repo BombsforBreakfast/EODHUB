@@ -19,8 +19,8 @@ import FeedPostHeader from "../../../components/FeedPostHeader";
 import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
-import { EMPLOYER_DOCUMENT_ACCEPT, inferEmployerDocumentContentType } from "../../../lib/uploadLimits";
-import { validateFeedAttachmentPick, validateImagePick, UPLOAD_LIMITS, formatUploadBytes } from "../../../lib/uploadLimits";
+import { EMPLOYER_DOCUMENT_ACCEPT, FEED_ATTACHMENT_ACCEPT, inferEmployerDocumentContentType } from "../../../lib/uploadLimits";
+import { validateFeedAttachmentPick, validateImagePick, UPLOAD_LIMITS, formatUploadBytes, isVideoFile, isVideoUrl } from "../../../lib/uploadLimits";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
 import { postNotifyJson } from "../../../lib/postNotifyClient";
@@ -316,10 +316,6 @@ type ConnectionActionResponse = {
   workedWith?: boolean;
   error?: string;
 };
-
-function isVideoUrl(url: string): boolean {
-  return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
-}
 
 function httpsAssetUrl(url: string | null | undefined): string {
   if (!url?.trim()) return "";
@@ -4790,7 +4786,7 @@ export default function PublicProfilePage() {
                 <input
                   ref={postImageInputRef}
                   type="file"
-                  accept="image/*,video/*,.pdf"
+                  accept={FEED_ATTACHMENT_ACCEPT}
                   multiple
                   onChange={(e) => {
                     const files = Array.from(e.target.files ?? []);
@@ -4816,8 +4812,8 @@ export default function PublicProfilePage() {
                   <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
                     {selectedPostImages.map((item, i) => (
                       <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
-                        {item.file.type.startsWith("video/") ? (
-                          <video src={item.previewUrl} style={feedContainedImageStyle} />
+                        {isVideoFile(item.file) ? (
+                          <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
                         ) : item.file.type === "application/pdf" ? (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: t.textMuted }}>
                             <FileText size={28} color={t.textMuted} />
@@ -4850,7 +4846,7 @@ export default function PublicProfilePage() {
                   </div>
                   <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
                     Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
-                    Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~2 min).
+                    Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~3–4 min).
                     For longer video, paste a YouTube or Vimeo link in your post.
                   </p>
                   <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8 }}>
@@ -4859,7 +4855,7 @@ export default function PublicProfilePage() {
                       onClick={() => postImageInputRef.current?.click()}
                       style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
                     >
-                      {selectedPostImages.length > 0 ? "Add More Photos" : "Add Photo"}
+                      {selectedPostImages.length > 0 ? "Add More" : "Add Photo or Video"}
                     </button>
                     <GifPickerButton
                       onSelect={(url) => setSelectedPostGif(url)}

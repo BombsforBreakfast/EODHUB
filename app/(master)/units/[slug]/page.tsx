@@ -15,9 +15,17 @@ import { MurphyRabbitholeBanner } from "../../../components/MurphyRabbitholeBann
 import FeedPostHeader from "../../../components/FeedPostHeader";
 import ExpandableText from "../../../components/ExpandableText";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
-import { prepareImageUploadFile } from "../../../lib/prepareUploadFile";
+import { prepareFeedUploadFile, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
 import { FEED_MEDIA_FRAME_BG, feedContainedImageStyle } from "../../../lib/feedLayout";
-import { validateImagePick } from "../../../lib/uploadLimits";
+import {
+  FEED_ATTACHMENT_ACCEPT,
+  UPLOAD_LIMITS,
+  formatUploadBytes,
+  isVideoFile,
+  isVideoUrl,
+  validateFeedAttachmentPick,
+  validateImagePick,
+} from "../../../lib/uploadLimits";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
 import { ensureSavedEventForUser } from "../../../lib/ensureSavedEventForUser";
 import type { Theme } from "../../../lib/theme";
@@ -801,11 +809,11 @@ export default function UnitPage() {
 
   // ── Wall posts ───────────────────────────────────────────────────────────
 
-  async function uploadUnitPhoto(file: File): Promise<string> {
-    const prepared = await prepareImageUploadFile(file);
+  async function uploadUnitMedia(file: File): Promise<string> {
+    const prepared = await prepareFeedUploadFile(file);
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
-    const safeFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;
+    const safeFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `unit-posts/${safeFileName}`;
     const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
     if (error) throw new Error(error.message);
@@ -818,7 +826,7 @@ export default function UnitPage() {
     try {
       let finalPhotoUrl = postPhotoUrl.trim() || null;
       if (postPhotoFile) {
-        finalPhotoUrl = await uploadUnitPhoto(postPhotoFile);
+        finalPhotoUrl = await uploadUnitMedia(postPhotoFile);
       }
       const token = await getToken();
       const res = await fetch(`/api/units/${slug}/posts`, {
@@ -845,7 +853,7 @@ export default function UnitPage() {
     setSubmittingPhoto(true);
     setPhotoSubmitMsg(null);
     try {
-      const finalPhotoUrl = await uploadUnitPhoto(photoUploadFile);
+      const finalPhotoUrl = await uploadUnitMedia(photoUploadFile);
       const token = await getToken();
       const wallRes = await fetch(`/api/units/${slug}/posts`, {
         method: "POST",
@@ -1382,11 +1390,21 @@ export default function UnitPage() {
 
                   {postPhotoPreview && (
                     <div style={{ marginTop: 8, position: "relative", display: "inline-block", width: 200, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
-                      <img
-                        src={postPhotoPreview}
-                        alt="preview"
-                        style={{ ...feedContainedImageStyle, width: "100%", height: 200 }}
-                      />
+                      {postPhotoFile && isVideoFile(postPhotoFile) ? (
+                        <video
+                          src={postPhotoPreview}
+                          style={{ ...feedContainedImageStyle, width: "100%", height: 200 }}
+                          muted
+                          playsInline
+                          controls
+                        />
+                      ) : (
+                        <img
+                          src={postPhotoPreview}
+                          alt="preview"
+                          style={{ ...feedContainedImageStyle, width: "100%", height: 200 }}
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={() => { setPostPhotoPreview(null); setPostPhotoFile(null); if (postPhotoInputRef.current) postPhotoInputRef.current.value = ""; }}
@@ -1398,12 +1416,12 @@ export default function UnitPage() {
                   <input
                     ref={postPhotoInputRef}
                     type="file"
-                    accept="image/*"
+                    accept={FEED_ATTACHMENT_ACCEPT}
                     style={{ display: "none" }}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      const pickError = validateImagePick(file);
+                      const pickError = validateFeedAttachmentPick([file]);
                       if (pickError) {
                         alert(pickError);
                         e.target.value = "";
@@ -1415,13 +1433,19 @@ export default function UnitPage() {
                     }}
                   />
 
+                  <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
+                    Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
+                    Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~3–4 min).
+                    For longer video, paste a YouTube or Vimeo link in your post.
+                  </p>
+
                   <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginTop: 12 }}>
                     <button
                       type="button"
                       onClick={() => postPhotoInputRef.current?.click()}
                       style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                     >
-                      {postPhotoFile ? "Change Photo" : "Add Photo"}
+                      {postPhotoFile ? "Change Attachment" : "Add Photo or Video"}
                     </button>
 
                     <EmojiPickerButton
@@ -2504,7 +2528,17 @@ function PostCard({
             justifyContent: "center",
           }}
         >
-          <img src={post.photo_url} alt="" style={feedContainedImageStyle} />
+          {isVideoUrl(post.photo_url) ? (
+            <video
+              src={post.photo_url}
+              controls
+              playsInline
+              preload="metadata"
+              style={feedContainedImageStyle}
+            />
+          ) : (
+            <img src={post.photo_url} alt="" style={feedContainedImageStyle} />
+          )}
         </div>
       )}
 

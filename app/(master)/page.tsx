@@ -16,7 +16,15 @@ import MemberPaywallModal from "../components/MemberPaywallModal";
 import SidebarThreadDrawer from "../components/SidebarThreadDrawer";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
 import { prepareFeedUploadFile } from "../lib/prepareUploadFile";
-import { validateFeedAttachmentPick, validateImagePick } from "../lib/uploadLimits";
+import {
+  FEED_ATTACHMENT_ACCEPT,
+  UPLOAD_LIMITS,
+  formatUploadBytes,
+  isVideoFile,
+  isVideoUrl,
+  validateFeedAttachmentPick,
+  validateImagePick,
+} from "../lib/uploadLimits";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
@@ -504,10 +512,6 @@ function formatEventDisplayDate(dateIso: string | null | undefined) {
     day: "numeric",
     year: "numeric",
   });
-}
-
-function isVideoUrl(url: string): boolean {
-  return /\.(mp4|webm|mov|avi|mkv|ogv)(\?|$)/i.test(url);
 }
 
 function extractLegacyEventTitle(content: string | null | undefined): string | null {
@@ -3290,14 +3294,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       const remainingSlots = 10 - prev.length;
 
       if (remainingSlots <= 0) {
-        alert("You can upload up to 10 images per post.");
+        alert("You can attach up to 10 photos or videos per post.");
         return prev;
       }
 
       const filesToAdd = files.slice(0, remainingSlots);
 
       if (files.length > remainingSlots) {
-        alert("Only the first images were added. Max is 10 per post.");
+        alert("Only the first files were added. Max is 10 photos or videos per post.");
       }
 
       const pickError = validateFeedAttachmentPick(filesToAdd);
@@ -4998,7 +5002,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             <input
               ref={postImageInputRef}
               type="file"
-              accept="image/*"
+              accept={FEED_ATTACHMENT_ACCEPT}
               multiple
               onChange={handlePostImageChange}
               style={{ display: "none" }}
@@ -5006,7 +5010,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
             {selectedPostImages.length > 0 && (
               <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted }}>
-                {selectedPostImages.length} of 10 photos selected
+                {selectedPostImages.length} of 10 attachments selected
               </div>
             )}
 
@@ -5031,11 +5035,19 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       aspectRatio: "1 / 1",
                     }}
                   >
-                    <img
-                      src={item.previewUrl}
-                      alt={`Selected post image ${index + 1}`}
-                      style={feedContainedImageStyle}
-                    />
+                    {isVideoFile(item.file) ? (
+                      <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
+                    ) : item.file.type === "application/pdf" ? (
+                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: t.textMuted, padding: 8, textAlign: "center", wordBreak: "break-all" }}>
+                        {item.file.name}
+                      </div>
+                    ) : (
+                      <img
+                        src={item.previewUrl}
+                        alt={`Selected post attachment ${index + 1}`}
+                        style={feedContainedImageStyle}
+                      />
+                    )}
 
                     <button
                       type="button"
@@ -5060,6 +5072,12 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 ))}
               </div>
             )}
+
+            <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
+              Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
+              Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~3–4 min).
+              For longer video, paste a YouTube or Vimeo link in your post.
+            </p>
 
             {kcComposerPhase === "confirm" && (
               <div
@@ -5258,7 +5276,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       color: t.text,
                     }}
                   >
-                    Remove All Photos
+                    Remove All Attachments
                   </button>
                 )}
               </div>
@@ -5277,7 +5295,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     cursor: "pointer",
                   }}
                 >
-                  {selectedPostImages.length > 0 ? "Add More Photos" : "Add Photo"}
+                  {selectedPostImages.length > 0 ? "Add More" : "Add Photo or Video"}
                 </button>
 
                 <EmojiPickerButton
