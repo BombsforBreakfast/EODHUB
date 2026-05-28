@@ -5,6 +5,7 @@ import { useTheme } from "../../lib/ThemeContext";
 import { httpsAssetUrl, type JobRow } from "../master/masterShared";
 import JobCardActions from "./JobCardActions";
 import JobImage, { JobCardClickableText } from "./JobImage";
+import JobStaleReportControl from "./JobStaleReportControl";
 import type { JobModalData } from "./JobDetailsModal";
 
 type Props = {
@@ -99,6 +100,18 @@ export default function JobFeedCard({
             isTogglingSave={isTogglingSave}
             onToggleSave={onToggleSave}
           />
+        </div>
+
+        <div
+          style={{
+            marginTop: 8,
+            paddingTop: 6,
+            borderTop: `1px dashed ${t.border}`,
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
+          <JobStaleReportControl jobId={job.id} variant="compact" triggerLabel="Report" />
         </div>
       </div>
     </div>

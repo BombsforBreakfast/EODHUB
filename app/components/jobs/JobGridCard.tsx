@@ -5,6 +5,7 @@ import { useTheme } from "../../lib/ThemeContext";
 import type { JobListItem } from "../../lib/jobFilters";
 import JobCardActions from "./JobCardActions";
 import JobImage, { JobCardClickableText } from "./JobImage";
+import JobStaleReportControl from "./JobStaleReportControl";
 import type { JobModalData } from "./JobDetailsModal";
 
 type Props = {
@@ -91,9 +92,15 @@ export default function JobGridCard({
             color: t.textFaint,
             fontWeight: 600,
             letterSpacing: 0.3,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
           }}
         >
-          Via {formatSource(job.source_type)}
+          <span>Via {formatSource(job.source_type)}</span>
+          <JobStaleReportControl jobId={job.id} variant="compact" triggerLabel="Report" />
         </div>
       </div>
     </div>
