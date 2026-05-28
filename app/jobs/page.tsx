@@ -12,7 +12,7 @@ import { shouldEnforceMemberPaywall } from "../lib/paywallPaths";
 import { hasFullPlatformAccess, needsEmailVerification } from "../lib/verificationAccess";
 import {
   applyJobFilters,
-  uniqueJobRegions,
+  uniqueJobRegionOptions,
   type JobFilterState,
   type JobListItem,
   type SalaryMin,
@@ -298,7 +298,7 @@ export default function JobsPage() {
     };
   }, [userId, loadSavedJobs]);
 
-  const regionOptions = useMemo(() => uniqueJobRegions(jobs), [jobs]);
+  const regionOptions = useMemo(() => uniqueJobRegionOptions(jobs), [jobs]);
 
   const visibleJobs = useMemo(() => {
     if (!canUseJobFilters) return jobs;
@@ -381,8 +381,8 @@ export default function JobsPage() {
               style={inputStyle}
             >
               <option value="">All locations</option>
-              {regionOptions.map((r) => (
-                <option key={r} value={r}>{r}</option>
+              {regionOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
 
@@ -424,7 +424,7 @@ export default function JobsPage() {
             )}
           </div>
           <div style={{ marginTop: 8, fontSize: 11, color: t.textFaint }}>
-            Location dropdown reflects states &amp; countries with active job postings — unlisted regions currently have no open positions.
+            US states are listed by full name. Jobs without a listed location appear in every state filter.
           </div>
         </div>
       )}

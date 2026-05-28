@@ -53,14 +53,48 @@ const STATE_NAME_TO_ABBR: Record<string, string> = {
   "district of columbia": "DC", "washington d.c.": "DC", "washington dc": "DC",
 };
 
+const ABBR_TO_STATE_NAME: Record<string, string> = Object.fromEntries(
+  Object.entries(STATE_NAME_TO_ABBR).map(([name, abbr]) => [abbr, name]),
+);
+ABBR_TO_STATE_NAME.DC = "District of Columbia";
+
+export type JobRegionOption = {
+  value: string;
+  label: string;
+};
+
 // Phrases that mean "this segment is just the country suffix for a US address".
 const US_SUFFIXES = new Set(["united states", "usa", "us", "u.s.", "u.s.a."]);
 
-// OCONUS regions always shown in the dropdown regardless of current job data.
-const OCONUS_REGIONS: string[] = [
-  "Canada", "Guam", "Italy", "Kuwait", "Philippines",
-  "Puerto Rico", "Saudi Arabia", "Spain", "UAE",
-];
+export function isUsStateAbbr(key: string): boolean {
+  return US_STATE_ABBRS.has(key.toUpperCase());
+}
+
+/** Display label for a canonical region key (US abbr → full state name). */
+export function regionDisplayLabel(key: string): string {
+  const upper = key.toUpperCase();
+  if (isUsStateAbbr(upper)) {
+    const name = ABBR_TO_STATE_NAME[upper];
+    if (name) {
+      return name.replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  }
+  return key;
+}
+
+/** Normalize a filter value (abbr or full state name) to a canonical region key. */
+export function resolveRegionFilter(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const upper = trimmed.replace(/\s/g, "").toUpperCase();
+  if (/^[A-Z]{2}$/.test(upper) && US_STATE_ABBRS.has(upper)) return upper;
+
+  const abbr = STATE_NAME_TO_ABBR[trimmed.toLowerCase()];
+  if (abbr) return abbr;
+
+  return trimmed;
+}
 
 /**
  * Given a raw job location string (e.g. "Norfolk, VA" or "Naples, Italy"),
@@ -101,35 +135,50 @@ export function extractRegion(location: string | null): string | null {
 }
 
 /**
- * Build the sorted list of unique regions for the location dropdown.
- * Purely data-driven — only regions that appear in the current job list
- * are shown, so the dropdown always reflects what's actually available.
+ * Build sorted location dropdown options: US states (A–Z by full name), then international (A–Z).
+ * Only regions present in the current job list are included.
  */
-export function uniqueJobRegions(jobs: JobListItem[]): string[] {
+export function uniqueJobRegionOptions(jobs: JobListItem[]): JobRegionOption[] {
   const regions = new Set<string>();
   for (const job of jobs) {
     const region = extractRegion(job.location);
     if (region && region !== "Remote") regions.add(region);
   }
-  return [...regions].sort((a, b) => a.localeCompare(b));
+
+  const usStates: JobRegionOption[] = [];
+  const international: JobRegionOption[] = [];
+
+  for (const value of regions) {
+    const option = { value, label: regionDisplayLabel(value) };
+    if (isUsStateAbbr(value)) usStates.push(option);
+    else international.push(option);
+  }
+
+  usStates.sort((a, b) => a.label.localeCompare(b.label));
+  international.sort((a, b) => a.label.localeCompare(b.label));
+
+  return [...usStates, ...international];
+}
+
+/**
+ * @deprecated use uniqueJobRegionOptions instead
+ */
+export function uniqueJobRegions(jobs: JobListItem[]): string[] {
+  return uniqueJobRegionOptions(jobs).map((o) => o.label);
 }
 
 // ─── Filter logic ─────────────────────────────────────────────────────────────
 
-function toLower(v: string | null | undefined): string {
-  return (v ?? "").toLowerCase();
-}
-
 export function applyJobFilters(jobs: JobListItem[], filters: JobFilterState): JobListItem[] {
   const keyword = filters.keyword.trim().toLowerCase();
-  const region = filters.locationRegion;
+  const region = filters.locationRegion ? resolveRegionFilter(filters.locationRegion) : "";
   const salaryMin = filters.salaryMin;
 
   return jobs.filter((job) => {
-    // Region filter — match against the extracted region label.
+    // Region filter — match canonical key; jobs without a parseable location pass through.
     if (region) {
       const jobRegion = extractRegion(job.location);
-      if (jobRegion !== region) return false;
+      if (jobRegion !== null && jobRegion !== region) return false;
     }
 
     // Keyword filter.

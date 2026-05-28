@@ -3935,7 +3935,23 @@ export default function AdminPage() {
                     <div style={{ flex: "1 1 220px", minWidth: 0 }}>
                       <div style={{ fontWeight: 800, fontSize: 15, color: t.text, wordBreak: "break-word" }}>{titleLine}</div>
                       <div style={{ fontSize: 12, color: t.textFaint, marginTop: 4 }}>
-                        {r.reporter_name ?? "Unknown"} · {new Date(r.created_at).toLocaleString()}
+                        {r.user_id ? (
+                          <>
+                            <Link
+                              href={`/sidebar?with=${encodeURIComponent(r.user_id)}`}
+                              title="Open Sidebars conversation with this reporter"
+                              style={{ color: "#2563eb", fontWeight: 700, textDecoration: "none" }}
+                            >
+                              {r.reporter_name ?? "Unknown"}
+                            </Link>
+                            {" · "}
+                            {new Date(r.created_at).toLocaleString()}
+                          </>
+                        ) : (
+                          <>
+                            {r.reporter_name ?? "Unknown"} · {new Date(r.created_at).toLocaleString()}
+                          </>
+                        )}
                       </div>
                       <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, wordBreak: "break-all" }}>
                         <strong style={{ color: t.textMuted }}>User ID:</strong> {r.user_id ?? "—"}

@@ -61,7 +61,7 @@ import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../compo
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 import { Award, Play, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
-import { applyJobFilters, uniqueJobRegions, type JobFilterState } from "../lib/jobFilters";
+import { applyJobFilters, uniqueJobRegionOptions, type JobFilterState } from "../lib/jobFilters";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
 import { postNotifyJson } from "../lib/postNotifyClient";
 import type {
@@ -4586,7 +4586,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     return copy;
   }, [jobs, jobSort]);
 
-  const jobLocationOptions = useMemo(() => uniqueJobRegions(sortedJobs), [sortedJobs]);
+  const jobLocationOptions = useMemo(() => uniqueJobRegionOptions(sortedJobs), [sortedJobs]);
 
   const mobileVisibleJobs = useMemo(() => {
     if (!canViewFullJobs) return sortedJobs.slice(0, 5);
@@ -7056,9 +7056,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     style={{ width: "100%", fontSize: 13, padding: "6px 8px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text }}
                   >
                     <option value="">All locations</option>
-                    {jobLocationOptions.map((loc) => (
-                      <option key={loc} value={loc}>
-                        {loc}
+                    {jobLocationOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
                       </option>
                     ))}
                   </select>
