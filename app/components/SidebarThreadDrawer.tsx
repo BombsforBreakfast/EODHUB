@@ -509,7 +509,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
             Drop photo to attach
           </div>
         )}
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className={isMobile ? "sidebar-composer-row" : undefined} style={{ display: "flex", gap: 8, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
           <input
             ref={inputRef}
             value={draft}
@@ -524,6 +524,8 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
             disabled={!conversationId || loading}
             style={{
               flex: 1,
+              minWidth: 0,
+              boxSizing: "border-box",
               border: `1px solid ${t.inputBorder}`,
               borderRadius: 10,
               padding: "10px 12px",

@@ -18,7 +18,15 @@ type Props = {
 
 export default function EmojiPickerButton({ value, onChange, inputRef, theme = "light" }: Props) {
   const [open, setOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth <= 900);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -49,6 +57,13 @@ export default function EmojiPickerButton({ value, onChange, inputRef, theme = "
   }
 
   return (
+    <>
+      {open && isMobile && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 999 }}
+        />
+      )}
     <div ref={wrapperRef} style={{ position: "relative", flexShrink: 0 }}>
       <button
         type="button"
@@ -69,7 +84,21 @@ export default function EmojiPickerButton({ value, onChange, inputRef, theme = "
       </button>
 
       {open && (
-        <div style={{ position: "absolute", bottom: "calc(100% + 6px)", right: 0, zIndex: 500 }}>
+        <div style={isMobile ? {
+          position: "fixed",
+          left: 10,
+          right: 10,
+          bottom: "max(10px, env(safe-area-inset-bottom, 0px))",
+          zIndex: 1000,
+          maxWidth: "calc(100vw - 20px)",
+          overflow: "hidden",
+        } : {
+          position: "absolute",
+          bottom: "calc(100% + 6px)",
+          right: 0,
+          zIndex: 500,
+          maxWidth: "calc(100vw - 24px)",
+        }}>
           <Picker
             data={data}
             onEmojiSelect={handleSelect}
@@ -80,5 +109,6 @@ export default function EmojiPickerButton({ value, onChange, inputRef, theme = "
         </div>
       )}
     </div>
+    </>
   );
 }

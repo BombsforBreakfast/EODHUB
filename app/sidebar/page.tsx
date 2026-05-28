@@ -719,14 +719,15 @@ export default function SidebarPage() {
   if (loading) return <div style={{ padding: 40, color: t.text }}>Loading…</div>;
 
   const InboxPane = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, borderRight: isMobile ? "none" : `1px solid ${t.border}` }}>
+    <div className={isMobile ? "sidebar-mobile-pane" : undefined} style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, borderRight: isMobile ? "none" : `1px solid ${t.border}` }}>
       {/* Tabs */}
       <div style={{ display: "flex", borderBottom: `1px solid ${t.border}` }}>
         <button
           onClick={() => setInboxTab("messages")}
           style={{
             flex: 1, padding: "14px 8px", fontWeight: 800, fontSize: 14, cursor: "pointer",
-            border: "none", borderBottom: inboxTab === "messages" ? `2px solid ${t.text}` : "2px solid transparent",
+            borderTop: "none", borderLeft: "none", borderRight: "none",
+            borderBottom: inboxTab === "messages" ? `2px solid ${t.text}` : "2px solid transparent",
             background: t.surface, color: inboxTab === "messages" ? t.text : t.textFaint,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
           }}
@@ -737,7 +738,8 @@ export default function SidebarPage() {
           onClick={() => setInboxTab("requests")}
           style={{
             flex: 1, padding: "14px 8px", fontWeight: 800, fontSize: 14, cursor: "pointer",
-            border: "none", borderBottom: inboxTab === "requests" ? `2px solid ${t.text}` : "2px solid transparent",
+            borderTop: "none", borderLeft: "none", borderRight: "none",
+            borderBottom: inboxTab === "requests" ? `2px solid ${t.text}` : "2px solid transparent",
             background: t.surface, color: inboxTab === "requests" ? t.text : t.textFaint,
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
           }}
@@ -762,7 +764,8 @@ export default function SidebarPage() {
                 style={{
                   width: "100%", textAlign: "left", padding: "10px 20px",
                   background: isDark ? "#1c2a1c" : "#f0fdf4",
-                  border: "none", borderBottom: `1px solid ${t.border}`,
+                  borderTop: "none", borderLeft: "none", borderRight: "none",
+                  borderBottom: `1px solid ${t.border}`,
                   cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
                   fontSize: 13, fontWeight: 700, color: isDark ? "#86efac" : "#166534",
                 }}
@@ -784,6 +787,7 @@ export default function SidebarPage() {
             {acceptedConvs.map((conv) => (
               <div
                 key={conv.id}
+                className={isMobile ? "sidebar-inbox-row" : undefined}
                 onClick={() => selectConversation(conv.id)}
                 style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "14px 20px",
@@ -819,8 +823,8 @@ export default function SidebarPage() {
                   </div>
                 </a>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontWeight: conv.unread_count > 0 ? 800 : 600, fontSize: 14, color: t.text }}>{conv.other_user_name}</span>
+                  <div className={isMobile ? "sidebar-inbox-name-row" : undefined} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    <span className={isMobile ? "sidebar-inbox-name" : undefined} style={{ fontWeight: conv.unread_count > 0 ? 800 : 600, fontSize: 14, color: t.text, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conv.other_user_name}</span>
                     <span style={{ fontSize: 11, color: t.textFaint, flexShrink: 0 }}>{timeAgo(conv.last_message_at)}</span>
                   </div>
                   <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -833,6 +837,7 @@ export default function SidebarPage() {
             {sentPending.map((conv) => (
               <div
                 key={conv.id}
+                className={isMobile ? "sidebar-inbox-row" : undefined}
                 onClick={() => selectConversation(conv.id)}
                 style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "14px 20px",
@@ -848,8 +853,8 @@ export default function SidebarPage() {
                   </div>
                 </a>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{conv.other_user_name}</span>
+                  <div className={isMobile ? "sidebar-inbox-name-row" : undefined} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    <span className={isMobile ? "sidebar-inbox-name" : undefined} style={{ fontWeight: 600, fontSize: 14, color: t.text, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{conv.other_user_name}</span>
                     <span style={{ background: "#fef9c3", color: "#92400e", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 20, flexShrink: 0 }}>Pending</span>
                   </div>
                   <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -1020,7 +1025,7 @@ export default function SidebarPage() {
   }
 
   const MessageBubbles = (
-    <div ref={messagesContainerRef} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+    <div ref={messagesContainerRef} className={isMobile ? "sidebar-messages-scroll" : undefined} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: isMobile ? "16px 12px" : "16px 20px", display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
       {messages.map((msg) => {
         const isMe = msg.sender_id === userId;
         const isHovered = hoveredMsgId === msg.id;
@@ -1036,7 +1041,8 @@ export default function SidebarPage() {
         return (
           <div
             key={msg.id}
-            style={{ display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start" }}
+            className={isMobile ? "sidebar-message-row" : undefined}
+            style={{ display: "flex", flexDirection: "column", alignItems: isMe ? "flex-end" : "flex-start", width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}
             onMouseEnter={() => setHoveredMsgId(msg.id)}
             onMouseLeave={() => setHoveredMsgId(null)}
           >
@@ -1051,7 +1057,7 @@ export default function SidebarPage() {
 
             {/* Confirm delete */}
             {isConfirm && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: t.surface, border: `1px solid #fca5a5`, borderRadius: 10, marginBottom: 4, fontSize: 13 }}>
+              <div className={isMobile ? "sidebar-delete-confirm" : undefined} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: t.surface, border: `1px solid #fca5a5`, borderRadius: 10, marginBottom: 4, fontSize: 13, maxWidth: "100%" }}>
                 <span style={{ color: t.text }}>Delete this message?</span>
                 <button onClick={() => deleteMessage(msg.id)} disabled={!!deletingId} style={{ background: "#ef4444", color: "white", border: "none", borderRadius: 6, padding: "3px 10px", fontWeight: 700, fontSize: 12, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                   {deletingId === msg.id && <span className="btn-spinner" />}
@@ -1088,13 +1094,15 @@ export default function SidebarPage() {
                 </div>
               </div>
             ) : !isConfirm && (
-              <div style={{
-                maxWidth: inviteEventId || lemonLotListingId ? "min(360px, 86%)" : extractFirstUrl(msg.content || "") ? "60%" : "72%",
+              <div className={isMobile ? "sidebar-message-bubble" : undefined} style={{
+                maxWidth: inviteEventId || lemonLotListingId ? "min(360px, 86%)" : extractFirstUrl(msg.content || "") ? "82%" : "82%",
                 padding: msg.gif_url && !msg.content ? "4px" : "10px 14px",
                 borderRadius: isMe ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
                 background: isMe ? "#111" : t.badgeBg,
                 color: isMe ? "white" : t.text,
                 fontSize: 14, lineHeight: 1.5,
+                wordBreak: "break-word",
+                overflowWrap: "anywhere",
               }}>
                 {visibleMessageContent && <div>{renderMessageTextWithLinks(visibleMessageContent)}</div>}
                 {msg.image_url ? (
@@ -1107,7 +1115,7 @@ export default function SidebarPage() {
                     <img
                       src={msg.image_url}
                       alt="Message attachment"
-                      style={{ display: "block", maxWidth: 260, maxHeight: 320, borderRadius: 12, objectFit: "cover" }}
+                      style={{ display: "block", maxWidth: isMobile ? "100%" : 260, width: "100%", maxHeight: 320, borderRadius: 12, objectFit: "cover" }}
                     />
                   </a>
                 ) : null}
@@ -1192,7 +1200,7 @@ export default function SidebarPage() {
                 })()}
                 {msg.gif_url && (
                   <div style={{ marginTop: msg.content ? 8 : 0 }}>
-                    <img src={msg.gif_url} alt="GIF" style={{ maxWidth: 220, borderRadius: 12, display: "block" }} />
+                    <img src={msg.gif_url} alt="GIF" style={{ maxWidth: isMobile ? "100%" : 220, width: "100%", borderRadius: 12, display: "block" }} />
                   </div>
                 )}
                 <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: isMe ? "right" : "left" }}>{timeAgo(msg.created_at)}</div>
@@ -1206,9 +1214,9 @@ export default function SidebarPage() {
   );
 
   const ThreadPane = (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+    <div className={isMobile ? "sidebar-mobile-pane" : undefined} style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
       {/* Thread header */}
-      <div style={{ padding: "14px 20px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "center", gap: 12 }}>
+      <div className={isMobile ? "sidebar-thread-header" : undefined} style={{ padding: isMobile ? "14px 12px" : "14px 20px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "center", gap: 12, minWidth: 0, width: "100%", boxSizing: "border-box" }}>
         {isMobile && (
           <button
             onClick={() => { setMobileView("list"); setRequestTarget(null); }}
@@ -1235,12 +1243,12 @@ export default function SidebarPage() {
               </div>
             )}
             {threadUserId && !requestTarget ? (
-              <a href={`/profile/${threadUserId}`} style={{ fontWeight: 800, fontSize: 16, textDecoration: "none", color: "inherit" }}>
+              <a href={`/profile/${threadUserId}`} className={isMobile ? "sidebar-thread-header-name" : undefined} style={{ fontWeight: 800, fontSize: 16, textDecoration: "none", color: "inherit", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {threadName}
               </a>
             ) : (
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 16, color: t.text }}>{threadName}</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className={isMobile ? "sidebar-thread-header-name" : undefined} style={{ fontWeight: 800, fontSize: 16, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{threadName}</div>
                 <div style={{ fontSize: 12, color: t.textFaint, marginTop: 1 }}>New message request</div>
               </div>
             )}
@@ -1263,23 +1271,25 @@ export default function SidebarPage() {
               Your message will be sent as a request.<br />{requestTarget.name} can choose to accept or decline.
             </div>
           </div>
-          <div style={{ padding: "12px 16px", borderTop: `1px solid ${t.border}`, display: "flex", gap: 10 }}>
+          <div className={isMobile ? "sidebar-composer-wrap" : undefined} style={{ padding: isMobile ? "12px 12px" : "12px 16px", borderTop: `1px solid ${t.border}`, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
+            <div className={isMobile ? "sidebar-composer-row" : undefined} style={{ display: "flex", gap: isMobile ? 6 : 10, alignItems: "center", width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
             <input
               autoFocus
               value={requestDraft}
               onChange={(e) => setRequestDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && requestDraft.trim()) { e.preventDefault(); sendRequest(); } }}
               placeholder={`Message ${requestTarget.name}...`}
-              style={{ flex: 1, padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
+              style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
             />
             <button
               onClick={sendRequest}
               disabled={!requestDraft.trim() || sending}
-              style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: !requestDraft.trim() || sending ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
+              style={{ padding: isMobile ? "10px 12px" : "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: !requestDraft.trim() || sending ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}
             >
               {sending && <span className="btn-spinner" />}
               Send
             </button>
+            </div>
           </div>
           {(() => {
             const url = extractFirstUrl(requestDraft);
@@ -1333,10 +1343,15 @@ export default function SidebarPage() {
               }}
               onDragLeave={() => setIsDraggingPhoto(false)}
               onDrop={handlePhotoDrop}
+              className={isMobile ? "sidebar-composer-wrap" : undefined}
               style={{
-                padding: "12px 16px",
+                padding: isMobile ? "12px 12px" : "12px 16px",
                 borderTop: `1px solid ${isDraggingPhoto ? "#60a5fa" : t.border}`,
                 background: isDraggingPhoto ? (isDark ? "rgba(96,165,250,0.12)" : "rgba(96,165,250,0.1)") : undefined,
+                width: "100%",
+                maxWidth: "100%",
+                minWidth: 0,
+                boxSizing: "border-box",
               }}
             >
               <input
@@ -1375,14 +1390,14 @@ export default function SidebarPage() {
                   Drop photo to attach
                 </div>
               )}
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              <div className={isMobile ? "sidebar-composer-row" : undefined} style={{ display: "flex", gap: isMobile ? 6 : 10, alignItems: "center", width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
                 <input
                   ref={messageInputRef}
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                   placeholder="Type a message..."
-                  style={{ flex: 1, padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
+                  style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
                 />
                 <EmojiPickerButton
                   value={newMessage}
@@ -1395,7 +1410,7 @@ export default function SidebarPage() {
                   onClick={() => photoInputRef.current?.click()}
                   disabled={sending}
                   title="Add photo"
-                  style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: "50%", width: 34, height: 34, cursor: sending ? "default" : "pointer", fontWeight: 900, opacity: sending ? 0.6 : 1 }}
+                  style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: "50%", width: 34, height: 34, cursor: sending ? "default" : "pointer", fontWeight: 900, opacity: sending ? 0.6 : 1, flexShrink: 0 }}
                 >
                   +
                 </button>
@@ -1406,7 +1421,7 @@ export default function SidebarPage() {
                 <button
                   onClick={() => sendMessage()}
                   disabled={(!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending}
-                  style={{ padding: "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: (!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6 }}
+                  style={{ padding: isMobile ? "10px 12px" : "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: (!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}
                 >
                   {sending && <span className="btn-spinner" />}
                   Send
@@ -1436,13 +1451,17 @@ export default function SidebarPage() {
   const selectedInviteMeta = selectedInviteEventId ? eventInviteMeta[selectedInviteEventId] : null;
 
   return (
-    <div style={{ color: t.text }}>
-      <div style={{
-        border: `1px solid ${t.border}`, borderRadius: 16, overflow: "hidden", background: t.surface,
+    <div className={isMobile ? "sidebar-mobile-page" : undefined} style={{ color: t.text, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", overflowX: isMobile ? "hidden" : undefined }}>
+      <div className={isMobile ? "sidebar-mobile-grid" : undefined} style={{
+        border: `1px solid ${t.border}`, borderRadius: isMobile ? 12 : 16, overflow: "hidden", background: t.surface,
         display: "grid",
         gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
         gridTemplateRows: "1fr",
-        height: isMobile ? "calc(100dvh - 120px)" : "calc(100dvh - 120px)",
+        height: "calc(100dvh - 120px)",
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
       }}>
         {isMobile ? (
           mobileView === "list" ? InboxPane : ThreadPane

@@ -531,6 +531,116 @@ a.rabbithole-brand-link:focus-visible {
     max-width: 100% !important;
     box-sizing: border-box !important;
   }
+
+  .master-shell-mobile {
+    max-width: 100% !important;
+    width: 100% !important;
+    overflow-x: clip !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Sidebars / messaging route */
+  .sidebar-mobile-page {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    overflow-x: clip;
+    padding-top: 12px;
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
+  }
+  .sidebar-mobile-grid {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .sidebar-mobile-pane {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+  }
+  .sidebar-inbox-row {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .sidebar-inbox-name-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .sidebar-inbox-name {
+    min-width: 0;
+    flex: 1 1 0%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sidebar-thread-header {
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .sidebar-thread-header-name {
+    flex: 1 1 0%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sidebar-messages-scroll {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
+  .sidebar-message-row {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .sidebar-message-bubble {
+    max-width: min(82%, calc(100% - 16px)) !important;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+  .sidebar-composer-wrap {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  }
+  .sidebar-composer-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .sidebar-composer-row > input {
+    flex: 1 1 0%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+  .sidebar-composer-row > button,
+  .sidebar-composer-row > div {
+    flex-shrink: 0;
+  }
+  .sidebar-delete-confirm {
+    flex-wrap: wrap;
+    max-width: 100%;
+  }
 }
 
 /* EOD Hub mobile modal — same 2-col grid as former inline hub panel */
