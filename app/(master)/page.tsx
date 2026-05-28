@@ -62,6 +62,7 @@ import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from ".
 import { Award, Play, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
 import { applyJobFilters, uniqueJobRegionOptions, type JobFilterState } from "../lib/jobFilters";
+import { jobListingCutoffIso } from "../lib/jobRetention";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
 import { postNotifyJson } from "../lib/postNotifyClient";
 import type {
@@ -1584,14 +1585,17 @@ export default function HomePage() {
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfNextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 
+    const listingCutoff = jobListingCutoffIso();
+
     const [jobsRes, lastSeenRes, totalRes, todayRes] = await Promise.all([
-      supabase.from("jobs").select(JOB_COLUMNS).eq("is_approved", true).order("created_at", { ascending: false }).limit(limit),
+      supabase.from("jobs").select(JOB_COLUMNS).eq("is_approved", true).gte("created_at", listingCutoff).order("created_at", { ascending: false }).limit(limit),
       supabase.from("jobs").select("last_seen_at").eq("source_type", "usajobs").order("last_seen_at", { ascending: false }).limit(1).maybeSingle(),
-      supabase.from("jobs").select("id", { count: "exact", head: true }).eq("is_approved", true),
+      supabase.from("jobs").select("id", { count: "exact", head: true }).eq("is_approved", true).gte("created_at", listingCutoff),
       supabase
         .from("jobs")
         .select("id", { count: "exact", head: true })
         .eq("is_approved", true)
+        .gte("created_at", listingCutoff)
         .gte("created_at", startOfDay.toISOString())
         .lt("created_at", startOfNextDay.toISOString()),
     ]);

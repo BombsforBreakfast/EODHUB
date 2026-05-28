@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { jobListingCutoffIso } from "../../lib/jobRetention";
 
 const EOD_KEYWORDS = [
   "Explosive Ordnance Disposal",
@@ -73,8 +74,6 @@ const MILITARY_RECRUITMENT_FILTERS = [
   "medicine",
   "medical",
 ];
-
-const STALE_DAYS = 30;
 
 function isRelevantTitle(title: string): boolean {
   const lower = title.toLowerCase();
@@ -169,14 +168,14 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // 1. Purge stale USAJobs entries not seen in the last STALE_DAYS days (skip rejected — they're blocklist markers)
-  const cutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  // 1. Purge USAJobs listings older than the feed retention window (keep rejected blocklist rows).
+  const cutoff = jobListingCutoffIso();
   const { count: purged } = await supabase
     .from("jobs")
     .delete({ count: "exact" })
     .eq("source_type", "usajobs")
     .neq("is_rejected", true)
-    .lt("last_seen_at", cutoff);
+    .lt("created_at", cutoff);
 
   // 2. Scrape and upsert
   const seenPositionURIs = new Set<string>();
@@ -242,7 +241,7 @@ export async function GET(req: NextRequest) {
           skipped++;
           continue;
         }
-        // Job still active — refresh last_seen_at to reset the 30-day clock
+        // Job still active — refresh last_seen_at for "last updated" display
         const { error: upErr } = await supabase
           .from("jobs")
           .update({ last_seen_at: new Date().toISOString() })

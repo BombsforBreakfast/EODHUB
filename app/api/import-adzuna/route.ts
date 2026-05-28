@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { jobListingCutoffIso } from "../../lib/jobRetention";
 import {
   canonicalAdzunaDetailsUrl,
   parseAdzunaAdIdFromUrl,
@@ -19,7 +20,6 @@ const EOD_KEYWORDS = [
 
 const MAX_PAGES_PER_KEYWORD = 3;
 const RESULTS_PER_PAGE = 50;
-const STALE_DAYS = 30;
 
 const TITLE_RELEVANT_TERMS = [
   "eod",
@@ -149,16 +149,14 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Purge stale Adzuna jobs not seen in STALE_DAYS days
-  const cutoff = new Date(
-    Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000
-  ).toISOString();
+  // Purge Adzuna listings older than the feed retention window.
+  const cutoff = jobListingCutoffIso();
   const { count: purged } = await supabase
     .from("jobs")
     .delete({ count: "exact" })
     .eq("source_type", "adzuna")
     .neq("is_rejected", true)
-    .lt("last_seen_at", cutoff);
+    .lt("created_at", cutoff);
 
   const seenAdzunaIds = new Set<string>();
   let imported = 0;

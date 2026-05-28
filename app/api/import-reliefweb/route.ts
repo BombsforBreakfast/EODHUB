@@ -11,8 +11,8 @@ import {
   RESULTS_PER_PAGE,
   scoreReliefWebRelevance,
   shouldIngestReliefWebJob,
-  STALE_DAYS,
 } from "../../lib/reliefwebJob";
+import { jobListingCutoffIso } from "../../lib/jobRetention";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
@@ -45,13 +45,13 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const cutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const cutoff = jobListingCutoffIso();
   const { count: purged } = await supabase
     .from("jobs")
     .delete({ count: "exact" })
     .eq("source_type", "reliefweb")
     .neq("is_rejected", true)
-    .lt("last_seen_at", cutoff);
+    .lt("created_at", cutoff);
 
   const createdAfter = new Date(
     Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000

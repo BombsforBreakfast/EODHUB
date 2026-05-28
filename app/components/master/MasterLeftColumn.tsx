@@ -7,6 +7,7 @@ import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import { getFeatureAccess } from "../../lib/featureAccess";
+import { jobListingCutoffIso } from "../../lib/jobRetention";
 import { postNotifyJson } from "../../lib/postNotifyClient";
 import UpgradePromptModal from "../UpgradePromptModal";
 import JobCardActions from "../jobs/JobCardActions";
@@ -640,14 +641,17 @@ export default function MasterLeftColumn({
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const startOfNextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
 
+    const listingCutoff = jobListingCutoffIso();
+
     const [jobsRes, lastSeenRes, totalRes, todayRes] = await Promise.all([
-      supabase.from("jobs").select("*").eq("is_approved", true).order("created_at", { ascending: false }).limit(limit),
+      supabase.from("jobs").select("*").eq("is_approved", true).gte("created_at", listingCutoff).order("created_at", { ascending: false }).limit(limit),
       supabase.from("jobs").select("last_seen_at").eq("source_type", "usajobs").order("last_seen_at", { ascending: false }).limit(1).maybeSingle(),
-      supabase.from("jobs").select("*", { count: "exact", head: true }).eq("is_approved", true),
+      supabase.from("jobs").select("*", { count: "exact", head: true }).eq("is_approved", true).gte("created_at", listingCutoff),
       supabase
         .from("jobs")
         .select("*", { count: "exact", head: true })
         .eq("is_approved", true)
+        .gte("created_at", listingCutoff)
         .gte("created_at", startOfDay.toISOString())
         .lt("created_at", startOfNextDay.toISOString()),
     ]);

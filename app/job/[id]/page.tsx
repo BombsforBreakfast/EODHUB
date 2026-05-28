@@ -6,6 +6,7 @@ import { supabase } from "../../lib/lib/supabaseClient";
 import NavBar from "../../components/NavBar";
 import { useTheme } from "../../lib/ThemeContext";
 import JobImage from "../../components/jobs/JobImage";
+import { isJobListingExpired } from "../../lib/jobRetention";
 
 type Job = {
   id: string;
@@ -20,6 +21,7 @@ type Job = {
   clearance: string | null;
   source_type: string | null;
   og_image: string | null;
+  created_at: string | null;
 };
 
 function formatExternalUrl(url: string | null | undefined): string | null {
@@ -46,13 +48,13 @@ export default function JobDetailPage() {
       const { data: jobData, error: jobError } = await supabase
         .from("jobs")
         .select(
-          "id,title,company_name,location,category,description,apply_url,pay_min,pay_max,clearance,source_type,og_image,is_approved"
+          "id,title,company_name,location,category,description,apply_url,pay_min,pay_max,clearance,source_type,og_image,is_approved,created_at"
         )
         .eq("id", jobId)
         .eq("is_approved", true)
         .single();
 
-      if (jobError) {
+      if (jobError || !jobData || isJobListingExpired((jobData as Job).created_at)) {
         console.error("Job load error:", jobError);
         setJob(null);
         setLoading(false);

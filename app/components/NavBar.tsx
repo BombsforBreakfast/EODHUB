@@ -13,6 +13,7 @@ import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import NotificationCenter from "./NotificationCenter";
 import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
+import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import type { User } from "@supabase/supabase-js";
 
@@ -329,6 +330,7 @@ export default function NavBar() {
           .or(`business_name.ilike.%${q}%,og_title.ilike.%${q}%,og_site_name.ilike.%${q}%,custom_blurb.ilike.%${q}%`).limit(5),
         supabase.from("jobs").select("id, title, company_name, location, apply_url")
           .eq("is_approved", true)
+          .gte("created_at", jobListingCutoffIso())
           .or(`title.ilike.%${q}%,company_name.ilike.%${q}%,location.ilike.%${q}%`).limit(5),
         supabase.from("memorials").select("id, name, death_date, category").ilike("name", `%${q}%`).limit(5),
         supabase.from("units").select("id, name, slug, type, description").ilike("name", `%${q}%`).limit(5),

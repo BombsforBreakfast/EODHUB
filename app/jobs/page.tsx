@@ -19,6 +19,7 @@ import {
 } from "../lib/jobFilters";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
+import { jobListingCutoffIso } from "../lib/jobRetention";
 
 type ProfileRow = {
   account_type: string | null;
@@ -262,11 +263,13 @@ export default function JobsPage() {
       setCanUseJobFilters(true);
 
       const limit = 500;
+      const listingCutoff = jobListingCutoffIso();
       const [{ data: jobsData, error }] = await Promise.all([
         supabase
           .from("jobs")
           .select("id, created_at, title, category, location, pay_min, pay_max, clearance, description, apply_url, company_name, source_type, og_title, og_description, og_image, og_site_name")
           .eq("is_approved", true)
+          .gte("created_at", listingCutoff)
           .order("created_at", { ascending: false })
           .limit(limit),
         loadSavedJobs(uid),
