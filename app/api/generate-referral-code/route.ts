@@ -6,8 +6,12 @@ const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 function makeCode(length = 8): string {
   let code = "";
+  // Use a secure random number generator instead of Math.random() for security tokens
+  const randomValues = new Uint32Array(length);
+  crypto.getRandomValues(randomValues);
+
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    code += CHARS[randomValues[i] % CHARS.length];
   }
   return code;
 }
