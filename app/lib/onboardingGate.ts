@@ -12,9 +12,18 @@ import {
 export const ONBOARDING_REQUIRED_FIELDS_MESSAGE =
   "Required fields — please enter before continuing.";
 
-/** Profile columns needed to decide whether to send someone back to onboarding. */
+/**
+ * Profile columns needed to decide whether to send someone back to onboarding.
+ *
+ * IMPORTANT: this select must include every column read by
+ * `shouldRedirectToOnboarding` and the helpers it calls — especially the
+ * verification access fields (`email_verified`, `admin_verified`,
+ * `verification_status`). Without those, `hasFullPlatformAccess` returns
+ * false on the loaded profile and fully-approved users get bounced into
+ * `/onboarding` (or `/pending` / `/verify-email` via `useRequireFullAccess`).
+ */
 export const ONBOARDING_GATE_PROFILE_SELECT =
-  "user_id, first_name, last_name, service, company_name, account_type, is_pure_admin, must_complete_onboarding, created_at";
+  "user_id, first_name, last_name, service, company_name, account_type, is_pure_admin, must_complete_onboarding, created_at, email_verified, admin_verified, verification_status, is_approved";
 
 export type OnboardingGateProfile = SignupProfileFields &
   VerificationProfile & {
@@ -23,6 +32,7 @@ export type OnboardingGateProfile = SignupProfileFields &
     must_complete_onboarding?: boolean | null;
     subscription_status?: string | null;
     is_admin?: boolean | null;
+    is_approved?: boolean | null;
   };
 
 export function shouldRedirectToOnboarding(
