@@ -12,6 +12,7 @@ import {
 } from "@/app/lib/profileCompleteness";
 import { VERIFICATION } from "@/app/lib/verificationStatus";
 import { ensureWelcomeSidebarMessage } from "@/app/lib/server/ensureWelcomeSidebarMessage";
+import { clearFailedAuthReportsOnSuccessfulLogin } from "@/app/lib/server/clearFailedAuthReportsOnLogin";
 
 export type ApproveUserSource = "admin" | "vouch";
 
@@ -147,6 +148,35 @@ export async function approveUserAccount(
         step: "waitlist_cleanup",
         userId,
         source,
+      });
+    }
+
+    // Wipe stale unresolved failed-auth triage entries for this email. The
+    // user just got full app access, so any prior EMAIL_NOT_FOUND /
+    // ACCOUNT_CREATION_FAILED / login-bounce attempts are no longer
+    // actionable. Resolved/provisioned reports are preserved by the helper
+    // (it only deletes rows with admin_decision IS NULL) so the audit
+    // trail stays intact. Future failed attempts will still be logged via
+    // logFailedAuthAttempt so we can spot post-verification issues.
+    try {
+      const { deletedCount } = await clearFailedAuthReportsOnSuccessfulLogin(
+        adminClient,
+        email,
+      );
+      if (deletedCount > 0) {
+        devAuthLog("approve-user", {
+          step: "failed_auth_cleanup",
+          userId,
+          source,
+          deletedCount,
+        });
+      }
+    } catch (err) {
+      devAuthLog("approve-user", {
+        step: "failed_auth_cleanup_failed",
+        userId,
+        source,
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }
