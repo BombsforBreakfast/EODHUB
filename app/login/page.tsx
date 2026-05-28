@@ -1008,6 +1008,25 @@ export default function LoginPage() {
         </form>
         </>
       )}
+
+      <div
+        style={{
+          marginTop: 18,
+          padding: "10px 12px",
+          textAlign: "center",
+          fontSize: 12,
+          lineHeight: 1.5,
+          color: t.textMuted,
+        }}
+      >
+        Questions or experiencing login issues — email{" "}
+        <a
+          href="mailto:murphy@eod-hub.com"
+          style={{ color: t.text, fontWeight: 700, textDecoration: "underline" }}
+        >
+          murphy@eod-hub.com
+        </a>
+      </div>
     </div>
   );
 }
