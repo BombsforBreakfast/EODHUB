@@ -59,38 +59,25 @@ export async function approveUserAccount(
     throw new Error(profileError?.message ?? "Profile not found");
   }
 
-  // Look up the user's auth record (email + identity providers) once. Used
-  // both for the trusted-auth admin override below and for the approval
-  // email send further down.
+  // Look up the user's auth record (email + identity providers) once for the
+  // approval email send further down.
   const { data: userData, error: userError } = await adminClient.auth.admin.getUserById(userId);
   const authUser = userData?.user ?? null;
   const email = authUser?.email ?? null;
-  const identityProviders = (authUser?.identities ?? [])
-    .map((i) => i.provider)
-    .filter((p): p is string => typeof p === "string");
-  // A user is "auth-trusted" if they signed up with email/password OR via
-  // Google OAuth. This is the rule we use to let an admin force-verify an
-  // otherwise-incomplete account (no stub / OAuth-only-with-no-identity).
-  const hasTrustedAuth = identityProviders.some(
-    (p) => p === "email" || p === "google",
-  );
 
+  // Admin verification mirrors the vouching gate: a new signup must finish
+  // onboarding (first name + last name + service/company) before either an
+  // admin or a vouch can flip them to verified. No trusted-auth override —
+  // incomplete users belong in the "Onboarding" tab until they complete the
+  // funnel.
   if (blocksSignupApproval(profile)) {
-    if (source === "admin" && hasTrustedAuth) {
-      devAuthLog("approve-user", {
-        step: "admin_override_incomplete_profile",
-        userId,
-        providers: identityProviders,
-      });
-    } else {
-      const missing = signupProfileMissingFields(profile).filter((field) =>
-        field === "first name" || field === "last name",
-      );
-      devAuthLog("approve-user", { step: "incomplete_profile", userId, source, missing });
-      throw new Error(
-        `Cannot approve: new signup is missing ${missing.join(" and ") || "first and last name"}. User must finish onboarding first.`,
-      );
-    }
+    const missing = signupProfileMissingFields(profile).filter((field) =>
+      field === "first name" || field === "last name",
+    );
+    devAuthLog("approve-user", { step: "incomplete_profile", userId, source, missing });
+    throw new Error(
+      `Cannot approve: new signup is missing ${missing.join(" and ") || "first and last name"}. User must finish onboarding first.`,
+    );
   }
 
   const wasAlreadyApproved = isFullyApproved(profile);

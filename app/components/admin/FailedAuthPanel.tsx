@@ -78,6 +78,148 @@ function truncate(value: string | null | undefined, max: number): string {
   return value.slice(0, max - 1) + "…";
 }
 
+// ── CSV export helpers ─────────────────────────────────────────────────────
+// Excel and most spreadsheets honor RFC 4180: wrap in quotes, double internal
+// quotes, normalize newlines. Prefix with a UTF-8 BOM so Excel auto-detects
+// the encoding and renders accents/em-dashes correctly.
+
+function csvCell(value: string | number | boolean | null | undefined): string {
+  if (value === null || value === undefined) return "";
+  const s = String(value);
+  if (s === "") return "";
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+function rowsToCsv(headers: ReadonlyArray<string>, rows: ReadonlyArray<ReadonlyArray<string | number | boolean | null | undefined>>): string {
+  const lines = [headers.map((h) => csvCell(h)).join(",")];
+  for (const r of rows) {
+    lines.push(r.map((c) => csvCell(c)).join(","));
+  }
+  return "\uFEFF" + lines.join("\r\n");
+}
+
+function downloadCsv(filename: string, csv: string): void {
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  // Defer revoke to give Safari/Firefox a tick to start the download.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function csvDateStamp(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+const TRIAGE_CSV_HEADERS = [
+  "email",
+  "attempts",
+  "latest_attempt_at",
+  "latest_reason",
+  "latest_error_code",
+  "latest_risk",
+  "classification",
+  "suspicious",
+  "admin_can_override",
+  "exists_in_auth",
+  "exists_in_profiles",
+  "verification_status",
+  "waitlist_status",
+  "ips",
+  "source_routes",
+  "failure_reasons_seen",
+  "admin_decision",
+  "admin_decided_at",
+  "admin_notes",
+] as const;
+
+function triageGroupsToCsv(groups: ReadonlyArray<FailedAuthReportGroup>): string {
+  const rows = groups.map((g) => [
+    g.displayEmail ?? g.normalizedEmail ?? "",
+    g.attemptCount,
+    g.latestCreatedAt,
+    g.latestReason,
+    g.latestErrorCode ?? "",
+    g.latestRiskLevel,
+    g.classification.displayReason,
+    g.classification.suspicious,
+    g.classification.adminCanOverride,
+    g.userExistsInAuth ?? "",
+    g.userExistsInProfiles ?? "",
+    g.verificationStatus ?? "",
+    g.waitlistStatus,
+    g.ipAddresses.join("; "),
+    g.sourceRoutes.join("; "),
+    g.failureReasons.join("; "),
+    g.adminDecision ?? "",
+    g.adminDecidedAt ?? "",
+    g.adminNotes ?? "",
+  ]);
+  return rowsToCsv(TRIAGE_CSV_HEADERS, rows);
+}
+
+const ARCHIVE_CSV_HEADERS = [
+  "id",
+  "created_at",
+  "email_attempted",
+  "normalized_email",
+  "ip_address",
+  "source_route",
+  "failure_reason",
+  "error_code",
+  "raw_error_message",
+  "turnstile_status",
+  "turnstile_error",
+  "user_exists_in_auth",
+  "user_exists_in_profiles",
+  "verification_status",
+  "request_id",
+  "attempt_count",
+  "risk_level",
+  "admin_decision",
+  "admin_decided_at",
+  "admin_decided_by",
+  "admin_notes",
+  "user_agent",
+] as const;
+
+function archiveReportsToCsv(reports: ReadonlyArray<FailedAuthReportRow>): string {
+  const rows = reports.map((r) => [
+    r.id,
+    r.created_at,
+    r.email_attempted ?? "",
+    r.normalized_email ?? "",
+    r.ip_address ?? "",
+    r.source_route ?? "",
+    r.failure_reason,
+    r.error_code ?? "",
+    r.raw_error_message ?? "",
+    r.turnstile_status ?? "",
+    r.turnstile_error ?? "",
+    r.user_exists_in_auth ?? "",
+    r.user_exists_in_profiles ?? "",
+    r.verification_status ?? "",
+    r.request_id,
+    r.attempt_count ?? "",
+    r.risk_level,
+    r.admin_decision ?? "",
+    r.admin_decided_at ?? "",
+    r.admin_decided_by ?? "",
+    r.admin_notes ?? "",
+    r.user_agent ?? "",
+  ]);
+  return rowsToCsv(ARCHIVE_CSV_HEADERS, rows);
+}
+
 export default function FailedAuthPanel() {
   const { t } = useTheme();
   const [range, setRange] = useState<Range>("24h");
@@ -234,8 +376,35 @@ export default function FailedAuthPanel() {
               ({groups.length} {groups.length === 1 ? "email" : "emails"})
             </span>
           </div>
-          <div style={{ fontSize: 12, color: t.textFaint }}>
-            Unresolved attempts from the last 30 days, grouped by email.
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 12, color: t.textFaint }}>
+              Unresolved attempts from the last 30 days, grouped by email.
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (groups.length === 0) return;
+                downloadCsv(
+                  `eod-failed-auth-triage-${csvDateStamp()}.csv`,
+                  triageGroupsToCsv(groups),
+                );
+              }}
+              disabled={groups.length === 0}
+              title="Download triage queue as CSV (one row per email, useful for outreach)"
+              style={{
+                padding: "6px 12px",
+                borderRadius: 999,
+                border: `1px solid ${t.border}`,
+                background: t.bg,
+                color: t.text,
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: groups.length === 0 ? "not-allowed" : "pointer",
+                opacity: groups.length === 0 ? 0.5 : 1,
+              }}
+            >
+              Export CSV
+            </button>
           </div>
         </div>
 
@@ -359,6 +528,31 @@ export default function FailedAuthPanel() {
               }}
             >
               {loading ? "Loading…" : "Refresh"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (reports.length === 0) return;
+                downloadCsv(
+                  `eod-failed-auth-archive-${range}-${csvDateStamp()}.csv`,
+                  archiveReportsToCsv(reports),
+                );
+              }}
+              disabled={reports.length === 0}
+              title="Download the currently filtered archive list as CSV"
+              style={{
+                padding: "6px 12px",
+                borderRadius: 999,
+                border: `1px solid ${t.border}`,
+                background: t.bg,
+                color: t.text,
+                fontSize: 13,
+                fontWeight: 700,
+                cursor: reports.length === 0 ? "not-allowed" : "pointer",
+                opacity: reports.length === 0 ? 0.5 : 1,
+              }}
+            >
+              Export CSV
             </button>
           </div>
           <div

@@ -138,18 +138,29 @@ function adminUserDisplayName(u: UserProfile): string {
   );
 }
 
-function userMatchesStatusFilter(u: UserProfile, filter: "all" | "pending" | "verified" | "denied"): boolean {
+type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "denied";
+
+function isAtAdminReviewTier(u: UserProfile): boolean {
+  return (
+    !!u.email_verified &&
+    !blocksSignupApproval(u) &&
+    (u.verification_status === "awaiting_admin_review" ||
+      u.verification_status === "pending_admin_review" ||
+      u.verification_status === "pending")
+  );
+}
+
+function userMatchesStatusFilter(u: UserProfile, filter: UserStatusFilter): boolean {
   if (filter === "all") return true;
-  if (filter === "pending") {
-    if (u.signup_incomplete) return true;
-    return (
-      (u.verification_status === "awaiting_admin_review" ||
-        u.verification_status === "pending_admin_review" ||
-        u.verification_status === "pending") &&
-      !!u.email_verified
-    );
+  if (filter === "verified") return u.verification_status === "verified";
+  if (filter === "denied") return u.verification_status === "denied";
+  if (filter === "pending") return isAtAdminReviewTier(u);
+  if (filter === "onboarding") {
+    if (u.verification_status === "verified") return false;
+    if (u.verification_status === "denied") return false;
+    return !isAtAdminReviewTier(u);
   }
-  return u.verification_status === filter;
+  return false;
 }
 
 function userMatchesSearchQuery(u: UserProfile, query: string): boolean {
@@ -657,7 +668,7 @@ export default function AdminPage() {
   const [flags, setFlags] = useState<Flag[]>([]);
 
   const [pendingOnly, setPendingOnly] = useState(true);
-  const [userFilter, setUserFilter] = useState<"all" | "pending" | "verified" | "denied">("pending");
+  const [userFilter, setUserFilter] = useState<UserStatusFilter>("pending");
   const [userSearch, setUserSearch] = useState("");
 
   const filteredAdminUsers = useMemo(
@@ -3722,7 +3733,7 @@ export default function AdminPage() {
           <div style={{ marginTop: 20 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
               <div style={{ display: "flex", gap: 6 }}>
-                {(["all", "pending", "verified", "denied"] as const).map((f) => (
+                {(["all", "pending", "onboarding", "verified", "denied"] as const).map((f) => (
                   <button
                     key={f}
                     onClick={() => setUserFilter(f)}
@@ -3733,7 +3744,7 @@ export default function AdminPage() {
                       color: userFilter === f ? "white" : t.badgeText,
                     }}
                   >
-                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                    {f === "onboarding" ? "Onboarding" : f.charAt(0).toUpperCase() + f.slice(1)}
                     {" "}
                     <span style={{ opacity: 0.7 }}>
                       ({users.filter((u) => userMatchesStatusFilter(u, f)).length})
@@ -3790,13 +3801,10 @@ export default function AdminPage() {
                   !hasRequiredSignupNames(u) ? signupProfileMissingFields(u).filter((f) => f === "first name" || f === "last name") : [];
                 const canVerify = !blocksSignupApproval(u);
                 const isVerified = u.verification_status === "verified";
-                const isPending =
-                  isIncompleteSignup ||
-                  (!!u.email_verified &&
-                  (u.verification_status === "awaiting_admin_review" ||
-                    u.verification_status === "pending_admin_review" ||
-                    u.verification_status === "pending"));
                 const isDenied = u.verification_status === "denied";
+                const isPending = isAtAdminReviewTier(u);
+                const isAwaitingEmail =
+                  !isVerified && !isDenied && !isIncompleteSignup && !u.email_verified;
                 return (
                   <div key={u.user_id} style={{ border: `1px solid ${isDenied ? "#fca5a5" : t.border}`, borderRadius: 12, padding: "12px 16px", background: isDenied ? "#fff5f5" : t.surface, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
                     <div style={{ flex: 1, minWidth: 200 }}>
@@ -3812,8 +3820,9 @@ export default function AdminPage() {
                         )}
                         {isIncompleteSignup && !isGrandfathered && <span style={{ background: "#ffedd5", color: "#c2410c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Incomplete signup</span>}
                         {isIncompleteSignup && isGrandfathered && <span style={{ background: "#e5e7eb", color: "#4b5563", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Legacy profile</span>}
+                        {isAwaitingEmail && <span style={{ background: "#e0e7ff", color: "#3730a3", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Awaiting email</span>}
                         {isVerified && <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Verified</span>}
-                        {isPending && !isIncompleteSignup && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
+                        {isPending && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
                         {isDenied && <span style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Denied</span>}
                       </div>
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
