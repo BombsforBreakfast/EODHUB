@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export type AdminPendingBreakdown = {
   biz: number;
   jobs: number;
+  jobsStale: number;
   users: number;
   flags: number;
   bugs: number;
@@ -24,6 +25,7 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
     bizRes,
     bizClaimsRes,
     jobRes,
+    jobStaleRes,
     userRes,
     flagRes,
     reportRes,
@@ -36,6 +38,9 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
     client.from("business_listings").select("*", { count: "exact", head: true }).neq("is_approved", true),
     client.from("business_listing_claims").select("*", { count: "exact", head: true }).eq("status", "pending"),
     client.from("jobs").select("*", { count: "exact", head: true }).neq("is_approved", true),
+    // Number of distinct jobs with at least one open stale-report. The
+    // partial-index on community_stale_count keeps this read cheap.
+    client.from("jobs").select("*", { count: "exact", head: true }).gt("community_stale_count", 0),
     client
       .from("profiles")
       .select("*", { count: "exact", head: true })
@@ -77,6 +82,7 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
   return {
     biz: (bizRes.count ?? 0) + claimsPending,
     jobs: jobRes.count ?? 0,
+    jobsStale: jobStaleRes.error ? 0 : (jobStaleRes.count ?? 0),
     users: userRes.count ?? 0,
     flags: flagRes.count ?? 0,
     bugs: reportRes.count ?? 0,
@@ -93,6 +99,7 @@ export function sumAdminPending(b: AdminPendingBreakdown): number {
   return (
     b.biz +
     b.jobs +
+    b.jobsStale +
     b.users +
     b.flags +
     b.bugs +

@@ -1,10 +1,26 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useTheme } from "../../lib/ThemeContext";
+import { supabase } from "../../lib/lib/supabaseClient";
 import JobImage from "./JobImage";
+
+type StaleReason =
+  | "dead_link"
+  | "expired"
+  | "position_filled"
+  | "incorrect_info"
+  | "other";
+
+const STALE_REASON_OPTIONS: ReadonlyArray<{ id: StaleReason; label: string }> = [
+  { id: "dead_link", label: "Link is broken / 404" },
+  { id: "expired", label: "Posting has expired" },
+  { id: "position_filled", label: "Position has been filled" },
+  { id: "incorrect_info", label: "Details are wrong" },
+  { id: "other", label: "Other (add a note)" },
+];
 
 export type JobModalData = {
   id: string;
@@ -51,6 +67,13 @@ export default function JobDetailsModal({
   onToggleSave,
 }: Props) {
   const { t } = useTheme();
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reason, setReason] = useState<StaleReason>("dead_link");
+  const [notes, setNotes] = useState("");
+  const [reporting, setReporting] = useState(false);
+  const [reportMessage, setReportMessage] = useState<string | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [reported, setReported] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -65,6 +88,60 @@ export default function JobDetailsModal({
       window.removeEventListener("keydown", onKey);
     };
   }, [open, onClose]);
+
+  // Reset the per-job report state when the modal is opened on a new listing.
+  useEffect(() => {
+    if (!open) return;
+    setReportOpen(false);
+    setReason("dead_link");
+    setNotes("");
+    setReporting(false);
+    setReportMessage(null);
+    setReportError(null);
+    setReported(false);
+  }, [open, job?.id]);
+
+  async function submitStaleReport() {
+    if (!job || reporting) return;
+    setReporting(true);
+    setReportError(null);
+    setReportMessage(null);
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setReportError("Please sign in again to report this listing.");
+        return;
+      }
+
+      const res = await fetch(`/api/jobs/${job.id}/flag-stale`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ reason, notes: notes.trim() || undefined }),
+      });
+
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+      };
+
+      if (!res.ok) {
+        setReportError(json.error ?? `Report failed (${res.status})`);
+        return;
+      }
+
+      setReported(true);
+      setReportMessage("Thanks — we've sent this to the admin team for review.");
+      setReportOpen(false);
+    } catch (err) {
+      setReportError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReporting(false);
+    }
+  }
 
   if (!open || !job || typeof document === "undefined") return null;
 
@@ -181,6 +258,131 @@ export default function JobDetailsModal({
             }}
           >
             {description.trim().length > 0 ? description : "No description available. Use “Visit site” to view the full listing at the source."}
+          </div>
+
+          {/* Report stale listing */}
+          <div style={{ marginTop: 18, borderTop: `1px dashed ${t.border}`, paddingTop: 12 }}>
+            {!reportOpen && !reported && (
+              <button
+                type="button"
+                onClick={() => {
+                  setReportOpen(true);
+                  setReportError(null);
+                  setReportMessage(null);
+                }}
+                style={{
+                  background: "none",
+                  border: "none",
+                  padding: 0,
+                  color: t.textMuted,
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  textDecoration: "underline",
+                }}
+              >
+                Report broken link or expired listing
+              </button>
+            )}
+            {reported && reportMessage && (
+              <div style={{ fontSize: 12, color: "#15803d", fontWeight: 700 }}>
+                {reportMessage}
+              </div>
+            )}
+            {reportOpen && (
+              <div style={{ display: "grid", gap: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>
+                  Report this listing
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {STALE_REASON_OPTIONS.map((opt) => (
+                    <label
+                      key={opt.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontSize: 13,
+                        color: t.text,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="job-stale-reason"
+                        checked={reason === opt.id}
+                        onChange={() => setReason(opt.id)}
+                      />
+                      {opt.label}
+                    </label>
+                  ))}
+                </div>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  placeholder="Optional — anything else admins should know."
+                  rows={2}
+                  maxLength={500}
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: "8px 10px",
+                    borderRadius: 8,
+                    border: `1px solid ${t.inputBorder ?? t.border}`,
+                    background: t.input ?? t.surface,
+                    color: t.text,
+                    fontSize: 13,
+                    resize: "vertical",
+                    minHeight: 50,
+                  }}
+                />
+                {reportError && (
+                  <div style={{ fontSize: 12, color: "#b91c1c", fontWeight: 700 }}>
+                    {reportError}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => void submitStaleReport()}
+                    disabled={reporting}
+                    style={{
+                      background: "#111",
+                      color: "white",
+                      border: "1px solid #111",
+                      borderRadius: 8,
+                      padding: "6px 14px",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: reporting ? "not-allowed" : "pointer",
+                      opacity: reporting ? 0.6 : 1,
+                    }}
+                  >
+                    {reporting ? "Sending…" : "Submit report"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReportOpen(false);
+                      setReportError(null);
+                    }}
+                    disabled={reporting}
+                    style={{
+                      background: "transparent",
+                      color: t.text,
+                      border: `1px solid ${t.border}`,
+                      borderRadius: 8,
+                      padding: "6px 14px",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: reporting ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

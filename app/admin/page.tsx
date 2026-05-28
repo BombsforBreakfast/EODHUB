@@ -41,6 +41,19 @@ import { validateImagePick } from "../lib/uploadLimits";
 // Lazy-loaded — only loaded when the admin opens the Failed Auth tab.
 const FailedAuthPanel = lazy(() => import("../components/admin/FailedAuthPanel"));
 
+import type {
+  StaleFlagApiResponse,
+  StaleFlagJobGroup,
+} from "../api/admin/jobs/stale-flags/route";
+
+const STALE_FLAG_REASON_LABELS: Record<string, string> = {
+  dead_link: "Broken link",
+  expired: "Expired",
+  position_filled: "Position filled",
+  incorrect_info: "Incorrect info",
+  other: "Other",
+};
+
 type BusinessListing = {
   id: string;
   created_at: string;
@@ -668,6 +681,10 @@ export default function AdminPage() {
   const [flags, setFlags] = useState<Flag[]>([]);
 
   const [pendingOnly, setPendingOnly] = useState(true);
+  const [jobsSubTab, setJobsSubTab] = useState<"submissions" | "stale">("submissions");
+  const [staleFlagGroups, setStaleFlagGroups] = useState<StaleFlagJobGroup[]>([]);
+  const [staleFlagsLoading, setStaleFlagsLoading] = useState(false);
+  const [resolvingStaleJobId, setResolvingStaleJobId] = useState<string | null>(null);
   const [userFilter, setUserFilter] = useState<UserStatusFilter>("pending");
   const [userSearch, setUserSearch] = useState("");
 
@@ -824,6 +841,7 @@ export default function AdminPage() {
   const [pendingCounts, setPendingCounts] = useState({
     biz: 0,
     jobs: 0,
+    jobsStale: 0,
     users: 0,
     flags: 0,
     bugs: 0,
@@ -1479,6 +1497,75 @@ export default function AdminPage() {
     setJobs((json.jobs ?? []) as Job[]);
   }
 
+  async function loadStaleFlags() {
+    setStaleFlagsLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/jobs/stale-flags`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (!res.ok) {
+        console.error("loadStaleFlags API error", res.status);
+        setStaleFlagGroups([]);
+        return;
+      }
+      const json = (await res.json()) as StaleFlagApiResponse;
+      setStaleFlagGroups(json.groups ?? []);
+    } finally {
+      setStaleFlagsLoading(false);
+    }
+  }
+
+  async function resolveStaleFlag(
+    jobId: string,
+    action: "delete_job" | "dismiss",
+  ) {
+    const target = staleFlagGroups.find((g) => g.job.id === jobId);
+    const label = target?.job.title || "this job";
+    const confirmMsg =
+      action === "delete_job"
+        ? `Delete "${label}" and close ${target?.openCount ?? 0} report${
+            (target?.openCount ?? 0) === 1 ? "" : "s"
+          }? The job will be removed from the public feed.`
+        : `Dismiss ${target?.openCount ?? 0} report${
+            (target?.openCount ?? 0) === 1 ? "" : "s"
+          } for "${label}"? The listing stays live.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setResolvingStaleJobId(jobId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/admin/jobs/stale-flags/resolve", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ jobId, action }),
+      });
+      const json = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        resolvedCount?: number;
+      };
+      if (!res.ok) {
+        alert(json.error ?? `Action failed (${res.status})`);
+        return;
+      }
+      showToast(
+        action === "delete_job"
+          ? `Job deleted — ${json.resolvedCount ?? 0} report${
+              json.resolvedCount === 1 ? "" : "s"
+            } closed.`
+          : `Dismissed ${json.resolvedCount ?? 0} report${
+              json.resolvedCount === 1 ? "" : "s"
+            }.`,
+      );
+      await Promise.all([loadStaleFlags(), loadPendingCounts()]);
+    } finally {
+      setResolvingStaleJobId(null);
+    }
+  }
+
   async function loadUsers() {
     const { data: { session } } = await supabase.auth.getSession();
     const res = await fetch("/api/admin/users", {
@@ -1643,7 +1730,10 @@ export default function AdminPage() {
       void loadBusinesses();
       void loadBizClaims();
     }
-    if (activeTab === "jobs") loadJobs();
+    if (activeTab === "jobs") {
+      loadJobs();
+      loadStaleFlags();
+    }
     if (activeTab === "users") loadUsers();
     if (activeTab === "groups") loadGroups();
     if (activeTab === "flags") loadFlags();
@@ -3117,7 +3207,7 @@ export default function AdminPage() {
           </button>
           <button type="button" style={tabStyle("jobs")} onClick={() => setActiveTab("jobs")}>
             Jobs
-            {tabNotifyBadge(pendingCounts.jobs)}
+            {tabNotifyBadge(pendingCounts.jobs + pendingCounts.jobsStale)}
           </button>
           <button type="button" style={tabStyle("users")} onClick={() => setActiveTab("users")}>
             Users
@@ -3447,6 +3537,165 @@ export default function AdminPage() {
         {/* ── JOBS TAB ── */}
         {activeTab === "jobs" && (
           <div style={{ marginTop: 20 }}>
+            {/* Sub-filter: switch between submission queue and stale-report queue */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+              <button
+                type="button"
+                onClick={() => setJobsSubTab("submissions")}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 20,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  border: jobsSubTab === "submissions" ? "none" : `1px solid ${t.border}`,
+                  background: jobsSubTab === "submissions" ? "#111" : t.surface,
+                  color: jobsSubTab === "submissions" ? "white" : t.badgeText,
+                }}
+              >
+                Submissions
+                <span style={{ opacity: 0.7, marginLeft: 6 }}>({pendingCounts.jobs})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setJobsSubTab("stale")}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 20,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  border: jobsSubTab === "stale" ? "none" : `1px solid ${t.border}`,
+                  background: jobsSubTab === "stale" ? "#111" : t.surface,
+                  color: jobsSubTab === "stale" ? "white" : t.badgeText,
+                }}
+              >
+                Reported Stale
+                <span style={{ opacity: 0.7, marginLeft: 6 }}>({staleFlagGroups.filter((g) => g.openCount > 0).length})</span>
+              </button>
+            </div>
+
+            {jobsSubTab === "stale" && (
+              <div style={{ display: "grid", gap: 12 }}>
+                <div style={{ fontSize: 13, color: t.textMuted }}>
+                  Listings flagged by members as broken links, expired postings, or
+                  otherwise stale. Verify, then either delete the job or dismiss the
+                  reports.
+                </div>
+                {staleFlagsLoading && (
+                  <div style={{ padding: 24, textAlign: "center", color: t.textFaint }}>
+                    Loading reports…
+                  </div>
+                )}
+                {!staleFlagsLoading && staleFlagGroups.filter((g) => g.openCount > 0).length === 0 && (
+                  <div style={{ padding: 32, textAlign: "center", color: t.textFaint, border: `1px dashed ${t.border}`, borderRadius: 14, background: t.surface }}>
+                    No stale-job reports right now.
+                  </div>
+                )}
+                {staleFlagGroups
+                  .filter((g) => g.openCount > 0)
+                  .map((group) => {
+                    const isResolving = resolvingStaleJobId === group.job.id;
+                    return (
+                      <div
+                        key={group.job.id}
+                        style={{
+                          border: `1px solid ${t.border}`,
+                          borderRadius: 14,
+                          padding: 16,
+                          background: t.surface,
+                          display: "grid",
+                          gap: 10,
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ fontWeight: 900, fontSize: 17, color: t.text }}>
+                              {group.job.title || "Untitled Job"}
+                            </div>
+                            <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>
+                              {group.job.company_name || "Unknown company"}
+                            </div>
+                            <div style={{ marginTop: 2, fontSize: 13, color: t.textMuted }}>
+                              {[group.job.location, group.job.category].filter(Boolean).join(" · ")}
+                            </div>
+                            <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap", fontSize: 12, color: t.textFaint, alignItems: "center" }}>
+                              {group.job.apply_url && (
+                                <a href={group.job.apply_url} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8" }}>
+                                  Check link ↗
+                                </a>
+                              )}
+                              {group.job.source_type && (
+                                <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "1px 8px" }}>
+                                  {group.job.source_type}
+                                </span>
+                              )}
+                              <span style={{ background: "#fef9c3", color: "#854d0e", borderRadius: 20, padding: "1px 8px", fontWeight: 800 }}>
+                                {group.openCount} report{group.openCount === 1 ? "" : "s"}
+                              </span>
+                              {group.job.created_at && (
+                                <span>Posted {new Date(group.job.created_at).toLocaleDateString()}</span>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              style={{ ...actionBtn("#ef4444"), opacity: isResolving ? 0.6 : 1 }}
+                              disabled={isResolving}
+                              onClick={() => resolveStaleFlag(group.job.id, "delete_job")}
+                            >
+                              {isResolving ? "..." : "Delete job"}
+                            </button>
+                            <button
+                              type="button"
+                              style={{ ...actionBtn("#6b7280"), opacity: isResolving ? 0.6 : 1 }}
+                              disabled={isResolving}
+                              onClick={() => resolveStaleFlag(group.job.id, "dismiss")}
+                            >
+                              Dismiss reports
+                            </button>
+                          </div>
+                        </div>
+
+                        <div style={{ borderTop: `1px dashed ${t.border}`, paddingTop: 10, display: "grid", gap: 8 }}>
+                          {group.flags
+                            .filter((f) => f.status === "open")
+                            .map((flag) => {
+                              const reporterName =
+                                flag.reporter?.display_name ||
+                                [flag.reporter?.first_name, flag.reporter?.last_name].filter(Boolean).join(" ") ||
+                                flag.reporter?.email ||
+                                "Unknown member";
+                              return (
+                                <div key={flag.id} style={{ fontSize: 13, color: t.text, lineHeight: 1.45 }}>
+                                  <span style={{ background: "#fef3c7", color: "#92400e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, marginRight: 8 }}>
+                                    {STALE_FLAG_REASON_LABELS[flag.reason] ?? flag.reason}
+                                  </span>
+                                  <strong>{reporterName}</strong>
+                                  {flag.reporter?.service && (
+                                    <span style={{ color: t.textMuted }}> · {flag.reporter.service}</span>
+                                  )}
+                                  <span style={{ color: t.textFaint, marginLeft: 8, fontSize: 12 }}>
+                                    {new Date(flag.created_at).toLocaleString()}
+                                  </span>
+                                  {flag.notes && (
+                                    <div style={{ marginTop: 4, color: t.textMuted, fontSize: 13, fontStyle: "italic" }}>
+                                      “{flag.notes}”
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+
+            {jobsSubTab === "submissions" && (
+              <>
             {/* Batch toolbar */}
             {jobs.length > 0 && (
               <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
@@ -3562,6 +3811,8 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+              </>
+            )}
           </div>
         )}
 
