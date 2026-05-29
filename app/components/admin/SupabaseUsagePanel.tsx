@@ -5,7 +5,6 @@ import { supabase } from "@/app/lib/lib/supabaseClient";
 import {
   formatBytes,
   formatCount,
-  MONTHLY_REVIEW_CHECKLIST,
   pctOfLimit,
   SUPABASE_USAGE_REVIEW_STORAGE_KEY,
   type UsageLevel,
@@ -59,7 +58,9 @@ type UsagePayload = {
     realtime: string;
     mau: string;
   };
-  upgradeRecommendation: string;
+  upgradeRecommendation: string | null;
+  planSummary: string;
+  monthlyReviewChecklist: string[];
   giphy: {
     plan: "development" | "production";
     dashboardUrl: string;
@@ -91,6 +92,7 @@ function UsageMeter({
   limit,
   watchAt,
   sub,
+  tierLabel,
 }: {
   t: ThemeTokens;
   isDark: boolean;
@@ -99,6 +101,7 @@ function UsageMeter({
   limit: number;
   watchAt: number;
   sub?: string;
+  tierLabel: string;
 }) {
   const level = usageLevel(current, limit, watchAt);
   const pct = pctOfLimit(current, limit);
@@ -170,7 +173,7 @@ function UsageMeter({
         />
       </div>
       <div style={{ marginTop: 6, fontSize: 11, color: t.textMuted }}>
-        {pct}% of Free tier · watch at 80%
+        {pct}% of {tierLabel} · watch at 80%
         {sub ? ` · ${sub}` : ""}
       </div>
     </div>
@@ -182,9 +185,10 @@ export default function SupabaseUsagePanel({ t, isDark }: { t: ThemeTokens; isDa
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<UsagePayload | null>(null);
   const [lastReviewed, setLastReviewed] = useState<string | null>(null);
-  const [checklistDone, setChecklistDone] = useState<boolean[]>(
-    () => MONTHLY_REVIEW_CHECKLIST.map(() => false),
-  );
+  const [checklistDone, setChecklistDone] = useState<boolean[]>([]);
+
+  const reviewChecklist = data?.monthlyReviewChecklist ?? [];
+  const tierLabel = data?.plan === "pro" ? "Pro tier" : "Free tier";
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -205,6 +209,7 @@ export default function SupabaseUsagePanel({ t, isDark }: { t: ThemeTokens; isDa
         return;
       }
       setData(json);
+      setChecklistDone((json.monthlyReviewChecklist ?? []).map(() => false));
     } catch (err) {
       console.error("Supabase usage load error:", err);
       setError("Failed to load usage.");
@@ -235,7 +240,7 @@ export default function SupabaseUsagePanel({ t, isDark }: { t: ThemeTokens; isDa
     const iso = new Date().toISOString();
     localStorage.setItem(SUPABASE_USAGE_REVIEW_STORAGE_KEY, iso);
     setLastReviewed(iso);
-    setChecklistDone(MONTHLY_REVIEW_CHECKLIST.map(() => false));
+    setChecklistDone(reviewChecklist.map(() => false));
   }
 
   const snap = data?.snapshot;
@@ -251,7 +256,7 @@ export default function SupabaseUsagePanel({ t, isDark }: { t: ThemeTokens; isDa
 
   return (
     <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
-      {data?.plan === "free" && (
+      {data?.plan === "free" && data.upgradeRecommendation && (
         <div
           style={{
             border: `1px solid ${isDark ? "#854d0e" : "#fcd34d"}`,
@@ -284,6 +289,24 @@ export default function SupabaseUsagePanel({ t, isDark }: { t: ThemeTokens; isDa
           >
             Open Supabase billing ↗
           </a>
+        </div>
+      )}
+
+      {data?.plan === "pro" && data.planSummary && (
+        <div
+          style={{
+            border: `1px solid ${isDark ? "#166534" : "#86efac"}`,
+            borderRadius: 14,
+            padding: "16px 18px",
+            background: isDark ? "#052e16" : "#f0fdf4",
+          }}
+        >
+          <div style={{ fontWeight: 900, fontSize: 15, color: t.text, marginBottom: 6 }}>
+            Supabase Pro active
+          </div>
+          <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.5 }}>
+            {data.planSummary}
+          </div>
         </div>
       )}
 
@@ -395,6 +418,7 @@ export default function SupabaseUsagePanel({ t, isDark }: { t: ThemeTokens; isDa
             limit={giphy.limits.callsPerHour}
             watchAt={giphy.watchThresholds.callsPerHour}
             sub="Dev tier cap · upgrade to Production near 80/hr"
+            tierLabel="Dev tier"
           />
         </div>
       )}
@@ -526,6 +550,7 @@ export default function SupabaseUsagePanel({ t, isDark }: { t: ThemeTokens; isDa
             limit={data.limits.storageBytes}
             watchAt={data.watchThresholds.storageBytes}
             sub="Highest risk for photo-heavy app"
+            tierLabel={tierLabel}
           />
           <UsageMeter
             t={t}
@@ -534,6 +559,7 @@ export default function SupabaseUsagePanel({ t, isDark }: { t: ThemeTokens; isDa
             current={snap.database_bytes}
             limit={data.limits.databaseBytes}
             watchAt={data.watchThresholds.databaseBytes}
+            tierLabel={tierLabel}
           />
           <UsageMeter
             t={t}
@@ -543,6 +569,7 @@ export default function SupabaseUsagePanel({ t, isDark }: { t: ThemeTokens; isDa
             limit={data.limits.mau}
             watchAt={data.watchThresholds.mau}
             sub={`${formatCount(snap.registered_profiles)} registered profiles`}
+            tierLabel={tierLabel}
           />
         </div>
       )}
@@ -621,7 +648,7 @@ export default function SupabaseUsagePanel({ t, isDark }: { t: ThemeTokens; isDa
           </button>
         </div>
         <ul style={{ margin: "14px 0 0", paddingLeft: 20, display: "grid", gap: 8 }}>
-          {MONTHLY_REVIEW_CHECKLIST.map((item, i) => (
+          {reviewChecklist.map((item, i) => (
             <li key={item} style={{ fontSize: 13, color: t.text, listStyle: "disc" }}>
               <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
                 <input

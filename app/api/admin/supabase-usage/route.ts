@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
-  SUPABASE_FREE_TIER,
-  SUPABASE_WATCH_THRESHOLDS,
+  getMonthlyReviewChecklist,
+  getSupabaseTierLimits,
+  getSupabaseWatchThresholds,
   supabaseDashboardUrls,
+  supabasePlanFromEnv,
+  supabasePlanSummary,
   supabaseProjectRefFromUrl,
+  supabaseUpgradeRecommendation,
 } from "@/app/lib/supabaseTierLimits";
 import {
   GIPHY_DEV_TIER,
@@ -95,12 +99,18 @@ export async function GET(req: NextRequest) {
     giphyError = giphyStats.error;
   }
 
+  const plan = supabasePlanFromEnv();
+  const limits = getSupabaseTierLimits(plan);
+  const watchThresholds = getSupabaseWatchThresholds(plan);
+
   return NextResponse.json({
-    plan: process.env.SUPABASE_PLAN === "pro" ? "pro" : "free",
+    plan,
     projectRef,
     dashboard,
-    limits: SUPABASE_FREE_TIER,
-    watchThresholds: SUPABASE_WATCH_THRESHOLDS,
+    limits,
+    watchThresholds,
+    monthlyReviewChecklist: getMonthlyReviewChecklist(plan),
+    planSummary: supabasePlanSummary(plan),
     snapshot,
     snapshotError,
     notes: {
@@ -111,8 +121,7 @@ export async function GET(req: NextRequest) {
       mau:
         "auth_mau_approx counts auth.users active in the last 30 days; Supabase billing MAU may differ slightly.",
     },
-    upgradeRecommendation:
-      "Upgrade to Pro ($25/mo) before public launch for daily backups, no inactivity pause, and 100 GB storage / 250 GB egress headroom.",
+    upgradeRecommendation: supabaseUpgradeRecommendation(plan),
     giphy: {
       plan: giphyPlan,
       dashboardUrl: GIPHY_DASHBOARD_URL,
