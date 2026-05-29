@@ -3380,7 +3380,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       });
     }
 
-    // Rank: fresh posts float to top; EOD HUB staff posts soft-pin for ~2h then stay boosted.
+    // Rank: fresh posts float to top; staff posts soft-pin ~2h; RUMINT news ~3h.
     const feedSortOpts = { nowMs: Date.now(), authorAffinityBoost };
     mergedPosts.sort((a, b) => compareFeedPosts(a, b, feedSortOpts));
 

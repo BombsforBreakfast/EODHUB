@@ -12,6 +12,21 @@ export const STAFF_POST_SOFT_PIN_MULTIPLIER = 50;
 /** Ongoing ranking multiplier for staff posts after the soft pin window. */
 export const STAFF_POST_ONGOING_BOOST_MULTIPLIER = 2.5;
 
+/** How long freshly released RUMINT news stays boosted near the feed top. */
+export const RUMINT_POST_SOFT_PIN_HOURS = 3;
+
+/** After the soft pin expires, treat RUMINT posts as this many hours younger. */
+export const RUMINT_POST_CHRONO_HOUR_CREDIT = 6;
+
+/** Soft-pin floor for RUMINT (well below staff's 1_000_000 tier). */
+export const RUMINT_POST_SOFT_PIN_BASE = 6_000;
+
+/** Per-hour decay added to the RUMINT soft-pin floor while pinned. */
+export const RUMINT_POST_SOFT_PIN_SLOPE = 300;
+
+/** Ongoing ranking multiplier for RUMINT after the soft pin window. */
+export const RUMINT_POST_ONGOING_BOOST_MULTIPLIER = 2;
+
 export type StaffFeedPostInput = {
   userId: string;
   authorIsPureAdmin?: boolean | null;
@@ -26,6 +41,13 @@ export function isStaffFeedPost(input: StaffFeedPostInput): boolean {
   if (input.contentType === "news") return false;
   if (input.systemGenerated === true) return false;
   return true;
+}
+
+/** Automated RUMINT / news shadow posts in the public feed. */
+export function isRumintFeedPost(input: StaffFeedPostInput): boolean {
+  if (input.userId === RUMINT_USER_ID) return true;
+  if (input.contentType === "news") return true;
+  return false;
 }
 
 export function staffPostAgeHours(createdAt: string, nowMs = Date.now()): number {
@@ -69,11 +91,18 @@ export function computeFeedSortScore(
     contentType: post.content_type,
     systemGenerated: post.system_generated,
   });
+  const rumint = !staff && isRumintFeedPost({
+    userId: post.user_id,
+    contentType: post.content_type,
+    systemGenerated: post.system_generated,
+  });
 
   const ageHours = staffPostAgeHours(post.created_at, opts.nowMs);
   const effectiveAge = staff
     ? Math.max(0.25, ageHours - STAFF_POST_CHRONO_HOUR_CREDIT)
-    : ageHours;
+    : rumint
+      ? Math.max(0.25, ageHours - RUMINT_POST_CHRONO_HOUR_CREDIT)
+      : ageHours;
 
   let score =
     (post.likeCount + post.commentCount * 2 + 1) / Math.pow(effectiveAge + 2, 1.5);
@@ -85,6 +114,18 @@ export function computeFeedSortScore(
       return 1_000_000 + (STAFF_POST_SOFT_PIN_HOURS - ageHours) * 1_000 + score;
     }
     score *= STAFF_POST_ONGOING_BOOST_MULTIPLIER;
+    return score;
+  }
+
+  if (rumint) {
+    if (ageHours <= RUMINT_POST_SOFT_PIN_HOURS) {
+      return (
+        RUMINT_POST_SOFT_PIN_BASE
+        + (RUMINT_POST_SOFT_PIN_HOURS - ageHours) * RUMINT_POST_SOFT_PIN_SLOPE
+        + score
+      );
+    }
+    score *= RUMINT_POST_ONGOING_BOOST_MULTIPLIER;
   }
 
   return score;
