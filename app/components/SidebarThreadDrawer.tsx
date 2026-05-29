@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import UrlPreviewCard from "./UrlPreviewCard";
@@ -44,6 +44,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
   const inputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   useEffect(() => {
@@ -160,10 +161,20 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
     };
   }, [open, peerUserId, currentUserId]);
 
-  useEffect(() => {
-    const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  useLayoutEffect(() => {
+    if (!open || loading || messages.length === 0) return;
+    requestAnimationFrame(() => {
+      const el = listRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    });
+    const timer = window.setTimeout(() => {
+      const el = listRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [open, loading, conversationId, messages]);
 
   useEffect(() => {
     return () => {
@@ -466,6 +477,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
             </div>
           );
         })}
+        <div ref={bottomRef} />
       </div>
 
       <div

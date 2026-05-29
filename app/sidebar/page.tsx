@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import EmojiPickerButton from "../components/EmojiPickerButton";
@@ -117,6 +117,22 @@ function formatEventInviteDate(dateString: string | null) {
   });
 }
 
+function matchesInboxSearch(conv: Conversation, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  if (conv.other_user_name.toLowerCase().includes(q)) return true;
+  if (conv.last_message_preview?.toLowerCase().includes(q)) return true;
+  return false;
+}
+
+function scrollMessagesToBottom(container: HTMLDivElement | null, anchor: HTMLDivElement | null) {
+  if (!container) return;
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+    anchor?.scrollIntoView({ block: "end" });
+  });
+}
+
 function timeAgo(dateString: string) {
   const diff = Date.now() - new Date(dateString).getTime();
   const mins = Math.floor(diff / 60000);
@@ -143,6 +159,7 @@ export default function SidebarPage() {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileView, setMobileView] = useState<"list" | "thread">("list");
   const [inboxTab, setInboxTab] = useState<"messages" | "requests">("messages");
+  const [inboxSearch, setInboxSearch] = useState("");
   const [requestTarget, setRequestTarget] = useState<{ userId: string; name: string; photo: string | null } | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
   const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
@@ -438,10 +455,14 @@ export default function SidebarPage() {
       .subscribe();
   }
 
-  useEffect(() => {
-    const el = messagesContainerRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages]);
+  useLayoutEffect(() => {
+    if (!activeConvId || messages.length === 0) return;
+    scrollMessagesToBottom(messagesContainerRef.current, bottomRef.current);
+    const timer = window.setTimeout(() => {
+      scrollMessagesToBottom(messagesContainerRef.current, bottomRef.current);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [activeConvId, messages]);
 
   useEffect(() => {
     return () => { if (realtimeRef.current) supabase.removeChannel(realtimeRef.current); };
@@ -710,6 +731,10 @@ export default function SidebarPage() {
   const acceptedConvs = conversations.filter((c) => c.status === "accepted");
   const sentPending = conversations.filter((c) => c.status === "pending" && c.initiated_by === userId);
   const receivedRequests = conversations.filter((c) => c.status === "pending" && c.initiated_by !== userId);
+  const filteredAcceptedConvs = acceptedConvs.filter((c) => matchesInboxSearch(c, inboxSearch));
+  const filteredSentPending = sentPending.filter((c) => matchesInboxSearch(c, inboxSearch));
+  const filteredReceivedRequests = receivedRequests.filter((c) => matchesInboxSearch(c, inboxSearch));
+  const hasAnyConversations = acceptedConvs.length + sentPending.length + receivedRequests.length > 0;
   const avatarStyle = (name: string, photo: string | null, size = 40): React.CSSProperties => ({
     width: size, height: size, borderRadius: "50%", flexShrink: 0,
     background: photo ? "transparent" : "#111",
@@ -755,6 +780,29 @@ export default function SidebarPage() {
         </button>
       </div>
 
+      {hasAnyConversations && (
+        <div style={{ padding: "10px 12px", borderBottom: `1px solid ${t.border}`, background: t.surface }}>
+          <input
+            type="search"
+            value={inboxSearch}
+            onChange={(e) => setInboxSearch(e.target.value)}
+            placeholder={inboxTab === "requests" ? "Search requests…" : "Search conversations…"}
+            aria-label="Search conversations"
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              padding: "9px 12px",
+              borderRadius: 10,
+              border: `1px solid ${t.inputBorder}`,
+              background: t.input,
+              color: t.text,
+              fontSize: 14,
+              outline: "none",
+            }}
+          />
+        </div>
+      )}
+
       <div style={{ flex: 1, overflowY: "auto" }}>
         {/* MESSAGES TAB */}
         {inboxTab === "messages" && (
@@ -785,8 +833,13 @@ export default function SidebarPage() {
                 Your accepted conversations will appear here.
               </div>
             )}
+            {inboxSearch.trim() && filteredAcceptedConvs.length === 0 && filteredSentPending.length === 0 && (acceptedConvs.length > 0 || sentPending.length > 0) && (
+              <div style={{ padding: 24, textAlign: "center", color: t.textFaint, fontSize: 14 }}>
+                No matches for &ldquo;{inboxSearch.trim()}&rdquo;
+              </div>
+            )}
             {/* Accepted conversations */}
-            {acceptedConvs.map((conv) => (
+            {filteredAcceptedConvs.map((conv) => (
               <div
                 key={conv.id}
                 className={isMobile ? "sidebar-inbox-row" : undefined}
@@ -836,7 +889,7 @@ export default function SidebarPage() {
               </div>
             ))}
             {/* Sent pending requests */}
-            {sentPending.map((conv) => (
+            {filteredSentPending.map((conv) => (
               <div
                 key={conv.id}
                 className={isMobile ? "sidebar-inbox-row" : undefined}
@@ -876,7 +929,12 @@ export default function SidebarPage() {
                 No pending requests.
               </div>
             )}
-            {receivedRequests.map((conv) => {
+            {inboxSearch.trim() && filteredReceivedRequests.length === 0 && receivedRequests.length > 0 && (
+              <div style={{ padding: 24, textAlign: "center", color: t.textFaint, fontSize: 14 }}>
+                No matches for &ldquo;{inboxSearch.trim()}&rdquo;
+              </div>
+            )}
+            {filteredReceivedRequests.map((conv) => {
               const isEmployer = conv.other_user_account_type === "employer";
               return (
                 <div key={conv.id} style={{ padding: "16px 20px", borderBottom: `1px solid ${t.border}` }}>
