@@ -539,7 +539,7 @@ function CourtCard({ court, active, closed, verdict, bundle, effectiveViewerId, 
             >
               <span style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${selected || winner ? "#7c3aed" : border}`, flexShrink: 0, background: selected || winner ? "#7c3aed" : "transparent" }} />
               <span style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{opt.label}</span>
-              <span style={{ fontSize: 12, color: t.textMuted, flexShrink: 0 }}>{pct}% · {cnt}</span>
+              <span style={{ fontSize: 13, fontWeight: 600, color: t.text, flexShrink: 0 }}>{pct}% · {cnt}</span>
             </button>
           );
         })}

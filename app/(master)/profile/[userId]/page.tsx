@@ -34,7 +34,9 @@ import type {
   KangarooCourtOptionRow,
   KangarooCourtRow,
   KangarooCourtVerdictRow,
+  KangarooCourtVoteTotalRow,
 } from "../../../lib/kangarooCourt";
+import { voteCountsByCourtFromTotals } from "../../../lib/kangarooCourt";
 import { sanitizeRumintOgDescription } from "../../../lib/sanitizeRumintOgDescription";
 import { ReactionLeaderboard, ReactionPickerTrigger } from "../../../components/ReactionBar";
 import {
@@ -1451,10 +1453,16 @@ export default function PublicProfilePage() {
             .from("kangaroo_court_verdicts")
             .select("id, court_id, winning_option_id, winning_label_snapshot, total_votes, body, created_at")
             .in("court_id", courtIds);
-          const votesRes = await supabase
-            .from("kangaroo_court_votes")
-            .select("court_id, option_id, user_id")
-            .in("court_id", courtIds);
+          const voteTotalsRes = await supabase.rpc("kangaroo_court_vote_totals", {
+            p_court_ids: courtIds,
+          });
+          const myVoteRes = kcViewerId
+            ? await supabase
+                .from("kangaroo_court_votes")
+                .select("court_id, option_id")
+                .in("court_id", courtIds)
+                .eq("user_id", kcViewerId)
+            : { data: [] as { court_id: string; option_id: string }[], error: null };
 
           if (!optsRes.error && !verdictsRes.error) {
             const optsByCourt = new Map<string, KangarooCourtOptionRow[]>();
@@ -1467,13 +1475,21 @@ export default function PublicProfilePage() {
             for (const v of (verdictsRes.data ?? []) as KangarooCourtVerdictRow[]) {
               verdictByCourt.set(v.court_id, v);
             }
-            const voteRows = (votesRes.error ? [] : (votesRes.data ?? [])) as {
-              court_id: string;
-              option_id: string;
-              user_id: string;
-            }[];
-            if (votesRes.error) {
-              console.warn("[KC wall] kangaroo_court_votes:", votesRes.error.message);
+            if (voteTotalsRes.error) {
+              console.warn("[KC wall] kangaroo_court_vote_totals:", voteTotalsRes.error.message);
+            }
+            if (myVoteRes.error) {
+              console.warn("[KC wall] kangaroo_court_votes (mine):", myVoteRes.error.message);
+            }
+
+            const voteCountsByCourt = voteTotalsRes.error
+              ? new Map<string, Record<string, number>>()
+              : voteCountsByCourtFromTotals((voteTotalsRes.data ?? []) as KangarooCourtVoteTotalRow[]);
+            const myVoteByCourtId = new Map<string, string>();
+            if (!myVoteRes.error) {
+              for (const v of (myVoteRes.data ?? []) as { court_id: string; option_id: string }[]) {
+                myVoteByCourtId.set(v.court_id, v.option_id);
+              }
             }
 
             for (const [, courtArr] of byPost) {
@@ -1483,13 +1499,8 @@ export default function PublicProfilePage() {
               if (!postKey) continue;
               const opts = optsByCourt.get(court.id) ?? [];
               const verdict = verdictByCourt.get(court.id) ?? null;
-              const vForCourt = voteRows.filter((x) => x.court_id === court.id);
-              const voteCounts: Record<string, number> = {};
-              for (const v of vForCourt) {
-                voteCounts[v.option_id] = (voteCounts[v.option_id] ?? 0) + 1;
-              }
-              const mine = vForCourt.find((v) => v.user_id === kcViewerId);
-              const myVoteOptionId: string | null = mine?.option_id ?? null;
+              const voteCounts = voteCountsByCourt.get(court.id) ?? {};
+              const myVoteOptionId: string | null = myVoteByCourtId.get(court.id) ?? null;
               kcBundleByPostId.set(postKey, {
                 court,
                 options: opts,

@@ -70,6 +70,25 @@ export type FeedKangarooBundle = {
   voteCounts: Record<string, number>;
 };
 
+/** Row from `kangaroo_court_vote_totals` RPC (anonymous aggregates, no voter ids). */
+export type KangarooCourtVoteTotalRow = {
+  court_id: string;
+  option_id: string;
+  vote_count: number;
+};
+
+export function voteCountsByCourtFromTotals(
+  totals: KangarooCourtVoteTotalRow[],
+): Map<string, Record<string, number>> {
+  const byCourt = new Map<string, Record<string, number>>();
+  for (const row of totals) {
+    const counts = byCourt.get(row.court_id) ?? {};
+    counts[row.option_id] = row.vote_count;
+    byCourt.set(row.court_id, counts);
+  }
+  return byCourt;
+}
+
 export function judgeAvatarSrc(): string {
   return "/branding/judge-n-e-w.png";
 }

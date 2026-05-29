@@ -70,6 +70,7 @@ import type {
   KangarooCourtOptionRow,
   KangarooCourtRow,
   KangarooCourtVerdictRow,
+  KangarooCourtVoteTotalRow,
   KcDurationHours,
 } from "../lib/kangarooCourt";
 import {
@@ -77,6 +78,7 @@ import {
   KC_CONFIRM_SUBTITLE,
   KC_CONFIRM_TITLE,
   KC_DURATION_HOURS,
+  voteCountsByCourtFromTotals,
 } from "../lib/kangarooCourt";
 import {
   FEED_MEDIA_FRAME_BG,
@@ -3185,10 +3187,16 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           .from("kangaroo_court_verdicts")
           .select("id, court_id, winning_option_id, winning_label_snapshot, total_votes, body, created_at")
           .in("court_id", courtIds);
-        const votesRes = await supabase
-          .from("kangaroo_court_votes")
-          .select("court_id, option_id, user_id")
-          .in("court_id", courtIds);
+        const voteTotalsRes = await supabase.rpc("kangaroo_court_vote_totals", {
+          p_court_ids: courtIds,
+        });
+        const myVoteRes = kcViewerId
+          ? await supabase
+              .from("kangaroo_court_votes")
+              .select("court_id, option_id")
+              .in("court_id", courtIds)
+              .eq("user_id", kcViewerId)
+          : { data: [] as { court_id: string; option_id: string }[], error: null };
 
         if (optsRes.error) {
           console.error("[KC] Phase A kangaroo_court_options failed:", optsRes.error.message, optsRes.error);
@@ -3200,16 +3208,18 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         } else if (kcDebug) {
           console.info("[KC] verdicts rows:", (verdictsRes.data ?? []).length);
         }
-        if (votesRes.error) {
-          console.error("[KC] Phase A kangaroo_court_votes failed:", votesRes.error.message, votesRes.error);
+        if (voteTotalsRes.error) {
+          console.error("[KC] Phase A kangaroo_court_vote_totals failed:", voteTotalsRes.error.message, voteTotalsRes.error);
         } else if (kcDebug) {
-          console.info("[KC] votes rows:", (votesRes.data ?? []).length);
+          console.info("[KC] vote total rows:", (voteTotalsRes.data ?? []).length);
+        }
+        if (myVoteRes.error) {
+          console.error("[KC] Phase B kangaroo_court_votes (mine) failed:", myVoteRes.error.message, myVoteRes.error);
         }
 
         if (!optsRes.error) {
           const optsRaw = optsRes.data;
           const verdictsRaw = verdictsRes.data;
-          const votesRaw = votesRes.error ? [] : votesRes.data;
 
           const optsByCourt = new Map<string, KangarooCourtOptionRow[]>();
           for (const o of (optsRaw ?? []) as KangarooCourtOptionRow[]) {
@@ -3225,7 +3235,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             }
           }
 
-          const voteRows = (votesRaw ?? []) as { court_id: string; option_id: string; user_id: string }[];
+          const voteCountsByCourt = voteTotalsRes.error
+            ? new Map<string, Record<string, number>>()
+            : voteCountsByCourtFromTotals((voteTotalsRes.data ?? []) as KangarooCourtVoteTotalRow[]);
+          const myVoteByCourtId = new Map<string, string>();
+          if (!myVoteRes.error) {
+            for (const v of (myVoteRes.data ?? []) as { court_id: string; option_id: string }[]) {
+              myVoteByCourtId.set(v.court_id, v.option_id);
+            }
+          }
 
           for (const [, courtArr] of byPost) {
             courtArr.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -3235,15 +3253,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
             const opts = optsByCourt.get(court.id) ?? [];
             const verdict = verdictByCourt.get(court.id) ?? null;
-            const vForCourt = voteRows.filter((x) => x.court_id === court.id);
-            const voteCounts: Record<string, number> = {};
-            for (const v of vForCourt) {
-              voteCounts[v.option_id] = (voteCounts[v.option_id] ?? 0) + 1;
-            }
-
-            // Phase B: viewer's vote (JWT from isolated getSession).
-            const mine = vForCourt.find((v) => v.user_id === kcViewerId);
-            const myVoteOptionId: string | null = mine?.option_id ?? null;
+            const voteCounts = voteCountsByCourt.get(court.id) ?? {};
+            const myVoteOptionId: string | null = myVoteByCourtId.get(court.id) ?? null;
 
             kcBundleByPostId.set(postKey, {
               court,
