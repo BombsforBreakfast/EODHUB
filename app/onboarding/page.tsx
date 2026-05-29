@@ -26,6 +26,11 @@ import {
   MEMBER_STATUS_OPTIONS,
 } from "../lib/profileCompleteness";
 import { ONBOARDING_REQUIRED_FIELDS_MESSAGE } from "../lib/onboardingGate";
+import {
+  captureReferralFromUrl,
+  clearStoredReferral,
+  readStoredReferral,
+} from "../lib/referralCapture";
 const SERVICE_OPTIONS = [...MEMBER_SERVICE_OPTIONS];
 const STATUS_OPTIONS = [...MEMBER_STATUS_OPTIONS];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "LEO/FED", "Civil Service"];
@@ -210,7 +215,7 @@ export default function OnboardingPage() {
         if (params.get("notice") === "required" || params.get("error") === "incomplete") {
           setShowRequiredHelper(true);
         }
-        const ref = params.get("ref") || localStorage.getItem("eod_ref") || "";
+        const ref = params.get("ref") || readStoredReferral() || "";
         if (ref) setReferralInput(ref.toUpperCase());
         setChecking(false);
         return;
@@ -270,7 +275,7 @@ export default function OnboardingPage() {
       if (params.get("notice") === "required" || params.get("error") === "incomplete") {
         setShowRequiredHelper(true);
       }
-      const ref = params.get("ref") || localStorage.getItem("eod_ref") || "";
+      const ref = params.get("ref") || readStoredReferral() || "";
       if (ref) setReferralInput(ref.toUpperCase());
 
       setChecking(false);
@@ -395,7 +400,7 @@ export default function OnboardingPage() {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
-      localStorage.removeItem("eod_ref");
+      clearStoredReferral();
 
       if (accountType === "member") {
         setMemberPaywallOpen(true);

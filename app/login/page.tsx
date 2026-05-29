@@ -12,6 +12,10 @@ import {
   needsEmailVerification,
 } from "../lib/verificationAccess";
 import {
+  captureReferralFromUrl,
+  readStoredReferral,
+} from "../lib/referralCapture";
+import {
   loginFailureMessage,
   isLoginEmailNotFoundError,
   isLoginCredentialMismatchError,
@@ -113,11 +117,9 @@ export default function LoginPage() {
     setMode("signup");
   }
 
-  // Persist ?ref= referral code through signup flow via localStorage
+  // Persist ?ref= referral code through signup flow (cookie + localStorage)
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const ref = params.get("ref");
-    if (ref) localStorage.setItem("eod_ref", ref.toUpperCase());
+    captureReferralFromUrl();
   }, []);
 
   useEffect(() => {
@@ -214,7 +216,11 @@ export default function LoginPage() {
 
   function signInWithGoogleOAuth() {
     clearAppAuthState();
-    const redirectTo = `${window.location.origin}/auth/callback?next=/onboarding`;
+    const storedRef = readStoredReferral();
+    const onboardingNext = storedRef
+      ? `/onboarding?ref=${encodeURIComponent(storedRef)}`
+      : "/onboarding";
+    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(onboardingNext)}`;
     const hint = email.trim();
     const options =
       hint.includes("@")

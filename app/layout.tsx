@@ -4,6 +4,7 @@ import "./globals.css";
 import { ThemeProvider } from "./lib/ThemeContext";
 import SessionGuard from "./components/SessionGuard";
 import AnalyticsTracker from "./components/AnalyticsTracker";
+import ReferralCaptureTracker from "./components/ReferralCaptureTracker";
 import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { MemorialNavModalProvider } from "./components/memorial/MemorialNavModalProvider";
@@ -48,6 +49,7 @@ export default function RootLayout({
               <SessionGuard />
               <BugReportGate />
               <AnalyticsTracker />
+              <ReferralCaptureTracker />
               <script
                 type="application/ld+json"
                 dangerouslySetInnerHTML={{
