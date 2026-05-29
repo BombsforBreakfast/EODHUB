@@ -176,7 +176,7 @@ async function ensurePublishedNewsPosts(supabase: ReturnType<typeof adminClient>
       og_url: item.canonical_url ?? item.source_url,
       og_title: item.headline,
       og_description: item.summary,
-      og_image: item.thumbnail_url,
+      og_image: item.admin_manual_image_url ?? item.thumbnail_url,
       og_site_name: item.source_name,
       news_item_id: item.id,
       content_type: "news",
@@ -429,6 +429,20 @@ export async function POST(req: NextRequest) {
   );
 }
 
+async function syncNewsShadowPostImage(
+  supabase: ReturnType<typeof adminClient>,
+  newsItemId: string,
+  adminManualImageUrl: string | null,
+  thumbnailUrl: string | null,
+) {
+  const ogImage = adminManualImageUrl ?? thumbnailUrl;
+  const { error } = await supabase
+    .from("posts")
+    .update({ og_image: ogImage })
+    .eq("news_item_id", newsItemId);
+  if (error) throw new Error(error.message);
+}
+
 export async function PATCH(req: NextRequest) {
   const auth = await requireAdmin(req);
   if (auth instanceof NextResponse) return auth;
@@ -459,7 +473,7 @@ export async function PATCH(req: NextRequest) {
   const supabase = adminClient();
   const { data: row, error: rowErr } = await supabase
     .from("news_items")
-    .select("id, status")
+    .select("id, status, thumbnail_url")
     .eq("id", id)
     .maybeSingle();
   if (rowErr) return NextResponse.json({ error: rowErr.message }, { status: 500 });
@@ -470,6 +484,22 @@ export async function PATCH(req: NextRequest) {
     .update({ admin_manual_image_url })
     .eq("id", id);
   if (newsErr) return NextResponse.json({ error: newsErr.message }, { status: 500 });
+
+  if ((row as { status: string }).status === "published") {
+    try {
+      await syncNewsShadowPostImage(
+        supabase,
+        id,
+        admin_manual_image_url,
+        (row as { thumbnail_url: string | null }).thumbnail_url,
+      );
+    } catch (syncErr) {
+      return NextResponse.json(
+        { error: `Image saved but feed post sync failed: ${(syncErr as Error).message}` },
+        { status: 500 },
+      );
+    }
+  }
 
   return NextResponse.json({ ok: true, id, admin_manual_image_url });
 }

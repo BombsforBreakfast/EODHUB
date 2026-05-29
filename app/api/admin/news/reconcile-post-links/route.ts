@@ -15,6 +15,7 @@ type NewsItemRow = {
   source_url: string;
   canonical_url: string | null;
   thumbnail_url: string | null;
+  admin_manual_image_url: string | null;
   published_at: string | null;
   ingested_at: string;
   shadow_post_id: string | null;
@@ -133,7 +134,7 @@ async function fetchState(supabase: ReturnType<typeof adminClient>) {
   const [{ data: newsItems, error: newsErr }, { data: linkedPosts, error: postsErr }] = await Promise.all([
     supabase
       .from("news_items")
-      .select("id, status, headline, summary, source_name, source_url, canonical_url, thumbnail_url, published_at, ingested_at, shadow_post_id"),
+      .select("id, status, headline, summary, source_name, source_url, canonical_url, thumbnail_url, admin_manual_image_url, published_at, ingested_at, shadow_post_id"),
     supabase
       .from("posts")
       .select("id, news_item_id, content_type, system_generated")
@@ -185,7 +186,7 @@ async function applyPlan(supabase: ReturnType<typeof adminClient>, plan: Reconci
       og_url: item.canonical_url ?? item.source_url,
       og_title: item.headline,
       og_description: item.summary,
-      og_image: item.thumbnail_url,
+      og_image: item.admin_manual_image_url ?? item.thumbnail_url,
       og_site_name: item.source_name,
       news_item_id: item.id,
       content_type: "news",

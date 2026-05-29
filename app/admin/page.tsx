@@ -808,6 +808,8 @@ export default function AdminPage() {
   const [manualNewsUrl, setManualNewsUrl] = useState("");
   const [manualNewsHeadline, setManualNewsHeadline] = useState("");
   const [manualNewsSummary, setManualNewsSummary] = useState("");
+  const [manualNewsImageUrl, setManualNewsImageUrl] = useState<string | null>(null);
+  const [manualNewsImageUploading, setManualNewsImageUploading] = useState(false);
   const [manualNewsBusy, setManualNewsBusy] = useState(false);
 
   const [waitlistRows, setWaitlistRows] = useState<WaitlistSignupRow[]>([]);
@@ -969,6 +971,7 @@ export default function AdminPage() {
           url,
           headline: manualNewsHeadline.trim() || undefined,
           summary: manualNewsSummary.trim() || undefined,
+          admin_manual_image_url: manualNewsImageUrl,
         }),
       });
       const j = await res.json().catch(() => ({}));
@@ -983,6 +986,7 @@ export default function AdminPage() {
       setManualNewsUrl("");
       setManualNewsHeadline("");
       setManualNewsSummary("");
+      setManualNewsImageUrl(null);
       setNewsFilter("pending");
       showToast(
         j.metadata_fetched === false
@@ -1032,11 +1036,16 @@ export default function AdminPage() {
     }
   }
 
-  async function saveNewsManualImageOverride(id: string) {
+  async function saveNewsManualImageOverride(id: string, explicitUrl?: string | null) {
     setNewsManualImageSavingId(id);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const manualImageOverride = (newsManualImageOverrides[id] ?? "").trim();
+      const raw =
+        explicitUrl !== undefined
+          ? explicitUrl
+          : (newsManualImageOverrides[id] ?? "");
+      const manualImageOverride =
+        typeof raw === "string" && raw.trim().length > 0 ? raw.trim() : null;
       const res = await fetch(`/api/admin/news`, {
         method: "PATCH",
         headers: {
@@ -1045,7 +1054,7 @@ export default function AdminPage() {
         },
         body: JSON.stringify({
           id,
-          admin_manual_image_url: manualImageOverride.length > 0 ? manualImageOverride : null,
+          admin_manual_image_url: manualImageOverride,
         }),
       });
       const j = await res.json().catch(() => ({}));
@@ -1056,7 +1065,9 @@ export default function AdminPage() {
       setNewsItems((prev) =>
         prev.map((item) => (item.id === id ? { ...item, admin_manual_image_url: j.admin_manual_image_url ?? null } : item))
       );
-      showToast(j.admin_manual_image_url ? "Manual image override saved" : "Manual image override cleared");
+      showToast(
+        j.admin_manual_image_url ? "Manual photo saved" : "Manual photo cleared",
+      );
     } finally {
       setNewsManualImageSavingId(null);
     }
@@ -1084,12 +1095,32 @@ export default function AdminPage() {
     try {
       const publicUrl = await uploadNewsThumbnail(file);
       setNewsManualImageOverrides((prev) => ({ ...prev, [newsId]: publicUrl }));
-      showToast("Image uploaded. Click save to apply.");
+      await saveNewsManualImageOverride(newsId, publicUrl);
     } catch (err) {
       const msg = (err as { message?: string } | null)?.message || "Failed to upload photo.";
       showToast(msg);
     } finally {
       setNewsManualImageUploadingId(null);
+    }
+  }
+
+  async function handleManualNewsImagePick(file: File | null) {
+    if (!file) return;
+    const pickError = validateImagePick(file);
+    if (pickError) {
+      showToast(pickError);
+      return;
+    }
+    setManualNewsImageUploading(true);
+    try {
+      const publicUrl = await uploadNewsThumbnail(file);
+      setManualNewsImageUrl(publicUrl);
+      showToast("Photo ready — will apply when you add to queue");
+    } catch (err) {
+      const msg = (err as { message?: string } | null)?.message || "Failed to upload photo.";
+      showToast(msg);
+    } finally {
+      setManualNewsImageUploading(false);
     }
   }
 
@@ -4942,7 +4973,7 @@ export default function AdminPage() {
             >
               <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>Manual RUMINT source</div>
               <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
-                Paste a story URL. We pull Open Graph title, description, image, and outlet name when possible, then enqueue a normal pending item. Approving creates the same RUMINT shadow post as automated ingestion.
+                Paste a story URL. We pull Open Graph title, description, image, and outlet name when possible, then enqueue a normal pending item. You can override the feed photo below before adding. Approving creates the same RUMINT shadow post as automated ingestion.
               </div>
               <input
                 type="url"
@@ -4997,6 +5028,68 @@ export default function AdminPage() {
                     resize: "vertical",
                   }}
                 />
+              </div>
+              <div style={{ display: "grid", gap: 8, maxWidth: 560 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Override feed photo (optional)</label>
+                {manualNewsImageUrl && (
+                  <img
+                    src={manualNewsImageUrl}
+                    alt="Manual feed photo preview"
+                    style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 8, border: `1px solid ${t.border}` }}
+                  />
+                )}
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <label
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 8,
+                      border: "none",
+                      background: "#374151",
+                      color: "white",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      cursor: manualNewsImageUploading || manualNewsBusy ? "default" : "pointer",
+                      opacity: manualNewsImageUploading || manualNewsBusy ? 0.7 : 1,
+                    }}
+                  >
+                    {manualNewsImageUploading ? "Uploading…" : manualNewsImageUrl ? "Change photo" : "Choose photo"}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      style={{ display: "none" }}
+                      disabled={manualNewsImageUploading || manualNewsBusy}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] ?? null;
+                        void handleManualNewsImagePick(file);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+                  </label>
+                  {manualNewsImageUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setManualNewsImageUrl(null)}
+                      disabled={manualNewsBusy}
+                      style={{
+                        padding: "8px 14px",
+                        borderRadius: 8,
+                        border: `1px solid ${t.border}`,
+                        background: t.surface,
+                        color: t.text,
+                        fontWeight: 700,
+                        fontSize: 13,
+                        cursor: manualNewsBusy ? "default" : "pointer",
+                      }}
+                    >
+                      Remove photo
+                    </button>
+                  )}
+                  <span style={{ fontSize: 11, color: t.textMuted }}>
+                    {manualNewsImageUrl
+                      ? "Manual photo takes priority over scraped OG image"
+                      : "No override — scraped OG image will be used if available"}
+                  </span>
+                </div>
               </div>
               <button
                 type="button"
@@ -5505,24 +5598,8 @@ export default function AdminPage() {
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ display: "grid", gap: 5 }}>
                         <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
-                          Manual feed image URL (optional)
+                          Manual feed photo (optional)
                         </label>
-                        <input
-                          type="url"
-                          value={newsManualImageOverrides[n.id] ?? ""}
-                          onChange={(e) => setNewsManualImageOverrides((prev) => ({ ...prev, [n.id]: e.target.value }))}
-                          placeholder={n.thumbnail_url ? "Leave blank to use OG image" : "Paste image URL"}
-                          style={{
-                            width: "100%",
-                            boxSizing: "border-box",
-                            border: `1px solid ${t.border}`,
-                            borderRadius: 8,
-                            padding: "8px 10px",
-                            background: t.bg,
-                            color: t.text,
-                            fontSize: 13,
-                          }}
-                        />
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                           <label
                             style={{
@@ -5533,16 +5610,22 @@ export default function AdminPage() {
                               color: "white",
                               fontWeight: 700,
                               fontSize: 12,
-                              cursor: newsManualImageUploadingId === n.id ? "default" : "pointer",
-                              opacity: newsManualImageUploadingId === n.id ? 0.7 : 1,
+                              cursor: newsManualImageUploadingId === n.id || newsManualImageSavingId === n.id ? "default" : "pointer",
+                              opacity: newsManualImageUploadingId === n.id || newsManualImageSavingId === n.id ? 0.7 : 1,
                             }}
                           >
-                            {newsManualImageUploadingId === n.id ? "Uploading…" : "Upload image"}
+                            {newsManualImageUploadingId === n.id
+                              ? "Uploading…"
+                              : newsManualImageSavingId === n.id
+                                ? "Saving…"
+                                : (newsManualImageOverrides[n.id] ?? "").trim()
+                                  ? "Change photo"
+                                  : "Choose photo"}
                             <input
                               type="file"
                               accept="image/*"
                               style={{ display: "none" }}
-                              disabled={newsManualImageUploadingId === n.id}
+                              disabled={newsManualImageUploadingId === n.id || newsManualImageSavingId === n.id}
                               onChange={(e) => {
                                 const file = e.target.files?.[0] ?? null;
                                 void handleNewsThumbnailPick(n.id, file);
@@ -5553,15 +5636,19 @@ export default function AdminPage() {
                           {(newsManualImageOverrides[n.id] ?? "").trim().length > 0 && (
                             <button
                               type="button"
-                              onClick={() => setNewsManualImageOverrides((prev) => ({ ...prev, [n.id]: "" }))}
-                              style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 12, cursor: "pointer" }}
+                              onClick={() => {
+                                setNewsManualImageOverrides((prev) => ({ ...prev, [n.id]: "" }));
+                                void saveNewsManualImageOverride(n.id, null);
+                              }}
+                              disabled={newsManualImageSavingId === n.id}
+                              style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 12, cursor: newsManualImageSavingId === n.id ? "default" : "pointer", opacity: newsManualImageSavingId === n.id ? 0.7 : 1 }}
                             >
-                              Clear override
+                              Remove photo
                             </button>
                           )}
                           <span style={{ fontSize: 11, color: t.textMuted }}>
                             {newsManualImageOverrides[n.id]?.trim()
-                              ? "Manual image takes priority over OG"
+                              ? "Manual photo takes priority over OG"
                               : n.thumbnail_url
                                 ? "Using scraped OG image"
                                 : "No image; feed will show text-only card"}
@@ -5569,14 +5656,6 @@ export default function AdminPage() {
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                        <button
-                          type="button"
-                          onClick={() => void saveNewsManualImageOverride(n.id)}
-                          disabled={newsManualImageSavingId === n.id}
-                          style={{ padding: "7px 14px", borderRadius: 8, border: "none", background: "#1d4ed8", color: "white", fontWeight: 700, fontSize: 13, cursor: newsManualImageSavingId === n.id ? "default" : "pointer", opacity: newsManualImageSavingId === n.id ? 0.7 : 1 }}
-                        >
-                          {newsManualImageSavingId === n.id ? "Saving…" : "Save image override"}
-                        </button>
                         {newsFilter === "pending" && (
                           <>
                             <button

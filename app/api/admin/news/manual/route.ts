@@ -54,7 +54,7 @@ function hostnameOnly(url: string): string {
 
 /**
  * POST /api/admin/news/manual
- * Body: { url: string, headline?: string, summary?: string }
+ * Body: { url: string, headline?: string, summary?: string, admin_manual_image_url?: string | null }
  *
  * Inserts `news_items` as pending with the same fields ingestion uses. Approve
  * via existing /api/admin/news — shadow post + feed behave like any RUMINT story.
@@ -63,9 +63,19 @@ export async function POST(req: NextRequest) {
   const auth = await requireAdmin(req);
   if (auth instanceof NextResponse) return auth;
 
-  let body: { url?: string; headline?: string; summary?: string };
+  let body: {
+    url?: string;
+    headline?: string;
+    summary?: string;
+    admin_manual_image_url?: string | null;
+  };
   try {
-    body = (await req.json()) as { url?: string; headline?: string; summary?: string };
+    body = (await req.json()) as {
+      url?: string;
+      headline?: string;
+      summary?: string;
+      admin_manual_image_url?: string | null;
+    };
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -130,6 +140,13 @@ export async function POST(req: NextRequest) {
   const summary =
     overrideSummary || (ogDescription?.trim() ? ogDescription.trim() : null);
 
+  const manualImageOverride =
+    typeof body.admin_manual_image_url === "string"
+      ? body.admin_manual_image_url.trim() || null
+      : body.admin_manual_image_url === null
+        ? null
+        : null;
+
   const row = {
     headline,
     source_name: ogSiteName?.trim() || host,
@@ -137,6 +154,7 @@ export async function POST(req: NextRequest) {
     canonical_url: normalizedUrl,
     summary,
     thumbnail_url: ogImage,
+    admin_manual_image_url: manualImageOverride,
     published_at: null as string | null,
     tags: [] as string[],
     relevance_score: MANUAL_RELEVANCE_SCORE,
