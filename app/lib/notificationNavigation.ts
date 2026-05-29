@@ -203,6 +203,7 @@ export function getNotificationIcon(n: NotificationNavInput): string {
   if (lower.includes("join")) return "🪖";
   if (lower.includes("memorial")) return "🕊️";
   if (lower.includes("mention") || t.startsWith("mention")) return "@";
+  if (t === "feed_comment_reply" || lower.includes("replied to your comment")) return "↩️";
   if (t.startsWith("connection_") || t === "worked_with") return "🤝";
   if (n.post_owner_id) return "👤";
   return "🔔";

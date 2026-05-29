@@ -390,6 +390,7 @@ type Comment = {
   created_at: string;
   image_url: string | null;
   gif_url: string | null;
+  parent_comment_id: string | null;
 };
 
 type FeedComment = Comment & {
@@ -401,6 +402,8 @@ type FeedComment = Comment & {
   myReaction: ReactionType | null;
   reactionCountsByType: Partial<Record<ReactionType, number>>;
   reactorNamesByType: Partial<Record<ReactionType, string[]>>;
+  replies: FeedComment[];
+  replyCount: number;
 };
 
 type MemorialComment = {
@@ -921,6 +924,17 @@ export default function HomePage() {
   const [submittingCommentFor, setSubmittingCommentFor] = useState<
     string | null
   >(null);
+
+  // Replies (one level deep): keyed by the top-level comment id being replied to.
+  const [expandedReplies, setExpandedReplies] = useState<Record<string, boolean>>({});
+  const [replyingToCommentId, setReplyingToCommentId] = useState<string | null>(null);
+  const [replyTargetAuthor, setReplyTargetAuthor] = useState<{
+    userId: string;
+    name: string;
+  } | null>(null);
+  const [replyInputs, setReplyInputs] = useState<Record<string, string>>({});
+  const replyRawsRef = useRef<Record<string, string>>({});
+  const [submittingReplyFor, setSubmittingReplyFor] = useState<string | null>(null);
 
   const [likedBizIds, setLikedBizIds] = useState<Set<string>>(new Set());
   const [togglingBizLikeFor, setTogglingBizLikeFor] = useState<string | null>(null);
@@ -2205,7 +2219,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     /** Only non-hidden comments; if column missing (older DB), load without this filter. */
     let commentsWithImageQuery = await supabase
       .from("post_comments")
-      .select("id, post_id, user_id, content, created_at, image_url, gif_url")
+      .select("id, post_id, user_id, content, created_at, image_url, gif_url, parent_comment_id")
       .in("post_id", postIds)
       .or("hidden_for_review.is.null,hidden_for_review.eq.false")
       .order("created_at", { ascending: true });
@@ -2216,9 +2230,42 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     ) {
       commentsWithImageQuery = await supabase
         .from("post_comments")
-        .select("id, post_id, user_id, content, created_at, image_url, gif_url")
+        .select("id, post_id, user_id, content, created_at, image_url, gif_url, parent_comment_id")
         .in("post_id", postIds)
         .order("created_at", { ascending: true });
+    }
+
+    // Older DBs may not have parent_comment_id yet; retry without it.
+    if (
+      commentsWithImageQuery.error &&
+      isMissingColumnError(commentsWithImageQuery.error, "parent_comment_id")
+    ) {
+      let legacyQuery = await supabase
+        .from("post_comments")
+        .select("id, post_id, user_id, content, created_at, image_url, gif_url")
+        .in("post_id", postIds)
+        .or("hidden_for_review.is.null,hidden_for_review.eq.false")
+        .order("created_at", { ascending: true });
+
+      if (
+        legacyQuery.error &&
+        isMissingColumnError(legacyQuery.error, "hidden_for_review")
+      ) {
+        legacyQuery = await supabase
+          .from("post_comments")
+          .select("id, post_id, user_id, content, created_at, image_url, gif_url")
+          .in("post_id", postIds)
+          .order("created_at", { ascending: true });
+      }
+
+      if (!legacyQuery.error) {
+        const normalized: Comment[] = (legacyQuery.data ?? []).map((comment) => ({
+          ...(comment as Omit<Comment, "parent_comment_id">),
+          parent_comment_id: null,
+        }));
+        return { comments: normalized };
+      }
+      commentsWithImageQuery = legacyQuery;
     }
 
     if (!commentsWithImageQuery.error) {
@@ -2242,7 +2289,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
     let commentsWithoutImageQuery = await supabase
       .from("post_comments")
-      .select("id, post_id, user_id, content, created_at")
+      .select("id, post_id, user_id, content, created_at, parent_comment_id")
       .in("post_id", postIds)
       .or("hidden_for_review.is.null,hidden_for_review.eq.false")
       .order("created_at", { ascending: true });
@@ -2253,9 +2300,54 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     ) {
       commentsWithoutImageQuery = await supabase
         .from("post_comments")
-        .select("id, post_id, user_id, content, created_at")
+        .select("id, post_id, user_id, content, created_at, parent_comment_id")
         .in("post_id", postIds)
         .order("created_at", { ascending: true });
+    }
+
+    // Older DBs without parent_comment_id: retry the no-image query without it.
+    if (
+      commentsWithoutImageQuery.error &&
+      isMissingColumnError(commentsWithoutImageQuery.error, "parent_comment_id")
+    ) {
+      let legacyNoImageQuery = await supabase
+        .from("post_comments")
+        .select("id, post_id, user_id, content, created_at")
+        .in("post_id", postIds)
+        .or("hidden_for_review.is.null,hidden_for_review.eq.false")
+        .order("created_at", { ascending: true });
+
+      if (
+        legacyNoImageQuery.error &&
+        isMissingColumnError(legacyNoImageQuery.error, "hidden_for_review")
+      ) {
+        legacyNoImageQuery = await supabase
+          .from("post_comments")
+          .select("id, post_id, user_id, content, created_at")
+          .in("post_id", postIds)
+          .order("created_at", { ascending: true });
+      }
+
+      if (legacyNoImageQuery.error) {
+        console.error("Comments fallback load error:", {
+          message: legacyNoImageQuery.error.message,
+          details: legacyNoImageQuery.error.details,
+          hint: legacyNoImageQuery.error.hint,
+          code: legacyNoImageQuery.error.code,
+        });
+        return { comments: [] as Comment[] };
+      }
+
+      const legacyComments: Comment[] = (legacyNoImageQuery.data ?? []).map(
+        (comment) =>
+          ({
+            ...(comment as Record<string, unknown>),
+            image_url: null,
+            gif_url: null,
+            parent_comment_id: null,
+          }) as Comment,
+      );
+      return { comments: legacyComments };
     }
 
     if (commentsWithoutImageQuery.error) {
@@ -2273,10 +2365,16 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
     const normalizedComments: Comment[] = (
       commentsWithoutImageQuery.data ?? []
-    ).map((comment) => ({
-      ...(comment as Omit<Comment, "image_url">),
-      image_url: null,
-    }));
+    ).map(
+      (comment) =>
+        ({
+          ...(comment as Record<string, unknown>),
+          image_url: null,
+          gif_url: null,
+          parent_comment_id:
+            (comment as { parent_comment_id?: string | null }).parent_comment_id ?? null,
+        }) as Comment,
+    );
 
     return {
       comments: normalizedComments,
@@ -2859,12 +2957,12 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
     });
 
-    const commentsByPost = new Map<string, FeedComment[]>();
+    // Enrich every comment row (top-level and replies) into a FeedComment, keyed
+    // by id, so we can assemble a one-level reply tree below.
+    const enrichedById = new Map<string, FeedComment>();
     rawComments.forEach((comment) => {
-      const existing = commentsByPost.get(comment.post_id) || [];
       const agg = commentAggregatesMap.get(comment.id) ?? emptyAggregate();
-
-      existing.push({
+      enrichedById.set(comment.id, {
         ...comment,
         authorName: profileNameMap.get(comment.user_id) || "User",
         authorPhotoUrl: profilePhotoMap.get(comment.user_id) || null,
@@ -2878,9 +2976,32 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           comment.id,
           profileNameMap,
         ),
+        replies: [],
+        replyCount: 0,
       });
+    });
 
+    const commentsByPost = new Map<string, FeedComment[]>();
+    // First pass: register top-level comments (no parent, or parent missing/hidden).
+    rawComments.forEach((comment) => {
+      const enriched = enrichedById.get(comment.id);
+      if (!enriched) return;
+      const isReply =
+        comment.parent_comment_id != null &&
+        enrichedById.has(comment.parent_comment_id);
+      if (isReply) return;
+      const existing = commentsByPost.get(comment.post_id) || [];
+      existing.push(enriched);
       commentsByPost.set(comment.post_id, existing);
+    });
+    // Second pass: attach replies to their top-level parent (one level deep).
+    rawComments.forEach((comment) => {
+      if (comment.parent_comment_id == null) return;
+      const enriched = enrichedById.get(comment.id);
+      const parent = enrichedById.get(comment.parent_comment_id);
+      if (!enriched || !parent) return;
+      parent.replies.push(enriched);
+      parent.replyCount = parent.replies.length;
     });
 
     const uniqueFeedEventIds = [
@@ -3190,7 +3311,10 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         authorIsEmployer: profileEmployerMap.get(post.user_id) ?? null,
         authorIsPureAdmin: profilePureAdminMap.get(post.user_id) ?? null,
         likeCount: agg.totalCount,
-        commentCount: commentsForPost.length,
+        commentCount: commentsForPost.reduce(
+          (sum, c) => sum + 1 + c.replyCount,
+          0,
+        ),
         myReaction: agg.myReaction,
         reactionCountsByType: agg.countsByType,
         reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(
@@ -4037,6 +4161,180 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     }
   }
 
+  function openReplyComposer(
+    targetCommentId: string,
+    author: { userId: string; name: string },
+  ) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    // Clicking the same target's Reply again closes the composer.
+    if (
+      replyingToCommentId === targetCommentId &&
+      replyTargetAuthor?.userId === author.userId
+    ) {
+      setReplyingToCommentId(null);
+      setReplyTargetAuthor(null);
+      return;
+    }
+    setReplyingToCommentId(targetCommentId);
+    setReplyTargetAuthor(author);
+    setExpandedReplies((prev) => ({ ...prev, [targetCommentId]: true }));
+  }
+
+  // Replies are one level deep: parentCommentId is always a top-level comment.
+  async function submitReply(postId: string, parentCommentId: string) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    if (blockMemberInteraction()) return;
+
+    const replyText = (
+      replyRawsRef.current[parentCommentId] ||
+      replyInputs[parentCommentId] ||
+      ""
+    ).trim();
+    if (!replyText) return;
+
+    try {
+      setSubmittingReplyFor(parentCommentId);
+
+      const insert = await supabase
+        .from("post_comments")
+        .insert([
+          {
+            post_id: postId,
+            user_id: userId,
+            content: replyText,
+            parent_comment_id: parentCommentId,
+          },
+        ])
+        .select("id")
+        .single();
+
+      if (insert.error) {
+        console.error("Reply insert error:", insert.error);
+        alert(insert.error.message || "Failed to post reply.");
+        return;
+      }
+
+      const insertedReplyId = insert.data?.id ?? null;
+      const post = posts.find((p) => p.id === postId);
+      const ownerId = post?.user_id ?? userId;
+      const actorName = currentUserName?.trim() || "Someone";
+      const replyLink = `/?postId=${encodeURIComponent(postId)}${insertedReplyId ? `&commentId=${encodeURIComponent(insertedReplyId)}` : ""}`;
+      const replyTo = replyTargetAuthor;
+
+      const notified = new Set<string>([userId]);
+      const tasks: Promise<unknown>[] = [];
+
+      // Mention notifications
+      const mentionIds = extractMentionIds(replyText).filter((id) => id !== userId);
+      for (const uid of mentionIds) {
+        notified.add(uid);
+        tasks.push(
+          postNotifyJson(supabase, {
+            user_id: uid,
+            actor_name: actorName,
+            post_owner_id: ownerId,
+            type: "mention_comment",
+            category: "social",
+            post_id: postId,
+            parent_entity_type: "comment",
+            parent_entity_id: insertedReplyId,
+            message: `${actorName} mentioned you in a reply`,
+            link: replyLink,
+            group_key: `post:${postId}:mentions`,
+            dedupe_key: insertedReplyId
+              ? `mention_comment:${insertedReplyId}:${uid}`
+              : `mention_comment:${postId}:${uid}`,
+            metadata: {
+              feed: true,
+              ...(insertedReplyId ? { comment_id: insertedReplyId } : {}),
+            },
+          }),
+        );
+      }
+
+      // Notify the author of the comment being replied to.
+      if (replyTo && replyTo.userId !== userId && !notified.has(replyTo.userId)) {
+        notified.add(replyTo.userId);
+        tasks.push(
+          postNotifyJson(supabase, {
+            user_id: replyTo.userId,
+            actor_name: actorName,
+            post_owner_id: ownerId,
+            type: "feed_comment_reply",
+            category: "social",
+            post_id: postId,
+            parent_entity_type: "comment",
+            parent_entity_id: insertedReplyId,
+            message: `${actorName} replied to your comment`,
+            link: replyLink,
+            metadata: {
+              feed: true,
+              ...(insertedReplyId ? { comment_id: insertedReplyId } : {}),
+            },
+          }),
+        );
+      }
+
+      // Post owner (skip if already notified above).
+      if (post && ownerId !== userId && !notified.has(ownerId)) {
+        notified.add(ownerId);
+        tasks.push(
+          notify(ownerId, `${actorName} commented on your post`, ownerId, {
+            type: "feed_comment",
+            post_id: postId,
+          }),
+        );
+      }
+
+      // Thread participants (everyone else who commented on this post).
+      const { data: td } = await supabase
+        .from("post_comments")
+        .select("user_id")
+        .eq("post_id", postId)
+        .neq("user_id", userId);
+      const participants = [
+        ...new Set(((td ?? []) as { user_id: string }[]).map((c) => c.user_id)),
+      ].filter((id) => !notified.has(id));
+      for (const pid of participants) {
+        tasks.push(
+          notify(
+            pid,
+            `${actorName} also commented on a post you're following`,
+            ownerId,
+            { type: "feed_comment_thread", post_id: postId },
+          ),
+        );
+      }
+
+      await Promise.all(tasks);
+
+      setReplyInputs((prev) => ({ ...prev, [parentCommentId]: "" }));
+      replyRawsRef.current[parentCommentId] = "";
+      setReplyingToCommentId(null);
+      setReplyTargetAuthor(null);
+      setExpandedReplies((prev) => ({ ...prev, [parentCommentId]: true }));
+      setExpandedComments((prev) => ({ ...prev, [postId]: true }));
+
+      setSubmittingReplyFor(null);
+      void loadPosts();
+      void refreshPlankHolderChallenge();
+    } catch (err) {
+      console.error("submitReply crashed:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while posting your reply.",
+      );
+      setSubmittingReplyFor(null);
+    }
+  }
+
   async function deletePost(postId: string) {
     if (!userId) return;
     if (blockMemberInteraction()) return;
@@ -4508,6 +4806,17 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
     setExpandedComments((prev) => ({ ...prev, [postId]: true }));
 
+    // If the deep link targets a reply, expand its parent thread so it renders.
+    if (commentId) {
+      const deepLinkPost = posts.find((p) => p.id === postId);
+      const parentComment = deepLinkPost?.comments.find((c) =>
+        (c.replies ?? []).some((r) => r.id === commentId),
+      );
+      if (parentComment) {
+        setExpandedReplies((prev) => ({ ...prev, [parentComment.id]: true }));
+      }
+    }
+
     let cancelled = false;
     let timeoutId: number | null = null;
     let attempt = 0;
@@ -4809,6 +5118,440 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         <SkeletonBlock width="100%" height={13} />
         <SkeletonBlock width="85%" height={13} />
         <SkeletonBlock width="60%" height={13} />
+      </div>
+    );
+  }
+
+  // Renders a single comment card (used for both top-level comments and their
+  // one-level replies). `replyTargetId` is the top-level comment the Reply
+  // button should attach to (a reply attaches to its parent, keeping depth at 1).
+  function renderCommentNode(
+    comment: FeedComment,
+    opts: { isReply: boolean; replyTargetId: string },
+  ) {
+    const isOwnComment = userId === comment.user_id;
+    const isEditingComment = editingCommentId === comment.id;
+    const textExpanded = expandedCommentTexts[comment.id] || false;
+    const isLong = (comment.content?.length ?? 0) > 100;
+    const avatarSize = opts.isReply ? 20 : 24;
+
+    return (
+      <div
+        id={`feed-comment-${comment.id}`}
+        key={comment.id}
+        style={{
+          background: t.bg,
+          borderRadius: 10,
+          padding: 6,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "clamp(8px, 2.2vw, 12px)",
+            alignItems: "flex-start",
+            flexWrap: "wrap",
+            minWidth: 0,
+            width: "100%",
+            boxSizing: "border-box",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              gap: "clamp(6px, 2vw, 10px)",
+              alignItems: "center",
+              flex: 1,
+              minWidth: 0,
+              flexWrap: "wrap",
+            }}
+          >
+            <Link
+              href={`/profile/${comment.user_id}`}
+              style={{ textDecoration: "none", flexShrink: 0, lineHeight: 0 }}
+            >
+              <Avatar
+                photoUrl={comment.authorPhotoUrl}
+                name={comment.authorName}
+                size={avatarSize}
+                service={comment.authorService}
+                isEmployer={comment.authorIsEmployer}
+              />
+            </Link>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <Link
+                href={`/profile/${comment.user_id}`}
+                style={{
+                  fontWeight: 700,
+                  fontSize: 14,
+                  color: t.text,
+                  textDecoration: "none",
+                  display: "block",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {comment.authorName}
+              </Link>
+            </div>
+            <span
+              style={{
+                fontSize: "clamp(11px, 2.8vw, 12px)",
+                color: t.textMuted,
+                flexShrink: 0,
+                alignSelf: "center",
+              }}
+            >
+              {formatDate(comment.created_at)}
+            </span>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              gap: "clamp(6px, 1.8vw, 10px)",
+              alignItems: "center",
+              flexShrink: 0,
+              flexWrap: "wrap",
+            }}
+          >
+            {!isOwnComment && (
+              <button type="button" onClick={() => openFlagModal("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 13, lineHeight: 1 }}>
+                ...
+              </button>
+            )}
+            {isOwnComment && (
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+              {!isEditingComment && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    startEditComment(comment.id, comment.content)
+                  }
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    padding: 0,
+                    cursor: "pointer",
+                    color: t.textMuted,
+                    fontWeight: 700,
+                  }}
+                >
+                  Edit
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => deleteComment(comment.id)}
+                disabled={deletingCommentId === comment.id}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  padding: 0,
+                  cursor:
+                    deletingCommentId === comment.id
+                      ? "not-allowed"
+                      : "pointer",
+                  color: t.textMuted,
+                  fontWeight: 700,
+                  opacity: deletingCommentId === comment.id ? 0.6 : 1,
+                }}
+              >
+                {deletingCommentId === comment.id
+                  ? "Deleting..."
+                  : "Delete"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+        {isEditingComment ? (
+          <div style={{ marginTop: 8 }}>
+            <textarea
+              value={editingCommentContent}
+              onChange={(e) => setEditingCommentContent(e.target.value)}
+              style={{
+                width: "100%",
+                minHeight: 70,
+                border: `1px solid ${t.inputBorder}`,
+                borderRadius: 10,
+                padding: 10,
+                resize: "vertical",
+                fontSize: 14,
+                boxSizing: "border-box",
+                background: t.input,
+                color: t.text,
+              }}
+            />
+
+            <div
+              style={{
+                marginTop: 10,
+                display: "flex",
+                justifyContent: "flex-end",
+                gap: 10,
+              }}
+            >
+              <button
+                type="button"
+                onClick={cancelEditComment}
+                style={{
+                  background: "transparent",
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 10,
+                  padding: "8px 14px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  color: t.text,
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => saveCommentEdit(comment.id)}
+                disabled={savingCommentId === comment.id}
+                style={{
+                  background: "#111",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 10,
+                  padding: "8px 14px",
+                  fontWeight: 700,
+                  cursor:
+                    savingCommentId === comment.id
+                      ? "not-allowed"
+                      : "pointer",
+                  opacity: savingCommentId === comment.id ? 0.7 : 1,
+                }}
+              >
+                {savingCommentId === comment.id ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {comment.content && (
+              <div style={{ marginTop: 3 }}>
+                <div style={{ fontSize: 13, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
+                  {renderContent(comment.content)}
+                </div>
+                {isLong && (
+                  <button type="button" onClick={() => setExpandedCommentTexts((p) => ({ ...p, [comment.id]: !textExpanded }))} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: 12, fontWeight: 700, marginTop: 1 }}>
+                    {textExpanded ? "Show less" : "Show more"}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {comment.content && (() => {
+              const youtubeUrl = firstYouTubeUrlFromText(comment.content);
+              return youtubeUrl ? (
+                <YouTubeEmbed
+                  url={youtubeUrl}
+                  title="Comment YouTube video"
+                  maxWidth="min(360px, 100%)"
+                  marginTop={8}
+                />
+              ) : null;
+            })()}
+
+            {comment.image_url && (
+              <button
+                type="button"
+                onClick={() => openGallery([comment.image_url!], 0)}
+                aria-label="View comment image full size"
+                style={{
+                  marginTop: 10,
+                  width: "100%",
+                  maxWidth: "min(180px, 100%)",
+                  height: 180,
+                  borderRadius: 10,
+                  overflow: "hidden",
+                  border: `1px solid ${t.border}`,
+                  background: FEED_MEDIA_FRAME_BG,
+                  boxSizing: "border-box",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 0,
+                  cursor: "pointer",
+                }}
+              >
+                <img
+                  src={comment.image_url}
+                  alt="Comment image"
+                  style={feedContainedImageStyle}
+                />
+              </button>
+            )}
+
+            {comment.gif_url && (
+              <div
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  maxWidth: "min(180px, 100%)",
+                  boxSizing: "border-box",
+                }}
+              >
+                <img
+                  src={comment.gif_url}
+                  alt="GIF"
+                  style={{
+                    width: "100%",
+                    height: "auto",
+                    maxWidth: 180,
+                    borderRadius: 10,
+                    display: "block",
+                  }}
+                />
+              </div>
+            )}
+          </>
+        )}
+
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            alignItems: "center",
+            marginTop: 4,
+            flexWrap: "wrap",
+          }}
+        >
+          <ReactionPickerTrigger
+            t={t}
+            disabled={!userId}
+            viewerReaction={comment.myReaction}
+            totalCount={comment.likeCount}
+            busy={togglingCommentLikeFor === comment.id}
+            showTriggerCount={false}
+            onPick={(type) =>
+              void handleFeedCommentReaction(comment.id, type)
+            }
+          />
+          <button
+            type="button"
+            onClick={() =>
+              openReplyComposer(opts.replyTargetId, {
+                userId: comment.user_id,
+                name: comment.authorName,
+              })
+            }
+            style={{
+              background: "transparent",
+              border: "none",
+              padding: 0,
+              cursor: "pointer",
+              color: t.textMuted,
+              fontWeight: 700,
+              fontSize: 13,
+            }}
+          >
+            Reply
+          </button>
+          <div style={{ flex: "1 1 12px", minWidth: 0 }} />
+          <ReactionLeaderboard
+            t={t}
+            countsByType={comment.reactionCountsByType}
+            reactorNamesByType={comment.reactorNamesByType}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // Compact composer shown inline when replying to a comment thread.
+  function renderReplyComposer(post: FeedPost, targetCommentId: string) {
+    if (replyingToCommentId !== targetCommentId) return null;
+    const placeholder = replyTargetAuthor
+      ? `Reply to ${replyTargetAuthor.name}...`
+      : "Write a reply...";
+    return (
+      <div style={{ marginTop: 8 }}>
+        <MentionTextarea
+          placeholder={placeholder}
+          value={replyInputs[targetCommentId] || ""}
+          onChange={(val) =>
+            setReplyInputs((prev) => ({ ...prev, [targetCommentId]: val }))
+          }
+          onChangeRaw={(raw) => {
+            replyRawsRef.current[targetCommentId] = raw;
+          }}
+          style={{
+            width: "100%",
+            minHeight: 56,
+            border: `1px solid ${t.inputBorder}`,
+            borderRadius: 10,
+            padding: 10,
+            resize: "vertical",
+            fontSize: 14,
+            boxSizing: "border-box",
+            background: t.input,
+            color: t.text,
+          }}
+        />
+        <div
+          style={{
+            marginTop: 8,
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 10,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setReplyingToCommentId(null);
+              setReplyTargetAuthor(null);
+            }}
+            style={{
+              background: "transparent",
+              border: `1px solid ${t.border}`,
+              borderRadius: 10,
+              padding: "6px 12px",
+              fontWeight: 700,
+              cursor: "pointer",
+              color: t.text,
+              fontSize: 13,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => submitReply(post.id, targetCommentId)}
+            disabled={submittingReplyFor === targetCommentId}
+            style={{
+              background: "#111",
+              color: "white",
+              border: "none",
+              borderRadius: 10,
+              padding: "6px 14px",
+              fontWeight: 700,
+              cursor:
+                submittingReplyFor === targetCommentId
+                  ? "not-allowed"
+                  : "pointer",
+              opacity: submittingReplyFor === targetCommentId ? 0.7 : 1,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 13,
+            }}
+          >
+            {submittingReplyFor === targetCommentId && (
+              <span className="btn-spinner" />
+            )}
+            Reply
+          </button>
+        </div>
       </div>
     );
   }
@@ -6394,319 +7137,60 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       {post.comments.length > 0 && (
                       <div style={{ display: "grid", gap: 4 }}>
                         {(commentsOpen ? post.comments : post.comments.slice(0, 2)).map((comment) => {
-                          const isOwnComment = userId === comment.user_id;
-                          const isEditingComment = editingCommentId === comment.id;
-                          const textExpanded = expandedCommentTexts[comment.id] || false;
-                          const isLong = (comment.content?.length ?? 0) > 100;
+                          const replies = comment.replies ?? [];
+                          const repliesOpen = expandedReplies[comment.id] || false;
 
                           return (
-                            <div
-                              id={`feed-comment-${comment.id}`}
-                              key={comment.id}
-                              style={{
-                                background: t.bg,
-                                borderRadius: 10,
-                                padding: 6,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  gap: "clamp(8px, 2.2vw, 12px)",
-                                  alignItems: "flex-start",
-                                  flexWrap: "wrap",
-                                  minWidth: 0,
-                                  width: "100%",
-                                  boxSizing: "border-box",
-                                }}
-                              >
-                                <div
+                            <div key={comment.id} style={{ display: "grid", gap: 4 }}>
+                              {renderCommentNode(comment, { isReply: false, replyTargetId: comment.id })}
+
+                              {replies.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedReplies((prev) => ({
+                                      ...prev,
+                                      [comment.id]: !repliesOpen,
+                                    }))
+                                  }
                                   style={{
-                                    display: "flex",
-                                    gap: "clamp(6px, 2vw, 10px)",
-                                    alignItems: "center",
-                                    flex: 1,
-                                    minWidth: 0,
-                                    flexWrap: "wrap",
+                                    marginLeft: 30,
+                                    background: "transparent",
+                                    border: "none",
+                                    padding: 0,
+                                    cursor: "pointer",
+                                    color: t.textMuted,
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    textAlign: "left",
                                   }}
                                 >
-                                  <Link
-                                    href={`/profile/${comment.user_id}`}
-                                    style={{ textDecoration: "none", flexShrink: 0, lineHeight: 0 }}
-                                  >
-                                    <Avatar
-                                      photoUrl={comment.authorPhotoUrl}
-                                      name={comment.authorName}
-                                      size={24}
-                                      service={comment.authorService}
-                                      isEmployer={comment.authorIsEmployer}
-                                    />
-                                  </Link>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <Link
-                                      href={`/profile/${comment.user_id}`}
-                                      style={{
-                                        fontWeight: 700,
-                                        fontSize: 14,
-                                        color: t.text,
-                                        textDecoration: "none",
-                                        display: "block",
-                                        overflow: "hidden",
-                                        textOverflow: "ellipsis",
-                                        whiteSpace: "nowrap",
-                                      }}
-                                    >
-                                      {comment.authorName}
-                                    </Link>
-                                  </div>
-                                  <span
-                                    style={{
-                                      fontSize: "clamp(11px, 2.8vw, 12px)",
-                                      color: t.textMuted,
-                                      flexShrink: 0,
-                                      alignSelf: "center",
-                                    }}
-                                  >
-                                    {formatDate(comment.created_at)}
-                                  </span>
-                                </div>
-
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    gap: "clamp(6px, 1.8vw, 10px)",
-                                    alignItems: "center",
-                                    flexShrink: 0,
-                                    flexWrap: "wrap",
-                                  }}
-                                >
-                                  {!isOwnComment && (
-                                    <button type="button" onClick={() => openFlagModal("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 13, lineHeight: 1 }}>
-                                      ...
-                                    </button>
-                                  )}
-                                  {isOwnComment && (
-                                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                                    {!isEditingComment && (
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          startEditComment(comment.id, comment.content)
-                                        }
-                                        style={{
-                                          background: "transparent",
-                                          border: "none",
-                                          padding: 0,
-                                          cursor: "pointer",
-                                          color: t.textMuted,
-                                          fontWeight: 700,
-                                        }}
-                                      >
-                                        Edit
-                                      </button>
-                                    )}
-
-                                    <button
-                                      type="button"
-                                      onClick={() => deleteComment(comment.id)}
-                                      disabled={deletingCommentId === comment.id}
-                                      style={{
-                                        background: "transparent",
-                                        border: "none",
-                                        padding: 0,
-                                        cursor:
-                                          deletingCommentId === comment.id
-                                            ? "not-allowed"
-                                            : "pointer",
-                                        color: t.textMuted,
-                                        fontWeight: 700,
-                                        opacity: deletingCommentId === comment.id ? 0.6 : 1,
-                                      }}
-                                    >
-                                      {deletingCommentId === comment.id
-                                        ? "Deleting..."
-                                        : "Delete"}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-
-                              {isEditingComment ? (
-                                <div style={{ marginTop: 8 }}>
-                                  <textarea
-                                    value={editingCommentContent}
-                                    onChange={(e) => setEditingCommentContent(e.target.value)}
-                                    style={{
-                                      width: "100%",
-                                      minHeight: 70,
-                                      border: `1px solid ${t.inputBorder}`,
-                                      borderRadius: 10,
-                                      padding: 10,
-                                      resize: "vertical",
-                                      fontSize: 14,
-                                      boxSizing: "border-box",
-                                      background: t.input,
-                                      color: t.text,
-                                    }}
-                                  />
-
-                                  <div
-                                    style={{
-                                      marginTop: 10,
-                                      display: "flex",
-                                      justifyContent: "flex-end",
-                                      gap: 10,
-                                    }}
-                                  >
-                                    <button
-                                      type="button"
-                                      onClick={cancelEditComment}
-                                      style={{
-                                        background: "transparent",
-                                        border: `1px solid ${t.border}`,
-                                        borderRadius: 10,
-                                        padding: "8px 14px",
-                                        fontWeight: 700,
-                                        cursor: "pointer",
-                                        color: t.text,
-                                      }}
-                                    >
-                                      Cancel
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => saveCommentEdit(comment.id)}
-                                      disabled={savingCommentId === comment.id}
-                                      style={{
-                                        background: "#111",
-                                        color: "white",
-                                        border: "none",
-                                        borderRadius: 10,
-                                        padding: "8px 14px",
-                                        fontWeight: 700,
-                                        cursor:
-                                          savingCommentId === comment.id
-                                            ? "not-allowed"
-                                            : "pointer",
-                                        opacity: savingCommentId === comment.id ? 0.7 : 1,
-                                      }}
-                                    >
-                                      {savingCommentId === comment.id ? "Saving..." : "Save"}
-                                    </button>
-                                  </div>
-                                </div>
-                              ) : (
-                                <>
-                                  {comment.content && (
-                                    <div style={{ marginTop: 3 }}>
-                                      <div style={{ fontSize: 13, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
-                                        {renderContent(comment.content)}
-                                      </div>
-                                      {isLong && (
-                                        <button type="button" onClick={() => setExpandedCommentTexts((p) => ({ ...p, [comment.id]: !textExpanded }))} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: 12, fontWeight: 700, marginTop: 1 }}>
-                                          {textExpanded ? "Show less" : "Show more"}
-                                        </button>
-                                      )}
-                                    </div>
-                                  )}
-
-                                  {comment.content && (() => {
-                                    const youtubeUrl = firstYouTubeUrlFromText(comment.content);
-                                    return youtubeUrl ? (
-                                      <YouTubeEmbed
-                                        url={youtubeUrl}
-                                        title="Comment YouTube video"
-                                        maxWidth="min(360px, 100%)"
-                                        marginTop={8}
-                                      />
-                                    ) : null;
-                                  })()}
-
-                                  {comment.image_url && (
-                                    <button
-                                      type="button"
-                                      onClick={() => openGallery([comment.image_url!], 0)}
-                                      aria-label="View comment image full size"
-                                      style={{
-                                        marginTop: 10,
-                                        width: "100%",
-                                        maxWidth: "min(180px, 100%)",
-                                        height: 180,
-                                        borderRadius: 10,
-                                        overflow: "hidden",
-                                        border: `1px solid ${t.border}`,
-                                        background: FEED_MEDIA_FRAME_BG,
-                                        boxSizing: "border-box",
-                                        display: "flex",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                        padding: 0,
-                                        cursor: "pointer",
-                                      }}
-                                    >
-                                      <img
-                                        src={comment.image_url}
-                                        alt="Comment image"
-                                        style={feedContainedImageStyle}
-                                      />
-                                    </button>
-                                  )}
-
-                                  {comment.gif_url && (
-                                    <div
-                                      style={{
-                                        marginTop: 8,
-                                        width: "100%",
-                                        maxWidth: "min(180px, 100%)",
-                                        boxSizing: "border-box",
-                                      }}
-                                    >
-                                      <img
-                                        src={comment.gif_url}
-                                        alt="GIF"
-                                        style={{
-                                          width: "100%",
-                                          height: "auto",
-                                          maxWidth: 180,
-                                          borderRadius: 10,
-                                          display: "block",
-                                        }}
-                                      />
-                                    </div>
-                                  )}
-                                </>
+                                  {repliesOpen
+                                    ? "Hide replies"
+                                    : `View ${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
+                                </button>
                               )}
 
-                              <div
-                                style={{
-                                  display: "flex",
-                                  gap: 10,
-                                  alignItems: "center",
-                                  marginTop: 4,
-                                  flexWrap: "wrap",
-                                }}
-                              >
-                                <ReactionPickerTrigger
-                                  t={t}
-                                  disabled={!userId}
-                                  viewerReaction={comment.myReaction}
-                                  totalCount={comment.likeCount}
-                                  busy={togglingCommentLikeFor === comment.id}
-                                  showTriggerCount={false}
-                                  onPick={(type) =>
-                                    void handleFeedCommentReaction(comment.id, type)
-                                  }
-                                />
-                                <div style={{ flex: "1 1 12px", minWidth: 0 }} />
-                                <ReactionLeaderboard
-                                  t={t}
-                                  countsByType={comment.reactionCountsByType}
-                                  reactorNamesByType={comment.reactorNamesByType}
-                                />
-                              </div>
+                              {replies.length > 0 && repliesOpen && (
+                                <div
+                                  style={{
+                                    marginLeft: 24,
+                                    paddingLeft: 10,
+                                    borderLeft: `2px solid ${t.border}`,
+                                    display: "grid",
+                                    gap: 4,
+                                  }}
+                                >
+                                  {replies.map((reply) =>
+                                    renderCommentNode(reply, {
+                                      isReply: true,
+                                      replyTargetId: comment.id,
+                                    }),
+                                  )}
+                                </div>
+                              )}
+
+                              {renderReplyComposer(post, comment.id)}
                             </div>
                           );
                         })}

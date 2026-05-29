@@ -222,6 +222,7 @@ Every feature called out in the brief already routes through the central pipelin
 | --- | --- | --- |
 | Feed post like | client | `notify()` in [app/(master)/page.tsx](../app/(master)/page.tsx) (debounced through [app/lib/likeNotifyDelay.ts](../app/lib/likeNotifyDelay.ts)); `type: "feed_like"` |
 | Feed comment like | client | same `notify()` helper; `type: "feed_comment_like"` |
+| Feed comment reply | client | `submitReply()` in [app/(master)/page.tsx](../app/(master)/page.tsx); notifies the replied-to comment author (`type: "feed_comment_reply"`, deep links to `?postId=&commentId=`) plus post owner (`feed_comment`) and thread participants (`feed_comment_thread`), deduped |
 | Feed comment / reply | client | mention path in [app/(master)/page.tsx](../app/(master)/page.tsx); `type: "mention_comment"`, `type: "mention_post"` |
 | Mentions in posts | client | [app/(master)/page.tsx](../app/(master)/page.tsx) mention block (`type: "mention_post"`) |
 | Memorial mentions | client | [app/(master)/page.tsx](../app/(master)/page.tsx) memorial comment block (`type: "memorial_mention"`) |
