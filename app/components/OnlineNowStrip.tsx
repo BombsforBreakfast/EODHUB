@@ -6,6 +6,7 @@ import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import { LikerAvatar } from "./PostLikersStack";
 import { useOnlinePresence } from "./OnlinePresenceProvider";
+import { hasFullPlatformAccess, type VerificationProfile } from "../lib/verificationAccess";
 
 const AVATAR = 28; // 25% larger than the previous 22px strip avatars
 const AVATAR_OVERLAP = 6;
@@ -13,7 +14,7 @@ const AVATAR_STEP = AVATAR - AVATAR_OVERLAP;
 const SEE_ALL_MIN_W = 96;
 const POPOVER_CLOSE_DELAY_MS = 120;
 
-type ProfileRow = {
+type ProfileRow = VerificationProfile & {
   user_id: string;
   first_name: string | null;
   last_name: string | null;
@@ -56,7 +57,12 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     if (others.length === 0) return [];
     const ordered = others
       .map((id) => profiles.get(id))
-      .filter((p): p is ProfileRow => !!p && p.privacy_show_online !== false)
+      .filter(
+        (p): p is ProfileRow =>
+          !!p &&
+          p.privacy_show_online !== false &&
+          hasFullPlatformAccess(p),
+      )
       .sort((a, b) => displayName(a).localeCompare(displayName(b)));
     return ordered;
   }, [currentUserId, onlineUserIds, profiles]);
@@ -68,7 +74,9 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     }
     const { data, error } = await supabase
       .from("profiles")
-      .select("user_id, first_name, last_name, display_name, photo_url, service, is_employer, privacy_show_online")
+      .select(
+        "user_id, first_name, last_name, display_name, photo_url, service, is_employer, privacy_show_online, verification_status, email_verified, admin_verified, is_pure_admin",
+      )
       .in("user_id", ids);
     if (error) return;
     const map = new Map<string, ProfileRow>();
@@ -166,9 +174,8 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     return () => cancelCloseTimer();
   }, [cancelCloseTimer]);
 
-  if (!currentUserId) return null;
+  if (!currentUserId || previewRows.length === 0) return null;
 
-  const hasOthers = previewRows.length > 0;
   const visibleRows = previewRows.slice(0, visibleCount);
   const hiddenCount = Math.max(0, previewRows.length - visibleRows.length);
 
@@ -194,12 +201,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
       >
         Online now
       </span>
-      {!hasOthers ? (
-        <span style={{ fontSize: 13, fontWeight: 600, color: t.textMuted, lineHeight: 1.3 }}>
-          Nobody else on the feed right now.
-        </span>
-      ) : (
-        <div ref={measureRef} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
+      <div ref={measureRef} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
           <div
             ref={popoverRef}
             style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
@@ -328,7 +330,6 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
             )}
           </div>
         </div>
-      )}
     </div>
   );
 }

@@ -1,19 +1,23 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabase } from "../lib/lib/supabaseClient";
+import { hasFullPlatformAccess, type VerificationProfile } from "../lib/verificationAccess";
 
 /**
  * App-wide online presence.
  *
- * Mounted in the root layout so a member broadcasts while in ANY part of the
- * app (feed, jobs, profile, businesses, etc.) — not just the home feed.
- * Without this, navigating off the feed unmounts the tracker and the strip
- * flickers / users disappear after a few seconds.
+ * Mounted in the root layout so verified members broadcast while in ANY part of
+ * the app (feed, jobs, profile, businesses, rabbithole, etc.) — not just the
+ * home feed. Re-tracks on route changes and tab visibility so presence stays
+ * fresh across client navigations and websocket reconnects.
  */
 
 const PRESENCE_CHANNEL = "eod_home_online";
+const PRESENCE_HEARTBEAT_MS = 30_000;
 
 type OnlinePresenceContextValue = {
   onlineUserIds: string[];
@@ -36,8 +40,10 @@ function presenceUserIds(state: Record<string, unknown[]>): Set<string> {
 }
 
 export function OnlinePresenceProvider({ children }: { children: ReactNode }) {
+  const pathname = usePathname();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
+  const trackPresenceRef = useRef<(() => Promise<void>) | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,29 +68,46 @@ export function OnlinePresenceProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!currentUserId) {
       setOnlineUserIds([]);
+      trackPresenceRef.current = null;
       return;
     }
 
     let cancelled = false;
-    let cleanup: (() => void) | null = null;
+    let channel: RealtimeChannel | null = null;
+    let heartbeat: ReturnType<typeof setInterval> | null = null;
+    let broadcastSelf = false;
+
+    async function trackSelf() {
+      if (cancelled || !broadcastSelf || !channel) return;
+      await channel.track({
+        user_id: currentUserId,
+        online_at: new Date().toISOString(),
+      });
+    }
+
+    trackPresenceRef.current = trackSelf;
 
     (async () => {
-      // Honor privacy_show_online: still subscribe so the user can see who else
-      // is online, but skip broadcasting our own presence.
       const { data: meRow } = await supabase
         .from("profiles")
-        .select("privacy_show_online")
+        .select(
+          "privacy_show_online, verification_status, email_verified, admin_verified, is_pure_admin",
+        )
         .eq("user_id", currentUserId)
         .maybeSingle();
       if (cancelled) return;
-      const broadcastSelf = meRow?.privacy_show_online !== false;
 
-      const channel = supabase.channel(PRESENCE_CHANNEL, {
+      const profile = (meRow ?? {}) as VerificationProfile & { privacy_show_online?: boolean | null };
+      // Only verified members broadcast; all signed-in viewers still subscribe below.
+      broadcastSelf =
+        hasFullPlatformAccess(profile) && profile.privacy_show_online !== false;
+
+      channel = supabase.channel(PRESENCE_CHANNEL, {
         config: { presence: { key: currentUserId } },
       });
 
       const applyState = () => {
-        const ids = [...presenceUserIds(channel.presenceState())];
+        const ids = [...presenceUserIds(channel!.presenceState())];
         ids.sort();
         setOnlineUserIds(ids);
       };
@@ -94,29 +117,38 @@ export function OnlinePresenceProvider({ children }: { children: ReactNode }) {
         .on("presence", { event: "join" }, applyState)
         .on("presence", { event: "leave" }, applyState);
 
-      // Subscribe handler also fires on reconnects (status flips back to
-      // SUBSCRIBED after a websocket drop). Re-tracking here keeps the user
-      // online through transient network blips and tab background/foreground.
       channel.subscribe(async (status) => {
         if (status !== "SUBSCRIBED") return;
-        if (!broadcastSelf) return;
-        await channel.track({
-          user_id: currentUserId,
-          online_at: new Date().toISOString(),
-        });
+        await trackSelf();
       });
 
-      cleanup = () => {
-        if (broadcastSelf) void channel.untrack();
-        supabase.removeChannel(channel);
-      };
+      heartbeat = setInterval(() => {
+        if (document.visibilityState === "visible") void trackSelf();
+      }, PRESENCE_HEARTBEAT_MS);
     })();
+
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void trackSelf();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
       cancelled = true;
-      if (cleanup) cleanup();
+      trackPresenceRef.current = null;
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (heartbeat) clearInterval(heartbeat);
+      if (channel) {
+        if (broadcastSelf) void channel.untrack();
+        supabase.removeChannel(channel);
+      }
     };
   }, [currentUserId]);
+
+  // Re-broadcast on client navigations so presence stays current on every app surface.
+  useEffect(() => {
+    if (!currentUserId) return;
+    void trackPresenceRef.current?.();
+  }, [pathname, currentUserId]);
 
   const value = useMemo(() => ({ onlineUserIds }), [onlineUserIds]);
 
