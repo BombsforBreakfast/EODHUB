@@ -662,9 +662,9 @@ function renderContent(text: string): React.ReactNode[] {
       const raw = match[0].replace(/[.,)>]+$/, "");
       const href = raw.startsWith("http") ? raw : `https://${raw}`;
       parts.push(
-        <a key={`url-${match.index}`} href={href} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>
+        <ExternalSiteLink key={`url-${match.index}`} href={href} style={{ color: "#1d4ed8", textDecoration: "underline", wordBreak: "break-all" }}>
           {raw}
-        </a>
+        </ExternalSiteLink>
       );
     }
     lastIndex = match.index + match[0].length;
@@ -687,9 +687,12 @@ function OgCard({ og }: { og: OgPreview }) {
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const imgUrl = candidateImgUrl && failedImageUrl !== candidateImgUrl ? candidateImgUrl : "";
   return (
-    <a href={og.url ? httpsAssetUrl(og.url) : "#"} target="_blank" rel="noreferrer" style={{ display: "block", marginTop: 12, border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.bg, textDecoration: "none", color: "inherit" }}>
+    <ExternalSiteLink
+      href={og.url ? httpsAssetUrl(og.url) : "#"}
+      style={{ display: "block", width: "100%", marginTop: 12, border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.bg, textDecoration: "none", color: "inherit", textAlign: "left" }}
+    >
       {imgUrl ? (
-        <div
+        <span
           style={{
             width: "100%",
             aspectRatio: "2 / 1",
@@ -706,15 +709,15 @@ function OgCard({ og }: { og: OgPreview }) {
             onError={() => setFailedImageUrl(imgUrl)}
             style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
           />
-        </div>
+        </span>
       ) : null}
-      <div style={{ padding: imgUrl ? "10px 14px" : "12px 14px" }}>
-        {og.siteName && <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{og.siteName}</div>}
-        {og.title && <div style={{ fontWeight: 800, fontSize: 14, lineHeight: 1.3, color: t.text }}>{og.title}</div>}
-        {og.description && <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>{og.description}</div>}
-        <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint, wordBreak: "break-all" }}>{og.url}</div>
-      </div>
-    </a>
+      <span style={{ display: "block", padding: imgUrl ? "10px 14px" : "12px 14px" }}>
+        {og.siteName && <span style={{ display: "block", fontSize: 11, color: t.textFaint, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 3 }}>{og.siteName}</span>}
+        {og.title && <span style={{ display: "block", fontWeight: 800, fontSize: 14, lineHeight: 1.3, color: t.text }}>{og.title}</span>}
+        {og.description && <span style={{ fontSize: 13, color: t.textMuted, marginTop: 4, lineHeight: 1.4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>{og.description}</span>}
+        <span style={{ display: "block", marginTop: 6, fontSize: 12, color: t.textFaint, wordBreak: "break-all" }}>{og.url}</span>
+      </span>
+    </ExternalSiteLink>
   );
 }
 

@@ -117,11 +117,12 @@ function formatEventInviteDate(dateString: string | null) {
   });
 }
 
-function matchesInboxSearch(conv: Conversation, query: string): boolean {
+function matchesInboxSearch(conv: Conversation, query: string, messageMatches: Record<string, string>): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return true;
   if (conv.other_user_name.toLowerCase().includes(q)) return true;
   if (conv.last_message_preview?.toLowerCase().includes(q)) return true;
+  if (messageMatches[conv.id]) return true;
   return false;
 }
 
@@ -145,6 +146,31 @@ function timeAgo(dateString: string) {
   return new Date(dateString).toLocaleDateString();
 }
 
+function conversationActivityMs(conv: Conversation): number {
+  const time = new Date(conv.last_message_at).getTime();
+  return Number.isFinite(time) ? time : 0;
+}
+
+function sortConversationsByRecentActivity(convs: Conversation[]): Conversation[] {
+  return [...convs].sort((a, b) => {
+    const unreadDelta = (b.unread_count > 0 ? 1 : 0) - (a.unread_count > 0 ? 1 : 0);
+    if (unreadDelta !== 0) return unreadDelta;
+    return conversationActivityMs(b) - conversationActivityMs(a);
+  });
+}
+
+function compactMessageSnippet(content: string): string {
+  return content.replace(/\s+/g, " ").trim().slice(0, 140);
+}
+
+function shouldShowMessageMatch(conv: Conversation, query: string, messageMatches: Record<string, string>): boolean {
+  const match = messageMatches[conv.id];
+  if (!match) return false;
+  const q = query.trim().toLowerCase();
+  if (!q) return false;
+  return !(conv.last_message_preview ?? "").toLowerCase().includes(q);
+}
+
 export default function SidebarPage() {
   useRequireFullAccess("app/sidebar/page.tsx");
   usePageTracking(PAGE_TRACKING.sidebar);
@@ -160,6 +186,8 @@ export default function SidebarPage() {
   const [mobileView, setMobileView] = useState<"list" | "thread">("list");
   const [inboxTab, setInboxTab] = useState<"messages" | "requests">("messages");
   const [inboxSearch, setInboxSearch] = useState("");
+  const [messageSearchMatches, setMessageSearchMatches] = useState<Record<string, string>>({});
+  const [messageSearchLoading, setMessageSearchLoading] = useState(false);
   const [requestTarget, setRequestTarget] = useState<{ userId: string; name: string; photo: string | null } | null>(null);
   const [requestDraft, setRequestDraft] = useState("");
   const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
@@ -265,11 +293,7 @@ export default function SidebarPage() {
 
     const json = await res.json() as { conversations?: Conversation[] };
     const convs = json.conversations ?? [];
-    const sorted = [...convs].sort((a, b) => {
-      const unreadDelta = (b.unread_count > 0 ? 1 : 0) - (a.unread_count > 0 ? 1 : 0);
-      if (unreadDelta !== 0) return unreadDelta;
-      return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
-    });
+    const sorted = sortConversationsByRecentActivity(convs);
 
       setConversations(sorted);
       return sorted;
@@ -413,7 +437,7 @@ export default function SidebarPage() {
       });
     }
     setConversations((prev) =>
-      prev.map((c) => c.id === convId ? { ...c, unread_count: 0 } : c)
+      sortConversationsByRecentActivity(prev.map((c) => c.id === convId ? { ...c, unread_count: 0 } : c))
     );
   }
 
@@ -447,9 +471,9 @@ export default function SidebarPage() {
           });
         }
         setConversations((prev) =>
-          prev.map((c) => c.id === convId
+          sortConversationsByRecentActivity(prev.map((c) => c.id === convId
             ? { ...c, last_message_preview: msg.content, last_message_at: msg.created_at }
-            : c)
+            : c))
         );
       })
       .subscribe();
@@ -473,6 +497,50 @@ export default function SidebarPage() {
       if (selectedPhoto) URL.revokeObjectURL(selectedPhoto.previewUrl);
     };
   }, [selectedPhoto]);
+
+  useEffect(() => {
+    const q = inboxSearch.trim();
+    const conversationIds = conversations.map((conv) => conv.id);
+    if (q.length < 2 || conversationIds.length === 0) {
+      setMessageSearchMatches({});
+      setMessageSearchLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setMessageSearchLoading(true);
+    const timer = window.setTimeout(async () => {
+      const escaped = q.replace(/[%_]/g, "\\$&");
+      const { data, error } = await supabase
+        .from("messages")
+        .select("conversation_id, content, created_at")
+        .in("conversation_id", conversationIds)
+        .ilike("content", `%${escaped}%`)
+        .order("created_at", { ascending: false })
+        .limit(80);
+
+      if (cancelled) return;
+      if (error) {
+        console.error("Message search failed:", error);
+        setMessageSearchMatches({});
+        setMessageSearchLoading(false);
+        return;
+      }
+
+      const next: Record<string, string> = {};
+      for (const row of (data ?? []) as Array<{ conversation_id: string; content: string | null }>) {
+        if (!row.content?.trim() || next[row.conversation_id]) continue;
+        next[row.conversation_id] = compactMessageSnippet(row.content);
+      }
+      setMessageSearchMatches(next);
+      setMessageSearchLoading(false);
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [inboxSearch, conversations]);
 
   function setMessagePhoto(file: File) {
     if (!file.type.startsWith("image/")) {
@@ -699,6 +767,18 @@ export default function SidebarPage() {
       if (insertedMessage) {
         setMessages((prev) => prev.map((msg) => (msg.id === optimisticId ? (insertedMessage as Message) : msg)));
       }
+      const activityAt = insertedMessage?.created_at ?? optimisticMsg.created_at;
+      setConversations((prev) =>
+        sortConversationsByRecentActivity(prev.map((conv) =>
+          conv.id === activeConvId
+            ? {
+                ...conv,
+                last_message_at: activityAt,
+                last_message_preview: content || (imageUrl ? "Photo" : gif ? "GIF" : conv.last_message_preview),
+              }
+            : conv,
+        ))
+      );
       await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", activeConvId);
       if (activeConv?.other_user_id) {
         await postNotifyJson(supabase, {
@@ -731,9 +811,9 @@ export default function SidebarPage() {
   const acceptedConvs = conversations.filter((c) => c.status === "accepted");
   const sentPending = conversations.filter((c) => c.status === "pending" && c.initiated_by === userId);
   const receivedRequests = conversations.filter((c) => c.status === "pending" && c.initiated_by !== userId);
-  const filteredAcceptedConvs = acceptedConvs.filter((c) => matchesInboxSearch(c, inboxSearch));
-  const filteredSentPending = sentPending.filter((c) => matchesInboxSearch(c, inboxSearch));
-  const filteredReceivedRequests = receivedRequests.filter((c) => matchesInboxSearch(c, inboxSearch));
+  const filteredAcceptedConvs = acceptedConvs.filter((c) => matchesInboxSearch(c, inboxSearch, messageSearchMatches));
+  const filteredSentPending = sentPending.filter((c) => matchesInboxSearch(c, inboxSearch, messageSearchMatches));
+  const filteredReceivedRequests = receivedRequests.filter((c) => matchesInboxSearch(c, inboxSearch, messageSearchMatches));
   const hasAnyConversations = acceptedConvs.length + sentPending.length + receivedRequests.length > 0;
   const avatarStyle = (name: string, photo: string | null, size = 40): React.CSSProperties => ({
     width: size, height: size, borderRadius: "50%", flexShrink: 0,
@@ -786,7 +866,7 @@ export default function SidebarPage() {
             type="search"
             value={inboxSearch}
             onChange={(e) => setInboxSearch(e.target.value)}
-            placeholder={inboxTab === "requests" ? "Search requests…" : "Search conversations…"}
+            placeholder={inboxTab === "requests" ? "Search requests or message text…" : "Search conversations or message text…"}
             aria-label="Search conversations"
             style={{
               width: "100%",
@@ -800,6 +880,9 @@ export default function SidebarPage() {
               outline: "none",
             }}
           />
+          {messageSearchLoading ? (
+            <div style={{ marginTop: 6, fontSize: 11, color: t.textFaint }}>Searching message text...</div>
+          ) : null}
         </div>
       )}
 
@@ -885,6 +968,11 @@ export default function SidebarPage() {
                   <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {conv.last_message_preview ?? "Start a conversation"}
                   </div>
+                  {shouldShowMessageMatch(conv, inboxSearch, messageSearchMatches) ? (
+                    <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      Matched: {messageSearchMatches[conv.id]}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -915,6 +1003,11 @@ export default function SidebarPage() {
                   <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                     {conv.last_message_preview ?? "Request sent"}
                   </div>
+                  {shouldShowMessageMatch(conv, inboxSearch, messageSearchMatches) ? (
+                    <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      Matched: {messageSearchMatches[conv.id]}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -961,6 +1054,11 @@ export default function SidebarPage() {
                           &ldquo;{conv.last_message_preview}&rdquo;
                         </div>
                       )}
+                      {shouldShowMessageMatch(conv, inboxSearch, messageSearchMatches) ? (
+                        <div style={{ fontSize: 12, color: t.textFaint, marginTop: 5, lineHeight: 1.4 }}>
+                          Matched: {messageSearchMatches[conv.id]}
+                        </div>
+                      ) : null}
                       <div style={{ fontSize: 11, color: t.textFaint, marginTop: 4 }}>{timeAgo(conv.last_message_at)}</div>
                     </div>
                   </div>

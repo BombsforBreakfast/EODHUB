@@ -1,7 +1,6 @@
 "use client";
 
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import ImageCropDialog from "../components/ImageCropDialog";
 import ShareListingToFeedModal from "../components/ShareListingToFeedModal";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
@@ -17,7 +16,6 @@ import {
   OgCard,
   type BusinessListingRow,
 } from "../components/master/masterShared";
-import { ASPECT_RESOURCE_LOGO } from "../lib/imageCropTargets";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
@@ -126,8 +124,7 @@ export default function BusinessesPage() {
   const [bizTags, setBizTags] = useState<string[]>([]);
   const [bizImageFile, setBizImageFile] = useState<File | null>(null);
   const [bizImagePreview, setBizImagePreview] = useState<string | null>(null);
-  const [bizCropOpen, setBizCropOpen] = useState(false);
-  const [bizCropSrc, setBizCropSrc] = useState<string | null>(null);
+  const [bizPersistedImageUrl, setBizPersistedImageUrl] = useState<string | null>(null);
   const bizImageInputRef = useRef<HTMLInputElement | null>(null);
   const bizOgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bizMetadataRequestRef = useRef(0);
@@ -307,12 +304,6 @@ export default function BusinessesPage() {
     }, 800);
   }
 
-  function closeBizCrop() {
-    if (bizCropSrc) URL.revokeObjectURL(bizCropSrc);
-    setBizCropSrc(null);
-    setBizCropOpen(false);
-  }
-
   function onPickBizPhoto(e: ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     e.target.value = "";
@@ -322,9 +313,9 @@ export default function BusinessesPage() {
       alert(pickError);
       return;
     }
-    if (bizCropSrc) URL.revokeObjectURL(bizCropSrc);
-    setBizCropSrc(URL.createObjectURL(f));
-    setBizCropOpen(true);
+    if (bizImagePreview) URL.revokeObjectURL(bizImagePreview);
+    setBizImageFile(f);
+    setBizImagePreview(URL.createObjectURL(f));
   }
 
   async function uploadBizImage(file: File): Promise<string> {
@@ -350,6 +341,7 @@ export default function BusinessesPage() {
       const tagList = normalizeBizTagsInput(bizTags);
       for (const x of tagList) rememberCustomBizTag(x);
       const manualImageUrl = bizImageFile ? await uploadBizImage(bizImageFile) : null;
+      const resolvedImageUrl = manualImageUrl ?? bizOgPreview?.image ?? (editingBizId ? bizPersistedImageUrl : null);
 
       const contentPayload = {
         website_url: url,
@@ -361,7 +353,7 @@ export default function BusinessesPage() {
         city_state: bizCityState.trim() || null,
         og_title: bizOgPreview?.title ?? null,
         og_description: bizOgPreview?.description ?? null,
-        og_image: manualImageUrl ?? bizOgPreview?.image ?? null,
+        og_image: resolvedImageUrl,
         og_site_name: bizOgPreview?.siteName ?? null,
         tags: tagList,
       };
@@ -458,9 +450,9 @@ export default function BusinessesPage() {
       setBizOgPreview(null);
       setBizImageLookupStatus("idle");
       setBizImageFile(null);
+      setBizPersistedImageUrl(null);
       if (bizImagePreview) URL.revokeObjectURL(bizImagePreview);
       setBizImagePreview(null);
-      closeBizCrop();
       if (bizImageInputRef.current) bizImageInputRef.current.value = "";
 
       setTimeout(() => {
@@ -542,6 +534,10 @@ export default function BusinessesPage() {
     setBizCityState(listing.city_state ?? "");
     setBizType(coerceBizOrgType(listing));
     setBizTags(coerceTagsFromDb(listing.tags));
+    setBizImageFile(null);
+    if (bizImagePreview) URL.revokeObjectURL(bizImagePreview);
+    setBizImagePreview(null);
+    setBizPersistedImageUrl(listing.og_image ?? null);
     setBizOgPreview({
       url: listing.website_url ?? "",
       title: listing.og_title ?? null,
@@ -742,7 +738,7 @@ export default function BusinessesPage() {
     }
   }
 
-  const suggestedBizImage = bizOgPreview?.image ?? null;
+  const suggestedBizImage = bizOgPreview?.image ?? (editingBizId ? bizPersistedImageUrl : null);
   const displayedBizFormImage = bizImagePreview ?? suggestedBizImage;
   const hasManualBizImage = Boolean(bizImagePreview);
 
@@ -754,21 +750,6 @@ export default function BusinessesPage() {
         color: t.text,
       }}
     >
-      <ImageCropDialog
-        open={bizCropOpen}
-        imageSrc={bizCropSrc}
-        aspect={ASPECT_RESOURCE_LOGO}
-        cropShape="rect"
-        title="Crop listing photo"
-        onCancel={closeBizCrop}
-        onComplete={async (blob) => {
-          if (bizImagePreview) URL.revokeObjectURL(bizImagePreview);
-          const file = new File([blob], "biz-cover.jpg", { type: "image/jpeg" });
-          setBizImageFile(file);
-          setBizImagePreview(URL.createObjectURL(file));
-          closeBizCrop();
-        }}
-      />
       <ShareListingToFeedModal
         key={shareComposerListing?.id ?? "closed"}
         listing={shareComposerListing}
@@ -860,7 +841,7 @@ export default function BusinessesPage() {
                     <img
                       src={httpsAssetUrl(displayedBizFormImage)}
                       alt="Selected listing preview"
-                      style={{ width: "100%", aspectRatio: "2 / 1", objectFit: hasManualBizImage ? "cover" : "contain", display: "block" }}
+                      style={{ width: "100%", aspectRatio: "2 / 1", objectFit: "contain", display: "block" }}
                     />
                     {hasManualBizImage ? (
                       <button
@@ -899,14 +880,14 @@ export default function BusinessesPage() {
                 </button>
                 <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>
                   {hasManualBizImage
-                    ? "Uploaded image selected. Remove it to use the website image again."
+                    ? "Uploaded photo selected. It will keep its original shape and display inside the wide listing frame."
                     : suggestedBizImage
-                      ? "Image pulled from website. You can replace it."
+                      ? "Saved listing image. Use the photo picker to replace it."
                       : bizImageLookupStatus === "loading"
                         ? "Looking for website image..."
                         : bizImageLookupStatus === "not-found"
-                          ? "No website image found. You can upload one."
-                          : "Optional. Crop to a wide logo/photo (2:1). If chosen, this replaces the website image."}
+                          ? "No saved image found. Use the photo picker to add one."
+                          : "Optional. Choose a logo or photo. It will display inside the listing frame without cropping."}
                 </div>
               </div>
 
@@ -1366,6 +1347,46 @@ export default function BusinessesPage() {
                 <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted }}>
                   {(listingCommentsById[selectedListing.id] ?? []).length} comments
                 </div>
+                {userManagesListing(selectedListing, userId) ? (
+                  <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, fontWeight: 800, color: "#15803d" }}>You manage this listing</span>
+                    <button
+                      type="button"
+                      onClick={() => beginEditBizListing(selectedListing)}
+                      style={{
+                        background: "#2563eb",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 8,
+                        padding: "6px 11px",
+                        fontWeight: 800,
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Edit listing
+                    </button>
+                  </div>
+                ) : canEditBizListing(selectedListing, userId, isAdmin) ? (
+                  <div style={{ marginTop: 8 }}>
+                    <button
+                      type="button"
+                      onClick={() => beginEditBizListing(selectedListing)}
+                      style={{
+                        background: "#374151",
+                        color: "white",
+                        border: "none",
+                        borderRadius: 8,
+                        padding: "6px 11px",
+                        fontWeight: 800,
+                        fontSize: 12,
+                        cursor: "pointer",
+                      }}
+                    >
+                      Edit listing
+                    </button>
+                  </div>
+                ) : null}
               </div>
               <button type="button" onClick={() => setSelectedListing(null)} style={{ background: "none", border: "none", color: t.text, fontSize: 24, fontWeight: 800, cursor: "pointer", lineHeight: 1 }}>
                 x
@@ -1476,15 +1497,6 @@ export default function BusinessesPage() {
                         {claimSubmittingFor === selectedListing.id ? "Submitting…" : "Claim listing"}
                       </button>
                     )
-                  ) : null}
-                  {canEditBizListing(selectedListing, userId, isAdmin) ? (
-                    <button
-                      type="button"
-                      onClick={() => beginEditBizListing(selectedListing)}
-                      style={{ background: "#374151", color: "white", border: "none", borderRadius: 8, padding: "7px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
-                    >
-                      Edit
-                    </button>
                   ) : null}
                   {userManagesListing(selectedListing, userId) ? (
                     <button
