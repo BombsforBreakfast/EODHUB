@@ -132,6 +132,24 @@ export async function GET(
   // Get like counts
   const postIds = unitPosts.map((p) => p.id);
 
+  const imageUrlsByPostId = new Map<string, string[]>();
+  if (postIds.length > 0) {
+    const { data: imageRows, error: imageRowsError } = await adminClient
+      .from("unit_post_images")
+      .select("unit_post_id, image_url, sort_order")
+      .in("unit_post_id", postIds)
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
+
+    if (!imageRowsError) {
+      for (const row of (imageRows ?? []) as { unit_post_id: string; image_url: string }[]) {
+        const existing = imageUrlsByPostId.get(row.unit_post_id) ?? [];
+        existing.push(row.image_url);
+        imageUrlsByPostId.set(row.unit_post_id, existing);
+      }
+    }
+  }
+
   const { data: likes } = await adminClient
     .from("unit_post_likes")
     .select("unit_post_id, user_id")
@@ -192,6 +210,12 @@ export async function GET(
 
     const base = {
       ...post,
+      image_urls:
+        imageUrlsByPostId.get(post.id)?.length
+          ? imageUrlsByPostId.get(post.id)!
+          : post.photo_url?.trim()
+            ? [post.photo_url.trim()]
+            : [],
       author_name: authorName,
       author_photo: profile?.photo_url ?? null,
       like_count: likeCountMap[post.id] ?? 0,
@@ -259,9 +283,10 @@ export async function POST(
   }
 
   const body = await req.json();
-  const { content, photo_url, gif_url, rabbithole_contribution_id, meta, photo_submission_only, post_type } = body as {
+  const { content, photo_url, image_urls, gif_url, rabbithole_contribution_id, meta, photo_submission_only, post_type } = body as {
     content?: string;
     photo_url?: string;
+    image_urls?: string[];
     gif_url?: string | null;
     rabbithole_contribution_id?: string | null;
     meta?: Record<string, unknown> | null;
@@ -269,9 +294,18 @@ export async function POST(
     post_type?: "post" | "photo_album";
   };
 
-  if (!content?.trim() && !photo_url?.trim() && !gif_url) {
+  const normalizedImageUrls = [
+    ...new Set(
+      (Array.isArray(image_urls) ? image_urls : [])
+        .map((url) => (typeof url === "string" ? url.trim() : ""))
+        .filter(Boolean),
+    ),
+  ];
+  const primaryPhotoUrl = photo_url?.trim() || normalizedImageUrls[0] || null;
+
+  if (!content?.trim() && !primaryPhotoUrl && !gif_url) {
     return NextResponse.json(
-      { error: "Content, photo_url, or gif_url is required" },
+      { error: "Content, photo, or gif is required" },
       { status: 400 }
     );
   }
@@ -279,14 +313,14 @@ export async function POST(
   const normalizedPostType = post_type === "photo_album" ? "photo_album" : "post";
 
   const shouldHoldForApproval =
-    Boolean(photo_submission_only && photo_url?.trim()) &&
+    Boolean(photo_submission_only && primaryPhotoUrl) &&
     !["owner", "admin"].includes(String(membership.role ?? ""));
 
   const insertPayload: Record<string, unknown> = {
     unit_id: unit.id,
     user_id: user.id,
     content: content?.trim() ?? null,
-    photo_url: photo_url?.trim() ?? null,
+    photo_url: primaryPhotoUrl,
     gif_url: gif_url ?? null,
     post_type: normalizedPostType,
     rabbithole_contribution_id: rabbithole_contribution_id ?? null,
@@ -316,5 +350,33 @@ export async function POST(
     );
   }
 
-  return NextResponse.json({ post }, { status: 201 });
+  const urlsToStore =
+    normalizedImageUrls.length > 0
+      ? normalizedImageUrls
+      : primaryPhotoUrl
+        ? [primaryPhotoUrl]
+        : [];
+
+  if (urlsToStore.length > 0) {
+    const { error: imagesError } = await adminClient.from("unit_post_images").insert(
+      urlsToStore.map((image_url, sort_order) => ({
+        unit_post_id: post.id,
+        image_url,
+        sort_order,
+      })),
+    );
+    if (imagesError && !isMissingColumnError(imagesError, "unit_post_images")) {
+      return NextResponse.json({ error: imagesError.message }, { status: 500 });
+    }
+  }
+
+  return NextResponse.json(
+    {
+      post: {
+        ...post,
+        image_urls: urlsToStore,
+      },
+    },
+    { status: 201 },
+  );
 }

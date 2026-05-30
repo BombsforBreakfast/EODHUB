@@ -18,12 +18,14 @@ import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVi
 import { prepareFeedUploadFile, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
 import { FEED_MEDIA_FRAME_BG, feedContainedImageStyle } from "../../../lib/feedLayout";
+import FeedPostImageGrid from "../../../components/FeedPostImageGrid";
+import FeedImageGalleryModal from "../../../components/FeedImageGalleryModal";
+import { useFeedImageGallery } from "../../../hooks/useFeedImageGallery";
 import {
   FEED_ATTACHMENT_ACCEPT,
   UPLOAD_LIMITS,
   formatUploadBytes,
   isVideoFile,
-  isVideoUrl,
   validateFeedAttachmentPick,
   validateImagePick,
 } from "../../../lib/uploadLimits";
@@ -66,6 +68,7 @@ type UnitPost = {
   user_id: string;
   content: string | null;
   photo_url: string | null;
+  image_urls?: string[];
   gif_url: string | null;
   post_type: "post" | "join_request" | "photo_album";
   meta: {
@@ -221,6 +224,11 @@ function formatEventDate(date: string) {
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
+type SelectedUnitPostImage = {
+  file: File;
+  previewUrl: string;
+};
+
 export default function UnitPage() {
   const { t, isDark } = useTheme();
   const { isDesktopShell } = useMasterShell();
@@ -239,8 +247,8 @@ export default function UnitPage() {
   const postsRef = useRef<UnitPost[]>([]);
   const [postInput, setPostInput] = useState("");
   const [postPhotoUrl, setPostPhotoUrl] = useState("");
-  const [postPhotoPreview, setPostPhotoPreview] = useState<string | null>(null);
-  const [postPhotoFile, setPostPhotoFile] = useState<File | null>(null);
+  const [selectedPostImages, setSelectedPostImages] = useState<SelectedUnitPostImage[]>([]);
+  const selectedPostImagesRef = useRef<SelectedUnitPostImage[]>([]);
   const postPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const [postGif, setPostGif] = useState<string | null>(null);
   const [submittingPost, setSubmittingPost] = useState(false);
@@ -298,6 +306,15 @@ export default function UnitPage() {
   const [photoSubmitMsg, setPhotoSubmitMsg] = useState<string | null>(null);
   const photoUploadInputRef = useRef<HTMLInputElement | null>(null);
   const [galleryPhotoIndex, setGalleryPhotoIndex] = useState<number | null>(null);
+  const {
+    galleryImages: postGalleryImages,
+    galleryIndex: postGalleryIndex,
+    isGalleryOpen: isPostGalleryOpen,
+    openGallery: openPostGallery,
+    closeGallery: closePostGallery,
+    showPrevGalleryImage: showPrevPostGalleryImage,
+    showNextGalleryImage: showNextPostGalleryImage,
+  } = useFeedImageGallery();
 
   // Invite modal
   const [showInvite, setShowInvite] = useState(false);
@@ -821,43 +838,84 @@ export default function UnitPage() {
     return supabase.storage.from("feed-images").getPublicUrl(filePath).data.publicUrl;
   }
 
-  function attachUnitPostFile(file: File) {
-    const pickError = validateFeedAttachmentPick([file]);
-    if (pickError) {
-      alert(pickError);
-      return;
-    }
-    setPostPhotoFile(file);
-    setPostPhotoPreview(URL.createObjectURL(file));
+  function addUnitPostImagesFromFiles(files: File[]) {
+    if (files.length === 0) return;
+
+    setSelectedPostImages((prev) => {
+      const remainingSlots = 10 - prev.length;
+      if (remainingSlots <= 0) {
+        alert("You can attach up to 10 photos or videos per post.");
+        return prev;
+      }
+
+      const filesToAdd = files.slice(0, remainingSlots);
+      if (files.length > remainingSlots) {
+        alert("Only the first files were added. Max is 10 photos or videos per post.");
+      }
+
+      const pickError = validateFeedAttachmentPick(filesToAdd);
+      if (pickError) {
+        alert(pickError);
+        return prev;
+      }
+
+      const newItems = filesToAdd.map((file) => ({
+        file,
+        previewUrl: URL.createObjectURL(file),
+      }));
+
+      return [...prev, ...newItems];
+    });
     setPostGif(null);
+  }
+
+  function attachUnitPostFile(file: File) {
+    addUnitPostImagesFromFiles([file]);
     if (postPhotoInputRef.current) postPhotoInputRef.current.value = "";
   }
 
   function handleUnitPostImagePaste(e: ClipboardEvent) {
-    handlePasteImageFromClipboard(e, (files) => {
-      if (files[0]) attachUnitPostFile(files[0]);
+    handlePasteImageFromClipboard(e, addUnitPostImagesFromFiles);
+  }
+
+  function removeSelectedPostImage(indexToRemove: number) {
+    setSelectedPostImages((prev) => {
+      const itemToRemove = prev[indexToRemove];
+      if (itemToRemove) URL.revokeObjectURL(itemToRemove.previewUrl);
+      return prev.filter((_, index) => index !== indexToRemove);
     });
   }
 
+  function clearSelectedPostImages() {
+    setSelectedPostImages((prev) => {
+      prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      return [];
+    });
+    if (postPhotoInputRef.current) postPhotoInputRef.current.value = "";
+  }
+
   async function submitPost() {
-    if (!postInput.trim() && !postPhotoFile && !postPhotoUrl.trim() && !postGif) return;
+    if (!postInput.trim() && selectedPostImages.length === 0 && !postPhotoUrl.trim() && !postGif) return;
     setSubmittingPost(true);
     try {
-      let finalPhotoUrl = postPhotoUrl.trim() || null;
-      if (postPhotoFile) {
-        finalPhotoUrl = await uploadUnitMedia(postPhotoFile);
+      const uploadedUrls: string[] = [];
+      for (const item of selectedPostImages) {
+        uploadedUrls.push(await uploadUnitMedia(item.file));
       }
       const token = await getToken();
       const res = await fetch(`/api/units/${slug}/posts`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ content: postInput.trim() || null, photo_url: finalPhotoUrl, gif_url: postGif }),
+        body: JSON.stringify({
+          content: postInput.trim() || null,
+          photo_url: uploadedUrls[0] ?? (postPhotoUrl.trim() || null),
+          image_urls: uploadedUrls,
+          gif_url: postGif,
+        }),
       });
       if (res.ok) {
         setPostInput("");
-        setPostPhotoFile(null);
-        setPostPhotoPreview(null);
-        if (postPhotoInputRef.current) postPhotoInputRef.current.value = "";
+        clearSelectedPostImages();
         setPostPhotoUrl("");
         setPostGif(null);
         await loadPosts();
@@ -1408,28 +1466,49 @@ export default function UnitPage() {
                     </div>
                   )}
 
-                  {postPhotoPreview && (
-                    <div style={{ marginTop: 8, position: "relative", display: "inline-block", width: 200, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
-                      {postPhotoFile && isVideoFile(postPhotoFile) ? (
-                        <video
-                          src={postPhotoPreview}
-                          style={{ ...feedContainedImageStyle, width: "100%", height: 200 }}
-                          muted
-                          playsInline
-                          controls
-                        />
-                      ) : (
-                        <img
-                          src={postPhotoPreview}
-                          alt="preview"
-                          style={{ ...feedContainedImageStyle, width: "100%", height: 200 }}
-                        />
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => { setPostPhotoPreview(null); setPostPhotoFile(null); if (postPhotoInputRef.current) postPhotoInputRef.current.value = ""; }}
-                        style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.75)", color: "#fff", border: "none", borderRadius: "50%", width: 26, height: 26, fontWeight: 800, cursor: "pointer", fontSize: 14, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}
-                      >×</button>
+                  {selectedPostImages.length > 0 && (
+                    <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted }}>
+                      {selectedPostImages.length} of 10 attachments selected
+                    </div>
+                  )}
+
+                  {selectedPostImages.length > 0 && (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
+                        gap: 10,
+                      }}
+                    >
+                      {selectedPostImages.map((item, index) => (
+                        <div
+                          key={`${item.previewUrl}-${index}`}
+                          style={{
+                            position: "relative",
+                            borderRadius: 12,
+                            overflow: "hidden",
+                            border: `1px solid ${t.border}`,
+                            background: FEED_MEDIA_FRAME_BG,
+                            aspectRatio: "1 / 1",
+                          }}
+                        >
+                          {isVideoFile(item.file) ? (
+                            <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
+                          ) : item.file.type === "application/pdf" ? (
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, padding: 8, textAlign: "center" }}>
+                              PDF
+                            </div>
+                          ) : (
+                            <img src={item.previewUrl} alt="" style={feedContainedImageStyle} />
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => removeSelectedPostImage(index)}
+                            style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.75)", color: "#fff", border: "none", borderRadius: "50%", width: 26, height: 26, fontWeight: 800, cursor: "pointer", fontSize: 14, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}
+                          >×</button>
+                        </div>
+                      ))}
                     </div>
                   )}
 
@@ -1437,11 +1516,13 @@ export default function UnitPage() {
                     ref={postPhotoInputRef}
                     type="file"
                     accept={FEED_ATTACHMENT_ACCEPT}
+                    multiple
                     style={{ display: "none" }}
                     onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      attachUnitPostFile(file);
+                      const files = Array.from(e.target.files ?? []);
+                      if (files.length === 0) return;
+                      addUnitPostImagesFromFiles(files);
+                      if (postPhotoInputRef.current) postPhotoInputRef.current.value = "";
                     }}
                   />
 
@@ -1457,7 +1538,7 @@ export default function UnitPage() {
                       onClick={() => postPhotoInputRef.current?.click()}
                       style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                     >
-                      {postPhotoFile ? "Change Attachment" : "Add Photo or Video"}
+                      {selectedPostImages.length > 0 ? "Add More" : "Add Photo or Video"}
                     </button>
 
                     <EmojiPickerButton
@@ -1468,14 +1549,14 @@ export default function UnitPage() {
                     />
 
                     <GifPickerButton
-                      onSelect={(url) => { setPostGif(url); setPostPhotoFile(null); setPostPhotoPreview(null); }}
+                      onSelect={(url) => { setPostGif(url); clearSelectedPostImages(); }}
                       theme={isDark ? "dark" : "light"}
                     />
 
                     <button
                       onClick={submitPost}
-                      disabled={submittingPost || (!postInput.trim() && !postPhotoFile && !postGif)}
-                      style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: submittingPost || (!postInput.trim() && !postPhotoFile && !postGif) ? "not-allowed" : "pointer", opacity: submittingPost || (!postInput.trim() && !postPhotoFile && !postGif) ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}
+                      disabled={submittingPost || (!postInput.trim() && selectedPostImages.length === 0 && !postGif)}
+                      style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "10px 18px", fontWeight: 800, fontSize: 13, cursor: submittingPost || (!postInput.trim() && selectedPostImages.length === 0 && !postGif) ? "not-allowed" : "pointer", opacity: submittingPost || (!postInput.trim() && selectedPostImages.length === 0 && !postGif) ? 0.7 : 1, display: "flex", alignItems: "center", gap: 6 }}
                     >
                       {submittingPost && <span className="btn-spinner" />}
                       Post
@@ -1546,6 +1627,14 @@ export default function UnitPage() {
                           : undefined
                       }
                       rabbitholeThreadId={post.rabbithole_thread_id ?? null}
+                      onOpenGallery={(startIndex) => {
+                        const urls = post.image_urls?.length
+                          ? post.image_urls
+                          : post.photo_url
+                            ? [post.photo_url]
+                            : [];
+                        openPostGallery(urls, startIndex);
+                      }}
                     />
                   );
                 })}
@@ -2227,6 +2316,15 @@ export default function UnitPage() {
           }}
         />
       )}
+
+      <FeedImageGalleryModal
+        open={isPostGalleryOpen}
+        images={postGalleryImages}
+        index={postGalleryIndex}
+        onClose={closePostGallery}
+        onPrev={showPrevPostGalleryImage}
+        onNext={showNextPostGalleryImage}
+      />
     </div>
   );
 }
@@ -2347,6 +2445,7 @@ function PostCard({
   onFlag,
   onAddToRabbithole,
   rabbitholeThreadId,
+  onOpenGallery,
 }: {
   post: UnitPost; t: ThemeTokens; isDark: boolean;
   comments: Comment[] | undefined;
@@ -2375,12 +2474,20 @@ function PostCard({
   onFlag: () => void;
   onAddToRabbithole?: (() => void) | undefined;
   rabbitholeThreadId?: string | null;
+  onOpenGallery: (startIndex: number) => void;
 }) {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [commentGif, setCommentGif] = useState<string | null>(null);
   const [commentImage, setCommentImage] = useState<{ file: File; previewUrl: string } | null>(null);
   const [expandedCommentImageUrl, setExpandedCommentImageUrl] = useState<string | null>(null);
   const commentImageInputRef = useRef<HTMLInputElement | null>(null);
+
+  const postImageUrls =
+    post.image_urls?.length
+      ? post.image_urls
+      : post.photo_url
+        ? [post.photo_url]
+        : [];
 
   function clearCommentMedia() {
     setCommentGif(null);
@@ -2495,7 +2602,7 @@ function PostCard({
         <ExpandableText
           textLength={post.content.length}
           style={{ fontSize: 15, color: t.text }}
-          wrapperStyle={{ marginBottom: post.photo_url ? 12 : 0 }}
+          wrapperStyle={{ marginBottom: postImageUrls.length > 0 ? 12 : 0 }}
           toggleColor={t.textMuted}
         >
           {renderUnitText(post.content)}
@@ -2543,35 +2650,11 @@ function PostCard({
         );
       })()}
 
-      {/* Photo — fixed frame; full image visible via contain */}
-      {post.photo_url && (
-        <div
-          style={{
-            marginTop: 10,
-            borderRadius: 12,
-            overflow: "hidden",
-            border: `1px solid ${t.border}`,
-            aspectRatio: "1 / 1",
-            maxWidth: 420,
-            background: FEED_MEDIA_FRAME_BG,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          {isVideoUrl(post.photo_url) ? (
-            <video
-              src={post.photo_url}
-              controls
-              playsInline
-              preload="metadata"
-              style={feedContainedImageStyle}
-            />
-          ) : (
-            <img src={post.photo_url} alt="" style={feedContainedImageStyle} />
-          )}
-        </div>
-      )}
+      <FeedPostImageGrid
+        imageUrls={postImageUrls}
+        onOpenGallery={onOpenGallery}
+        borderColor={t.border}
+      />
 
       {/* GIF */}
       {post.gif_url && (
