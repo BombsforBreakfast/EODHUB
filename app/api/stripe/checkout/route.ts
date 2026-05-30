@@ -2,10 +2,20 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
 import { computeStripeTrialEndUnix } from "../../../lib/subscriptionAccess";
+import { isPaywallSuspended } from "../../../lib/paywallWorkflow";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
+  // Global paywall suspension: never start a paid subscription while suspended,
+  // even if a stale client or direct request reaches this endpoint.
+  if (isPaywallSuspended()) {
+    return NextResponse.json(
+      { error: "Subscriptions are not available yet. EOD HUB is free during beta." },
+      { status: 403 }
+    );
+  }
+
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
