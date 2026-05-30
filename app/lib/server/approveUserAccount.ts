@@ -12,6 +12,7 @@ import {
 } from "@/app/lib/profileCompleteness";
 import { VERIFICATION } from "@/app/lib/verificationStatus";
 import { ensureWelcomeSidebarMessage } from "@/app/lib/server/ensureWelcomeSidebarMessage";
+import { ensureReferralCode } from "@/app/lib/server/ensureReferralCode";
 import { clearFailedAuthReportsOnSuccessfulLogin } from "@/app/lib/server/clearFailedAuthReportsOnLogin";
 
 export type ApproveUserSource = "admin" | "vouch";
@@ -107,6 +108,18 @@ export async function approveUserAccount(
   if (updateError) {
     devAuthLog("approve-user", { step: "db_update_failed", userId, source, error: updateError.message });
     throw new Error("DB update failed: " + updateError.message);
+  }
+
+  let referralCode = profile.referral_code?.trim() || null;
+  try {
+    referralCode = await ensureReferralCode(adminClient, userId);
+  } catch (err) {
+    devAuthLog("approve-user", {
+      step: "referral_code_failed",
+      userId,
+      source,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   devAuthLog("approve-user", {
@@ -217,7 +230,7 @@ export async function approveUserAccount(
   const html = buildApprovalEmailHtml({
     firstName,
     loginUrl,
-    referralCode: profile.referral_code,
+    referralCode: referralCode ?? profile.referral_code,
     approvedViaVouch: source === "vouch",
   });
 
