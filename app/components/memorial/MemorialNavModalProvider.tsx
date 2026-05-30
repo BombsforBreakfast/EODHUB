@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/app/lib/lib/supabaseClient";
 import { MemorialReadModal } from "./MemorialReadModal";
 import type { Memorial } from "./memorialModalShared";
@@ -38,8 +39,7 @@ export function MemorialNavModalProvider({ children }: { children: ReactNode }) 
   useEffect(() => {
     let cancelled = false;
 
-    async function syncActorFromSession() {
-      const { data: { session } } = await supabase.auth.getSession();
+    async function syncActorFromSession(session: Session | null) {
       const uid = session?.user?.id ?? null;
       if (cancelled) return;
       if (!uid) {
@@ -54,9 +54,11 @@ export function MemorialNavModalProvider({ children }: { children: ReactNode }) 
       }
     }
 
-    void syncActorFromSession();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      void syncActorFromSession();
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      void syncActorFromSession(session);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      void syncActorFromSession(session);
     });
     return () => {
       cancelled = true;

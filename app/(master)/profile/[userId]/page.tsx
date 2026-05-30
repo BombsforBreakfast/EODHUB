@@ -1023,12 +1023,24 @@ export default function PublicProfilePage() {
         .update(payload)
         .eq("user_id", currentUserId);
       if (error) {
-        alert(error.message);
+        const message = String(error.message ?? "");
+        if (message.toLowerCase().includes("lock") || message.toLowerCase().includes("timeout")) {
+          alert("Your connection had trouble confirming your session. Your changes were not saved. Please check your signal and try again.");
+        } else {
+          alert(error.message);
+        }
         return;
       }
       await loadProfile(userId);
       void refreshPlankHolderChallenge();
       setEditingProfile(false);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.toLowerCase().includes("lock") || message.toLowerCase().includes("timeout")) {
+        alert("Your connection had trouble confirming your session. Your changes were not saved. Please check your signal and try again.");
+      } else {
+        alert(`Could not save profile: ${message}`);
+      }
     } finally {
       setSavingProfile(false);
     }

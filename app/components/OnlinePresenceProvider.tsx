@@ -49,9 +49,9 @@ export function OnlinePresenceProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     async function loadUser() {
-      const { data } = await supabase.auth.getUser();
+      const { data } = await supabase.auth.getSession();
       if (cancelled) return;
-      setCurrentUserId(data.user?.id ?? null);
+      setCurrentUserId(data.session?.user?.id ?? null);
     }
 
     void loadUser();

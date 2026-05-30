@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { useTheme } from "../../lib/ThemeContext";
 import NavBar from "../NavBar";
 import DesktopLayout from "../DesktopLayout";
@@ -70,9 +71,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     let cancelled = false;
-    async function loadShellUser() {
-      const { data } = await supabase.auth.getUser();
-      const user = data.user ?? null;
+    async function loadShellUser(user: User | null) {
       const uid = user?.id ?? null;
       if (cancelled) return;
       setUserId(uid);
@@ -131,9 +130,11 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       }
     }
 
-    void loadShellUser();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-      void loadShellUser();
+    void supabase.auth.getSession().then(({ data: { session } }) => {
+      void loadShellUser(session?.user ?? null);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      void loadShellUser(session?.user ?? null);
     });
     return () => {
       cancelled = true;

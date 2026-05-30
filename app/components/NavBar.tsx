@@ -235,12 +235,9 @@ export default function NavBar() {
         await loadNotifications(uid);
         if (session.access_token) {
           void loadFounderStatus(session.access_token);
-        }
-        // Load group pending count for any logged-in user (not just site admins)
-        const { data: { session: s } } = await supabase.auth.getSession();
-        if (s?.access_token) {
+          // Load group pending count for any logged-in user (not just site admins)
           fetch("/api/units/pending-summary", {
-            headers: { Authorization: `Bearer ${s.access_token}` },
+            headers: { Authorization: `Bearer ${session.access_token}` },
           })
             .then((r) => r.ok ? r.json() : { groups: [] })
             .then((j: { groups: { pending_count: number }[] }) => {
