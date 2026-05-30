@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import EmojiPickerButton from "../components/EmojiPickerButton";
@@ -15,6 +15,7 @@ import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
 import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
 import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
+import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import {
   displayListingDescription,
@@ -567,6 +568,13 @@ export default function SidebarPage() {
     if (!activeConvId || sending) return;
     const image = Array.from(e.dataTransfer.files).find((file) => file.type.startsWith("image/"));
     if (image) setMessagePhoto(image);
+  }
+
+  function handleMessagePhotoPaste(e: ClipboardEvent) {
+    if (!activeConvId || sending) return;
+    handlePasteImageFromClipboard(e, (files) => {
+      if (files[0]) setMessagePhoto(files[0]);
+    }, { imagesOnly: true });
   }
 
   async function ensurePreview(url: string) {
@@ -1553,6 +1561,7 @@ export default function SidebarPage() {
                   ref={messageInputRef}
                   value={newMessage}
                   onChange={(e) => setNewMessage(e.target.value)}
+                  onPaste={handleMessagePhotoPaste}
                   onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
                   placeholder="Type a message..."
                   style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import UrlPreviewCard from "./UrlPreviewCard";
 import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
 import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
+import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -207,6 +208,13 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
     if (!conversationId || sending) return;
     const image = Array.from(e.dataTransfer.files).find((file) => file.type.startsWith("image/"));
     if (image) setMessagePhoto(image);
+  }
+
+  function handleMessagePhotoPaste(e: ClipboardEvent) {
+    if (!conversationId || sending) return;
+    handlePasteImageFromClipboard(e, (files) => {
+      if (files[0]) setMessagePhoto(files[0]);
+    }, { imagesOnly: true });
   }
 
   async function ensurePreview(url: string) {
@@ -526,6 +534,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
             ref={inputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onPaste={handleMessagePhotoPaste}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();

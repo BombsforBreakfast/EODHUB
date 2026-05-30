@@ -19,6 +19,7 @@ import FeedPostHeader from "../../../components/FeedPostHeader";
 import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
+import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
 import { EMPLOYER_DOCUMENT_ACCEPT, FEED_ATTACHMENT_ACCEPT, inferEmployerDocumentContentType } from "../../../lib/uploadLimits";
 import { validateFeedAttachmentPick, validateImagePick, UPLOAD_LIMITS, formatUploadBytes, isVideoFile, isVideoUrl } from "../../../lib/uploadLimits";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
@@ -2352,6 +2353,32 @@ export default function PublicProfilePage() {
     const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
     if (error) throw new Error(error.message);
     return supabase.storage.from("feed-images").getPublicUrl(filePath).data.publicUrl;
+  }
+
+  function addWallPostImagesFromFiles(files: File[]) {
+    if (files.length === 0) return;
+    setSelectedPostImages((prev) => {
+      const slots = 10 - prev.length;
+      if (slots <= 0) {
+        alert("You can attach up to 10 photos or videos per post.");
+        return prev;
+      }
+      const toAddFiles = files.slice(0, slots);
+      const pickError = validateFeedAttachmentPick(toAddFiles);
+      if (pickError) {
+        alert(pickError);
+        return prev;
+      }
+      if (files.length > slots) {
+        alert("Only the first files were added. Max is 10 photos or videos per post.");
+      }
+      const toAdd = toAddFiles.map((f) => ({ file: f, previewUrl: URL.createObjectURL(f) }));
+      return [...prev, ...toAdd];
+    });
+  }
+
+  function handleWallPostImagePaste(e: React.ClipboardEvent) {
+    handlePasteImageFromClipboard(e, addWallPostImagesFromFiles);
   }
 
   async function submitPost() {
@@ -4775,6 +4802,7 @@ export default function PublicProfilePage() {
                   value={postContent}
                   onChange={handlePostContentChange}
                   onChangeRaw={(raw) => { postContentRawRef.current = raw; }}
+                  onPaste={handleWallPostImagePaste}
                   style={{ width: "100%", minHeight: 80, border: "none", outline: "none", resize: "vertical", fontSize: 16, boxSizing: "border-box", background: t.input, color: t.text }}
                 />
 
@@ -4802,17 +4830,7 @@ export default function PublicProfilePage() {
                   onChange={(e) => {
                     const files = Array.from(e.target.files ?? []);
                     if (files.length === 0) return;
-                    const pickError = validateFeedAttachmentPick(files);
-                    if (pickError) {
-                      alert(pickError);
-                      if (postImageInputRef.current) postImageInputRef.current.value = "";
-                      return;
-                    }
-                    setSelectedPostImages((prev) => {
-                      const slots = 10 - prev.length;
-                      const toAdd = files.slice(0, slots).map((f) => ({ file: f, previewUrl: URL.createObjectURL(f) }));
-                      return [...prev, ...toAdd];
-                    });
+                    addWallPostImagesFromFiles(files);
                     if (postImageInputRef.current) postImageInputRef.current.value = "";
                   }}
                   style={{ display: "none" }}

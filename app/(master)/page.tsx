@@ -16,6 +16,7 @@ import MemberPaywallModal from "../components/MemberPaywallModal";
 import SidebarThreadDrawer from "../components/SidebarThreadDrawer";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
 import { prepareFeedUploadFile } from "../lib/prepareUploadFile";
+import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import {
   FEED_ATTACHMENT_ACCEPT,
   UPLOAD_LIMITS,
@@ -291,6 +292,24 @@ type DiscoverAffinitySource = {
   status: string | null;
   professional_tags: string[] | null;
   unit_history_tags: string[] | null;
+};
+
+type PendingMemberVoucher = {
+  user_id: string;
+  name: string;
+  photo_url: string | null;
+};
+
+type PendingMember = {
+  user_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  display_name: string | null;
+  photo_url: string | null;
+  service: string | null;
+  vouch_count: number;
+  user_vouched: boolean;
+  vouchers: PendingMemberVoucher[];
 };
 
 const RUMINT_USER_ID = "ffffffff-ffff-4fff-afff-52554d494e54";
@@ -883,6 +902,7 @@ export default function HomePage() {
   const [isMobile, setIsMobile] = useState(false);
   const { isDesktopShell, openSidebarPeer, showMemorialFeedCards, setShowMemorialFeedCards } = useMasterShell();
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [currentUserPhotoUrl, setCurrentUserPhotoUrl] = useState<string | null>(null);
   const [currentUserReferralCode, setCurrentUserReferralCode] = useState<string | null>(null);
   const [referralNudgeDismissed, setReferralNudgeDismissed] = useState<boolean>(() =>
     typeof window !== "undefined" && localStorage.getItem("eod_referral_nudge_dismissed") === "1"
@@ -996,7 +1016,8 @@ export default function HomePage() {
   // so we can phrase the toast ("Know request sent to Jane Doe").
   const [discoverKnowToast, setDiscoverKnowToast] = useState<string | null>(null);
   const discoverKnowToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [pendingMembers, setPendingMembers] = useState<{ user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null; vouch_count: number; user_vouched: boolean }[]>([]);
+  const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
+  const [openVouchPopoverFor, setOpenVouchPopoverFor] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const memberInteractionAllowedRef = useRef(true);
   const activeProfileLoadSeqRef = useRef(0);
@@ -1997,15 +2018,36 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
     const pendingIds = pending.map((p: { user_id: string }) => p.user_id);
 
-    // Get vouch counts and whether current user already vouched
+    // Get voucher identities, vouch counts, and whether current user already vouched
     const [{ data: allVouches }, { data: myVouches }] = await Promise.all([
-      supabase.from("profile_vouches").select("vouchee_user_id").in("vouchee_user_id", pendingIds),
+      supabase.from("profile_vouches").select("vouchee_user_id, voucher_user_id").in("vouchee_user_id", pendingIds),
       supabase.from("profile_vouches").select("vouchee_user_id").in("vouchee_user_id", pendingIds).eq("voucher_user_id", currentUserId),
     ]);
 
+    const voucherIds = Array.from(
+      new Set((allVouches ?? []).map((v: { voucher_user_id: string }) => v.voucher_user_id).filter(Boolean))
+    );
+    const { data: voucherProfiles } = voucherIds.length
+      ? await supabase
+          .from("profiles")
+          .select("user_id, first_name, last_name, display_name, photo_url")
+          .in("user_id", voucherIds)
+      : { data: [] };
+    const voucherProfileMap = new Map<string, PendingMemberVoucher>();
+    (voucherProfiles ?? []).forEach((p: { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null }) => {
+      const name = p.display_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
+      voucherProfileMap.set(p.user_id, { user_id: p.user_id, name, photo_url: p.photo_url ?? null });
+    });
+
     const vouchCountMap: Record<string, number> = {};
-    (allVouches ?? []).forEach((v: { vouchee_user_id: string }) => {
+    const voucherMap: Record<string, PendingMemberVoucher[]> = {};
+    (allVouches ?? []).forEach((v: { vouchee_user_id: string; voucher_user_id: string }) => {
       vouchCountMap[v.vouchee_user_id] = (vouchCountMap[v.vouchee_user_id] ?? 0) + 1;
+      const voucher = voucherProfileMap.get(v.voucher_user_id);
+      if (voucher) {
+        if (!voucherMap[v.vouchee_user_id]) voucherMap[v.vouchee_user_id] = [];
+        voucherMap[v.vouchee_user_id].push(voucher);
+      }
     });
     const myVouchedSet = new Set((myVouches ?? []).map((v: { vouchee_user_id: string }) => v.vouchee_user_id));
 
@@ -2014,6 +2056,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         ...p,
         vouch_count: vouchCountMap[p.user_id] ?? 0,
         user_vouched: myVouchedSet.has(p.user_id),
+        vouchers: voucherMap[p.user_id] ?? [],
       }))
     );
   }
@@ -2035,7 +2078,16 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           setPendingMembers((prev) => prev.filter((m) => m.user_id !== voucheeId));
         } else {
           setPendingMembers((prev) =>
-            prev.map((m) => m.user_id === voucheeId ? { ...m, vouch_count: json.vouches, user_vouched: true } : m)
+            prev.map((m) => m.user_id === voucheeId
+              ? {
+                  ...m,
+                  vouch_count: json.vouches,
+                  user_vouched: true,
+                  vouchers: m.vouchers.some((v) => v.user_id === userId)
+                    ? m.vouchers
+                    : [...m.vouchers, { user_id: userId, name: currentUserName ?? "You", photo_url: currentUserPhotoUrl }],
+                }
+              : m)
           );
         }
       }
@@ -3434,8 +3486,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     );
   }
 
-  function handlePostImageChange(e: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []);
+  function addPostImagesFromFiles(files: File[]) {
     if (files.length === 0) return;
 
     setSelectedPostImages((prev) => {
@@ -3465,10 +3516,21 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
       return [...prev, ...newItems];
     });
+  }
+
+  function handlePostImageChange(e: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+
+    addPostImagesFromFiles(files);
 
     if (postImageInputRef.current) {
       postImageInputRef.current.value = "";
     }
+  }
+
+  function handlePostImagePaste(e: React.ClipboardEvent) {
+    handlePasteImageFromClipboard(e, addPostImagesFromFiles);
   }
 
   function removeSelectedPostImage(indexToRemove: number) {
@@ -3526,13 +3588,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     commentImageInputRefs.current[postId]?.click();
   }
 
-  function handleCommentImageChange(
-    postId: string,
-    e: ChangeEvent<HTMLInputElement>
-  ) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  function attachCommentImage(postId: string, file: File) {
     const pickError = validateImagePick(file);
     if (pickError) {
       alert(pickError);
@@ -3560,6 +3616,21 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     if (commentImageInputRefs.current[postId]) {
       commentImageInputRefs.current[postId]!.value = "";
     }
+  }
+
+  function handleCommentImageChange(
+    postId: string,
+    e: ChangeEvent<HTMLInputElement>
+  ) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    attachCommentImage(postId, file);
+  }
+
+  function handleCommentImagePaste(postId: string, e: React.ClipboardEvent) {
+    handlePasteImageFromClipboard(e, (files) => {
+      if (files[0]) attachCommentImage(postId, files[0]);
+    }, { imagesOnly: true });
   }
 
   function clearSelectedCommentImage(postId: string) {
@@ -4572,6 +4643,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
     function resetActiveProfileState() {
       setCurrentUserName(null);
+      setCurrentUserPhotoUrl(null);
       setCurrentUserReferralCode(null);
       setPlankHolderChallenge(null);
       plankHolderChallengeRef.current = null;
@@ -4673,6 +4745,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null; is_admin: boolean | null } | null;
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
+          setCurrentUserPhotoUrl(nd?.photo_url ?? null);
           setCurrentUserReferralCode(nd?.referral_code ?? null);
           setIsAdmin(!!nd?.is_admin);
           setShowMemorialFeedCards(
@@ -5587,14 +5660,15 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               {pendingMembers.map((m) => {
                 const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
                 const initial = (name[0] || "?").toUpperCase();
+                const vouchPopoverOpen = openVouchPopoverFor === m.user_id;
                 return (
                   <div key={m.user_id} style={{ border: `1px solid ${isDark ? "#2a2a00" : "#fef08a"}`, borderRadius: 14, padding: 16, background: isDark ? "#1a1a00" : "#fefce8", display: "flex", gap: 14, alignItems: "flex-start" }}>
-                    <a href={`/profile/${m.user_id}`} style={{ textDecoration: "none", flexShrink: 0 }}>
+                    <div style={{ flexShrink: 0 }} aria-hidden>
                       {m.photo_url
-                        ? <img src={m.photo_url} alt={name} style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "cover", display: "block" }} />
+                        ? <img src={m.photo_url} alt="" style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "cover", display: "block" }} />
                         : <div style={{ width: 42, height: 42, borderRadius: "50%", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, color: t.textMuted }}>{initial}</div>
                       }
-                    </a>
+                    </div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{name} is requesting to join</div>
                       {m.service && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{m.service}</div>}
@@ -5602,12 +5676,81 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         Once 3 members vouch, they&apos;re verified automatically. An admin can approve them directly.
                       </div>
                       <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        <button
+                          type="button"
+                          aria-label={m.vouch_count > 0 ? `Show ${m.vouch_count} voucher${m.vouch_count === 1 ? "" : "s"}` : "No vouches yet"}
+                          aria-expanded={vouchPopoverOpen}
+                          onClick={() => {
+                            if (!isMobile || m.vouch_count === 0) return;
+                            setOpenVouchPopoverFor((prev) => (prev === m.user_id ? null : m.user_id));
+                          }}
+                          onMouseEnter={() => {
+                            if (isMobile || m.vouch_count === 0) return;
+                            setOpenVouchPopoverFor(m.user_id);
+                          }}
+                          onMouseLeave={() => {
+                            if (isMobile) return;
+                            setOpenVouchPopoverFor((prev) => (prev === m.user_id ? null : prev));
+                          }}
+                          style={{
+                            position: "relative",
+                            display: "flex",
+                            gap: 4,
+                            alignItems: "center",
+                            background: "transparent",
+                            border: "none",
+                            padding: 0,
+                            cursor: m.vouch_count > 0 ? "pointer" : "default",
+                            color: "inherit",
+                          }}
+                        >
                           {[0, 1, 2].map((i) => (
                             <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: i < m.vouch_count ? "#22c55e" : (isDark ? "#2e2e2e" : "#e5e7eb") }} />
                           ))}
                           <span style={{ fontSize: 12, color: t.textMuted, marginLeft: 4, fontWeight: 600 }}>{m.vouch_count}/3 approved</span>
-                        </div>
+                          {vouchPopoverOpen && (
+                            <div
+                              style={{
+                                position: "absolute",
+                                left: 0,
+                                top: "calc(100% + 8px)",
+                                zIndex: 20,
+                                minWidth: 190,
+                                maxWidth: 260,
+                                border: `1px solid ${t.border}`,
+                                borderRadius: 12,
+                                padding: 10,
+                                background: t.surface,
+                                boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
+                                color: t.text,
+                              }}
+                            >
+                              <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
+                                Vouched by
+                              </div>
+                              {m.vouchers.length > 0 ? (
+                                <div style={{ display: "grid", gap: 8 }}>
+                                  {m.vouchers.slice(0, 3).map((voucher) => (
+                                    <div key={voucher.user_id} style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                                      {voucher.photo_url ? (
+                                        <img src={voucher.photo_url} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
+                                      ) : (
+                                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: t.badgeBg, color: t.textMuted, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
+                                          {(voucher.name[0] || "?").toUpperCase()}
+                                        </div>
+                                      )}
+                                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13, fontWeight: 700 }}>
+                                        {voucher.name}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: 12, color: t.textMuted }}>No vouches yet.</div>
+                              )}
+                            </div>
+                          )}
+                        </button>
                         {!m.user_vouched ? (
                           <button
                             onClick={() => vouchForMember(m.user_id)}
@@ -5723,6 +5866,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               value={content}
               onChange={handleContentChange}
               onChangeRaw={(raw) => { contentRawRef.current = raw; }}
+              onPaste={handlePostImagePaste}
               style={{
                 width: "100%",
                 minHeight: 90,
@@ -7291,6 +7435,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           value={commentInputs[post.id] || ""}
                           onChange={(val) => setCommentInputs((prev) => ({ ...prev, [post.id]: val }))}
                           onChangeRaw={(raw) => { commentRawsRef.current[post.id] = raw; }}
+                          onPaste={(e) => handleCommentImagePaste(post.id, e)}
                           style={{
                             width: "100%",
                             minHeight: 70,

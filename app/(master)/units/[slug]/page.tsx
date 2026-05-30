@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
@@ -16,6 +16,7 @@ import FeedPostHeader from "../../../components/FeedPostHeader";
 import ExpandableText from "../../../components/ExpandableText";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { prepareFeedUploadFile, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
+import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
 import { FEED_MEDIA_FRAME_BG, feedContainedImageStyle } from "../../../lib/feedLayout";
 import {
   FEED_ATTACHMENT_ACCEPT,
@@ -820,6 +821,24 @@ export default function UnitPage() {
     return supabase.storage.from("feed-images").getPublicUrl(filePath).data.publicUrl;
   }
 
+  function attachUnitPostFile(file: File) {
+    const pickError = validateFeedAttachmentPick([file]);
+    if (pickError) {
+      alert(pickError);
+      return;
+    }
+    setPostPhotoFile(file);
+    setPostPhotoPreview(URL.createObjectURL(file));
+    setPostGif(null);
+    if (postPhotoInputRef.current) postPhotoInputRef.current.value = "";
+  }
+
+  function handleUnitPostImagePaste(e: ClipboardEvent) {
+    handlePasteImageFromClipboard(e, (files) => {
+      if (files[0]) attachUnitPostFile(files[0]);
+    });
+  }
+
   async function submitPost() {
     if (!postInput.trim() && !postPhotoFile && !postPhotoUrl.trim() && !postGif) return;
     setSubmittingPost(true);
@@ -1376,6 +1395,7 @@ export default function UnitPage() {
                   <textarea
                     value={postInput}
                     onChange={(e) => setPostInput(e.target.value)}
+                    onPaste={handleUnitPostImagePaste}
                     placeholder="Post to the unit wall..."
                     rows={3}
                     style={{ width: "100%", border: "none", outline: "none", resize: "vertical", fontSize: 15, boxSizing: "border-box", background: t.surface, color: t.text, fontFamily: "inherit" }}
@@ -1421,15 +1441,7 @@ export default function UnitPage() {
                     onChange={(e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      const pickError = validateFeedAttachmentPick([file]);
-                      if (pickError) {
-                        alert(pickError);
-                        e.target.value = "";
-                        return;
-                      }
-                      setPostPhotoFile(file);
-                      setPostPhotoPreview(URL.createObjectURL(file));
-                      setPostGif(null);
+                      attachUnitPostFile(file);
                     }}
                   />
 
@@ -2377,6 +2389,25 @@ function PostCard({
     if (commentImageInputRef.current) commentImageInputRef.current.value = "";
   }
 
+  function attachCommentImage(file: File) {
+    const pickError = validateImagePick(file);
+    if (pickError) {
+      alert(pickError);
+      if (commentImageInputRef.current) commentImageInputRef.current.value = "";
+      return;
+    }
+    if (commentImage) URL.revokeObjectURL(commentImage.previewUrl);
+    setCommentImage({ file, previewUrl: URL.createObjectURL(file) });
+    setCommentGif(null);
+    if (commentImageInputRef.current) commentImageInputRef.current.value = "";
+  }
+
+  function handleCommentImagePaste(e: ClipboardEvent) {
+    handlePasteImageFromClipboard(e, (files) => {
+      if (files[0]) attachCommentImage(files[0]);
+    }, { imagesOnly: true });
+  }
+
   async function handleSend() {
     if (submittingComment) return;
     setSubmittingComment(true);
@@ -2721,6 +2752,7 @@ function PostCard({
             <textarea
               value={commentInput}
               onChange={(e) => onCommentInputChange(e.target.value)}
+              onPaste={handleCommentImagePaste}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleSend(); } }}
               placeholder="Write a comment..."
               rows={2}
@@ -2736,9 +2768,7 @@ function PostCard({
                 const file = e.target.files?.[0];
                 e.target.value = "";
                 if (!file) return;
-                if (commentImage) URL.revokeObjectURL(commentImage.previewUrl);
-                setCommentImage({ file, previewUrl: URL.createObjectURL(file) });
-                setCommentGif(null);
+                attachCommentImage(file);
               }}
             />
 

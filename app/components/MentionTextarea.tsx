@@ -19,6 +19,7 @@ type Props = {
   placeholder?: string;
   style?: React.CSSProperties;
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onPaste?: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
 };
 
 // Parse stored @[Name](userId) syntax → extract userIds for notifications
@@ -49,7 +50,7 @@ function displayPosToRaw(raw: string, displayPos: number): number {
 }
 
 const MentionTextarea = forwardRef<HTMLTextAreaElement, Props>(
-  ({ value, onChange, onChangeRaw, placeholder, style, onKeyDown }, ref) => {
+  ({ value, onChange, onChangeRaw, placeholder, style, onKeyDown, onPaste }, ref) => {
     const { t } = useTheme();
     const [mentionQuery, setMentionQuery] = useState<string | null>(null);
     const [mentionResults, setMentionResults] = useState<MentionUser[]>([]);
@@ -162,6 +163,7 @@ const MentionTextarea = forwardRef<HTMLTextAreaElement, Props>(
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onPaste={onPaste}
           placeholder={placeholder}
           style={style}
         />
