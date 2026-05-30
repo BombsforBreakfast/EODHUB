@@ -17,6 +17,8 @@ import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
 import SupabaseUsagePanel from "../components/admin/SupabaseUsagePanel";
+import TrafficByHourChart from "../components/admin/TrafficByHourChart";
+import type { TrafficByHourSummary } from "../lib/analyticsTrafficByHour";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
@@ -428,6 +430,7 @@ type EngagementSummary = {
     total_ms: number;
     sessions: number;
   }>;
+  traffic_by_hour: TrafficByHourSummary;
 };
 
 type PageAnalyticsRange = "24h" | "7d" | "30d" | "all";
@@ -4602,6 +4605,22 @@ export default function AdminPage() {
                   <KpiCard t={t} label="Unique visitors (7d)" value={engagement.kpis.wau.toLocaleString()} sub="WAU" subtle />
                   <KpiCard t={t} label="Unique visitors (30d)" value={engagement.kpis.mau.toLocaleString()} sub="MAU" subtle />
                 </div>
+
+                {engagement.traffic_by_hour && (
+                  <TrafficByHourChart
+                    data={engagement.traffic_by_hour}
+                    rangeLabel={
+                      engagementRange === "today"
+                        ? "today"
+                        : engagementRange === "7d"
+                          ? "last 7 days"
+                          : "last 30 days"
+                    }
+                    formatDuration={formatDuration}
+                    t={t}
+                    isMobile={isMobile}
+                  />
+                )}
 
                 {/* Top pages by time + Most engaged users */}
                 <div

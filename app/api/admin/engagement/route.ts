@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { loadAnalyticsExcludedUserIds } from "../../../lib/analyticsExclusions";
 import { isExcludedFromPageTimeAnalytics } from "../../../lib/analyticsPath";
+import {
+  buildTrafficByHour,
+  daysInEngagementRange,
+  DEFAULT_ANALYTICS_TIMEZONE,
+} from "../../../lib/analyticsTrafficByHour";
 
 // Engagement KPIs for the admin "Engagement" tab.
 //
@@ -106,7 +111,6 @@ export async function GET(req: NextRequest) {
     prevNewSignupsRes,
     sessionsCurRes,
     sessionsPrevRes,
-    sessionsAggRes,
     pageViewsAggRes,
   ] = await Promise.all([
     supabase.from("profiles").select("user_id", { count: "exact", head: true }),
@@ -121,7 +125,7 @@ export async function GET(req: NextRequest) {
       .lt("created_at", sinceIso),
     supabase
       .from("analytics_sessions")
-      .select("id, user_id")
+      .select("id, user_id, started_at, active_ms")
       .gte("started_at", sinceIso)
       .limit(50000),
     supabase
@@ -130,13 +134,6 @@ export async function GET(req: NextRequest) {
       .gte("started_at", prevSinceIso)
       .lt("started_at", sinceIso)
       .limit(50000),
-    // Pull active_ms for sessions in range so we can compute sum + avg in JS
-    // (PostgREST doesn't give us aggregate functions directly).
-    supabase
-      .from("analytics_sessions")
-      .select("active_ms, user_id")
-      .gte("started_at", sinceIso)
-      .limit(50000),
     supabase
       .from("analytics_page_views")
       .select("path, active_ms, user_id")
@@ -144,15 +141,23 @@ export async function GET(req: NextRequest) {
       .limit(100000),
   ]);
 
-  const sessionsCurRows = (sessionsCurRes.data ?? []) as Array<{ id: string; user_id: string | null }>;
+  type SessionRow = {
+    id: string;
+    user_id: string | null;
+    started_at?: string;
+    active_ms?: number | null;
+  };
+
+  const sessionsCurRows = (sessionsCurRes.data ?? []) as SessionRow[];
   const sessionsPrevRows = (sessionsPrevRes.data ?? []) as Array<{ id: string; user_id: string | null }>;
   const visits =
     sessionsCurRows.filter((row) => !row.user_id || !excludedUserIds.has(row.user_id)).length;
   const visitsPrev =
     sessionsPrevRows.filter((row) => !row.user_id || !excludedUserIds.has(row.user_id)).length;
 
-  const sessionsRows = ((sessionsAggRes.data ?? []) as Array<{ active_ms: number | null; user_id: string | null }>)
-    .filter((row) => !row.user_id || !excludedUserIds.has(row.user_id));
+  const sessionsRows = sessionsCurRows.filter(
+    (row) => !row.user_id || !excludedUserIds.has(row.user_id),
+  ) as Array<{ active_ms: number | null; user_id: string | null; started_at: string }>;
   const totalActiveMs = sessionsRows.reduce((acc, r) => acc + (r.active_ms ?? 0), 0);
   const sessionsWithTime = sessionsRows.filter((r) => (r.active_ms ?? 0) > 0);
   const avgSessionMs =
@@ -249,6 +254,11 @@ export async function GET(req: NextRequest) {
     countDistinct(supabase, "analytics_sessions", "user_id", "started_at", monthAgo, excludedUserIds),
   ]);
 
+  const trafficByHour = buildTrafficByHour(sessionsRows, {
+    daysInRange: daysInEngagementRange(range),
+    timeZone: DEFAULT_ANALYTICS_TIMEZONE,
+  });
+
   return NextResponse.json({
     range,
     generated_at: new Date().toISOString(),
@@ -267,5 +277,6 @@ export async function GET(req: NextRequest) {
     },
     top_pages: topPagesByTime,
     most_engaged_users: mostEngagedUsers,
+    traffic_by_hour: trafficByHour,
   });
 }
