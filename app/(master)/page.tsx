@@ -7297,18 +7297,39 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         {(commentsOpen ? post.comments : post.comments.slice(0, 2)).map((comment) => {
                           const replies = comment.replies ?? [];
                           const repliesOpen = expandedReplies[comment.id] || false;
+                          const visibleReplies = repliesOpen ? replies : replies.slice(0, 1);
+                          const hiddenReplyCount = replies.length - visibleReplies.length;
 
                           return (
                             <div key={comment.id} style={{ display: "grid", gap: 4 }}>
                               {renderCommentNode(comment, { isReply: false, replyTargetId: comment.id })}
 
-                              {replies.length > 0 && (
+                              {visibleReplies.length > 0 && (
+                                <div
+                                  style={{
+                                    marginLeft: 24,
+                                    paddingLeft: 10,
+                                    borderLeft: `2px solid ${t.border}`,
+                                    display: "grid",
+                                    gap: 4,
+                                  }}
+                                >
+                                  {visibleReplies.map((reply) =>
+                                    renderCommentNode(reply, {
+                                      isReply: true,
+                                      replyTargetId: comment.id,
+                                    }),
+                                  )}
+                                </div>
+                              )}
+
+                              {hiddenReplyCount > 0 && (
                                 <button
                                   type="button"
                                   onClick={() =>
                                     setExpandedReplies((prev) => ({
                                       ...prev,
-                                      [comment.id]: !repliesOpen,
+                                      [comment.id]: true,
                                     }))
                                   }
                                   style={{
@@ -7323,29 +7344,33 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                     textAlign: "left",
                                   }}
                                 >
-                                  {repliesOpen
-                                    ? "Hide replies"
-                                    : `View ${replies.length} ${replies.length === 1 ? "reply" : "replies"}`}
+                                  View all {replies.length} {replies.length === 1 ? "reply" : "replies"}
                                 </button>
                               )}
 
-                              {replies.length > 0 && repliesOpen && (
-                                <div
+                              {repliesOpen && replies.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setExpandedReplies((prev) => ({
+                                      ...prev,
+                                      [comment.id]: false,
+                                    }))
+                                  }
                                   style={{
-                                    marginLeft: 24,
-                                    paddingLeft: 10,
-                                    borderLeft: `2px solid ${t.border}`,
-                                    display: "grid",
-                                    gap: 4,
+                                    marginLeft: 30,
+                                    background: "transparent",
+                                    border: "none",
+                                    padding: 0,
+                                    cursor: "pointer",
+                                    color: t.textMuted,
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    textAlign: "left",
                                   }}
                                 >
-                                  {replies.map((reply) =>
-                                    renderCommentNode(reply, {
-                                      isReply: true,
-                                      replyTargetId: comment.id,
-                                    }),
-                                  )}
-                                </div>
+                                  Hide replies
+                                </button>
                               )}
 
                               {renderReplyComposer(post, comment.id)}

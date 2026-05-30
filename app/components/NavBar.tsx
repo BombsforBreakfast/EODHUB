@@ -611,30 +611,17 @@ export default function NavBar() {
                 </Link>
               );
             }
-            if (isAdmin) {
-              return (
-                <Link
-                  href={`/profile/${currentUserId}`}
-                  className="nav-avatar"
-                  aria-label="My profile — edit photo and settings"
-                  title="My profile"
-                  onClick={openProfile}
-                  style={{ ...navAvatarCircleStyle, cursor: "pointer" }}
-                >
-                  {inner}
-                </Link>
-              );
-            }
             return (
-              <div
+              <Link
+                href={`/profile/${currentUserId}`}
                 className="nav-avatar"
-                role="img"
-                aria-label="Your profile photo"
-                title="Profile photo"
-                style={{ ...navAvatarCircleStyle, cursor: "default" }}
+                aria-label="My profile"
+                title="My profile"
+                onClick={openProfile}
+                style={{ ...navAvatarCircleStyle, cursor: "pointer" }}
               >
                 {inner}
-              </div>
+              </Link>
             );
           })()}
         </div>
