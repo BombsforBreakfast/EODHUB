@@ -1025,6 +1025,7 @@ export default function HomePage() {
   const memberInteractionAllowedRef = useRef(true);
   const activeProfileLoadSeqRef = useRef(0);
   const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
+  const [showNavHelper, setShowNavHelper] = useState(false);
 
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingPostContent, setEditingPostContent] = useState("");
@@ -1339,6 +1340,12 @@ export default function HomePage() {
     if (memberInteractionAllowedRef.current) return false;
     setMemberPaywallOpen(true);
     return true;
+  }
+
+  async function dismissNavHelper() {
+    setShowNavHelper(false);
+    if (!userId) return;
+    await supabase.from("profiles").update({ nav_helper_seen: true }).eq("user_id", userId);
   }
 
   const loadFeedEventAttendeePreviews = React.useCallback(async (eventId: string) => {
@@ -4707,10 +4714,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             referral_code: string | null;
             is_admin: boolean | null;
             show_memorial_feed_cards: boolean | null;
+            nav_helper_seen: boolean | null;
           }
         >(supabase, authUser, {
           route: "app/(master)/page.tsx:init",
-          select: `${ONBOARDING_GATE_PROFILE_SELECT}, email, display_name, photo_url, status, professional_tags, unit_history_tags, subscription_status, referral_code, is_admin, show_memorial_feed_cards, verification_status, email_verified, admin_verified`,
+          select: `${ONBOARDING_GATE_PROFILE_SELECT}, email, display_name, photo_url, status, professional_tags, unit_history_tags, subscription_status, referral_code, is_admin, show_memorial_feed_cards, nav_helper_seen, verification_status, email_verified, admin_verified`,
         });
         if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
@@ -4742,6 +4750,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         }
 
         ensureWelcomeSidebarOnce(supabase);
+
+        if (
+          isMounted &&
+          activeProfileLoadSeqRef.current === loadSeq &&
+          (profileCheck as { nav_helper_seen?: boolean | null }).nav_helper_seen !== true
+        ) {
+          setShowNavHelper(true);
+        }
 
         const featureAccess = getFeatureAccess({
           accountType: profileCheck.account_type,
@@ -5801,6 +5817,50 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   </div>
                 );
               })}
+            </div>
+          )}
+
+          {showNavHelper && (
+            <div
+              role="status"
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 12,
+                border: `1px solid ${isDark ? "#ca8a04" : "#b45309"}`,
+                borderLeft: `4px solid ${isDark ? "#facc15" : "#d97706"}`,
+                borderRadius: 12,
+                background: isDark ? "#4a3f0f" : "#ca8a04",
+                padding: "14px 16px",
+                marginBottom: 14,
+                boxShadow: isDark ? "0 2px 8px rgba(0,0,0,0.35)" : "0 2px 8px rgba(180, 83, 9, 0.25)",
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 800, fontSize: 15, color: isDark ? "#fef9c3" : "#422006", marginBottom: 4 }}>
+                  Welcome to EOD-HUB
+                </div>
+                <div style={{ fontSize: 14, color: isDark ? "#fde68a" : "#451a03", lineHeight: 1.5 }}>
+                  Use the <strong style={{ color: isDark ? "#fffbeb" : "#292524" }}>EOD Hub</strong> button at the top of the page to navigate the site.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => { void dismissNavHelper(); }}
+                style={{
+                  flexShrink: 0,
+                  background: isDark ? "#292524" : "#422006",
+                  color: "#fef9c3",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                }}
+              >
+                Got it
+              </button>
             </div>
           )}
 

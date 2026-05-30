@@ -677,7 +677,7 @@ export default function NavBar() {
               className="nav-btn nav-hub-toggle"
               aria-expanded={showHub}
               aria-haspopup="dialog"
-              style={{ ...navButton, cursor: "pointer", alignItems: "center", gap: 6, background: "transparent", border: "none", boxShadow: "none" }}
+              style={{ ...navButton, cursor: "pointer", alignItems: "center", gap: 6, background: "transparent", border: "2px solid #ffffff", borderRadius: 8, boxShadow: "0 0 0 1px rgba(0,0,0,0.18)" }}
             >
               EOD Hub
             </button>
