@@ -70,6 +70,8 @@ import {
   type PlankHolderResponse,
   type PlankHolderToastState,
 } from "../../../lib/plankHolderChallengeClient";
+import { isEmployerAccount } from "../../../lib/profileCompleteness";
+import EmployerAccountCardDetails from "../../../components/profile/EmployerAccountCardDetails";
 
 type Profile = {
   user_id: string;
@@ -92,6 +94,8 @@ type Profile = {
   plank_holder_seen_modal: boolean | null;
   is_employer: boolean | null;
   employer_verified: boolean | null;
+  company_name: string | null;
+  account_type: string | null;
   company_website: string | null;
   professional_tags: string[] | null;
   unit_history_tags: string[] | null;
@@ -601,6 +605,9 @@ export default function PublicProfilePage() {
 
   const [editingProfile, setEditingProfile] = useState(false);
   const [editRole, setEditRole] = useState("");
+  const [editCompanyName, setEditCompanyName] = useState("");
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
   const [editBio, setEditBio] = useState("");
   const [editService, setEditService] = useState("");
   const [editStatus, setEditStatus] = useState("");
@@ -931,6 +938,9 @@ export default function PublicProfilePage() {
 
   function openWallEditProfile() {
     if (!profile || currentUserId !== profile.user_id) return;
+    setEditCompanyName(profile.company_name ?? "");
+    setEditFirstName(profile.first_name ?? "");
+    setEditLastName(profile.last_name ?? "");
     setEditRole(profile.role ?? "");
     setEditBio(profile.bio ?? "");
     setEditService(profile.service ?? "");
@@ -967,40 +977,50 @@ export default function PublicProfilePage() {
 
   async function handleSaveWallProfile() {
     if (!currentUserId || !profile || currentUserId !== profile.user_id || !userId) return;
+    const savingEmployerAccount = !!profile.is_employer || isEmployerAccount(profile);
     try {
       setSavingProfile(true);
+      const payload = savingEmployerAccount
+        ? {
+            company_name: editCompanyName.trim() || null,
+            first_name: editFirstName.trim() || null,
+            last_name: editLastName.trim() || null,
+            company_website: editCompanyWebsite.trim() || null,
+            bio: editBio.trim() || null,
+          }
+        : {
+            role: editRole || null,
+            bio: editBio || null,
+            service: editService || null,
+            status: editStatus || null,
+            years_experience: editYearsExp || null,
+            skill_badge: editSkillBadge || null,
+            company_website: editCompanyWebsite || null,
+            open_to_opportunities: editOpenToOpportunities,
+            employer_summary: editEmployerSummary || null,
+            resume_url: editResumeUrl || null,
+            education_url: editEducationUrl || null,
+            specialized_training: editSpecializedTraining.length ? editSpecializedTraining : null,
+            specialized_training_docs: Object.keys(editSpecializedTrainingDocs).length ? editSpecializedTrainingDocs : null,
+            availability_type: editAvailabilityType || null,
+            availability_date: editAvailabilityDate || null,
+            current_city: editCurrentCity || null,
+            current_state: editCurrentState || null,
+            willing_to_relocate: editWillingToRelocate,
+            willing_to_travel: editWillingToTravel || null,
+            work_preference: editWorkPreference || null,
+            clearance_level: editClearanceLevel || null,
+            clearance_status: editClearanceStatus || null,
+            clearance_expiration_date: editClearanceExpirationDate || null,
+            has_oconus_experience: editHasOconusExperience,
+            has_contract_experience: editHasContractExperience,
+            has_federal_le_military_crossover: editHasFederalLeMilitaryCrossover,
+            professional_tags: editProfessionalTags.length ? editProfessionalTags : null,
+            unit_history_tags: editUnitHistoryTags.length ? editUnitHistoryTags : null,
+          };
       const { error } = await supabase
         .from("profiles")
-        .update({
-          role: editRole || null,
-          bio: editBio || null,
-          service: editService || null,
-          status: editStatus || null,
-          years_experience: editYearsExp || null,
-          skill_badge: editSkillBadge || null,
-          company_website: editCompanyWebsite || null,
-          open_to_opportunities: editOpenToOpportunities,
-          employer_summary: editEmployerSummary || null,
-          resume_url: editResumeUrl || null,
-          education_url: editEducationUrl || null,
-          specialized_training: editSpecializedTraining.length ? editSpecializedTraining : null,
-          specialized_training_docs: Object.keys(editSpecializedTrainingDocs).length ? editSpecializedTrainingDocs : null,
-          availability_type: editAvailabilityType || null,
-          availability_date: editAvailabilityDate || null,
-          current_city: editCurrentCity || null,
-          current_state: editCurrentState || null,
-          willing_to_relocate: editWillingToRelocate,
-          willing_to_travel: editWillingToTravel || null,
-          work_preference: editWorkPreference || null,
-          clearance_level: editClearanceLevel || null,
-          clearance_status: editClearanceStatus || null,
-          clearance_expiration_date: editClearanceExpirationDate || null,
-          has_oconus_experience: editHasOconusExperience,
-          has_contract_experience: editHasContractExperience,
-          has_federal_le_military_crossover: editHasFederalLeMilitaryCrossover,
-          professional_tags: editProfessionalTags.length ? editProfessionalTags : null,
-          unit_history_tags: editUnitHistoryTags.length ? editUnitHistoryTags : null,
-        })
+        .update(payload)
         .eq("user_id", currentUserId);
       if (error) {
         alert(error.message);
@@ -2984,12 +3004,24 @@ export default function PublicProfilePage() {
     ? profile.display_name || `${profile.first_name || ""} ${profile.last_name || ""}`.trim() || "User"
     : "";
 
+  const isEmployerProfile = profile ? !!profile.is_employer || isEmployerAccount(profile) : false;
+  const employerCompanyName = profile?.company_name?.trim() ?? "";
+  const employerContactName = profile
+    ? `${profile.first_name || ""} ${profile.last_name || ""}`.trim()
+    : "";
+  const profileHeadlineName =
+    isEmployerProfile && employerCompanyName ? employerCompanyName : fullName;
+  const profileAvatarInitial = (profileHeadlineName[0] || fullName[0] || "?").toUpperCase();
+
   const techTypesText = profile
     ? Array.isArray(profile.tech_types) ? profile.tech_types.join(", ") : profile.tech_types || "Not added yet"
     : "";
 
   const isOwnWall = currentUserId === profile?.user_id;
-  const canViewEmployerBack = isOwnWall || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities);
+  const showEmployerEmailOnCard = isEmployerProfile && (isOwnWall || viewerIsAdmin);
+  const canViewEmployerBack =
+    !isEmployerProfile &&
+    (isOwnWall || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities));
   const professionalTags = normalizeTagArray(profile?.professional_tags);
   const unitHistoryTags = normalizeTagArray(profile?.unit_history_tags);
 
@@ -3406,8 +3438,8 @@ export default function PublicProfilePage() {
                     style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: profile.photo_url || isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url
-                      ? <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                      : fullName[0]?.toUpperCase()}
+                      ? <img src={profile.photo_url} alt={profileHeadlineName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      : profileAvatarInitial}
                     {isOwnWall && (
                       <div
                         onClick={(e) => {
@@ -3424,9 +3456,12 @@ export default function PublicProfilePage() {
                     )}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
+                    <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, lineHeight: 1.2 }}>{profileHeadlineName}</h1>
+                    {isEmployerProfile && employerContactName && employerCompanyName && (
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{employerContactName}</div>
+                    )}
                     <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                      {isOwnWall ? "My Profile" : "Member Profile"}
+                      {isOwnWall ? "My Profile" : isEmployerProfile ? "Employer Profile" : "Member Profile"}
                       {profile.is_employer && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
                           {profile.employer_verified ? "EOD Employer" : "Employer"}
@@ -3443,6 +3478,7 @@ export default function PublicProfilePage() {
                         <PlankHolderBadge number={profile.plank_holder_number} />
                       </div>
                     )}
+                    {!isEmployerProfile && (
                     <div style={{ display: "flex", gap: 14, marginTop: 8, alignItems: "flex-start" }}>
                       <div style={{ textAlign: "center" }}>
                         <button type="button" onClick={() => openConnList("know")}
@@ -3501,27 +3537,28 @@ export default function PublicProfilePage() {
                         </button>
                       </div>
                     </div>
+                    )}
                   </div>
                 </div>
 
-                {renderWorkUnitHistorySection(true)}
+                {!isEmployerProfile && renderWorkUnitHistorySection(true)}
 
                 {/* Connection buttons */}
                 {!isOwnWall && currentUserId && (
                   <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-                    {currentUserKnowStatus === "none" && (
+                    {!isEmployerProfile && currentUserKnowStatus === "none" && (
                       <button type="button" onClick={requestKnow} disabled={togglingConnection === "know"} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
                         {togglingConnection === "know" && <span className="btn-spinner btn-spinner-dark" />}
                         Know
                       </button>
                     )}
-                    {currentUserKnowStatus === "pending_outgoing" && (
+                    {!isEmployerProfile && currentUserKnowStatus === "pending_outgoing" && (
                       <button type="button" onClick={cancelKnowRequest} disabled={togglingConnection === "know"} style={{ flex: 1, background: t.surface, color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
                         {togglingConnection === "know" && <span className="btn-spinner btn-spinner-dark" />}
                         Request Sent
                       </button>
                     )}
-                    {currentUserKnowStatus === "pending_incoming" && (
+                    {!isEmployerProfile && currentUserKnowStatus === "pending_incoming" && (
                       <>
                         <button type="button" onClick={() => respondToKnowRequest(true)} disabled={togglingConnection === "confirm"} style={{ flex: 1, background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
                           {togglingConnection === "confirm" && <span className="btn-spinner" />}
@@ -3533,7 +3570,7 @@ export default function PublicProfilePage() {
                         </button>
                       </>
                     )}
-                    {currentUserKnowStatus === "accepted" && (
+                    {!isEmployerProfile && currentUserKnowStatus === "accepted" && (
                       <button type="button" onClick={toggleWorkedWith} disabled={togglingConnection === "worked_with"} style={{ flex: 1, background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
                         {togglingConnection === "worked_with" && <span className={currentUserWorkedWith ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
                         {currentUserWorkedWith ? "Worked With" : "Mark Worked With"}
@@ -3548,9 +3585,29 @@ export default function PublicProfilePage() {
                 {/* Profile details ΓÇö full width below */}
                 <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
                   {!showDesktopProfileBack ? (
+                    isEmployerProfile ? (
+                      <EmployerAccountCardDetails
+                        companyName={profile.company_name}
+                        firstName={profile.first_name}
+                        lastName={profile.last_name}
+                        email={profile.email}
+                        companyWebsite={profile.company_website}
+                        employerVerified={profile.employer_verified}
+                        verificationStatus={profile.verification_status}
+                        bio={profile.bio}
+                        showEmail={showEmployerEmailOnCard}
+                        compact
+                        borderColor={t.borderLight}
+                        textColor={t.text}
+                        textMuted={t.textMuted}
+                        textFaint={t.textFaint}
+                        isOwnWall={isOwnWall}
+                        onCompleteBio={openWallEditProfile}
+                      />
+                    ) : (
                     <>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
-                        <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
+                        <div><strong>Current Position:</strong> {profile.role || "Not added yet"}</div>
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
                           <strong>Service:</strong> <ServiceSealValue service={profile.service} size={50} />
                         </div>
@@ -3559,13 +3616,6 @@ export default function PublicProfilePage() {
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
                           <strong>Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={52} />
                         </div>
-                        {profile.is_employer && (
-                          <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
-                            {profile.company_website
-                              ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
-                              : <span style={{ color: "#9ca3af" }}>Not added yet</span>}
-                          </div>
-                        )}
                       </div>
                       {profile.bio?.trim() ? (
                         <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, paddingInline: 8, color: t.textMuted, lineHeight: 1.6 }}>
@@ -3588,6 +3638,7 @@ export default function PublicProfilePage() {
                         </div>
                       ) : null}
                     </>
+                    )
                   ) : (
                     <div style={{ border: `1px solid ${t.border}`, borderRadius: 10, padding: 12, background: t.bg }}>
                       <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.4 }}>Employer View</div>
@@ -3713,7 +3764,7 @@ export default function PublicProfilePage() {
                     style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: profile.photo_url || isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url ? (
-                      <img src={profile.photo_url} alt={fullName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      <img src={profile.photo_url} alt={profileHeadlineName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     ) : ("Photo")}
                     {isOwnWall && (
                       <div
@@ -3732,9 +3783,12 @@ export default function PublicProfilePage() {
                   </div>
 
                   <div style={{ textAlign: "center" }}>
-                    <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>{fullName}</h1>
+                    <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>{profileHeadlineName}</h1>
+                    {isEmployerProfile && employerContactName && employerCompanyName && (
+                      <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{employerContactName}</div>
+                    )}
                     <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted, display: "flex", gap: 6, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
-                      {isOwnWall ? "My Profile" : "Member Profile"}
+                      {isOwnWall ? "My Profile" : isEmployerProfile ? "Employer Profile" : "Member Profile"}
                       {profile.is_employer && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
                           {profile.employer_verified ? "EOD Employer" : "Employer"}
@@ -3753,6 +3807,7 @@ export default function PublicProfilePage() {
                     )}
                   </div>
 
+                  {!isEmployerProfile && (
                   <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%", alignItems: "flex-start" }}>
                     <div style={{ textAlign: "center" }}>
                       <button type="button" onClick={() => openConnList("know")}
@@ -3811,24 +3866,25 @@ export default function PublicProfilePage() {
                       </button>
                     </div>
                   </div>
+                  )}
 
-                {renderWorkUnitHistorySection(false)}
+                {!isEmployerProfile && renderWorkUnitHistorySection(false)}
 
                   {!isOwnWall && currentUserId && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-                      {currentUserKnowStatus === "none" && (
+                      {!isEmployerProfile && currentUserKnowStatus === "none" && (
                         <button type="button" onClick={requestKnow} disabled={togglingConnection === "know"} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                           {togglingConnection === "know" && <span className="btn-spinner btn-spinner-dark" />}
                           Know
                         </button>
                       )}
-                      {currentUserKnowStatus === "pending_outgoing" && (
+                      {!isEmployerProfile && currentUserKnowStatus === "pending_outgoing" && (
                         <button type="button" onClick={cancelKnowRequest} disabled={togglingConnection === "know"} style={{ background: t.surface, color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                           {togglingConnection === "know" && <span className="btn-spinner btn-spinner-dark" />}
                           Request Sent
                         </button>
                       )}
-                      {currentUserKnowStatus === "pending_incoming" && (
+                      {!isEmployerProfile && currentUserKnowStatus === "pending_incoming" && (
                         <>
                           <button type="button" onClick={() => respondToKnowRequest(true)} disabled={togglingConnection === "confirm"} style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                             {togglingConnection === "confirm" && <span className="btn-spinner" />}
@@ -3840,7 +3896,7 @@ export default function PublicProfilePage() {
                           </button>
                         </>
                       )}
-                      {currentUserKnowStatus === "accepted" && (
+                      {!isEmployerProfile && currentUserKnowStatus === "accepted" && (
                         <button type="button" onClick={toggleWorkedWith} disabled={togglingConnection === "worked_with"} style={{ background: currentUserWorkedWith ? "#111" : t.surface, color: currentUserWorkedWith ? "white" : t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                           {togglingConnection === "worked_with" && <span className={currentUserWorkedWith ? "btn-spinner" : "btn-spinner btn-spinner-dark"} />}
                         {currentUserWorkedWith ? "Worked With" : "Mark Worked With"}
@@ -3856,9 +3912,28 @@ export default function PublicProfilePage() {
                 {/* Profile details */}
                 <div style={{ flex: 1, minWidth: 0, marginLeft: 20, color: t.textMuted, lineHeight: 1.8 }}>
                   {!showDesktopProfileBack ? (
+                    isEmployerProfile ? (
+                      <EmployerAccountCardDetails
+                        companyName={profile.company_name}
+                        firstName={profile.first_name}
+                        lastName={profile.last_name}
+                        email={profile.email}
+                        companyWebsite={profile.company_website}
+                        employerVerified={profile.employer_verified}
+                        verificationStatus={profile.verification_status}
+                        bio={profile.bio}
+                        showEmail={showEmployerEmailOnCard}
+                        borderColor={t.borderLight}
+                        textColor={t.text}
+                        textMuted={t.textMuted}
+                        textFaint={t.textFaint}
+                        isOwnWall={isOwnWall}
+                        onCompleteBio={openWallEditProfile}
+                      />
+                    ) : (
                     <>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
-                        <div><strong>Current Position:</strong> {profile.is_employer ? "Employer Account" : (profile.role || "Not added yet")}</div>
+                        <div><strong>Current Position:</strong> {profile.role || "Not added yet"}</div>
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
                           <strong>Service:</strong> <ServiceSealValue service={profile.service} size={60} />
                         </div>
@@ -3867,13 +3942,6 @@ export default function PublicProfilePage() {
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
                           <strong>Skill Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={64} />
                         </div>
-                        {profile.is_employer && (
-                          <div style={{ gridColumn: "1 / -1" }}><strong>Website:</strong>{" "}
-                            {profile.company_website
-                              ? <a href={profile.company_website} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", wordBreak: "break-all" }}>{profile.company_website}</a>
-                              : <span style={{ color: "#9ca3af" }}>Not added yet</span>}
-                          </div>
-                        )}
                       </div>
                       {profile.bio?.trim() ? (
                         <div style={{ marginTop: 14, color: t.textMuted, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14, paddingInline: 8 }}>
@@ -3896,6 +3964,7 @@ export default function PublicProfilePage() {
                         </div>
                       ) : null}
                     </>
+                    )
                   ) : (
                     <div style={{ minHeight: 290, border: `1px solid ${t.border}`, borderRadius: 12, padding: 16, background: t.bg }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "space-between", flexWrap: "wrap", marginBottom: 12 }}>
@@ -4143,6 +4212,31 @@ export default function PublicProfilePage() {
                 </div>
                 <div style={{ overflowY: "auto", flex: 1, padding: isMobile ? 16 : 24 }}>
                   <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
+                {isEmployerProfile ? (
+                  <>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Company / Organization Name</label>
+                      <input value={editCompanyName} onChange={(e) => setEditCompanyName(e.target.value)} placeholder="e.g. Acme Defense Group" style={wallEditInputStyle} />
+                    </div>
+                    <div>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Primary Contact — First Name</label>
+                      <input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} style={wallEditInputStyle} />
+                    </div>
+                    <div>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Primary Contact — Last Name</label>
+                      <input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} style={wallEditInputStyle} />
+                    </div>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Company Website</label>
+                      <input value={editCompanyWebsite} onChange={(e) => setEditCompanyWebsite(e.target.value)} placeholder="https://yourcompany.com" style={wallEditInputStyle} />
+                    </div>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>About the Organization</label>
+                      <textarea ref={bioTextareaRef} value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Brief description of your organization for reviewers and candidates..." rows={4} style={{ ...wallEditInputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }} />
+                    </div>
+                  </>
+                ) : (
+                  <>
                 <div>
                   <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Current Position</label>
                   <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="e.g. EOD Tech" style={wallEditInputStyle} />
@@ -4464,7 +4558,7 @@ export default function PublicProfilePage() {
                     </div>
                   </div>
                 </div>
-                {profile.is_employer && (
+                {profile.is_employer && !isEmployerProfile && (
                   <div style={{ gridColumn: "1 / -1" }}>
                     <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Company Website</label>
                     <input value={editCompanyWebsite} onChange={(e) => setEditCompanyWebsite(e.target.value)} placeholder="https://yourcompany.com" style={wallEditInputStyle} />
@@ -4477,6 +4571,8 @@ export default function PublicProfilePage() {
                     {editBio.trim().length} / 50 characters
                   </div>
                 </div>
+                  </>
+                )}
               </div>
                 </div>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: isMobile ? "12px 16px" : "16px 24px", borderTop: `1px solid ${t.border}`, flexShrink: 0 }}>

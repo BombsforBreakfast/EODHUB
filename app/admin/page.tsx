@@ -145,6 +145,12 @@ type UserProfile = {
 };
 
 function adminUserDisplayName(u: UserProfile): string {
+  if (u.is_employer || u.account_type === "employer") {
+    const company = u.company_name?.trim();
+    const contact = `${u.first_name || ""} ${u.last_name || ""}`.trim();
+    if (company && contact) return `${company} (${contact})`;
+    if (company) return company;
+  }
   return (
     u.display_name ||
     u.name ||
@@ -4111,8 +4117,9 @@ export default function AdminPage() {
                         {isDenied && <span style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Denied</span>}
                       </div>
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
-                        {[u.role, u.service].filter(Boolean).join(" · ")}
-                        {u.email && <span style={{ color: t.textFaint, marginLeft: u.role || u.service ? 6 : 0 }}>{u.role || u.service ? "· " : ""}{u.email}</span>}
+                        {(u.is_employer || u.account_type === "employer")
+                          ? [u.company_name, u.email].filter(Boolean).join(" · ")
+                          : [u.role, u.service, u.email].filter(Boolean).join(" · ")}
                       </div>
                       {missingSignupFields.length > 0 && (
                         <div style={{ fontSize: 12, color: isGrandfathered ? t.textMuted : "#c2410c", marginTop: 4, fontWeight: 600 }}>

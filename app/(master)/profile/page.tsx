@@ -11,6 +11,7 @@ import ChangePasswordSection from "../../components/account/ChangePasswordSectio
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
 import { isPaywallEnforced, memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { hasPublicMemberProfile } from "../../lib/pureAdminAllowlist";
+import EmployerAccountCardDetails from "../../components/profile/EmployerAccountCardDetails";
 
 function BillingCard({ hasActiveMembership }: { hasActiveMembership: boolean }) {
   const { t } = useTheme();
@@ -92,7 +93,9 @@ type Profile = {
   subscription_status: string | null;
   is_employer: boolean | null;
   employer_verified: boolean | null;
+  company_name: string | null;
   company_website: string | null;
+  verification_status: string | null;
   is_pure_admin: boolean | null;
   email: string | null;
   must_change_password: boolean | null;
@@ -378,6 +381,35 @@ export default function MyAccountPage() {
               authUserCreatedAtIso: authCreatedAt,
               isAdmin: profile?.is_admin,
             })}
+          />
+        </div>
+      )}
+
+      {/* Employer account summary */}
+      {profile?.is_employer && (
+        <div style={{ marginTop: 24, ...card }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+            <div style={{ fontSize: 20, fontWeight: 900, color: t.text }}>Employer Account</div>
+            {currentUserId && (
+              <a href={`/profile/${currentUserId}`} style={{ background: t.text, color: t.surface, borderRadius: 10, padding: "7px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>
+                View employer profile →
+              </a>
+            )}
+          </div>
+          <EmployerAccountCardDetails
+            companyName={profile.company_name}
+            firstName={profile.first_name}
+            lastName={profile.last_name}
+            email={profile.email}
+            companyWebsite={profile.company_website}
+            employerVerified={profile.employer_verified}
+            verificationStatus={profile.verification_status}
+            bio={profile.bio}
+            showEmail
+            borderColor={t.border}
+            textColor={t.text}
+            textMuted={t.textMuted}
+            textFaint={t.textFaint}
           />
         </div>
       )}

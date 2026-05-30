@@ -69,6 +69,7 @@ export default function OnboardingPage() {
   const [agreedGuidelines, setAgreedGuidelines] = useState(false);
   const [missingFieldId, setMissingFieldId] = useState<string | null>(null);
   const [showRequiredHelper, setShowRequiredHelper] = useState(false);
+  const [employerConfirmOpen, setEmployerConfirmOpen] = useState(false);
 
   useEffect(() => {
     const prevDocColorScheme = document.documentElement.style.colorScheme;
@@ -560,7 +561,7 @@ export default function OnboardingPage() {
               </button>
 
               <button
-                onClick={() => setAccountType("employer")}
+                onClick={() => setEmployerConfirmOpen(true)}
                 style={{
                   padding: "20px 24px", borderRadius: 14, border: "2px solid #e5e7eb",
                   background: "white", cursor: "pointer", textAlign: "left", transition: "border-color 0.15s",
@@ -874,6 +875,81 @@ export default function OnboardingPage() {
         onClose={() => {}}
         onboardingAck={{ onContinue: () => completeMemberSubscriptionAck() }}
       />
+
+      {employerConfirmOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="employer-confirm-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.55)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+          onClick={() => setEmployerConfirmOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "white",
+              borderRadius: 16,
+              padding: "28px 24px",
+              maxWidth: 440,
+              width: "100%",
+              boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+            }}
+          >
+            <div id="employer-confirm-title" style={{ fontSize: 18, fontWeight: 900, color: "#111827", marginBottom: 12 }}>
+              Employer account
+            </div>
+            <p style={{ fontSize: 15, color: "#374151", lineHeight: 1.65, margin: "0 0 24px" }}>
+              Employer accounts are for businesses who intend to actively recruit and hire EOD/PSBTs for roles within their organization. If this is not your intent, please sign up for a user account.
+            </p>
+            <div style={{ display: "grid", gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setEmployerConfirmOpen(false);
+                  setAccountType("employer");
+                }}
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  border: "none",
+                  background: "#111",
+                  color: "white",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Confirm — continue onboarding for employer
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmployerConfirmOpen(false)}
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  border: "1px solid #d1d5db",
+                  background: "white",
+                  color: "#111827",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: "pointer",
+                }}
+              >
+                Create user account
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
