@@ -10,6 +10,7 @@ import NotificationPreferencesCard from "../../components/account/NotificationPr
 import ChangePasswordSection from "../../components/account/ChangePasswordSection";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
 import { isPaywallEnforced, memberHasInteractionAccess } from "../../lib/subscriptionAccess";
+import { hasPublicMemberProfile } from "../../lib/pureAdminAllowlist";
 
 function BillingCard({ hasActiveMembership }: { hasActiveMembership: boolean }) {
   const { t } = useTheme();
@@ -93,6 +94,7 @@ type Profile = {
   employer_verified: boolean | null;
   company_website: string | null;
   is_pure_admin: boolean | null;
+  email: string | null;
   must_change_password: boolean | null;
 };
 
@@ -227,7 +229,7 @@ export default function MyAccountPage() {
       </nav>
       {!loading && currentUserId && (
         <div style={{ marginTop: 14, display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-          {!profile?.is_pure_admin && (
+          {profile && hasPublicMemberProfile(profile) && (
             <a
               href={`/profile/${currentUserId}`}
               style={{

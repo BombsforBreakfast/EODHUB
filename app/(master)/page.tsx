@@ -66,6 +66,7 @@ import { applyJobFilters, uniqueJobRegionOptions, type JobFilterState } from "..
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
 import { postNotifyJson } from "../lib/postNotifyClient";
+import { hasPublicMemberProfile } from "../lib/pureAdminAllowlist";
 import type {
   FeedKangarooBundle,
   KangarooCourtOptionRow,
@@ -271,6 +272,7 @@ type ProfileName = {
   service: string | null;
   is_employer: boolean | null;
   is_pure_admin: boolean | null;
+  email: string | null;
 };
 
 type DiscoverProfile = {
@@ -474,6 +476,7 @@ type FeedPost = RankedPostRow & {
   authorService: string | null;
   authorIsEmployer: boolean | null;
   authorIsPureAdmin: boolean | null;
+  authorHasPublicMemberProfile: boolean;
   likeCount: number;
   commentCount: number;
   myReaction: ReactionType | null;
@@ -2725,6 +2728,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         authorService: null,
         authorIsEmployer: null,
         authorIsPureAdmin: null,
+        authorHasPublicMemberProfile: true,
         likeCount: 0,
         commentCount: 0,
         myReaction: null,
@@ -2984,7 +2988,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       allProfileUserIds.length > 0
         ? await supabase
             .from("profiles")
-            .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, is_pure_admin")
+            .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, is_pure_admin, email")
             .in("user_id", allProfileUserIds)
         : { data: [], error: null };
 
@@ -2997,6 +3001,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const profileServiceMap = new Map<string, string | null>();
     const profileEmployerMap = new Map<string, boolean | null>();
     const profilePureAdminMap = new Map<string, boolean | null>();
+    const profilePublicMemberMap = new Map<string, boolean>();
 
     (profileData as ProfileName[] | null)?.forEach((profile) => {
       // System / pure-admin accounts (EOD-HUB, RUMINT, etc.) intentionally
@@ -3012,6 +3017,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       profileServiceMap.set(profile.user_id, profile.service ?? null);
       profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
       profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
+      profilePublicMemberMap.set(
+        profile.user_id,
+        hasPublicMemberProfile({
+          email: profile.email,
+          is_pure_admin: profile.is_pure_admin,
+        }),
+      );
     });
 
     // Enrich every comment row (top-level and replies) into a FeedComment, keyed
@@ -3376,6 +3388,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         authorService: profileServiceMap.get(post.user_id) ?? null,
         authorIsEmployer: profileEmployerMap.get(post.user_id) ?? null,
         authorIsPureAdmin: profilePureAdminMap.get(post.user_id) ?? null,
+        authorHasPublicMemberProfile: profilePublicMemberMap.get(post.user_id) ?? true,
         likeCount: agg.totalCount,
         commentCount: commentsForPost.reduce(
           (sum, c) => sum + 1 + c.replyCount,
@@ -6746,6 +6759,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               const isOwnPost = userId === post.user_id;
               const isRumintPost = post.user_id === RUMINT_USER_ID;
               const isPureAdminPost = Boolean(post.authorIsPureAdmin);
+              const isInternalPureAdminPost =
+                isPureAdminPost && !post.authorHasPublicMemberProfile;
               const canEditPost = isOwnPost;
               const canDeletePost = isOwnPost || isAdmin;
               const isEditingPost = editingPostId === post.id;
@@ -6774,13 +6789,13 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         size={46}
                         service={post.authorService}
                         isEmployer={post.authorIsEmployer}
-                        isPureAdmin={post.authorIsPureAdmin}
+                        isPureAdmin={isInternalPureAdminPost}
                       />
                     }
                     authorName={post.authorName}
                     createdAtLabel={formatDate(post.created_at)}
                     t={t}
-                    disableProfileLink={isRumintPost || isPureAdminPost}
+                    disableProfileLink={isRumintPost || isInternalPureAdminPost}
                     hideAvatar={isRumintPost}
                     isOwnPost={isOwnPost}
                     canEdit={canEditPost}

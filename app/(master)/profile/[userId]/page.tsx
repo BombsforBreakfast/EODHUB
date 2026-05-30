@@ -50,7 +50,7 @@ import {
 } from "../../../lib/reactions";
 import { ServiceSealValue } from "../../../lib/serviceSeals";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
-import { STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../../../lib/pureAdminAllowlist";
+import { isInternalOnlyPureAdmin, STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../../../lib/pureAdminAllowlist";
 import { getServiceRingColor } from "../../../lib/serviceBranchVisual";
 import { buildLoginReferralUrl } from "../../../lib/referralLink";
 import { ReferralQrModal } from "../../../components/profile/ReferralQrModal";
@@ -115,6 +115,7 @@ type Profile = {
   has_contract_experience: boolean | null;
   has_federal_le_military_crossover: boolean | null;
   is_pure_admin: boolean | null;
+  email: string | null;
 };
 
 type RawComment = {
@@ -2915,7 +2916,7 @@ export default function PublicProfilePage() {
     );
   }
 
-  if (!loading && profile?.is_pure_admin) {
+  if (!loading && profile && isInternalOnlyPureAdmin(profile)) {
     return (
       <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
         <div
