@@ -2,6 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isReliefWebJobSuppressed } from "@/app/lib/reliefweb/publicVisibility";
 
+type ReliefWebImportMeta = {
+  suppressed?: boolean;
+  relevance_confidence?: "high" | "possible" | "low";
+} | null;
+
+function toReliefWebImportMeta(value: unknown): ReliefWebImportMeta {
+  if (!value || typeof value !== "object") return null;
+  const metadata = value as { suppressed?: unknown; relevance_confidence?: unknown };
+  const confidence = metadata.relevance_confidence;
+
+  return {
+    suppressed: metadata.suppressed === true,
+    relevance_confidence:
+      confidence === "high" || confidence === "possible" || confidence === "low"
+        ? confidence
+        : undefined,
+  };
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
@@ -48,7 +67,7 @@ export async function POST(req: NextRequest) {
   if (
     isReliefWebJobSuppressed(
       jobRow.source_type,
-      jobRow.import_metadata as { suppressed?: boolean; relevance_confidence?: string } | null
+      toReliefWebImportMeta(jobRow.import_metadata)
     )
   ) {
     return NextResponse.json(
