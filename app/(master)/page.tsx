@@ -916,9 +916,8 @@ export default function HomePage() {
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [currentUserPhotoUrl, setCurrentUserPhotoUrl] = useState<string | null>(null);
   const [currentUserReferralCode, setCurrentUserReferralCode] = useState<string | null>(null);
-  const [referralNudgeDismissed, setReferralNudgeDismissed] = useState<boolean>(() =>
-    typeof window !== "undefined" && localStorage.getItem("eod_referral_nudge_dismissed") === "1"
-  );
+  const [recruiterNudgeHidden, setRecruiterNudgeHidden] = useState(false);
+  const [recruiterCount, setRecruiterCount] = useState(0);
   const [referralCopied, setReferralCopied] = useState(false);
   const [plankHolderChallenge, setPlankHolderChallenge] = useState<PlankHolderResponse | null>(null);
   const plankHolderChallengeRef = useRef<PlankHolderResponse | null>(null);
@@ -1191,6 +1190,31 @@ export default function HomePage() {
     }
   }, [plankHolderCardHiddenKey]);
 
+  const recruiterNudgeHiddenKey = useCallback(
+    (uid: string | null) => (uid ? `eod_recruiter_nudge_hidden:${uid}` : null),
+    [],
+  );
+
+  const readRecruiterNudgeHidden = useCallback((uid: string | null) => {
+    if (typeof window === "undefined") return false;
+    const key = recruiterNudgeHiddenKey(uid);
+    if (!key) return false;
+    try {
+      return window.sessionStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  }, [recruiterNudgeHiddenKey]);
+
+  const hideRecruiterNudge = useCallback(() => {
+    setRecruiterNudgeHidden(true);
+    if (typeof window === "undefined") return;
+    const key = recruiterNudgeHiddenKey(userId);
+    if (key) {
+      try { window.sessionStorage.setItem(key, "1"); } catch {}
+    }
+  }, [recruiterNudgeHiddenKey, userId]);
+
   const hidePlankHolderCard = useCallback(() => {
     setPlankHolderCardHidden(true);
     if (typeof window === "undefined") return;
@@ -1234,6 +1258,10 @@ export default function HomePage() {
   useEffect(() => {
     setPlankHolderCardHidden(readPlankHolderCardHidden(userId));
   }, [userId, readPlankHolderCardHidden]);
+
+  useEffect(() => {
+    setRecruiterNudgeHidden(readRecruiterNudgeHidden(userId));
+  }, [userId, readRecruiterNudgeHidden]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !userId) {
@@ -4632,6 +4660,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       setCurrentUserName(null);
       setCurrentUserPhotoUrl(null);
       setCurrentUserReferralCode(null);
+      setRecruiterCount(0);
       setPlankHolderChallenge(null);
       plankHolderChallengeRef.current = null;
       plankHolderInitializedRef.current = false;
@@ -4738,12 +4767,30 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
         setUserId(currentUserId);
         setPlankHolderCardHidden(readPlankHolderCardHidden(currentUserId));
+        setRecruiterNudgeHidden(readRecruiterNudgeHidden(currentUserId));
 
         const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null; is_admin: boolean | null } | null;
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
           setCurrentUserPhotoUrl(nd?.photo_url ?? null);
           setCurrentUserReferralCode(nd?.referral_code ?? null);
+          if (nd?.referral_code) {
+            void supabase
+              .from("profiles")
+              .select("user_id", { count: "exact", head: true })
+              .eq("referred_by", nd.referral_code)
+              .then(({ count, error }) => {
+                if (error) {
+                  console.error("recruiter count load failed:", error);
+                  return;
+                }
+                if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
+                  setRecruiterCount(count ?? 0);
+                }
+              });
+          } else {
+            setRecruiterCount(0);
+          }
           setIsAdmin(!!nd?.is_admin);
           setShowMemorialFeedCards(
             (profileCheck as { show_memorial_feed_cards?: boolean | null } | null)?.show_memorial_feed_cards !== false
@@ -4801,6 +4848,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       setUserId(nextUserId);
       resetActiveProfileState();
       setPlankHolderCardHidden(readPlankHolderCardHidden(nextUserId));
+      setRecruiterNudgeHidden(readRecruiterNudgeHidden(nextUserId));
       setLoading(true);
       if (nextUserId) {
         void init();
@@ -5849,7 +5897,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             onHide={hidePlankHolderCard}
           />
 
-          {currentUserReferralCode && !referralNudgeDismissed && (
+          {currentUserReferralCode && !recruiterNudgeHidden && (
             <div className="referral-nudge" style={{
               marginBottom: 12,
               border: `1px solid #6366f1`,
@@ -5863,9 +5911,19 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               <div style={{ flex: 1, minWidth: 0, display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <Award size={22} color={isDark ? "#a5b4fc" : "#4338ca"} style={{ flexShrink: 0 }} />
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: isDark ? "#a5b4fc" : "#4338ca" }}>Invite 5 colleagues, earn a Recruiter Badge</div>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: isDark ? "#a5b4fc" : "#4338ca" }}>
+                    {recruiterCount >= 25
+                      ? "Gold Recruiter unlocked: free hat coupon"
+                      : recruiterCount >= 10
+                        ? `${recruiterCount} / 25 recruits toward Gold Recruiter`
+                        : recruiterCount >= 5
+                          ? `${recruiterCount} / 10 recruits toward Silver Recruiter`
+                          : `${recruiterCount} / 5 recruits toward Bronze Recruiter`}
+                  </div>
                   <div style={{ fontSize: 13, color: isDark ? "#818cf8" : "#6366f1", marginTop: 2 }}>
-                    Your referral link is on your profile — share it to grow the EOD HUB community.
+                    {recruiterCount >= 25
+                      ? <>Use code <strong>Master Recruiter</strong> for one free hat at brandedapparelcompany.com.</>
+                      : <>Share your referral link to grow EOD HUB and climb the recruiter tiers. Hit <strong>25 recruits</strong> to unlock a one-free-hat coupon for brandedapparelcompany.com.</>}
                   </div>
                 </div>
               </div>
@@ -5884,7 +5942,17 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 >
                   {referralCopied ? "Copied!" : "Copy Link"}
                 </button>
-                <button type="button" onClick={() => { setReferralNudgeDismissed(true); localStorage.setItem("eod_referral_nudge_dismissed", "1"); }} style={{ padding: "7px 10px", borderRadius: 10, background: "transparent", border: `1px solid #6366f1`, color: isDark ? "#a5b4fc" : "#4338ca", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                {recruiterCount >= 25 && (
+                  <a
+                    href="https://www.brandedapparelcompany.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ padding: "7px 12px", borderRadius: 10, background: "#111", border: "none", color: "white", fontWeight: 800, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap" }}
+                  >
+                    Redeem Hat
+                  </a>
+                )}
+                <button type="button" onClick={hideRecruiterNudge} style={{ padding: "7px 10px", borderRadius: 10, background: "transparent", border: `1px solid #6366f1`, color: isDark ? "#a5b4fc" : "#4338ca", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                   Dismiss
                 </button>
               </div>
