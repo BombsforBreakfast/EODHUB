@@ -54,6 +54,7 @@ export function buildWeeklyAnalyticsEmailHtml(params: {
     metricRow("New feed posts", rollup.this_week.new_posts),
     metricRow("New recruits (referral signups)", rollup.this_week.new_recruits),
     metricRow("New Plank Holders awarded", rollup.this_week.new_plank_holders),
+    metricRow("Accounts closed", rollup.this_week.deleted_accounts ?? 0),
   ].join("");
 
   const platformRows = [
@@ -64,6 +65,7 @@ export function buildWeeklyAnalyticsEmailHtml(params: {
     metricRow("Weekly active users (WAU)", rollup.platform.wau, true),
     metricRow("Plank Holders (all time)", rollup.platform.plank_holders),
     metricRow("Members who recruited ≥1", rollup.platform.recruiters),
+    metricRow("Total accounts closed (all time)", rollup.platform.total_deleted_accounts ?? 0),
     metricRow("Signed in, never tracked in app", rollup.platform.authenticated_untracked),
   ].join("");
 

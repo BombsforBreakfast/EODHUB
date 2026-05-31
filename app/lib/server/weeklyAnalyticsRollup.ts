@@ -11,6 +11,7 @@ export type WeeklyAnalyticsRollup = {
     new_posts: number;
     new_recruits: number;
     new_plank_holders: number;
+    deleted_accounts: number;
   };
   platform: {
     total_members: number;
@@ -19,6 +20,7 @@ export type WeeklyAnalyticsRollup = {
     completed_profiles: number;
     plank_holders: number;
     recruiters: number;
+    total_deleted_accounts: number;
     wau: number;
     authenticated_untracked: number;
   };

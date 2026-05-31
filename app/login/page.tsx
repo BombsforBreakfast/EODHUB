@@ -123,6 +123,14 @@ export default function LoginPage() {
   }, []);
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("deleted") === "1") {
+      setLoginMessage("Your account has been closed. You can sign up again anytime with the same email.");
+      window.history.replaceState({}, "", "/login");
+    }
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function loadCount() {

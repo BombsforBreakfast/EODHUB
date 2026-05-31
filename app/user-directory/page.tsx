@@ -62,6 +62,7 @@ export default function UserDirectoryPage() {
       .from("profiles")
       .select(PROFILE_COLUMNS)
       .eq("verification_status", "verified")
+      .is("account_deleted_at", null)
       .neq("user_id", RUMINT_USER_ID)
       .not("first_name", "is", null)
       .order("last_name")

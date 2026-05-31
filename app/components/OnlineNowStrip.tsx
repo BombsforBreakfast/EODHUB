@@ -23,6 +23,7 @@ type ProfileRow = VerificationProfile & {
   service: string | null;
   is_employer: boolean | null;
   privacy_show_online: boolean | null;
+  account_deleted_at: string | null;
 };
 
 function displayName(p: ProfileRow): string {
@@ -60,6 +61,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
       .filter(
         (p): p is ProfileRow =>
           !!p &&
+          !p.account_deleted_at &&
           p.privacy_show_online !== false &&
           hasFullPlatformAccess(p),
       )
@@ -75,7 +77,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     const { data, error } = await supabase
       .from("profiles")
       .select(
-        "user_id, first_name, last_name, display_name, photo_url, service, is_employer, privacy_show_online, verification_status, email_verified, admin_verified, is_pure_admin",
+        "user_id, first_name, last_name, display_name, photo_url, service, is_employer, privacy_show_online, verification_status, email_verified, admin_verified, is_pure_admin, account_deleted_at",
       )
       .in("user_id", ids);
     if (error) return;
