@@ -26,7 +26,7 @@ if (fs.existsSync(envPath)) {
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-const appName = process.env.RELIEFWEB_APP_NAME?.trim();
+const appName = process.env.RELIEFWEB_APP_NAME?.trim() ?? "";
 if (!url || !key || !appName) {
   console.error("Missing env vars");
   process.exit(1);
