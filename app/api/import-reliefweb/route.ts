@@ -4,12 +4,13 @@ import {
   buildImportMetadata,
   detectCategory,
   fetchReliefWebJobsBatch,
+  formatReliefWebFilterDate,
   LOOKBACK_DAYS,
   MAX_PAGES_PER_BATCH,
   normalizeReliefWebJob,
   RELIEFWEB_KEYWORD_BATCHES,
   RESULTS_PER_PAGE,
-  scoreReliefWebRelevance,
+  scoreReliefWebJob,
   shouldIngestReliefWebJob,
 } from "../../lib/reliefwebJob";
 import { jobListingCutoffIso } from "../../lib/jobRetention";
@@ -53,14 +54,15 @@ export async function GET(req: NextRequest) {
     .neq("is_rejected", true)
     .lt("created_at", cutoff);
 
-  const createdAfter = new Date(
-    Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000
-  ).toISOString();
+  const createdAfter = formatReliefWebFilterDate(
+    new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
+  );
 
   const seenReliefWebIds = new Set<string>();
   let imported = 0;
   let refreshed = 0;
   let skipped = 0;
+  let suppressed = 0;
   let apiCalls = 0;
   const importedTitles: string[] = [];
   const errors: string[] = [];
@@ -97,20 +99,24 @@ export async function GET(req: NextRequest) {
           }
           seenReliefWebIds.add(rwId);
 
-          const relevance = scoreReliefWebRelevance(
-            normalized.title,
-            normalized.description,
-            normalized.organization
-          );
+          const relevance = scoreReliefWebJob({
+            title: normalized.title,
+            description: normalized.description,
+            metadataText: normalized.metadataText,
+          });
 
-          if (!shouldIngestReliefWebJob(relevance.score, normalized.title, normalized.description)) {
+          if (
+            relevance.excluded ||
+            !shouldIngestReliefWebJob(
+              relevance.score,
+              normalized.title,
+              normalized.description,
+              normalized.metadataText
+            )
+          ) {
             skipped++;
             continue;
           }
-
-          const importMetadata = buildImportMetadata(normalized, relevance, queryBatch);
-          const now = new Date().toISOString();
-          const category = detectCategory(normalized.title);
 
           const { data: existing, error: selectErr } = await supabase
             .from("jobs")
@@ -123,6 +129,17 @@ export async function GET(req: NextRequest) {
             errors.push(`[select reliefweb ${rwId}] ${selectErr.message}`);
             continue;
           }
+
+          if (relevance.suppressed) suppressed++;
+
+          if (relevance.suppressed && !existing) {
+            skipped++;
+            continue;
+          }
+
+          const importMetadata = buildImportMetadata(normalized, relevance, queryBatch);
+          const now = new Date().toISOString();
+          const category = detectCategory(normalized.title);
 
           const rowPayload = {
             title: normalized.title,
@@ -185,6 +202,7 @@ export async function GET(req: NextRequest) {
     refreshed,
     purged: purged ?? 0,
     skipped,
+    suppressed,
     apiCalls,
     keywordBatches: RELIEFWEB_KEYWORD_BATCHES.length,
     sample: importedTitles.slice(0, 10),
@@ -196,20 +214,18 @@ function mergeImportMetadata(
   existing: Record<string, unknown>,
   incoming: ReturnType<typeof buildImportMetadata>
 ): Record<string, unknown> {
-  const prevKw = Array.isArray(existing.matched_keywords)
-    ? (existing.matched_keywords as string[])
-    : [];
   const prevQ = Array.isArray(existing.matched_queries)
     ? (existing.matched_queries as string[])
     : [];
-  const kwSet = new Set([...prevKw, ...incoming.matched_keywords]);
+  const prevR = Array.isArray(existing.relevance_reasons)
+    ? (existing.relevance_reasons as string[])
+    : [];
   const qSet = new Set([...prevQ, ...incoming.matched_queries]);
+  const rSet = new Set([...prevR, ...incoming.relevance_reasons]);
   return {
     ...existing,
     ...incoming,
-    matched_keywords: [...kwSet],
     matched_queries: [...qSet],
-    strong_match:
-      Boolean(existing.strong_match) || incoming.strong_match,
+    relevance_reasons: [...rSet],
   };
 }

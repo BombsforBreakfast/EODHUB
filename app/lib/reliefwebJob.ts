@@ -1,7 +1,23 @@
 /**
- * ReliefWeb Jobs API v2 client, normalization, and EOD/HMA relevance scoring.
+ * ReliefWeb Jobs API v2 client and normalization.
+ * Relevance scoring lives in ./reliefweb/scoreReliefWebJob.ts
  * @see https://apidoc.reliefweb.int/
  */
+
+export {
+  RELIEFWEB_KEYWORD_BATCHES,
+  HARD_EXCLUSION_TERMS,
+} from "./reliefweb/relevanceConfig";
+
+import type { ReliefWebJobScore } from "./reliefweb/scoreReliefWebJob";
+
+export {
+  scoreReliefWebJob,
+  shouldExcludeReliefWebJob,
+  shouldIngestReliefWebJob,
+  type ReliefWebJobScoreInput,
+} from "./reliefweb/scoreReliefWebJob";
+export type { ReliefWebJobScore } from "./reliefweb/scoreReliefWebJob";
 
 export const RELIEFWEB_API_BASE = "https://api.reliefweb.int/v2/jobs";
 
@@ -10,117 +26,23 @@ export const MAX_PAGES_PER_BATCH = 2;
 export const STALE_DAYS = 30;
 export const LOOKBACK_DAYS = 60;
 
-/** Batched OR queries to limit API calls (ReliefWeb daily quota: 1000 calls). */
-export const RELIEFWEB_KEYWORD_BATCHES: string[] = [
-  "explosive OR ordnance OR EOD OR UXO OR \"unexploded ordnance\"",
-  "\"mine action\" OR \"humanitarian mine action\" OR HMA OR demining OR deminer",
-  "clearance OR \"weapons contamination\" OR \"explosive ordnance risk education\" OR EORE OR \"risk education\"",
-  "IED OR \"improvised explosive\" OR CBRN OR CBRNE OR WMD OR CWMD OR \"counter weapons of mass destruction\"",
-  "ammunition OR munitions OR \"small arms\" OR \"light weapons\" OR SALW OR \"arms control\"",
-  "\"standards and training\" OR \"training manager\" OR \"technical advisor\" OR \"operations manager\"",
-  "\"quality assurance\" OR \"quality control\" OR \"land release\" OR \"battle area clearance\" OR BAC",
-  "\"non-technical survey\" OR \"technical survey\" OR NTS OR \"explosive remnants of war\" OR ERW",
-  "protection OR \"security risk\" OR \"safety and security\" OR stabilization OR peacebuilding OR conflict",
-  "Syria OR Iraq OR Ukraine OR Afghanistan OR Somalia OR Yemen",
-];
-
-const HIGH_CONFIDENCE_TERMS = [
-  "eod",
-  "uxo",
-  "unexploded ordnance",
-  "explosive ordnance",
-  "mine action",
-  "humanitarian mine action",
-  "demining",
-  "deminer",
-  "weapons contamination",
-  "eore",
-  "explosive ordnance risk education",
-  "erw",
-  "explosive remnants of war",
-  "ied",
-  "improvised explosive",
-  "cbrn",
-  "cbrne",
-  "wmd",
-  "cwmd",
-  "counter weapons of mass destruction",
-  "battle area clearance",
-  "land release",
-];
-
-const MEDIUM_CONFIDENCE_TERMS = [
-  "ammunition",
-  "munitions",
-  "arms control",
-  "small arms",
-  "salw",
-  "light weapons",
-  "standards and training",
-  "technical advisor",
-  "operations manager",
-  "quality assurance",
-  "quality control",
-  "technical survey",
-  "non-technical survey",
-  "nts",
-  "bac",
-  "hma",
-  "clearance",
-];
-
-const LOW_CONFIDENCE_TERMS = [
-  "protection",
-  "security",
-  "stabilization",
-  "peacebuilding",
-  "conflict",
-  "training manager",
-  "safety",
-  "syria",
-  "iraq",
-  "ukraine",
-  "afghanistan",
-  "somalia",
-  "yemen",
-];
-
-const KNOWN_ORGS = [
-  "halo trust",
-  "halo",
-  "mines advisory group",
-  "mag",
-  "danish refugee council",
-  "drc",
-  "norwegian people's aid",
-  "npa",
-  "humanity & inclusion",
-  "humanity and inclusion",
-  "unmas",
-  "gichd",
-  "geneva international centre for humanitarian demining",
-  "tetra tech",
-  "janus global",
-  "fsd",
-  "apopo",
-  "spirit of soccer",
-  "ddg",
-  "danish demining group",
-  "icrc",
-];
-
-export const SCORE_STRONG_MATCH = 15;
-export const SCORE_INGEST_MIN = 8;
-
 export type ReliefWebImportMetadata = {
-  matched_keywords: string[];
   matched_queries: string[];
-  strong_match: boolean;
   source_url: string | null;
   deadline: string | null;
   posted_at: string | null;
   organization: string | null;
   countries: string[];
+  themes: string[];
+  career_categories: string[];
+  relevance_confidence: "high" | "possible" | "low";
+  relevance_reasons: string[];
+  needs_review: boolean;
+  suppressed: boolean;
+  /** @deprecated legacy field from earlier scorer */
+  matched_keywords?: string[];
+  /** @deprecated legacy field from earlier scorer */
+  strong_match?: boolean;
 };
 
 export type NormalizedReliefWebJob = {
@@ -135,6 +57,9 @@ export type NormalizedReliefWebJob = {
   deadline: string | null;
   countries: string[];
   organization: string;
+  themes: string[];
+  careerCategories: string[];
+  metadataText: string;
 };
 
 type ReliefWebNamedRef = { id?: number; name?: string; shortname?: string };
@@ -145,6 +70,8 @@ type ReliefWebJobFields = {
   source?: ReliefWebNamedRef[];
   country?: ReliefWebNamedRef[];
   city?: ReliefWebNamedRef[];
+  theme?: ReliefWebNamedRef[];
+  career_category?: ReliefWebNamedRef[];
   date?: {
     created?: string;
     closing?: string;
@@ -163,103 +90,11 @@ export type ReliefWebApiResponse = {
   links?: { next?: string };
 };
 
-export type RelevanceResult = {
-  score: number;
-  matchedKeywords: string[];
-  strongMatch: boolean;
-};
-
-function termMatches(text: string, term: string): boolean {
-  const t = term.toLowerCase();
-  if (t.length <= 3 && !t.includes(" ")) {
-    return new RegExp(`\\b${escapeRegex(t)}\\b`, "i").test(text);
-  }
-  return text.includes(t);
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function collectTermMatches(
-  text: string,
-  terms: string[],
-  weight: number,
-  label: string,
-  matched: Set<string>
-): number {
-  let points = 0;
-  const lower = text.toLowerCase();
-  for (const term of terms) {
-    if (termMatches(lower, term)) {
-      const key = `${label}:${term}`;
-      if (!matched.has(key)) {
-        matched.add(key);
-        points += weight;
-      }
-    }
-  }
-  return points;
-}
-
-export function scoreReliefWebRelevance(
-  title: string,
-  body: string,
-  orgName: string
-): RelevanceResult {
-  const matched = new Set<string>();
-  const combined = `${title}\n${body}\n${orgName}`;
-  const titleLower = title.toLowerCase();
-  const orgLower = orgName.toLowerCase();
-
-  let score = 0;
-  score += collectTermMatches(combined, HIGH_CONFIDENCE_TERMS, 10, "high", matched);
-  score += collectTermMatches(combined, MEDIUM_CONFIDENCE_TERMS, 5, "med", matched);
-  score += collectTermMatches(combined, LOW_CONFIDENCE_TERMS, 2, "low", matched);
-
-  for (const term of HIGH_CONFIDENCE_TERMS) {
-    if (termMatches(titleLower, term)) {
-      score += 5;
-      matched.add(`title:${term}`);
-      break;
-    }
-  }
-
-  for (const org of KNOWN_ORGS) {
-    if (orgLower.includes(org)) {
-      score += 3;
-      matched.add(`org:${org}`);
-      break;
-    }
-  }
-
-  const matchedKeywords = [...matched].map((k) => k.split(":").slice(1).join(":"));
-
-  return {
-    score,
-    matchedKeywords,
-    strongMatch: score >= SCORE_STRONG_MATCH,
-  };
-}
-
-export function hasHighConfidenceTerm(title: string, body: string): boolean {
-  const text = `${title}\n${body}`.toLowerCase();
-  return HIGH_CONFIDENCE_TERMS.some((term) => termMatches(text, term));
-}
-
-export function shouldIngestReliefWebJob(
-  score: number,
-  title: string,
-  body: string
-): boolean {
-  if (score >= SCORE_INGEST_MIN) return true;
-  if (score < SCORE_INGEST_MIN && hasHighConfidenceTerm(title, body)) return true;
-  return false;
-}
-
 export function detectCategory(title: string): string {
   const t = title.toLowerCase();
   if (t.includes("uxo") || t.includes("unexploded ordnance")) return "UXO";
+  if (t.includes("uas") || t.includes("uav") || t.includes("unmanned aerial") || t.includes("drone"))
+    return "UAS";
   if (t.includes("bomb squad") || t.includes("bomb tech")) return "Bomb Squad";
   if (t.includes("demining") || t.includes("mine action") || t.includes("hma"))
     return "HMA";
@@ -286,6 +121,22 @@ export function buildReliefWebJobUrl(jobId: string | number, fieldsUrl?: string)
   return `https://reliefweb.int/job/${jobId}`;
 }
 
+export function buildReliefWebMetadataText(parts: {
+  organization: string;
+  countries: string[];
+  themes: string[];
+  careerCategories: string[];
+}): string {
+  return [
+    parts.organization,
+    ...parts.countries,
+    ...parts.themes,
+    ...parts.careerCategories,
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function normalizeReliefWebJob(raw: ReliefWebApiJob): NormalizedReliefWebJob | null {
   const id = raw.id != null ? String(raw.id) : "";
   if (!id) return null;
@@ -300,12 +151,20 @@ export function normalizeReliefWebJob(raw: ReliefWebApiJob): NormalizedReliefWeb
   const sources = pickNames(f.source);
   const countries = pickNames(f.country);
   const cities = pickNames(f.city);
+  const themes = pickNames(f.theme);
+  const careerCategories = pickNames(f.career_category);
   const organization = sources[0] ?? "";
   const locationParts = [...cities, ...countries].filter(Boolean);
   const location = locationParts.length > 0 ? locationParts.join(", ") : "International";
 
   const fieldsUrl = typeof f.url === "string" ? f.url : undefined;
   const applyUrl = buildReliefWebJobUrl(id, fieldsUrl);
+  const metadataText = buildReliefWebMetadataText({
+    organization,
+    countries,
+    themes,
+    careerCategories,
+  });
 
   return {
     reliefwebJobId: id,
@@ -319,7 +178,15 @@ export function normalizeReliefWebJob(raw: ReliefWebApiJob): NormalizedReliefWeb
     deadline: f.date?.closing ?? null,
     countries,
     organization,
+    themes,
+    careerCategories,
+    metadataText,
   };
+}
+
+/** ReliefWeb date filters require +00:00 offset, not Z suffix. */
+export function formatReliefWebFilterDate(date: Date): string {
+  return `${date.toISOString().slice(0, 10)}T00:00:00+00:00`;
 }
 
 export function buildReliefWebPostBody(
@@ -348,6 +215,7 @@ export function buildReliefWebPostBody(
         "source.shortname",
         "country.name",
         "city.name",
+        "theme.name",
         "date.created",
         "date.closing",
       ],
@@ -389,17 +257,22 @@ export async function fetchReliefWebJobsBatch(
 
 export function buildImportMetadata(
   normalized: NormalizedReliefWebJob,
-  relevance: RelevanceResult,
+  score: ReliefWebJobScore,
   matchedQuery: string
 ): ReliefWebImportMetadata {
   return {
-    matched_keywords: relevance.matchedKeywords,
     matched_queries: [matchedQuery],
-    strong_match: relevance.strongMatch,
     source_url: normalized.sourceUrl,
     deadline: normalized.deadline,
     posted_at: normalized.postedAt,
     organization: normalized.organization,
     countries: normalized.countries,
+    themes: normalized.themes,
+    career_categories: normalized.careerCategories,
+    relevance_confidence: score.confidence,
+    relevance_reasons: score.reasons,
+    needs_review: score.needsReview,
+    suppressed: score.suppressed,
+    strong_match: score.confidence === "high",
   };
 }

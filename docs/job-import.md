@@ -24,14 +24,34 @@ RELIEFWEB_APP_NAME=your-approved-appname
 
 Set in Vercel (Production + Preview). **Never** expose this value client-side; it is only read in `app/api/import-reliefweb/route.ts`.
 
-If `RELIEFWEB_APP_NAME` is missing, the import route returns HTTP 200 with `{ skipped: true }` and does not fail other crons.
+If `RELIEFWEB_APP_NAME` is missing, the import route returns HTTP 200 with `{ skippedRun: true }` and does not fail other crons.
 
-### Behavior
+### Two-stage filtering
 
-- Broad keyword batches (OR queries) with in-run dedupe by `reliefweb_job_id`
-- Relevance scoring stored in `relevance_score` and `import_metadata` (matched keywords, deadline, organization, etc.)
-- Jobs with score &lt; 8 are skipped unless title/body contains a high-confidence EOD/HMA term
-- Stale ReliefWeb rows (`last_seen_at` &gt; 30 days) are purged unless `is_rejected`
+1. **Broad API intake** — keyword batches in [`app/lib/reliefweb/relevanceConfig.ts`](app/lib/reliefweb/relevanceConfig.ts) cast a wide ReliefWeb search net (~12 batches × 2 pages).
+2. **Weighted relevance scoring** — [`app/lib/reliefweb/scoreReliefWebJob.ts`](app/lib/reliefweb/scoreReliefWebJob.ts) scores each result 0–100 using:
+   - Title matches: up to 60 points
+   - Metadata (org, countries, ReliefWeb themes/categories): up to 25 points
+   - Description/body: up to 15 points
+   - Negative humanitarian-sector terms downrank (but do not block strong EOD/HMA title matches)
+
+Hard exclusions (never imported): mixed migration, human trafficking, trafficking in persons.
+
+### Confidence thresholds
+
+| Score | Confidence | Admin behavior |
+|-------|------------|----------------|
+| ≥ 75 | `high` | Approve button enabled; sorted to top |
+| 50–74 | `possible` | Needs review badge |
+| < 50 | `low` | Suppressed — skipped on import (not stored); existing rows are refreshed for score updates only |
+
+Stored on each row:
+
+- `relevance_score` (0–100 integer column)
+- `import_metadata.relevance_confidence`
+- `import_metadata.relevance_reasons` (explainable `+`/`-` strings)
+- `import_metadata.needs_review`
+- `import_metadata.suppressed`
 
 ### Manual test
 
@@ -39,7 +59,19 @@ If `RELIEFWEB_APP_NAME` is missing, the import route returns HTTP 200 with `{ sk
 curl "https://www.eod-hub.com/api/import-reliefweb?secret=$CRON_SECRET"
 ```
 
-Expected JSON fields: `imported`, `refreshed`, `skipped`, `purged`, `apiCalls`, `keywordBatches`, `sample`, optional `errors`.
+Local script:
+
+```bash
+npx tsx scripts/run-reliefweb-import.ts purge-pending
+npx tsx scripts/run-reliefweb-import.ts
+npx tsx scripts/run-reliefweb-import.ts score-samples
+```
+
+Expected JSON fields: `imported`, `refreshed`, `skipped`, `suppressed`, `confidence`, `apiCalls`, `keywordBatches`, `sample`, optional `errors`.
+
+### Tuning
+
+Edit keyword lists and weights in [`app/lib/reliefweb/relevanceConfig.ts`](app/lib/reliefweb/relevanceConfig.ts) only — avoid scattering terms elsewhere.
 
 ### Database migration
 
@@ -49,6 +81,8 @@ Apply `supabase/migrations/20260525120000_jobs_reliefweb_import.sql` to add:
 - `relevance_score`
 - `import_metadata` (jsonb)
 
+No new migration required for confidence/reasons — stored in `import_metadata`.
+
 ### Admin review
 
-Pending ReliefWeb jobs show source badge **ReliefWeb**, relevance score, matched keywords, organization, countries, deadline, and a ReliefWeb link.
+Pending ReliefWeb jobs show source badge **ReliefWeb**, numeric score, **HIGH / POSSIBLE / LOW** confidence badge, score reasons, organization, countries, themes, deadline, and a ReliefWeb link. Suppressed listings cannot be approved.

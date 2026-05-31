@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isReliefWebJobSuppressed } from "@/app/lib/reliefweb/publicVisibility";
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
@@ -34,6 +35,27 @@ export async function POST(req: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+
+  const { data: jobRow, error: jobErr } = await adminClient
+    .from("jobs")
+    .select("id, source_type, import_metadata")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (jobErr) return NextResponse.json({ error: jobErr.message }, { status: 500 });
+  if (!jobRow) return NextResponse.json({ error: "Job not found" }, { status: 404 });
+
+  if (
+    isReliefWebJobSuppressed(
+      jobRow.source_type,
+      jobRow.import_metadata as { suppressed?: boolean; relevance_confidence?: string } | null
+    )
+  ) {
+    return NextResponse.json(
+      { error: "This ReliefWeb listing is suppressed (low relevance). Delete it or re-import after tuning." },
+      { status: 409 }
+    );
+  }
 
   const { error } = await adminClient
     .from("jobs")

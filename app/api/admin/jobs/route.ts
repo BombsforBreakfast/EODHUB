@@ -48,5 +48,13 @@ export async function GET(req: NextRequest) {
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  return NextResponse.json({ jobs: data ?? [] });
+  const jobs = (data ?? []).sort((a, b) => {
+    const aRw = a.source_type?.toLowerCase() === "reliefweb";
+    const bRw = b.source_type?.toLowerCase() === "reliefweb";
+    if (aRw && bRw) return (b.relevance_score ?? -1) - (a.relevance_score ?? -1);
+    if (aRw !== bRw) return aRw ? -1 : 1;
+    return new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime();
+  });
+
+  return NextResponse.json({ jobs });
 }

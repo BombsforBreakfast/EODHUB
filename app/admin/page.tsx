@@ -21,6 +21,7 @@ import TrafficByHourChart from "../components/admin/TrafficByHourChart";
 import type { TrafficByHourSummary } from "../lib/analyticsTrafficByHour";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
+import { reliefWebConfidenceBadge } from "../lib/reliefweb/publicVisibility";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { coerceTagsFromDb, normalizeBizTagsInput } from "../lib/bizListingTags";
@@ -87,7 +88,6 @@ type BizListingClaimPending = {
 };
 
 type JobImportMetadata = {
-  matched_keywords?: string[];
   matched_queries?: string[];
   strong_match?: boolean;
   source_url?: string | null;
@@ -95,6 +95,14 @@ type JobImportMetadata = {
   posted_at?: string | null;
   organization?: string | null;
   countries?: string[];
+  themes?: string[];
+  career_categories?: string[];
+  relevance_confidence?: "high" | "possible" | "low";
+  relevance_reasons?: string[];
+  needs_review?: boolean;
+  suppressed?: boolean;
+  /** @deprecated earlier scorer */
+  matched_keywords?: string[];
 };
 
 type Job = {
@@ -120,6 +128,19 @@ function formatJobSourceBadge(sourceType: string | null): string {
   if (sourceType.toLowerCase() === "adzuna") return "Adzuna";
   return sourceType;
 }
+
+function formatJobDescriptionPreview(description: string): string {
+  return description
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const jobCardTextStyle: React.CSSProperties = {
+  overflowWrap: "anywhere",
+  wordBreak: "break-word",
+  maxWidth: "100%",
+};
 
 type UserProfile = {
   user_id: string;
@@ -3774,27 +3795,27 @@ export default function AdminPage() {
                 {pendingOnly ? "No pending job submissions." : "No jobs found."}
               </div>
             )}
-            <div style={{ display: "grid", gap: 14 }}>
+            <div style={{ display: "grid", gap: 14, maxWidth: "100%", minWidth: 0 }}>
               {jobs.map((job) => (
                 <div
                   key={job.id}
-                  style={{ border: `1px solid ${selectedJobs.has(job.id) ? "#6366f1" : t.border}`, borderRadius: 14, padding: 16, background: selectedJobs.has(job.id) ? (t.bg === "#fff" || t.bg === "#f9fafb" ? "#f5f3ff" : "#1e1b4b22") : t.surface, transition: "border-color 0.1s" }}
+                  style={{ border: `1px solid ${selectedJobs.has(job.id) ? "#6366f1" : t.border}`, borderRadius: 14, padding: 16, background: selectedJobs.has(job.id) ? (t.bg === "#fff" || t.bg === "#f9fafb" ? "#f5f3ff" : "#1e1b4b22") : t.surface, transition: "border-color 0.1s", overflow: "hidden", maxWidth: "100%", boxSizing: "border-box" }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: 1, minWidth: 0, maxWidth: "100%" }}>
                       <input
                         type="checkbox"
                         checked={selectedJobs.has(job.id)}
                         onChange={() => toggleJobSelection(job.id)}
                         style={{ width: 16, height: 16, marginTop: 3, cursor: "pointer", flexShrink: 0 }}
                       />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontWeight: 900, fontSize: 17, color: t.text }}>{job.title || "Untitled Job"}</div>
-                        <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>{job.company_name || "Unknown company"}</div>
-                        <div style={{ marginTop: 2, fontSize: 13, color: t.textMuted }}>{[job.location, job.category].filter(Boolean).join(" · ")}</div>
+                      <div style={{ flex: 1, minWidth: 0, maxWidth: "100%" }}>
+                        <div style={{ fontWeight: 900, fontSize: 17, color: t.text, ...jobCardTextStyle }}>{job.title || "Untitled Job"}</div>
+                        <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted, ...jobCardTextStyle }}>{job.company_name || "Unknown company"}</div>
+                        <div style={{ marginTop: 2, fontSize: 13, color: t.textMuted, ...jobCardTextStyle }}>{[job.location, job.category].filter(Boolean).join(" · ")}</div>
                         {job.description && (
-                          <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
-                            {job.description}
+                          <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden", ...jobCardTextStyle }}>
+                            {formatJobDescriptionPreview(job.description)}
                           </div>
                         )}
                         <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint, display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -3804,11 +3825,29 @@ export default function AdminPage() {
                           )}
                           <span>{job.created_at ? new Date(job.created_at).toLocaleDateString() : ""}</span>
                           <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "1px 8px" }}>{formatJobSourceBadge(job.source_type)}</span>
-                          {job.source_type?.toLowerCase() === "reliefweb" && job.relevance_score != null && (
-                            <span style={{ background: job.import_metadata?.strong_match ? "#dcfce7" : t.badgeBg, color: job.import_metadata?.strong_match ? "#15803d" : t.badgeText, borderRadius: 20, padding: "1px 8px", fontWeight: 700 }}>
-                              Score: {job.relevance_score}{job.import_metadata?.strong_match ? " · Strong match" : ""}
-                            </span>
-                          )}
+                          {job.source_type?.toLowerCase() === "reliefweb" && job.relevance_score != null && (() => {
+                            const badge = reliefWebConfidenceBadge(job.import_metadata?.relevance_confidence);
+                            return (
+                              <>
+                                <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: "1px 8px", fontWeight: 800 }}>
+                                  {badge.label}
+                                </span>
+                                <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "1px 8px", fontWeight: 700 }}>
+                                  Score: {job.relevance_score}
+                                </span>
+                                {job.import_metadata?.suppressed && (
+                                  <span style={{ background: "#fee2e2", color: "#b91c1c", borderRadius: 20, padding: "1px 8px", fontWeight: 700 }}>
+                                    Suppressed
+                                  </span>
+                                )}
+                                {job.import_metadata?.needs_review && !job.import_metadata?.suppressed && (
+                                  <span style={{ background: "#fef9c3", color: "#854d0e", borderRadius: 20, padding: "1px 8px", fontWeight: 700 }}>
+                                    Needs review
+                                  </span>
+                                )}
+                              </>
+                            );
+                          })()}
                         </div>
                         {job.source_type?.toLowerCase() === "reliefweb" && (
                           <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>
@@ -3821,10 +3860,26 @@ export default function AdminPage() {
                             {job.import_metadata?.deadline && (
                               <div><strong>Deadline:</strong> {new Date(job.import_metadata.deadline).toLocaleDateString()}</div>
                             )}
+                            {job.import_metadata?.themes && job.import_metadata.themes.length > 0 && (
+                              <div><strong>Themes:</strong> {job.import_metadata.themes.join(", ")}</div>
+                            )}
+                            {job.import_metadata?.career_categories && job.import_metadata.career_categories.length > 0 && (
+                              <div><strong>Career categories:</strong> {job.import_metadata.career_categories.join(", ")}</div>
+                            )}
+                            {job.import_metadata?.relevance_reasons && job.import_metadata.relevance_reasons.length > 0 && (
+                              <div style={{ marginTop: 6 }}>
+                                <strong>Score reasons:</strong>
+                                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
+                                  {job.import_metadata.relevance_reasons.slice(0, 8).map((reason, i) => (
+                                    <li key={`${reason}-${i}`} style={{ fontSize: 11, color: reason.startsWith("-") ? "#b91c1c" : "#15803d" }}>{reason}</li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
                             {job.import_metadata?.matched_keywords && job.import_metadata.matched_keywords.length > 0 && (
                               <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                {job.import_metadata.matched_keywords.slice(0, 12).map((kw) => (
-                                  <span key={kw} style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 12, padding: "2px 8px", fontSize: 11 }}>{kw}</span>
+                                {[...new Set(job.import_metadata.matched_keywords)].slice(0, 12).map((kw, i) => (
+                                  <span key={`${kw}-${i}`} style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 12, padding: "2px 8px", fontSize: 11 }}>{kw}</span>
                                 ))}
                               </div>
                             )}
@@ -3837,7 +3892,18 @@ export default function AdminPage() {
                         <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Live</span>
                       )}
                       {!job.is_approved && (
-                        <button style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === job.id} onClick={() => approveJob(job.id)}>
+                        <button
+                          style={{
+                            ...actionBtn("#16a34a"),
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 5,
+                            opacity: job.source_type?.toLowerCase() === "reliefweb" && job.import_metadata?.suppressed ? 0.45 : 1,
+                          }}
+                          disabled={actionLoading === job.id || (job.source_type?.toLowerCase() === "reliefweb" && job.import_metadata?.suppressed)}
+                          title={job.source_type?.toLowerCase() === "reliefweb" && job.import_metadata?.suppressed ? "Suppressed ReliefWeb listings cannot be approved" : undefined}
+                          onClick={() => approveJob(job.id)}
+                        >
                           {actionLoading === job.id && <span className="btn-spinner" />}
                           Approve
                         </button>
