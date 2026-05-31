@@ -3,8 +3,12 @@
 import { Play } from "lucide-react";
 import {
   FEED_MEDIA_FRAME_BG,
+  FEED_MEDIA_GRID_GAP,
+  FEED_MEDIA_RADIUS,
   FEED_POST_IMAGES_MAX_WIDTH,
+  FEED_SECTION_GAP,
   feedContainedImageStyle,
+  feedSingleImageStyle,
 } from "../lib/feedLayout";
 import { isVideoUrl } from "../lib/uploadLimits";
 
@@ -29,7 +33,7 @@ export default function FeedPostImageGrid({
   return (
     <div
       style={{
-        marginTop: 12,
+        marginTop: FEED_SECTION_GAP,
         display: "grid",
         gridTemplateColumns:
           visibleImages.length === 1
@@ -37,7 +41,7 @@ export default function FeedPostImageGrid({
             : visibleImages.length === 2
               ? "repeat(2, minmax(0, 1fr))"
               : "repeat(3, minmax(0, 1fr))",
-        gap: "clamp(6px, 1.8vw, 10px)",
+        gap: FEED_MEDIA_GRID_GAP,
         width: "100%",
         maxWidth,
         boxSizing: "border-box",
@@ -45,6 +49,7 @@ export default function FeedPostImageGrid({
     >
       {visibleImages.map((url, index) => {
         const showOverlay = index === 2 && remainingCount > 0;
+        const isSingleImage = visibleImages.length === 1;
 
         return (
           <button
@@ -53,13 +58,14 @@ export default function FeedPostImageGrid({
             onClick={() => onOpenGallery(index)}
             style={{
               position: "relative",
-              borderRadius: 12,
+              borderRadius: FEED_MEDIA_RADIUS,
               overflow: "hidden",
-              border: `1px solid ${borderColor}`,
+              border: isSingleImage ? "none" : `1px solid ${borderColor}`,
               background: FEED_MEDIA_FRAME_BG,
-              aspectRatio: "1 / 1",
+              aspectRatio: isSingleImage ? undefined : "1 / 1",
               padding: 0,
               cursor: "pointer",
+              width: "100%",
             }}
           >
             {isVideoUrl(url) ? (
@@ -69,7 +75,7 @@ export default function FeedPostImageGrid({
                   preload="metadata"
                   muted
                   playsInline
-                  style={feedContainedImageStyle}
+                  style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
                 />
                 {!showOverlay && (
                   <div
@@ -102,7 +108,7 @@ export default function FeedPostImageGrid({
               <img
                 src={url}
                 alt={`Post image ${index + 1}`}
-                style={feedContainedImageStyle}
+                style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
               />
             )}
 

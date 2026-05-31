@@ -14,8 +14,8 @@ const OPEN_DELAY_MS = 80;
 const HOVER_LEAVE_DELAY_MS = 220;
 const LEADERBOARD_POPOVER_OPEN_MS = 90;
 const LEADERBOARD_POPOVER_LEAVE_MS = 220;
-/** Default thumbs-up / chosen emoji on the main trigger (+25% vs prior 18px). */
-const TRIGGER_EMOJI_FONT_PX = 22.5;
+/** Default thumbs-up / chosen emoji on the main trigger. */
+const TRIGGER_EMOJI_FONT_PX = 20;
 
 export type ReactionPickerTriggerProps = {
   t: Theme;

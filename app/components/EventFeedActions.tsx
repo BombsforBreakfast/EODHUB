@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
+import { FEED_ACTION_ROW_PADDING, FEED_SECTION_GAP } from "../lib/feedLayout";
 import { ExternalSiteLink } from "./ExternalSiteEmbedModal";
 
 export type EventFeedActionsProps = {
@@ -146,12 +147,12 @@ export default function EventFeedActions({
   return (
     <div
       style={{
-        marginTop: 12,
-        paddingTop: 12,
-        borderTop: `1px solid ${t.border}`,
+        marginTop: FEED_SECTION_GAP,
+        padding: FEED_ACTION_ROW_PADDING,
+        borderTop: `1px solid ${t.borderLight}`,
         display: "flex",
         flexWrap: "wrap",
-        gap: 8,
+        gap: 6,
         alignItems: "center",
         justifyContent: "center",
         width: "100%",

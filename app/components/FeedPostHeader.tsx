@@ -71,7 +71,7 @@ export default function FeedPostHeader({
       style={{
         display: "flex",
         justifyContent: "space-between",
-        gap: "clamp(8px, 2.4vw, 14px)",
+        gap: "clamp(4px, 1.4vw, 8px)",
         alignItems: "flex-start",
         flexWrap: "wrap",
         width: "100%",
@@ -84,8 +84,8 @@ export default function FeedPostHeader({
       <div
         style={{
           display: "flex",
-          gap: "clamp(8px, 2.2vw, 12px)",
-          alignItems: "flex-start",
+          gap: "clamp(4px, 1.4vw, 8px)",
+          alignItems: "center",
           minWidth: 0,
           flex: "1 1 auto",
         }}
@@ -133,9 +133,10 @@ export default function FeedPostHeader({
 
           <div
             style={{
-              fontSize: "clamp(12px, 3.1vw, 13px)",
+              fontSize: "clamp(11px, 2.6vw, 12px)",
               color: t.textMuted,
-              marginTop: 2,
+              marginTop: 0,
+              lineHeight: 1.25,
             }}
           >
             {createdAtLabel}
@@ -148,7 +149,7 @@ export default function FeedPostHeader({
         ref={ownerMenuRef}
         style={{
           display: "flex",
-          gap: "clamp(8px, 2vw, 12px)",
+          gap: "clamp(6px, 1.6vw, 10px)",
           alignItems: "center",
           flexShrink: 0,
           flexWrap: "wrap",

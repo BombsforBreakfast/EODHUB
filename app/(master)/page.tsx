@@ -83,11 +83,18 @@ import {
   voteCountsByCourtFromTotals,
 } from "../lib/kangarooCourt";
 import {
+  FEED_ACTION_ROW_GAP,
+  FEED_ACTION_ROW_PADDING,
   FEED_MEDIA_FRAME_BG,
-  FEED_POST_CARD_PADDING,
+  FEED_MEDIA_GRID_GAP,
+  FEED_MEDIA_RADIUS,
+  FEED_POST_AVATAR_SIZE,
   FEED_POST_EMBED_MAX_WIDTH,
   FEED_POST_IMAGES_MAX_WIDTH,
+  FEED_SECTION_GAP,
   feedContainedImageStyle,
+  feedPostCardStyle,
+  feedSingleImageStyle,
 } from "../lib/feedLayout";
 import { compareFeedPosts } from "../lib/feedRanking";
 import { sanitizeRumintOgDescription } from "../lib/sanitizeRumintOgDescription";
@@ -711,7 +718,7 @@ function OgCard({ og }: { og: OgPreview }) {
   return (
     <ExternalSiteLink
       href={og.url ? httpsAssetUrl(og.url) : "#"}
-      style={{ display: "block", width: "100%", marginTop: 12, border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.bg, textDecoration: "none", color: "inherit", textAlign: "left" }}
+      style={{ display: "block", width: "100%", marginTop: FEED_SECTION_GAP, border: `1px solid ${t.borderLight}`, borderRadius: FEED_MEDIA_RADIUS, overflow: "hidden", background: t.bg, textDecoration: "none", color: "inherit", textAlign: "left" }}
     >
       {imgUrl ? (
         <span
@@ -5223,9 +5230,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
   function SkeletonPost() {
     return (
-      <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
-        <div style={{ display: "flex", gap: 12, marginBottom: 14 }}>
-          <div style={{ ...skeletonStyle, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
+      <div style={feedPostCardStyle(t)}>
+        <div style={{ display: "flex", gap: 8, marginBottom: FEED_SECTION_GAP }}>
+          <div style={{ ...skeletonStyle, width: FEED_POST_AVATAR_SIZE, height: FEED_POST_AVATAR_SIZE, borderRadius: "50%", flexShrink: 0 }} />
           <div style={{ flex: 1 }}>
             <SkeletonBlock width="35%" height={14} />
             <SkeletonBlock width="20%" height={11} />
@@ -6553,7 +6560,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             </div>
           )}
 
-          <div style={{ marginTop: 20, display: "grid", gap: "clamp(12px, 3vw, 16px)", width: "100%", minWidth: 0, boxSizing: "border-box" }}>
+          <div style={{ marginTop: 12, display: "grid", gap: 0, width: "100%", minWidth: 0, boxSizing: "border-box" }}>
             {!postsLoaded && [0,1,2,3].map((i) => <SkeletonPost key={i} />)}
             {/* Memorial anniversary cards - auto-injected on anniversary date (opt-out in My Account) */}
             {showMemorialFeedCards &&
@@ -6830,15 +6837,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                 <React.Fragment key={post.id}>
                 <div
                   id={`feed-post-${post.id}`}
-                  style={{
-                    border: `1px solid ${t.border}`,
-                    borderRadius: 14,
-                    padding: FEED_POST_CARD_PADDING,
-                    background: t.surface,
-                    minWidth: 0,
-                    maxWidth: "100%",
-                    boxSizing: "border-box",
-                  }}
+                  style={feedPostCardStyle(t)}
                 >
                   <FeedPostHeader
                     profileHref={`/profile/${post.user_id}`}
@@ -6846,7 +6845,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       <Avatar
                         photoUrl={post.authorPhotoUrl}
                         name={post.authorName}
-                        size={46}
+                        size={FEED_POST_AVATAR_SIZE}
                         service={post.authorService}
                         isEmployer={post.authorIsEmployer}
                         isPureAdmin={isInternalPureAdminPost}
@@ -6976,7 +6975,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         ) && (
                         <ExpandableText
                           textLength={post.content.length}
-                          wrapperStyle={{ marginTop: 10 }}
+                          wrapperStyle={{ marginTop: FEED_SECTION_GAP }}
                           toggleColor={t.textMuted}
                         >
                           {renderContent(post.content)}
@@ -7019,7 +7018,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                           return (
                             <div
                               style={{
-                                marginTop: 12,
+                                marginTop: FEED_SECTION_GAP,
                                 display: "grid",
                                 gridTemplateColumns:
                                   visibleImages.length === 1
@@ -7027,7 +7026,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                     : visibleImages.length === 2
                                     ? "repeat(2, minmax(0, 1fr))"
                                     : "repeat(3, minmax(0, 1fr))",
-                                gap: "clamp(6px, 1.8vw, 10px)",
+                                gap: FEED_MEDIA_GRID_GAP,
                                 width: "100%",
                                 maxWidth: FEED_POST_IMAGES_MAX_WIDTH,
                                 boxSizing: "border-box",
@@ -7035,6 +7034,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                             >
                               {visibleImages.map((url, index) => {
                                 const showOverlay = index === 2 && remainingCount > 0;
+                                const isSingleImage = visibleImages.length === 1;
 
                                 return (
                                   <button
@@ -7043,13 +7043,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                     onClick={() => openGallery(post.image_urls, index)}
                                     style={{
                                       position: "relative",
-                                      borderRadius: 12,
+                                      borderRadius: FEED_MEDIA_RADIUS,
                                       overflow: "hidden",
-                                      border: `1px solid ${t.border}`,
+                                      border: isSingleImage ? "none" : `1px solid ${t.borderLight}`,
                                       background: FEED_MEDIA_FRAME_BG,
-                                      aspectRatio: "1 / 1",
+                                      aspectRatio: isSingleImage ? undefined : "1 / 1",
                                       padding: 0,
                                       cursor: "pointer",
+                                      width: "100%",
                                     }}
                                   >
                                     {isVideoUrl(url) ? (
@@ -7059,7 +7060,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                           preload="metadata"
                                           muted
                                           playsInline
-                                          style={feedContainedImageStyle}
+                                          style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
                                         />
                                         {!showOverlay && (
                                           <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
@@ -7073,7 +7074,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                       <img
                                         src={url}
                                         alt={`Post image ${index + 1}`}
-                                        style={feedContainedImageStyle}
+                                        style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
                                       />
                                     )}
 
@@ -7106,7 +7107,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   {post.gif_url && (
                     <div
                       style={{
-                        marginTop: 12,
+                        marginTop: FEED_SECTION_GAP,
                         width: "100%",
                         maxWidth: FEED_POST_EMBED_MAX_WIDTH,
                         boxSizing: "border-box",
@@ -7118,8 +7119,8 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                         style={{
                           width: "100%",
                           height: "auto",
-                          maxHeight: 300,
-                          borderRadius: 12,
+                          maxHeight: 360,
+                          borderRadius: FEED_MEDIA_RADIUS,
                           display: "block",
                           objectFit: "contain",
                         }}
@@ -7236,9 +7237,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     style={{
                       display: "flex",
                       justifyContent: post.event_id ? "center" : "flex-start",
-                      gap: "clamp(10px, 2.8vw, 16px)",
+                      gap: FEED_ACTION_ROW_GAP,
                       alignItems: "center",
-                      marginTop: 14,
+                      marginTop: FEED_SECTION_GAP,
+                      padding: FEED_ACTION_ROW_PADDING,
+                      borderTop: `1px solid ${t.borderLight}`,
                       flexWrap: "wrap",
                       width: "100%",
                       minWidth: 0,
@@ -7362,9 +7365,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   {(post.comments.length > 0 || commentsOpen) && (
                     <div
                       style={{
-                        marginTop: 12,
-                        paddingTop: 12,
-                        borderTop: `1px solid ${t.border}`,
+                        marginTop: FEED_SECTION_GAP,
+                        paddingTop: FEED_SECTION_GAP,
+                        borderTop: `1px solid ${t.borderLight}`,
                       }}
                     >
                       {post.comments.length > 0 && (

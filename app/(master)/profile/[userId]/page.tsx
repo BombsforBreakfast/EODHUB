@@ -28,7 +28,19 @@ import { postNotifyJson } from "../../../lib/postNotifyClient";
 import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
 import { KangarooCourtVerdictBanner } from "../../../components/KangarooCourtVerdictBanner";
 import { Gem, Medal, Camera, FileText, Play, Check, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
-import { FEED_MEDIA_FRAME_BG, feedContainedImageStyle } from "../../../lib/feedLayout";
+import {
+  FEED_ACTION_ROW_GAP,
+  FEED_ACTION_ROW_PADDING,
+  FEED_MEDIA_FRAME_BG,
+  FEED_MEDIA_GRID_GAP,
+  FEED_MEDIA_RADIUS,
+  FEED_POST_AVATAR_SIZE,
+  FEED_POST_IMAGES_MAX_WIDTH,
+  FEED_SECTION_GAP,
+  feedContainedImageStyle,
+  feedPostCardStyle,
+  feedSingleImageStyle,
+} from "../../../lib/feedLayout";
 import { SkillBadgeValue } from "../../../lib/skillBadges";
 import type {
   FeedKangarooBundle,
@@ -5011,7 +5023,7 @@ export default function PublicProfilePage() {
               </div>
             )}
 
-            <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+            <div style={{ marginTop: 12, display: "grid", gap: 0 }}>
               {posts.length === 0 && <div style={{ color: t.textMuted }}>No wall posts yet.</div>}
 
               {posts.map((post) => {
@@ -5021,14 +5033,14 @@ export default function PublicProfilePage() {
                 const isEditingPost = editingPostId === post.id;
 
                 return (
-                  <div key={post.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                  <div key={post.id} style={feedPostCardStyle(t)}>
                     {/* Post header */}
                     {(() => {
                       const postAuthorPhoto = post.authorPhotoUrl ?? profile.photo_url;
                       const postAuthorService = post.authorService ?? profile.service;
                       const postAuthorName = post.author_name ?? fullName;
                       const avatar = (
-                        <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(postAuthorService) ? `3px solid ${getServiceRingColor(postAuthorService)}` : undefined }}>
+                        <div style={{ width: FEED_POST_AVATAR_SIZE, height: FEED_POST_AVATAR_SIZE, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(postAuthorService) ? `3px solid ${getServiceRingColor(postAuthorService)}` : undefined }}>
                           {postAuthorPhoto
                             ? <img src={postAuthorPhoto} alt={postAuthorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                             : postAuthorName[0]?.toUpperCase()}
@@ -5123,7 +5135,7 @@ export default function PublicProfilePage() {
                       ) && (
                       <ExpandableText
                         textLength={post.content.length}
-                        wrapperStyle={{ marginTop: 10 }}
+                        wrapperStyle={{ marginTop: FEED_SECTION_GAP }}
                         toggleColor={t.textMuted}
                       >
                         {renderContent(post.content)}
@@ -5137,8 +5149,8 @@ export default function PublicProfilePage() {
                     })()}
 
                     {post.gif_url && (
-                      <div style={{ marginTop: 10 }}>
-                        <img src={post.gif_url} alt="GIF" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 12, display: "block" }} />
+                      <div style={{ marginTop: FEED_SECTION_GAP, width: "100%", maxWidth: FEED_POST_IMAGES_MAX_WIDTH }}>
+                        <img src={post.gif_url} alt="GIF" style={{ width: "100%", maxHeight: 360, borderRadius: FEED_MEDIA_RADIUS, display: "block", objectFit: "contain" }} />
                       </div>
                     )}
 
@@ -5171,12 +5183,14 @@ export default function PublicProfilePage() {
                       const visible = post.image_urls.slice(0, 3);
                       const remaining = post.image_urls.length - 3;
                       return (
-                        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: visible.length === 1 ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 8, maxWidth: 420 }}>
-                          {visible.map((url, i) => (
-                            <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
+                        <div style={{ marginTop: FEED_SECTION_GAP, display: "grid", gridTemplateColumns: visible.length === 1 ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: FEED_MEDIA_GRID_GAP, maxWidth: FEED_POST_IMAGES_MAX_WIDTH, width: "100%" }}>
+                          {visible.map((url, i) => {
+                            const isSingleImage = visible.length === 1;
+                            return (
+                            <div key={i} style={{ position: "relative", aspectRatio: isSingleImage ? undefined : "1/1", borderRadius: FEED_MEDIA_RADIUS, overflow: "hidden", border: isSingleImage ? "none" : `1px solid ${t.borderLight}`, background: FEED_MEDIA_FRAME_BG }}>
                               {isVideoUrl(url) ? (
                                 <>
-                                  <video src={url} preload="metadata" muted playsInline style={feedContainedImageStyle} />
+                                  <video src={url} preload="metadata" muted playsInline style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle} />
                                   {!(i === 2 && remaining > 0) && (
                                     <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
                                       <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -5186,7 +5200,7 @@ export default function PublicProfilePage() {
                                   )}
                                 </>
                               ) : (
-                                <img src={url} alt={`Post image ${i + 1}`} style={feedContainedImageStyle} />
+                                <img src={url} alt={`Post image ${i + 1}`} style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle} />
                               )}
                               {i === 2 && remaining > 0 && (
                                 <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 24, fontWeight: 800 }}>
@@ -5194,7 +5208,7 @@ export default function PublicProfilePage() {
                                 </div>
                               )}
                             </div>
-                          ))}
+                          );})}
                         </div>
                       );
                     })()}
@@ -5291,9 +5305,11 @@ export default function PublicProfilePage() {
                     <div
                       style={{
                         display: "flex",
-                        gap: 16,
+                        gap: FEED_ACTION_ROW_GAP,
                         alignItems: "center",
-                        marginTop: 14,
+                        marginTop: FEED_SECTION_GAP,
+                        padding: FEED_ACTION_ROW_PADDING,
+                        borderTop: `1px solid ${t.borderLight}`,
                         flexWrap: "wrap",
                         width: "100%",
                         minWidth: 0,
@@ -5333,14 +5349,14 @@ export default function PublicProfilePage() {
                         countsByType={post.reactionCountsByType}
                         reactorNamesByType={post.reactorNamesByType}
                       />
-                      <div style={{ fontSize: 14, color: t.textMuted }}>
+                      <div style={{ fontSize: 13, color: t.textMuted }}>
                         {post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}
                       </div>
                     </div>
 
                     {/* Comments section */}
                     {(post.comments.length > 0 || commentsOpen) && (
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
+                      <div style={{ marginTop: FEED_SECTION_GAP, paddingTop: FEED_SECTION_GAP, borderTop: `1px solid ${t.borderLight}` }}>
                         {post.comments.length > 0 && (
                         <div style={{ display: "grid", gap: 4 }}>
                           {(commentsOpen ? post.comments : post.comments.slice(0, 2)).map((comment) => {

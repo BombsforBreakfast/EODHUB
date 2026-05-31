@@ -17,7 +17,7 @@ import ExpandableText from "../../../components/ExpandableText";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { prepareFeedUploadFile, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
-import { FEED_MEDIA_FRAME_BG, feedContainedImageStyle } from "../../../lib/feedLayout";
+import { FEED_ACTION_ROW_GAP, FEED_ACTION_ROW_PADDING, FEED_MEDIA_FRAME_BG, FEED_MEDIA_RADIUS, FEED_POST_AVATAR_SIZE, FEED_POST_IMAGES_MAX_WIDTH, FEED_SECTION_GAP, feedContainedImageStyle, feedPostCardStyle } from "../../../lib/feedLayout";
 import FeedPostImageGrid from "../../../components/FeedPostImageGrid";
 import FeedImageGalleryModal from "../../../components/FeedImageGalleryModal";
 import { useFeedImageGallery } from "../../../hooks/useFeedImageGallery";
@@ -1569,6 +1569,7 @@ export default function UnitPage() {
                   <div style={{ color: t.textMuted, textAlign: "center", padding: 40, fontSize: 14 }}>No posts yet. Be the first to post.</div>
                 )}
 
+                <div style={{ display: "grid", gap: 0 }}>
                 {wallPosts.map((post) => {
                   if (post.post_type === "join_request") {
                     return (
@@ -1638,6 +1639,7 @@ export default function UnitPage() {
                     />
                   );
                 })}
+                </div>
               </div>
             )}
 
@@ -2527,11 +2529,11 @@ function PostCard({
   }
 
   return (
-    <div id={`unit-post-${post.id}`} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+    <div id={`unit-post-${post.id}`} style={feedPostCardStyle(t)}>
       {/* Author row */}
       <FeedPostHeader
         profileHref={`/profile/${post.user_id}`}
-        avatar={<Avatar photo={post.author_photo} name={post.author_name} size={38} />}
+        avatar={<Avatar photo={post.author_photo} name={post.author_name} size={FEED_POST_AVATAR_SIZE} />}
         authorName={post.author_name}
         createdAtLabel={timeAgo(post.created_at)}
         t={t}
@@ -2653,18 +2655,18 @@ function PostCard({
       <FeedPostImageGrid
         imageUrls={postImageUrls}
         onOpenGallery={onOpenGallery}
-        borderColor={t.border}
+        borderColor={t.borderLight}
       />
 
       {/* GIF */}
       {post.gif_url && (
-        <div style={{ marginTop: 10 }}>
-          <img src={post.gif_url} alt="GIF" style={{ maxWidth: 320, borderRadius: 12, display: "block" }} />
+        <div style={{ marginTop: FEED_SECTION_GAP, width: "100%", maxWidth: FEED_POST_IMAGES_MAX_WIDTH }}>
+          <img src={post.gif_url} alt="GIF" style={{ width: "100%", maxHeight: 360, borderRadius: FEED_MEDIA_RADIUS, display: "block", objectFit: "contain" }} />
         </div>
       )}
 
       {/* Like / Comment / Rabbithole toolbar */}
-      <div style={{ display: "flex", gap: 16, alignItems: "center", marginTop: 14, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: FEED_ACTION_ROW_GAP, alignItems: "center", marginTop: FEED_SECTION_GAP, padding: FEED_ACTION_ROW_PADDING, borderTop: `1px solid ${t.borderLight}`, flexWrap: "wrap" }}>
         <ReactionPickerTrigger
           t={t as Theme}
           disabled={!currentUserId}

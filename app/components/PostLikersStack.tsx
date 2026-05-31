@@ -69,9 +69,9 @@ export function LikerAvatar({
 }
 
 const PEEK_LIKERS = 3;
-/** Overlapping liker faces in the post action bar (2× prior 22px). */
-const TOOLBAR_AVATAR_SIZE = 44;
-const TOOLBAR_AVATAR_OVERLAP = -10;
+/** Overlapping liker faces in the post action bar. */
+const TOOLBAR_AVATAR_SIZE = 32;
+const TOOLBAR_AVATAR_OVERLAP = -8;
 
 export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
   const { t } = useTheme();
@@ -132,11 +132,11 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
             aria-label="Show everyone who liked this post"
             onClick={() => setOpen(true)}
             style={{
-              marginLeft: 8,
+              marginLeft: 6,
               background: t.bg,
-              border: `1px solid ${t.border}`,
+              border: `1px solid ${t.borderLight}`,
               borderRadius: 999,
-              minWidth: 52,
+              minWidth: 40,
               height: TOOLBAR_AVATAR_SIZE,
               display: "flex",
               alignItems: "center",

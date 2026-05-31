@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
+import { FEED_MEDIA_RADIUS, FEED_SECTION_GAP } from "../lib/feedLayout";
 import { ExternalSiteEmbedModal } from "./ExternalSiteEmbedModal";
 
 type FeedEventSnapshot = {
@@ -115,25 +116,24 @@ export default function EventPostCard({ event, onOpen, maxWidth = 720 }: EventPo
   return (
     <div
       style={{
-        marginTop: 12,
+        marginTop: FEED_SECTION_GAP,
         width: "100%",
         maxWidth,
         marginLeft: "auto",
         marginRight: "auto",
-        borderRadius: 14,
-        border: `1px solid ${t.border}`,
+        borderRadius: FEED_MEDIA_RADIUS,
+        border: `1px solid ${t.borderLight}`,
         background: isDark ? "rgba(255,255,255,0.02)" : t.bg,
         overflow: "hidden",
-        boxShadow: isDark ? "0 10px 24px rgba(0,0,0,0.28)" : "0 8px 18px rgba(2, 6, 23, 0.08)",
       }}
     >
       <div
         style={{
-          padding: "10px 12px",
-          borderBottom: `1px solid ${t.border}`,
-          fontSize: 11,
+          padding: "6px 10px",
+          borderBottom: `1px solid ${t.borderLight}`,
+          fontSize: 10,
           fontWeight: 800,
-          letterSpacing: 0.9,
+          letterSpacing: 0.8,
           color: t.textMuted,
         }}
       >
@@ -210,7 +210,7 @@ export default function EventPostCard({ event, onOpen, maxWidth = 720 }: EventPo
         </button>
       )}
 
-      <div style={{ padding: "12px 14px 14px", display: "grid", gap: 8 }}>
+      <div style={{ padding: "10px 12px 12px", display: "grid", gap: 6 }}>
         <div style={{ fontSize: 14, fontWeight: 700, color: t.text }}>{eventDate}</div>
         {event.event_time ? <div style={{ fontSize: 14, color: t.text }}>{event.event_time}</div> : null}
         {(event.location || event.organization) ? (
