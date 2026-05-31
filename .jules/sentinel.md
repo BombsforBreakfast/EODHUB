@@ -1,0 +1,4 @@
+## 2025-02-27 - [JSON-LD XSS Vector]
+**Vulnerability:** XSS vulnerability in `app/layout.tsx` where JSON-LD data was directly injected using `dangerouslySetInnerHTML` without proper escaping of the `<` character. While in this specific case the content was static, the pattern is dangerous if dynamic user content were to be added in the future.
+**Learning:** `JSON.stringify()` alone is not sufficient to prevent XSS when injecting JSON into a `<script>` tag. An attacker can inject strings containing `</script><script>alert(1)</script>` inside string properties, effectively escaping the script tag context and executing arbitrary JavaScript, since the HTML parser runs before the JavaScript parser.
+**Prevention:** Always append `.replace(/</g, '\u003c')` when using `JSON.stringify` inside `dangerouslySetInnerHTML` within a `<script>` tag to neutralize the `<` character and prevent escaping the `<script>` tag context.
