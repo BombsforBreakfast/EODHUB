@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useTheme } from "../lib/ThemeContext";
 import { getServiceRingColor } from "../lib/serviceBranchVisual";
 
@@ -73,14 +73,201 @@ const PEEK_LIKERS = 3;
 const TOOLBAR_AVATAR_SIZE = 32;
 const TOOLBAR_AVATAR_OVERLAP = -8;
 
-export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
+function LikerPopoverList({
+  likers,
+  onNavigate,
+}: {
+  likers: PostLikerBrief[];
+  onNavigate: () => void;
+}) {
   const { t } = useTheme();
-  const [open, setOpen] = useState(false);
+
+  return (
+    <>
+      {likers.map((liker) => (
+        <Link
+          key={liker.userId}
+          href={`/profile/${liker.userId}`}
+          role="menuitem"
+          onClick={onNavigate}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "6px 8px",
+            borderRadius: 8,
+            textDecoration: "none",
+            color: t.text,
+            background: "transparent",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = t.badgeBg;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+          }}
+        >
+          <LikerAvatar
+            photoUrl={liker.photoUrl}
+            name={liker.name}
+            size={32}
+            service={liker.service}
+            isEmployer={liker.isEmployer}
+          />
+          <span style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>{liker.name}</span>
+        </Link>
+      ))}
+    </>
+  );
+}
+
+function MobileLikersPopover({
+  likers,
+  peekLikers,
+  showEllipsis,
+  hiddenCount,
+}: {
+  likers: PostLikerBrief[];
+  peekLikers: PostLikerBrief[];
+  showEllipsis: boolean;
+  hiddenCount: number;
+}) {
+  const { t } = useTheme();
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!popoverOpen) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") setPopoverOpen(false);
+    };
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (popoverRef.current?.contains(target)) return;
+      setPopoverOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [popoverOpen]);
+
+  return (
+    <div
+      ref={popoverRef}
+      style={{ position: "relative", display: "inline-flex", alignItems: "center", flexShrink: 0 }}
+    >
+      <button
+        type="button"
+        aria-expanded={popoverOpen}
+        aria-haspopup="menu"
+        aria-label={`${likers.length} reaction${likers.length === 1 ? "" : "s"}. Show who reacted.`}
+        onClick={() => setPopoverOpen((open) => !open)}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          flexShrink: 0,
+          background: "none",
+          border: "none",
+          padding: 0,
+          cursor: "pointer",
+          borderRadius: 999,
+        }}
+      >
+        {peekLikers.map((liker, i) => (
+          <span
+            key={liker.userId}
+            style={{
+              marginLeft: i === 0 ? 0 : TOOLBAR_AVATAR_OVERLAP,
+              position: "relative",
+              zIndex: peekLikers.length - i,
+              lineHeight: 0,
+              pointerEvents: "none",
+            }}
+          >
+            <LikerAvatar
+              photoUrl={liker.photoUrl}
+              name={liker.name}
+              size={TOOLBAR_AVATAR_SIZE}
+              service={liker.service}
+              isEmployer={liker.isEmployer}
+            />
+          </span>
+        ))}
+        {showEllipsis && (
+          <span
+            style={{
+              marginLeft: 6,
+              flexShrink: 0,
+              background: t.bg,
+              border: `1px solid ${t.borderLight}`,
+              borderRadius: 999,
+              minWidth: 28,
+              height: TOOLBAR_AVATAR_SIZE,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: t.textMuted,
+              fontSize: 13,
+              fontWeight: 800,
+              lineHeight: 1,
+              pointerEvents: "none",
+            }}
+          >
+            +{hiddenCount}
+          </span>
+        )}
+      </button>
+
+      {popoverOpen && (
+        <div
+          role="menu"
+          aria-label="People who reacted"
+          style={{
+            position: "absolute",
+            bottom: "calc(100% + 8px)",
+            left: 0,
+            zIndex: 10050,
+            minWidth: 220,
+            maxWidth: 320,
+            maxHeight: "min(320px, 50vh)",
+            overflowY: "auto",
+            background: t.surface,
+            border: `1px solid ${t.border}`,
+            borderRadius: 12,
+            boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+            padding: 4,
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
+          <LikerPopoverList likers={likers} onNavigate={() => setPopoverOpen(false)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
+  const { t } = useTheme();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [prefersHover, setPrefersHover] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(hover: hover) and (pointer: fine)");
+    const apply = () => setPrefersHover(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setModalOpen(false);
     };
     window.addEventListener("keydown", onKey);
     const prev = document.body.style.overflow;
@@ -89,11 +276,24 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
       window.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
     };
-  }, [open]);
+  }, [modalOpen]);
 
   if (likers.length === 0) return null;
 
+  const peekLikers = likers.slice(0, PEEK_LIKERS);
   const showEllipsis = likers.length > PEEK_LIKERS;
+  const hiddenCount = Math.max(0, likers.length - peekLikers.length);
+
+  if (!prefersHover) {
+    return (
+      <MobileLikersPopover
+        likers={likers}
+        peekLikers={peekLikers}
+        showEllipsis={showEllipsis}
+        hiddenCount={hiddenCount}
+      />
+    );
+  }
 
   return (
     <>
@@ -104,7 +304,7 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
           flexShrink: 0,
         }}
       >
-        {likers.slice(0, PEEK_LIKERS).map((liker, i) => (
+        {peekLikers.map((liker, i) => (
           <Link
             key={liker.userId}
             href={`/profile/${liker.userId}`}
@@ -130,7 +330,7 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
           <button
             type="button"
             aria-label="Show everyone who liked this post"
-            onClick={() => setOpen(true)}
+            onClick={() => setModalOpen(true)}
             style={{
               marginLeft: 6,
               background: t.bg,
@@ -154,12 +354,12 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
         )}
       </div>
 
-      {open && (
+      {modalOpen && (
         <div
           role="dialog"
           aria-modal="true"
           aria-label="People who liked this post"
-          onClick={() => setOpen(false)}
+          onClick={() => setModalOpen(false)}
           style={{
             position: "fixed",
             inset: 0,
@@ -202,7 +402,7 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
               <button
                 type="button"
                 aria-label="Close"
-                onClick={() => setOpen(false)}
+                onClick={() => setModalOpen(false)}
                 style={{
                   background: "transparent",
                   border: "none",
@@ -226,31 +426,7 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
                 gap: 2,
               }}
             >
-              {likers.map((liker) => (
-                <Link
-                  key={liker.userId}
-                  href={`/profile/${liker.userId}`}
-                  onClick={() => setOpen(false)}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                    padding: "8px 10px",
-                    borderRadius: 10,
-                    textDecoration: "none",
-                    color: t.text,
-                  }}
-                >
-                  <LikerAvatar
-                    photoUrl={liker.photoUrl}
-                    name={liker.name}
-                    size={36}
-                    service={liker.service}
-                    isEmployer={liker.isEmployer}
-                  />
-                  <span style={{ fontWeight: 700, fontSize: 15 }}>{liker.name}</span>
-                </Link>
-              ))}
+              <LikerPopoverList likers={likers} onNavigate={() => setModalOpen(false)} />
             </div>
           </div>
         </div>
