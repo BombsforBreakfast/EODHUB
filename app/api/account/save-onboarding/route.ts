@@ -8,6 +8,10 @@ import {
   validateMemberOnboardingInput,
 } from "@/app/lib/profileCompleteness";
 import { createNotification } from "@/app/lib/notificationsServer";
+import {
+  lookupReferrerByCode,
+  referrerDisplayName,
+} from "@/app/lib/referralReferrer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -153,7 +157,18 @@ export async function POST(req: NextRequest) {
           ...verificationFields,
         };
 
-  const finalUpdates = referralInput ? { ...updates, referred_by: referralInput } : updates;
+  let verifiedReferrer: Awaited<ReturnType<typeof lookupReferrerByCode>> = null;
+  if (referralInput) {
+    verifiedReferrer = await lookupReferrerByCode(adminClient, referralInput);
+  }
+
+  const finalUpdates = referralInput
+    ? {
+        ...updates,
+        referred_by: referralInput,
+        ...(verifiedReferrer ? { referrer_user_id: verifiedReferrer.user_id } : {}),
+      }
+    : updates;
 
   const { error: updateError } = await adminClient
     .from("profiles")
@@ -171,10 +186,10 @@ export async function POST(req: NextRequest) {
   // automatically casts 1 of the 3 community vouches needed to verify them.
   // Two additional vouches (or admin approval) are still required.
   let autoVouched = false;
-  if (referralInput && accountType === "member" && !wasProvisioned) {
+  if (verifiedReferrer && accountType === "member" && !wasProvisioned) {
     autoVouched = await applyReferralAutoVouch(adminClient, {
       newUserId: userId,
-      referralCode: referralInput,
+      referrer: verifiedReferrer,
     });
   }
 
@@ -189,27 +204,15 @@ export async function POST(req: NextRequest) {
 
 type AutoVouchArgs = {
   newUserId: string;
-  referralCode: string;
+  referrer: NonNullable<Awaited<ReturnType<typeof lookupReferrerByCode>>>;
 };
 
 async function applyReferralAutoVouch(
   adminClient: SupabaseClient,
-  { newUserId, referralCode }: AutoVouchArgs,
+  { newUserId, referrer }: AutoVouchArgs,
 ): Promise<boolean> {
   try {
-    const { data: referrer } = await adminClient
-      .from("profiles")
-      .select(
-        "user_id, is_approved, verification_status, first_name, last_name, display_name",
-      )
-      .eq("referral_code", referralCode)
-      .maybeSingle();
-
-    if (!referrer || referrer.user_id === newUserId) return false;
-
-    const referrerEligible =
-      referrer.is_approved === true || referrer.verification_status === "verified";
-    if (!referrerEligible) return false;
+    if (referrer.user_id === newUserId) return false;
 
     const { error: vouchError } = await adminClient
       .from("profile_vouches")
@@ -223,10 +226,7 @@ async function applyReferralAutoVouch(
       return false;
     }
 
-    const referrerName =
-      referrer.display_name ||
-      `${referrer.first_name ?? ""} ${referrer.last_name ?? ""}`.trim() ||
-      "Your referrer";
+    const referrerName = referrerDisplayName(referrer);
 
     try {
       await createNotification(adminClient, {

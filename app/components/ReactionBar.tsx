@@ -103,6 +103,9 @@ export function ReactionPickerTrigger({
     ? `${REACTION_META[viewerReaction].ariaLabel}, ${totalCount} reactions total`
     : "Open reactions — choose thumbs up or another emoji from the list";
 
+  const pickerColumnCount = 2;
+  const pickerRowCount = Math.ceil(reactionOrder.length / pickerColumnCount);
+
   return (
     <div
       ref={wrapRef}
@@ -121,16 +124,16 @@ export function ReactionPickerTrigger({
             transform: pickerOffsetX ? `translateX(${pickerOffsetX})` : undefined,
             marginBottom: 8,
             zIndex: 50,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            flexWrap: isNarrowViewport ? "wrap" : "nowrap",
+            display: "grid",
+            gridTemplateColumns: `repeat(${pickerColumnCount}, auto)`,
+            gridTemplateRows: `repeat(${pickerRowCount}, auto)`,
+            gridAutoFlow: "column",
+            justifyItems: "center",
+            gap: 4,
             padding: "8px 10px",
-            borderRadius: 999,
+            borderRadius: 16,
             border: `1px solid ${t.border}`,
             background: t.surface,
-            maxWidth: isNarrowViewport ? "min(92vw, 300px)" : undefined,
-            overflowX: isNarrowViewport ? "auto" : undefined,
             boxShadow: "0 8px 28px rgba(0,0,0,0.35)",
           }}
         >

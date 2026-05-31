@@ -163,6 +163,9 @@ type UserProfile = {
   created_at: string | null;
   community_flag_count?: number | null;
   signup_incomplete?: boolean;
+  referred_by?: string | null;
+  referrer_user_id?: string | null;
+  referred_by_name?: string | null;
 };
 
 function adminUserDisplayName(u: UserProfile): string {
@@ -4187,6 +4190,23 @@ export default function AdminPage() {
                           ? [u.company_name, u.email].filter(Boolean).join(" · ")
                           : [u.role, u.service, u.email].filter(Boolean).join(" · ")}
                       </div>
+                      {u.referred_by_name && (
+                        <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
+                          Referred by:{" "}
+                          {u.referrer_user_id ? (
+                            <a
+                              href={`/profile/${u.referrer_user_id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              style={{ color: "#2563eb", fontWeight: 600, textDecoration: "none" }}
+                            >
+                              {u.referred_by_name}
+                            </a>
+                          ) : (
+                            <span style={{ fontWeight: 600 }}>{u.referred_by_name}</span>
+                          )}
+                        </div>
+                      )}
                       {missingSignupFields.length > 0 && (
                         <div style={{ fontSize: 12, color: isGrandfathered ? t.textMuted : "#c2410c", marginTop: 4, fontWeight: 600 }}>
                           {isGrandfathered ? "Legacy — missing " : "Missing: "}

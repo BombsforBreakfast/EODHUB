@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { blocksSignupApproval, hasRequiredSignupNames } from "@/app/lib/profileCompleteness";
+import { referrerDisplayName } from "@/app/lib/referralReferrer";
 
 type ProfilesQueryResult = {
   data: Array<Record<string, unknown>> | null;
@@ -40,9 +41,9 @@ export async function GET(req: NextRequest) {
   );
 
   const profileSelectWithMirrors =
-    "user_id, first_name, last_name, display_name, name, email, role, service, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count";
+    "user_id, first_name, last_name, display_name, name, email, role, service, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
   const profileSelectBase =
-    "user_id, first_name, last_name, display_name, role, service, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count";
+    "user_id, first_name, last_name, display_name, role, service, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
 
   // Fetch profiles and auth users. The mirrored name/email columns are deployed via
   // migration, so keep this compatible with environments that have not run it yet.
@@ -64,6 +65,46 @@ export async function GET(req: NextRequest) {
 
   if (profilesQuery.error) {
     return NextResponse.json({ error: profilesQuery.error.message }, { status: 500 });
+  }
+
+  const profileRows = profilesQuery.data ?? [];
+  const referrerIds = [
+    ...new Set(
+      profileRows
+        .map((p) => (typeof p.referrer_user_id === "string" ? p.referrer_user_id : null))
+        .filter((id): id is string => !!id),
+    ),
+  ];
+  const unresolvedCodes = [
+    ...new Set(
+      profileRows
+        .filter((p) => !p.referrer_user_id && typeof p.referred_by === "string" && p.referred_by.trim())
+        .map((p) => String(p.referred_by).trim().toUpperCase()),
+    ),
+  ];
+
+  const referrerNameByUserId = new Map<string, string>();
+  const referrerNameByCode = new Map<string, string>();
+
+  if (referrerIds.length > 0) {
+    const { data: referrersById } = await adminClient
+      .from("profiles")
+      .select("user_id, display_name, first_name, last_name")
+      .in("user_id", referrerIds);
+    for (const referrer of referrersById ?? []) {
+      referrerNameByUserId.set(referrer.user_id, referrerDisplayName(referrer));
+    }
+  }
+
+  if (unresolvedCodes.length > 0) {
+    const { data: referrersByCode } = await adminClient
+      .from("profiles")
+      .select("referral_code, display_name, first_name, last_name")
+      .in("referral_code", unresolvedCodes);
+    for (const referrer of referrersByCode ?? []) {
+      const code = referrer.referral_code?.trim().toUpperCase();
+      if (code) referrerNameByCode.set(code, referrerDisplayName(referrer));
+    }
   }
 
   // Build a map of auth user metadata by user_id
@@ -121,6 +162,14 @@ export async function GET(req: NextRequest) {
       last_name,
       email: row.email ?? authMeta?.email ?? null,
       name: row.name ?? authMeta?.full_name ?? null,
+      referred_by_name:
+        (typeof row.referrer_user_id === "string"
+          ? referrerNameByUserId.get(row.referrer_user_id)
+          : null) ??
+        (typeof row.referred_by === "string"
+          ? referrerNameByCode.get(row.referred_by.trim().toUpperCase())
+          : null) ??
+        null,
       signup_incomplete: blocksSignupApproval({
         first_name,
         last_name,
