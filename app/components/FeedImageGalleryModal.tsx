@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { createPortal } from "react-dom";
 import { isVideoUrl } from "../lib/uploadLimits";
 
 type Props = {
@@ -11,6 +13,31 @@ type Props = {
   onNext: () => void;
 };
 
+const NAV_BTN: CSSProperties = {
+  background: "rgba(0,0,0,0.78)",
+  color: "white",
+  border: "1px solid rgba(255,255,255,0.65)",
+  borderRadius: 999,
+  width: 52,
+  height: 52,
+  minWidth: 52,
+  minHeight: 52,
+  fontSize: 32,
+  fontWeight: 900,
+  cursor: "pointer",
+  zIndex: 2,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: 0,
+  lineHeight: 1,
+  boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
+};
+
+function stopControlEvent(e: MouseEvent | PointerEvent) {
+  e.stopPropagation();
+}
+
 export default function FeedImageGalleryModal({
   open,
   images,
@@ -19,13 +46,26 @@ export default function FeedImageGalleryModal({
   onPrev,
   onNext,
 }: Props) {
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open]);
+
   if (!open || images.length === 0) return null;
 
-  const currentUrl = images[index];
+  const indexSafe = Math.min(Math.max(index, 0), images.length - 1);
+  const currentUrl = images[indexSafe];
 
-  return (
+  const modal = (
     <div
-      onClick={onClose}
+      role="presentation"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
       style={{
         position: "fixed",
         inset: 0,
@@ -33,126 +73,129 @@ export default function FeedImageGalleryModal({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 1000,
+        zIndex: 10050,
         padding: 24,
+        boxSizing: "border-box",
       }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Image gallery"
         onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
         style={{
-          position: "relative",
-          width: "100%",
-          maxWidth: 980,
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           gap: 14,
+          maxWidth: "calc(100vw - 24px)",
         }}
       >
-        <button
-          type="button"
-          onClick={onClose}
+        <div
           style={{
-            position: "absolute",
-            top: -10,
-            right: 0,
-            background: "rgba(255,255,255,0.14)",
-            color: "white",
-            border: "1px solid rgba(255,255,255,0.25)",
-            borderRadius: 999,
-            width: 42,
-            height: 42,
-            fontSize: 24,
-            fontWeight: 700,
-            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 10,
+            maxWidth: "100%",
           }}
         >
-          x
-        </button>
-
-        {images.length > 1 && (
-          <>
+          {images.length > 1 && (
             <button
               type="button"
-              onClick={onPrev}
-              style={{
-                position: "absolute",
-                left: 0,
-                top: "50%",
-                transform: "translateY(-50%)",
-                background: "rgba(255,255,255,0.14)",
-                color: "white",
-                border: "1px solid rgba(255,255,255,0.25)",
-                borderRadius: 999,
-                width: 46,
-                height: 46,
-                fontSize: 28,
-                fontWeight: 700,
-                cursor: "pointer",
+              aria-label="Previous image"
+              onPointerDown={stopControlEvent}
+              onClick={(e) => {
+                stopControlEvent(e);
+                onPrev();
               }}
+              style={NAV_BTN}
             >
-              {"<"}
+              ‹
             </button>
+          )}
 
+          <div style={{ position: "relative", display: "inline-block", maxWidth: "calc(100vw - 148px)" }}>
             <button
               type="button"
-              onClick={onNext}
+              aria-label="Close gallery"
+              onPointerDown={stopControlEvent}
+              onClick={(e) => {
+                stopControlEvent(e);
+                onClose();
+              }}
               style={{
+                ...NAV_BTN,
                 position: "absolute",
-                right: 0,
-                top: "50%",
-                transform: "translateY(-50%)",
-                background: "rgba(255,255,255,0.14)",
-                color: "white",
-                border: "1px solid rgba(255,255,255,0.25)",
-                borderRadius: 999,
-                width: 46,
-                height: 46,
-                fontSize: 28,
-                fontWeight: 700,
-                cursor: "pointer",
+                top: -14,
+                right: -14,
+                width: 42,
+                height: 42,
+                minWidth: 42,
+                minHeight: 42,
+                fontSize: 24,
+                zIndex: 3,
               }}
             >
-              {">"}
+              ×
             </button>
-          </>
-        )}
 
-        <div style={{ width: "100%", display: "flex", justifyContent: "center" }}>
-          {isVideoUrl(currentUrl) ? (
-            <video
-              key={currentUrl}
-              src={currentUrl}
-              controls
-              autoPlay
-              playsInline
-              style={{
-                maxWidth: "100%",
-                maxHeight: "80vh",
-                borderRadius: 12,
-                display: "block",
-                background: "#000",
+            {isVideoUrl(currentUrl) ? (
+              <video
+                key={currentUrl}
+                src={currentUrl}
+                controls
+                autoPlay
+                playsInline
+                style={{
+                  maxWidth: "min(980px, calc(100vw - 148px))",
+                  maxHeight: "80vh",
+                  borderRadius: 12,
+                  display: "block",
+                  background: "#000",
+                }}
+              />
+            ) : (
+              <img
+                src={currentUrl}
+                alt={`Gallery image ${indexSafe + 1}`}
+                style={{
+                  maxWidth: "min(980px, calc(100vw - 148px))",
+                  maxHeight: "80vh",
+                  objectFit: "contain",
+                  borderRadius: 12,
+                  display: "block",
+                }}
+              />
+            )}
+          </div>
+
+          {images.length > 1 && (
+            <button
+              type="button"
+              aria-label="Next image"
+              onClick={(e) => {
+                stopControlEvent(e);
+                onNext();
               }}
-            />
-          ) : (
-            <img
-              src={currentUrl}
-              alt={`Gallery image ${index + 1}`}
-              style={{
-                maxWidth: "100%",
-                maxHeight: "80vh",
-                objectFit: "contain",
-                borderRadius: 12,
-                display: "block",
-              }}
-            />
+              onPointerDown={stopControlEvent}
+              style={NAV_BTN}
+            >
+              ›
+            </button>
           )}
         </div>
 
-        <div style={{ color: "white", fontSize: 14, fontWeight: 700 }}>
-          {index + 1} / {images.length}
-        </div>
+        {images.length > 1 && (
+          <div style={{ color: "white", fontSize: 14, fontWeight: 700 }}>
+            {indexSafe + 1} / {images.length}
+          </div>
+        )}
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return modal;
+  return createPortal(modal, document.body);
 }

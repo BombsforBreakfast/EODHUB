@@ -4697,6 +4697,43 @@ export default function PublicProfilePage() {
                     </div>
                   ))}
                 </div>
+                {galleryExpanded && galleryPhotos.length > 0 && (
+                  <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Gallery</div>
+                    <div style={{ display: "grid", gridTemplateColumns: mobilePhotoGridCols, gap: 8 }}>
+                      {galleryPhotos.map((photo) => (
+                        <div key={photo.id}>
+                          <div
+                            onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
+                            style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
+                          >
+                            <img src={photo.photo_url} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          </div>
+                          {isOwnWall && (
+                            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+                              <button
+                                type="button"
+                                onClick={() => togglePinned(photo)}
+                                disabled={togglingPinnedId === photo.id}
+                                style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1, minWidth: 0 }}
+                              >
+                                {togglingPinnedId === photo.id ? "..." : "Pin"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => deletePhoto(photo)}
+                                disabled={deletingPhotoId === photo.id}
+                                style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1, minWidth: 0 }}
+                              >
+                                {deletingPhotoId === photo.id ? "..." : "Del"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
               {!isMobile && <div style={{ width: 1, alignSelf: "stretch", background: t.border }} />}
 
@@ -4828,42 +4865,6 @@ export default function PublicProfilePage() {
                 )}
               </div>}
             </div>
-            {/* Expanded gallery grid */}
-            {galleryExpanded && galleryPhotos.length > 0 && (
-              <div style={{ borderTop: `1px solid ${t.border}`, padding: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Gallery</div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
-                  {galleryPhotos.map((photo) => (
-                    <div key={photo.id}>
-                      <div
-                        onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
-                        style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
-                      >
-                        <img src={photo.photo_url} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                      </div>
-                      {isOwnWall && (
-                        <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
-                          <button
-                            onClick={() => togglePinned(photo)}
-                            disabled={togglingPinnedId === photo.id}
-                            style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1 }}
-                          >
-                            {togglingPinnedId === photo.id ? "..." : "Pin"}
-                          </button>
-                          <button
-                            onClick={() => deletePhoto(photo)}
-                            disabled={deletingPhotoId === photo.id}
-                            style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1 }}
-                          >
-                            {deletingPhotoId === photo.id ? "..." : "Del"}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
 
           {showAllModal && (

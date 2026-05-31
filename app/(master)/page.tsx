@@ -40,7 +40,9 @@ import ExpandableText from "../components/ExpandableText";
 import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
+import FeedImageGalleryModal from "../components/FeedImageGalleryModal";
 import FeedPostHeader from "../components/FeedPostHeader";
+import { useFeedImageGallery } from "../hooks/useFeedImageGallery";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../components/YouTubeEmbed";
 import KangarooCourtFeedSection from "../components/KangarooCourtFeedSection";
 import AddToRabbitholeModal from "../rabbithole/components/AddToRabbitholeModal";
@@ -1049,9 +1051,15 @@ export default function HomePage() {
   const [rabbitholeModalPost, setRabbitholeModalPost] = useState<{ id: string; content: string; og_title: string | null } | null>(null);
   const [flagCategoryChoice, setFlagCategoryChoice] = useState<FlagCategory>("general");
 
-  const [galleryImages, setGalleryImages] = useState<string[]>([]);
-  const [galleryIndex, setGalleryIndex] = useState(0);
-  const [isGalleryOpen, setIsGalleryOpen] = useState(false);
+  const {
+    galleryImages,
+    galleryIndex,
+    isGalleryOpen,
+    openGallery,
+    closeGallery,
+    showPrevGalleryImage,
+    showNextGalleryImage,
+  } = useFeedImageGallery();
 
   const [ogPreview, setOgPreview] = useState<OgPreview | null>(null);
   const [fetchingOg, setFetchingOg] = useState(false);
@@ -1315,33 +1323,6 @@ export default function HomePage() {
     dismissedMemorialIdsRef.current = stored;
     setDismissedMemorialIds(stored);
   }, [userId]);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (!isGalleryOpen) return;
-
-      if (event.key === "Escape") {
-        setIsGalleryOpen(false);
-        return;
-      }
-
-      if (event.key === "ArrowLeft") {
-        setGalleryIndex((prev) =>
-          prev === 0 ? galleryImages.length - 1 : prev - 1
-        );
-        return;
-      }
-
-      if (event.key === "ArrowRight") {
-        setGalleryIndex((prev) =>
-          prev === galleryImages.length - 1 ? 0 : prev + 1
-        );
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isGalleryOpen, galleryImages.length]);
 
   function blockMemberInteraction(): boolean {
     if (memberInteractionAllowedRef.current) return false;
@@ -3489,28 +3470,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
   function openPostImagePicker() {
     postImageInputRef.current?.click();
-  }
-
-  function openGallery(images: string[], startIndex: number) {
-    setGalleryImages(images);
-    setGalleryIndex(startIndex);
-    setIsGalleryOpen(true);
-  }
-
-  function closeGallery() {
-    setIsGalleryOpen(false);
-  }
-
-  function showPrevGalleryImage() {
-    setGalleryIndex((prev) =>
-      prev === 0 ? galleryImages.length - 1 : prev - 1
-    );
-  }
-
-  function showNextGalleryImage() {
-    setGalleryIndex((prev) =>
-      prev === galleryImages.length - 1 ? 0 : prev + 1
-    );
   }
 
   function addPostImagesFromFiles(files: File[]) {
@@ -8319,138 +8278,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         </div>
       )}
 
-      {isGalleryOpen && galleryImages.length > 0 && (
-        <div
-          onClick={closeGallery}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.86)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: 24,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "relative",
-              width: "100%",
-              maxWidth: 980,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 14,
-            }}
-          >
-            <button
-              type="button"
-              onClick={closeGallery}
-              style={{
-                position: "absolute",
-                top: -10,
-                right: 0,
-                background: "rgba(255,255,255,0.14)",
-                color: "white",
-                border: "1px solid rgba(255,255,255,0.25)",
-                borderRadius: 999,
-                width: 42,
-                height: 42,
-                fontSize: 24,
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              x
-            </button>
-
-            {galleryImages.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  onClick={showPrevGalleryImage}
-                  style={{
-                    position: "absolute",
-                    left: 0,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    background: "rgba(255,255,255,0.14)",
-                    color: "white",
-                    border: "1px solid rgba(255,255,255,0.25)",
-                    borderRadius: 999,
-                    width: 46,
-                    height: 46,
-                    fontSize: 28,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
-                  {"<"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={showNextGalleryImage}
-                  style={{
-                    position: "absolute",
-                    right: 0,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    background: "rgba(255,255,255,0.14)",
-                    color: "white",
-                    border: "1px solid rgba(255,255,255,0.25)",
-                    borderRadius: 999,
-                    width: 46,
-                    height: 46,
-                    fontSize: 28,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                  }}
-                >
-                  {">"}
-                </button>
-              </>
-            )}
-
-            <div
-              style={{
-                width: "100%",
-                display: "flex",
-                justifyContent: "center",
-              }}
-            >
-              {isVideoUrl(galleryImages[galleryIndex]) ? (
-                <video
-                  key={galleryImages[galleryIndex]}
-                  src={galleryImages[galleryIndex]}
-                  controls
-                  autoPlay
-                  playsInline
-                  style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12, display: "block", background: "#000" }}
-                />
-              ) : (
-                <img
-                  src={galleryImages[galleryIndex]}
-                  alt={`Gallery image ${galleryIndex + 1}`}
-                  style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12, display: "block" }}
-                />
-              )}
-            </div>
-
-            <div
-              style={{
-                color: "white",
-                fontSize: 14,
-                fontWeight: 700,
-              }}
-            >
-              {galleryIndex + 1} / {galleryImages.length}
-            </div>
-          </div>
-        </div>
-      )}
+      <FeedImageGalleryModal
+        open={isGalleryOpen}
+        images={galleryImages}
+        index={galleryIndex}
+        onClose={closeGallery}
+        onPrev={showPrevGalleryImage}
+        onNext={showNextGalleryImage}
+      />
 
       {flagModal && (
         <div
