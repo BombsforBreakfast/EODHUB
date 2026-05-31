@@ -1180,6 +1180,17 @@ export default function HomePage() {
     [],
   );
 
+  const readPlankHolderCardHidden = useCallback((uid: string | null) => {
+    if (typeof window === "undefined") return false;
+    const key = plankHolderCardHiddenKey(uid);
+    if (!key) return false;
+    try {
+      return window.sessionStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  }, [plankHolderCardHiddenKey]);
+
   const hidePlankHolderCard = useCallback(() => {
     setPlankHolderCardHidden(true);
     if (typeof window === "undefined") return;
@@ -1221,18 +1232,8 @@ export default function HomePage() {
   }, [revealPlankHolderCard]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const key = plankHolderCardHiddenKey(userId);
-    if (!key) {
-      setPlankHolderCardHidden(false);
-      return;
-    }
-    try {
-      setPlankHolderCardHidden(window.sessionStorage.getItem(key) === "1");
-    } catch {
-      setPlankHolderCardHidden(false);
-    }
-  }, [userId, plankHolderCardHiddenKey]);
+    setPlankHolderCardHidden(readPlankHolderCardHidden(userId));
+  }, [userId, readPlankHolderCardHidden]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !userId) {
@@ -4736,6 +4737,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         setCanUseJobFilters(featureAccess.canUseJobFilters);
 
         setUserId(currentUserId);
+        setPlankHolderCardHidden(readPlankHolderCardHidden(currentUserId));
 
         const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null; is_admin: boolean | null } | null;
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
@@ -4798,6 +4800,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       const nextUserId = session?.user?.id ?? null;
       setUserId(nextUserId);
       resetActiveProfileState();
+      setPlankHolderCardHidden(readPlankHolderCardHidden(nextUserId));
       setLoading(true);
       if (nextUserId) {
         void init();
