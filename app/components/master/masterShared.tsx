@@ -46,6 +46,8 @@ export type BusinessListingRow = {
   tags?: string[] | null;
   /** Set when a user's ownership claim was approved; grants edit/delete on the public listing. */
   managed_by_user_id?: string | null;
+  /** Set when an admin links this listing to a Business / Organization page. */
+  claimed_business_org_page_id?: string | null;
 };
 
 export type BizListingType = "business" | "organization" | "resource";
