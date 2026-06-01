@@ -206,6 +206,19 @@ type PostImageRow = {
   sort_order: number | null;
 };
 
+type LegacyPostRow = LegacyPostImageRow & {
+  gif_url?: string | null;
+  og_url?: string | null;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image?: string | null;
+  og_site_name?: string | null;
+  event_id?: string | null;
+  content_type?: string | null;
+  system_generated?: boolean | null;
+  news_item_id?: string | null;
+};
+
 type BusinessListing = {
   id: string;
   created_at: string;
@@ -254,6 +267,7 @@ const JOB_COLUMNS =
 const BUSINESS_LISTING_COLUMNS =
   "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags";
 const PERF_DEBUG = process.env.NODE_ENV !== "production";
+const INITIAL_FEED_BATCH_SIZE = 8;
 
 function perfNowMs(): number {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -509,6 +523,7 @@ type FeedPost = RankedPostRow & {
   court_verdict_at?: string | null;
   rabbithole_thread_id?: string | null;
   rabbithole_contribution_id?: string | null;
+  isInteractionHydrating?: boolean;
 };
 
 type FeedSelectedEvent = {
@@ -670,6 +685,8 @@ function isOnlyPreviewUrl(content: string | null | undefined, previewUrl: string
 }
 
 const MENTION_RE = /@\[([^\]]+)\]\(([^)]+)\)/g;
+const FEED_COMMENT_TEXT_SIZE = 14;
+const FEED_COMMENT_META_SIZE = 13;
 
 function renderContent(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
@@ -897,6 +914,7 @@ export default function HomePage() {
 
   const [loading, setLoading] = useState(true);
   const [postsLoaded, setPostsLoaded] = useState(false);
+  const postsLoadedRef = useRef(false);
   // Set to the postId when a deep-link target post is known to be unavailable
   // (deleted, hidden for review, or a wall post not shown in the public feed).
   const [deepLinkPostUnavailable, setDeepLinkPostUnavailable] = useState<string | null>(null);
@@ -1029,6 +1047,7 @@ export default function HomePage() {
   const discoverKnowToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
   const [openVouchPopoverFor, setOpenVouchPopoverFor] = useState<string | null>(null);
+  const [hiddenPendingMemberIds, setHiddenPendingMemberIds] = useState<Set<string>>(() => new Set());
   const [isAdmin, setIsAdmin] = useState(false);
   const memberInteractionAllowedRef = useRef(true);
   const activeProfileLoadSeqRef = useRef(0);
@@ -1215,6 +1234,41 @@ export default function HomePage() {
     }
   }, [recruiterNudgeHiddenKey, userId]);
 
+  const pendingVouchHiddenKey = useCallback(
+    (uid: string | null) => (uid ? `eod_pending_vouch_hidden:${uid}` : null),
+    [],
+  );
+
+  const readHiddenPendingMemberIds = useCallback((uid: string | null): Set<string> => {
+    if (typeof window === "undefined") return new Set();
+    const key = pendingVouchHiddenKey(uid);
+    if (!key) return new Set();
+    try {
+      const raw = window.sessionStorage.getItem(key);
+      if (!raw) return new Set();
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return new Set();
+      return new Set(parsed.filter((id): id is string => typeof id === "string"));
+    } catch {
+      return new Set();
+    }
+  }, [pendingVouchHiddenKey]);
+
+  const hidePendingMember = useCallback((memberId: string) => {
+    setHiddenPendingMemberIds((prev) => {
+      const next = new Set(prev);
+      next.add(memberId);
+      if (typeof window !== "undefined") {
+        const key = pendingVouchHiddenKey(userId);
+        if (key) {
+          try { window.sessionStorage.setItem(key, JSON.stringify([...next])); } catch {}
+        }
+      }
+      return next;
+    });
+    setOpenVouchPopoverFor((prev) => (prev === memberId ? null : prev));
+  }, [pendingVouchHiddenKey, userId]);
+
   const hidePlankHolderCard = useCallback(() => {
     setPlankHolderCardHidden(true);
     if (typeof window === "undefined") return;
@@ -1264,6 +1318,10 @@ export default function HomePage() {
   }, [userId, readRecruiterNudgeHidden]);
 
   useEffect(() => {
+    setHiddenPendingMemberIds(readHiddenPendingMemberIds(userId));
+  }, [userId, readHiddenPendingMemberIds]);
+
+  useEffect(() => {
     if (typeof window === "undefined" || !userId) {
       setPlankHolderBannerDismissed(false);
       return;
@@ -1295,6 +1353,10 @@ export default function HomePage() {
   useEffect(() => {
     postsRef.current = posts;
   }, [posts]);
+
+  useEffect(() => {
+    postsLoadedRef.current = postsLoaded;
+  }, [postsLoaded]);
 
   useEffect(() => {
     function check() { setIsMobile(window.innerWidth <= 900); }
@@ -2465,6 +2527,248 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     };
   }
 
+  function createFeedPostShell(
+    post: RankedPostRow,
+    overrides: Partial<FeedPost> = {},
+  ): FeedPost {
+    return {
+      ...post,
+      image_url: null,
+      image_urls: [],
+      gif_url: null,
+      content_type: "user_post",
+      system_generated: false,
+      news_item_id: null,
+      authorName: "User",
+      authorPhotoUrl: null,
+      authorService: null,
+      authorIsEmployer: null,
+      authorIsPureAdmin: null,
+      authorHasPublicMemberProfile: true,
+      likeCount: 0,
+      commentCount: 0,
+      myReaction: null,
+      reactionCountsByType: {},
+      reactorNamesByType: {},
+      likers: [],
+      comments: [],
+      og_url: null,
+      og_title: null,
+      og_description: null,
+      og_image: null,
+      admin_manual_image_url: null,
+      og_site_name: null,
+      event_id: null,
+      feed_event: null,
+      event_interested_count: 0,
+      event_going_count: 0,
+      event_my_attendance: null,
+      event_saved: false,
+      kangaroo: null,
+      court_verdict_at: null,
+      rabbithole_thread_id: null,
+      rabbithole_contribution_id: null,
+      isInteractionHydrating: false,
+      ...overrides,
+    };
+  }
+
+  async function loadInitialFeedBatch(
+    rawPosts: RankedPostRow[],
+    effectiveUserId: string | null,
+    perfStart: number,
+  ): Promise<void> {
+    const initialPosts = rawPosts.slice(0, INITIAL_FEED_BATCH_SIZE);
+    const postIds = initialPosts.map((post) => post.id);
+    const uniqueUserIds = [...new Set(initialPosts.map((post) => post.user_id))];
+
+    const [
+      legacyWithEvent,
+      postImagesRes,
+      reactionRowsResult,
+      commentCountResult,
+      profileRes,
+    ] = await Promise.all([
+      supabase
+        .from("posts")
+        .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id, court_verdict_at, rabbithole_thread_id, rabbithole_contribution_id")
+        .in("id", postIds),
+      supabase
+        .from("post_images")
+        .select("id, post_id, image_url, sort_order")
+        .in("post_id", postIds)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true }),
+      fetchContentReactionsForSubjects(supabase, "post", postIds).catch((error) => {
+        console.error("Initial reactions load error:", error);
+        return [] as { subject_id: string; user_id: string; reaction_type: string }[];
+      }),
+      supabase
+        .from("post_comments")
+        .select("post_id, parent_comment_id")
+        .in("post_id", postIds)
+        .or("hidden_for_review.is.null,hidden_for_review.eq.false")
+        .then(async (result) => {
+          if (!result.error || !isMissingColumnError(result.error, "hidden_for_review")) return result;
+          return supabase
+            .from("post_comments")
+            .select("post_id, parent_comment_id")
+            .in("post_id", postIds);
+        })
+        .then(async (result) => {
+          if (!result.error || !isMissingColumnError(result.error, "parent_comment_id")) return result;
+          const fallback = await supabase
+            .from("post_comments")
+            .select("post_id")
+            .in("post_id", postIds);
+          return {
+            ...fallback,
+            data: (fallback.data ?? []).map((row) => ({ ...row, parent_comment_id: null })),
+          };
+        }),
+      uniqueUserIds.length > 0
+        ? supabase
+            .from("profiles")
+            .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, is_pure_admin, email")
+            .in("user_id", uniqueUserIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (legacyWithEvent.error) {
+      console.error("Initial post media load error:", legacyWithEvent.error);
+    }
+    if (postImagesRes.error) {
+      console.error("Initial post images load error:", postImagesRes.error);
+    }
+    if (commentCountResult.error) {
+      console.error("Initial comment count load error:", commentCountResult.error);
+    }
+    if (profileRes.error) {
+      console.error("Initial profile load error:", profileRes.error);
+    }
+
+    const legacyPostImageMap = new Map<string, string | null>();
+    const postGifMap = new Map<string, string | null>();
+    const postOgMap = new Map<string, { og_url: string | null; og_title: string | null; og_description: string | null; og_image: string | null; og_site_name: string | null }>();
+    const eventIdByPostId = new Map<string, string | null>();
+    const postMetaMap = new Map<string, { content_type: string | null; system_generated: boolean | null; news_item_id: string | null }>();
+    const verdictAtByPostId = new Map<string, string | null>();
+    const rabbitholeThreadIdByPostId = new Map<string, string | null>();
+    const rabbitholeContributionIdByPostId = new Map<string, string | null>();
+
+    ((legacyWithEvent.data ?? []) as Array<LegacyPostRow & {
+      court_verdict_at?: string | null;
+      rabbithole_thread_id?: string | null;
+      rabbithole_contribution_id?: string | null;
+    }>).forEach((row) => {
+      legacyPostImageMap.set(row.id, row.image_url ?? null);
+      postGifMap.set(row.id, row.gif_url ?? null);
+      postOgMap.set(row.id, {
+        og_url: row.og_url ?? null,
+        og_title: row.og_title ?? null,
+        og_description: row.og_description ?? null,
+        og_image: row.og_image ?? null,
+        og_site_name: row.og_site_name ?? null,
+      });
+      eventIdByPostId.set(row.id, row.event_id ?? null);
+      postMetaMap.set(row.id, {
+        content_type: row.content_type ?? null,
+        system_generated: row.system_generated ?? null,
+        news_item_id: row.news_item_id ?? null,
+      });
+      verdictAtByPostId.set(row.id, row.court_verdict_at ?? null);
+      rabbitholeThreadIdByPostId.set(row.id, row.rabbithole_thread_id ?? null);
+      rabbitholeContributionIdByPostId.set(row.id, row.rabbithole_contribution_id ?? null);
+    });
+
+    const multiPostImageMap = new Map<string, string[]>();
+    ((postImagesRes.data ?? []) as PostImageRow[]).forEach((row) => {
+      const existing = multiPostImageMap.get(row.post_id) || [];
+      existing.push(row.image_url);
+      multiPostImageMap.set(row.post_id, existing);
+    });
+
+    const reactionRows = reactionRowsResult as { subject_id: string; user_id: string; reaction_type: string }[];
+    const aggregatesMap = aggregatesBySubjectId(reactionRows, effectiveUserId);
+    const commentCountMap = new Map<string, number>();
+    ((commentCountResult.data ?? []) as { post_id: string; parent_comment_id?: string | null }[]).forEach((comment) => {
+      commentCountMap.set(comment.post_id, (commentCountMap.get(comment.post_id) ?? 0) + 1);
+    });
+
+    const profileNameMap = new Map<string, string>();
+    const profilePhotoMap = new Map<string, string | null>();
+    const profileServiceMap = new Map<string, string | null>();
+    const profileEmployerMap = new Map<string, boolean | null>();
+    const profilePureAdminMap = new Map<string, boolean | null>();
+    const profilePublicMemberMap = new Map<string, boolean>();
+
+    (profileRes.data as ProfileName[] | null)?.forEach((profile) => {
+      const fullName =
+        (profile.display_name?.trim() || null) ||
+        `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
+        "User";
+      profileNameMap.set(profile.user_id, fullName);
+      profilePhotoMap.set(profile.user_id, profile.photo_url ?? null);
+      profileServiceMap.set(profile.user_id, profile.service ?? null);
+      profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
+      profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
+      profilePublicMemberMap.set(
+        profile.user_id,
+        hasPublicMemberProfile({
+          email: profile.email,
+          is_pure_admin: profile.is_pure_admin,
+        }),
+      );
+    });
+
+    const initialFeedPosts = initialPosts.map((post) => {
+      const agg = aggregatesMap.get(post.id) ?? emptyAggregate();
+      const multiImages = multiPostImageMap.get(post.id) || [];
+      const legacyImage = legacyPostImageMap.get(post.id) ?? null;
+      const ogData = postOgMap.get(post.id);
+      const postMeta = postMetaMap.get(post.id);
+
+      return createFeedPostShell(post, {
+        image_url: legacyImage,
+        image_urls: multiImages.length > 0 ? multiImages : legacyImage ? [legacyImage] : [],
+        gif_url: postGifMap.get(post.id) ?? null,
+        content_type: postMeta?.content_type ?? "user_post",
+        system_generated: postMeta?.system_generated ?? false,
+        news_item_id: postMeta?.news_item_id ?? null,
+        authorName: profileNameMap.get(post.user_id) || "User",
+        authorPhotoUrl: profilePhotoMap.get(post.user_id) || null,
+        authorService: profileServiceMap.get(post.user_id) ?? null,
+        authorIsEmployer: profileEmployerMap.get(post.user_id) ?? null,
+        authorIsPureAdmin: profilePureAdminMap.get(post.user_id) ?? null,
+        authorHasPublicMemberProfile: profilePublicMemberMap.get(post.user_id) ?? true,
+        likeCount: agg.totalCount,
+        commentCount: commentCountMap.get(post.id) ?? 0,
+        myReaction: agg.myReaction,
+        reactionCountsByType: agg.countsByType,
+        reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(reactionRows, post.id, profileNameMap),
+        og_url: ogData?.og_url ?? null,
+        og_title: ogData?.og_title ?? null,
+        og_description: ogData?.og_description ?? null,
+        og_image: ogData?.og_image ?? null,
+        og_site_name: ogData?.og_site_name ?? null,
+        event_id: eventIdByPostId.get(post.id) ?? null,
+        court_verdict_at: verdictAtByPostId.get(post.id) ?? null,
+        rabbithole_thread_id: rabbitholeThreadIdByPostId.get(post.id) ?? null,
+        rabbithole_contribution_id: rabbitholeContributionIdByPostId.get(post.id) ?? null,
+        isInteractionHydrating: true,
+      });
+    });
+
+    setPosts(initialFeedPosts);
+    postsLoadedRef.current = true;
+    setPostsLoaded(true);
+    logPerf("home.loadPosts.initialBatch", perfStart, {
+      rankedCount: rawPosts.length,
+      renderedCount: initialFeedPosts.length,
+      postIdsCount: postIds.length,
+    });
+  }
+
   async function loadUnitFeedHighlightsForUser(effectiveUserId: string | null): Promise<void> {
     if (!effectiveUserId) {
       setUnitFeedHighlights([]);
@@ -2614,9 +2918,12 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     setUnitFeedHighlights(scored);
   }
 
-  async function loadPosts(currentUserId?: string | null) {
+  async function loadPosts(
+    currentUserId?: string | null,
+    options: { forceFullHydration?: boolean } = {},
+  ) {
     const perfStart = perfNowMs();
-    const isInitialProgressiveLoad = !postsLoaded;
+    const isInitialProgressiveLoad = !postsLoadedRef.current && !options.forceFullHydration;
     // Resolve user id from the live session first. Google OAuth often hydrates the Supabase session
     // before React `userId` updates; realtime loadPosts() can also close over a stale null userId.
     // Kangaroo Court (and other RLS paths) need a consistent id that matches the JWT.
@@ -2728,6 +3035,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
     if (rawPosts.length === 0) {
       setPosts([]);
+      postsLoadedRef.current = true;
       setPostsLoaded(true);
       logPerf("home.loadPosts.empty", perfStart);
       return;
@@ -2736,67 +3044,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     const postIds = rawPosts.map((post) => post.id);
     const uniqueUserIds = [...new Set(rawPosts.map((post) => post.user_id))];
 
-    // First-load perceived performance: paint a lightweight feed shell immediately,
-    // then hydrate likes/comments/media metadata in the background of this same call.
     if (isInitialProgressiveLoad) {
-      const basePosts: FeedPost[] = rawPosts.map((post) => ({
-        ...post,
-        image_url: null,
-        image_urls: [],
-        gif_url: null,
-        content_type: "user_post",
-        system_generated: false,
-        news_item_id: null,
-        authorName: "User",
-        authorPhotoUrl: null,
-        authorService: null,
-        authorIsEmployer: null,
-        authorIsPureAdmin: null,
-        authorHasPublicMemberProfile: true,
-        likeCount: 0,
-        commentCount: 0,
-        myReaction: null,
-        reactionCountsByType: {},
-        reactorNamesByType: {},
-        likers: [],
-        comments: [],
-        og_url: null,
-        og_title: null,
-        og_description: null,
-        og_image: null,
-        admin_manual_image_url: null,
-        og_site_name: null,
-        event_id: null,
-        feed_event: null,
-        event_interested_count: 0,
-        event_going_count: 0,
-        event_my_attendance: null,
-        event_saved: false,
-        kangaroo: null,
-        court_verdict_at: null,
-        rabbithole_thread_id: null,
-        rabbithole_contribution_id: null,
-      }));
-      setPosts(basePosts);
-      setPostsLoaded(true);
-      logPerf("home.loadPosts.base", perfStart, {
-        rankedCount: rawPosts.length,
-        renderedCount: basePosts.length,
-      });
-    }
+      await loadInitialFeedBatch(rawPosts, effectiveUserId, perfStart);
 
-    type LegacyPostRow = LegacyPostImageRow & {
-      gif_url?: string | null;
-      og_url?: string | null;
-      og_title?: string | null;
-      og_description?: string | null;
-      og_image?: string | null;
-      og_site_name?: string | null;
-      event_id?: string | null;
-      content_type?: string | null;
-      system_generated?: boolean | null;
-      news_item_id?: string | null;
-    };
+      window.setTimeout(() => {
+        void loadPosts(effectiveUserId, { forceFullHydration: true }).catch((err) => console.error("loadPosts background hydration failed:", err));
+      }, 0);
+      return;
+    }
 
     const legacyWithEvent = await supabase
       .from("posts")
@@ -3488,6 +3743,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     mergedPosts.sort((a, b) => compareFeedPosts(a, b, feedSortOpts));
 
     setPosts(mergedPosts);
+    postsLoadedRef.current = true;
     setPostsLoaded(true);
     logPerf("home.loadPosts", perfStart, {
       rankedCount: rawPosts.length,
@@ -4674,6 +4930,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       setDiscoverProfiles([]);
       setDiscoverPageIndex(0);
       setPendingMembers([]);
+      setPosts([]);
+      postsLoadedRef.current = false;
+      setPostsLoaded(false);
       memberInteractionAllowedRef.current = false;
     }
 
@@ -4768,39 +5027,49 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         setUserId(currentUserId);
         setPlankHolderCardHidden(readPlankHolderCardHidden(currentUserId));
         setRecruiterNudgeHidden(readRecruiterNudgeHidden(currentUserId));
+        setHiddenPendingMemberIds(readHiddenPendingMemberIds(currentUserId));
 
         const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null; is_admin: boolean | null } | null;
+        const topLineTasks: Promise<unknown>[] = [];
+
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
           setCurrentUserPhotoUrl(nd?.photo_url ?? null);
           setCurrentUserReferralCode(nd?.referral_code ?? null);
-          if (nd?.referral_code) {
-            void supabase
-              .from("profiles")
-              .select("user_id", { count: "exact", head: true })
-              .eq("referred_by", nd.referral_code)
-              .then(({ count, error }) => {
-                if (error) {
-                  console.error("recruiter count load failed:", error);
-                  return;
-                }
-                if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
-                  setRecruiterCount(count ?? 0);
-                }
-              });
-          } else {
-            setRecruiterCount(0);
-          }
           setIsAdmin(!!nd?.is_admin);
           setShowMemorialFeedCards(
             (profileCheck as { show_memorial_feed_cards?: boolean | null } | null)?.show_memorial_feed_cards !== false
           );
         }
 
-        void refreshPlankHolderChallenge();
+        if (nd?.referral_code) {
+          topLineTasks.push(
+            Promise.resolve(
+              supabase
+                .from("profiles")
+                .select("user_id", { count: "exact", head: true })
+                .eq("referred_by", nd.referral_code)
+            ).then(({ count, error }) => {
+              if (error) {
+                console.error("recruiter count load failed:", error);
+                return;
+              }
+              if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
+                setRecruiterCount(count ?? 0);
+              }
+            })
+          );
+        } else {
+          setRecruiterCount(0);
+        }
 
-        // Prioritize feed readiness: render as soon as posts are loaded, then hydrate secondary data.
-        await loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err));
+        topLineTasks.push(
+          refreshPlankHolderChallenge().catch((err) => console.error("refreshPlankHolderChallenge failed:", err)),
+          loadPendingMembers(currentUserId).catch((err) => console.error("loadPendingMembers failed:", err))
+        );
+
+        const feedReady = loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err));
+        await Promise.all([feedReady, ...topLineTasks]);
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setLoading(false);
         }
@@ -4814,7 +5083,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             professional_tags: ((profileCheck as { professional_tags?: string[] | null } | null)?.professional_tags ?? null),
             unit_history_tags: ((profileCheck as { unit_history_tags?: string[] | null } | null)?.unit_history_tags ?? null),
           }).catch((err) => console.error("loadDiscoverProfiles failed:", err)),
-          loadPendingMembers(currentUserId).catch((err) => console.error("loadPendingMembers failed:", err)),
         ];
 
         // Desktop shell already has dedicated left/right column loaders; avoid duplicate heavy fetches here.
@@ -4849,6 +5117,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       resetActiveProfileState();
       setPlankHolderCardHidden(readPlankHolderCardHidden(nextUserId));
       setRecruiterNudgeHidden(readRecruiterNudgeHidden(nextUserId));
+      setHiddenPendingMemberIds(readHiddenPendingMemberIds(nextUserId));
       setLoading(true);
       if (nextUserId) {
         void init();
@@ -5251,7 +5520,33 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         <SkeletonBlock width="100%" height={13} />
         <SkeletonBlock width="85%" height={13} />
         <SkeletonBlock width="60%" height={13} />
+        <div
+          style={{
+            ...skeletonStyle,
+            width: "100%",
+            aspectRatio: "16 / 9",
+            marginTop: FEED_SECTION_GAP,
+            marginBottom: 0,
+            background: FEED_MEDIA_FRAME_BG,
+          }}
+        />
       </div>
+    );
+  }
+
+  function InlineSkeletonPill({ width = 42 }: { width?: number }) {
+    return (
+      <span
+        aria-hidden
+        style={{
+          ...skeletonStyle,
+          display: "inline-block",
+          width,
+          height: 14,
+          marginBottom: 0,
+          verticalAlign: "middle",
+        }}
+      />
     );
   }
 
@@ -5331,7 +5626,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
             </div>
             <span
               style={{
-                fontSize: "clamp(11px, 2.8vw, 12px)",
+                fontSize: FEED_COMMENT_META_SIZE,
                 color: t.textMuted,
                 flexShrink: 0,
                 alignSelf: "center",
@@ -5471,11 +5766,11 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           <>
             {comment.content && (
               <div style={{ marginTop: 3 }}>
-                <div style={{ fontSize: 13, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
+                <div style={{ fontSize: FEED_COMMENT_TEXT_SIZE, lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
                   {renderContent(comment.content)}
                 </div>
                 {isLong && (
-                  <button type="button" onClick={() => setExpandedCommentTexts((p) => ({ ...p, [comment.id]: !textExpanded }))} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: 12, fontWeight: 700, marginTop: 1 }}>
+                  <button type="button" onClick={() => setExpandedCommentTexts((p) => ({ ...p, [comment.id]: !textExpanded }))} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: FEED_COMMENT_META_SIZE, fontWeight: 700, marginTop: 1 }}>
                     {textExpanded ? "Show less" : "Show more"}
                   </button>
                 )}
@@ -5584,7 +5879,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
               cursor: "pointer",
               color: t.textMuted,
               fontWeight: 700,
-              fontSize: 13,
+              fontSize: FEED_COMMENT_META_SIZE,
             }}
           >
             Reply
@@ -5701,21 +5996,41 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         >
             <>
           {/* Pending Members ΓÇö community vouching */}
-          {userId && pendingMembers.length > 0 && (
+          {userId && pendingMembers.some((m) => !hiddenPendingMemberIds.has(m.user_id)) && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
-              {pendingMembers.map((m) => {
+              {pendingMembers.filter((m) => !hiddenPendingMemberIds.has(m.user_id)).map((m) => {
                 const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
                 const initial = (name[0] || "?").toUpperCase();
                 const vouchPopoverOpen = openVouchPopoverFor === m.user_id;
                 return (
-                  <div key={m.user_id} style={{ border: `1px solid ${isDark ? "#2a2a00" : "#fef08a"}`, borderRadius: 14, padding: 16, background: isDark ? "#1a1a00" : "#fefce8", display: "flex", gap: 14, alignItems: "flex-start" }}>
+                  <div key={m.user_id} style={{ position: "relative", border: `1px solid ${isDark ? "#2a2a00" : "#fef08a"}`, borderRadius: 14, padding: 16, background: isDark ? "#1a1a00" : "#fefce8", display: "flex", gap: 14, alignItems: "flex-start" }}>
+                    <button
+                      type="button"
+                      onClick={() => hidePendingMember(m.user_id)}
+                      aria-label={`Dismiss ${name}'s join request`}
+                      title="Dismiss for this session"
+                      style={{
+                        position: "absolute",
+                        top: 8,
+                        right: 8,
+                        background: "transparent",
+                        border: "none",
+                        color: t.textMuted,
+                        fontSize: 22,
+                        lineHeight: 1,
+                        cursor: "pointer",
+                        padding: "2px 6px",
+                      }}
+                    >
+                      ×
+                    </button>
                     <div style={{ flexShrink: 0 }} aria-hidden>
                       {m.photo_url
                         ? <img src={m.photo_url} alt="" style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "cover", display: "block" }} />
                         : <div style={{ width: 42, height: 42, borderRadius: "50%", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, color: t.textMuted }}>{initial}</div>
                       }
                     </div>
-                    <div style={{ flex: 1 }}>
+                    <div style={{ flex: 1, minWidth: 0, paddingRight: 24 }}>
                       <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{name} is requesting to join</div>
                       {m.service && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{m.service}</div>}
                       <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 1.5 }}>
@@ -7077,7 +7392,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                       overflow: "hidden",
                                       border: isSingleImage ? "none" : `1px solid ${t.borderLight}`,
                                       background: FEED_MEDIA_FRAME_BG,
-                                      aspectRatio: isSingleImage ? undefined : "1 / 1",
+                                      aspectRatio: isSingleImage ? "16 / 9" : "1 / 1",
                                       padding: 0,
                                       cursor: "pointer",
                                       width: "100%",
@@ -7361,20 +7676,24 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                       onPick={(type) => void handleFeedPostReaction(post.id, type)}
                     />
 
-                    <button
-                      type="button"
-                      onClick={() => toggleComments(post.id)}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        padding: 0,
-                        cursor: "pointer",
-                        fontWeight: 700,
-                        color: t.textMuted,
-                      }}
-                    >
-                      {commentsOpen ? "Hide Comments" : "Comment"}
-                    </button>
+                    {post.isInteractionHydrating ? (
+                      <InlineSkeletonPill width={70} />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => toggleComments(post.id)}
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          padding: 0,
+                          cursor: "pointer",
+                          fontWeight: 700,
+                          color: t.textMuted,
+                        }}
+                      >
+                        {commentsOpen ? "Hide Comments" : "Comment"}
+                      </button>
+                    )}
 
                     {post.likeCount > 0 && <PostLikersStack likers={post.likers} />}
 
@@ -7387,8 +7706,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                     />
 
                     <div style={{ fontSize: 14, color: t.textMuted }}>
-                      {post.commentCount}{" "}
-                      {post.commentCount === 1 ? "comment" : "comments"}
+                      {post.isInteractionHydrating ? (
+                        <InlineSkeletonPill width={86} />
+                      ) : (
+                        <>
+                          {post.commentCount}{" "}
+                          {post.commentCount === 1 ? "comment" : "comments"}
+                        </>
+                      )}
                     </div>
                   </div>
 
@@ -7447,7 +7772,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                     padding: 0,
                                     cursor: "pointer",
                                     color: t.textMuted,
-                                    fontSize: 12,
+                                    fontSize: FEED_COMMENT_META_SIZE,
                                     fontWeight: 700,
                                     textAlign: "left",
                                   }}
@@ -7472,7 +7797,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                                     padding: 0,
                                     cursor: "pointer",
                                     color: t.textMuted,
-                                    fontSize: 12,
+                                    fontSize: FEED_COMMENT_META_SIZE,
                                     fontWeight: 700,
                                     textAlign: "left",
                                   }}
