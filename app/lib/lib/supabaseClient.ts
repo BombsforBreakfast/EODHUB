@@ -19,3 +19,20 @@ export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
 // assignment until the SDK reliably forwards the option.
 (supabase.auth as unknown as { lockAcquireTimeout?: number }).lockAcquireTimeout =
   AUTH_LOCK_ACQUIRE_TIMEOUT_MS;
+
+let sessionPromise: ReturnType<typeof supabase.auth.getSession> | null = null;
+let userPromise: ReturnType<typeof supabase.auth.getUser> | null = null;
+
+export function getSupabaseSession() {
+  sessionPromise ??= supabase.auth.getSession().finally(() => {
+    sessionPromise = null;
+  });
+  return sessionPromise;
+}
+
+export function getSupabaseUser() {
+  userPromise ??= supabase.auth.getUser().finally(() => {
+    userPromise = null;
+  });
+  return userPromise;
+}
