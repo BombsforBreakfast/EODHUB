@@ -1,6 +1,7 @@
 "use client";
 
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import ShareListingToFeedModal from "../components/ShareListingToFeedModal";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
@@ -25,6 +26,9 @@ import { usePageTracking } from "../hooks/usePageTracking";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { shareListingToFeed } from "../lib/shareListingToFeed";
+import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
+import { fetchApprovedBusinessListings, BUSINESSES_STALE_MS } from "../lib/queries/businesses";
+import { queryKeys } from "../lib/queryKeys";
 
 type BusinessOrgListingType = "business" | "organization";
 
@@ -69,7 +73,7 @@ type ListingComment = ListingCommentRow & {
 };
 
 const BUSINESS_LISTING_COLUMNS =
-  "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags, managed_by_user_id";
+  "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags, managed_by_user_id, claimed_business_org_page_id";
 
 function coerceBizOrgType(listing: Pick<BusinessListing, "listing_type">): BusinessOrgListingType {
   return listing.listing_type === "organization" ? "organization" : "business";
@@ -80,6 +84,7 @@ function listingEligibleForClaim(listing: BusinessListing): boolean {
   if (t !== "business" && t !== "organization") return false;
   if (!listing.is_approved) return false;
   if (listing.managed_by_user_id) return false;
+  if (listing.claimed_business_org_page_id) return false;
   return true;
 }
 
@@ -96,9 +101,8 @@ export default function BusinessesPage() {
   useRequireFullAccess("app/businesses/page.tsx");
   usePageTracking(PAGE_TRACKING.businesses);
   const { t } = useTheme();
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [isMobile, setIsMobile] = useState(false);
-  const [listings, setListings] = useState<BusinessListing[]>([]);
   const [filters, setFilters] = useState<BizFilterState>({ listingType: "all", keyword: "" });
   const [userId, setUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -152,21 +156,13 @@ export default function BusinessesPage() {
     let mounted = true;
     async function loadUser() {
       const { data } = await supabase.auth.getSession();
-      const uid = data.session?.user?.id ?? null;
+      const sessionUser = data.session?.user ?? null;
+      const uid = sessionUser?.id ?? null;
       if (!mounted) return;
       setUserId(uid);
-      if (!uid) return;
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("display_name, first_name, last_name, is_admin")
-        .eq("user_id", uid)
-        .maybeSingle();
-      const p = profile as {
-        display_name?: string | null;
-        first_name?: string | null;
-        last_name?: string | null;
-        is_admin?: boolean | null;
-      } | null;
+      if (!uid || !sessionUser) return;
+      const p = await fetchViewerProfileCached(queryClient, supabase, sessionUser);
+      if (!mounted) return;
       const composed = [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
       setCurrentUserName(p?.display_name?.trim() || composed || "You");
       setIsAdmin(Boolean(p?.is_admin));
@@ -175,7 +171,7 @@ export default function BusinessesPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     if (!userId) {
@@ -208,50 +204,33 @@ export default function BusinessesPage() {
     return p.display_name?.trim() || composed || (fallbackUserId === userId ? currentUserName : "Member");
   }
 
-  useEffect(() => {
-    let mounted = true;
-    async function init() {
-      const { data, error } = await supabase
-        .from("business_listings")
-        .select(BUSINESS_LISTING_COLUMNS)
-        .eq("is_approved", true)
-        .order("is_featured", { ascending: false })
-        .order("business_name", { ascending: true, nullsFirst: false })
-        .limit(500);
+  const listingsQuery = useQuery({
+    queryKey: queryKeys.businessesApproved(500),
+    queryFn: () =>
+      fetchApprovedBusinessListings<BusinessListing>(supabase, BUSINESS_LISTING_COLUMNS, 500),
+    staleTime: BUSINESSES_STALE_MS,
+  });
 
-      const combined = (data ?? []) as BusinessListing[];
-
-      if (error && combined.length === 0) {
-        console.error("Businesses page load error:", error);
-        if (mounted) setListings([]);
-      } else if (mounted) {
-        setListings(combined);
-      }
-      if (mounted) setLoading(false);
-    }
-    void init();
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const EMPTY_LISTINGS = useMemo<BusinessListing[]>(() => [], []);
+  const listings = listingsQuery.data ?? EMPTY_LISTINGS;
+  const loading = listingsQuery.isLoading;
 
   async function refreshApprovedBizListings() {
-    const { data, error } = await supabase
-      .from("business_listings")
-      .select(BUSINESS_LISTING_COLUMNS)
-      .eq("is_approved", true)
-      .order("is_featured", { ascending: false })
-      .order("business_name", { ascending: true, nullsFirst: false })
-      .limit(500);
-
-    const combined = (data ?? []) as BusinessListing[];
-
-    if (error && combined.length === 0) {
-      console.error("Businesses list refresh error:", error);
+    let combined: BusinessListing[];
+    try {
+      // Force a fresh read (mutation just changed the data) and update the cache
+      // so the listings query re-renders with the new rows.
+      combined = await queryClient.fetchQuery({
+        queryKey: queryKeys.businessesApproved(500),
+        queryFn: () =>
+          fetchApprovedBusinessListings<BusinessListing>(supabase, BUSINESS_LISTING_COLUMNS, 500),
+        staleTime: 0,
+      });
+    } catch (err) {
+      console.error("Businesses list refresh error:", err);
       return;
     }
 
-    setListings(combined);
     setSelectedListing((prev) => {
       if (!prev) return null;
       return combined.find((r) => r.id === prev.id) ?? null;

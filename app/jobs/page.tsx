@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
@@ -11,7 +12,6 @@ import { getFeatureAccess } from "../lib/featureAccess";
 import { shouldEnforceMemberPaywall } from "../lib/paywallPaths";
 import { useOnboardingGate } from "../hooks/useOnboardingGate";
 import {
-  ONBOARDING_GATE_PROFILE_SELECT,
   resolvePreAccessRedirectPath,
   type OnboardingGateProfile,
 } from "../lib/onboardingGate";
@@ -26,6 +26,9 @@ import {
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { jobListingCutoffIso } from "../lib/jobRetention";
+import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
+import { fetchApprovedJobs, JOBS_LIST_STALE_MS } from "../lib/queries/jobs";
+import { queryKeys } from "../lib/queryKeys";
 
 type ProfileRow = {
   account_type: string | null;
@@ -107,8 +110,8 @@ export default function JobsPage() {
   useOnboardingGate("app/jobs/page.tsx");
   usePageTracking(PAGE_TRACKING.jobs);
   const { t } = useTheme();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(true);
-  const [jobs, setJobs] = useState<JobListItem[]>([]);
   const [filters, setFilters] = useState<JobFilterState>(DEFAULT_FILTERS);
   const [isMobile, setIsMobile] = useState(false);
   const [canViewFullJobs, setCanViewFullJobs] = useState(true);
@@ -226,24 +229,33 @@ export default function JobsPage() {
     [userId, savedJobIds]
   );
 
+  const listingCutoff = useMemo(() => jobListingCutoffIso(), []);
+
+  const jobsQuery = useQuery({
+    queryKey: queryKeys.jobsList(500, listingCutoff),
+    queryFn: () => fetchApprovedJobs<JobListItem>(supabase, 500, listingCutoff),
+    enabled: !!userId,
+    staleTime: JOBS_LIST_STALE_MS,
+  });
+
+  const EMPTY_JOBS = useMemo<JobListItem[]>(() => [], []);
+  const jobs = jobsQuery.data ?? EMPTY_JOBS;
+
   useEffect(() => {
     let mounted = true;
 
     async function init() {
       const { data: authData } = await supabase.auth.getUser();
-      const uid = authData.user?.id ?? null;
-      if (!uid) {
+      const authUser = authData.user ?? null;
+      const uid = authUser?.id ?? null;
+      if (!uid || !authUser) {
         window.location.href = "/login";
         return;
       }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select(ONBOARDING_GATE_PROFILE_SELECT + ", subscription_status, is_admin")
-        .eq("user_id", uid)
-        .maybeSingle();
-
-      const p = (profile ?? null) as (OnboardingGateProfile & ProfileRow) | null;
+      const p = (await fetchViewerProfileCached(queryClient, supabase, authUser)) as
+        | (OnboardingGateProfile & ProfileRow)
+        | null;
       if (!p || !hasFullPlatformAccess(p)) {
         window.location.href = p ? resolvePreAccessRedirectPath(p) : "/onboarding";
         return;
@@ -252,7 +264,7 @@ export default function JobsPage() {
       const featureAccess = getFeatureAccess({
         accountType: p.account_type,
         subscriptionStatus: p.subscription_status,
-        authUserCreatedAtIso: authData.user?.created_at ?? null,
+        authUserCreatedAtIso: authUser.created_at ?? null,
         isAdmin: p.is_admin,
       });
       if (
@@ -268,34 +280,21 @@ export default function JobsPage() {
       setUserId(uid);
       setCanViewFullJobs(true);
       setCanUseJobFilters(true);
-
-      const limit = 500;
-      const listingCutoff = jobListingCutoffIso();
-      const [{ data: jobsData, error }] = await Promise.all([
-        supabase
-          .from("jobs")
-          .select("id, created_at, title, category, location, pay_min, pay_max, clearance, description, apply_url, company_name, source_type, og_title, og_description, og_image, og_site_name")
-          .eq("is_approved", true)
-          .gte("created_at", listingCutoff)
-          .order("created_at", { ascending: false })
-          .limit(limit),
-        loadSavedJobs(uid),
-      ]);
-
-      if (error) {
-        console.error("Jobs page load error:", error);
-        if (mounted) setJobs([]);
-      } else if (mounted) {
-        setJobs((jobsData ?? []) as JobListItem[]);
-      }
-      if (mounted) setLoading(false);
+      void loadSavedJobs(uid);
     }
 
     void init();
     return () => {
       mounted = false;
     };
-  }, [loadSavedJobs]);
+  }, [loadSavedJobs, queryClient]);
+
+  // Loading clears once the gate resolved a user and the jobs query settled.
+  useEffect(() => {
+    if (userId && (jobsQuery.isSuccess || jobsQuery.isError)) {
+      setLoading(false);
+    }
+  }, [userId, jobsQuery.isSuccess, jobsQuery.isError]);
 
   useEffect(() => {
     if (!userId) return;

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "./lib/ThemeContext";
+import QueryProvider from "./providers/QueryProvider";
 import SessionGuard from "./components/SessionGuard";
 import AnalyticsTracker from "./components/AnalyticsTracker";
 import ReferralCaptureTracker from "./components/ReferralCaptureTracker";
@@ -44,6 +45,7 @@ export default function RootLayout({
         data-dark="true"
       >
         <ThemeProvider>
+          <QueryProvider>
           <MemorialNavModalProvider>
             <OnlinePresenceProvider>
               <SessionGuard />
@@ -111,6 +113,7 @@ export default function RootLayout({
               ) : null}
             </OnlinePresenceProvider>
           </MemorialNavModalProvider>
+          </QueryProvider>
         </ThemeProvider>
       </body>
     </html>

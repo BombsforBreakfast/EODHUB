@@ -1,32 +1,27 @@
 "use client";
 
 import { useEffect } from "react";
-import { supabase } from "../lib/lib/supabaseClient";
-import { loadActiveProfile } from "../lib/auth/activeProfile";
-import {
-  ONBOARDING_GATE_PROFILE_SELECT,
-  onboardingRedirectUrl,
-  shouldRedirectToOnboarding,
-  type OnboardingGateProfile,
-} from "../lib/onboardingGate";
+import { useQueryClient } from "@tanstack/react-query";
+import { getSupabaseUser, supabase } from "../lib/lib/supabaseClient";
+import { onboardingRedirectUrl, shouldRedirectToOnboarding } from "../lib/onboardingGate";
+import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 
 /**
  * Sends incomplete new signups back to /onboarding before they can use other pages.
  */
 export function useOnboardingGate(route: string) {
+  const queryClient = useQueryClient();
+
   useEffect(() => {
     let cancelled = false;
 
     async function check() {
       const {
         data: { user },
-      } = await supabase.auth.getUser();
+      } = await getSupabaseUser();
       if (!user || cancelled) return;
 
-      const { profile } = await loadActiveProfile<OnboardingGateProfile>(supabase, user, {
-        route,
-        select: ONBOARDING_GATE_PROFILE_SELECT,
-      });
+      const profile = await fetchViewerProfileCached(queryClient, supabase, user);
       if (cancelled) return;
 
       if (shouldRedirectToOnboarding(profile)) {
@@ -38,5 +33,5 @@ export function useOnboardingGate(route: string) {
     return () => {
       cancelled = true;
     };
-  }, [route]);
+  }, [route, queryClient]);
 }

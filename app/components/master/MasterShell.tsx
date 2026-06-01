@@ -12,13 +12,12 @@ import { supabase } from "../../lib/lib/supabaseClient";
 import { isMemberPaywallExemptPath, isExemptFromMemberPaywall, shouldEnforceMemberPaywall } from "../../lib/paywallPaths";
 import { memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { MasterShellProvider } from "./masterShellContext";
-import { loadActiveProfile } from "../../lib/auth/activeProfile";
+import { useQueryClient } from "@tanstack/react-query";
+import { fetchViewerProfileCached } from "../../lib/queries/viewerProfile";
 import {
-  ONBOARDING_GATE_PROFILE_SELECT,
   onboardingRedirectUrl,
   resolvePreAccessRedirectPath,
   shouldRedirectToOnboarding,
-  type OnboardingGateProfile,
 } from "../../lib/onboardingGate";
 import { hasFullPlatformAccess } from "../../lib/verificationAccess";
 import { ensureWelcomeSidebarOnce } from "../../lib/welcomeSidebarClient";
@@ -38,6 +37,7 @@ function getSavedRailState(key: string): "expanded" | "collapsed" {
 
 export default function MasterShell({ children }: { children: React.ReactNode }) {
   const { t } = useTheme();
+  const queryClient = useQueryClient();
   // Must match server first paint: never read `window` / `localStorage` in useState initializers,
   // or wide viewports hydrate as desktop while SSR always emitted mobile shell → hydration mismatch.
   const [isDesktop, setIsDesktop] = useState(false);
@@ -53,6 +53,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   /** Defer heavy side-rail Supabase work until after first paint / idle so center feed wins on cold load. */
   const [sideRailsReady, setSideRailsReady] = useState(false);
   const [showMemorialFeedCards, setShowMemorialFeedCards] = useState(true);
+  const [isBusinessOrgAccount, setIsBusinessOrgAccount] = useState(false);
 
   useLayoutEffect(() => {
     const mq = window.matchMedia("(min-width: 901px)");
@@ -75,22 +76,13 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       const uid = user?.id ?? null;
       if (cancelled) return;
       setUserId(uid);
+      setIsBusinessOrgAccount(false);
       if (!user) {
         setShowMemorialFeedCards(true);
         memberInteractionAllowedRef.current = false;
         return;
       }
-      const { profile: profileCheck } = await loadActiveProfile<
-        OnboardingGateProfile & {
-          account_type: string | null;
-          subscription_status: string | null;
-          is_admin: boolean | null;
-          show_memorial_feed_cards: boolean | null;
-        }
-      >(supabase, user, {
-        route: "app/components/master/MasterShell.tsx:loadShellUser",
-        select: `${ONBOARDING_GATE_PROFILE_SELECT}, display_name, photo_url, account_type, subscription_status, is_admin, show_memorial_feed_cards, verification_status, email_verified, admin_verified`,
-      });
+      const profileCheck = await fetchViewerProfileCached(queryClient, supabase, user);
       if (cancelled) return;
       if (shouldRedirectToOnboarding(profileCheck)) {
         window.location.replace(onboardingRedirectUrl(true));
@@ -101,6 +93,8 @@ export default function MasterShell({ children }: { children: React.ReactNode })
         memberInteractionAllowedRef.current = false;
         return;
       }
+      const isBusinessOrg = profileCheck.account_type === "business_org";
+      setIsBusinessOrgAccount(isBusinessOrg);
       if (!hasFullPlatformAccess(profileCheck)) {
         window.location.replace(resolvePreAccessRedirectPath(profileCheck));
         return;
@@ -115,7 +109,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       });
       memberInteractionAllowedRef.current = allowed;
 
-      if (hasFullPlatformAccess(profileCheck)) {
+      if (hasFullPlatformAccess(profileCheck) && !isBusinessOrg) {
         ensureWelcomeSidebarOnce(supabase);
       }
 
@@ -140,7 +134,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     if (!isDesktop) {
@@ -187,8 +181,9 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       openSidebarPeer: isDesktop ? openSidebarPeer : () => {},
       showMemorialFeedCards,
       setShowMemorialFeedCards,
+      isBusinessOrgAccount,
     }),
-    [isDesktop, openSidebarPeer, showMemorialFeedCards]
+    [isDesktop, openSidebarPeer, showMemorialFeedCards, isBusinessOrgAccount]
   );
 
   if (!isDesktop) {

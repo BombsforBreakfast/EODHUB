@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
@@ -12,7 +13,9 @@ import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import NotificationCenter from "./NotificationCenter";
 import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
-import { loadActiveProfile } from "../lib/auth/activeProfile";
+import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
+import { fetchNotifications, NOTIFICATIONS_STALE_MS } from "../lib/queries/notifications";
+import { queryKeys } from "../lib/queryKeys";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import type { User } from "@supabase/supabase-js";
@@ -47,6 +50,7 @@ type SearchResult = {
 
 export default function NavBar() {
   const { openMemorialById } = useMemorialNavModal();
+  const queryClient = useQueryClient();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [userInitial, setUserInitial] = useState<string>("?");
@@ -86,46 +90,42 @@ export default function NavBar() {
     : notifications.length;
   const canAccessRabbithole = isVerifiedRabbitholeViewer(verificationStatus);
 
-  const NOTIFICATION_SELECT =
-    "id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key, type, actor_id, post_id, unit_id, unit_post_id, metadata";
-
   async function loadNotifications(uid: string) {
-    const baseQuery = supabase
-      .from("notifications")
-      .select(NOTIFICATION_SELECT)
-      .order("created_at", { ascending: false });
-    const { data, error } = notificationsV2Enabled
-      ? await baseQuery.eq("recipient_user_id", uid).is("archived_at", null).limit(100)
-      : await baseQuery.eq("user_id", uid).limit(50);
-    if (error) {
-      const { data: fallback } = await supabase
-        .from("notifications")
-        .select("id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key")
-        .eq("user_id", uid)
-        .is("archived_at", null)
-        .order("created_at", { ascending: false })
-        .limit(100);
-      setNotifications((fallback ?? []) as Notification[]);
-      return;
-    }
-    setNotifications((data ?? []) as Notification[]);
+    // Cache-backed: remounts within the stale window reuse the cached list
+    // instead of re-querying Supabase. Realtime changes invalidate first (below).
+    const data = await queryClient.fetchQuery({
+      queryKey: queryKeys.notifications(uid, notificationsV2Enabled),
+      queryFn: () => fetchNotifications<Notification>(supabase, uid, notificationsV2Enabled),
+      staleTime: NOTIFICATIONS_STALE_MS,
+    });
+    setNotifications(data);
+  }
+
+  function invalidateNotifications() {
+    if (!currentUserId) return;
+    void queryClient.invalidateQueries({
+      queryKey: queryKeys.notifications(currentUserId, notificationsV2Enabled),
+    });
   }
 
   async function dismissNotification(id: string) {
     if (!notificationsV2Enabled) {
       await supabase.from("notifications").delete().eq("id", id);
       setNotifications((prev) => prev.filter((n) => n.id !== id));
+      invalidateNotifications();
       return;
     }
     const now = new Date().toISOString();
     await supabase.from("notifications").update({ archived_at: now, is_read: true, read_at: now }).eq("id", id);
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, archived_at: now, read_at: now, is_read: true } : n)));
+    invalidateNotifications();
   }
 
   async function openNotification(id: string, href: string) {
     if (!notificationsV2Enabled) {
       await supabase.from("notifications").delete().eq("id", id);
       setNotifications((prev) => prev.filter((n) => n.id !== id));
+      invalidateNotifications();
       setShowNotifPanel(false);
       window.location.href = href;
       return;
@@ -133,6 +133,7 @@ export default function NavBar() {
     const now = new Date().toISOString();
     await supabase.from("notifications").update({ is_read: true, read_at: now }).eq("id", id);
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: now, is_read: true } : n)));
+    invalidateNotifications();
     setShowNotifPanel(false);
     window.location.href = href;
   }
@@ -148,6 +149,7 @@ export default function NavBar() {
       .is("read_at", null)
       .is("archived_at", null);
     setNotifications((prev) => prev.map((n) => (n.archived_at || n.read_at ? n : { ...n, is_read: true, read_at: now })));
+    invalidateNotifications();
   }
 
   useEffect(() => {
@@ -191,20 +193,7 @@ export default function NavBar() {
     }
 
     async function loadNavProfile(user: User) {
-      const { profile } = await loadActiveProfile<{
-        user_id: string;
-        email: string | null;
-        display_name: string | null;
-        first_name: string | null;
-        last_name: string | null;
-        photo_url: string | null;
-        is_admin: boolean | null;
-        account_type: string | null;
-        verification_status: string | null;
-      }>(supabase, user, {
-        route: "app/components/NavBar.tsx:loadNavProfile",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, is_admin, account_type, verification_status",
-      });
+      const profile = await fetchViewerProfileCached(queryClient, supabase, user);
       if (!mounted) return;
       const row = profile;
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
@@ -308,7 +297,13 @@ export default function NavBar() {
         filter: notificationsV2Enabled
           ? `recipient_user_id=eq.${currentUserId}`
           : `user_id=eq.${currentUserId}`,
-      }, () => loadNotifications(currentUserId))
+      }, () => {
+        // Live change: drop the cached list so the refetch returns fresh rows
+        // even within the stale window, then repopulate.
+        void queryClient
+          .invalidateQueries({ queryKey: queryKeys.notifications(currentUserId, notificationsV2Enabled) })
+          .then(() => loadNotifications(currentUserId));
+      })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId, notificationsV2Enabled]);
