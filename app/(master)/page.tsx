@@ -1234,40 +1234,31 @@ export default function HomePage() {
     }
   }, [recruiterNudgeHiddenKey, userId]);
 
-  const pendingVouchHiddenKey = useCallback(
-    (uid: string | null) => (uid ? `eod_pending_vouch_hidden:${uid}` : null),
-    [],
-  );
-
-  const readHiddenPendingMemberIds = useCallback((uid: string | null): Set<string> => {
-    if (typeof window === "undefined") return new Set();
-    const key = pendingVouchHiddenKey(uid);
-    if (!key) return new Set();
-    try {
-      const raw = window.sessionStorage.getItem(key);
-      if (!raw) return new Set();
-      const parsed = JSON.parse(raw) as unknown;
-      if (!Array.isArray(parsed)) return new Set();
-      return new Set(parsed.filter((id): id is string => typeof id === "string"));
-    } catch {
-      return new Set();
-    }
-  }, [pendingVouchHiddenKey]);
-
-  const hidePendingMember = useCallback((memberId: string) => {
+  const hidePendingMember = useCallback(async (memberId: string) => {
     setHiddenPendingMemberIds((prev) => {
       const next = new Set(prev);
       next.add(memberId);
-      if (typeof window !== "undefined") {
-        const key = pendingVouchHiddenKey(userId);
-        if (key) {
-          try { window.sessionStorage.setItem(key, JSON.stringify([...next])); } catch {}
-        }
-      }
       return next;
     });
     setOpenVouchPopoverFor((prev) => (prev === memberId ? null : prev));
-  }, [pendingVouchHiddenKey, userId]);
+    if (!userId) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/profile-vouch/dismiss", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ vouchee_user_id: memberId }),
+      });
+      if (!res.ok) {
+        console.error("profile-vouch dismiss failed:", await res.text());
+      }
+    } catch (err) {
+      console.error("profile-vouch dismiss failed:", err);
+    }
+  }, [userId]);
 
   const hidePlankHolderCard = useCallback(() => {
     setPlankHolderCardHidden(true);
@@ -1316,10 +1307,6 @@ export default function HomePage() {
   useEffect(() => {
     setRecruiterNudgeHidden(readRecruiterNudgeHidden(userId));
   }, [userId, readRecruiterNudgeHidden]);
-
-  useEffect(() => {
-    setHiddenPendingMemberIds(readHiddenPendingMemberIds(userId));
-  }, [userId, readHiddenPendingMemberIds]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !userId) {
@@ -2139,6 +2126,14 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       }
     });
     const myVouchedSet = new Set((myVouches ?? []).map((v: { vouchee_user_id: string }) => v.vouchee_user_id));
+
+    const { data: dismissals } = await supabase
+      .from("profile_vouch_dismissals")
+      .select("vouchee_user_id")
+      .eq("viewer_user_id", currentUserId);
+    setHiddenPendingMemberIds(
+      new Set((dismissals ?? []).map((d: { vouchee_user_id: string }) => d.vouchee_user_id)),
+    );
 
     setPendingMembers(
       (pending as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null }[]).map((p) => ({
@@ -5027,7 +5022,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         setUserId(currentUserId);
         setPlankHolderCardHidden(readPlankHolderCardHidden(currentUserId));
         setRecruiterNudgeHidden(readRecruiterNudgeHidden(currentUserId));
-        setHiddenPendingMemberIds(readHiddenPendingMemberIds(currentUserId));
 
         const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null; is_admin: boolean | null } | null;
         const topLineTasks: Promise<unknown>[] = [];
@@ -5117,7 +5111,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       resetActiveProfileState();
       setPlankHolderCardHidden(readPlankHolderCardHidden(nextUserId));
       setRecruiterNudgeHidden(readRecruiterNudgeHidden(nextUserId));
-      setHiddenPendingMemberIds(readHiddenPendingMemberIds(nextUserId));
+      setHiddenPendingMemberIds(new Set());
       setLoading(true);
       if (nextUserId) {
         void init();
@@ -6006,9 +6000,9 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
                   <div key={m.user_id} style={{ position: "relative", border: `1px solid ${isDark ? "#2a2a00" : "#fef08a"}`, borderRadius: 14, padding: 16, background: isDark ? "#1a1a00" : "#fefce8", display: "flex", gap: 14, alignItems: "flex-start" }}>
                     <button
                       type="button"
-                      onClick={() => hidePendingMember(m.user_id)}
-                      aria-label={`Dismiss ${name}'s join request`}
-                      title="Dismiss for this session"
+                      onClick={() => void hidePendingMember(m.user_id)}
+                      aria-label={`I don't know ${name}`}
+                      title="I don't know this person"
                       style={{
                         position: "absolute",
                         top: 8,

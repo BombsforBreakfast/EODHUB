@@ -22,6 +22,8 @@ export async function purgePersonalAccountData(
     { table: "profile_connections", column: "target_user_id" },
     { table: "profile_vouches", column: "voucher_user_id" },
     { table: "profile_vouches", column: "vouchee_user_id" },
+    { table: "profile_vouch_dismissals", column: "viewer_user_id" },
+    { table: "profile_vouch_dismissals", column: "vouchee_user_id" },
     { table: "unit_members", column: "user_id" },
     { table: "unit_post_likes", column: "user_id" },
     { table: "saved_jobs", column: "user_id" },
