@@ -970,7 +970,6 @@ export default function HomePage() {
   const [expandedComments, setExpandedComments] = useState<
     Record<string, boolean>
   >({});
-  const [expandedCommentTexts, setExpandedCommentTexts] = useState<Record<string, boolean>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [selectedCommentImages, setSelectedCommentImages] = useState<
     Record<string, SelectedCommentImage | null>
@@ -5553,8 +5552,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
   ) {
     const isOwnComment = userId === comment.user_id;
     const isEditingComment = editingCommentId === comment.id;
-    const textExpanded = expandedCommentTexts[comment.id] || false;
-    const isLong = (comment.content?.length ?? 0) > 100;
     const avatarSize = opts.isReply ? 20 : 24;
 
     return (
@@ -5759,16 +5756,18 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
         ) : (
           <>
             {comment.content && (
-              <div style={{ marginTop: 3 }}>
-                <div style={{ fontSize: FEED_COMMENT_TEXT_SIZE, lineHeight: 1.5, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
-                  {renderContent(comment.content)}
-                </div>
-                {isLong && (
-                  <button type="button" onClick={() => setExpandedCommentTexts((p) => ({ ...p, [comment.id]: !textExpanded }))} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: FEED_COMMENT_META_SIZE, fontWeight: 700, marginTop: 1 }}>
-                    {textExpanded ? "Show less" : "Show more"}
-                  </button>
-                )}
-              </div>
+              <ExpandableText
+                textLength={comment.content.length}
+                maxLines={2}
+                minCharsToToggle={99999}
+                style={{ fontSize: FEED_COMMENT_TEXT_SIZE }}
+                wrapperStyle={{ marginTop: 3 }}
+                toggleColor={t.textMuted}
+                expandLabel="Show more"
+                collapseLabel="Show less"
+              >
+                {renderContent(comment.content)}
+              </ExpandableText>
             )}
 
             {comment.content && (() => {
