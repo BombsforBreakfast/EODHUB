@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import {
@@ -21,6 +22,8 @@ import {
 import { BizListingTagsField } from "../biz/BizListingTagsField";
 import { BizListingTagChips } from "../biz/BizListingTagChips";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../../lib/bizListingTags";
+import { fetchApprovedBusinessListings, BUSINESSES_STALE_MS } from "../../lib/queries/businesses";
+import { queryKeys } from "../../lib/queryKeys";
 
 type BusinessOrgListingType = Exclude<BizListingType, "resource">;
 
@@ -80,8 +83,7 @@ export default function MasterRightColumn({
 
   const [desktopConversations, setDesktopConversations] = useState<DesktopConversation[]>([]);
 
-  const [businessListings, setBusinessListings] = useState<BusinessListingRow[]>([]);
-  const [bizLoaded, setBizLoaded] = useState(false);
+  const [businessLikeCountOverrides, setBusinessLikeCountOverrides] = useState<Record<string, number>>({});
   const [showBizForm, setShowBizForm] = useState(false);
   const [bizUrl, setBizUrl] = useState("");
   const [bizName, setBizName] = useState("");
@@ -124,23 +126,22 @@ export default function MasterRightColumn({
     );
   }
 
-  const loadBusinessListings = useCallback(async () => {
-    const { data, error } = await supabase
-      .from("business_listings")
-      .select("*")
-      .eq("is_approved", true)
-      .order("is_featured", { ascending: false })
-      .order("business_name", { ascending: true, nullsFirst: false })
-      .limit(50);
+  const businessListingsQuery = useQuery({
+    queryKey: queryKeys.businessesApproved(50),
+    queryFn: () => fetchApprovedBusinessListings<BusinessListingRow>(supabase, "*", 50),
+    enabled: sideRailsReady,
+    staleTime: BUSINESSES_STALE_MS,
+  });
 
-    if (error) {
-      console.error("Business listings load error:", error);
-      return;
-    }
-
-    setBusinessListings((data ?? []) as BusinessListingRow[]);
-    setBizLoaded(true);
-  }, []);
+  const businessListings = useMemo(
+    () =>
+      (businessListingsQuery.data ?? []).map((listing) => {
+        const override = businessLikeCountOverrides[listing.id];
+        return override === undefined ? listing : { ...listing, like_count: override };
+      }),
+    [businessListingsQuery.data, businessLikeCountOverrides],
+  );
+  const bizLoaded = businessListingsQuery.isSuccess;
 
   const loadBizLikes = useCallback(async (uid: string) => {
     const { data } = await supabase.from("business_likes").select("business_id").eq("user_id", uid);
@@ -209,11 +210,6 @@ export default function MasterRightColumn({
 
   useEffect(() => {
     if (!sideRailsReady) return;
-    loadBusinessListings().catch((e) => console.error(e));
-  }, [sideRailsReady, loadBusinessListings]);
-
-  useEffect(() => {
-    if (!sideRailsReady) return;
     if (!userId) {
       setDesktopConversations([]);
       return;
@@ -238,23 +234,6 @@ export default function MasterRightColumn({
       void supabase.removeChannel(ch);
     };
   }, [sideRailsReady, userId, loadDesktopConversations]);
-
-  useEffect(() => {
-    if (!sideRailsReady || !userId) return;
-    const ch = supabase
-      .channel("master-shell-biz")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "business_listings" },
-        () => {
-          void loadBusinessListings();
-        }
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(ch);
-    };
-  }, [sideRailsReady, userId, loadBusinessListings]);
 
   const featuredBizPool = useMemo(
     () =>
@@ -420,11 +399,17 @@ export default function MasterRightColumn({
         s.delete(bizId);
         return s;
       });
-      setBusinessListings((prev) => prev.map((b) => (b.id === bizId ? { ...b, like_count: Math.max(0, (b.like_count ?? 0) - 1) } : b)));
+      setBusinessLikeCountOverrides((prev) => ({
+        ...prev,
+        [bizId]: Math.max(0, (businessListings.find((b) => b.id === bizId)?.like_count ?? 0) - 1),
+      }));
     } else {
       await supabase.from("business_likes").insert({ user_id: userId, business_id: bizId });
       setLikedBizIds((prev) => new Set(prev).add(bizId));
-      setBusinessListings((prev) => prev.map((b) => (b.id === bizId ? { ...b, like_count: (b.like_count ?? 0) + 1 } : b)));
+      setBusinessLikeCountOverrides((prev) => ({
+        ...prev,
+        [bizId]: (businessListings.find((b) => b.id === bizId)?.like_count ?? 0) + 1,
+      }));
     }
     setTogglingBizLikeFor(null);
   }
@@ -592,7 +577,7 @@ export default function MasterRightColumn({
             Collapse
           </button>
         </div>
-        <div style={{ display: "grid", gap: 8, maxHeight: 270, overflowY: "auto", paddingRight: 2 }}>
+        <div style={{ display: "grid", gap: 8, maxHeight: 172, overflowY: "auto", paddingRight: 2 }}>
           {desktopConversations.length === 0 && <div style={{ color: t.textFaint, fontSize: 12 }}>No conversations yet.</div>}
           {desktopConversations.map((conv) => (
             <button

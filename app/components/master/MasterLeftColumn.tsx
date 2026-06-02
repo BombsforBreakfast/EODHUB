@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "../../lib/lib/supabaseClient";
@@ -22,6 +23,7 @@ import { collapsedRailTitleLinkZoom, httpsAssetUrl, sectionTitleLinkZoom, type J
 import { MemorialDisclaimer } from "../memorial/MemorialDisclaimer";
 import { memorialTheme } from "../memorial/memorialModalShared";
 import { ExternalSiteLink } from "../ExternalSiteEmbedModal";
+import { fetchViewerProfileCached } from "../../lib/queries/viewerProfile";
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -154,6 +156,7 @@ export default function MasterLeftColumn({
   sideRailsReady,
 }: Props) {
   const { t, isDark } = useTheme();
+  const queryClient = useQueryClient();
 
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
@@ -695,19 +698,16 @@ export default function MasterLeftColumn({
     let cancelled = false;
     (async () => {
       const { data } = await supabase.auth.getUser();
-      const uid = data.user?.id ?? null;
-      if (cancelled || !uid) return;
-      const { data: profileCheck } = await supabase
-        .from("profiles")
-        .select("account_type, subscription_status, is_admin")
-        .eq("user_id", uid)
-        .maybeSingle();
+      const user = data.user ?? null;
+      const uid = user?.id ?? null;
+      if (cancelled || !uid || !user) return;
+      const profileCheck = await fetchViewerProfileCached(queryClient, supabase, user);
       if (cancelled) return;
       const featureAccess = getFeatureAccess({
-        accountType: (profileCheck as { account_type?: string | null } | null)?.account_type,
-        subscriptionStatus: (profileCheck as { subscription_status?: string | null } | null)?.subscription_status ?? null,
+        accountType: profileCheck?.account_type,
+        subscriptionStatus: profileCheck?.subscription_status ?? null,
         authUserCreatedAtIso: data.user?.created_at ?? null,
-        isAdmin: (profileCheck as { is_admin?: boolean | null } | null)?.is_admin,
+        isAdmin: profileCheck?.is_admin,
       });
       setCanViewFullJobs(featureAccess.canViewFullJobs);
       await Promise.all([
@@ -720,7 +720,7 @@ export default function MasterLeftColumn({
     return () => {
       cancelled = true;
     };
-  }, [sideRailsReady, loadJobs, loadSavedJobIds, loadDesktopSavedEvents, loadDesktopSavedJobs]);
+  }, [sideRailsReady, loadJobs, loadSavedJobIds, loadDesktopSavedEvents, loadDesktopSavedJobs, queryClient]);
 
   useEffect(() => {
     if (!sideRailsReady || !userId) return;
