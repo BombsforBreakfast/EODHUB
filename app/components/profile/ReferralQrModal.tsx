@@ -10,10 +10,9 @@ type Props = {
   referralUrl: string;
   onClose: () => void;
   onInviteAction?: () => void;
-  onLinkCopied?: () => void;
 };
 
-export function ReferralQrModal({ open, referralUrl, onClose, onInviteAction, onLinkCopied }: Props) {
+export function ReferralQrModal({ open, referralUrl, onClose, onInviteAction }: Props) {
   const { t, isDark } = useTheme();
   const [copied, setCopied] = useState(false);
 
@@ -25,10 +24,9 @@ export function ReferralQrModal({ open, referralUrl, onClose, onInviteAction, on
     void navigator.clipboard.writeText(referralUrl).then(() => {
       setCopied(true);
       onInviteAction?.();
-      onLinkCopied?.();
       window.setTimeout(() => setCopied(false), 2000);
     });
-  }, [onInviteAction, onLinkCopied, referralUrl]);
+  }, [onInviteAction, referralUrl]);
 
   useEffect(() => {
     if (!open) return;
