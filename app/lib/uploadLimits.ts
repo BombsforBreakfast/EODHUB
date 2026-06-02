@@ -59,16 +59,60 @@ const EXTENSION_MIME: Record<string, string> = {
   heif: "image/heif",
 };
 
-/** iOS often sends PDFs as application/octet-stream or an empty type — infer before storage upload. */
+/** iOS/Android often misreport employer docs — infer from extension before trusting file.type. */
 export function inferEmployerDocumentContentType(file: File): string {
+  const ext = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
+  if (ext && EXTENSION_MIME[ext]) return EXTENSION_MIME[ext];
+
   const trimmedType = file.type?.trim() ?? "";
   if (trimmedType && trimmedType !== "application/octet-stream") return trimmedType;
 
-  const ext = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "";
-  if (ext && EXTENSION_MIME[ext]) return EXTENSION_MIME[ext];
   if (isDocumentFile(file)) return "application/pdf";
   if (isImageFile(file)) return "image/jpeg";
   return trimmedType || "application/octet-stream";
+}
+
+const UNREADABLE_FILE_MESSAGE =
+  "Could not read the selected file. If it is stored in Google Drive or another cloud app, download it to your phone first, then upload again.";
+
+const EMPTY_FILE_MESSAGE =
+  "The selected file appears empty. Try saving a copy on your phone and upload again.";
+
+/** Read file bytes into memory before upload — fixes Android pickers that fail mid-request. */
+export async function materializeUploadFile(file: File, contentType?: string): Promise<File> {
+  let buffer: ArrayBuffer;
+  try {
+    buffer = await file.arrayBuffer();
+  } catch {
+    throw new Error(UNREADABLE_FILE_MESSAGE);
+  }
+  if (buffer.byteLength === 0) {
+    throw new Error(EMPTY_FILE_MESSAGE);
+  }
+  const resolvedType = contentType ?? inferEmployerDocumentContentType(file);
+  return new File([buffer], file.name || "document", {
+    type: resolvedType,
+    lastModified: file.lastModified,
+  });
+}
+
+export function formatEmployerDocumentUploadError(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  if (
+    message === "Failed to fetch"
+    || message.includes("NetworkError")
+    || message.includes("Load failed")
+    || message.includes("network")
+  ) {
+    return (
+      "Upload could not reach the server. Check your connection, stay on this page while uploading, and try again. " +
+      "If the file is in Google Drive or another cloud app, download it to your phone first."
+    );
+  }
+  if (message.toLowerCase().includes("mime") || message.toLowerCase().includes("not allowed")) {
+    return "That file type is not supported. Use PDF, Word (.doc/.docx), or a plain text file.";
+  }
+  return message;
 }
 
 export function normalizeEmployerDocumentFile(file: File): File {
@@ -168,6 +212,30 @@ export function validateImagePick(file: File): string | null {
   }
   return null;
 }
+
+/** Validate resume/education/training picks before upload starts. */
+export function validateEmployerDocumentPick(file: File): string | null {
+  if (isImageFile(file)) return validateImagePick(file);
+  if (!isEmployerDocumentFile(file)) {
+    return "Please choose a PDF, Word doc, text file, or image.";
+  }
+  if (file.size === 0) return EMPTY_FILE_MESSAGE;
+  if (file.size > UPLOAD_LIMITS.document) {
+    return uploadTooLargeMessage(file, UPLOAD_LIMITS.document, "document");
+  }
+  return null;
+}
+
+function isEmployerDocumentFile(file: File): boolean {
+  return (
+    isDocumentFile(file)
+    || EMPLOYER_DOC_NAME.test(file.name)
+    || file.type.startsWith("application/")
+    || file.type.startsWith("text/")
+  );
+}
+
+const EMPLOYER_DOC_NAME = /\.(pdf|doc|docx|txt|rtf|odt)$/i;
 
 /** Validate a document pick (RabbitHole, scrapbook, etc.). */
 export function validateDocumentPick(file: File): string | null {

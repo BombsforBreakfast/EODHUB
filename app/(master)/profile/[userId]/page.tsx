@@ -21,7 +21,7 @@ import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
-import { EMPLOYER_DOCUMENT_ACCEPT, FEED_ATTACHMENT_ACCEPT, inferEmployerDocumentContentType } from "../../../lib/uploadLimits";
+import { EMPLOYER_DOCUMENT_ACCEPT, FEED_ATTACHMENT_ACCEPT, formatEmployerDocumentUploadError, inferEmployerDocumentContentType, validateEmployerDocumentPick } from "../../../lib/uploadLimits";
 import { validateFeedAttachmentPick, validateImagePick, UPLOAD_LIMITS, formatUploadBytes, isVideoFile, isVideoUrl } from "../../../lib/uploadLimits";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
@@ -882,18 +882,25 @@ export default function PublicProfilePage() {
 
   async function uploadEmployerDocument(file: File, folder: string): Promise<string> {
     if (!currentUserId || currentUserId !== userId) throw new Error("Not authorized");
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error("Your session expired. Please sign in again and retry.");
+
     const prepared = await prepareEmployerDocumentUpload(file);
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
     const ext = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "bin";
     const safeExt = ext && /^[a-z0-9]+$/.test(ext) ? ext : "bin";
     const filePath = `${currentUserId}/${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
-    const contentType = inferEmployerDocumentContentType(file);
-    const { error } = await supabase.storage.from("feed-images").upload(filePath, file, {
-      upsert: true,
-      contentType,
-    });
-    if (error) throw error;
+    const contentType = file.type || inferEmployerDocumentContentType(file);
+    try {
+      const { error } = await supabase.storage.from("feed-images").upload(filePath, file, {
+        upsert: true,
+        contentType,
+      });
+      if (error) throw error;
+    } catch (err) {
+      throw new Error(formatEmployerDocumentUploadError(err));
+    }
     const { data } = supabase.storage.from("feed-images").getPublicUrl(filePath);
     return data.publicUrl;
   }
@@ -902,6 +909,11 @@ export default function PublicProfilePage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    const pickError = validateEmployerDocumentPick(file);
+    if (pickError) {
+      alert(pickError);
+      return;
+    }
     try {
       setUploadingResumeDoc(true);
       const url = await uploadEmployerDocument(file, "resume");
@@ -917,6 +929,11 @@ export default function PublicProfilePage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
+    const pickError = validateEmployerDocumentPick(file);
+    if (pickError) {
+      alert(pickError);
+      return;
+    }
     try {
       setUploadingEducationDoc(true);
       const url = await uploadEmployerDocument(file, "education");
@@ -932,6 +949,12 @@ export default function PublicProfilePage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !trainingUploadTargetTag) return;
+    const pickError = validateEmployerDocumentPick(file);
+    if (pickError) {
+      alert(pickError);
+      setTrainingUploadTargetTag(null);
+      return;
+    }
     try {
       setUploadingTrainingTag(trainingUploadTargetTag);
       const url = await uploadEmployerDocument(file, "training");

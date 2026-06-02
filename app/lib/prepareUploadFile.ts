@@ -1,12 +1,14 @@
 import { compressImageFile } from "./compressImage";
 import {
   UPLOAD_LIMITS,
+  inferEmployerDocumentContentType,
   isDocumentFile,
   isImageFile,
   isVideoFile,
-  normalizeEmployerDocumentFile,
+  materializeUploadFile,
   uploadTooLargeMessage,
   validateDocumentPick,
+  validateEmployerDocumentPick,
   validateFileOnPick,
 } from "./uploadLimits";
 
@@ -114,32 +116,31 @@ export function prepareDocumentUploadFile(file: File): PrepareUploadResult {
   return { ok: true, file };
 }
 
-const EMPLOYER_DOC_NAME = /\.(pdf|doc|docx|txt|rtf|odt)$/i;
-
-function isEmployerDocumentFile(file: File): boolean {
-  return (
-    isDocumentFile(file)
-    || EMPLOYER_DOC_NAME.test(file.name)
-    || file.type.startsWith("application/")
-    || file.type.startsWith("text/")
-  );
-}
-
 /** Resume, education, and training uploads on profile. */
 export async function prepareEmployerDocumentUpload(file: File): Promise<PrepareUploadResult> {
+  const pickError = validateEmployerDocumentPick(file);
+  if (pickError) return { ok: false, error: pickError };
+
   if (isImageFile(file)) {
     return prepareImageUploadFile(file);
   }
-  if (!isEmployerDocumentFile(file)) {
-    return { ok: false, error: "Please choose a PDF, Word doc, text file, or image." };
-  }
-  if (file.size > UPLOAD_LIMITS.document) {
+
+  try {
+    const contentType = inferEmployerDocumentContentType(file);
+    const materialized = await materializeUploadFile(file, contentType);
+    if (materialized.size > UPLOAD_LIMITS.document) {
+      return {
+        ok: false,
+        error: uploadTooLargeMessage(materialized, UPLOAD_LIMITS.document, "document"),
+      };
+    }
+    return { ok: true, file: materialized };
+  } catch (err) {
     return {
       ok: false,
-      error: uploadTooLargeMessage(file, UPLOAD_LIMITS.document, "document"),
+      error: err instanceof Error ? err.message : "Could not read the selected file.",
     };
   }
-  return { ok: true, file: normalizeEmployerDocumentFile(file) };
 }
 
 /** Prepare any image or document for memorial scrapbook uploads. */
