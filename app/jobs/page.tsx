@@ -28,6 +28,14 @@ import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 import { fetchApprovedJobs, JOBS_LIST_STALE_MS } from "../lib/queries/jobs";
+import {
+  fetchSavedJobs,
+  savedJobRowFromJob,
+  savedJobIdsFromRows,
+  SAVED_JOBS_STALE_MS,
+  toggleSavedJob,
+  type SavedJobRow,
+} from "../lib/queries/savedJobs";
 import { queryKeys } from "../lib/queryKeys";
 
 type ProfileRow = {
@@ -37,26 +45,6 @@ type ProfileRow = {
   verification_status: string | null;
   email_verified: boolean | null;
   admin_verified: boolean | null;
-};
-
-type SavedJobRow = {
-  id: string;
-  job_id: string;
-  title: string | null;
-  company_name: string | null;
-  location: string | null;
-  category: string | null;
-  description: string | null;
-  apply_url: string | null;
-  pay_min: number | null;
-  pay_max: number | null;
-  clearance: string | null;
-  source_type: string | null;
-  created_at: string | null;
-  og_title: string | null;
-  og_description: string | null;
-  og_image: string | null;
-  og_site_name: string | null;
 };
 
 const SALARY_OPTIONS: Array<{ label: string; value: SalaryMin | "" }> = [
@@ -118,8 +106,6 @@ export default function JobsPage() {
   const [canUseJobFilters, setCanUseJobFilters] = useState(true);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
-  const [savedJobs, setSavedJobs] = useState<SavedJobRow[]>([]);
-  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [togglingJobId, setTogglingJobId] = useState<string | null>(null);
   const [savedExpanded, setSavedExpanded] = useState(false);
   const [detailsJob, setDetailsJob] = useState<JobModalData | null>(null);
@@ -132,103 +118,6 @@ export default function JobsPage() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  const loadSavedJobs = useCallback(async (uid: string) => {
-    const { data, error } = await supabase
-      .from("saved_jobs")
-      .select(
-        "id, job_id, jobs(title, company_name, location, category, description, apply_url, pay_min, pay_max, clearance, source_type, created_at, og_title, og_description, og_image, og_site_name)"
-      )
-      .eq("user_id", uid)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Saved jobs load error:", error);
-      setSavedJobs([]);
-      setSavedJobIds(new Set());
-      return;
-    }
-
-    type RawJob = {
-      title: string | null;
-      company_name: string | null;
-      location: string | null;
-      category: string | null;
-      description: string | null;
-      apply_url: string | null;
-      pay_min: number | null;
-      pay_max: number | null;
-      clearance: string | null;
-      source_type: string | null;
-      created_at: string | null;
-      og_title: string | null;
-      og_description: string | null;
-      og_image: string | null;
-      og_site_name: string | null;
-    };
-    type RawRow = {
-      id: string;
-      job_id: string;
-      jobs: RawJob | RawJob[] | null;
-    };
-
-    const rows: SavedJobRow[] = ((data ?? []) as unknown as RawRow[]).map((r) => {
-      const job = Array.isArray(r.jobs) ? r.jobs[0] ?? null : r.jobs;
-      return {
-        id: r.id,
-        job_id: r.job_id,
-        title: job?.title ?? null,
-        company_name: job?.company_name ?? null,
-        location: job?.location ?? null,
-        category: job?.category ?? null,
-        description: job?.description ?? null,
-        apply_url: job?.apply_url ?? null,
-        pay_min: job?.pay_min ?? null,
-        pay_max: job?.pay_max ?? null,
-        clearance: job?.clearance ?? null,
-        source_type: job?.source_type ?? null,
-        created_at: job?.created_at ?? null,
-        og_title: job?.og_title ?? null,
-        og_description: job?.og_description ?? null,
-        og_image: job?.og_image ?? null,
-        og_site_name: job?.og_site_name ?? null,
-      };
-    });
-    setSavedJobs(rows);
-    setSavedJobIds(new Set(rows.map((r) => r.job_id)));
-  }, []);
-
-  const toggleSaveJob = useCallback(
-    async (job: JobModalData) => {
-      if (!userId) return;
-      try {
-        setTogglingJobId(job.id);
-        const isSaved = savedJobIds.has(job.id);
-        if (isSaved) {
-          await supabase.from("saved_jobs").delete().eq("user_id", userId).eq("job_id", job.id);
-          setSavedJobIds((prev) => {
-            const next = new Set(prev);
-            next.delete(job.id);
-            return next;
-          });
-          setSavedJobs((prev) => prev.filter((j) => j.job_id !== job.id));
-        } else {
-          await supabase.from("saved_jobs").insert([{ user_id: userId, job_id: job.id }]);
-          setSavedJobIds((prev) => new Set(prev).add(job.id));
-        }
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("eod:saved-jobs-changed", { detail: { jobId: job.id } })
-          );
-        }
-      } catch (err) {
-        console.error("Toggle save job error:", err);
-      } finally {
-        setTogglingJobId(null);
-      }
-    },
-    [userId, savedJobIds]
-  );
-
   const listingCutoff = useMemo(() => jobListingCutoffIso(), []);
 
   const jobsQuery = useQuery({
@@ -240,6 +129,39 @@ export default function JobsPage() {
 
   const EMPTY_JOBS = useMemo<JobListItem[]>(() => [], []);
   const jobs = jobsQuery.data ?? EMPTY_JOBS;
+
+  const savedJobsQuery = useQuery({
+    queryKey: userId ? queryKeys.savedJobs(userId) : queryKeys.savedJobs("pending"),
+    queryFn: () => fetchSavedJobs(supabase, userId as string),
+    enabled: !!userId,
+    staleTime: SAVED_JOBS_STALE_MS,
+  });
+
+  const EMPTY_SAVED_JOBS = useMemo<SavedJobRow[]>(() => [], []);
+  const savedJobs = savedJobsQuery.data ?? EMPTY_SAVED_JOBS;
+  const savedJobIds = useMemo(() => savedJobIdsFromRows(savedJobs), [savedJobs]);
+
+  const toggleSaveJob = useCallback(
+    async (job: JobModalData) => {
+      if (!userId) return;
+      try {
+        setTogglingJobId(job.id);
+        await toggleSavedJob({
+          queryClient,
+          supabase,
+          userId,
+          jobId: job.id,
+          saved: savedJobIds.has(job.id),
+          optimisticRow: savedJobRowFromJob(job),
+        });
+      } catch (err) {
+        console.error("Toggle save job error:", err);
+      } finally {
+        setTogglingJobId(null);
+      }
+    },
+    [queryClient, userId, savedJobIds]
+  );
 
   useEffect(() => {
     let mounted = true;
@@ -280,14 +202,13 @@ export default function JobsPage() {
       setUserId(uid);
       setCanViewFullJobs(true);
       setCanUseJobFilters(true);
-      void loadSavedJobs(uid);
     }
 
     void init();
     return () => {
       mounted = false;
     };
-  }, [loadSavedJobs, queryClient]);
+  }, [queryClient]);
 
   // Loading clears once the gate resolved a user and the jobs query settled.
   useEffect(() => {
@@ -295,17 +216,6 @@ export default function JobsPage() {
       setLoading(false);
     }
   }, [userId, jobsQuery.isSuccess, jobsQuery.isError]);
-
-  useEffect(() => {
-    if (!userId) return;
-    const onChanged = () => {
-      void loadSavedJobs(userId);
-    };
-    window.addEventListener("eod:saved-jobs-changed", onChanged as EventListener);
-    return () => {
-      window.removeEventListener("eod:saved-jobs-changed", onChanged as EventListener);
-    };
-  }, [userId, loadSavedJobs]);
 
   const regionOptions = useMemo(() => uniqueJobRegionOptions(jobs), [jobs]);
 

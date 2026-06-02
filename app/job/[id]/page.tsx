@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "next/navigation";
 import { supabase } from "../../lib/lib/supabaseClient";
 import NavBar from "../../components/NavBar";
@@ -8,6 +9,14 @@ import { useTheme } from "../../lib/ThemeContext";
 import JobImage from "../../components/jobs/JobImage";
 import { isJobListingExpired } from "../../lib/jobRetention";
 import { useRequireFullAccess } from "../../hooks/useRequireFullAccess";
+import {
+  fetchSavedJobs,
+  savedJobIdsFromRows,
+  savedJobRowFromJob,
+  SAVED_JOBS_STALE_MS,
+  toggleSavedJob,
+} from "../../lib/queries/savedJobs";
+import { queryKeys } from "../../lib/queryKeys";
 
 type Job = {
   id: string;
@@ -36,12 +45,19 @@ export default function JobDetailPage() {
   const params = useParams();
   const jobId = params.id as string;
   const { t } = useTheme();
+  const queryClient = useQueryClient();
 
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const [togglingSave, setTogglingSave] = useState(false);
+  const savedJobsQuery = useQuery({
+    queryKey: userId ? queryKeys.savedJobs(userId) : queryKeys.savedJobs("pending"),
+    queryFn: () => fetchSavedJobs(supabase, userId as string),
+    enabled: !!userId,
+    staleTime: SAVED_JOBS_STALE_MS,
+  });
+  const saved = savedJobIdsFromRows(savedJobsQuery.data).has(jobId);
 
   useEffect(() => {
     async function loadJobPage() {
@@ -69,16 +85,6 @@ export default function JobDetailPage() {
       const uid = userData.user?.id ?? null;
       setUserId(uid);
 
-      if (uid) {
-        const { data: savedRow } = await supabase
-          .from("saved_jobs")
-          .select("id")
-          .eq("user_id", uid)
-          .eq("job_id", jobId)
-          .maybeSingle();
-        setSaved(!!savedRow);
-      }
-
       setLoading(false);
     }
 
@@ -94,16 +100,14 @@ export default function JobDetailPage() {
     }
     try {
       setTogglingSave(true);
-      if (saved) {
-        await supabase.from("saved_jobs").delete().eq("user_id", userId).eq("job_id", job.id);
-        setSaved(false);
-      } else {
-        await supabase.from("saved_jobs").insert([{ user_id: userId, job_id: job.id }]);
-        setSaved(true);
-      }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("eod:saved-jobs-changed", { detail: { jobId: job.id } }));
-      }
+      await toggleSavedJob({
+        queryClient,
+        supabase,
+        userId,
+        jobId: job.id,
+        saved,
+        optimisticRow: savedJobRowFromJob(job),
+      });
     } catch (err) {
       console.error("Toggle save on /job/[id]:", err);
     } finally {

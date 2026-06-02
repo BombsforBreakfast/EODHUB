@@ -1,6 +1,7 @@
 ﻿"use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/lib/supabaseClient";
@@ -86,6 +87,13 @@ import { isEmployerAccount } from "../../../lib/profileCompleteness";
 import EmployerAccountCardDetails from "../../../components/profile/EmployerAccountCardDetails";
 import ProfileSocialLinks from "../../../components/profile/ProfileSocialLinks";
 import { normalizeLinkedInUrl } from "../../../lib/linkedInUrl";
+import {
+  fetchSavedJobs,
+  SAVED_JOBS_STALE_MS,
+  toggleSavedJob,
+  type SavedJobRow,
+} from "../../../lib/queries/savedJobs";
+import { queryKeys } from "../../../lib/queryKeys";
 
 type Profile = {
   user_id: string;
@@ -172,17 +180,6 @@ type SavedEventRow = {
   signup_url: string | null;
   unit_id?: string | null;
   visibility?: string | null;
-};
-
-type SavedJobRow = {
-  id: string;
-  job_id: string;
-  title: string | null;
-  company_name: string | null;
-  location: string | null;
-  category: string | null;
-  apply_url: string | null;
-  created_at: string | null;
 };
 
 type FeedEventSnapshot = {
@@ -556,6 +553,7 @@ export default function PublicProfilePage() {
       : null;
 
   const { t, isDark } = useTheme();
+  const queryClient = useQueryClient();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
@@ -569,7 +567,6 @@ export default function PublicProfilePage() {
     SavedEventRow[]
   >([]);
   const [desktopSavedEvents, setDesktopSavedEvents] = useState<SavedEventRow[]>([]);
-  const [desktopSavedJobs, setDesktopSavedJobs] = useState<SavedJobRow[]>([]);
   const [unsavingWallEvent, setUnsavingWallEvent] = useState<string | null>(null);
   const [unsavingDesktopJobId, setUnsavingDesktopJobId] = useState<string | null>(null);
   const [desktopCalendarDate, setDesktopCalendarDate] = useState(() => new Date());
@@ -580,6 +577,14 @@ export default function PublicProfilePage() {
 
   const [postContent, setPostContent] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const savedJobsQuery = useQuery({
+    queryKey: currentUserId ? queryKeys.savedJobs(currentUserId) : queryKeys.savedJobs("pending"),
+    queryFn: () => fetchSavedJobs(supabase, currentUserId as string),
+    enabled: !!currentUserId,
+    staleTime: SAVED_JOBS_STALE_MS,
+  });
+  const EMPTY_SAVED_JOBS = useMemo<SavedJobRow[]>(() => [], []);
+  const desktopSavedJobs = savedJobsQuery.data ?? EMPTY_SAVED_JOBS;
   const [submittingPost, setSubmittingPost] = useState(false);
   const [ogPreview, setOgPreview] = useState<OgPreview | null>(null);
   const [fetchingOg, setFetchingOg] = useState(false);
@@ -750,17 +755,6 @@ export default function PublicProfilePage() {
       window.removeEventListener("keydown", onKey);
     };
   }, [editingProfile]);
-
-  useEffect(() => {
-    if (!currentUserId) return;
-    const onSavedJobsChanged = () => {
-      void loadDesktopSavedJobs(currentUserId);
-    };
-    window.addEventListener("eod:saved-jobs-changed", onSavedJobsChanged as EventListener);
-    return () => {
-      window.removeEventListener("eod:saved-jobs-changed", onSavedJobsChanged as EventListener);
-    };
-  }, [currentUserId]);
 
   const applyPlankHolderResponse = useCallback((next: PlankHolderResponse | null) => {
     if (!next) return;
@@ -2111,37 +2105,6 @@ export default function PublicProfilePage() {
     setDesktopSavedEvents(rows);
   }
 
-  async function loadDesktopSavedJobs(uid: string) {
-    const { data, error } = await supabase
-      .from("saved_jobs")
-      .select("id, job_id, jobs(title, company_name, location, category, apply_url, created_at)")
-      .eq("user_id", uid)
-      .order("created_at", { ascending: false });
-    if (error) {
-      setDesktopSavedJobs([]);
-      return;
-    }
-    type RawRow = {
-      id: string;
-      job_id: string;
-      jobs: { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null } | { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null }[] | null;
-    };
-    const rows = ((data ?? []) as unknown as RawRow[]).map((r) => {
-      const job = Array.isArray(r.jobs) ? r.jobs[0] ?? null : r.jobs;
-      return {
-        id: r.id,
-        job_id: r.job_id,
-        title: job?.title ?? null,
-        company_name: job?.company_name ?? null,
-        location: job?.location ?? null,
-        category: job?.category ?? null,
-        apply_url: job?.apply_url ?? null,
-        created_at: job?.created_at ?? null,
-      };
-    });
-    setDesktopSavedJobs(rows);
-  }
-
   async function unsaveWallEvent(rowId: string) {
     try {
       setUnsavingWallEvent(rowId);
@@ -2157,12 +2120,14 @@ export default function PublicProfilePage() {
     try {
       setUnsavingDesktopJobId(savedJobRowId);
       const removed = desktopSavedJobs.find((j) => j.id === savedJobRowId);
-      await supabase.from("saved_jobs").delete().eq("id", savedJobRowId);
-      setDesktopSavedJobs((prev) => prev.filter((j) => j.id !== savedJobRowId));
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("eod:saved-jobs-changed", { detail: { jobId: removed?.job_id ?? null } })
-        );
+      if (removed?.job_id && currentUserId) {
+        await toggleSavedJob({
+          queryClient,
+          supabase,
+          userId: currentUserId,
+          jobId: removed.job_id,
+          saved: true,
+        });
       }
     } finally {
       setUnsavingDesktopJobId(null);
@@ -2785,13 +2750,9 @@ export default function PublicProfilePage() {
         loadSavedEventsForUser(userId),
       ]);
       if (signedInUserId) {
-        await Promise.all([
-          loadDesktopSavedEvents(signedInUserId),
-          loadDesktopSavedJobs(signedInUserId),
-        ]);
+        await loadDesktopSavedEvents(signedInUserId);
       } else {
         setDesktopSavedEvents([]);
-        setDesktopSavedJobs([]);
         setViewerIsEmployer(false);
         setViewerIsAdmin(false);
       }

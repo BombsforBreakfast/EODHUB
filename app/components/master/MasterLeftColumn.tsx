@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import { ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "../../lib/lib/supabaseClient";
@@ -24,6 +24,15 @@ import { MemorialDisclaimer } from "../memorial/MemorialDisclaimer";
 import { memorialTheme } from "../memorial/memorialModalShared";
 import { ExternalSiteLink } from "../ExternalSiteEmbedModal";
 import { fetchViewerProfileCached } from "../../lib/queries/viewerProfile";
+import {
+  fetchSavedJobs,
+  savedJobIdsFromRows,
+  savedJobRowFromJob,
+  SAVED_JOBS_STALE_MS,
+  toggleSavedJob,
+  type SavedJobRow,
+} from "../../lib/queries/savedJobs";
+import { queryKeys } from "../../lib/queryKeys";
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -60,26 +69,6 @@ type EventInviteUser = {
   last_name: string | null;
   photo_url: string | null;
   service: string | null;
-};
-
-type SavedJobRow = {
-  id: string;
-  job_id: string;
-  title: string | null;
-  company_name: string | null;
-  location: string | null;
-  category: string | null;
-  description: string | null;
-  apply_url: string | null;
-  pay_min: number | null;
-  pay_max: number | null;
-  clearance: string | null;
-  source_type: string | null;
-  created_at: string | null;
-  og_title: string | null;
-  og_description: string | null;
-  og_image: string | null;
-  og_site_name: string | null;
 };
 
 type DesktopCalendarEvent = {
@@ -167,12 +156,10 @@ export default function MasterLeftColumn({
   const [jobSort] = useState<"recent" | "az" | "za">("recent");
   const [canViewFullJobs, setCanViewFullJobs] = useState(true);
   const [showJobsUpgradePrompt, setShowJobsUpgradePrompt] = useState(false);
-  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [togglingJobSaveFor, setTogglingJobSaveFor] = useState<string | null>(null);
   const [jobDetailsModal, setJobDetailsModal] = useState<JobModalData | null>(null);
 
   const [desktopSavedEvents, setDesktopSavedEvents] = useState<SavedEventRow[]>([]);
-  const [desktopSavedJobs, setDesktopSavedJobs] = useState<SavedJobRow[]>([]);
   const [unsavingWallEvent, setUnsavingWallEvent] = useState<string | null>(null);
   const [unsavingDesktopJobId, setUnsavingDesktopJobId] = useState<string | null>(null);
   const [desktopCalendarDate, setDesktopCalendarDate] = useState(() => new Date());
@@ -207,6 +194,15 @@ export default function MasterLeftColumn({
   const savedEventIdsForRealtimeRef = useRef<Set<string>>(new Set());
   const selectedEventIdRef = useRef<string | null>(null);
   const eventInviteUsersLoadedRef = useRef(false);
+  const savedJobsQuery = useQuery({
+    queryKey: userId ? queryKeys.savedJobs(userId) : queryKeys.savedJobs("pending"),
+    queryFn: () => fetchSavedJobs(supabase, userId as string),
+    enabled: sideRailsReady && !!userId,
+    staleTime: SAVED_JOBS_STALE_MS,
+  });
+  const EMPTY_SAVED_JOBS = useMemo<SavedJobRow[]>(() => [], []);
+  const desktopSavedJobs = savedJobsQuery.data ?? EMPTY_SAVED_JOBS;
+  const savedJobIds = useMemo(() => savedJobIdsFromRows(desktopSavedJobs), [desktopSavedJobs]);
   useEffect(() => {
     savedEventIdsForRealtimeRef.current = new Set(desktopSavedEvents.map((e) => e.event_id));
   }, [desktopSavedEvents]);
@@ -386,65 +382,6 @@ export default function MasterLeftColumn({
     setDesktopSavedEvents(dedupeSavedEventRowsByEventId(rows));
   }, []);
 
-  const loadDesktopSavedJobs = useCallback(async (uid: string) => {
-    const { data, error } = await supabase
-      .from("saved_jobs")
-      .select(
-        "id, job_id, jobs(title, company_name, location, category, description, apply_url, pay_min, pay_max, clearance, source_type, created_at, og_title, og_description, og_image, og_site_name)"
-      )
-      .eq("user_id", uid)
-      .order("created_at", { ascending: false });
-    if (error) {
-      setDesktopSavedJobs([]);
-      return;
-    }
-    type RawJob = {
-      title: string | null;
-      company_name: string | null;
-      location: string | null;
-      category: string | null;
-      description: string | null;
-      apply_url: string | null;
-      pay_min: number | null;
-      pay_max: number | null;
-      clearance: string | null;
-      source_type: string | null;
-      created_at: string | null;
-      og_title: string | null;
-      og_description: string | null;
-      og_image: string | null;
-      og_site_name: string | null;
-    };
-    type RawRow = {
-      id: string;
-      job_id: string;
-      jobs: RawJob | RawJob[] | null;
-    };
-    const rows: SavedJobRow[] = ((data ?? []) as unknown as RawRow[]).map((r) => {
-      const job = Array.isArray(r.jobs) ? r.jobs[0] ?? null : r.jobs;
-      return {
-        id: r.id,
-        job_id: r.job_id,
-        title: job?.title ?? null,
-        company_name: job?.company_name ?? null,
-        location: job?.location ?? null,
-        category: job?.category ?? null,
-        description: job?.description ?? null,
-        apply_url: job?.apply_url ?? null,
-        pay_min: job?.pay_min ?? null,
-        pay_max: job?.pay_max ?? null,
-        clearance: job?.clearance ?? null,
-        source_type: job?.source_type ?? null,
-        created_at: job?.created_at ?? null,
-        og_title: job?.og_title ?? null,
-        og_description: job?.og_description ?? null,
-        og_image: job?.og_image ?? null,
-        og_site_name: job?.og_site_name ?? null,
-      };
-    });
-    setDesktopSavedJobs(rows);
-  }, []);
-
   const loadDesktopCalendarData = useCallback(async (date: Date) => {
     const start = new Date(date.getFullYear(), date.getMonth(), date.getDate());
     const end = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -614,30 +551,19 @@ export default function MasterLeftColumn({
     try {
       setUnsavingDesktopJobId(savedJobRowId);
       const removed = desktopSavedJobs.find((j) => j.id === savedJobRowId);
-      await supabase.from("saved_jobs").delete().eq("id", savedJobRowId);
-      setDesktopSavedJobs((prev) => prev.filter((j) => j.id !== savedJobRowId));
-      if (removed?.job_id) {
-        setSavedJobIds((prev) => {
-          const next = new Set(prev);
-          next.delete(removed.job_id);
-          return next;
+      if (removed?.job_id && userId) {
+        await toggleSavedJob({
+          queryClient,
+          supabase,
+          userId,
+          jobId: removed.job_id,
+          saved: true,
         });
-      }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(
-          new CustomEvent("eod:saved-jobs-changed", { detail: { jobId: removed?.job_id ?? null } })
-        );
       }
     } finally {
       setUnsavingDesktopJobId(null);
     }
   }
-
-  const loadSavedJobIds = useCallback(async (uid: string) => {
-    const { data, error } = await supabase.from("saved_jobs").select("job_id").eq("user_id", uid);
-    if (error) return;
-    setSavedJobIds(new Set((data ?? []).map((r: { job_id: string }) => r.job_id)));
-  }, []);
 
   const loadJobs = useCallback(async (limit: number) => {
     const now = new Date();
@@ -712,15 +638,13 @@ export default function MasterLeftColumn({
       setCanViewFullJobs(featureAccess.canViewFullJobs);
       await Promise.all([
         loadJobs(featureAccess.canViewFullJobs ? 500 : 5),
-        loadSavedJobIds(uid),
         loadDesktopSavedEvents(uid),
-        loadDesktopSavedJobs(uid),
       ]);
     })();
     return () => {
       cancelled = true;
     };
-  }, [sideRailsReady, loadJobs, loadSavedJobIds, loadDesktopSavedEvents, loadDesktopSavedJobs, queryClient]);
+  }, [sideRailsReady, loadJobs, loadDesktopSavedEvents, queryClient]);
 
   useEffect(() => {
     if (!sideRailsReady || !userId) return;
@@ -764,17 +688,11 @@ export default function MasterLeftColumn({
     const onSavedEventsChanged = () => {
       void loadDesktopSavedEvents(userId);
     };
-    const onSavedJobsChanged = () => {
-      void loadDesktopSavedJobs(userId);
-      void loadSavedJobIds(userId);
-    };
     window.addEventListener("eod:saved-events-changed", onSavedEventsChanged as EventListener);
-    window.addEventListener("eod:saved-jobs-changed", onSavedJobsChanged as EventListener);
     return () => {
       window.removeEventListener("eod:saved-events-changed", onSavedEventsChanged as EventListener);
-      window.removeEventListener("eod:saved-jobs-changed", onSavedJobsChanged as EventListener);
     };
-  }, [sideRailsReady, userId, loadDesktopSavedEvents, loadDesktopSavedJobs, loadSavedJobIds]);
+  }, [sideRailsReady, userId, loadDesktopSavedEvents]);
 
   useEffect(() => {
     if (!sideRailsReady) return;
@@ -871,18 +789,23 @@ export default function MasterLeftColumn({
       const isSaved = savedJobIds.has(jobId);
 
       if (isSaved) {
-        await supabase.from("saved_jobs").delete().eq("user_id", userId).eq("job_id", jobId);
-        setSavedJobIds((prev) => {
-          const next = new Set(prev);
-          next.delete(jobId);
-          return next;
+        await toggleSavedJob({
+          queryClient,
+          supabase,
+          userId,
+          jobId,
+          saved: true,
         });
-        setDesktopSavedJobs((prev) => prev.filter((j) => j.job_id !== jobId));
       } else {
-        await supabase.from("saved_jobs").insert([{ user_id: userId, job_id: jobId }]);
-        setSavedJobIds((prev) => new Set(prev).add(jobId));
-        void loadDesktopSavedJobs(userId);
         const job = jobs.find((j) => j.id === jobId);
+        await toggleSavedJob({
+          queryClient,
+          supabase,
+          userId,
+          jobId,
+          saved: false,
+          optimisticRow: job ? savedJobRowFromJob(job) : undefined,
+        });
         if (job?.source_type === "community" && job.user_id && job.user_id !== userId) {
           void postNotifyJson(supabase, {
             user_id: job.user_id,
@@ -895,9 +818,6 @@ export default function MasterLeftColumn({
             metadata: { job_id: jobId },
           });
         }
-      }
-      if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent("eod:saved-jobs-changed", { detail: { jobId } }));
       }
     } catch (err) {
       console.error("Toggle save job error:", err);

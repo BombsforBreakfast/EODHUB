@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import React, { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { supabase } from "../lib/lib/supabaseClient";
@@ -68,6 +69,14 @@ import { applyJobFilters, uniqueJobRegionOptions, type JobFilterState } from "..
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
 import { postNotifyJson } from "../lib/postNotifyClient";
+import {
+  fetchSavedJobs,
+  savedJobIdsFromRows,
+  savedJobRowFromJob,
+  SAVED_JOBS_STALE_MS,
+  toggleSavedJob,
+} from "../lib/queries/savedJobs";
+import { queryKeys } from "../lib/queryKeys";
 import { hasPublicMemberProfile } from "../lib/pureAdminAllowlist";
 import type {
   FeedKangarooBundle,
@@ -897,6 +906,7 @@ function Avatar({
 export default function HomePage() {
   usePageTracking(PAGE_TRACKING.feed);
   const { t, isDark } = useTheme();
+  const queryClient = useQueryClient();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
   const [jobLeaderboard, setJobLeaderboard] = useState<{ user_id: string; name: string; photo_url: string | null; count: number }[]>([]);
@@ -929,6 +939,16 @@ export default function HomePage() {
   const [showJobsUpgradePrompt, setShowJobsUpgradePrompt] = useState(false);
   const [bizLoaded, setBizLoaded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const savedJobsQuery = useQuery({
+    queryKey: userId ? queryKeys.savedJobs(userId) : queryKeys.savedJobs("pending"),
+    queryFn: () => fetchSavedJobs(supabase, userId as string),
+    enabled: !!userId,
+    staleTime: SAVED_JOBS_STALE_MS,
+  });
+  const savedJobIds = useMemo(
+    () => savedJobIdsFromRows(savedJobsQuery.data),
+    [savedJobsQuery.data]
+  );
   const [isMobile, setIsMobile] = useState(false);
   const { isDesktopShell, openSidebarPeer, showMemorialFeedCards, setShowMemorialFeedCards } = useMasterShell();
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
@@ -1008,7 +1028,6 @@ export default function HomePage() {
     null
   );
 
-  const [savedJobIds, setSavedJobIds] = useState<Set<string>>(new Set());
   const [togglingJobSaveFor, setTogglingJobSaveFor] = useState<string | null>(null);
   const [jobDetailsModal, setJobDetailsModal] = useState<JobModalData | null>(null);
   const [selectedFeedEvent, setSelectedFeedEvent] = useState<FeedSelectedEvent | null>(null);
@@ -2296,20 +2315,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     }
   }
 
-  async function loadSavedJobs(currentUserId: string) {
-    const { data, error } = await supabase
-      .from("saved_jobs")
-      .select("job_id")
-      .eq("user_id", currentUserId);
-
-    if (error) {
-      console.error("Saved jobs load error:", error);
-      return;
-    }
-
-    setSavedJobIds(new Set((data ?? []).map((r: { job_id: string }) => r.job_id)));
-  }
-
   async function toggleSaveJob(jobId: string) {
     if (!userId) {
       window.location.href = "/login";
@@ -2322,19 +2327,24 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       const isSaved = savedJobIds.has(jobId);
 
       if (isSaved) {
-        await supabase.from("saved_jobs").delete().eq("user_id", userId).eq("job_id", jobId);
-        setSavedJobIds((prev) => { const next = new Set(prev); next.delete(jobId); return next; });
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("eod:saved-jobs-changed", { detail: { jobId } }));
-        }
+        await toggleSavedJob({
+          queryClient,
+          supabase,
+          userId,
+          jobId,
+          saved: true,
+        });
       } else {
-        await supabase.from("saved_jobs").insert([{ user_id: userId, job_id: jobId }]);
-        setSavedJobIds((prev) => new Set(prev).add(jobId));
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("eod:saved-jobs-changed", { detail: { jobId } }));
-        }
-        // Notify job poster (fire and forget ΓÇö no actor name for privacy)
         const job = jobs.find((j) => j.id === jobId);
+        await toggleSavedJob({
+          queryClient,
+          supabase,
+          userId,
+          jobId,
+          saved: false,
+          optimisticRow: job ? savedJobRowFromJob(job) : undefined,
+        });
+        // Notify job poster (fire and forget ΓÇö no actor name for privacy)
         if (job?.source_type === "community" && job.user_id && job.user_id !== userId) {
           void postNotifyJson(supabase, {
             user_id: job.user_id,
@@ -4920,7 +4930,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       setCanViewFullJobs(true);
       setCanUseJobFilters(true);
       setLikedBizIds(new Set());
-      setSavedJobIds(new Set());
       setDiscoverProfiles([]);
       setDiscoverPageIndex(0);
       setPendingMembers([]);
@@ -5083,8 +5092,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           deferredTasks.push(
             loadJobs(featureAccess.canViewFullJobs ? 500 : 5).catch((err) => console.error("loadJobs failed:", err)),
             loadBusinessListings().catch((err) => console.error("loadBusinessListings failed:", err)),
-            loadBizLikes(currentUserId).catch((err) => console.error("loadBizLikes failed:", err)),
-            loadSavedJobs(currentUserId).catch((err) => console.error("loadSavedJobs failed:", err))
+            loadBizLikes(currentUserId).catch((err) => console.error("loadBizLikes failed:", err))
           );
         }
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
