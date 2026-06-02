@@ -153,8 +153,12 @@ type UserProfile = {
   company_name?: string | null;
   account_type?: string | null;
   is_pure_admin?: boolean | null;
+  photo_url?: string | null;
   role: string | null;
   service: string | null;
+  status?: string | null;
+  skill_badge?: string | null;
+  years_experience?: string | null;
   verification_status: string | null;
   email_verified?: boolean | null;
   is_admin: boolean | null;
@@ -203,7 +207,7 @@ function userMatchesStatusFilter(u: UserProfile, filter: UserStatusFilter): bool
   if (filter === "onboarding") {
     if (u.verification_status === "verified") return false;
     if (u.verification_status === "denied") return false;
-    return !isAtAdminReviewTier(u);
+    return !!u.signup_incomplete || blocksSignupApproval(u);
   }
   return false;
 }
@@ -292,6 +296,58 @@ function buildWaitlistCsv(rows: WaitlistSignupRow[]): string {
   return lines.join("\r\n");
 }
 
+function buildOnboardingUsersCsv(rows: UserProfile[]): string {
+  const header = [
+    "User ID",
+    "First Name",
+    "Last Name",
+    "Display Name",
+    "Email",
+    "Account Type",
+    "Service",
+    "Status",
+    "Skill Badge",
+    "Years Experience",
+    "Company",
+    "Verification Status",
+    "Email Verified",
+    "Has Profile Picture",
+    "Profile Picture URL",
+    "Created At",
+    "Referred By Code",
+    "Referred By Name",
+    "Missing Fields",
+  ];
+  const lines = [header.map(escapeCsvField).join(",")];
+  for (const u of rows) {
+    const missingFields = signupProfileMissingFields(u).join("; ");
+    lines.push(
+      [
+        u.user_id,
+        u.first_name ?? "",
+        u.last_name ?? "",
+        u.display_name ?? u.name ?? "",
+        u.email ?? "",
+        u.account_type ?? (u.is_employer ? "employer" : "member"),
+        u.service ?? "",
+        u.status ?? "",
+        u.skill_badge ?? "",
+        u.years_experience ?? "",
+        u.company_name ?? "",
+        u.verification_status ?? "",
+        u.email_verified ? "yes" : "no",
+        u.photo_url ? "yes" : "no",
+        u.photo_url ?? "",
+        u.created_at ? new Date(u.created_at).toLocaleString() : "",
+        u.referred_by ?? "",
+        u.referred_by_name ?? "",
+        missingFields,
+      ].map(escapeCsvField).join(","),
+    );
+  }
+  return lines.join("\r\n");
+}
+
 function downloadWaitlistCsv(rows: WaitlistSignupRow[]): void {
   const csv = buildWaitlistCsv(rows);
   const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
@@ -300,6 +356,18 @@ function downloadWaitlistCsv(rows: WaitlistSignupRow[]): void {
   const stamp = new Date().toISOString().slice(0, 10);
   a.href = url;
   a.download = `eod-hub-waitlist-${stamp}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadOnboardingUsersCsv(rows: UserProfile[]): void {
+  const csv = buildOnboardingUsersCsv(rows);
+  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `eod-hub-onboarding-users-${stamp}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1642,18 +1710,18 @@ export default function AdminPage() {
       // Fallback: direct query (works if RLS allows admin to read all profiles)
       let fallback = (await supabase
         .from("profiles")
-        .select("user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
+        .select("user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, referred_by, referrer_user_id")
         .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
       if (fallback.error) {
         fallback = (await supabase
           .from("profiles")
-          .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
+          .select("user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, referred_by, referrer_user_id")
           .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
       }
       if (fallback.error) {
         fallback = (await supabase
           .from("profiles")
-          .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
+          .select("user_id, first_name, last_name, display_name, role, service, company_name, account_type, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at")
           .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
       }
       if (!fallback.error) setUsers((fallback.data ?? []).map((u) => ({ ...u, email: (u as { email?: string | null }).email ?? null })) as UserProfile[]);
@@ -4154,6 +4222,20 @@ export default function AdminPage() {
                 {userSearch.trim() && (
                   <button type="button" style={actionBtn("#6b7280")} onClick={() => setUserSearch("")}>
                     Clear
+                  </button>
+                )}
+                {userFilter === "onboarding" && (
+                  <button
+                    type="button"
+                    onClick={() => downloadOnboardingUsersCsv(filteredAdminUsers)}
+                    disabled={filteredAdminUsers.length === 0}
+                    style={{
+                      ...actionBtn("#374151"),
+                      opacity: filteredAdminUsers.length === 0 ? 0.5 : 1,
+                      cursor: filteredAdminUsers.length === 0 ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    Export CSV
                   </button>
                 )}
                 <button type="button" onClick={() => void loadUsers()} style={actionBtn("#374151")}>↻ Refresh</button>

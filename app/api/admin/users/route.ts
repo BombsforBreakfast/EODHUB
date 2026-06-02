@@ -41,9 +41,9 @@ export async function GET(req: NextRequest) {
   );
 
   const profileSelectWithMirrors =
-    "user_id, first_name, last_name, display_name, name, email, role, service, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
+    "user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
   const profileSelectBase =
-    "user_id, first_name, last_name, display_name, role, service, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
+    "user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
 
   // Fetch profiles and auth users. The mirrored name/email columns are deployed via
   // migration, so keep this compatible with environments that have not run it yet.
@@ -129,8 +129,12 @@ export async function GET(req: NextRequest) {
       display_name: null,
       name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || null,
       email: authUser.email ?? null,
+      photo_url: null,
       role: null,
       service: null,
+      status: null,
+      skill_badge: null,
+      years_experience: null,
       verification_status: null,
       email_verified: false,
       is_admin: false,

@@ -733,7 +733,7 @@ export default function UnitPage() {
       if (cancelled) return;
       const commentEl = commentId ? document.getElementById(`unit-comment-${commentId}`) : null;
       const postEl = document.getElementById(`unit-post-${unitPostId}`);
-      const target = commentEl ?? postEl;
+      const target = commentId ? commentEl : postEl;
       if (target) {
         target.scrollIntoView({ behavior: "smooth", block: "center" });
         target.classList.add("feed-notification-highlight");

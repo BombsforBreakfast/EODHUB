@@ -1,5 +1,5 @@
 export const LEGAL_EFFECTIVE_DATE = "April 9, 2026";
-export const LEGAL_LAST_UPDATED = "April 9, 2026";
+export const LEGAL_LAST_UPDATED = "June 2, 2026";
 export const LEGAL_CONTACT_EMAIL = "Hello@eod-hub.com";
 
 export const TERMS_OF_SERVICE_TEXT = `Terms of Service
@@ -19,6 +19,15 @@ By using the Services, you represent and warrant that:
 - You are at least 18 years old
 - You have the legal capacity to enter into a binding agreement
 - You will comply with all applicable laws and regulations
+
+EOD Hub community membership is intended for qualified Military Explosive Ordnance Disposal (EOD) personnel and Public Service Bomb Technicians who are in good professional standing, including active, former, retired, reserve, guard, or otherwise credentialed personnel whose background is consistent with the purpose of the Platform.
+
+By creating or maintaining a member account, you represent and warrant that:
+- The identity, service history, qualifications, and professional information you provide are accurate and complete
+- You meet the membership eligibility standards described above
+- You are not misrepresenting your affiliation, credentials, qualifications, employment, service history, or standing within the EOD or Public Service Bomb Technician community
+
+We may request additional information, documentation, community vouches, or other verification at any time. If we determine, in our sole discretion, that you do not meet these eligibility requirements, that your account information is false or misleading, or that your continued participation may compromise the trust, safety, or professional integrity of the Platform, we may immediately remove, suspend, restrict, or terminate your account and access to the Services without prior notice.
 
 If you are using the Services on behalf of an organization, you represent that you have authority to bind that organization.
 
@@ -131,6 +140,8 @@ Reasons may include:
 - Violation of these Terms
 - Harmful or abusive behavior
 - Legal or security concerns
+- Failure to meet or maintain Platform eligibility requirements
+- False, misleading, or unverifiable identity, affiliation, credential, or professional-standing information
 
 You may terminate your account at any time.
 
@@ -301,6 +312,8 @@ Last Updated: ${LEGAL_LAST_UPDATED}
 
 EOD Hub is built for professional connection, trust, and shared experience. These guidelines ensure the platform stays valuable.
 
+Membership is reserved for qualified Military EOD personnel and Public Service Bomb Technicians who are in good professional standing, along with approved employer and administrative accounts that support that community. Do not create, maintain, or use an account if you do not meet the applicable eligibility requirements or if you are misrepresenting your identity, affiliation, credentials, qualifications, service history, employment, or professional standing.
+
 1. BE PROFESSIONAL
 - Treat others with respect
 - Disagree without being disrespectful
@@ -355,6 +368,8 @@ Violations may result in:
 - Content removal
 - Account warnings
 - Suspension or permanent ban
+
+Accounts found to be ineligible, falsely represented, misleading, or otherwise inconsistent with the membership standards of EOD Hub may be removed immediately to protect the trust, safety, and integrity of the Platform and its community.
 
 10. BUILD THE CULTURE
 

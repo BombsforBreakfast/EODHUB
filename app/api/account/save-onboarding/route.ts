@@ -26,6 +26,7 @@ type OnboardingBody = {
   yearsExperience?: unknown;
   companyName?: unknown;
   referralInput?: unknown;
+  photoUrl?: unknown;
 };
 
 export async function POST(req: NextRequest) {
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
   const yearsExperience = typeof body.yearsExperience === "string" ? body.yearsExperience : "";
   const companyName = typeof body.companyName === "string" ? body.companyName : "";
   const referralInput = typeof body.referralInput === "string" ? body.referralInput.trim().toUpperCase() : "";
+  const photoUrl = typeof body.photoUrl === "string" ? body.photoUrl.trim() : "";
 
   const validationError =
     accountType === "member"
@@ -146,6 +148,7 @@ export async function POST(req: NextRequest) {
           status,
           skill_badge: skillBadge || null,
           years_experience: yearsExperience || null,
+          ...(photoUrl ? { photo_url: photoUrl } : {}),
           ...verificationFields,
         }
       : {
@@ -154,6 +157,7 @@ export async function POST(req: NextRequest) {
           first_name: firstName.trim(),
           last_name: lastName.trim(),
           company_name: companyName.trim(),
+          ...(photoUrl ? { photo_url: photoUrl } : {}),
           ...verificationFields,
         };
 

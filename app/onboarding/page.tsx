@@ -26,6 +26,7 @@ import {
   MEMBER_STATUS_OPTIONS,
 } from "../lib/profileCompleteness";
 import { ONBOARDING_REQUIRED_FIELDS_MESSAGE } from "../lib/onboardingGate";
+import { validateImagePick } from "../lib/uploadLimits";
 import {
   captureReferralFromUrl,
   clearStoredReferral,
@@ -54,6 +55,9 @@ export default function OnboardingPage() {
   const [status, setStatus] = useState("");
   const [skillBadge, setSkillBadge] = useState("");
   const [yearsExperience, setYearsExperience] = useState("");
+  const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
+  const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
+  const [profilePhotoError, setProfilePhotoError] = useState<string | null>(null);
 
   // Employer fields
   const [empFirstName, setEmpFirstName] = useState("");
@@ -82,6 +86,12 @@ export default function OnboardingPage() {
     };
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (profilePhotoPreviewUrl) URL.revokeObjectURL(profilePhotoPreviewUrl);
+    };
+  }, [profilePhotoPreviewUrl]);
+
   function markMissingField(fieldId: string) {
     setMissingFieldId(fieldId);
     setShowRequiredHelper(true);
@@ -101,6 +111,47 @@ export default function OnboardingPage() {
   }
 
   const isMissing = (fieldId: string) => missingFieldId === fieldId;
+
+  function handleProfilePhotoPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    if (!file) return;
+
+    const validationError = validateImagePick(file);
+    if (validationError) {
+      setProfilePhotoError(validationError);
+      setProfilePhotoFile(null);
+      e.target.value = "";
+      return;
+    }
+
+    setProfilePhotoError(null);
+    setProfilePhotoFile(file);
+    setProfilePhotoPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  }
+
+  function clearProfilePhotoPick() {
+    setProfilePhotoFile(null);
+    setProfilePhotoError(null);
+    setProfilePhotoPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }
+
+  async function uploadOnboardingProfilePhoto(file: File, ownerUserId: string): Promise<string> {
+    const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "jpg";
+    const safeExtension = extension?.replace(/[^a-z0-9]/g, "") || "jpg";
+    const filePath = `${ownerUserId}/${Date.now()}-onboarding.${safeExtension}`;
+    const { error } = await supabase.storage.from("profile-photos").upload(filePath, file, {
+      upsert: true,
+      contentType: file.type || "image/jpeg",
+    });
+    if (error) throw error;
+    return supabase.storage.from("profile-photos").getPublicUrl(filePath).data.publicUrl;
+  }
 
   useEffect(() => {
     async function check() {
@@ -341,6 +392,18 @@ export default function OnboardingPage() {
         return;
       }
 
+      let uploadedProfilePhotoUrl: string | null = null;
+      if (profilePhotoFile) {
+        try {
+          uploadedProfilePhotoUrl = await uploadOnboardingProfilePhoto(profilePhotoFile, userId);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          setProfilePhotoError(message);
+          alert(`Profile picture upload failed: ${message}`);
+          return;
+        }
+      }
+
       const saveRes = await fetch("/api/account/save-onboarding", {
         method: "POST",
         headers: {
@@ -357,6 +420,7 @@ export default function OnboardingPage() {
           yearsExperience,
           companyName,
           referralInput,
+          photoUrl: uploadedProfilePhotoUrl,
         }),
       });
 
@@ -571,7 +635,6 @@ export default function OnboardingPage() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                   <span style={{ fontWeight: 900, fontSize: 16, color: "#111827" }}>Employer Account</span>
-                  <span style={{ background: "#dbeafe", color: "#1d4ed8", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20 }}>FREE</span>
                 </div>
                 <div style={{ fontSize: 13, color: "#1f2937", lineHeight: 1.5 }}>
                   Hiring organization or recruiter. Post jobs on the EOD job board and search candidates open to new opportunities.
@@ -686,6 +749,44 @@ export default function OnboardingPage() {
                         {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
+                  </div>
+
+                  <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#f9fafb" }}>
+                    <label style={{ fontWeight: 800, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>
+                      Include profile picture <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
+                    </label>
+                    <div style={{ fontSize: 12, color: "#047857", fontWeight: 800, marginBottom: 10 }}>
+                      *users who include a profile picture get vouched 50% faster.
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                      {profilePhotoPreviewUrl && (
+                        <img
+                          src={profilePhotoPreviewUrl}
+                          alt="Selected profile preview"
+                          style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "2px solid #d1d5db" }}
+                        />
+                      )}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleProfilePhotoPick}
+                        style={{ color: "#111827", fontSize: 13 }}
+                      />
+                      {profilePhotoFile && (
+                        <button
+                          type="button"
+                          onClick={clearProfilePhotoPick}
+                          style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                    {profilePhotoError && (
+                      <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 12, fontWeight: 700 }}>
+                        {profilePhotoError}
+                      </div>
+                    )}
                   </div>
 
                 </>

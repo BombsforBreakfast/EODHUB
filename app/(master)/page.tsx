@@ -5219,9 +5219,17 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
     const tryScroll = () => {
       if (cancelled) return;
+      const deepLinkPost = posts.find((p) => p.id === postId);
+      if (deepLinkPost?.isInteractionHydrating) {
+        attempt += 1;
+        if (attempt < maxAttempts) {
+          timeoutId = window.setTimeout(tryScroll, 80);
+        }
+        return;
+      }
       const commentEl = commentId ? document.getElementById(`feed-comment-${commentId}`) : null;
       const postEl = document.getElementById(`feed-post-${postId}`);
-      const target = commentEl ?? postEl;
+      const target = commentId ? commentEl : postEl;
       if (target) {
         target.scrollIntoView({ behavior: "smooth", block: "center" });
         target.classList.add("feed-notification-highlight");
