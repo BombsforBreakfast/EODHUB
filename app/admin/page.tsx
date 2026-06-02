@@ -513,6 +513,9 @@ type BugReport = {
   admin_notes: string | null;
   created_at: string;
   reporter_name?: string | null;
+  reporter_first_name?: string | null;
+  reporter_last_name?: string | null;
+  reporter_email?: string | null;
 };
 
 type Flag = {
@@ -2357,16 +2360,35 @@ export default function AdminPage() {
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("user_id, first_name, last_name")
+        .select("user_id, first_name, last_name, display_name, name, email")
         .in("user_id", userIds);
-      const nameMap = new Map(
-        (profiles ?? []).map((p: { user_id: string; first_name: string | null; last_name: string | null }) => [
-          p.user_id,
-          `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown",
-        ]),
+      type ReporterProfile = {
+        user_id: string;
+        first_name: string | null;
+        last_name: string | null;
+        display_name: string | null;
+        name: string | null;
+        email: string | null;
+      };
+      const profileMap = new Map(
+        (profiles ?? []).map((p) => {
+          const row = p as ReporterProfile;
+          return [row.user_id, row] as const;
+        }),
       );
       reports.forEach((r) => {
-        r.reporter_name = r.user_id ? (nameMap.get(r.user_id) ?? null) : null;
+        if (!r.user_id) return;
+        const p = profileMap.get(r.user_id);
+        if (!p) return;
+        r.reporter_first_name = p.first_name?.trim() || null;
+        r.reporter_last_name = p.last_name?.trim() || null;
+        r.reporter_email = p.email?.trim() || null;
+        r.reporter_name =
+          p.display_name?.trim() ||
+          p.name?.trim() ||
+          `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+          p.email?.trim() ||
+          null;
       });
     }
     setBugReports(reports);
@@ -4373,7 +4395,22 @@ export default function AdminPage() {
                           </>
                         )}
                       </div>
-                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, wordBreak: "break-all" }}>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, wordBreak: "break-word" }}>
+                        <strong style={{ color: t.textMuted }}>First name:</strong> {r.reporter_first_name ?? "—"}
+                        {" · "}
+                        <strong style={{ color: t.textMuted }}>Last name:</strong> {r.reporter_last_name ?? "—"}
+                      </div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, wordBreak: "break-all" }}>
+                        <strong style={{ color: t.textMuted }}>Email:</strong>{" "}
+                        {r.reporter_email ? (
+                          <a href={`mailto:${r.reporter_email}`} style={{ color: "#2563eb", textDecoration: "none" }}>
+                            {r.reporter_email}
+                          </a>
+                        ) : (
+                          "—"
+                        )}
+                      </div>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, wordBreak: "break-all" }}>
                         <strong style={{ color: t.textMuted }}>User ID:</strong> {r.user_id ?? "—"}
                       </div>
                       <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, wordBreak: "break-all" }}>

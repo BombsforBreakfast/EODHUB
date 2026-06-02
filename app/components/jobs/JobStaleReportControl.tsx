@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 
@@ -47,7 +48,17 @@ export default function JobStaleReportControl({
   const [submitting, setSubmitting] = useState(false);
   const [reportError, setReportError] = useState<string | null>(null);
   const [reported, setReported] = useState(false);
+  const [isNarrowViewport, setIsNarrowViewport] = useState(false);
   const popoverRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(max-width: 720px)");
+    const sync = () => setIsNarrowViewport(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
 
   // Reset everything when the control switches to a different job (cards
   // recycle the component as the user scrolls).
@@ -60,9 +71,9 @@ export default function JobStaleReportControl({
     setReported(false);
   }, [jobId]);
 
-  // Close compact popover on outside click.
+  // Close compact popover on outside click (desktop popover only).
   useEffect(() => {
-    if (variant !== "compact" || !open) return;
+    if (variant !== "compact" || !open || isNarrowViewport) return;
     function onDocClick(e: MouseEvent) {
       if (!popoverRef.current) return;
       if (!popoverRef.current.contains(e.target as Node)) {
@@ -71,7 +82,7 @@ export default function JobStaleReportControl({
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
-  }, [variant, open]);
+  }, [variant, open, isNarrowViewport]);
 
   async function submit() {
     if (submitting) return;
@@ -255,32 +266,71 @@ export default function JobStaleReportControl({
     );
   }
 
-  // Compact variant — a small text trigger that opens a card-attached popover.
+  const popoverPanelStyle: React.CSSProperties = {
+    background: t.surface,
+    border: `1px solid ${t.border}`,
+    borderRadius: 12,
+    padding: 12,
+    boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+  };
+
+  // Compact variant — text trigger; bottom sheet on mobile, anchored popover on desktop.
   return (
     <div style={{ position: "relative", display: "inline-block" }} ref={popoverRef}>
       <button type="button" onClick={() => setOpen((v) => !v)} style={triggerStyle}>
         {triggerLabel}
       </button>
-      {open && (
+      {open && !isNarrowViewport && (
         <div
           onClick={(e) => e.stopPropagation()}
           style={{
             position: "absolute",
             bottom: "calc(100% + 6px)",
-            left: 0,
+            right: 0,
+            left: "auto",
             zIndex: 50,
             width: 280,
             maxWidth: "calc(100vw - 24px)",
-            background: t.surface,
-            border: `1px solid ${t.border}`,
-            borderRadius: 12,
-            padding: 12,
-            boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+            ...popoverPanelStyle,
           }}
         >
           {form}
         </div>
       )}
+      {open &&
+        isNarrowViewport &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Report this listing"
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 500,
+              background: "rgba(0,0,0,0.45)",
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+              padding: 12,
+            }}
+            onClick={() => setOpen(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "100%",
+                maxWidth: 400,
+                marginBottom: "max(12px, env(safe-area-inset-bottom))",
+                ...popoverPanelStyle,
+              }}
+            >
+              {form}
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTheme } from "../lib/ThemeContext";
 import { getServiceRingColor } from "../lib/serviceBranchVisual";
 
@@ -134,7 +135,37 @@ function MobileLikersPopover({
 }) {
   const { t } = useTheme();
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const popoverRef = useRef<HTMLDivElement>(null);
+  const [panelPosition, setPanelPosition] = useState<{ top: number; left: number } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!popoverOpen) {
+      setPanelPosition(null);
+      return;
+    }
+
+    const trigger = triggerRef.current;
+    const panel = panelRef.current;
+    if (!trigger || !panel) return;
+
+    const viewportPad = 12;
+    const gap = 8;
+    const triggerRect = trigger.getBoundingClientRect();
+    const panelWidth = panel.offsetWidth;
+    const panelHeight = panel.offsetHeight;
+
+    let left = triggerRect.left + triggerRect.width / 2 - panelWidth / 2;
+    left = Math.max(viewportPad, Math.min(left, window.innerWidth - viewportPad - panelWidth));
+
+    let top = triggerRect.top - gap - panelHeight;
+    if (top < viewportPad) {
+      top = triggerRect.bottom + gap;
+    }
+
+    setPanelPosition({ top, left });
+  }, [popoverOpen, likers.length]);
 
   useEffect(() => {
     if (!popoverOpen) return;
@@ -143,7 +174,8 @@ function MobileLikersPopover({
     };
     const onPointerDown = (e: MouseEvent) => {
       const target = e.target as Node;
-      if (popoverRef.current?.contains(target)) return;
+      if (rootRef.current?.contains(target)) return;
+      if (panelRef.current?.contains(target)) return;
       setPopoverOpen(false);
     };
     window.addEventListener("keydown", onKey);
@@ -154,12 +186,29 @@ function MobileLikersPopover({
     };
   }, [popoverOpen]);
 
+  const panelChromeStyle: React.CSSProperties = {
+    minWidth: 220,
+    maxWidth: 320,
+    maxHeight: "min(320px, 50vh)",
+    overflowY: "auto",
+    background: t.surface,
+    border: `1px solid ${t.border}`,
+    borderRadius: 12,
+    boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
+    padding: 4,
+    display: "flex",
+    flexDirection: "column",
+    gap: 2,
+    visibility: panelPosition ? "visible" : "hidden",
+  };
+
   return (
     <div
-      ref={popoverRef}
+      ref={rootRef}
       style={{ position: "relative", display: "inline-flex", alignItems: "center", flexShrink: 0 }}
     >
       <button
+        ref={triggerRef}
         type="button"
         aria-expanded={popoverOpen}
         aria-haspopup="menu"
@@ -221,32 +270,25 @@ function MobileLikersPopover({
         )}
       </button>
 
-      {popoverOpen && (
-        <div
-          role="menu"
-          aria-label="People who reacted"
-          style={{
-            position: "absolute",
-            bottom: "calc(100% + 8px)",
-            left: 0,
-            zIndex: 10050,
-            minWidth: 220,
-            maxWidth: 320,
-            maxHeight: "min(320px, 50vh)",
-            overflowY: "auto",
-            background: t.surface,
-            border: `1px solid ${t.border}`,
-            borderRadius: 12,
-            boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
-            padding: 4,
-            display: "flex",
-            flexDirection: "column",
-            gap: 2,
-          }}
-        >
-          <LikerPopoverList likers={likers} onNavigate={() => setPopoverOpen(false)} />
-        </div>
-      )}
+      {popoverOpen &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={panelRef}
+            role="menu"
+            aria-label="People who reacted"
+            style={{
+              position: "fixed",
+              top: panelPosition?.top ?? 0,
+              left: panelPosition?.left ?? 0,
+              zIndex: 10050,
+              ...panelChromeStyle,
+            }}
+          >
+            <LikerPopoverList likers={likers} onNavigate={() => setPopoverOpen(false)} />
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

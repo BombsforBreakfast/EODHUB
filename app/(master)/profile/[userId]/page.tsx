@@ -618,6 +618,7 @@ export default function PublicProfilePage() {
   const [editingProfile, setEditingProfile] = useState(false);
   const [editRole, setEditRole] = useState("");
   const [editCompanyName, setEditCompanyName] = useState("");
+  const [editDisplayName, setEditDisplayName] = useState("");
   const [editFirstName, setEditFirstName] = useState("");
   const [editLastName, setEditLastName] = useState("");
   const [editBio, setEditBio] = useState("");
@@ -951,6 +952,7 @@ export default function PublicProfilePage() {
   function openWallEditProfile() {
     if (!profile || currentUserId !== profile.user_id) return;
     setEditCompanyName(profile.company_name ?? "");
+    setEditDisplayName(profile.display_name ?? "");
     setEditFirstName(profile.first_name ?? "");
     setEditLastName(profile.last_name ?? "");
     setEditRole(profile.role ?? "");
@@ -1001,6 +1003,7 @@ export default function PublicProfilePage() {
             bio: editBio.trim() || null,
           }
         : {
+            display_name: editDisplayName.trim() || null,
             role: editRole || null,
             bio: editBio || null,
             service: editService || null,
@@ -4261,6 +4264,22 @@ export default function PublicProfilePage() {
                   </>
                 ) : (
                   <>
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Display Name</label>
+                  <input
+                    value={editDisplayName}
+                    onChange={(e) => setEditDisplayName(e.target.value)}
+                    placeholder={
+                      `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
+                      "How your name appears publicly"
+                    }
+                    maxLength={80}
+                    style={wallEditInputStyle}
+                  />
+                  <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted, lineHeight: 1.4 }}>
+                    Shown on posts, comments, reactions, and your profile. Leave blank to use your account name on file.
+                  </div>
+                </div>
                 <div>
                   <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Current Position</label>
                   <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="e.g. EOD Tech" style={wallEditInputStyle} />
