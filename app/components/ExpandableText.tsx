@@ -25,7 +25,7 @@ type Props = {
 export default function ExpandableText({
   children,
   textLength,
-  maxLines = 5,
+  maxLines = 8,
   minCharsToToggle = 280,
   style,
   wrapperStyle,
