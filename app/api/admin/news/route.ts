@@ -77,35 +77,36 @@ function buildNewsPostContent(item: Pick<PublishedNewsRow, "headline" | "summary
   return `${headline}\n\n${summary}`;
 }
 
+/** Stagger approved news: first slot now (or after queued future releases), +90m per item. */
 async function allocateReleaseSlots(
   supabase: ReturnType<typeof adminClient>,
-  count: number
+  count: number,
+  excludeNewsItemIds: string[] = [],
 ): Promise<string[]> {
   if (count <= 0) return [];
 
-  // We only care about FUTURE-scheduled news posts here. If the latest news
-  // post is already in the past, we should start scheduling from "now" so a
-  // freshly approved batch surfaces at the top of the feed immediately rather
-  // than inheriting some ancient created_at. If there are future-scheduled
-  // items already in the queue, we stack the new batch behind them so the
-  // 90-minute cadence is preserved.
   const nowMs = Date.now();
   const nowIso = new Date(nowMs).toISOString();
-  const { data: futureNewsPost } = await supabase
+  const exclude = new Set(excludeNewsItemIds);
+  const { data: futureNewsPosts, error } = await supabase
     .from("posts")
-    .select("created_at")
+    .select("created_at, news_item_id")
     .eq("content_type", "news")
     .gt("created_at", nowIso)
     .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(50);
+  if (error) throw new Error(error.message);
 
-  const latestFutureMs = Date.parse(
-    ((futureNewsPost as { created_at?: string | null } | null)?.created_at ?? "")
-  );
-  const startMs = Number.isFinite(latestFutureMs)
-    ? latestFutureMs + NEWS_RELEASE_INTERVAL_MS
-    : nowMs;
+  const latestFutureMs = ((futureNewsPosts ?? []) as Array<{
+    created_at: string;
+    news_item_id: string | null;
+  }>)
+    .filter((row) => row.news_item_id && !exclude.has(row.news_item_id))
+    .map((row) => Date.parse(row.created_at))
+    .find((ms) => Number.isFinite(ms));
+
+  const startMs =
+    latestFutureMs !== undefined ? latestFutureMs + NEWS_RELEASE_INTERVAL_MS : nowMs;
 
   return Array.from({ length: count }, (_, i) =>
     new Date(startMs + i * NEWS_RELEASE_INTERVAL_MS).toISOString()
@@ -145,48 +146,47 @@ async function ensurePublishedNewsPosts(supabase: ReturnType<typeof adminClient>
   });
 
   const missing = items.filter((item) => !existingByNewsId.has(item.id));
-  // Freshly approved items get a future release slot regardless of whatever
-  // stale `release_at` may be on the row. We only preserve an existing
-  // `release_at` if it is still in the future — otherwise we treat it as
-  // expired and allocate a new slot so the post actually lands at the top of
-  // the feed and the 90-minute cadence is respected. This prevents shadow
-  // posts from being created with a `created_at` 1-3 days in the past
-  // (inherited from the article's original published_at), which was burying
-  // newly approved articles at the bottom of the feed.
-  const nowIso = new Date().toISOString();
-  const missingNeedingSlot = missing.filter(
-    (item) => !item.release_at || item.release_at <= nowIso
+  const releaseTimes = await allocateReleaseSlots(
+    supabase,
+    items.length,
+    items.map((item) => item.id),
   );
-  const slots = await allocateReleaseSlots(supabase, missingNeedingSlot.length);
-  const slotByNewsId = new Map<string, string>();
-  missingNeedingSlot.forEach((item, idx) => {
-    slotByNewsId.set(item.id, slots[idx]);
+  const releaseAtByNewsId = new Map<string, string>();
+  items.forEach((item, idx) => {
+    releaseAtByNewsId.set(item.id, releaseTimes[idx] ?? releaseTimes[0] ?? new Date().toISOString());
   });
 
-  const inserts = missing.map((item) => {
-    const futureExistingRelease =
-      item.release_at && item.release_at > nowIso ? item.release_at : null;
-    const scheduledReleaseAt =
-      futureExistingRelease ??
-      slotByNewsId.get(item.id) ??
-      new Date().toISOString();
-    return {
-      user_id: RUMINT_USER_ID,
-      content: buildNewsPostContent(item),
-      og_url: item.canonical_url ?? item.source_url,
-      og_title: item.headline,
-      og_description: item.summary,
-      og_image: item.admin_manual_image_url ?? item.thumbnail_url,
-      og_site_name: item.source_name,
-      news_item_id: item.id,
-      content_type: "news",
-      system_generated: true,
-      created_at: scheduledReleaseAt,
-    };
-  });
+  const inserts = missing.map((item) => ({
+    user_id: RUMINT_USER_ID,
+    content: buildNewsPostContent(item),
+    og_url: item.canonical_url ?? item.source_url,
+    og_title: item.headline,
+    og_description: item.summary,
+    og_image: item.admin_manual_image_url ?? item.thumbnail_url,
+    og_site_name: item.source_name,
+    news_item_id: item.id,
+    content_type: "news",
+    system_generated: true,
+    created_at: releaseAtByNewsId.get(item.id) ?? new Date().toISOString(),
+  }));
   if (inserts.length > 0) {
     const { error: insertErr } = await supabase.from("posts").insert(inserts);
     if (insertErr) throw new Error(insertErr.message);
+  }
+
+  // Reschedule existing shadow posts too — otherwise backfilled or previously
+  // scheduled rows keep a stale created_at and never surface at the top.
+  const existingToRefresh = items.filter((item) => existingByNewsId.has(item.id));
+  for (const item of existingToRefresh) {
+    const linked = existingByNewsId.get(item.id);
+    if (!linked) continue;
+    const releaseAt = releaseAtByNewsId.get(item.id);
+    if (!releaseAt) continue;
+    const { error: refreshErr } = await supabase
+      .from("posts")
+      .update({ created_at: releaseAt })
+      .eq("id", linked.id);
+    if (refreshErr) throw new Error(refreshErr.message);
   }
 
   const { data: allPosts, error: allPostsErr } = await supabase
@@ -204,9 +204,7 @@ async function ensurePublishedNewsPosts(supabase: ReturnType<typeof adminClient>
   for (const item of items) {
     const linkedPost = postByNewsId.get(item.id);
     if (!linkedPost) continue;
-    // Mirror whatever the linked post landed on (a future slot for new/rescheduled
-    // items, the existing future release for items we left alone). This keeps
-    // news_items.release_at in sync with the feed-visible post.created_at.
+    // Keep news_items.release_at aligned with the feed-visible post.created_at.
     const releaseAt = linkedPost.created_at;
     const { error: updateErr } = await supabase
       .from("news_items")
