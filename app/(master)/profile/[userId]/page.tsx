@@ -93,7 +93,7 @@ import {
   toggleSavedJob,
   type SavedJobRow,
 } from "../../../lib/queries/savedJobs";
-import { queryKeys } from "../../../lib/queryKeys";
+import { MOBILE_SHELL_MAX, STACKED_PROFILE_MAX } from "../../../lib/viewportLayout";
 
 type Profile = {
   user_id: string;
@@ -608,6 +608,7 @@ export default function PublicProfilePage() {
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
   const [galleryExpanded, setGalleryExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [profileLayoutCompact, setProfileLayoutCompact] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
 
   const [sidebarDrawer, setSidebarDrawer] = useState<{ open: boolean; peerId: string | null }>({
@@ -1012,65 +1013,86 @@ export default function PublicProfilePage() {
     if (!currentUserId || !profile || currentUserId !== profile.user_id || !userId) return;
     const savingEmployerAccount = !!profile.is_employer || isEmployerAccount(profile);
     const linkedInResult = normalizeLinkedInUrl(editLinkedInUrl);
-    if (!linkedInResult.ok) {
+    if (!savingEmployerAccount && !linkedInResult.ok) {
       alert(linkedInResult.error);
       return;
     }
     try {
       setSavingProfile(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        alert("Your session expired. Please sign in again and retry.");
+        window.location.href = "/login";
+        return;
+      }
+
       const payload = savingEmployerAccount
         ? {
-            company_name: editCompanyName.trim() || null,
-            first_name: editFirstName.trim() || null,
-            last_name: editLastName.trim() || null,
-            company_website: editCompanyWebsite.trim() || null,
-            bio: editBio.trim() || null,
+            accountKind: "employer" as const,
+            company_name: editCompanyName,
+            first_name: editFirstName,
+            last_name: editLastName,
+            company_website: editCompanyWebsite,
+            bio: editBio,
           }
         : {
-            display_name: editDisplayName.trim() || null,
-            role: editRole || null,
-            bio: editBio || null,
-            service: editService || null,
-            status: editStatus || null,
-            years_experience: editYearsExp || null,
-            skill_badge: editSkillBadge || null,
-            company_website: editCompanyWebsite || null,
-            linkedin_url: linkedInResult.url || null,
+            accountKind: "member" as const,
+            display_name: editDisplayName,
+            role: editRole,
+            bio: editBio,
+            service: editService,
+            status: editStatus,
+            years_experience: editYearsExp,
+            skill_badge: editSkillBadge,
+            company_website: editCompanyWebsite,
+            linkedin_url: editLinkedInUrl,
             open_to_opportunities: editOpenToOpportunities,
-            employer_summary: editEmployerSummary || null,
-            resume_url: editResumeUrl || null,
-            education_url: editEducationUrl || null,
-            specialized_training: editSpecializedTraining.length ? editSpecializedTraining : null,
-            specialized_training_docs: Object.keys(editSpecializedTrainingDocs).length ? editSpecializedTrainingDocs : null,
-            availability_type: editAvailabilityType || null,
-            availability_date: editAvailabilityDate || null,
-            current_city: editCurrentCity || null,
-            current_state: editCurrentState || null,
+            employer_summary: editEmployerSummary,
+            resume_url: editResumeUrl,
+            education_url: editEducationUrl,
+            specialized_training: editSpecializedTraining,
+            specialized_training_docs: editSpecializedTrainingDocs,
+            availability_type: editAvailabilityType,
+            availability_date: editAvailabilityDate,
+            current_city: editCurrentCity,
+            current_state: editCurrentState,
             willing_to_relocate: editWillingToRelocate,
-            willing_to_travel: editWillingToTravel || null,
-            work_preference: editWorkPreference || null,
-            clearance_level: editClearanceLevel || null,
-            clearance_status: editClearanceStatus || null,
-            clearance_expiration_date: editClearanceExpirationDate || null,
+            willing_to_travel: editWillingToTravel,
+            work_preference: editWorkPreference,
+            clearance_level: editClearanceLevel,
+            clearance_status: editClearanceStatus,
+            clearance_expiration_date: editClearanceExpirationDate,
             has_oconus_experience: editHasOconusExperience,
             has_contract_experience: editHasContractExperience,
             has_federal_le_military_crossover: editHasFederalLeMilitaryCrossover,
-            professional_tags: editProfessionalTags.length ? editProfessionalTags : null,
-            unit_history_tags: editUnitHistoryTags.length ? editUnitHistoryTags : null,
+            professional_tags: editProfessionalTags,
+            unit_history_tags: editUnitHistoryTags,
           };
-      const { error } = await supabase
-        .from("profiles")
-        .update(payload)
-        .eq("user_id", currentUserId);
-      if (error) {
-        const message = String(error.message ?? "");
+
+      const saveRes = await fetch("/api/account/save-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+      const saveJson = (await saveRes.json().catch(() => ({}))) as { error?: string; profile?: Profile };
+      if (!saveRes.ok) {
+        const message = saveJson.error ?? "Could not save profile.";
         if (message.toLowerCase().includes("lock") || message.toLowerCase().includes("timeout")) {
           alert("Your connection had trouble confirming your session. Your changes were not saved. Please check your signal and try again.");
         } else {
-          alert(error.message);
+          alert(message);
         }
         return;
       }
+      if (!saveJson.profile) {
+        alert("Your changes were not saved. Please refresh and try again.");
+        return;
+      }
+
+      setProfile(saveJson.profile);
       await loadProfile(userId);
       void refreshPlankHolderChallenge();
       setEditingProfile(false);
@@ -2720,10 +2742,14 @@ export default function PublicProfilePage() {
   }
 
   useEffect(() => {
-    function checkMobile() { setIsMobile(window.innerWidth <= 900); }
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+    function checkViewport() {
+      const width = window.innerWidth;
+      setIsMobile(width <= MOBILE_SHELL_MAX);
+      setProfileLayoutCompact(width <= STACKED_PROFILE_MAX);
+    }
+    checkViewport();
+    window.addEventListener("resize", checkViewport);
+    return () => window.removeEventListener("resize", checkViewport);
   }, []);
 
   useEffect(() => {
@@ -3439,7 +3465,7 @@ export default function PublicProfilePage() {
                 <input ref={trainingFileInputRef} type="file" accept={EMPLOYER_DOCUMENT_ACCEPT} onChange={handleTrainingFilePick} style={{ display: "none" }} aria-hidden />
               </>
             )}
-            {isMobile ? (
+            {profileLayoutCompact ? (
               /* ΓöÇΓöÇ Mobile profile card layout ΓöÇΓöÇ */
               <div>
                 {/* Top row: avatar + name + stats */}
@@ -4236,7 +4262,7 @@ export default function PublicProfilePage() {
                   </button>
                 </div>
                 <div style={{ overflowY: "auto", flex: 1, padding: isMobile ? 16 : 24 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: profileLayoutCompact ? "1fr" : "1fr 1fr", gap: 14 }}>
                 {isEmployerProfile ? (
                   <>
                     <div style={{ gridColumn: "1 / -1" }}>
@@ -4643,7 +4669,7 @@ export default function PublicProfilePage() {
               style={{
                 padding: 16,
                 display: "grid",
-                gridTemplateColumns: isMobile
+                gridTemplateColumns: profileLayoutCompact
                   ? "1fr"
                   : "minmax(0, 1fr) 1px minmax(0, max-content)",
                 gap: 14,
@@ -4684,7 +4710,7 @@ export default function PublicProfilePage() {
                   </div>
                 </div>
 
-                <div style={!isMobile ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobilePhotoGridCols, gap: 8 }}>
+                <div style={!profileLayoutCompact ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobilePhotoGridCols, gap: 8 }}>
                   {pinnedPhotos.length === 0 && (
                     <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
                       {photos.length > 0
@@ -4770,10 +4796,10 @@ export default function PublicProfilePage() {
                   flexDirection: "column",
                   gap: 10,
                   minWidth: 0,
-                  ...(!isMobile ? { alignItems: "flex-end" as const, width: "100%" } : {}),
+                  ...(!profileLayoutCompact ? { alignItems: "flex-end" as const, width: "100%" } : {}),
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: 56, alignContent: "center", width: "100%", maxWidth: !isMobile ? STRIP_THUMB_AREA_MAX : undefined }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: 56, alignContent: "center", width: "100%", maxWidth: !profileLayoutCompact ? STRIP_THUMB_AREA_MAX : undefined }}>
                   <div style={{ fontSize: 15, fontWeight: 900 }}>My Groups</div>
                   {!isMobile && myGroups.length > groupPreviewItems.length && (
                     <button
@@ -4785,7 +4811,7 @@ export default function PublicProfilePage() {
                     </button>
                   )}
                 </div>
-                <div style={!isMobile ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobileGroupsGridCols, gap: 8 }}>
+                <div style={!profileLayoutCompact ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobileGroupsGridCols, gap: 8 }}>
                   {myGroups.length === 0 && (
                     <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
                       No groups yet.

@@ -21,6 +21,11 @@ import {
 } from "../../lib/onboardingGate";
 import { hasFullPlatformAccess } from "../../lib/verificationAccess";
 import { ensureWelcomeSidebarOnce } from "../../lib/welcomeSidebarClient";
+import {
+  COMPACT_DESKTOP_MAX,
+  MOBILE_SHELL_MAX,
+  SHRINK_COLLAPSE_RATIO,
+} from "../../lib/viewportLayout";
 
 const MasterLeftColumn = dynamic(() => import("./MasterLeftColumn"), { ssr: true });
 const MasterRightColumn = dynamic(() => import("./MasterRightColumn"), { ssr: true });
@@ -54,20 +59,41 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   const [sideRailsReady, setSideRailsReady] = useState(false);
   const [showMemorialFeedCards, setShowMemorialFeedCards] = useState(true);
   const [isBusinessOrgAccount, setIsBusinessOrgAccount] = useState(false);
+  const [isCompactDesktop, setIsCompactDesktop] = useState(false);
+  const baselineViewportWidthRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
-    const mq = window.matchMedia("(min-width: 901px)");
+    const mq = window.matchMedia(`(min-width: ${MOBILE_SHELL_MAX + 1}px)`);
     function syncViewport() {
+      const width = window.innerWidth;
       const desktop = mq.matches;
       setIsDesktop(desktop);
+
+      if (baselineViewportWidthRef.current == null || width > baselineViewportWidthRef.current) {
+        baselineViewportWidthRef.current = width;
+      }
+      const baseline = baselineViewportWidthRef.current ?? width;
+      const shouldAutoCollapse =
+        width < COMPACT_DESKTOP_MAX || width <= baseline * SHRINK_COLLAPSE_RATIO;
+      setIsCompactDesktop(desktop && shouldAutoCollapse);
+
       if (desktop) {
-        setLeftRailState(getSavedRailState("eod-master-rail-left"));
-        setRightRailState(getSavedRailState("eod-master-rail-right"));
+        if (shouldAutoCollapse) {
+          setLeftRailState("collapsed");
+          setRightRailState("collapsed");
+        } else {
+          setLeftRailState(getSavedRailState("eod-master-rail-left"));
+          setRightRailState(getSavedRailState("eod-master-rail-right"));
+        }
       }
     }
     syncViewport();
     mq.addEventListener("change", syncViewport);
-    return () => mq.removeEventListener("change", syncViewport);
+    window.addEventListener("resize", syncViewport);
+    return () => {
+      mq.removeEventListener("change", syncViewport);
+      window.removeEventListener("resize", syncViewport);
+    };
   }, []);
 
   useEffect(() => {
@@ -178,12 +204,13 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   const ctxValue = useMemo(
     () => ({
       isDesktopShell: isDesktop,
+      isCompactDesktop,
       openSidebarPeer: isDesktop ? openSidebarPeer : () => {},
       showMemorialFeedCards,
       setShowMemorialFeedCards,
       isBusinessOrgAccount,
     }),
-    [isDesktop, openSidebarPeer, showMemorialFeedCards, isBusinessOrgAccount]
+    [isDesktop, isCompactDesktop, openSidebarPeer, showMemorialFeedCards, isBusinessOrgAccount]
   );
 
   if (!isDesktop) {
