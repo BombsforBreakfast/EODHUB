@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import UserDirectoryCard from "../components/userDirectory/UserDirectoryCard";
 import { useMasterShell } from "../components/master/masterShellContext";
 import { usePageTracking } from "../hooks/usePageTracking";
@@ -9,34 +10,29 @@ import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import {
-  attachKnowStatus,
-  buildKnowStatusMap,
   compareMembersAlphabetically,
   memberMatchesFilters,
-  postConnectionAction,
   PROFILE_SERVICE_OPTIONS,
-  RUMINT_USER_ID,
   type ConnectionAction,
-  type KnowStatus,
-  type UserDirectoryMember,
-  type UserDirectoryProfileRow,
 } from "../lib/userDirectory";
-
-const PROFILE_COLUMNS =
-  "user_id, first_name, last_name, display_name, photo_url, service, skill_badge";
+import {
+  fetchUserDirectoryMembers,
+  runConnectionAction as runDirectoryConnectionAction,
+  USER_DIRECTORY_STALE_MS,
+} from "../lib/queries/userDirectory";
+import { queryKeys } from "../lib/queryKeys";
 
 export default function UserDirectoryPage() {
   useRequireFullAccess("app/user-directory/page.tsx");
   usePageTracking(PAGE_TRACKING.userDirectory);
   const { t } = useTheme();
+  const queryClient = useQueryClient();
   const { openSidebarPeer, isDesktopShell } = useMasterShell();
 
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [members, setMembers] = useState<UserDirectoryMember[]>([]);
   const [keyword, setKeyword] = useState("");
   const [serviceFilter, setServiceFilter] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [viewerLoaded, setViewerLoaded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [busyUserId, setBusyUserId] = useState<string | null>(null);
 
@@ -48,69 +44,32 @@ export default function UserDirectoryPage() {
     return () => mq.removeEventListener("change", sync);
   }, []);
 
-  const loadMembers = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-
+  useEffect(() => {
+    let cancelled = false;
+    async function loadViewer() {
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    const viewerId = user?.id ?? null;
-    setCurrentUserId(viewerId);
-
-    let profileQuery = supabase
-      .from("profiles")
-      .select(PROFILE_COLUMNS)
-      .eq("verification_status", "verified")
-      .is("account_deleted_at", null)
-      .neq("user_id", RUMINT_USER_ID)
-      .not("first_name", "is", null)
-      .order("last_name")
-      .order("first_name")
-      .limit(500);
-
-    if (viewerId) {
-      profileQuery = profileQuery.neq("user_id", viewerId);
-    }
-
-    const { data: profileRows, error: profileError } = await profileQuery;
-
-    if (profileError) {
-      setLoadError(profileError.message);
-      setMembers([]);
-      setLoading(false);
-      return;
-    }
-
-    const profiles = (profileRows ?? []) as UserDirectoryProfileRow[];
-    let knowStatusByUserId = new Map<string, KnowStatus>();
-
-    if (viewerId) {
-      const { data: connRows, error: connError } = await supabase
-        .from("profile_connections")
-        .select("requester_user_id, target_user_id, status")
-        .or(`requester_user_id.eq.${viewerId},target_user_id.eq.${viewerId}`);
-
-      if (connError) {
-        setLoadError(connError.message);
-        setMembers([]);
-        setLoading(false);
-        return;
+      if (!cancelled) {
+        setCurrentUserId(user?.id ?? null);
+        setViewerLoaded(true);
       }
-
-      knowStatusByUserId = buildKnowStatusMap(
-        (connRows ?? []) as { requester_user_id: string; target_user_id: string; status: string }[],
-        viewerId,
-      );
     }
-
-    setMembers(attachKnowStatus(profiles, knowStatusByUserId));
-    setLoading(false);
+    void loadViewer();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  useEffect(() => {
-    void loadMembers();
-  }, [loadMembers]);
+  const membersQuery = useQuery({
+    queryKey: queryKeys.userDirectory(currentUserId),
+    queryFn: () => fetchUserDirectoryMembers(supabase, currentUserId),
+    staleTime: USER_DIRECTORY_STALE_MS,
+    enabled: viewerLoaded,
+  });
+  const members = membersQuery.data ?? [];
+  const loading = !viewerLoaded || membersQuery.isLoading;
+  const loadError = membersQuery.error instanceof Error ? membersQuery.error.message : null;
 
   const filterActive = keyword.trim().length > 0 || serviceFilter !== "";
 
@@ -132,12 +91,6 @@ export default function UserDirectoryPage() {
     boxSizing: "border-box",
   };
 
-  const updateKnowStatus = useCallback((targetUserId: string, knowStatus: KnowStatus) => {
-    setMembers((prev) =>
-      prev.map((m) => (m.user_id === targetUserId ? { ...m, knowStatus } : m)),
-    );
-  }, []);
-
   const runConnectionAction = useCallback(
     async (targetUserId: string, action: ConnectionAction) => {
       if (!currentUserId) {
@@ -148,48 +101,23 @@ export default function UserDirectoryPage() {
       const member = members.find((m) => m.user_id === targetUserId);
       if (!member) return;
 
-      const prevStatus = member.knowStatus;
-      let optimistic: KnowStatus = prevStatus;
-
-      if (action === "know") {
-        optimistic = prevStatus === "pending_incoming" ? "accepted" : "pending_outgoing";
-      } else if (action === "confirm") {
-        optimistic = "accepted";
-      } else if (action === "deny" || action === "cancel") {
-        optimistic = "none";
-      }
-
-      updateKnowStatus(targetUserId, optimistic);
       setBusyUserId(targetUserId);
 
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        if (!session?.access_token) {
-          updateKnowStatus(targetUserId, prevStatus);
-          alert("Please sign in again to continue.");
-          return;
-        }
-
-        const result = await postConnectionAction(action, targetUserId, session.access_token);
-        if (!result.ok) {
-          updateKnowStatus(targetUserId, prevStatus);
-          alert(result.error || "Action failed. Please try again.");
-          return;
-        }
-
-        if (result.state) {
-          updateKnowStatus(targetUserId, result.state);
-        }
-      } catch {
-        updateKnowStatus(targetUserId, prevStatus);
-        alert("Action failed. Please try again.");
+        await runDirectoryConnectionAction({
+          queryClient,
+          supabase,
+          viewerId: currentUserId,
+          targetUserId,
+          action,
+        });
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "Action failed. Please try again.");
       } finally {
         setBusyUserId(null);
       }
     },
-    [currentUserId, members, updateKnowStatus],
+    [currentUserId, members, queryClient],
   );
 
   const messageMember = useCallback(

@@ -10,4 +10,8 @@ export const queryKeys = {
   savedJobs: (userId: string) => ["saved-jobs", userId] as const,
   businessesApproved: (limit: number) => ["businesses", "approved", limit] as const,
   bizLikes: (userId: string) => ["biz-likes", userId] as const,
+  userDirectory: (viewerId: string | null) => ["profiles", "user-directory", viewerId] as const,
+  discoverProfiles: (viewerId: string | null) => ["profiles", "discover", viewerId] as const,
+  profileConnections: (viewerId: string | null, targetUserId: string | null) =>
+    ["profiles", "connections", { viewerId, targetUserId }] as const,
 } as const;
