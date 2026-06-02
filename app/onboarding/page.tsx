@@ -28,7 +28,6 @@ import {
 import { ONBOARDING_REQUIRED_FIELDS_MESSAGE } from "../lib/onboardingGate";
 import { validateImagePick } from "../lib/uploadLimits";
 import {
-  captureReferralFromUrl,
   clearStoredReferral,
   readStoredReferral,
 } from "../lib/referralCapture";
@@ -64,8 +63,6 @@ export default function OnboardingPage() {
   const [empLastName, setEmpLastName] = useState("");
   const [companyName, setCompanyName] = useState("");
 
-  // Referral
-  const [referralInput, setReferralInput] = useState("");
   const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
   const [resumeSubscriptionAckOnly, setResumeSubscriptionAckOnly] = useState(false);
   const [agreedTerms, setAgreedTerms] = useState(false);
@@ -267,8 +264,6 @@ export default function OnboardingPage() {
         if (params.get("notice") === "required" || params.get("error") === "incomplete") {
           setShowRequiredHelper(true);
         }
-        const ref = params.get("ref") || readStoredReferral() || "";
-        if (ref) setReferralInput(ref.toUpperCase());
         setChecking(false);
         return;
       }
@@ -327,8 +322,6 @@ export default function OnboardingPage() {
       if (params.get("notice") === "required" || params.get("error") === "incomplete") {
         setShowRequiredHelper(true);
       }
-      const ref = params.get("ref") || readStoredReferral() || "";
-      if (ref) setReferralInput(ref.toUpperCase());
 
       setChecking(false);
     }
@@ -419,7 +412,7 @@ export default function OnboardingPage() {
           skillBadge,
           yearsExperience,
           companyName,
-          referralInput,
+          referralInput: readStoredReferral() ?? "",
           photoUrl: uploadedProfilePhotoUrl,
         }),
       });
@@ -852,23 +845,6 @@ export default function OnboardingPage() {
                   </div>
                 </>
               )}
-
-              {/* Referral code — optional, shown for both account types */}
-              <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, marginTop: 4 }}>
-                <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>
-                  Referral Code <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
-                </label>
-                <input
-                  value={referralInput}
-                  onChange={(e) => setReferralInput(e.target.value.toUpperCase())}
-                  style={inputStyle}
-                  placeholder="e.g. EOD7X2K9"
-                  maxLength={8}
-                />
-                <div style={{ fontSize: 12, color: "#374151", marginTop: 4 }}>
-                  If a community member invited you, enter their code here.
-                </div>
-              </div>
 
               <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, marginTop: 4 }}>
                 <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 10, color: "#111827" }}>Legal Agreements *</div>
