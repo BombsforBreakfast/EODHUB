@@ -58,6 +58,12 @@ type Conversation = {
   last_message_preview: string | null;
 };
 
+type ConversationsResponse = {
+  conversations?: Conversation[];
+  hasMore?: boolean;
+  nextOffset?: number;
+};
+
 type Message = {
   id: string;
   conversation_id: string;
@@ -93,6 +99,7 @@ type EventInviteMeta = {
 };
 
 const EVENT_INVITE_URL_RE = /https?:\/\/[^\s]+\/events\?event=([0-9a-fA-F-]{20,}|[^&\s]+)(?:&[^\s]*)?/;
+const CONVERSATION_PAGE_SIZE = 25;
 
 function parseEventInviteId(content: string): string | null {
   const match = content.match(EVENT_INVITE_URL_RE);
@@ -178,6 +185,9 @@ export default function SidebarPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [myName, setMyName] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationNextOffset, setConversationNextOffset] = useState(0);
+  const [conversationHasMore, setConversationHasMore] = useState(false);
+  const [loadingMoreConversations, setLoadingMoreConversations] = useState(false);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
@@ -211,6 +221,8 @@ export default function SidebarPage() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const editInputRef = useRef<HTMLTextAreaElement | null>(null);
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const conversationsRealtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const conversationRefreshTimerRef = useRef<number | null>(null);
   const messageInputRef = useRef<HTMLInputElement | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const { t, isDark } = useTheme();
@@ -282,22 +294,52 @@ export default function SidebarPage() {
     if (withUserId) openOrCreateConversation(withUserId);
   }, [userId]);
 
-  async function loadConversations(_uid: string): Promise<Conversation[]> {
+  async function loadConversations(
+    _uid: string,
+    options: { offset?: number; append?: boolean; query?: string; background?: boolean } = {},
+  ): Promise<Conversation[]> {
     const { data: { session } } = await supabase.auth.getSession();
     const token = session?.access_token;
     if (!token) return [];
 
-    const res = await fetch("/api/sidebar/conversations", {
+    const offset = options.offset ?? 0;
+    const params = new URLSearchParams({
+      limit: String(CONVERSATION_PAGE_SIZE),
+      offset: String(offset),
+    });
+    if (options.query?.trim()) params.set("q", options.query.trim());
+
+    const res = await fetch(`/api/sidebar/conversations?${params.toString()}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) return [];
 
-    const json = await res.json() as { conversations?: Conversation[] };
+    const json = await res.json() as ConversationsResponse;
     const convs = json.conversations ?? [];
-    const sorted = sortConversationsByRecentActivity(convs);
+    let sorted: Conversation[];
 
-      setConversations(sorted);
-      return sorted;
+    if (options.append) {
+      const merged = new Map(conversations.map((conv) => [conv.id, conv]));
+      for (const conv of convs) merged.set(conv.id, conv);
+      sorted = sortConversationsByRecentActivity([...merged.values()]);
+    } else {
+      sorted = sortConversationsByRecentActivity(convs);
+    }
+
+    setConversations(sorted);
+    setConversationNextOffset(json.nextOffset ?? sorted.length);
+    setConversationHasMore(Boolean(json.hasMore));
+    return sorted;
+  }
+
+  async function loadMoreConversations() {
+    if (!userId || loadingMoreConversations || !conversationHasMore || inboxSearch.trim()) return;
+    setLoadingMoreConversations(true);
+    try {
+      await loadConversations(userId, { offset: conversationNextOffset, append: true, background: true });
+    } finally {
+      setLoadingMoreConversations(false);
+    }
   }
 
   async function openOrCreateConversation(otherId: string) {
@@ -494,6 +536,41 @@ export default function SidebarPage() {
   }, []);
 
   useEffect(() => {
+    if (!userId) return;
+
+    const refreshFirstPage = () => {
+      if (conversationRefreshTimerRef.current) window.clearTimeout(conversationRefreshTimerRef.current);
+      conversationRefreshTimerRef.current = window.setTimeout(() => {
+        void loadConversations(userId);
+      }, 250);
+    };
+
+    const channel = supabase
+      .channel(`sidebar-conversations-${userId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversations", filter: `participant_1=eq.${userId}` },
+        refreshFirstPage,
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "conversations", filter: `participant_2=eq.${userId}` },
+        refreshFirstPage,
+      )
+      .subscribe();
+
+    conversationsRealtimeRef.current = channel;
+    return () => {
+      if (conversationRefreshTimerRef.current) {
+        window.clearTimeout(conversationRefreshTimerRef.current);
+        conversationRefreshTimerRef.current = null;
+      }
+      conversationsRealtimeRef.current = null;
+      void supabase.removeChannel(channel);
+    };
+  }, [userId]);
+
+  useEffect(() => {
     return () => {
       if (selectedPhoto) URL.revokeObjectURL(selectedPhoto.previewUrl);
     };
@@ -501,39 +578,27 @@ export default function SidebarPage() {
 
   useEffect(() => {
     const q = inboxSearch.trim();
-    const conversationIds = conversations.map((conv) => conv.id);
-    if (q.length < 2 || conversationIds.length === 0) {
+    if (q.length < 2 || !userId) {
       setMessageSearchMatches({});
       setMessageSearchLoading(false);
+      if (userId && q.length === 0) {
+        void loadConversations(userId);
+      }
       return;
     }
 
     let cancelled = false;
     setMessageSearchLoading(true);
     const timer = window.setTimeout(async () => {
-      const escaped = q.replace(/[%_]/g, "\\$&");
-      const { data, error } = await supabase
-        .from("messages")
-        .select("conversation_id, content, created_at")
-        .in("conversation_id", conversationIds)
-        .ilike("content", `%${escaped}%`)
-        .order("created_at", { ascending: false })
-        .limit(80);
-
+      const results = await loadConversations(userId, { query: q });
       if (cancelled) return;
-      if (error) {
-        console.error("Message search failed:", error);
-        setMessageSearchMatches({});
-        setMessageSearchLoading(false);
-        return;
-      }
-
-      const next: Record<string, string> = {};
-      for (const row of (data ?? []) as Array<{ conversation_id: string; content: string | null }>) {
-        if (!row.content?.trim() || next[row.conversation_id]) continue;
-        next[row.conversation_id] = compactMessageSnippet(row.content);
-      }
-      setMessageSearchMatches(next);
+      setMessageSearchMatches(
+        Object.fromEntries(
+          results
+            .filter((conv) => conv.last_message_preview?.toLowerCase().includes(q.toLowerCase()))
+            .map((conv) => [conv.id, compactMessageSnippet(conv.last_message_preview ?? "")]),
+        ),
+      );
       setMessageSearchLoading(false);
     }, 250);
 
@@ -541,7 +606,7 @@ export default function SidebarPage() {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [inboxSearch, conversations]);
+  }, [inboxSearch, userId]);
 
   function setMessagePhoto(file: File) {
     if (!file.type.startsWith("image/")) {
@@ -894,7 +959,15 @@ export default function SidebarPage() {
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <div
+        style={{ flex: 1, overflowY: "auto" }}
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          if (el.scrollTop + el.clientHeight >= el.scrollHeight - 160) {
+            void loadMoreConversations();
+          }
+        }}
+      >
         {/* MESSAGES TAB */}
         {inboxTab === "messages" && (
           <>
@@ -1019,6 +1092,26 @@ export default function SidebarPage() {
                 </div>
               </div>
             ))}
+            {!inboxSearch.trim() && conversationHasMore && (
+              <button
+                type="button"
+                onClick={() => void loadMoreConversations()}
+                disabled={loadingMoreConversations}
+                style={{
+                  width: "100%",
+                  border: "none",
+                  borderBottom: `1px solid ${t.border}`,
+                  background: t.surface,
+                  color: t.textMuted,
+                  cursor: loadingMoreConversations ? "default" : "pointer",
+                  padding: "12px 20px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                {loadingMoreConversations ? "Loading more conversations..." : "Load more conversations"}
+              </button>
+            )}
           </>
         )}
 
