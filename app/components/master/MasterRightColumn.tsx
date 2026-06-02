@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import {
@@ -23,6 +23,12 @@ import { BizListingTagsField } from "../biz/BizListingTagsField";
 import { BizListingTagChips } from "../biz/BizListingTagChips";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../../lib/bizListingTags";
 import { fetchApprovedBusinessListings, BUSINESSES_STALE_MS } from "../../lib/queries/businesses";
+import {
+  BIZ_LIKES_STALE_MS,
+  fetchBizLikes,
+  likedBizIdsFromRows,
+  toggleBizLike,
+} from "../../lib/queries/bizLikes";
 import { queryKeys } from "../../lib/queryKeys";
 
 type BusinessOrgListingType = Exclude<BizListingType, "resource">;
@@ -80,10 +86,9 @@ export default function MasterRightColumn({
   sideRailsReady,
 }: Props) {
   const { t } = useTheme();
+  const queryClient = useQueryClient();
 
   const [desktopConversations, setDesktopConversations] = useState<DesktopConversation[]>([]);
-
-  const [businessLikeCountOverrides, setBusinessLikeCountOverrides] = useState<Record<string, number>>({});
   const [showBizForm, setShowBizForm] = useState(false);
   const [bizUrl, setBizUrl] = useState("");
   const [bizName, setBizName] = useState("");
@@ -97,8 +102,18 @@ export default function MasterRightColumn({
   const [bizTags, setBizTags] = useState<string[]>([]);
   const bizOgDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [likedBizIds, setLikedBizIds] = useState<Set<string>>(new Set());
   const [togglingBizLikeFor, setTogglingBizLikeFor] = useState<string | null>(null);
+
+  const bizLikesQuery = useQuery({
+    queryKey: userId ? queryKeys.bizLikes(userId) : queryKeys.bizLikes("pending"),
+    queryFn: () => fetchBizLikes(supabase, userId as string),
+    enabled: sideRailsReady && !!userId,
+    staleTime: BIZ_LIKES_STALE_MS,
+  });
+  const likedBizIds = useMemo(
+    () => likedBizIdsFromRows(bizLikesQuery.data),
+    [bizLikesQuery.data],
+  );
 
   function blockMemberInteraction(): boolean {
     if (memberInteractionAllowedRef.current) return false;
@@ -133,20 +148,9 @@ export default function MasterRightColumn({
     staleTime: BUSINESSES_STALE_MS,
   });
 
-  const businessListings = useMemo(
-    () =>
-      (businessListingsQuery.data ?? []).map((listing) => {
-        const override = businessLikeCountOverrides[listing.id];
-        return override === undefined ? listing : { ...listing, like_count: override };
-      }),
-    [businessListingsQuery.data, businessLikeCountOverrides],
-  );
+  const EMPTY_BUSINESS_LISTINGS = useMemo<BusinessListingRow[]>(() => [], []);
+  const businessListings = businessListingsQuery.data ?? EMPTY_BUSINESS_LISTINGS;
   const bizLoaded = businessListingsQuery.isSuccess;
-
-  const loadBizLikes = useCallback(async (uid: string) => {
-    const { data } = await supabase.from("business_likes").select("business_id").eq("user_id", uid);
-    setLikedBizIds(new Set((data ?? []).map((r: { business_id: string }) => r.business_id)));
-  }, []);
 
   const loadDesktopConversations = useCallback(async (uid: string) => {
     const { data, error } = await supabase
@@ -214,9 +218,8 @@ export default function MasterRightColumn({
       setDesktopConversations([]);
       return;
     }
-    loadBizLikes(userId).catch(() => {});
     loadDesktopConversations(userId).catch((err) => console.error("Desktop conversations load failed:", err));
-  }, [sideRailsReady, userId, loadBizLikes, loadDesktopConversations]);
+  }, [sideRailsReady, userId, loadDesktopConversations]);
 
   useEffect(() => {
     if (!sideRailsReady || !userId) return;
@@ -390,28 +393,19 @@ export default function MasterRightColumn({
     if (!userId || togglingBizLikeFor === bizId) return;
     if (blockMemberInteraction()) return;
     setTogglingBizLikeFor(bizId);
-
-    const already = likedBizIds.has(bizId);
-    if (already) {
-      await supabase.from("business_likes").delete().eq("user_id", userId).eq("business_id", bizId);
-      setLikedBizIds((prev) => {
-        const s = new Set(prev);
-        s.delete(bizId);
-        return s;
+    try {
+      await toggleBizLike({
+        queryClient,
+        supabase,
+        userId,
+        bizId,
+        liked: likedBizIds.has(bizId),
       });
-      setBusinessLikeCountOverrides((prev) => ({
-        ...prev,
-        [bizId]: Math.max(0, (businessListings.find((b) => b.id === bizId)?.like_count ?? 0) - 1),
-      }));
-    } else {
-      await supabase.from("business_likes").insert({ user_id: userId, business_id: bizId });
-      setLikedBizIds((prev) => new Set(prev).add(bizId));
-      setBusinessLikeCountOverrides((prev) => ({
-        ...prev,
-        [bizId]: (businessListings.find((b) => b.id === bizId)?.like_count ?? 0) + 1,
-      }));
+    } catch (err) {
+      console.error("Toggle business like error:", err);
+    } finally {
+      setTogglingBizLikeFor(null);
     }
-    setTogglingBizLikeFor(null);
   }
 
   if (railState === "collapsed") {

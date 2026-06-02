@@ -76,6 +76,12 @@ import {
   SAVED_JOBS_STALE_MS,
   toggleSavedJob,
 } from "../lib/queries/savedJobs";
+import {
+  BIZ_LIKES_STALE_MS,
+  fetchBizLikes,
+  likedBizIdsFromRows,
+  toggleBizLike,
+} from "../lib/queries/bizLikes";
 import { queryKeys } from "../lib/queryKeys";
 import { hasPublicMemberProfile } from "../lib/pureAdminAllowlist";
 import type {
@@ -949,6 +955,16 @@ export default function HomePage() {
     () => savedJobIdsFromRows(savedJobsQuery.data),
     [savedJobsQuery.data]
   );
+  const bizLikesQuery = useQuery({
+    queryKey: userId ? queryKeys.bizLikes(userId) : queryKeys.bizLikes("pending"),
+    queryFn: () => fetchBizLikes(supabase, userId as string),
+    enabled: !!userId,
+    staleTime: BIZ_LIKES_STALE_MS,
+  });
+  const likedBizIds = useMemo(
+    () => likedBizIdsFromRows(bizLikesQuery.data),
+    [bizLikesQuery.data],
+  );
   const [isMobile, setIsMobile] = useState(false);
   const { isDesktopShell, openSidebarPeer, showMemorialFeedCards, setShowMemorialFeedCards } = useMasterShell();
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
@@ -1009,7 +1025,6 @@ export default function HomePage() {
   const replyRawsRef = useRef<Record<string, string>>({});
   const [submittingReplyFor, setSubmittingReplyFor] = useState<string | null>(null);
 
-  const [likedBizIds, setLikedBizIds] = useState<Set<string>>(new Set());
   const [togglingBizLikeFor, setTogglingBizLikeFor] = useState<string | null>(null);
 
   const [listingCommentsById, setListingCommentsById] = useState<Record<string, BizListingComment[]>>({});
@@ -1691,32 +1706,37 @@ export default function HomePage() {
     logPerf("home.loadBusinessListings", perfStart, { count: (data ?? []).length });
   }
 
-  async function loadBizLikes(uid: string) {
-    const { data } = await supabase
-      .from("business_likes")
-      .select("business_id")
-      .eq("user_id", uid);
-    setLikedBizIds(new Set((data ?? []).map((r: { business_id: string }) => r.business_id)));
-  }
-
   async function handleBizLike(e: React.MouseEvent, bizId: string) {
     e.preventDefault();
     e.stopPropagation();
     if (!userId || togglingBizLikeFor === bizId) return;
     if (blockMemberInteraction()) return;
     setTogglingBizLikeFor(bizId);
-
     const already = likedBizIds.has(bizId);
-    if (already) {
-      await supabase.from("business_likes").delete().eq("user_id", userId).eq("business_id", bizId);
-      setLikedBizIds((prev) => { const s = new Set(prev); s.delete(bizId); return s; });
-      setBusinessListings((prev) => prev.map((b) => b.id === bizId ? { ...b, like_count: Math.max(0, (b.like_count ?? 0) - 1) } : b));
-    } else {
-      await supabase.from("business_likes").insert({ user_id: userId, business_id: bizId });
-      setLikedBizIds((prev) => new Set(prev).add(bizId));
-      setBusinessListings((prev) => prev.map((b) => b.id === bizId ? { ...b, like_count: (b.like_count ?? 0) + 1 } : b));
+    try {
+      await toggleBizLike({
+        queryClient,
+        supabase,
+        userId,
+        bizId,
+        liked: already,
+      });
+      // Mobile home still keeps listings in local state (not the shared listings query).
+      setBusinessListings((prev) =>
+        prev.map((b) =>
+          b.id === bizId
+            ? {
+                ...b,
+                like_count: Math.max(0, (b.like_count ?? 0) + (already ? -1 : 1)),
+              }
+            : b,
+        ),
+      );
+    } catch (err) {
+      console.error("Toggle business like error:", err);
+    } finally {
+      setTogglingBizLikeFor(null);
     }
-    setTogglingBizLikeFor(null);
   }
 
   async function loadJobs(limit = 500) {
@@ -4929,7 +4949,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
       setIsAdmin(false);
       setCanViewFullJobs(true);
       setCanUseJobFilters(true);
-      setLikedBizIds(new Set());
       setDiscoverProfiles([]);
       setDiscoverPageIndex(0);
       setPendingMembers([]);
@@ -5092,7 +5111,6 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
           deferredTasks.push(
             loadJobs(featureAccess.canViewFullJobs ? 500 : 5).catch((err) => console.error("loadJobs failed:", err)),
             loadBusinessListings().catch((err) => console.error("loadBusinessListings failed:", err)),
-            loadBizLikes(currentUserId).catch((err) => console.error("loadBizLikes failed:", err))
           );
         }
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
