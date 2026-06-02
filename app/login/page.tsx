@@ -1035,10 +1035,10 @@ export default function LoginPage() {
       >
         Questions or experiencing login issues — email{" "}
         <a
-          href="mailto:murphy@eod-hub.com"
+          href="mailto:hello@eod-hub.com"
           style={{ color: t.text, fontWeight: 700, textDecoration: "underline" }}
         >
-          murphy@eod-hub.com
+          hello@eod-hub.com
         </a>
       </div>
     </div>

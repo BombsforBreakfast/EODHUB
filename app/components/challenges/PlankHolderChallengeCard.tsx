@@ -6,6 +6,7 @@ import { useTheme } from "@/app/lib/ThemeContext";
 import {
   getNextIncompleteTask,
   getTaskCtaHref,
+  isPlankHolderChallengeOpen,
   PLANK_HOLDER_CAP,
   PLANK_HOLDER_TASK_HINTS,
   PLANK_HOLDER_TASK_LABELS,
@@ -25,14 +26,13 @@ export function PlankHolderChallengeCard({ challenge, userId, onCtaClick, hidden
   const { t, isDark } = useTheme();
   const [contributionHintOpen, setContributionHintOpen] = useState(false);
 
-  if (!challenge || !challenge.eligible) return null;
-  if (hidden && !challenge.awarded) return null;
-  if (challenge.awarded) return null;
+  if (!isPlankHolderChallengeOpen(challenge)) return null;
+  if (hidden) return null;
 
-  const nextTask = getNextIncompleteTask(challenge.progress);
+  const challengeState = challenge!;
+  const nextTask = getNextIncompleteTask(challengeState.progress);
   const ctaHref = getTaskCtaHref(nextTask, userId);
-  const lowRemaining = challenge.remainingSpots > 0 && challenge.remainingSpots <= 10;
-  const closedBeforeEarned = challenge.alreadyClosed;
+  const lowRemaining = challengeState.remainingSpots > 0 && challengeState.remainingSpots <= 10;
 
   return (
     <section
@@ -68,7 +68,7 @@ export function PlankHolderChallengeCard({ challenge, userId, onCtaClick, hidden
               whiteSpace: "nowrap",
             }}
           >
-            {challenge.claimedCount} / {PLANK_HOLDER_CAP} claimed
+            {challengeState.claimedCount} / {PLANK_HOLDER_CAP} claimed
           </div>
           {onHide && (
             <button
@@ -96,17 +96,17 @@ export function PlankHolderChallengeCard({ challenge, userId, onCtaClick, hidden
       </div>
 
       <div style={{ marginTop: 12, fontSize: 14, fontWeight: 900 }}>
-        {closedBeforeEarned ? "All 50 Plank Holder badges have been claimed." : `${challenge.progress.completedCount} / 5 Complete`}
+        {challengeState.progress.completedCount} / 5 Complete
       </div>
       {lowRemaining && (
         <div style={{ marginTop: 4, fontSize: 13, fontWeight: 900, color: "#b45309" }}>
-          Only {challenge.remainingSpots} founding spots remain.
+          Only {challengeState.remainingSpots} founding spots remain.
         </div>
       )}
 
       <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
         {PLANK_HOLDER_TASK_ORDER.map((task) => {
-          const done = challenge.progress[task];
+          const done = challengeState.progress[task];
           const isNext = task === nextTask;
           const hasHelper = task === "contribution";
           const helperOpen = hasHelper && (contributionHintOpen || (!done && isNext));
@@ -170,14 +170,13 @@ export function PlankHolderChallengeCard({ challenge, userId, onCtaClick, hidden
         })}
       </div>
 
-      {!closedBeforeEarned && (
-        <a
-          href={ctaHref}
-          onClick={(event) => {
-            event.preventDefault();
-            onCtaClick?.(ctaHref);
-          }}
-          style={{
+      <a
+        href={ctaHref}
+        onClick={(event) => {
+          event.preventDefault();
+          onCtaClick?.(ctaHref);
+        }}
+        style={{
             marginTop: 14,
             display: "inline-flex",
             alignItems: "center",
@@ -191,10 +190,9 @@ export function PlankHolderChallengeCard({ challenge, userId, onCtaClick, hidden
             textDecoration: "none",
           }}
         >
-          Complete Next Task
-          <ArrowRight size={15} />
-        </a>
-      )}
+        Complete Next Task
+        <ArrowRight size={15} />
+      </a>
     </section>
   );
 }

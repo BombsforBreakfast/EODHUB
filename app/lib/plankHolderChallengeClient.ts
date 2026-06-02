@@ -35,6 +35,22 @@ export type PlankHolderToastState = {
   progress: string;
 } | null;
 
+/** True while spots remain for users still competing (not awarded yet). */
+export function isPlankHolderChallengeOpen(challenge: PlankHolderResponse | null): boolean {
+  if (!challenge || !challenge.eligible || challenge.awarded) return false;
+  return !challenge.alreadyClosed;
+}
+
+/** Feed banner: holders may celebrate until dismissed; hide promo once cap is reached. */
+export function shouldShowPlankHolderFeedBanner(
+  challenge: PlankHolderResponse | null,
+  earnedBannerDismissed = false,
+): boolean {
+  if (!challenge || !challenge.eligible) return false;
+  if (challenge.awarded) return !earnedBannerDismissed;
+  return isPlankHolderChallengeOpen(challenge);
+}
+
 export const PLANK_HOLDER_TASK_LABELS: Record<PlankHolderTaskKey, string> = {
   profilePhoto: "Add profile photo",
   bio: "Complete your bio (50 character min)",

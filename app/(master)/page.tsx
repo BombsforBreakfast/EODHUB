@@ -142,6 +142,7 @@ import {
 import {
   dismissPlankHolderModal,
   fetchPlankHolderProgress,
+  isPlankHolderChallengeOpen,
   newlyCompletedTasks,
   PLANK_HOLDER_TASK_LABELS,
   plankHolderBannerDismissedKey,
@@ -1171,7 +1172,7 @@ export default function HomePage() {
     plankHolderChallengeRef.current = next;
     setPlankHolderChallenge(next);
 
-    if (plankHolderInitializedRef.current && completed.length > 0) {
+    if (plankHolderInitializedRef.current && completed.length > 0 && isPlankHolderChallengeOpen(next)) {
       const task = completed[0];
       setPlankHolderToast({
         title: "⚓ Challenge Updated",
@@ -1393,6 +1394,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!plankHolderChallenge?.eligible || plankHolderViewedRef.current) return;
+    if (!isPlankHolderChallengeOpen(plankHolderChallenge)) return;
     plankHolderViewedRef.current = true;
     trackPlankHolderEvent("challenge_viewed", {
       completedCount: plankHolderChallenge.progress.completedCount,

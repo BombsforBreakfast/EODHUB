@@ -75,6 +75,7 @@ import { PlankHolderChallengeToast } from "../../../components/challenges/PlankH
 import {
   dismissPlankHolderModal,
   fetchPlankHolderProgress,
+  isPlankHolderChallengeOpen,
   newlyCompletedTasks,
   PLANK_HOLDER_TASK_LABELS,
   recordPlankHolderInvite,
@@ -762,7 +763,7 @@ export default function PublicProfilePage() {
     plankHolderChallengeRef.current = next;
     setPlankHolderChallenge(next);
 
-    if (plankHolderInitializedRef.current && completed.length > 0) {
+    if (plankHolderInitializedRef.current && completed.length > 0 && isPlankHolderChallengeOpen(next)) {
       const task = completed[0];
       setPlankHolderToast({
         title: "⚓ Challenge Updated",
