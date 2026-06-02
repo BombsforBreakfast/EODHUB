@@ -52,7 +52,7 @@ export function oauthAccountExistsMessage(providers: string[] | null | undefined
 }
 
 /** Support email shown in failure-state helper text. */
-export const SUPPORT_EMAIL = "murphy@eod-hub.com";
+export const SUPPORT_EMAIL = "hello@eod-hub.com";
 
 /** Generic sign-in failure shown when we can't classify the error. */
 export const LOGIN_FAILED_MESSAGE =

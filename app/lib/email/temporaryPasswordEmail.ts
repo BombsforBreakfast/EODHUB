@@ -42,7 +42,7 @@ export function buildTemporaryPasswordEmailHtml(params: {
         ${loginUrl}
       </p>
       <p style="font-size: 13px; color: #999; margin-top: 32px; margin-bottom: 0;">
-        If you did not request this, contact EOD-HUB support at murphy@eod-hub.com.
+        If you did not request this, contact EOD-HUB support at hello@eod-hub.com.
       </p>
     </div>
   `;
