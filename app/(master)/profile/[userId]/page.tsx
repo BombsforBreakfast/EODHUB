@@ -84,6 +84,8 @@ import {
 } from "../../../lib/plankHolderChallengeClient";
 import { isEmployerAccount } from "../../../lib/profileCompleteness";
 import EmployerAccountCardDetails from "../../../components/profile/EmployerAccountCardDetails";
+import ProfileSocialLinks from "../../../components/profile/ProfileSocialLinks";
+import { normalizeLinkedInUrl } from "../../../lib/linkedInUrl";
 
 type Profile = {
   user_id: string;
@@ -109,6 +111,7 @@ type Profile = {
   company_name: string | null;
   account_type: string | null;
   company_website: string | null;
+  linkedin_url: string | null;
   professional_tags: string[] | null;
   unit_history_tags: string[] | null;
   open_to_opportunities: boolean | null;
@@ -627,6 +630,7 @@ export default function PublicProfilePage() {
   const [editYearsExp, setEditYearsExp] = useState("");
   const [editSkillBadge, setEditSkillBadge] = useState("");
   const [editCompanyWebsite, setEditCompanyWebsite] = useState("");
+  const [editLinkedInUrl, setEditLinkedInUrl] = useState("");
   const [editOpenToOpportunities, setEditOpenToOpportunities] = useState(false);
   const [editEmployerSummary, setEditEmployerSummary] = useState("");
   const [editResumeUrl, setEditResumeUrl] = useState("");
@@ -961,6 +965,7 @@ export default function PublicProfilePage() {
     setEditYearsExp(profile.years_experience ?? "");
     setEditSkillBadge(profile.skill_badge ?? "");
     setEditCompanyWebsite(profile.company_website ?? "");
+    setEditLinkedInUrl(profile.linkedin_url ?? "");
     setEditOpenToOpportunities(!!profile.open_to_opportunities);
     setEditEmployerSummary(profile.employer_summary ?? "");
     setEditResumeUrl(profile.resume_url ?? "");
@@ -991,6 +996,11 @@ export default function PublicProfilePage() {
   async function handleSaveWallProfile() {
     if (!currentUserId || !profile || currentUserId !== profile.user_id || !userId) return;
     const savingEmployerAccount = !!profile.is_employer || isEmployerAccount(profile);
+    const linkedInResult = normalizeLinkedInUrl(editLinkedInUrl);
+    if (!linkedInResult.ok) {
+      alert(linkedInResult.error);
+      return;
+    }
     try {
       setSavingProfile(true);
       const payload = savingEmployerAccount
@@ -1010,6 +1020,7 @@ export default function PublicProfilePage() {
             years_experience: editYearsExp || null,
             skill_badge: editSkillBadge || null,
             company_website: editCompanyWebsite || null,
+            linkedin_url: linkedInResult.url || null,
             open_to_opportunities: editOpenToOpportunities,
             employer_summary: editEmployerSummary || null,
             resume_url: editResumeUrl || null,
@@ -3638,7 +3649,10 @@ export default function PublicProfilePage() {
                           <strong>Service:</strong> <ServiceSealValue service={profile.service} size={50} />
                         </div>
                         <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
-                        <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
+                        <div>
+                          <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
+                          <ProfileSocialLinks linkedinUrl={profile.linkedin_url} />
+                        </div>
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
                           <strong>Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={52} />
                         </div>
@@ -3964,7 +3978,10 @@ export default function PublicProfilePage() {
                           <strong>Service:</strong> <ServiceSealValue service={profile.service} size={60} />
                         </div>
                         <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
-                        <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
+                        <div>
+                          <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
+                          <ProfileSocialLinks linkedinUrl={profile.linkedin_url} />
+                        </div>
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
                           <strong>Skill Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={64} />
                         </div>
@@ -4310,6 +4327,15 @@ export default function PublicProfilePage() {
                     <option value="">Select years...</option>
                     {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
+                </div>
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>LinkedIn Profile</label>
+                  <input
+                    value={editLinkedInUrl}
+                    onChange={(e) => setEditLinkedInUrl(e.target.value)}
+                    placeholder="https://linkedin.com/in/your-name"
+                    style={wallEditInputStyle}
+                  />
                 </div>
                 <div style={{ gridColumn: "1 / -1", border: `1px solid ${t.border}`, borderRadius: 12, padding: 12, background: t.bg }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
