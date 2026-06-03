@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../lib/memberSubscriptionServer";
+import { createNotification } from "../../../../lib/notificationsServer";
 
 function getAdminClient() {
   return createClient(
@@ -66,6 +67,17 @@ export async function POST(
   const isGod =
     approverMember.role === "owner" || approverMember.role === "admin";
 
+  const { data: approverProfile } = await adminClient
+    .from("profiles")
+    .select("first_name, last_name, display_name")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  const approverName =
+    approverProfile?.display_name ||
+    `${approverProfile?.first_name ?? ""} ${approverProfile?.last_name ?? ""}`.trim() ||
+    "A group admin";
+
   const body = await req.json();
   const { requester_user_id, action } = body as {
     requester_user_id: string;
@@ -118,6 +130,21 @@ export async function POST(
       .eq("user_id", requester_user_id)
       .eq("post_type", "join_request");
 
+    await createNotification(adminClient, {
+      recipientUserId: requester_user_id,
+      actorUserId: user.id,
+      actorName: approverName,
+      type: "unit_join_approved",
+      category: "group",
+      entityType: "unit",
+      entityId: unit.id,
+      message: `Your request to join ${unit.name} was approved`,
+      link: `/units/${encodeURIComponent(slug)}`,
+      groupKey: `unit:${unit.id}:membership`,
+      dedupeKey: `unit_join_approved:${unit.id}:${requester_user_id}`,
+      metadata: { unit_slug: slug, unit_id: unit.id },
+    });
+
     return NextResponse.json({ success: true, result: "approved" });
   }
 
@@ -158,6 +185,21 @@ export async function POST(
       .eq("unit_id", unit.id)
       .eq("user_id", requester_user_id)
       .eq("post_type", "join_request");
+
+    await createNotification(adminClient, {
+      recipientUserId: requester_user_id,
+      actorUserId: user.id,
+      actorName: approverName,
+      type: "unit_join_approved",
+      category: "group",
+      entityType: "unit",
+      entityId: unit.id,
+      message: `Your request to join ${unit.name} was approved`,
+      link: `/units/${encodeURIComponent(slug)}`,
+      groupKey: `unit:${unit.id}:membership`,
+      dedupeKey: `unit_join_approved:${unit.id}:${requester_user_id}`,
+      metadata: { unit_slug: slug, unit_id: unit.id, votes: voteCount },
+    });
 
     return NextResponse.json({
       success: true,
