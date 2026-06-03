@@ -1894,7 +1894,7 @@ export default function AdminPage() {
 
       setAuthorized(true);
       setAdminActorUserId(user.id);
-      await Promise.all([loadBusinesses(), loadBizClaims(), loadJobs(), loadUsers(), loadFlags(), loadPendingCounts()]);
+      await Promise.all([loadBusinesses(), loadBizClaims(), loadPendingCounts()]);
       setLoading(false);
     }
     init();
@@ -1903,8 +1903,8 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authorized) return;
     if (activeTab === "businesses") {
-      void loadBusinesses();
-      void loadBizClaims();
+      if (businesses.length === 0) void loadBusinesses();
+      if (bizClaimsPending.length === 0) void loadBizClaims();
     }
     if (activeTab === "jobs") {
       loadJobs();
@@ -3076,7 +3076,55 @@ export default function AdminPage() {
     return (
       <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box", background: t.bg, minHeight: "100vh", color: t.text, overflowX: "clip" }}>
         <NavBar />
-        <div style={{ marginTop: 40, textAlign: "center", color: t.textMuted }}>Loading...</div>
+        <div style={{ maxWidth: 1000, width: "100%", minWidth: 0, margin: "0 auto", boxSizing: "border-box" }} aria-busy="true">
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 20, flexWrap: "wrap" }}>
+            <div style={{ width: 210, height: 38, borderRadius: 10, background: t.badgeBg }} />
+            <div style={{ width: 94, height: 22, borderRadius: 999, background: t.badgeBg }} />
+            <div style={{ width: 72, height: 18, borderRadius: 8, background: t.badgeBg }} />
+          </div>
+          <div style={{ display: "flex", gap: 8, marginTop: 24, flexWrap: "wrap" }}>
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div
+                key={index}
+                style={{
+                  width: index === 0 ? 116 : 86,
+                  height: 36,
+                  borderRadius: 999,
+                  background: index === 0 ? "#111" : t.badgeBg,
+                  opacity: index === 0 ? 0.95 : 0.8,
+                }}
+              />
+            ))}
+          </div>
+          <div style={{ marginTop: 20, display: "grid", gap: 14 }}>
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div
+                key={index}
+                style={{
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 14,
+                  background: t.surface,
+                  overflow: "hidden",
+                  minHeight: 136,
+                  display: "flex",
+                }}
+              >
+                <div style={{ width: 140, height: 110, margin: 13, borderRadius: 10, background: t.badgeBg, flexShrink: 0 }} />
+                <div style={{ padding: "18px 16px", flex: 1, minWidth: 0 }}>
+                  <div style={{ width: "42%", height: 18, borderRadius: 8, background: t.badgeBg }} />
+                  <div style={{ width: "62%", height: 12, borderRadius: 8, background: t.badgeBg, marginTop: 10 }} />
+                  <div style={{ width: "90%", height: 12, borderRadius: 8, background: t.badgeBg, marginTop: 14 }} />
+                  <div style={{ width: "74%", height: 12, borderRadius: 8, background: t.badgeBg, marginTop: 8 }} />
+                  <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+                    <div style={{ width: 78, height: 28, borderRadius: 8, background: t.badgeBg }} />
+                    <div style={{ width: 92, height: 28, borderRadius: 8, background: t.badgeBg }} />
+                    <div style={{ width: 68, height: 28, borderRadius: 8, background: t.badgeBg }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
     );
   }
