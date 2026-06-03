@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Job preview image — only renders when a URL is present and the image loads
- * successfully. Missing or broken images render nothing (no placeholder block).
+ * Job preview image. A present URL reserves its configured media box while it
+ * loads so cards don't shift when the preview becomes available. Missing or
+ * broken images render nothing.
  */
 
 type JobImageProps = {
@@ -71,17 +72,20 @@ export default function JobImage({
 }: JobImageProps) {
   const trimmed = src?.trim() || null;
   const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(false);
   const onAvailabilityChangeRef = useRef(onAvailabilityChange);
   onAvailabilityChangeRef.current = onAvailabilityChange;
 
   useEffect(() => {
     if (!trimmed) {
       setLoaded(false);
+      setFailed(false);
       onAvailabilityChangeRef.current?.(false);
       return;
     }
 
     setLoaded(false);
+    setFailed(false);
     onAvailabilityChangeRef.current?.(false);
 
     const img = new Image();
@@ -95,6 +99,7 @@ export default function JobImage({
     img.onerror = () => {
       if (cancelled) return;
       setLoaded(false);
+      setFailed(true);
       onAvailabilityChangeRef.current?.(false);
     };
     img.src = trimmed;
@@ -106,7 +111,7 @@ export default function JobImage({
     };
   }, [trimmed]);
 
-  if (!trimmed || !loaded) return null;
+  if (!trimmed || failed) return null;
 
   const containerStyle: React.CSSProperties = {
     width: "100%",
@@ -132,7 +137,7 @@ export default function JobImage({
           width: "100%",
           height: "100%",
           objectFit: fit,
-          display: "block",
+          display: loaded ? "block" : "none",
         }}
       />
     </div>
