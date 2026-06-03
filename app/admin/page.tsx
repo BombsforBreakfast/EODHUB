@@ -56,6 +56,12 @@ const STALE_FLAG_REASON_LABELS: Record<string, string> = {
   other: "Other",
 };
 
+const BUSINESS_LISTINGS_PAGE_SIZE = 25;
+const BUSINESS_CLAIMS_PAGE_SIZE = 25;
+const JOBS_PAGE_SIZE = 25;
+const BUSINESS_LISTING_ADMIN_COLUMNS =
+  "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, tags, managed_by_user_id";
+
 type BusinessListing = {
   id: string;
   created_at: string;
@@ -793,9 +799,15 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>("businesses");
 
   const [businesses, setBusinesses] = useState<BusinessListing[]>([]);
+  const [businessTotalCount, setBusinessTotalCount] = useState(0);
+  const [businessesLoadingMore, setBusinessesLoadingMore] = useState(false);
   const [bizClaimsPending, setBizClaimsPending] = useState<BizListingClaimPending[]>([]);
+  const [bizClaimsTotalCount, setBizClaimsTotalCount] = useState(0);
+  const [bizClaimsLoadingMore, setBizClaimsLoadingMore] = useState(false);
   const [bizManagerLabels, setBizManagerLabels] = useState<Record<string, string>>({});
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobsTotalCount, setJobsTotalCount] = useState(0);
+  const [jobsLoadingMore, setJobsLoadingMore] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [groupSearch, setGroupSearch] = useState("");
@@ -1574,17 +1586,7 @@ export default function AdminPage() {
     }
   }
 
-  async function loadBusinesses() {
-    const query = supabase
-      .from("business_listings")
-      .select("*")
-      .order("created_at", { ascending: false });
-    const { data, error } = pendingOnly
-      ? await query.neq("is_approved", true)
-      : await query;
-    if (error) { console.error(error); return; }
-    const rows = (data ?? []) as BusinessListing[];
-    setBusinesses(rows);
+  async function hydrateBusinessManagerLabels(rows: BusinessListing[]) {
     const mgrIds = [...new Set(rows.map((r) => r.managed_by_user_id).filter(Boolean))] as string[];
     if (mgrIds.length === 0) {
       setBizManagerLabels({});
@@ -1609,15 +1611,51 @@ export default function AdminPage() {
     setBizManagerLabels(next);
   }
 
-  async function loadBizClaims() {
-    const { data, error } = await supabase
-      .from("business_listing_claims")
-      .select("id, listing_id, claimant_user_id, created_at, business_listings(business_name, og_title, website_url)")
-      .eq("status", "pending")
-      .order("created_at", { ascending: false });
+  async function loadBusinesses(page = 0, append = false) {
+    if (append) setBusinessesLoadingMore(true);
+    const from = page * BUSINESS_LISTINGS_PAGE_SIZE;
+    const to = from + BUSINESS_LISTINGS_PAGE_SIZE - 1;
+    const query = supabase
+      .from("business_listings")
+      .select(BUSINESS_LISTING_ADMIN_COLUMNS, { count: "exact" })
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    const { data, error, count } = pendingOnly
+      ? await query.neq("is_approved", true)
+      : await query;
     if (error) {
       console.error(error);
-      setBizClaimsPending([]);
+      if (append) setBusinessesLoadingMore(false);
+      return;
+    }
+    const rows = (data ?? []) as BusinessListing[];
+    const nextRows = append ? [...businesses, ...rows] : rows;
+    setBusinesses(nextRows);
+    setBusinessTotalCount(count ?? nextRows.length);
+    await hydrateBusinessManagerLabels(nextRows);
+    if (append) setBusinessesLoadingMore(false);
+  }
+
+  async function loadMoreBusinesses() {
+    await loadBusinesses(Math.floor(businesses.length / BUSINESS_LISTINGS_PAGE_SIZE), true);
+  }
+
+  async function loadBizClaims(page = 0, append = false) {
+    if (append) setBizClaimsLoadingMore(true);
+    const from = page * BUSINESS_CLAIMS_PAGE_SIZE;
+    const to = from + BUSINESS_CLAIMS_PAGE_SIZE - 1;
+    const { data, error, count } = await supabase
+      .from("business_listing_claims")
+      .select("id, listing_id, claimant_user_id, created_at, business_listings(business_name, og_title, website_url)", {
+        count: "exact",
+      })
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .range(from, to);
+    if (error) {
+      console.error(error);
+      if (!append) setBizClaimsPending([]);
+      if (append) setBizClaimsLoadingMore(false);
       return;
     }
     const rows = (data ?? []) as unknown as Array<{
@@ -1646,31 +1684,59 @@ export default function AdminPage() {
       const composed = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
       return p.display_name?.trim() || composed || p.email || `${uid.slice(0, 8)}…`;
     }
-    setBizClaimsPending(
-      rows.map((r) => {
-        const rawNested = r.business_listings;
-        const nested = Array.isArray(rawNested) ? rawNested[0] : rawNested;
-        const listing_label = nested?.business_name || nested?.og_title || nested?.website_url || r.listing_id.slice(0, 8);
-        return {
-          id: r.id,
-          listing_id: r.listing_id,
-          claimant_user_id: r.claimant_user_id,
-          created_at: r.created_at,
-          listing_label,
-          claimant_label: claimantLabel(r.claimant_user_id),
-        };
-      }),
-    );
+    const nextRows = rows.map((r) => {
+      const rawNested = r.business_listings;
+      const nested = Array.isArray(rawNested) ? rawNested[0] : rawNested;
+      const listing_label = nested?.business_name || nested?.og_title || nested?.website_url || r.listing_id.slice(0, 8);
+      return {
+        id: r.id,
+        listing_id: r.listing_id,
+        claimant_user_id: r.claimant_user_id,
+        created_at: r.created_at,
+        listing_label,
+        claimant_label: claimantLabel(r.claimant_user_id),
+      };
+    });
+    const nextClaims = append ? [...bizClaimsPending, ...nextRows] : nextRows;
+    setBizClaimsPending(nextClaims);
+    setBizClaimsTotalCount(count ?? nextClaims.length);
+    if (append) setBizClaimsLoadingMore(false);
   }
 
-  async function loadJobs() {
+  async function loadMoreBizClaims() {
+    await loadBizClaims(Math.floor(bizClaimsPending.length / BUSINESS_CLAIMS_PAGE_SIZE), true);
+  }
+
+  async function loadJobs(page = 0, append = false) {
+    if (append) setJobsLoadingMore(true);
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch(`/api/admin/jobs?pendingOnly=${pendingOnly}`, {
+    const offset = page * JOBS_PAGE_SIZE;
+    const params = new URLSearchParams({
+      pendingOnly: String(pendingOnly),
+      offset: String(offset),
+      limit: String(JOBS_PAGE_SIZE),
+    });
+    const res = await fetch(`/api/admin/jobs?${params.toString()}`, {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
-    if (!res.ok) { console.error("loadJobs API error", res.status); return; }
+    if (!res.ok) {
+      console.error("loadJobs API error", res.status);
+      if (append) setJobsLoadingMore(false);
+      return;
+    }
     const json = await res.json();
-    setJobs((json.jobs ?? []) as Job[]);
+    const nextJobs = append ? [...jobs, ...((json.jobs ?? []) as Job[])] : ((json.jobs ?? []) as Job[]);
+    setJobs(nextJobs);
+    setJobsTotalCount(typeof json.totalCount === "number" ? json.totalCount : nextJobs.length);
+    setSelectedJobs((prev) => {
+      const visibleIds = new Set(nextJobs.map((job) => job.id));
+      return new Set([...prev].filter((id) => visibleIds.has(id)));
+    });
+    if (append) setJobsLoadingMore(false);
+  }
+
+  async function loadMoreJobs() {
+    await loadJobs(Math.floor(jobs.length / JOBS_PAGE_SIZE), true);
   }
 
   async function loadStaleFlags() {
@@ -1903,7 +1969,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authorized) return;
     if (activeTab === "businesses") {
-      if (businesses.length === 0) void loadBusinesses();
+      void loadBusinesses();
       if (bizClaimsPending.length === 0) void loadBizClaims();
     }
     if (activeTab === "jobs") {
@@ -2034,6 +2100,7 @@ export default function AdminPage() {
   async function approveJob(id: string) {
     // Optimistically remove from pending list immediately
     if (pendingOnly) setJobs((prev) => prev.filter((j) => j.id !== id));
+    if (pendingOnly) setJobsTotalCount((prev) => Math.max(0, prev - 1));
     setPendingCounts((prev) => ({ ...prev, jobs: Math.max(0, prev.jobs - 1) }));
     showToast("Job approved!");
 
@@ -2042,7 +2109,7 @@ export default function AdminPage() {
       method: "POST",
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
-    await loadPendingCounts();
+    await Promise.all([loadJobs(), loadPendingCounts()]);
   }
 
   async function rejectJob(id: string) {
@@ -2060,7 +2127,8 @@ export default function AdminPage() {
       } else {
         showToast("Job removed.");
         setJobs((prev) => prev.filter((j) => j.id !== id));
-        await loadPendingCounts();
+        setJobsTotalCount((prev) => Math.max(0, prev - 1));
+        await Promise.all([loadJobs(), loadPendingCounts()]);
       }
       setActionLoading(null);
     });
@@ -2079,13 +2147,14 @@ export default function AdminPage() {
     ));
     if (pendingOnly) {
       setJobs((prev) => prev.filter((j) => !selectedJobs.has(j.id)));
+      setJobsTotalCount((prev) => Math.max(0, prev - selectedJobs.size));
     } else {
       setJobs((prev) => prev.map((j) => selectedJobs.has(j.id) ? { ...j, is_approved: true } : j));
     }
     showToast(`${ids.length} job${ids.length > 1 ? "s" : ""} approved!`);
     setSelectedJobs(new Set());
     setBatchActing(false);
-    await loadPendingCounts();
+    await Promise.all([loadJobs(), loadPendingCounts()]);
   }
 
   async function batchRejectJobs() {
@@ -2101,10 +2170,11 @@ export default function AdminPage() {
         })
       ));
       setJobs((prev) => prev.filter((j) => !selectedJobs.has(j.id)));
+      setJobsTotalCount((prev) => Math.max(0, prev - selectedJobs.size));
       showToast(`${ids.length} job${ids.length > 1 ? "s" : ""} deleted.`);
       setSelectedJobs(new Set());
       setBatchActing(false);
-      await loadPendingCounts();
+      await Promise.all([loadJobs(), loadPendingCounts()]);
     });
   }
 
@@ -3142,11 +3212,11 @@ export default function AdminPage() {
     );
   }
 
-  const pendingBizCount = businesses.filter((b) => !b.is_approved).length;
-  const pendingJobCount = jobs.filter((j) => !j.is_approved).length;
-  const unreviewedFlagCount = flags.filter((f) => !f.reviewed).length;
   const adminTotalPending = sumAdminPending(pendingCounts);
   const directoryPendingTotal = pendingCounts.dir + pendingCounts.locReq;
+  const hasMoreBusinesses = businesses.length < businessTotalCount;
+  const hasMoreBizClaims = bizClaimsPending.length < bizClaimsTotalCount;
+  const hasMoreJobs = jobs.length < jobsTotalCount;
 
   return (
     <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box", background: t.bg, minHeight: "100vh", color: t.text, overflowX: "clip" }}>
@@ -3549,6 +3619,19 @@ export default function AdminPage() {
                     </div>
                   ))}
                 </div>
+                {hasMoreBizClaims && (
+                  <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
+                    <button
+                      type="button"
+                      style={{ ...actionBtn("#92400e"), minWidth: 170, justifyContent: "center", display: "flex", alignItems: "center", gap: 6 }}
+                      disabled={bizClaimsLoadingMore}
+                      onClick={() => void loadMoreBizClaims()}
+                    >
+                      {bizClaimsLoadingMore && <span className="btn-spinner" />}
+                      {bizClaimsLoadingMore ? "Loading..." : `Load more claims (${bizClaimsPending.length}/${bizClaimsTotalCount})`}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             {businesses.length === 0 && (
@@ -3775,6 +3858,19 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+            {hasMoreBusinesses && (
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+                <button
+                  type="button"
+                  style={{ ...actionBtn("#374151"), minWidth: 160, justifyContent: "center", display: "flex", alignItems: "center", gap: 6 }}
+                  disabled={businessesLoadingMore}
+                  onClick={() => void loadMoreBusinesses()}
+                >
+                  {businessesLoadingMore && <span className="btn-spinner" />}
+                  {businessesLoadingMore ? "Loading..." : `Load more (${businesses.length}/${businessTotalCount})`}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -4100,6 +4196,19 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
+            {hasMoreJobs && (
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+                <button
+                  type="button"
+                  style={{ ...actionBtn("#374151"), minWidth: 160, justifyContent: "center", display: "flex", alignItems: "center", gap: 6 }}
+                  disabled={jobsLoadingMore}
+                  onClick={() => void loadMoreJobs()}
+                >
+                  {jobsLoadingMore && <span className="btn-spinner" />}
+                  {jobsLoadingMore ? "Loading..." : `Load more (${jobs.length}/${jobsTotalCount})`}
+                </button>
+              </div>
+            )}
               </>
             )}
           </div>
