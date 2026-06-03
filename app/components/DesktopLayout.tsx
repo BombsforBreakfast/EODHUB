@@ -35,7 +35,6 @@ export default function DesktopLayout({
               alignItems: desktopAlignItems,
               marginTop: desktopMarginTop,
               width: "100%",
-              transition: "grid-template-columns 220ms ease",
             }
       }
     >
