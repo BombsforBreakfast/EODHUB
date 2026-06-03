@@ -128,6 +128,8 @@ const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const CALENDAR_FIXED_CELL_HEIGHT = 120;
 
 const MAX_VISIBLE_EVENT_PILLS = 2;
+const UPCOMING_EVENTS_WINDOW_DAYS = 60;
+const UPCOMING_SOCIAL_PREFETCH_LIMIT = 8;
 
 function toDateStr(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -222,6 +224,7 @@ function EventsPageInner() {
   const [userId, setUserId] = useState<string | null>(null);
   const [userIsAdmin, setUserIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [upcomingEventsLoading, setUpcomingEventsLoading] = useState(true);
 
   const [allUpcomingEvents, setAllUpcomingEvents] = useState<CalendarEvent[]>([]);
 
@@ -654,36 +657,49 @@ function EventsPageInner() {
     await refreshAttendanceFor(eventId);
   }
 
-  async function loadAllUpcomingEvents() {
+  async function loadAllUpcomingEvents(uid: string | null = userId): Promise<CalendarEvent[]> {
+    setUpcomingEventsLoading(true);
+    const upcomingStart = new Date(today);
+    upcomingStart.setHours(0, 0, 0, 0);
+    const upcomingEnd = new Date(upcomingStart);
+    upcomingEnd.setDate(upcomingEnd.getDate() + UPCOMING_EVENTS_WINDOW_DAYS);
+    const upcomingStartStr = toDateStr(upcomingStart.getFullYear(), upcomingStart.getMonth(), upcomingStart.getDate());
+    const upcomingEndStr = toDateStr(upcomingEnd.getFullYear(), upcomingEnd.getMonth(), upcomingEnd.getDate());
+
     const { data, error } = await supabase
       .from("events")
       .select(EVENT_COLUMNS)
       .is("unit_id", null)
       .eq("visibility", "public")
+      .gte("date", upcomingStartStr)
+      .lte("date", upcomingEndStr)
       .order("date", { ascending: true });
-    if (error) { console.error("Events list load error:", error); return; }
-    const todayStart = new Date(today);
-    todayStart.setHours(0, 0, 0, 0);
-    const result = ((data ?? []) as CalendarEvent[]).sort((a, b) => {
-      const aTime = new Date(`${a.date}T00:00:00`).getTime();
-      const bTime = new Date(`${b.date}T00:00:00`).getTime();
-      const aUpcoming = aTime >= todayStart.getTime();
-      const bUpcoming = bTime >= todayStart.getTime();
-      if (aUpcoming !== bUpcoming) return aUpcoming ? -1 : 1;
-      return aTime - bTime;
-    });
+    if (error) {
+      console.error("Events list load error:", error);
+      setUpcomingEventsLoading(false);
+      return [];
+    }
+    const result = (data ?? []) as CalendarEvent[];
     setAllUpcomingEvents(result);
+    setUpcomingEventsLoading(false);
     if (result.length > 0) {
-      await loadAttendance(result.map((e) => e.id), userId);
-      await loadEventReactionsForEvents(result.map((e) => e.id));
+      void loadAttendance(result.map((e) => e.id), uid);
+      void loadEventReactionsForEvents(result.slice(0, UPCOMING_SOCIAL_PREFETCH_LIMIT).map((e) => e.id));
     } else {
       setEventCommentsByEventId({});
       setEventReactionsByEventId({});
     }
+    return result;
   }
 
   function toggleEventCommentComposer(eventId: string) {
-    setOpenEventCommentComposer((prev) => ({ ...prev, [eventId]: !prev[eventId] }));
+    setOpenEventCommentComposer((prev) => {
+      const opening = !prev[eventId];
+      if (opening && !eventCommentsByEventId[eventId]) {
+        void loadEventCommentsForEvents([eventId]);
+      }
+      return { ...prev, [eventId]: opening };
+    });
   }
 
   async function handleEventReaction(eventId: string, picked: ReactionType) {
@@ -1317,32 +1333,47 @@ function EventsPageInner() {
   }, [initialTodayStr]);
 
   useEffect(() => {
+    let cancelled = false;
     async function init() {
+      const eventsResult = await loadEvents();
+      if (!cancelled) {
+        setLoading(false);
+        if (eventsResult.length > 0) {
+          void loadAttendance(eventsResult.map((e) => e.id), null);
+        }
+      }
+
+      void loadMemorials();
+      const upcomingEventsPromise = loadAllUpcomingEvents(null);
+
       const { data } = await supabase.auth.getUser();
+      if (cancelled) return;
       const uid = data.user?.id ?? null;
-
       setUserId(uid);
-      if (uid) {
-        const { data: pr } = await supabase.from("profiles").select("is_admin").eq("user_id", uid).maybeSingle();
-        setUserIsAdmin(Boolean((pr as { is_admin?: boolean | null } | null)?.is_admin));
-      } else {
+      if (!uid) {
         setUserIsAdmin(false);
+        return;
       }
 
-      const [eventsResult] = await Promise.all([
-        loadEvents(),
-        loadMemorials(),
-        loadAllUpcomingEvents(),
-        uid ? loadSavedEvents(uid) : Promise.resolve(),
-      ]);
-      if (eventsResult && eventsResult.length > 0) {
-        await loadAttendance(eventsResult.map((e) => e.id), uid);
-      }
-
-      setLoading(false);
+      void loadAttendance(eventsResult.map((e) => e.id), uid);
+      void upcomingEventsPromise.then((upcomingEvents) => {
+        if (!cancelled && upcomingEvents.length > 0) {
+          void loadAttendance(upcomingEvents.map((e) => e.id), uid);
+        }
+      });
+      void loadSavedEvents(uid);
+      void (async () => {
+        const { data: pr } = await supabase.from("profiles").select("is_admin").eq("user_id", uid).maybeSingle();
+        if (!cancelled) {
+          setUserIsAdmin(Boolean((pr as { is_admin?: boolean | null } | null)?.is_admin));
+        }
+      })();
     }
 
-    init();
+    void init();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -1471,12 +1502,9 @@ function EventsPageInner() {
   }, [selectedEvent?.id]);
 
   useEffect(() => {
-    if (allUpcomingEvents.length === 0) return;
-    void loadEventCommentsForEvents(allUpcomingEvents.map((e) => e.id));
-  }, [loadEventCommentsForEvents, allUpcomingEvents]);
-
-  useEffect(() => {
-    const ids = allUpcomingEvents.map((e) => e.id);
+    const ids = Object.entries(openEventCommentComposer)
+      .filter(([, open]) => open)
+      .map(([id]) => id);
     if (ids.length === 0) return;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const scheduleReload = () => {
@@ -1490,14 +1518,17 @@ function EventsPageInner() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "event_comments" },
-        scheduleReload,
+        (payload) => {
+          const row = (payload.new ?? payload.old) as { event_id?: string } | null;
+          if (row?.event_id && ids.includes(row.event_id)) scheduleReload();
+        },
       )
       .subscribe();
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       void supabase.removeChannel(channel);
     };
-  }, [allUpcomingEvents, loadEventCommentsForEvents]);
+  }, [openEventCommentComposer, loadEventCommentsForEvents]);
 
   // NOTE: keep ALL hook calls above the early `return` below — React requires a
   // stable hook order across renders, so any useMemo/useCallback declared after
@@ -1517,14 +1548,6 @@ function EventsPageInner() {
     () => memorials.filter((m) => anniversaryDate(m.death_date, calendarDayDate.getFullYear()) === calendarDay),
     [memorials, calendarDay, calendarDayDate]
   );
-
-  if (loading) {
-    return (
-      <div style={{ color: t.text }}>
-        <div style={{ marginTop: 20 }}>Loading events...</div>
-      </div>
-    );
-  }
 
   const eventsOnSelectedDay = selectedDay
     ? events.filter((e) => e.date === selectedDay)
@@ -2831,15 +2854,22 @@ function EventsPageInner() {
         <div style={{ padding: "16px 20px", borderBottom: `1px solid ${t.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ fontSize: 18, fontWeight: 900 }}>
             Events
+            <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, color: t.textMuted }}>
+              Next {UPCOMING_EVENTS_WINDOW_DAYS} days
+            </span>
             {allUpcomingEvents.length > 0 && (
               <span style={{ marginLeft: 10, fontSize: 13, fontWeight: 700, color: t.textMuted }}>{allUpcomingEvents.length} event{allUpcomingEvents.length !== 1 ? "s" : ""}</span>
             )}
           </div>
         </div>
 
-        {allUpcomingEvents.length === 0 ? (
+        {upcomingEventsLoading && allUpcomingEvents.length === 0 ? (
           <div style={{ padding: "32px 20px", textAlign: "center", color: t.textFaint, fontSize: 14 }}>
-            No events yet. Be the first to add one!
+            Loading upcoming events...
+          </div>
+        ) : allUpcomingEvents.length === 0 ? (
+          <div style={{ padding: "32px 20px", textAlign: "center", color: t.textFaint, fontSize: 14 }}>
+            No events in the next {UPCOMING_EVENTS_WINDOW_DAYS} days. Be the first to add one!
           </div>
         ) : (
           <div style={{ display: "grid", gap: 0 }}>

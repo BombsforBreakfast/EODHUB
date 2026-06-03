@@ -291,6 +291,9 @@ const BUSINESS_LISTING_COLUMNS =
   "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags";
 const PERF_DEBUG = process.env.NODE_ENV !== "production";
 const INITIAL_FEED_BATCH_SIZE = 8;
+const INITIAL_RANKED_POSTS_LIMIT = 60;
+const FULL_FEED_HYDRATION_DELAY_MS = 1200;
+const HOME_WIDGET_LOAD_DELAY_MS = 1500;
 
 function perfNowMs(): number {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -835,6 +838,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [postsLoaded, setPostsLoaded] = useState(false);
   const postsLoadedRef = useRef(false);
+  const unitFeedHighlightsLoadedForRef = useRef<string | null>(null);
+  const unitFeedHighlightsLoadingForRef = useRef<string | null>(null);
   // Set to the postId when a deep-link target post is known to be unavailable
   // (deleted, hidden for review, or a wall post not shown in the public feed).
   const [deepLinkPostUnavailable, setDeepLinkPostUnavailable] = useState<string | null>(null);
@@ -2548,9 +2553,18 @@ export default function HomePage() {
 
   async function loadUnitFeedHighlightsForUser(effectiveUserId: string | null): Promise<void> {
     if (!effectiveUserId) {
+      unitFeedHighlightsLoadedForRef.current = null;
+      unitFeedHighlightsLoadingForRef.current = null;
       setUnitFeedHighlights([]);
       return;
     }
+    if (
+      unitFeedHighlightsLoadedForRef.current === effectiveUserId ||
+      unitFeedHighlightsLoadingForRef.current === effectiveUserId
+    ) {
+      return;
+    }
+    unitFeedHighlightsLoadingForRef.current = effectiveUserId;
     const { data: memberships } = await supabase
       .from("unit_members")
       .select("unit_id")
@@ -2560,6 +2574,8 @@ export default function HomePage() {
     const unitIds = ((memberships ?? []) as { unit_id: string }[]).map((m) => m.unit_id);
     if (unitIds.length === 0) {
       setUnitFeedHighlights([]);
+      unitFeedHighlightsLoadedForRef.current = effectiveUserId;
+      unitFeedHighlightsLoadingForRef.current = null;
       return;
     }
     const sinceIso = new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString();
@@ -2583,6 +2599,8 @@ export default function HomePage() {
 
     if (candidatePosts.length === 0) {
       setUnitFeedHighlights([]);
+      unitFeedHighlightsLoadedForRef.current = effectiveUserId;
+      unitFeedHighlightsLoadingForRef.current = null;
       return;
     }
 
@@ -2616,6 +2634,7 @@ export default function HomePage() {
             .in("id", unitIds);
           if (unitsFallback.error) {
             console.warn("Unit highlight units fallback warning:", unitsFallback.error.message);
+            unitFeedHighlightsLoadingForRef.current = null;
             return [];
           }
           return ((unitsFallback.data ?? []) as {
@@ -2693,6 +2712,8 @@ export default function HomePage() {
       .filter((p): p is UnitFeedHighlight => Boolean(p));
 
     setUnitFeedHighlights(scored);
+    unitFeedHighlightsLoadedForRef.current = effectiveUserId;
+    unitFeedHighlightsLoadingForRef.current = null;
   }
 
   async function loadPosts(
@@ -2714,10 +2735,16 @@ export default function HomePage() {
       setUnitFeedHighlights([]);
     });
 
-    const { data: rankedPostsData, error: postsError } = await supabase
+    let rankedPostsQuery = supabase
       .from("ranked_posts")
       .select("id, user_id, content, created_at, score, ranking_score")
       .lte("created_at", new Date().toISOString());
+
+    if (isInitialProgressiveLoad) {
+      rankedPostsQuery = rankedPostsQuery.limit(INITIAL_RANKED_POSTS_LIMIT);
+    }
+
+    const { data: rankedPostsData, error: postsError } = await rankedPostsQuery;
 
     if (postsError) {
       console.error("Feed load error:", postsError);
@@ -2826,7 +2853,7 @@ export default function HomePage() {
 
       window.setTimeout(() => {
         void loadPosts(effectiveUserId, { forceFullHydration: true }).catch((err) => console.error("loadPosts background hydration failed:", err));
-      }, 0);
+      }, FULL_FEED_HYDRATION_DELAY_MS);
       return;
     }
 
@@ -4787,7 +4814,6 @@ export default function HomePage() {
         setRecruiterNudgeHidden(readRecruiterNudgeHidden(currentUserId));
 
         const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null; is_admin: boolean | null } | null;
-        const topLineTasks: Promise<unknown>[] = [];
 
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
@@ -4800,13 +4826,11 @@ export default function HomePage() {
         }
 
         if (nd?.referral_code) {
-          topLineTasks.push(
-            Promise.resolve(
-              supabase
-                .from("profiles")
-                .select("user_id", { count: "exact", head: true })
-                .eq("referred_by", nd.referral_code)
-            ).then(({ count, error }) => {
+          void supabase
+            .from("profiles")
+            .select("user_id", { count: "exact", head: true })
+            .eq("referred_by", nd.referral_code)
+            .then(({ count, error }) => {
               if (error) {
                 console.error("recruiter count load failed:", error);
                 return;
@@ -4814,19 +4838,16 @@ export default function HomePage() {
               if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
                 setRecruiterCount(count ?? 0);
               }
-            })
-          );
+            });
         } else {
           setRecruiterCount(0);
         }
 
-        topLineTasks.push(
-          refreshPlankHolderChallenge().catch((err) => console.error("refreshPlankHolderChallenge failed:", err)),
-          loadPendingMembers().catch((err) => console.error("loadPendingMembers failed:", err))
-        );
+        void refreshPlankHolderChallenge().catch((err) => console.error("refreshPlankHolderChallenge failed:", err));
+        void loadPendingMembers().catch((err) => console.error("loadPendingMembers failed:", err));
 
         const feedReady = loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err));
-        await Promise.all([feedReady, ...topLineTasks]);
+        await feedReady;
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setLoading(false);
         }
@@ -4836,10 +4857,13 @@ export default function HomePage() {
 
         // Desktop shell already has dedicated left/right column loaders; avoid duplicate heavy fetches here.
         if (!inDesktopShell && isMounted && activeProfileLoadSeqRef.current === loadSeq) {
-          void Promise.all([
-            loadJobs(featureAccess.canViewFullJobs ? 500 : 5).catch((err) => console.error("loadJobs failed:", err)),
-            loadBusinessListings().catch((err) => console.error("loadBusinessListings failed:", err)),
-          ]);
+          window.setTimeout(() => {
+            if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
+            void Promise.all([
+              loadJobs(featureAccess.canViewFullJobs ? 10 : 5).catch((err) => console.error("loadJobs failed:", err)),
+              loadBusinessListings().catch((err) => console.error("loadBusinessListings failed:", err)),
+            ]);
+          }, HOME_WIDGET_LOAD_DELAY_MS);
         }
       } catch (error) {
         console.error("Homepage init error:", error);
