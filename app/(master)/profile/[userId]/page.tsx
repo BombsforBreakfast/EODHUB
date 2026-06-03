@@ -93,6 +93,7 @@ import {
   toggleSavedJob,
   type SavedJobRow,
 } from "../../../lib/queries/savedJobs";
+import { queryKeys } from "../../../lib/queryKeys";
 import { MOBILE_SHELL_MAX, STACKED_PROFILE_MAX } from "../../../lib/viewportLayout";
 
 type Profile = {
