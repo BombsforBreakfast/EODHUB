@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
@@ -55,7 +55,6 @@ export default function NavBar() {
   const [authLoaded, setAuthLoaded] = useState(false);
   const [userInitial, setUserInitial] = useState<string>("?");
   const [avatarPhotoUrl, setAvatarPhotoUrl] = useState<string | null>(null);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showHub, setShowHub] = useState(false);
   const hubBtnRef = useRef<HTMLButtonElement>(null);
   const hubPanelRef = useRef<HTMLDivElement>(null);
@@ -85,21 +84,19 @@ export default function NavBar() {
 
   /** In-app notifications (not DMs — those stay on Sidebars). */
   const notificationsV2Enabled = getNotificationsV2Enabled(isFounder);
+  const notificationsQuery = useQuery({
+    queryKey: currentUserId
+      ? queryKeys.notifications(currentUserId, notificationsV2Enabled)
+      : queryKeys.notifications("pending", notificationsV2Enabled),
+    queryFn: () => fetchNotifications<Notification>(supabase, currentUserId as string, notificationsV2Enabled),
+    enabled: !!currentUserId,
+    staleTime: NOTIFICATIONS_STALE_MS,
+  });
+  const notifications = notificationsQuery.data ?? [];
   const unreadNotifCount = notificationsV2Enabled
     ? notifications.filter((n) => !n.read_at && !n.archived_at).length
     : notifications.length;
   const canAccessRabbithole = isVerifiedRabbitholeViewer(verificationStatus);
-
-  async function loadNotifications(uid: string) {
-    // Cache-backed: remounts within the stale window reuse the cached list
-    // instead of re-querying Supabase. Realtime changes invalidate first (below).
-    const data = await queryClient.fetchQuery({
-      queryKey: queryKeys.notifications(uid, notificationsV2Enabled),
-      queryFn: () => fetchNotifications<Notification>(supabase, uid, notificationsV2Enabled),
-      staleTime: NOTIFICATIONS_STALE_MS,
-    });
-    setNotifications(data);
-  }
 
   function invalidateNotifications() {
     if (!currentUserId) return;
@@ -108,23 +105,31 @@ export default function NavBar() {
     });
   }
 
+  function patchNotifications(updater: (rows: Notification[]) => Notification[]) {
+    if (!currentUserId) return;
+    queryClient.setQueryData<Notification[]>(
+      queryKeys.notifications(currentUserId, notificationsV2Enabled),
+      (rows) => updater(rows ?? notifications),
+    );
+  }
+
   async function dismissNotification(id: string) {
     if (!notificationsV2Enabled) {
       await supabase.from("notifications").delete().eq("id", id);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      patchNotifications((prev) => prev.filter((n) => n.id !== id));
       invalidateNotifications();
       return;
     }
     const now = new Date().toISOString();
     await supabase.from("notifications").update({ archived_at: now, is_read: true, read_at: now }).eq("id", id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, archived_at: now, read_at: now, is_read: true } : n)));
+    patchNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, archived_at: now, read_at: now, is_read: true } : n)));
     invalidateNotifications();
   }
 
   async function openNotification(id: string, href: string) {
     if (!notificationsV2Enabled) {
       await supabase.from("notifications").delete().eq("id", id);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      patchNotifications((prev) => prev.filter((n) => n.id !== id));
       invalidateNotifications();
       setShowNotifPanel(false);
       window.location.href = href;
@@ -132,7 +137,7 @@ export default function NavBar() {
     }
     const now = new Date().toISOString();
     await supabase.from("notifications").update({ is_read: true, read_at: now }).eq("id", id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: now, is_read: true } : n)));
+    patchNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: now, is_read: true } : n)));
     invalidateNotifications();
     setShowNotifPanel(false);
     window.location.href = href;
@@ -148,7 +153,7 @@ export default function NavBar() {
       .eq("recipient_user_id", currentUserId)
       .is("read_at", null)
       .is("archived_at", null);
-    setNotifications((prev) => prev.map((n) => (n.archived_at || n.read_at ? n : { ...n, is_read: true, read_at: now })));
+    patchNotifications((prev) => prev.map((n) => (n.archived_at || n.read_at ? n : { ...n, is_read: true, read_at: now })));
     invalidateNotifications();
   }
 
@@ -221,7 +226,6 @@ export default function NavBar() {
 
       if (uid && session?.user) {
         await loadNavProfile(session.user);
-        await loadNotifications(uid);
         if (session.access_token) {
           void loadFounderStatus(session.access_token);
           // Load group pending count for any logged-in user (not just site admins)
@@ -249,7 +253,6 @@ export default function NavBar() {
       resetNavProfileState();
       if (uid && session?.user) {
         void loadNavProfile(session.user);
-        void loadNotifications(uid);
         if (session.access_token) {
           void loadFounderStatus(session.access_token);
         }
@@ -298,11 +301,11 @@ export default function NavBar() {
           ? `recipient_user_id=eq.${currentUserId}`
           : `user_id=eq.${currentUserId}`,
       }, () => {
-        // Live change: drop the cached list so the refetch returns fresh rows
-        // even within the stale window, then repopulate.
-        void queryClient
-          .invalidateQueries({ queryKey: queryKeys.notifications(currentUserId, notificationsV2Enabled) })
-          .then(() => loadNotifications(currentUserId));
+        // Live change: drop the cached list so active observers refetch fresh rows
+        // even within the stale window.
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.notifications(currentUserId, notificationsV2Enabled),
+        });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };

@@ -934,7 +934,7 @@ export default function SidebarPage() {
       </div>
 
       {hasAnyConversations && (
-        <div style={{ padding: "10px 12px", borderBottom: `1px solid ${t.border}`, background: t.surface }}>
+        <div style={{ padding: "10px 10px", borderBottom: `1px solid ${t.border}`, background: t.surface }}>
           <input
             type="search"
             value={inboxSearch}
@@ -944,7 +944,7 @@ export default function SidebarPage() {
             style={{
               width: "100%",
               boxSizing: "border-box",
-              padding: "9px 12px",
+              padding: "9px 10px",
               borderRadius: 10,
               border: `1px solid ${t.inputBorder}`,
               background: t.input,
@@ -1009,31 +1009,27 @@ export default function SidebarPage() {
                 className={isMobile ? "sidebar-inbox-row" : undefined}
                 onClick={() => selectConversation(conv.id)}
                 style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: "14px 20px",
+                  display: "flex", alignItems: "center", gap: 10, padding: "14px 14px",
                   cursor: "pointer", borderBottom: `1px solid ${t.border}`,
                   background: activeConvId === conv.id ? t.surfaceHover : t.surface,
                 }}
                 onMouseEnter={(e) => { if (activeConvId !== conv.id) e.currentTarget.style.background = t.surfaceHover; }}
                 onMouseLeave={(e) => { if (activeConvId !== conv.id) e.currentTarget.style.background = t.surface; }}
               >
-                <div
-                  style={{ width: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}
-                  aria-hidden
-                >
-                  {conv.unread_count > 0 ? (
-                    <span
-                      title="Unread"
-                      style={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        background: "#fbbf24",
-                        flexShrink: 0,
-                        boxShadow: isDark ? "0 0 0 1px rgba(0,0,0,0.35)" : undefined,
-                      }}
-                    />
-                  ) : null}
-                </div>
+                {conv.unread_count > 0 ? (
+                  <span
+                    title="Unread"
+                    aria-hidden
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: "#fbbf24",
+                      flexShrink: 0,
+                      boxShadow: isDark ? "0 0 0 1px rgba(0,0,0,0.35)" : undefined,
+                    }}
+                  />
+                ) : null}
                 <a href={`/profile/${conv.other_user_id}`} onClick={(e) => e.stopPropagation()} style={{ textDecoration: "none", flexShrink: 0 }}>
                   <div style={avatarStyle(conv.other_user_name, conv.other_user_photo)}>
                     {conv.other_user_photo
@@ -1064,7 +1060,7 @@ export default function SidebarPage() {
                 className={isMobile ? "sidebar-inbox-row" : undefined}
                 onClick={() => selectConversation(conv.id)}
                 style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: "14px 20px",
+                  display: "flex", alignItems: "center", gap: 10, padding: "14px 14px",
                   cursor: "pointer", borderBottom: `1px solid ${t.border}`,
                   background: activeConvId === conv.id ? t.surfaceHover : t.surface, opacity: 0.7,
                 }}
@@ -1715,7 +1711,7 @@ export default function SidebarPage() {
       <div className={isMobile ? "sidebar-mobile-grid" : undefined} style={{
         border: `1px solid ${t.border}`, borderRadius: isMobile ? 12 : 16, overflow: "hidden", background: t.surface,
         display: "grid",
-        gridTemplateColumns: isMobile ? "1fr" : "400px minmax(0, 1fr)",
+        gridTemplateColumns: isMobile ? "1fr" : "minmax(320px, 35%) minmax(0, 1fr)",
         gridTemplateRows: "1fr",
         height: "calc(100dvh - 120px)",
         width: "100%",
