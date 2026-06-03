@@ -34,6 +34,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Cannot dismiss yourself" }, { status: 400 });
   }
 
+  const { data: viewer } = await adminClient
+    .from("profiles")
+    .select("is_admin")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (viewer?.is_admin === true) {
+    return NextResponse.json({ success: true, persisted: false });
+  }
+
   const { error } = await adminClient
     .from("profile_vouch_dismissals")
     .upsert(

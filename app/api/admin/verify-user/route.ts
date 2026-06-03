@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { devAuthLog } from "@/app/lib/auth/signupErrors";
 import { approveUserAccount } from "@/app/lib/server/approveUserAccount";
+import { insertOnboardingEvent } from "@/app/lib/onboardingAnalyticsServer";
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,6 +52,10 @@ export async function POST(req: NextRequest) {
       req.nextUrl.origin,
       "admin",
     );
+
+    void insertOnboardingEvent(adminClient, userId, "admin_verified", "success", {
+      adminId: caller.id,
+    });
 
     return NextResponse.json({
       success: true,

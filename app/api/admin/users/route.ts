@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { blocksSignupApproval, hasRequiredSignupNames } from "@/app/lib/profileCompleteness";
+import { isSignupProfileComplete, resolveSignupNames, authMetadataDisplayName, splitFullName } from "@/app/lib/profileCompleteness";
 import { referrerDisplayName } from "@/app/lib/referralReferrer";
 
 type ProfilesQueryResult = {
@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
   for (const authUser of authUsersRes.data?.users ?? []) {
     authUserMap.set(authUser.id, {
       email: authUser.email ?? "",
-      full_name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || null,
+      full_name: authMetadataDisplayName(authUser.user_metadata ?? null),
     });
   }
 
@@ -127,7 +127,7 @@ export async function GET(req: NextRequest) {
       first_name: null,
       last_name: null,
       display_name: null,
-      name: authUser.user_metadata?.full_name || authUser.user_metadata?.name || null,
+      name: authMetadataDisplayName(authUser.user_metadata ?? null),
       email: authUser.email ?? null,
       photo_url: null,
       role: null,
@@ -151,14 +151,40 @@ export async function GET(req: NextRequest) {
     ...(profilesQuery.data ?? []).map((p) => {
     const authMeta = authUserMap.get(String(p.user_id));
     const row = p as Record<string, unknown> & { email?: string | null; name?: string | null };
-    let first_name = typeof p.first_name === "string" ? p.first_name : null;
-    let last_name = typeof p.last_name === "string" ? p.last_name : null;
+    const dbFirst = typeof p.first_name === "string" ? p.first_name : null;
+    const dbLast = typeof p.last_name === "string" ? p.last_name : null;
+    const dbName = typeof row.name === "string" ? row.name : null;
+    const dbDisplay = typeof p.display_name === "string" ? p.display_name : null;
+
+    let first_name = dbFirst;
+    let last_name = dbLast;
 
     if (!first_name && authMeta?.full_name) {
-      const parts = authMeta.full_name.trim().split(/\s+/);
-      first_name = parts[0] || null;
-      last_name = parts.slice(1).join(" ") || null;
+      const parts = splitFullName(authMeta.full_name);
+      first_name = parts.first_name || null;
+      last_name = last_name || parts.last_name || null;
     }
+
+    const resolved = resolveSignupNames({
+      first_name,
+      last_name,
+      name: dbName ?? authMeta?.full_name ?? null,
+      display_name: dbDisplay,
+    });
+    first_name = resolved.first_name || null;
+    last_name = resolved.last_name || null;
+
+    const signupFields = {
+      first_name,
+      last_name,
+      name: dbName ?? authMeta?.full_name ?? null,
+      display_name: dbDisplay,
+      service: typeof p.service === "string" ? p.service : null,
+      company_name: typeof row.company_name === "string" ? row.company_name : null,
+      account_type: typeof row.account_type === "string" ? row.account_type : null,
+      is_pure_admin: row.is_pure_admin === true,
+      created_at: typeof row.created_at === "string" ? row.created_at : null,
+    };
 
     return {
       ...p,
@@ -174,15 +200,7 @@ export async function GET(req: NextRequest) {
           ? referrerNameByCode.get(row.referred_by.trim().toUpperCase())
           : null) ??
         null,
-      signup_incomplete: blocksSignupApproval({
-        first_name,
-        last_name,
-        service: typeof p.service === "string" ? p.service : null,
-        company_name: typeof row.company_name === "string" ? row.company_name : null,
-        account_type: typeof row.account_type === "string" ? row.account_type : null,
-        is_pure_admin: row.is_pure_admin === true,
-        created_at: typeof row.created_at === "string" ? row.created_at : null,
-      }),
+      signup_incomplete: !isSignupProfileComplete(signupFields),
     };
   }),
   ];

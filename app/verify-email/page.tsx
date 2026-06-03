@@ -12,6 +12,7 @@ import {
   isInAdminReviewQueue,
   needsEmailVerification,
 } from "../lib/verificationAccess";
+import { useOnboardingStepTracking } from "../hooks/useOnboardingStepTracking";
 
 function VerifyEmailContent() {
   useOnboardingGate("app/verify-email/page.tsx");
@@ -22,6 +23,8 @@ function VerifyEmailContent() {
   const [resending, setResending] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
+
+  useOnboardingStepTracking("verify_email_viewed", !checking);
 
   useEffect(() => {
     const prevDocColorScheme = document.documentElement.style.colorScheme;

@@ -1275,7 +1275,9 @@ export default function HomePage() {
       return next;
     });
     setOpenVouchPopoverFor((prev) => (prev === memberId ? null : prev));
-    if (!userId) return;
+    // Admins need recurring visibility on the vouch queue. Hide only for the
+    // current page session; non-admin members persist dismissals.
+    if (!userId || isAdmin) return;
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/profile-vouch/dismiss", {
@@ -1292,7 +1294,7 @@ export default function HomePage() {
     } catch (err) {
       console.error("profile-vouch dismiss failed:", err);
     }
-  }, [userId]);
+  }, [isAdmin, userId]);
 
   const hidePlankHolderCard = useCallback(() => {
     setPlankHolderCardHidden(true);
@@ -2117,72 +2119,30 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
     setDiscoverPageIndex(0);
   }
 
-  async function loadPendingMembers(currentUserId: string) {
-    // Community members awaiting vouches ΓÇö same cohort as /pending (not in People You May Know)
-    const { data: pending } = await supabase
-      .from("profiles")
-      .select("user_id, first_name, last_name, display_name, photo_url, service, created_at")
-      .eq("email_verified", true)
-      .in("verification_status", ["awaiting_admin_review", "pending_admin_review", "pending"])
-      .eq("account_type", "member")
-      .neq("user_id", currentUserId)
-      .not("first_name", "is", null)
-      .order("created_at", { ascending: true })
-      .limit(20);
-
-    if (!pending || pending.length === 0) return;
-
-    const pendingIds = pending.map((p: { user_id: string }) => p.user_id);
-
-    // Get voucher identities, vouch counts, and whether current user already vouched
-    const [{ data: allVouches }, { data: myVouches }] = await Promise.all([
-      supabase.from("profile_vouches").select("vouchee_user_id, voucher_user_id").in("vouchee_user_id", pendingIds),
-      supabase.from("profile_vouches").select("vouchee_user_id").in("vouchee_user_id", pendingIds).eq("voucher_user_id", currentUserId),
-    ]);
-
-    const voucherIds = Array.from(
-      new Set((allVouches ?? []).map((v: { voucher_user_id: string }) => v.voucher_user_id).filter(Boolean))
-    );
-    const { data: voucherProfiles } = voucherIds.length
-      ? await supabase
-          .from("profiles")
-          .select("user_id, first_name, last_name, display_name, photo_url")
-          .in("user_id", voucherIds)
-      : { data: [] };
-    const voucherProfileMap = new Map<string, PendingMemberVoucher>();
-    (voucherProfiles ?? []).forEach((p: { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null }) => {
-      const name = p.display_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
-      voucherProfileMap.set(p.user_id, { user_id: p.user_id, name, photo_url: p.photo_url ?? null });
+  async function loadPendingMembers() {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/profile-vouch/candidates", {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
 
-    const vouchCountMap: Record<string, number> = {};
-    const voucherMap: Record<string, PendingMemberVoucher[]> = {};
-    (allVouches ?? []).forEach((v: { vouchee_user_id: string; voucher_user_id: string }) => {
-      vouchCountMap[v.vouchee_user_id] = (vouchCountMap[v.vouchee_user_id] ?? 0) + 1;
-      const voucher = voucherProfileMap.get(v.voucher_user_id);
-      if (voucher) {
-        if (!voucherMap[v.vouchee_user_id]) voucherMap[v.vouchee_user_id] = [];
-        voucherMap[v.vouchee_user_id].push(voucher);
-      }
-    });
-    const myVouchedSet = new Set((myVouches ?? []).map((v: { vouchee_user_id: string }) => v.vouchee_user_id));
+    if (!res.ok) {
+      console.error("loadPendingMembers failed:", await res.text());
+      setPendingMembers([]);
+      return;
+    }
 
-    const { data: dismissals } = await supabase
-      .from("profile_vouch_dismissals")
-      .select("vouchee_user_id")
-      .eq("viewer_user_id", currentUserId);
-    setHiddenPendingMemberIds(
-      new Set((dismissals ?? []).map((d: { vouchee_user_id: string }) => d.vouchee_user_id)),
-    );
+    const json = (await res.json()) as {
+      candidates?: PendingMember[];
+      hidden_ids?: string[];
+      error?: string;
+    };
 
-    setPendingMembers(
-      (pending as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null }[]).map((p) => ({
-        ...p,
-        vouch_count: vouchCountMap[p.user_id] ?? 0,
-        user_vouched: myVouchedSet.has(p.user_id),
-        vouchers: voucherMap[p.user_id] ?? [],
-      }))
-    );
+    if (json.error) {
+      console.warn("loadPendingMembers skipped:", json.error);
+    }
+
+    setHiddenPendingMemberIds(new Set(json.hidden_ids ?? []));
+    setPendingMembers(json.candidates ?? []);
   }
 
   async function vouchForMember(voucheeId: string) {
@@ -5088,7 +5048,7 @@ async function loadDiscoverProfiles(currentUserId: string, sourceProfile?: Disco
 
         topLineTasks.push(
           refreshPlankHolderChallenge().catch((err) => console.error("refreshPlankHolderChallenge failed:", err)),
-          loadPendingMembers(currentUserId).catch((err) => console.error("loadPendingMembers failed:", err))
+          loadPendingMembers().catch((err) => console.error("loadPendingMembers failed:", err))
         );
 
         const feedReady = loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err));

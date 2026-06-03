@@ -8,6 +8,7 @@ import {
   isGrandfatheredSignupProfile,
 } from "@/app/lib/profileCompleteness";
 import { isAwaitingEmailStatus, VERIFICATION } from "@/app/lib/verificationStatus";
+import { insertOnboardingEvent } from "@/app/lib/onboardingAnalyticsServer";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
   const { data: existing } = await adminClient
     .from("profiles")
     .select(
-      "email_verified, verification_status, first_name, last_name, created_at, is_pure_admin",
+      "email_verified, verification_status, first_name, last_name, name, display_name, created_at, is_pure_admin",
     )
     .eq("user_id", result.userId)
     .maybeSingle();
@@ -77,6 +78,8 @@ export async function GET(req: NextRequest) {
     console.error("verify-email: profile update failed", updateError);
     return NextResponse.redirect(new URL("/verify-email?error=invalid", origin));
   }
+
+  void insertOnboardingEvent(adminClient, result.userId, "email_verified", "success");
 
   if (existing && isAwaitingEmailStatus(existing.verification_status)) {
     devAuthLog("verify-email-click", {

@@ -26,9 +26,8 @@ import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { coerceTagsFromDb, normalizeBizTagsInput } from "../lib/bizListingTags";
 import {
-  blocksSignupApproval,
-  hasRequiredSignupNames,
   isGrandfatheredSignupProfile,
+  isSignupProfileComplete,
   signupProfileMissingFields,
 } from "@/app/lib/profileCompleteness";
 import {
@@ -192,7 +191,7 @@ type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "denied"
 function isAtAdminReviewTier(u: UserProfile): boolean {
   return (
     !!u.email_verified &&
-    !blocksSignupApproval(u) &&
+    isSignupProfileComplete(u) &&
     (u.verification_status === "awaiting_admin_review" ||
       u.verification_status === "pending_admin_review" ||
       u.verification_status === "pending")
@@ -207,7 +206,7 @@ function userMatchesStatusFilter(u: UserProfile, filter: UserStatusFilter): bool
   if (filter === "onboarding") {
     if (u.verification_status === "verified") return false;
     if (u.verification_status === "denied") return false;
-    return !!u.signup_incomplete || blocksSignupApproval(u);
+    return !!u.signup_incomplete || !isSignupProfileComplete(u);
   }
   return false;
 }
@@ -504,6 +503,24 @@ type PreviewResult = {
 };
 
 type EngagementRange = "today" | "7d" | "30d";
+
+type OnboardingFunnelRange = "7d" | "30d" | "90d";
+
+type OnboardingFunnelSummary = {
+  range: OnboardingFunnelRange;
+  generated_at: string;
+  cohort_signups: number;
+  incomplete_profiles_no_events: number;
+  funnel: Array<{
+    step: string;
+    label: string;
+    users: number;
+    conversion_from_previous_pct: number | null;
+    conversion_from_start_pct: number | null;
+  }>;
+  drop_offs: Array<{ step: string; label: string; users: number }>;
+  note: string | null;
+};
 
 type EngagementSummary = {
   range: EngagementRange;
@@ -882,6 +899,9 @@ export default function AdminPage() {
   const [engagement, setEngagement] = useState<EngagementSummary | null>(null);
   const [engagementLoading, setEngagementLoading] = useState(false);
   const [engagementRange, setEngagementRange] = useState<EngagementRange>("7d");
+  const [onboardingFunnel, setOnboardingFunnel] = useState<OnboardingFunnelSummary | null>(null);
+  const [onboardingFunnelLoading, setOnboardingFunnelLoading] = useState(false);
+  const [onboardingFunnelRange, setOnboardingFunnelRange] = useState<OnboardingFunnelRange>("30d");
   const [pageAnalytics, setPageAnalytics] = useState<PageAnalyticsSummary | null>(null);
   const [pageAnalyticsLoading, setPageAnalyticsLoading] = useState(false);
   const [pageAnalyticsRange, setPageAnalyticsRange] = useState<PageAnalyticsRange>("7d");
@@ -974,6 +994,27 @@ export default function AdminPage() {
   async function loadPendingCounts() {
     const next = await fetchAdminPendingBreakdown(supabase);
     setPendingCounts(next);
+  }
+
+  async function loadOnboardingFunnel(range: OnboardingFunnelRange = onboardingFunnelRange) {
+    setOnboardingFunnelLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/onboarding-funnel?range=${range}`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({} as { error?: string }));
+        console.error("loadOnboardingFunnel error", res.status, errJson.error ?? "");
+        return;
+      }
+      const json = (await res.json()) as OnboardingFunnelSummary;
+      setOnboardingFunnel(json);
+    } catch (err) {
+      console.error("loadOnboardingFunnel failed", err);
+    } finally {
+      setOnboardingFunnelLoading(false);
+    }
   }
 
   async function loadEngagement(range: EngagementRange = engagementRange) {
@@ -1881,11 +1922,12 @@ export default function AdminPage() {
     if (activeTab === "engagement") {
       void loadEngagement(engagementRange);
       void loadPageAnalytics(pageAnalyticsRange);
+      void loadOnboardingFunnel(onboardingFunnelRange);
     }
     if (activeTab === "news") void loadNews(newsFilter);
     if (activeTab === "waitlist") void loadWaitlist();
     if (activeTab === "lemon_lot") void loadLemonLot();
-  }, [pendingOnly, activeTab, authorized, engagementRange, pageAnalyticsRange, newsFilter, bugsFilter]);
+  }, [pendingOnly, activeTab, authorized, engagementRange, pageAnalyticsRange, onboardingFunnelRange, newsFilter, bugsFilter]);
 
   useEffect(() => {
     if (!authorized) return;
@@ -2125,8 +2167,8 @@ export default function AdminPage() {
     try {
       if (status === "verified") {
         const target = users.find((u) => u.user_id === userId);
-        if (target && blocksSignupApproval(target)) {
-          alert("Cannot verify: new signup must finish onboarding with first and last name.");
+        if (target && !isSignupProfileComplete(target)) {
+          alert("Cannot verify: signup profile is incomplete (name, service/company, etc.).");
           return;
         }
 
@@ -4260,10 +4302,11 @@ export default function AdminPage() {
               {filteredAdminUsers.map((u) => {
                 const name = adminUserDisplayName(u);
                 const isGrandfathered = isGrandfatheredSignupProfile(u);
-                const isIncompleteSignup = !!u.signup_incomplete || blocksSignupApproval(u);
-                const missingSignupFields =
-                  !hasRequiredSignupNames(u) ? signupProfileMissingFields(u).filter((f) => f === "first name" || f === "last name") : [];
-                const canVerify = !blocksSignupApproval(u);
+                const isIncompleteSignup = !!u.signup_incomplete || !isSignupProfileComplete(u);
+                const missingSignupFields = isIncompleteSignup && !isGrandfathered
+                  ? signupProfileMissingFields(u)
+                  : [];
+                const canVerify = isSignupProfileComplete(u);
                 const isVerified = u.verification_status === "verified";
                 const isDenied = u.verification_status === "denied";
                 const isPending = isAtAdminReviewTier(u);
@@ -4327,7 +4370,7 @@ export default function AdminPage() {
                           disabled={actionLoading === u.user_id + "-verify" || !canVerify}
                           title={
                             !canVerify
-                              ? "New signup must finish onboarding with first and last name"
+                              ? "Signup must finish onboarding (name, service/company) before approval"
                               : undefined
                           }
                           onClick={() => setVerification(u.user_id, "verified")}
@@ -4753,6 +4796,153 @@ export default function AdminPage() {
                   {engagementLoading ? "Refreshing…" : "Refresh"}
                 </button>
               </div>
+            </div>
+
+            {/* Onboarding funnel */}
+            <div
+              style={{
+                border: `1px solid ${t.border}`,
+                borderRadius: 14,
+                padding: "16px 18px",
+                background: t.surface,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 12,
+                  flexWrap: "wrap",
+                  marginBottom: 14,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 900, fontSize: 16, color: t.text }}>Signup funnel</div>
+                  <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
+                    Where new users drop off between account creation and admin approval.
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {(["7d", "30d", "90d"] as const).map((r) => {
+                    const active = onboardingFunnelRange === r;
+                    return (
+                      <button
+                        key={r}
+                        type="button"
+                        onClick={() => setOnboardingFunnelRange(r)}
+                        style={{
+                          padding: "6px 12px",
+                          borderRadius: 8,
+                          border: "none",
+                          fontWeight: 700,
+                          fontSize: 12,
+                          cursor: "pointer",
+                          background: active ? "#111" : t.badgeBg,
+                          color: active ? "white" : t.text,
+                        }}
+                      >
+                        {r === "7d" ? "7 days" : r === "30d" ? "30 days" : "90 days"}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onClick={() => void loadOnboardingFunnel(onboardingFunnelRange)}
+                    disabled={onboardingFunnelLoading}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: 8,
+                      border: `1px solid ${t.border}`,
+                      background: t.surface,
+                      color: t.text,
+                      fontWeight: 600,
+                      fontSize: 12,
+                      cursor: onboardingFunnelLoading ? "default" : "pointer",
+                      opacity: onboardingFunnelLoading ? 0.6 : 1,
+                    }}
+                  >
+                    {onboardingFunnelLoading ? "…" : "Refresh"}
+                  </button>
+                </div>
+              </div>
+
+              {onboardingFunnel?.note && (
+                <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 12 }}>{onboardingFunnel.note}</div>
+              )}
+
+              {onboardingFunnel && (
+                <>
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16, fontSize: 13, color: t.textMuted }}>
+                    <span>
+                      <strong style={{ color: t.text }}>{onboardingFunnel.cohort_signups}</strong> accounts with funnel events
+                    </span>
+                    {onboardingFunnel.incomplete_profiles_no_events > 0 && (
+                      <span>
+                        <strong style={{ color: "#c2410c" }}>{onboardingFunnel.incomplete_profiles_no_events}</strong> stuck before onboarding (no profile fields)
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {onboardingFunnel.funnel.map((row, index) => {
+                      const maxUsers = onboardingFunnel.funnel[0]?.users || 1;
+                      const widthPct = Math.max(4, Math.round((row.users / maxUsers) * 100));
+                      return (
+                        <div key={row.step} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "220px 1fr 80px", gap: 10, alignItems: "center" }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>
+                            {index + 1}. {row.label}
+                          </div>
+                          <div style={{ background: t.badgeBg, borderRadius: 6, height: 22, overflow: "hidden" }}>
+                            <div
+                              style={{
+                                width: `${widthPct}%`,
+                                height: "100%",
+                                background: index === 0 ? "#374151" : "#2563eb",
+                                borderRadius: 6,
+                                minWidth: row.users > 0 ? 8 : 0,
+                              }}
+                            />
+                          </div>
+                          <div style={{ fontSize: 12, color: t.textMuted, textAlign: isMobile ? "left" : "right" }}>
+                            {row.users}
+                            {row.conversion_from_start_pct != null && index > 0 && (
+                              <span style={{ marginLeft: 6 }}>({row.conversion_from_start_pct}%)</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {onboardingFunnel.drop_offs.length > 0 && (
+                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>
+                      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: t.text }}>Last step reached (not yet verified)</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {onboardingFunnel.drop_offs.slice(0, 6).map((d) => (
+                          <span
+                            key={d.step}
+                            style={{
+                              background: "#ffedd5",
+                              color: "#9a3412",
+                              fontSize: 12,
+                              fontWeight: 700,
+                              padding: "4px 10px",
+                              borderRadius: 20,
+                            }}
+                          >
+                            {d.label}: {d.users}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {!onboardingFunnel && onboardingFunnelLoading && (
+                <div style={{ fontSize: 13, color: t.textMuted }}>Loading funnel…</div>
+              )}
             </div>
 
             {!engagement && engagementLoading && (

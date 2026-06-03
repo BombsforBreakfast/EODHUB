@@ -9,6 +9,7 @@ import {
   needsEmailVerification,
 } from "../lib/verificationAccess";
 import { useOnboardingGate } from "../hooks/useOnboardingGate";
+import { useOnboardingStepTracking } from "../hooks/useOnboardingStepTracking";
 import { recordPlankHolderInvite } from "../lib/plankHolderChallengeClient";
 
 const VOUCHES_NEEDED = 3;
@@ -21,6 +22,9 @@ export default function PendingPage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [pageReady, setPageReady] = useState(false);
+
+  useOnboardingStepTracking("pending_viewed", pageReady);
 
   useEffect(() => {
     const prevDocColorScheme = document.documentElement.style.colorScheme;
@@ -114,6 +118,7 @@ export default function PendingPage() {
         .select("*", { count: "exact", head: true })
         .eq("vouchee_user_id", user.id);
       setVouchCount(count ?? 0);
+      setPageReady(true);
     }
     check();
   }, []);

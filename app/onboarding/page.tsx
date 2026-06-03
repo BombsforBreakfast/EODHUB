@@ -4,11 +4,6 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 import Link from "next/link";
-import {
-  COMMUNITY_GUIDELINES_TEXT,
-  PRIVACY_POLICY_TEXT,
-  TERMS_OF_SERVICE_TEXT,
-} from "../lib/legalText";
 import { isPureAdminEmail, STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../lib/pureAdminAllowlist";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { clearAppAuthState } from "../lib/auth/sessionState";
@@ -19,11 +14,12 @@ import {
   needsEmailVerification,
 } from "../lib/verificationAccess";
 import { devAuthLog } from "../lib/auth/signupErrors";
-import { VERIFICATION } from "../lib/verificationStatus";
 
 import {
   MEMBER_SERVICE_OPTIONS,
   MEMBER_STATUS_OPTIONS,
+  parseSignupFullName,
+  SIGNUP_FULL_NAME_REQUIRED_MESSAGE,
 } from "../lib/profileCompleteness";
 import { ONBOARDING_REQUIRED_FIELDS_MESSAGE } from "../lib/onboardingGate";
 import { validateImagePick } from "../lib/uploadLimits";
@@ -31,6 +27,8 @@ import {
   clearStoredReferral,
   readStoredReferral,
 } from "../lib/referralCapture";
+import { trackOnboardingStep } from "../lib/onboardingAnalytics";
+import { useOnboardingStepTracking } from "../hooks/useOnboardingStepTracking";
 const SERVICE_OPTIONS = [...MEMBER_SERVICE_OPTIONS];
 const STATUS_OPTIONS = [...MEMBER_STATUS_OPTIONS];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "LEO/FED", "Civil Service"];
@@ -42,14 +40,8 @@ export default function OnboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
   const [duplicateProviders, setDuplicateProviders] = useState<string[] | null>(null);
-  // True when this user landed on /onboarding because an admin set
-  // must_complete_onboarding=true (the temp-password / failed-auth flow).
-  // We only need to call the server route to clear that flag in that case.
-  const [wasProvisioned, setWasProvisioned] = useState(false);
-
   // Member fields
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [service, setService] = useState("");
   const [status, setStatus] = useState("");
   const [skillBadge, setSkillBadge] = useState("");
@@ -59,15 +51,25 @@ export default function OnboardingPage() {
   const [profilePhotoError, setProfilePhotoError] = useState<string | null>(null);
 
   // Employer fields
-  const [empFirstName, setEmpFirstName] = useState("");
-  const [empLastName, setEmpLastName] = useState("");
   const [companyName, setCompanyName] = useState("");
 
   const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
+
+  useOnboardingStepTracking("onboarding_viewed", !checking);
+
+  useEffect(() => {
+    if (accountType) {
+      trackOnboardingStep("onboarding_account_type", "action", { accountType });
+    }
+  }, [accountType]);
+
+  useEffect(() => {
+    if (memberPaywallOpen) {
+      trackOnboardingStep("subscription_ack_viewed", "view");
+    }
+  }, [memberPaywallOpen]);
   const [resumeSubscriptionAckOnly, setResumeSubscriptionAckOnly] = useState(false);
-  const [agreedTerms, setAgreedTerms] = useState(false);
-  const [agreedPrivacy, setAgreedPrivacy] = useState(false);
-  const [agreedGuidelines, setAgreedGuidelines] = useState(false);
+  const [agreedLegal, setAgreedLegal] = useState(false);
   const [missingFieldId, setMissingFieldId] = useState<string | null>(null);
   const [showRequiredHelper, setShowRequiredHelper] = useState(false);
   const [employerConfirmOpen, setEmployerConfirmOpen] = useState(false);
@@ -209,11 +211,7 @@ export default function OnboardingPage() {
       // Pre-fill name from Google OAuth metadata
       const googleName = user.user_metadata?.full_name || user.user_metadata?.name;
       if (googleName) {
-        const parts = (googleName as string).trim().split(/\s+/);
-        setFirstName(parts[0] || "");
-        setLastName(parts.slice(1).join(" ") || "");
-        setEmpFirstName(parts[0] || "");
-        setEmpLastName(parts.slice(1).join(" ") || "");
+        setFullName(String(googleName).trim());
       }
 
       // Check for duplicate accounts sharing this email (e.g. Google + email/password)
@@ -255,11 +253,8 @@ export default function OnboardingPage() {
       });
 
       if (profile?.must_complete_onboarding) {
-        setWasProvisioned(true);
-        if (profile.first_name) {
-          setFirstName(profile.first_name);
-          setEmpFirstName(profile.first_name);
-        }
+        const prefilled = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim();
+        if (prefilled) setFullName(prefilled);
         const params = new URLSearchParams(window.location.search);
         if (params.get("notice") === "required" || params.get("error") === "incomplete") {
           setShowRequiredHelper(true);
@@ -312,9 +307,14 @@ export default function OnboardingPage() {
       }
 
       // Pre-fill name from existing profile if available
-      if (profile?.first_name) {
-        setFirstName(profile.first_name);
-        setEmpFirstName(profile.first_name);
+      const profileFullName = [profile?.first_name, profile?.last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      if (profileFullName) {
+        setFullName(profileFullName);
+      } else if (profile?.display_name?.trim()) {
+        setFullName(profile.display_name.trim());
       }
 
       // Pre-fill referral code from URL param or localStorage
@@ -356,25 +356,21 @@ export default function OnboardingPage() {
   async function handleSubmit() {
     if (!userId || !accountType) return;
 
-    const { data: { user: authUser } } = await supabase.auth.getUser();
+    if (!parseSignupFullName(fullName)) return markMissingField("field-full-name");
 
     if (accountType === "member") {
-      if (!firstName.trim()) return markMissingField("field-member-first-name");
-      if (!lastName.trim()) return markMissingField("field-member-last-name");
       if (!service) return markMissingField("field-member-service");
       if (!status) return markMissingField("field-member-status");
     } else {
-      if (!empFirstName.trim()) return markMissingField("field-employer-first-name");
-      if (!empLastName.trim()) return markMissingField("field-employer-last-name");
       if (!companyName.trim()) return markMissingField("field-employer-company");
     }
 
-    if (!agreedTerms) return markMissingField("field-legal-terms");
-    if (!agreedPrivacy) return markMissingField("field-legal-privacy");
-    if (!agreedGuidelines) return markMissingField("field-legal-guidelines");
+    if (!agreedLegal) return markMissingField("field-legal-agreement");
 
     setMissingFieldId(null);
     setShowRequiredHelper(false);
+
+    trackOnboardingStep("onboarding_submit", "action", { accountType });
 
     setSubmitting(true);
     try {
@@ -405,8 +401,7 @@ export default function OnboardingPage() {
         },
         body: JSON.stringify({
           accountType,
-          firstName: accountType === "member" ? firstName : empFirstName,
-          lastName: accountType === "member" ? lastName : empLastName,
+          fullName: fullName.trim(),
           service,
           status,
           skillBadge,
@@ -481,6 +476,7 @@ export default function OnboardingPage() {
       alert("Could not save subscription acknowledgement: " + error.message);
       return;
     }
+    trackOnboardingStep("subscription_ack_done", "success");
     setMemberPaywallOpen(false);
     const { data: { user: authUser } } = await supabase.auth.getUser();
     const isGoogle = authUser ? isOAuthOnlyGoogleUser(authUser) : false;
@@ -651,44 +647,31 @@ export default function OnboardingPage() {
                 {accountType === "employer" ? "Employer Account" : "EOD Community Member"}
               </div>
 
+              <div
+                id="field-full-name"
+                style={isMissing("field-full-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+              >
+                <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Full Name *</label>
+                <input
+                  value={fullName}
+                  onChange={(e) => {
+                    setFullName(e.target.value);
+                    if (parseSignupFullName(e.target.value)) clearMissingFieldIfMatch("field-full-name");
+                  }}
+                  style={inputStyle}
+                  placeholder="First and last name"
+                  autoComplete="name"
+                />
+                {isMissing("field-full-name") && (
+                  <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>
+                    {SIGNUP_FULL_NAME_REQUIRED_MESSAGE}
+                  </div>
+                )}
+              </div>
+
               {/* MEMBER FORM */}
               {accountType === "member" && (
                 <>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <div
-                      id="field-member-first-name"
-                      style={isMissing("field-member-first-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
-                    >
-                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>First Name *</label>
-                      <input
-                        value={firstName}
-                        onChange={(e) => {
-                          setFirstName(e.target.value);
-                          if (e.target.value.trim()) clearMissingFieldIfMatch("field-member-first-name");
-                        }}
-                        style={inputStyle}
-                        placeholder="First name"
-                      />
-                      {isMissing("field-member-first-name") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
-                    </div>
-                    <div
-                      id="field-member-last-name"
-                      style={isMissing("field-member-last-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
-                    >
-                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Last Name *</label>
-                      <input
-                        value={lastName}
-                        onChange={(e) => {
-                          setLastName(e.target.value);
-                          if (e.target.value.trim()) clearMissingFieldIfMatch("field-member-last-name");
-                        }}
-                        style={inputStyle}
-                        placeholder="Last name"
-                      />
-                      {isMissing("field-member-last-name") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
-                    </div>
-                  </div>
-
                   <div
                     id="field-member-service"
                     style={isMissing("field-member-service") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
@@ -788,41 +771,6 @@ export default function OnboardingPage() {
               {/* EMPLOYER FORM */}
               {accountType === "employer" && (
                 <>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <div
-                      id="field-employer-first-name"
-                      style={isMissing("field-employer-first-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
-                    >
-                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>First Name *</label>
-                      <input
-                        value={empFirstName}
-                        onChange={(e) => {
-                          setEmpFirstName(e.target.value);
-                          if (e.target.value.trim()) clearMissingFieldIfMatch("field-employer-first-name");
-                        }}
-                        style={inputStyle}
-                        placeholder="First name"
-                      />
-                      {isMissing("field-employer-first-name") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
-                    </div>
-                    <div
-                      id="field-employer-last-name"
-                      style={isMissing("field-employer-last-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
-                    >
-                      <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Last Name *</label>
-                      <input
-                        value={empLastName}
-                        onChange={(e) => {
-                          setEmpLastName(e.target.value);
-                          if (e.target.value.trim()) clearMissingFieldIfMatch("field-employer-last-name");
-                        }}
-                        style={inputStyle}
-                        placeholder="Last name"
-                      />
-                      {isMissing("field-employer-last-name") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
-                    </div>
-                  </div>
-
                   <div
                     id="field-employer-company"
                     style={isMissing("field-employer-company") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
@@ -847,86 +795,41 @@ export default function OnboardingPage() {
               )}
 
               <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 14, marginTop: 4 }}>
-                <div style={{ fontWeight: 900, fontSize: 14, marginBottom: 10, color: "#111827" }}>Legal Agreements *</div>
-                <div style={{ fontSize: 12, color: "#374151", marginBottom: 10 }}>
-                  Review each document below. These are required to create your account.
-                </div>
-
-                <div style={{ display: "grid", gap: 12 }}>
-                  <div
-                    id="field-legal-terms"
-                    style={isMissing("field-legal-terms") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13, color: "#111827" }}>Terms of Service *</span>
-                      <Link href="/terms" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
+                <div
+                  id="field-legal-agreement"
+                  style={isMissing("field-legal-agreement") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 10 } : undefined}
+                >
+                  <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.55, cursor: "pointer", color: "#111827" }}>
+                    <input
+                      type="checkbox"
+                      checked={agreedLegal}
+                      onChange={(e) => {
+                        setAgreedLegal(e.target.checked);
+                        if (e.target.checked) clearMissingFieldIfMatch("field-legal-agreement");
+                      }}
+                      style={{ marginTop: 3, flexShrink: 0 }}
+                    />
+                    <span>
+                      I agree to the{" "}
+                      <Link href="/terms" target="_blank" style={{ color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                        Terms of Service
+                      </Link>
+                      ,{" "}
+                      <Link href="/privacy" target="_blank" style={{ color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                        Privacy Policy
+                      </Link>
+                      , and{" "}
+                      <Link href="/guidelines" target="_blank" style={{ color: "#2563eb", fontWeight: 700, textDecoration: "none" }}>
+                        Community Guidelines
+                      </Link>
+                      .
+                    </span>
+                  </label>
+                  {isMissing("field-legal-agreement") && (
+                    <div style={{ marginTop: 8, marginLeft: 28, fontSize: 12, color: "#047857", fontWeight: 700 }}>
+                      Please accept the agreements to continue.
                     </div>
-                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", color: "#1f2937" }}>
-                      {TERMS_OF_SERVICE_TEXT}
-                    </div>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#111827" }}>
-                      <input
-                        type="checkbox"
-                        checked={agreedTerms}
-                        onChange={(e) => {
-                          setAgreedTerms(e.target.checked);
-                          if (e.target.checked) clearMissingFieldIfMatch("field-legal-terms");
-                        }}
-                      />
-                      I agree to the Terms of Service
-                    </label>
-                    {isMissing("field-legal-terms") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
-                  </div>
-
-                  <div
-                    id="field-legal-privacy"
-                    style={isMissing("field-legal-privacy") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13, color: "#111827" }}>Privacy Policy *</span>
-                      <Link href="/privacy" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
-                    </div>
-                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", color: "#1f2937" }}>
-                      {PRIVACY_POLICY_TEXT}
-                    </div>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#111827" }}>
-                      <input
-                        type="checkbox"
-                        checked={agreedPrivacy}
-                        onChange={(e) => {
-                          setAgreedPrivacy(e.target.checked);
-                          if (e.target.checked) clearMissingFieldIfMatch("field-legal-privacy");
-                        }}
-                      />
-                      I agree to the Privacy Policy
-                    </label>
-                    {isMissing("field-legal-privacy") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
-                  </div>
-
-                  <div
-                    id="field-legal-guidelines"
-                    style={isMissing("field-legal-guidelines") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6, gap: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13, color: "#111827" }}>Community Guidelines *</span>
-                      <Link href="/guidelines" target="_blank" style={{ fontSize: 12, fontWeight: 700, color: "#2563eb", textDecoration: "none" }}>Open full page</Link>
-                    </div>
-                    <div style={{ maxHeight: 150, overflowY: "auto", border: "1px solid #d1d5db", borderRadius: 10, background: "#f9fafb", padding: 10, fontSize: 12, lineHeight: 1.5, whiteSpace: "pre-wrap", color: "#1f2937" }}>
-                      {COMMUNITY_GUIDELINES_TEXT}
-                    </div>
-                    <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", color: "#111827" }}>
-                      <input
-                        type="checkbox"
-                        checked={agreedGuidelines}
-                        onChange={(e) => {
-                          setAgreedGuidelines(e.target.checked);
-                          if (e.target.checked) clearMissingFieldIfMatch("field-legal-guidelines");
-                        }}
-                      />
-                      I agree to the Community Guidelines
-                    </label>
-                    {isMissing("field-legal-guidelines") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
-                  </div>
+                  )}
                 </div>
               </div>
 

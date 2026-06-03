@@ -4,6 +4,8 @@ import { isOAuthOnlyGoogleUser } from "@/app/lib/verificationAccess";
 import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
 import { VERIFICATION } from "@/app/lib/verificationStatus";
 import {
+  parseSignupFullName,
+  SIGNUP_FULL_NAME_REQUIRED_MESSAGE,
   validateEmployerOnboardingInput,
   validateMemberOnboardingInput,
 } from "@/app/lib/profileCompleteness";
@@ -12,12 +14,14 @@ import {
   lookupReferrerByCode,
   referrerDisplayName,
 } from "@/app/lib/referralReferrer";
+import { insertOnboardingEvent } from "@/app/lib/onboardingAnalyticsServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type OnboardingBody = {
   accountType?: unknown;
+  fullName?: unknown;
   firstName?: unknown;
   lastName?: unknown;
   service?: unknown;
@@ -55,8 +59,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Account type is required." }, { status: 400 });
   }
 
-  const firstName = typeof body.firstName === "string" ? body.firstName : "";
-  const lastName = typeof body.lastName === "string" ? body.lastName : "";
+  const fullNameRaw = typeof body.fullName === "string" ? body.fullName.trim() : "";
+  let firstName = typeof body.firstName === "string" ? body.firstName.trim() : "";
+  let lastName = typeof body.lastName === "string" ? body.lastName.trim() : "";
+
+  if (fullNameRaw) {
+    const parsed = parseSignupFullName(fullNameRaw);
+    if (!parsed) {
+      return NextResponse.json({ error: SIGNUP_FULL_NAME_REQUIRED_MESSAGE }, { status: 400 });
+    }
+    firstName = parsed.firstName;
+    lastName = parsed.lastName;
+  }
+
   const service = typeof body.service === "string" ? body.service : "";
   const status = typeof body.status === "string" ? body.status : "";
   const skillBadge = typeof body.skillBadge === "string" ? body.skillBadge : "";
@@ -185,6 +200,12 @@ export async function POST(req: NextRequest) {
       { status: 500 },
     );
   }
+
+  void insertOnboardingEvent(adminClient, userId, "onboarding_saved", "success", {
+    accountType,
+    isGoogle,
+    wasProvisioned,
+  });
 
   // Auto-vouch: when a referred member signs up, the referring user
   // automatically casts 1 of the 3 community vouches needed to verify them.

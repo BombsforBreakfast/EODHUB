@@ -27,13 +27,83 @@ export type SignupProfileFields = {
   account_type?: string | null;
   first_name?: string | null;
   last_name?: string | null;
+  /** Mirrored OAuth / display label — may exist while first/last columns are empty. */
+  name?: string | null;
+  display_name?: string | null;
   service?: string | null;
   company_name?: string | null;
   created_at?: string | null;
 };
 
+/** Best-effort split of a full name string into first + last. */
+export function splitFullName(fullName: string): { first_name: string; last_name: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { first_name: "", last_name: "" };
+  if (parts.length === 1) return { first_name: parts[0], last_name: "" };
+  return { first_name: parts[0], last_name: parts.slice(1).join(" ") };
+}
+
+export const SIGNUP_FULL_NAME_REQUIRED_MESSAGE =
+  "Please enter your first and last name.";
+
+/** Split a single full-name field into first + last; null when last name is missing. */
+export function parseSignupFullName(fullName: string): {
+  firstName: string;
+  lastName: string;
+} | null {
+  const parsed = splitFullName(fullName);
+  if (!parsed.first_name || !parsed.last_name) return null;
+  return { firstName: parsed.first_name, lastName: parsed.last_name };
+}
+
+/** Read display name from Supabase Auth user_metadata (Google OAuth, etc.). */
+export function authMetadataDisplayName(
+  metadata: Record<string, unknown> | null | undefined,
+): string | null {
+  if (!metadata) return null;
+  const full =
+    (typeof metadata.full_name === "string" && metadata.full_name.trim()) ||
+    (typeof metadata.name === "string" && metadata.name.trim()) ||
+    "";
+  if (full) return full;
+  const given = typeof metadata.given_name === "string" ? metadata.given_name.trim() : "";
+  const family = typeof metadata.family_name === "string" ? metadata.family_name.trim() : "";
+  const combined = [given, family].filter(Boolean).join(" ");
+  return combined || null;
+}
+
+/**
+ * Resolve signup first/last from profile columns, falling back to mirrored
+ * OAuth name or display_name (same sources the admin UI uses for labels).
+ */
+export function resolveSignupNames(profile: SignupProfileFields): {
+  first_name: string;
+  last_name: string;
+} {
+  const existingFirst = profile.first_name?.trim() ?? "";
+  const existingLast = profile.last_name?.trim() ?? "";
+  if (existingFirst && existingLast) {
+    return { first_name: existingFirst, last_name: existingLast };
+  }
+
+  const label =
+    profile.display_name?.trim() ||
+    profile.name?.trim() ||
+    "";
+  if (!label) {
+    return { first_name: existingFirst, last_name: existingLast };
+  }
+
+  const parsed = splitFullName(label);
+  return {
+    first_name: existingFirst || parsed.first_name,
+    last_name: existingLast || parsed.last_name,
+  };
+}
+
 export function hasRequiredSignupNames(profile: SignupProfileFields): boolean {
-  return !!(profile.first_name?.trim() && profile.last_name?.trim());
+  const { first_name, last_name } = resolveSignupNames(profile);
+  return !!(first_name && last_name);
 }
 
 /** Legacy accounts keep existing access even when name/service fields are empty. */
@@ -57,8 +127,7 @@ export function isEmployerAccount(profile: SignupProfileFields): boolean {
 export function isSignupProfileComplete(profile: SignupProfileFields): boolean {
   if (profile.is_pure_admin) return true;
 
-  const firstName = profile.first_name?.trim() ?? "";
-  const lastName = profile.last_name?.trim() ?? "";
+  const { first_name: firstName, last_name: lastName } = resolveSignupNames(profile);
   if (!firstName || !lastName) return false;
 
   if (isEmployerAccount(profile)) {
@@ -72,9 +141,10 @@ export function isSignupProfileComplete(profile: SignupProfileFields): boolean {
 export function signupProfileMissingFields(profile: SignupProfileFields): string[] {
   if (profile.is_pure_admin) return [];
 
+  const { first_name, last_name } = resolveSignupNames(profile);
   const missing: string[] = [];
-  if (!profile.first_name?.trim()) missing.push("first name");
-  if (!profile.last_name?.trim()) missing.push("last name");
+  if (!first_name) missing.push("first name");
+  if (!last_name) missing.push("last name");
 
   if (isEmployerAccount(profile)) {
     if (!profile.company_name?.trim()) missing.push("company name");

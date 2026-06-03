@@ -6,6 +6,7 @@ import {
   findAuthUsersByEmail,
 } from "@/app/lib/auth/adminAuthLookup";
 import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
+import { insertOnboardingEvent } from "@/app/lib/onboardingAnalyticsServer";
 import { logMxCheckTelemetry } from "@/app/lib/server/emailMxCheck";
 import {
   logAllowed,
@@ -330,6 +331,10 @@ export async function POST(req: NextRequest) {
         request: req,
         userExistsInAuth: true,
         userExistsInProfiles: false,
+      });
+    } else {
+      void insertOnboardingEvent(client, newUserId, "signup_complete", "success", {
+        provider: "email",
       });
     }
   }
