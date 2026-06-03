@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "../../../lib/lib/supabaseClient";
+import { getSupabaseUser, supabase } from "../../../lib/lib/supabaseClient";
 import DesktopLayout from "../../../components/DesktopLayout";
 import ImageCropDialog from "../../../components/ImageCropDialog";
 import { useTheme } from "../../../lib/ThemeContext";
@@ -102,6 +102,7 @@ import {
   type KnownPreviewUser,
   type ProfileConnectionsData,
 } from "../../../lib/queries/profileConnections";
+import { fetchViewerProfileCached } from "../../../lib/queries/viewerProfile";
 import { MOBILE_SHELL_MAX, STACKED_PROFILE_MAX } from "../../../lib/viewportLayout";
 
 type Profile = {
@@ -2636,7 +2637,7 @@ export default function PublicProfilePage() {
         return;
       }
 
-      const { data, error } = await supabase.auth.getUser();
+      const { data, error } = await getSupabaseUser();
 
       if (error) {
         console.error("Auth error:", error);
@@ -2649,11 +2650,14 @@ export default function PublicProfilePage() {
       setPlankHolderChallenge(null);
 
       if (signedInUserId) {
-        const { data: nameData } = await supabase.from("profiles").select("first_name, last_name, is_employer, is_admin").eq("user_id", signedInUserId).maybeSingle();
-        const nd = nameData as { first_name: string | null; last_name: string | null; is_employer: boolean | null; is_admin?: boolean | null } | null;
-        setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
-        setViewerIsEmployer(!!nd?.is_employer);
-        setViewerIsAdmin(!!nd?.is_admin);
+        const viewerProfile = data.user
+          ? await fetchViewerProfileCached(queryClient, supabase, data.user)
+          : null;
+        setCurrentUserName(
+          `${viewerProfile?.first_name || ""} ${viewerProfile?.last_name || ""}`.trim() || "Someone",
+        );
+        setViewerIsEmployer(!!viewerProfile?.is_employer);
+        setViewerIsAdmin(!!viewerProfile?.is_admin);
 
         const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
         const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);

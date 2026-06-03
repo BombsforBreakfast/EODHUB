@@ -1715,7 +1715,7 @@ export default function SidebarPage() {
       <div className={isMobile ? "sidebar-mobile-grid" : undefined} style={{
         border: `1px solid ${t.border}`, borderRadius: isMobile ? 12 : 16, overflow: "hidden", background: t.surface,
         display: "grid",
-        gridTemplateColumns: isMobile ? "1fr" : "320px 1fr",
+        gridTemplateColumns: isMobile ? "1fr" : "400px minmax(0, 1fr)",
         gridTemplateRows: "1fr",
         height: "calc(100dvh - 120px)",
         width: "100%",

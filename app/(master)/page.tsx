@@ -6,7 +6,7 @@ import React, { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState }
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
-import { supabase } from "../lib/lib/supabaseClient";
+import { getSupabaseUser, supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import EmojiPickerButton from "../components/EmojiPickerButton";
 import GifPickerButton from "../components/GifPickerButton";
@@ -132,18 +132,19 @@ import {
 import { MemorialDisclaimer } from "../components/memorial/MemorialDisclaimer";
 import { memorialTheme } from "../components/memorial/memorialModalShared";
 import { getServiceRingColor } from "../lib/serviceBranchVisual";
-import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { ensureWelcomeSidebarOnce } from "../lib/welcomeSidebarClient";
 import {
-  ONBOARDING_GATE_PROFILE_SELECT,
   onboardingRedirectUrl,
   resolvePreAccessRedirectPath,
   shouldRedirectToOnboarding,
-  type OnboardingGateProfile,
 } from "../lib/onboardingGate";
 import {
   hasFullPlatformAccess,
 } from "../lib/verificationAccess";
+import {
+  fetchViewerProfileCached,
+  invalidateViewerProfile,
+} from "../lib/queries/viewerProfile";
 import {
   dismissPlankHolderModal,
   fetchPlankHolderProgress,
@@ -4712,7 +4713,7 @@ export default function HomePage() {
     async function init() {
       const loadSeq = ++activeProfileLoadSeqRef.current;
       try {
-        const { data, error } = await supabase.auth.getUser();
+        const { data, error } = await getSupabaseUser();
 
         if (error) {
           console.error("Auth load error:", error);
@@ -4729,25 +4730,7 @@ export default function HomePage() {
         }
 
         // Check verification status ΓÇö unverified users go to /pending
-        const { profile: profileCheck } = await loadActiveProfile<
-          OnboardingGateProfile & {
-            user_id: string;
-            email: string | null;
-            display_name: string | null;
-            photo_url: string | null;
-            status: string | null;
-            professional_tags: string[] | null;
-            unit_history_tags: string[] | null;
-            subscription_status: string | null;
-            referral_code: string | null;
-            is_admin: boolean | null;
-            show_memorial_feed_cards: boolean | null;
-            nav_helper_seen: boolean | null;
-          }
-        >(supabase, authUser, {
-          route: "app/(master)/page.tsx:init",
-          select: `${ONBOARDING_GATE_PROFILE_SELECT}, email, display_name, photo_url, status, professional_tags, unit_history_tags, subscription_status, referral_code, is_admin, show_memorial_feed_cards, nav_helper_seen, verification_status, email_verified, admin_verified`,
-        });
+        const profileCheck = await fetchViewerProfileCached(queryClient, supabase, authUser);
         if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
         const isPureAdminProfile = !!(profileCheck as { is_pure_admin?: boolean | null } | null)?.is_pure_admin;
@@ -4760,6 +4743,7 @@ export default function HomePage() {
           const fn = parts[0] || "";
           const ln = parts.slice(1).join(" ") || "";
           await supabase.from("profiles").update({ first_name: fn, last_name: ln }).eq("user_id", currentUserId);
+          invalidateViewerProfile(queryClient, currentUserId);
         }
 
         if (!profileCheck) {
