@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import ShareListingToFeedModal, { type ShareListingPreview } from "../components/ShareListingToFeedModal";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
@@ -26,6 +27,7 @@ import {
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { jobListingCutoffIso } from "../lib/jobRetention";
+import { shareJobToFeed } from "../lib/shareJobToFeed";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 import { fetchApprovedJobs, JOBS_LIST_STALE_MS } from "../lib/queries/jobs";
 import {
@@ -94,6 +96,19 @@ function formatSource(sourceType: string | null): string {
   }
 }
 
+function jobSharePreview(job: JobModalData): ShareListingPreview {
+  return {
+    id: job.id,
+    website_url: job.apply_url,
+    business_name: job.title || job.og_title || "Job listing",
+    custom_blurb: job.description || job.og_description,
+    og_title: job.og_title || job.title,
+    og_description: job.og_description || job.description,
+    og_image: job.og_image,
+    og_site_name: job.og_site_name || job.company_name || "Jobs",
+  };
+}
+
 export default function JobsPage() {
   useOnboardingGate("app/jobs/page.tsx");
   usePageTracking(PAGE_TRACKING.jobs);
@@ -107,6 +122,9 @@ export default function JobsPage() {
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [togglingJobId, setTogglingJobId] = useState<string | null>(null);
+  const [sharingJobId, setSharingJobId] = useState<string | null>(null);
+  const [shareComposerJob, setShareComposerJob] = useState<JobModalData | null>(null);
+  const [jobNotice, setJobNotice] = useState<string | null>(null);
   const [savedExpanded, setSavedExpanded] = useState(false);
   const [detailsJob, setDetailsJob] = useState<JobModalData | null>(null);
 
@@ -162,6 +180,38 @@ export default function JobsPage() {
     },
     [queryClient, userId, savedJobIds]
   );
+
+  const openShareComposer = useCallback((job: JobModalData) => {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    setShareComposerJob(job);
+  }, [userId]);
+
+  const handleShareJob = useCallback(async (job: JobModalData, content: string) => {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    if (sharingJobId === job.id) return;
+    setSharingJobId(job.id);
+    setJobNotice(null);
+    try {
+      const result = await shareJobToFeed(supabase, job.id, content);
+      if (!result.ok) {
+        setJobNotice(result.error ?? "Could not share this job to the feed.");
+        return;
+      }
+      setJobNotice("Job shared to the feed.");
+      setShareComposerJob(null);
+    } catch {
+      setJobNotice("Could not share this job to the feed.");
+    } finally {
+      setSharingJobId(null);
+      window.setTimeout(() => setJobNotice(null), 4500);
+    }
+  }, [sharingJobId, userId]);
 
   useEffect(() => {
     let mounted = true;
@@ -248,6 +298,19 @@ export default function JobsPage() {
         color: t.text,
       }}
     >
+      <ShareListingToFeedModal
+        key={shareComposerJob?.id ?? "closed"}
+        listing={shareComposerJob ? jobSharePreview(shareComposerJob) : null}
+        label="Job"
+        submitting={Boolean(shareComposerJob && sharingJobId === shareComposerJob.id)}
+        onClose={() => {
+          if (!sharingJobId) setShareComposerJob(null);
+        }}
+        onSubmit={(content) => {
+          if (shareComposerJob) void handleShareJob(shareComposerJob, content);
+        }}
+      />
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 28, fontWeight: 900 }}>Jobs</h1>
@@ -348,6 +411,12 @@ export default function JobsPage() {
         </div>
       )}
 
+      {jobNotice && (
+        <div style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 10, padding: "10px 12px", fontSize: 13, fontWeight: 700, marginBottom: 14 }}>
+          {jobNotice}
+        </div>
+      )}
+
       {!loading && userId && (
         <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, background: t.surface, padding: 12, marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
@@ -422,6 +491,9 @@ export default function JobsPage() {
                       canSave={!!userId}
                       isTogglingSave={togglingJobId === job.job_id}
                       onToggleSave={toggleSaveJob}
+                      canShare={!!userId}
+                      isSharing={sharingJobId === job.job_id}
+                      onShare={openShareComposer}
                       size="compact"
                     />
                   </div>
@@ -459,6 +531,9 @@ export default function JobsPage() {
                 canSave={!!userId}
                 isTogglingSave={togglingJobId === job.id}
                 onToggleSave={toggleSaveJob}
+                canShare={!!userId}
+                isSharing={sharingJobId === job.id}
+                onShare={openShareComposer}
                 formatPay={formatPay}
                 formatSource={formatSource}
               />
@@ -476,6 +551,9 @@ export default function JobsPage() {
         canSave={!!userId}
         isTogglingSave={detailsJob ? togglingJobId === detailsJob.id : false}
         onToggleSave={toggleSaveJob}
+        canShare={!!userId}
+        isSharing={detailsJob ? sharingJobId === detailsJob.id : false}
+        onShare={openShareComposer}
       />
     </div>
   );

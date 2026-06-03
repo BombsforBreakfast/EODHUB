@@ -15,6 +15,9 @@ type Props = {
   canSave: boolean;
   isTogglingSave: boolean;
   onToggleSave: (job: JobModalData) => void | Promise<void>;
+  canShare?: boolean;
+  isSharing?: boolean;
+  onShare?: (job: JobModalData) => void;
   formatPay: (min: number | null, max: number | null) => string;
   formatSource: (sourceType: string | null) => string;
 };
@@ -26,6 +29,9 @@ export default function JobGridCard({
   canSave,
   isTogglingSave,
   onToggleSave,
+  canShare = false,
+  isSharing = false,
+  onShare,
   formatPay,
   formatSource,
 }: Props) {
@@ -80,6 +86,9 @@ export default function JobGridCard({
             canSave={canSave}
             isTogglingSave={isTogglingSave}
             onToggleSave={onToggleSave}
+            canShare={canShare}
+            isSharing={isSharing}
+            onShare={onShare}
           />
         </div>
 

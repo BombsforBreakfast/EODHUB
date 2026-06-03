@@ -59,6 +59,7 @@ const STALE_FLAG_REASON_LABELS: Record<string, string> = {
 const BUSINESS_LISTINGS_PAGE_SIZE = 25;
 const BUSINESS_CLAIMS_PAGE_SIZE = 25;
 const JOBS_PAGE_SIZE = 25;
+const USERS_PAGE_SIZE = 50;
 const BUSINESS_LISTING_ADMIN_COLUMNS =
   "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, tags, managed_by_user_id";
 
@@ -192,7 +193,7 @@ function adminUserDisplayName(u: UserProfile): string {
   );
 }
 
-type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "denied";
+type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "unverified" | "denied";
 
 function isAtAdminReviewTier(u: UserProfile): boolean {
   return (
@@ -202,34 +203,6 @@ function isAtAdminReviewTier(u: UserProfile): boolean {
       u.verification_status === "pending_admin_review" ||
       u.verification_status === "pending")
   );
-}
-
-function userMatchesStatusFilter(u: UserProfile, filter: UserStatusFilter): boolean {
-  if (filter === "all") return true;
-  if (filter === "verified") return u.verification_status === "verified";
-  if (filter === "denied") return u.verification_status === "denied";
-  if (filter === "pending") return isAtAdminReviewTier(u);
-  if (filter === "onboarding") {
-    if (u.verification_status === "verified") return false;
-    if (u.verification_status === "denied") return false;
-    return !!u.signup_incomplete || !isSignupProfileComplete(u);
-  }
-  return false;
-}
-
-function userMatchesSearchQuery(u: UserProfile, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  const haystack = [
-    adminUserDisplayName(u),
-    u.email ?? "",
-    u.service ?? "",
-    u.role ?? "",
-    u.user_id,
-  ]
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(q);
 }
 
 type UsersFallbackQueryResult = {
@@ -809,6 +782,10 @@ export default function AdminPage() {
   const [jobsTotalCount, setJobsTotalCount] = useState(0);
   const [jobsLoadingMore, setJobsLoadingMore] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [usersTotalCount, setUsersTotalCount] = useState(0);
+  const [usersLoadingMore, setUsersLoadingMore] = useState(false);
+  const [usersLoadingFullList, setUsersLoadingFullList] = useState(false);
+  const [usersShowingFullList, setUsersShowingFullList] = useState(false);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [groupSearch, setGroupSearch] = useState("");
   const [flags, setFlags] = useState<Flag[]>([]);
@@ -818,16 +795,9 @@ export default function AdminPage() {
   const [staleFlagGroups, setStaleFlagGroups] = useState<StaleFlagJobGroup[]>([]);
   const [staleFlagsLoading, setStaleFlagsLoading] = useState(false);
   const [resolvingStaleJobId, setResolvingStaleJobId] = useState<string | null>(null);
-  const [userFilter, setUserFilter] = useState<UserStatusFilter>("pending");
+  const [userFilter, setUserFilter] = useState<UserStatusFilter>("all");
   const [userSearch, setUserSearch] = useState("");
-
-  const filteredAdminUsers = useMemo(
-    () =>
-      users.filter(
-        (u) => userMatchesStatusFilter(u, userFilter) && userMatchesSearchQuery(u, userSearch),
-      ),
-    [users, userFilter, userSearch],
-  );
+  const [debouncedUserSearch, setDebouncedUserSearch] = useState("");
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
@@ -1808,9 +1778,18 @@ export default function AdminPage() {
     }
   }
 
-  async function loadUsers() {
+  async function loadUsers(page = 0, append = false, full = false) {
+    if (append) setUsersLoadingMore(true);
+    if (full) setUsersLoadingFullList(true);
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch("/api/admin/users", {
+    const params = new URLSearchParams({
+      status: userFilter,
+      q: debouncedUserSearch.trim(),
+      offset: String(page * USERS_PAGE_SIZE),
+      limit: String(USERS_PAGE_SIZE),
+    });
+    if (full) params.set("full", "true");
+    const res = await fetch(`/api/admin/users?${params.toString()}`, {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
     if (!res.ok) {
@@ -1818,24 +1797,47 @@ export default function AdminPage() {
       let fallback = (await supabase
         .from("profiles")
         .select("user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, referred_by, referrer_user_id")
-        .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
+        .order("created_at", { ascending: false })
+        .limit(USERS_PAGE_SIZE)) as UsersFallbackQueryResult;
       if (fallback.error) {
         fallback = (await supabase
           .from("profiles")
           .select("user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, referred_by, referrer_user_id")
-          .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
+          .order("created_at", { ascending: false })
+          .limit(USERS_PAGE_SIZE)) as UsersFallbackQueryResult;
       }
       if (fallback.error) {
         fallback = (await supabase
           .from("profiles")
           .select("user_id, first_name, last_name, display_name, role, service, company_name, account_type, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at")
-          .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
+          .order("created_at", { ascending: false })
+          .limit(USERS_PAGE_SIZE)) as UsersFallbackQueryResult;
       }
-      if (!fallback.error) setUsers((fallback.data ?? []).map((u) => ({ ...u, email: (u as { email?: string | null }).email ?? null })) as UserProfile[]);
+      if (!fallback.error) {
+        const fallbackUsers = (fallback.data ?? []).map((u) => ({ ...u, email: (u as { email?: string | null }).email ?? null })) as UserProfile[];
+        setUsers(fallbackUsers);
+        setUsersTotalCount(fallbackUsers.length);
+        setUsersShowingFullList(false);
+      }
+      setUsersLoadingMore(false);
+      setUsersLoadingFullList(false);
       return;
     }
     const json = await res.json();
-    setUsers((json.users ?? []) as UserProfile[]);
+    const nextUsers = append ? [...users, ...((json.users ?? []) as UserProfile[])] : ((json.users ?? []) as UserProfile[]);
+    setUsers(nextUsers);
+    setUsersTotalCount(typeof json.totalCount === "number" ? json.totalCount : nextUsers.length);
+    setUsersShowingFullList(!!json.full || full);
+    setUsersLoadingMore(false);
+    setUsersLoadingFullList(false);
+  }
+
+  async function loadMoreUsers() {
+    await loadUsers(Math.floor(users.length / USERS_PAGE_SIZE), true, false);
+  }
+
+  async function loadFullUsersList() {
+    await loadUsers(0, false, true);
   }
 
   async function loadGroups(search = groupSearch) {
@@ -1976,7 +1978,6 @@ export default function AdminPage() {
       loadJobs();
       loadStaleFlags();
     }
-    if (activeTab === "users") loadUsers();
     if (activeTab === "groups") loadGroups();
     if (activeTab === "flags") loadFlags();
     if (activeTab === "events") {
@@ -1994,6 +1995,18 @@ export default function AdminPage() {
     if (activeTab === "waitlist") void loadWaitlist();
     if (activeTab === "lemon_lot") void loadLemonLot();
   }, [pendingOnly, activeTab, authorized, engagementRange, pageAnalyticsRange, onboardingFunnelRange, newsFilter, bugsFilter]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setDebouncedUserSearch(userSearch.trim());
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [userSearch]);
+
+  useEffect(() => {
+    if (!authorized || activeTab !== "users") return;
+    void loadUsers();
+  }, [authorized, activeTab, userFilter, debouncedUserSearch]);
 
   useEffect(() => {
     if (!authorized) return;
@@ -4382,10 +4395,13 @@ export default function AdminPage() {
           <div style={{ marginTop: 20 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
               <div style={{ display: "flex", gap: 6 }}>
-                {(["all", "pending", "onboarding", "verified", "denied"] as const).map((f) => (
+                {(["all", "pending", "onboarding", "verified", "unverified", "denied"] as const).map((f) => (
                   <button
                     key={f}
-                    onClick={() => setUserFilter(f)}
+                    onClick={() => {
+                      setUsersShowingFullList(false);
+                      setUserFilter(f);
+                    }}
                     style={{
                       padding: "6px 14px", borderRadius: 20, fontSize: 13, fontWeight: 700, cursor: "pointer",
                       border: userFilter === f ? "none" : `1px solid ${t.border}`,
@@ -4394,10 +4410,7 @@ export default function AdminPage() {
                     }}
                   >
                     {f === "onboarding" ? "Onboarding" : f.charAt(0).toUpperCase() + f.slice(1)}
-                    {" "}
-                    <span style={{ opacity: 0.7 }}>
-                      ({users.filter((u) => userMatchesStatusFilter(u, f)).length})
-                    </span>
+                    {userFilter === f && <span style={{ opacity: 0.7, marginLeft: 6 }}>({usersTotalCount})</span>}
                   </button>
                 ))}
               </div>
@@ -4419,28 +4432,51 @@ export default function AdminPage() {
                   }}
                 />
                 {userSearch.trim() && (
-                  <button type="button" style={actionBtn("#6b7280")} onClick={() => setUserSearch("")}>
+                  <button
+                    type="button"
+                    style={actionBtn("#6b7280")}
+                    onClick={() => {
+                      setUsersShowingFullList(false);
+                      setUserSearch("");
+                    }}
+                  >
                     Clear
                   </button>
                 )}
                 {userFilter === "onboarding" && (
                   <button
                     type="button"
-                    onClick={() => downloadOnboardingUsersCsv(filteredAdminUsers)}
-                    disabled={filteredAdminUsers.length === 0}
+                    onClick={() => downloadOnboardingUsersCsv(users)}
+                    disabled={users.length === 0}
                     style={{
                       ...actionBtn("#374151"),
-                      opacity: filteredAdminUsers.length === 0 ? 0.5 : 1,
-                      cursor: filteredAdminUsers.length === 0 ? "not-allowed" : "pointer",
+                      opacity: users.length === 0 ? 0.5 : 1,
+                      cursor: users.length === 0 ? "not-allowed" : "pointer",
                     }}
                   >
                     Export CSV
                   </button>
                 )}
                 <button type="button" onClick={() => void loadUsers()} style={actionBtn("#374151")}>↻ Refresh</button>
+                <button
+                  type="button"
+                  onClick={() => void loadFullUsersList()}
+                  disabled={usersLoadingFullList || usersShowingFullList}
+                  style={{
+                    ...actionBtn("#6b7280"),
+                    opacity: usersLoadingFullList || usersShowingFullList ? 0.65 : 1,
+                    cursor: usersLoadingFullList || usersShowingFullList ? "default" : "pointer",
+                  }}
+                >
+                  {usersLoadingFullList ? "Loading full list..." : usersShowingFullList ? "Full list shown" : "Show full list"}
+                </button>
               </div>
             </div>
-            {filteredAdminUsers.length === 0 && (
+            <div style={{ color: t.textFaint, fontSize: 13, marginBottom: 10 }}>
+              Showing {users.length} of {usersTotalCount} {usersTotalCount === 1 ? "user" : "users"}
+              {usersShowingFullList ? " (full list)" : ""}
+            </div>
+            {users.length === 0 && (
               <div
                 style={{
                   padding: 32,
@@ -4456,7 +4492,7 @@ export default function AdminPage() {
               </div>
             )}
             <div style={{ display: "grid", gap: 10 }}>
-              {filteredAdminUsers.map((u) => {
+              {users.map((u) => {
                 const name = adminUserDisplayName(u);
                 const isGrandfathered = isGrandfatheredSignupProfile(u);
                 const isIncompleteSignup = !!u.signup_incomplete || !isSignupProfileComplete(u);
@@ -4599,6 +4635,19 @@ export default function AdminPage() {
                 );
               })}
             </div>
+            {users.length < usersTotalCount && !usersShowingFullList && (
+              <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+                <button
+                  type="button"
+                  style={{ ...actionBtn("#374151"), minWidth: 160, justifyContent: "center", display: "flex", alignItems: "center", gap: 6 }}
+                  disabled={usersLoadingMore}
+                  onClick={() => void loadMoreUsers()}
+                >
+                  {usersLoadingMore && <span className="btn-spinner" />}
+                  {usersLoadingMore ? "Loading..." : `Load more (${users.length}/${usersTotalCount})`}
+                </button>
+              </div>
+            )}
           </div>
         )}
         {/* ── BUGS TAB ── */}

@@ -1,11 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { OgCard, type BusinessListingRow } from "./master/masterShared";
+import { OgCard } from "./master/masterShared";
 import { useTheme } from "../lib/ThemeContext";
 
+export type ShareListingPreview = {
+  id: string;
+  website_url: string | null;
+  business_name?: string | null;
+  custom_blurb?: string | null;
+  og_title?: string | null;
+  og_description?: string | null;
+  og_image?: string | null;
+  og_site_name?: string | null;
+};
+
 type Props = {
-  listing: BusinessListingRow | null;
+  listing: ShareListingPreview | null;
   label: string;
   submitting: boolean;
   onClose: () => void;
@@ -39,7 +50,7 @@ export default function ShareListingToFeedModal({ listing, label, submitting, on
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 1500,
+        zIndex: 12000,
         background: "rgba(0,0,0,0.55)",
         display: "flex",
         alignItems: "center",
@@ -112,11 +123,11 @@ export default function ShareListingToFeedModal({ listing, label, submitting, on
           <div style={{ marginTop: 10 }}>
             <OgCard
               og={{
-                url: listing.website_url,
+                url: listing.website_url ?? "",
                 title,
                 description,
-                image: listing.og_image,
-                siteName: listing.og_site_name,
+                image: listing.og_image ?? null,
+                siteName: listing.og_site_name ?? null,
               }}
             />
           </div>

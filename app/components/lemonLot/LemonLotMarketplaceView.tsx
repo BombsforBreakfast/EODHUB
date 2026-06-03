@@ -24,6 +24,9 @@ import { prepareImageUploadFile } from "@/app/lib/prepareUploadFile";
 import { validateImagePick } from "@/app/lib/uploadLimits";
 
 const THIRTY_DAYS_MS = 30 * 86400000;
+const LEMON_LOT_INITIAL_LIMIT = 50;
+const LEMON_LOT_LISTING_COLUMNS =
+  "id, user_id, listing_mode, category, subcategory, title, description, manual_notes, price, location, mileage, external_url, og_title, og_description, og_image, og_site_name, gallery_images, status, expires_at, created_at, updated_at, approved, featured, tags";
 
 function expiryIsoFromNow(): string {
   return new Date(Date.now() + THIRTY_DAYS_MS).toISOString();
@@ -108,27 +111,35 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
   const [contactingId, setContactingId] = useState<string | null>(null);
   const [relistingId, setRelistingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const loadRowsSeqRef = useRef(0);
 
   const loadRows = useCallback(async (uid: string | null) => {
+    const seq = ++loadRowsSeqRef.current;
     const nowIso = new Date().toISOString();
-    let q = supabase.from("marketplace_listings").select("*");
+    setLoading(true);
+    let q = supabase.from("marketplace_listings").select(LEMON_LOT_LISTING_COLUMNS);
     if (uid) {
       q = q.or(`user_id.eq.${uid},and(status.eq.active,approved.eq.true,expires_at.gt.${nowIso})`);
     } else {
       q = q.eq("status", "active").eq("approved", true).gt("expires_at", nowIso);
     }
-    const { data, error } = await q.order("created_at", { ascending: false }).limit(200);
+    const { data, error } = await q.order("created_at", { ascending: false }).limit(LEMON_LOT_INITIAL_LIMIT);
     if (error) {
       console.error("Lemon Lot load:", error);
+      if (seq !== loadRowsSeqRef.current) return;
       setRows([]);
       setProfilesByUser({});
+      setLoading(false);
       return;
     }
     const list = (data ?? []) as MarketplaceListingRow[];
+    if (seq !== loadRowsSeqRef.current) return;
     setRows(list);
     const ids = [...new Set(list.map((r) => r.user_id))];
     if (ids.length === 0) {
+      if (seq !== loadRowsSeqRef.current) return;
       setProfilesByUser({});
+      setLoading(false);
       return;
     }
     const { data: profs } = await supabase
@@ -140,27 +151,34 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
       const n = p.display_name?.trim() || [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
       map[p.user_id] = n || "Member";
     });
+    if (seq !== loadRowsSeqRef.current) return;
     setProfilesByUser(map);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      void loadRows(null);
+
       const { data: { session } } = await supabase.auth.getSession();
+      if (cancelled) return;
       const uid = session?.user?.id ?? null;
-      if (!cancelled) setUserId(uid);
+      setUserId(uid);
       if (uid) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("display_name, first_name, last_name")
-          .eq("user_id", uid)
-          .maybeSingle();
-        const p = profile as { display_name: string | null; first_name: string | null; last_name: string | null } | null;
-        const n = p?.display_name?.trim() || [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
-        if (!cancelled) setMyName(n || "You");
+        void loadRows(uid);
+        void (async () => {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("display_name, first_name, last_name")
+            .eq("user_id", uid)
+            .maybeSingle();
+          if (cancelled) return;
+          const p = profile as { display_name: string | null; first_name: string | null; last_name: string | null } | null;
+          const n = p?.display_name?.trim() || [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
+          setMyName(n || "You");
+        })();
       }
-      await loadRows(uid);
-      if (!cancelled) setLoading(false);
     })();
     return () => {
       cancelled = true;
@@ -537,14 +555,6 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
       }) as const,
     [t.input, t.inputBorder, t.text],
   );
-
-  if (loading) {
-    return (
-      <div style={{ padding: 40, textAlign: "center", color: t.textMuted }}>
-        Loading Lemon Lot…
-      </div>
-    );
-  }
 
   return (
     <div
@@ -941,7 +951,11 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
         </div>
       </section>
 
-      {filtered.length === 0 ? (
+      {loading && rows.length === 0 ? (
+        <div style={{ padding: 28, textAlign: "center", color: t.textMuted, border: `1px dashed ${t.border}`, borderRadius: 14 }}>
+          Loading Lemon Lot listings…
+        </div>
+      ) : filtered.length === 0 ? (
         <div style={{ padding: 28, textAlign: "center", color: t.textMuted, border: `1px dashed ${t.border}`, borderRadius: 14 }}>
           No listings match these filters yet. Be the first to post.
         </div>

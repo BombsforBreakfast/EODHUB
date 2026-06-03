@@ -6,7 +6,104 @@ import { referrerDisplayName } from "@/app/lib/referralReferrer";
 type ProfilesQueryResult = {
   data: Array<Record<string, unknown>> | null;
   error: { message: string } | null;
+  count?: number | null;
 };
+
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 100;
+const FULL_LIST_LIMIT = 5000;
+const PENDING_REVIEW_STATUSES = ["awaiting_admin_review", "pending_admin_review", "pending"];
+const PROFILE_SELECT_WITH_MIRRORS =
+  "user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
+const PROFILE_SELECT_BASE =
+  "user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
+
+type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "unverified" | "denied";
+
+function parseBoundedInt(value: string | null, fallback: number, min: number, max: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function parseStatusFilter(value: string | null): UserStatusFilter {
+  if (
+    value === "pending" ||
+    value === "onboarding" ||
+    value === "verified" ||
+    value === "unverified" ||
+    value === "denied"
+  ) {
+    return value;
+  }
+  return "all";
+}
+
+function escapeIlike(value: string) {
+  return value.replace(/[%_]/g, (match) => `\\${match}`).replace(/,/g, " ");
+}
+
+function applyProfileStatusFilter<T extends { eq: (column: string, value: unknown) => T; neq: (column: string, value: unknown) => T; in: (column: string, values: string[]) => T; or: (filters: string) => T }>(
+  query: T,
+  status: UserStatusFilter,
+) {
+  if (status === "verified") return query.eq("verification_status", "verified");
+  if (status === "denied") return query.eq("verification_status", "denied");
+  if (status === "pending") {
+    return query.eq("email_verified", true).in("verification_status", PENDING_REVIEW_STATUSES);
+  }
+  if (status === "unverified") {
+    return query.or("verification_status.is.null,and(verification_status.neq.verified,verification_status.neq.denied)");
+  }
+  if (status === "onboarding") {
+    return query.or("verification_status.is.null,and(verification_status.neq.verified,verification_status.neq.denied)");
+  }
+  return query;
+}
+
+function applyProfileSearch<T extends { or: (filters: string) => T }>(
+  query: T,
+  rawSearch: string,
+  includeMirroredColumns: boolean,
+) {
+  const q = escapeIlike(rawSearch.trim());
+  if (!q) return query;
+  const pattern = `%${q}%`;
+  const fields = [
+    "first_name",
+    "last_name",
+    "display_name",
+    "service",
+    "role",
+    "company_name",
+    "user_id",
+  ];
+  if (includeMirroredColumns) fields.splice(3, 0, "name", "email");
+  return query.or(fields.map((field) => `${field}.ilike.${pattern}`).join(","));
+}
+
+function isAtAdminReviewTier(row: Record<string, unknown>) {
+  return (
+    row.email_verified === true &&
+    isSignupProfileComplete(row) &&
+    PENDING_REVIEW_STATUSES.includes(String(row.verification_status ?? ""))
+  );
+}
+
+function userMatchesStatus(row: Record<string, unknown>, status: UserStatusFilter) {
+  if (status === "all") return true;
+  if (status === "verified") return row.verification_status === "verified";
+  if (status === "denied") return row.verification_status === "denied";
+  if (status === "pending") return isAtAdminReviewTier(row);
+  if (status === "onboarding") {
+    if (row.verification_status === "verified" || row.verification_status === "denied") return false;
+    return row.signup_incomplete === true || !isSignupProfileComplete(row);
+  }
+  if (status === "unverified") {
+    return row.verification_status !== "verified" && row.verification_status !== "denied";
+  }
+  return true;
+}
 
 export async function GET(req: NextRequest) {
   // Verify caller is admin
@@ -40,27 +137,30 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  const profileSelectWithMirrors =
-    "user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
-  const profileSelectBase =
-    "user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
+  const search = req.nextUrl.searchParams.get("q")?.trim() ?? "";
+  const status = parseStatusFilter(req.nextUrl.searchParams.get("status"));
+  const full = req.nextUrl.searchParams.get("full") === "true";
+  const offset = full ? 0 : parseBoundedInt(req.nextUrl.searchParams.get("offset"), 0, 0, 100_000);
+  const limit = full
+    ? FULL_LIST_LIMIT
+    : parseBoundedInt(req.nextUrl.searchParams.get("limit"), DEFAULT_LIMIT, 1, MAX_LIMIT);
 
-  // Fetch profiles and auth users. The mirrored name/email columns are deployed via
-  // migration, so keep this compatible with environments that have not run it yet.
-  const [profilesRes, authUsersRes] = await Promise.all([
-    adminClient
-      .from("profiles")
-      .select(profileSelectWithMirrors)
-      .order("created_at", { ascending: false }),
-    adminClient.auth.admin.listUsers({ perPage: 1000 }),
-  ]);
+  let profileQuery = adminClient
+    .from("profiles")
+    .select(PROFILE_SELECT_WITH_MIRRORS, { count: "exact" })
+    .order("created_at", { ascending: false });
+  profileQuery = applyProfileStatusFilter(applyProfileSearch(profileQuery, search, true), status);
+  if (!full) profileQuery = profileQuery.range(offset, offset + limit - 1);
 
-  let profilesQuery = profilesRes as ProfilesQueryResult;
+  let profilesQuery = (await profileQuery) as ProfilesQueryResult;
   if (profilesQuery.error) {
-    profilesQuery = (await adminClient
+    let fallbackQuery = adminClient
       .from("profiles")
-      .select(profileSelectBase)
-      .order("created_at", { ascending: false })) as ProfilesQueryResult;
+      .select(PROFILE_SELECT_BASE, { count: "exact" })
+      .order("created_at", { ascending: false });
+    fallbackQuery = applyProfileStatusFilter(applyProfileSearch(fallbackQuery, search, false), status);
+    if (!full) fallbackQuery = fallbackQuery.range(offset, offset + limit - 1);
+    profilesQuery = (await fallbackQuery) as ProfilesQueryResult;
   }
 
   if (profilesQuery.error) {
@@ -107,20 +207,62 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Build a map of auth user metadata by user_id
+  // Build a map of auth user metadata by user_id. Normal paged loads only fetch
+  // auth records for the visible profile IDs; full loads are intentionally heavier.
   const authUserMap = new Map<string, { email: string; full_name: string | null }>();
-  for (const authUser of authUsersRes.data?.users ?? []) {
-    authUserMap.set(authUser.id, {
-      email: authUser.email ?? "",
-      full_name: authMetadataDisplayName(authUser.user_metadata ?? null),
-    });
+  const visibleProfileIds = profileRows
+    .filter((p) => {
+      const row = p as Record<string, unknown>;
+      const hasEmail = typeof row.email === "string" && row.email.trim().length > 0;
+      const hasName =
+        (typeof row.name === "string" && row.name.trim().length > 0) ||
+        (typeof row.display_name === "string" && row.display_name.trim().length > 0) ||
+        (typeof row.first_name === "string" && row.first_name.trim().length > 0);
+      return !hasEmail || !hasName;
+    })
+    .map((p) => (typeof p.user_id === "string" ? p.user_id : null))
+    .filter((id): id is string => !!id);
+
+  if (full) {
+    let page = 1;
+    for (;;) {
+      const authUsersRes = await adminClient.auth.admin.listUsers({ page, perPage: 1000 });
+      for (const authUser of authUsersRes.data?.users ?? []) {
+        authUserMap.set(authUser.id, {
+          email: authUser.email ?? "",
+          full_name: authMetadataDisplayName(authUser.user_metadata ?? null),
+        });
+      }
+      if ((authUsersRes.data?.users ?? []).length < 1000 || authUserMap.size >= FULL_LIST_LIMIT) break;
+      page += 1;
+    }
+  } else {
+    await Promise.all(
+      visibleProfileIds.map(async (id) => {
+        const { data } = await adminClient.auth.admin.getUserById(id);
+        if (data?.user) {
+          authUserMap.set(id, {
+            email: data.user.email ?? "",
+            full_name: authMetadataDisplayName(data.user.user_metadata ?? null),
+          });
+        }
+      }),
+    );
   }
 
   // Merge profiles with auth users that have no profile row (incomplete signups).
   const profileUserIds = new Set(
     (profilesQuery.data ?? []).map((p) => String((p as { user_id: string }).user_id)),
   );
-  const incompleteSignups = (authUsersRes.data?.users ?? [])
+  const authUsersForIncomplete = full
+    ? [...authUserMap.entries()].map(([id, meta]) => ({
+        id,
+        email: meta.email,
+        created_at: null,
+        user_metadata: { full_name: meta.full_name },
+      }))
+    : [];
+  const incompleteSignups = authUsersForIncomplete
     .filter((authUser) => !profileUserIds.has(authUser.id))
     .map((authUser) => ({
       user_id: authUser.id,
@@ -203,7 +345,11 @@ export async function GET(req: NextRequest) {
       signup_incomplete: !isSignupProfileComplete(signupFields),
     };
   }),
-  ];
+  ].filter((row) => userMatchesStatus(row as Record<string, unknown>, status));
 
-  return NextResponse.json({ users: profiles });
+  return NextResponse.json({
+    users: full ? profiles.slice(0, FULL_LIST_LIMIT) : profiles,
+    totalCount: full ? profiles.length : (profilesQuery.count ?? profiles.length),
+    full,
+  });
 }

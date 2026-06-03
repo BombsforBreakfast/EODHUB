@@ -34,6 +34,9 @@ type Props = {
   canSave: boolean;
   isTogglingSave: boolean;
   onToggleSave: (job: JobModalData) => void | Promise<void>;
+  canShare?: boolean;
+  isSharing?: boolean;
+  onShare?: (job: JobModalData) => void;
 };
 
 function formatExternalUrl(url: string | null | undefined): string | null {
@@ -50,6 +53,9 @@ export default function JobDetailsModal({
   canSave,
   isTogglingSave,
   onToggleSave,
+  canShare = false,
+  isSharing = false,
+  onShare,
 }: Props) {
   const { t } = useTheme();
 
@@ -222,25 +228,46 @@ export default function JobDetailsModal({
           ) : (
             <span style={{ fontSize: 13, color: t.textFaint }}>No external link for this listing.</span>
           )}
-          <button
-            type="button"
-            onClick={() => onToggleSave(job)}
-            disabled={!canSave || isTogglingSave}
-            title={canSave ? undefined : "Sign in to save jobs"}
-            style={{
-              background: saved ? "#111" : t.surface,
-              color: saved ? "white" : t.text,
-              border: `1px solid ${saved ? "#111" : t.border}`,
-              borderRadius: 10,
-              padding: "8px 14px",
-              fontWeight: 700,
-              fontSize: 13,
-              cursor: !canSave || isTogglingSave ? "not-allowed" : "pointer",
-              opacity: !canSave || isTogglingSave ? 0.6 : 1,
-            }}
-          >
-            {isTogglingSave ? "…" : saved ? "Saved ✓" : "Save"}
-          </button>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              onClick={() => onShare?.(job)}
+              disabled={!canShare || isSharing}
+              title={canShare ? undefined : "Sign in to share jobs"}
+              style={{
+                background: "#ecfdf5",
+                color: "#047857",
+                border: "1px solid #a7f3d0",
+                borderRadius: 10,
+                padding: "8px 14px",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: !canShare || isSharing ? "not-allowed" : "pointer",
+                opacity: !canShare || isSharing ? 0.6 : 1,
+              }}
+            >
+              {isSharing ? "Sharing..." : "Share to feed"}
+            </button>
+            <button
+              type="button"
+              onClick={() => onToggleSave(job)}
+              disabled={!canSave || isTogglingSave}
+              title={canSave ? undefined : "Sign in to save jobs"}
+              style={{
+                background: saved ? "#111" : t.surface,
+                color: saved ? "white" : t.text,
+                border: `1px solid ${saved ? "#111" : t.border}`,
+                borderRadius: 10,
+                padding: "8px 14px",
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: !canSave || isTogglingSave ? "not-allowed" : "pointer",
+                opacity: !canSave || isTogglingSave ? 0.6 : 1,
+              }}
+            >
+              {isTogglingSave ? "…" : saved ? "Saved ✓" : "Save"}
+            </button>
+          </div>
         </div>
       </div>
     </div>,

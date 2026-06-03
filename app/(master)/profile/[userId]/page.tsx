@@ -312,10 +312,61 @@ const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "LEO/FED", "Civil Serv
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
 const WORK_TAG_PREVIEW_LIMIT = 3;
 const WORK_TAG_MAX = 30;
+const PROFILE_WALL_PAGE_SIZE = 10;
+const PROFILE_PHOTO_PREVIEW_LIMIT = 12;
 const AVAILABILITY_TYPES = ["ETS", "Retirement", "Available From", "Contract End"];
 const WORK_PREFERENCES = ["Remote", "Hybrid", "Onsite", "Flexible"];
 const CLEARANCE_LEVELS = ["None", "Secret", "TS", "TS-SCI"];
 const CLEARANCE_STATUSES = ["Active", "Expired"];
+
+const PROFILE_DISPLAY_COLUMNS = [
+  "user_id",
+  "display_name",
+  "first_name",
+  "last_name",
+  "bio",
+  "photo_url",
+  "role",
+  "resume_text",
+  "tech_types",
+  "verification_status",
+  "service",
+  "status",
+  "years_experience",
+  "skill_badge",
+  "referral_code",
+  "plank_holder_awarded",
+  "plank_holder_number",
+  "plank_holder_seen_modal",
+  "is_employer",
+  "employer_verified",
+  "company_name",
+  "account_type",
+  "company_website",
+  "linkedin_url",
+  "professional_tags",
+  "unit_history_tags",
+  "open_to_opportunities",
+  "employer_summary",
+  "resume_url",
+  "education_url",
+  "specialized_training",
+  "availability_type",
+  "availability_date",
+  "current_city",
+  "current_state",
+  "willing_to_relocate",
+  "willing_to_travel",
+  "work_preference",
+  "clearance_level",
+  "clearance_status",
+  "clearance_expiration_date",
+  "has_oconus_experience",
+  "has_contract_experience",
+  "has_federal_le_military_crossover",
+  "is_pure_admin",
+  "email",
+].join(", ");
 
 type KnowStatus = "none" | "pending_outgoing" | "pending_incoming" | "accepted";
 
@@ -486,6 +537,16 @@ function normalizeTrainingDocs(value: unknown): Record<string, string> {
   return out;
 }
 
+function referralMatchFilter(profile: Pick<Profile, "user_id" | "referral_code">): string | null {
+  const parts = [`referrer_user_id.eq.${profile.user_id}`];
+  const code = profile.referral_code?.trim();
+  if (code) {
+    const escapedCode = code.replace(/[%_]/g, (match) => `\\${match}`).replace(/,/g, " ");
+    parts.push(`referred_by.ilike.${escapedCode}`);
+  }
+  return parts.join(",");
+}
+
 function addUniqueTag(tags: string[], rawValue: string): string[] {
   const nextValue = normalizeTagInput(rawValue);
   if (!nextValue) return tags;
@@ -538,11 +599,18 @@ export default function PublicProfilePage() {
   const queryClient = useQueryClient();
 
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileFullyLoaded, setProfileFullyLoaded] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [profileWallHasMorePosts, setProfileWallHasMorePosts] = useState(false);
+  const [profileWallLoadingMore, setProfileWallLoadingMore] = useState(false);
   const [photos, setPhotos] = useState<ProfilePhoto[]>([]);
   const [myGroups, setMyGroups] = useState<GroupTile[]>([]);
   const [showAllModal, setShowAllModal] = useState<"photos" | "groups" | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileWallLoading, setProfileWallLoading] = useState(false);
+  const [profilePhotosLoading, setProfilePhotosLoading] = useState(false);
+  const [profilePhotosFullyLoaded, setProfilePhotosFullyLoaded] = useState(false);
+  const [profileGroupsLoading, setProfileGroupsLoading] = useState(false);
 
   /** Own-wall only: saved events (saved jobs live under My Account) */
   const [wallSavedEvents, setWallSavedEvents] = useState<
@@ -960,42 +1028,43 @@ export default function PublicProfilePage() {
     }
   }
 
-  function openWallEditProfile() {
+  async function openWallEditProfile() {
     if (!profile || currentUserId !== profile.user_id) return;
-    setEditCompanyName(profile.company_name ?? "");
-    setEditDisplayName(profile.display_name ?? "");
-    setEditFirstName(profile.first_name ?? "");
-    setEditLastName(profile.last_name ?? "");
-    setEditRole(profile.role ?? "");
-    setEditBio(profile.bio ?? "");
-    setEditService(profile.service ?? "");
-    setEditStatus(profile.status === "Active" ? "Active Duty" : (profile.status ?? ""));
-    setEditYearsExp(profile.years_experience ?? "");
-    setEditSkillBadge(profile.skill_badge ?? "");
-    setEditCompanyWebsite(profile.company_website ?? "");
-    setEditLinkedInUrl(profile.linkedin_url ?? "");
-    setEditOpenToOpportunities(!!profile.open_to_opportunities);
-    setEditEmployerSummary(profile.employer_summary ?? "");
-    setEditResumeUrl(profile.resume_url ?? "");
-    setEditEducationUrl(profile.education_url ?? "");
-    setEditSpecializedTraining(normalizeTagArray(profile.specialized_training));
-    setEditSpecializedTrainingDocs(normalizeTrainingDocs(profile.specialized_training_docs));
+    const editableProfile = (await ensureFullProfileLoaded()) ?? profile;
+    setEditCompanyName(editableProfile.company_name ?? "");
+    setEditDisplayName(editableProfile.display_name ?? "");
+    setEditFirstName(editableProfile.first_name ?? "");
+    setEditLastName(editableProfile.last_name ?? "");
+    setEditRole(editableProfile.role ?? "");
+    setEditBio(editableProfile.bio ?? "");
+    setEditService(editableProfile.service ?? "");
+    setEditStatus(editableProfile.status === "Active" ? "Active Duty" : (editableProfile.status ?? ""));
+    setEditYearsExp(editableProfile.years_experience ?? "");
+    setEditSkillBadge(editableProfile.skill_badge ?? "");
+    setEditCompanyWebsite(editableProfile.company_website ?? "");
+    setEditLinkedInUrl(editableProfile.linkedin_url ?? "");
+    setEditOpenToOpportunities(!!editableProfile.open_to_opportunities);
+    setEditEmployerSummary(editableProfile.employer_summary ?? "");
+    setEditResumeUrl(editableProfile.resume_url ?? "");
+    setEditEducationUrl(editableProfile.education_url ?? "");
+    setEditSpecializedTraining(normalizeTagArray(editableProfile.specialized_training));
+    setEditSpecializedTrainingDocs(normalizeTrainingDocs(editableProfile.specialized_training_docs));
     setDraftSpecializedTraining("");
-    setEditAvailabilityType(profile.availability_type ?? "");
-    setEditAvailabilityDate(profile.availability_date ?? "");
-    setEditCurrentCity(profile.current_city ?? "");
-    setEditCurrentState(profile.current_state ?? "");
-    setEditWillingToRelocate(!!profile.willing_to_relocate);
-    setEditWillingToTravel(profile.willing_to_travel ?? "");
-    setEditWorkPreference(profile.work_preference ?? "");
-    setEditClearanceLevel(profile.clearance_level ?? "");
-    setEditClearanceStatus(profile.clearance_status ?? "");
-    setEditClearanceExpirationDate(profile.clearance_expiration_date ?? "");
-    setEditHasOconusExperience(!!profile.has_oconus_experience);
-    setEditHasContractExperience(!!profile.has_contract_experience);
-    setEditHasFederalLeMilitaryCrossover(!!profile.has_federal_le_military_crossover);
-    setEditProfessionalTags(normalizeTagArray(profile.professional_tags));
-    setEditUnitHistoryTags(normalizeTagArray(profile.unit_history_tags));
+    setEditAvailabilityType(editableProfile.availability_type ?? "");
+    setEditAvailabilityDate(editableProfile.availability_date ?? "");
+    setEditCurrentCity(editableProfile.current_city ?? "");
+    setEditCurrentState(editableProfile.current_state ?? "");
+    setEditWillingToRelocate(!!editableProfile.willing_to_relocate);
+    setEditWillingToTravel(editableProfile.willing_to_travel ?? "");
+    setEditWorkPreference(editableProfile.work_preference ?? "");
+    setEditClearanceLevel(editableProfile.clearance_level ?? "");
+    setEditClearanceStatus(editableProfile.clearance_status ?? "");
+    setEditClearanceExpirationDate(editableProfile.clearance_expiration_date ?? "");
+    setEditHasOconusExperience(!!editableProfile.has_oconus_experience);
+    setEditHasContractExperience(!!editableProfile.has_contract_experience);
+    setEditHasFederalLeMilitaryCrossover(!!editableProfile.has_federal_le_military_crossover);
+    setEditProfessionalTags(normalizeTagArray(editableProfile.professional_tags));
+    setEditUnitHistoryTags(normalizeTagArray(editableProfile.unit_history_tags));
     setDraftProfessionalTag("");
     setDraftUnitHistoryTag("");
     setEditingProfile(true);
@@ -1100,30 +1169,41 @@ export default function PublicProfilePage() {
     }
   }
 
-  async function loadProfile(targetUserId: string) {
+  async function loadProfile(targetUserId: string, options: { full?: boolean } = {}): Promise<Profile | null> {
     const { data, error } = await supabase
       .from("profiles")
-      .select("*")
+      .select(options.full ? "*" : PROFILE_DISPLAY_COLUMNS)
       .eq("user_id", targetUserId)
       .maybeSingle();
 
     if (error) {
       console.error("Profile load error:", error);
-      return;
+      return null;
     }
 
     const profileData = (data as Profile | null) ?? null;
     setProfile(profileData);
+    setProfileFullyLoaded(Boolean(options.full));
 
-    // Fetch referral count if they have a code
-    if (profileData?.referral_code) {
+    // Fetch verified recruit count using both canonical referrer_user_id and legacy referral code.
+    const referralFilter = profileData ? referralMatchFilter(profileData) : null;
+    if (profileData && referralFilter) {
       const { count } = await supabase
         .from("profiles")
         .select("*", { count: "exact", head: true })
-        .eq("referred_by", profileData.referral_code)
+        .or(referralFilter)
         .eq("verification_status", "verified");
       setReferralCount(count ?? 0);
+    } else {
+      setReferralCount(0);
     }
+    return profileData;
+  }
+
+  async function ensureFullProfileLoaded(): Promise<Profile | null> {
+    if (!userId) return profile;
+    if (profileFullyLoaded) return profile;
+    return loadProfile(userId, { full: true });
   }
 
   async function openConnList(type: ConnListType) {
@@ -1132,11 +1212,12 @@ export default function PublicProfilePage() {
     setConnListUsers([]);
     try {
       if (type === "recruited") {
-        if (!profile?.referral_code) { setConnListLoading(false); return; }
+        const referralFilter = profile ? referralMatchFilter(profile) : null;
+        if (!profile || !referralFilter) { setConnListLoading(false); return; }
         const { data } = await supabase
           .from("profiles")
           .select("user_id, first_name, last_name, photo_url, service")
-          .eq("referred_by", profile.referral_code)
+          .or(referralFilter)
           .eq("verification_status", "verified");
         setConnListUsers(
           ((data ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null }[])
@@ -1166,17 +1247,19 @@ export default function PublicProfilePage() {
     }
   }
 
-  async function loadPosts(targetUserId: string) {
-    const { error: closeKcErr } = await supabase.rpc("close_expired_kangaroo_courts");
-    if (closeKcErr) {
-      console.warn("close_expired_kangaroo_courts (wall):", closeKcErr.message);
-    }
+  async function loadPosts(
+    targetUserId: string,
+    options: { limit?: number } = {},
+  ) {
+    const visibleLimit = Math.max(options.limit ?? postsRef.current.length ?? PROFILE_WALL_PAGE_SIZE, PROFILE_WALL_PAGE_SIZE);
+    const queryLimit = visibleLimit + 1;
 
     const { data: rawData, error } = await supabase
       .from("posts")
       .select("id, user_id, wall_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
-      .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
-      .order("created_at", { ascending: false });
+      .or(`wall_user_id.eq.${targetUserId},and(user_id.eq.${targetUserId},wall_user_id.is.null)`)
+      .order("created_at", { ascending: false })
+      .limit(queryLimit);
 
     if (error) {
       console.error("Profile posts load error:", error);
@@ -1196,19 +1279,16 @@ export default function PublicProfilePage() {
       og_site_name?: string | null;
       rabbithole_contribution_id?: string | null;
     }[];
-    const rawPosts = allMatchedPosts.filter((p) => {
-      // Keep posts that are explicitly addressed to this wall.
-      if ((p.wall_user_id ?? null) === targetUserId) return true;
-      // Keep self-authored profile history posts (legacy/global posts with null wall target).
-      // Exclude posts authored by this user on someone else's wall.
-      if (p.user_id === targetUserId) {
-        return !p.wall_user_id || p.wall_user_id === targetUserId;
-      }
-      return false;
-    });
-    if (rawPosts.length === 0) { setPosts([]); return; }
+    const rawPosts = allMatchedPosts;
+    const hasMorePosts = rawPosts.length > visibleLimit;
+    const visibleRawPosts = rawPosts.slice(0, visibleLimit);
+    setProfileWallHasMorePosts(hasMorePosts);
+    if (visibleRawPosts.length === 0) {
+      setPosts([]);
+      return;
+    }
 
-    const postIds = rawPosts.map((p) => p.id);
+    const postIds = visibleRawPosts.map((p) => p.id);
 
     // Legacy single image_url
     const legacyWithEvent = await supabase
@@ -1246,7 +1326,7 @@ export default function PublicProfilePage() {
       eventIdByPostId.set(r.id, r.event_id ?? null);
     });
 
-    const missingEventCandidates = rawPosts
+    const missingEventCandidates = visibleRawPosts
       .filter((post) => !eventIdByPostId.get(post.id))
       .map((post) => ({
         postId: post.id,
@@ -1395,7 +1475,7 @@ export default function PublicProfilePage() {
     });
 
     // For wall posts from other users, fetch their names
-    const wallPosterIds = [...new Set(rawPosts
+    const wallPosterIds = [...new Set(visibleRawPosts
       .filter((p) => p.wall_user_id === targetUserId && p.user_id !== targetUserId)
       .map((p) => p.user_id))];
     const authorNameMap = new Map<string, string>();
@@ -1602,7 +1682,7 @@ export default function PublicProfilePage() {
       }
     }
 
-    const merged: Post[] = rawPosts.map((p) => {
+    const merged: Post[] = visibleRawPosts.map((p) => {
       const agg = aggregatesMap.get(p.id) ?? emptyAggregate();
       const postLikes = agg.userIds;
       const seenLiker = new Set<string>();
@@ -1660,6 +1740,16 @@ export default function PublicProfilePage() {
     });
 
     setPosts(merged);
+  }
+
+  async function loadMoreProfileWallPosts() {
+    if (!userId || profileWallLoadingMore || !profileWallHasMorePosts) return;
+    try {
+      setProfileWallLoadingMore(true);
+      await loadPosts(userId, { limit: postsRef.current.length + PROFILE_WALL_PAGE_SIZE });
+    } finally {
+      setProfileWallLoadingMore(false);
+    }
   }
 
   async function notify(
@@ -1924,12 +2014,18 @@ export default function PublicProfilePage() {
     } finally { setDeletingCommentId(null); }
   }
 
-  async function loadPhotos(targetUserId: string): Promise<ProfilePhoto[]> {
-    const { data, error } = await supabase
+  async function loadPhotos(targetUserId: string, options: { full?: boolean } = {}): Promise<ProfilePhoto[]> {
+    let query = supabase
       .from("profile_photos")
       .select("*")
       .eq("user_id", targetUserId)
       .order("created_at", { ascending: false });
+
+    if (!options.full) {
+      query = query.limit(PROFILE_PHOTO_PREVIEW_LIMIT);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error("Profile photos load error:", error);
@@ -1938,7 +2034,34 @@ export default function PublicProfilePage() {
 
     const result = (data as ProfilePhoto[]) ?? [];
     setPhotos(result);
+    setProfilePhotosFullyLoaded(Boolean(options.full) || result.length < PROFILE_PHOTO_PREVIEW_LIMIT);
     return result;
+  }
+
+  async function ensureFullProfilePhotosLoaded(): Promise<ProfilePhoto[]> {
+    if (!userId) return photos;
+    if (profilePhotosFullyLoaded) return photos;
+    setProfilePhotosLoading(true);
+    try {
+      const fullPhotos = await loadPhotos(userId, { full: true });
+      await loadPhotoInteractions(fullPhotos.map((p) => p.id), currentUserId);
+      return fullPhotos;
+    } finally {
+      setProfilePhotosLoading(false);
+    }
+  }
+
+  async function openFullProfilePhotos() {
+    await ensureFullProfilePhotosLoaded();
+    setShowAllModal("photos");
+  }
+
+  async function toggleGalleryExpanded() {
+    const expanding = !galleryExpanded;
+    if (expanding) {
+      await ensureFullProfilePhotosLoaded();
+    }
+    setGalleryExpanded(expanding);
   }
 
   async function loadMyGroups(targetUserId: string): Promise<GroupTile[]> {
@@ -2632,11 +2755,23 @@ export default function PublicProfilePage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function init() {
       if (!userId || userId === "undefined") {
         setLoading(false);
         return;
       }
+
+      setLoading(true);
+      setPosts([]);
+      setPhotos([]);
+      setMyGroups([]);
+      setWallSavedEvents([]);
+      setProfileWallHasMorePosts(false);
+      setProfileWallLoading(false);
+      setProfilePhotosLoading(false);
+      setProfileGroupsLoading(false);
 
       const { data, error } = await getSupabaseUser();
 
@@ -2645,54 +2780,90 @@ export default function PublicProfilePage() {
       }
 
       const signedInUserId = data.user?.id ?? null;
+      if (cancelled) return;
       setCurrentUserId(signedInUserId);
       plankHolderChallengeRef.current = null;
       plankHolderInitializedRef.current = false;
       setPlankHolderChallenge(null);
 
       if (signedInUserId) {
-        const viewerProfile = data.user
-          ? await fetchViewerProfileCached(queryClient, supabase, data.user)
-          : null;
-        setCurrentUserName(
-          `${viewerProfile?.first_name || ""} ${viewerProfile?.last_name || ""}`.trim() || "Someone",
-        );
-        setViewerIsEmployer(!!viewerProfile?.is_employer);
-        setViewerIsAdmin(!!viewerProfile?.is_admin);
+        void (async () => {
+          const viewerProfile = data.user
+            ? await fetchViewerProfileCached(queryClient, supabase, data.user)
+            : null;
+          if (cancelled) return;
+          setCurrentUserName(
+            `${viewerProfile?.first_name || ""} ${viewerProfile?.last_name || ""}`.trim() || "Someone",
+          );
+          setViewerIsEmployer(!!viewerProfile?.is_employer);
+          setViewerIsAdmin(!!viewerProfile?.is_admin);
+        })();
 
-        const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
-        const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);
-        if (convIds.length > 0) {
-          const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("is_read", false).neq("sender_id", signedInUserId).in("conversation_id", convIds);
-          setUnreadMessages(count ?? 0);
-        } else {
-          setUnreadMessages(0);
-        }
-      }
-
-      const [,, photoResults] = await Promise.all([
-        loadProfile(userId),
-        loadPosts(userId),
-        loadPhotos(userId),
-        loadMyGroups(userId),
-        loadSavedEventsForUser(userId),
-      ]);
-      if (signedInUserId) {
-        await loadDesktopSavedEvents(signedInUserId);
+        void (async () => {
+          const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
+          const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);
+          if (convIds.length > 0) {
+            const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("is_read", false).neq("sender_id", signedInUserId).in("conversation_id", convIds);
+            if (!cancelled) setUnreadMessages(count ?? 0);
+          } else if (!cancelled) {
+            setUnreadMessages(0);
+          }
+        })();
       } else {
+        setUnreadMessages(0);
         setDesktopSavedEvents([]);
         setViewerIsEmployer(false);
         setViewerIsAdmin(false);
       }
-      await loadPhotoInteractions((photoResults ?? []).map((p) => p.id), signedInUserId);
+
+      await loadProfile(userId);
+      if (cancelled) return;
+      setLoading(false);
+
+      void supabase.rpc("close_expired_kangaroo_courts")
+        .then(({ error: closeKcErr }) => {
+          if (closeKcErr) console.warn("close_expired_kangaroo_courts (wall):", closeKcErr.message);
+        });
+
+      setProfileWallLoading(true);
+      void loadPosts(userId, { limit: PROFILE_WALL_PAGE_SIZE })
+        .catch((err) => console.error("Profile wall load failed:", err))
+        .finally(() => {
+          if (!cancelled) setProfileWallLoading(false);
+        });
+
+      setProfilePhotosLoading(true);
+      void loadPhotos(userId, { full: false })
+        .then((photoResults) => {
+          if (cancelled) return;
+          void loadPhotoInteractions((photoResults ?? []).map((p) => p.id), signedInUserId)
+            .catch((err) => console.error("Profile photo interactions load failed:", err));
+        })
+        .catch((err) => console.error("Profile photos load failed:", err))
+        .finally(() => {
+          if (!cancelled) setProfilePhotosLoading(false);
+        });
+
+      setProfileGroupsLoading(true);
+      void loadMyGroups(userId)
+        .catch((err) => console.error("Profile groups load failed:", err))
+        .finally(() => {
+          if (!cancelled) setProfileGroupsLoading(false);
+        });
+
+      void loadSavedEventsForUser(userId).catch((err) => console.error("Profile saved events load failed:", err));
+      if (signedInUserId) {
+        void loadDesktopSavedEvents(signedInUserId).catch((err) => console.error("Desktop saved events load failed:", err));
+      }
       if (signedInUserId && signedInUserId === userId) {
         void refreshPlankHolderChallenge();
       }
-
-      setLoading(false);
     }
 
     init();
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -2741,8 +2912,9 @@ export default function PublicProfilePage() {
     handledChallengeParamRef.current = marker;
 
     if (challengeTarget === "bio") {
-      openWallEditProfile();
-      window.setTimeout(() => bioTextareaRef.current?.focus(), 150);
+      void openWallEditProfile().then(() => {
+        window.setTimeout(() => bioTextareaRef.current?.focus(), 150);
+      });
       return;
     }
 
@@ -3014,6 +3186,89 @@ export default function PublicProfilePage() {
   }
   const referralBadge = getReferralBadge(referralCount);
 
+  function renderConnectionStats(compact: boolean): React.ReactElement {
+    const previewLimit = compact ? 5 : 6;
+    const countFontSize = compact ? 17 : 20;
+    const labelFontSize = compact ? 10 : 12;
+    const avatarSize = compact ? 26 : 28;
+    const recruiterIconSize = compact ? 16 : 18;
+    const avatarPreview = knownPreviewUsers.slice(0, previewLimit);
+
+    return (
+      <div style={{ display: "flex", gap: compact ? 14 : 16, marginTop: compact ? 8 : 0, justifyContent: compact ? undefined : "center", width: compact ? undefined : "100%", alignItems: "flex-start" }}>
+        <div style={{ textAlign: "center" }}>
+          <button
+            type="button"
+            onClick={() => openConnList("know")}
+            style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+          >
+            <div style={{ fontWeight: 900, fontSize: countFontSize }}>{knowCount}</div>
+            <div style={{ fontSize: labelFontSize, color: t.textMuted }}>Know</div>
+          </button>
+          {knowCount > 0 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, marginTop: 8 }}>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                {avatarPreview.map((u, idx) => {
+                  const n = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
+                  return (
+                    <a
+                      key={u.user_id}
+                      href={`/profile/${u.user_id}`}
+                      title={n}
+                      style={{
+                        width: avatarSize,
+                        height: avatarSize,
+                        marginLeft: idx === 0 ? 0 : -8,
+                        borderRadius: "50%",
+                        border: `2px solid ${t.surface}`,
+                        overflow: "hidden",
+                        background: t.badgeBg,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: t.textMuted,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        textDecoration: "none",
+                      }}
+                    >
+                      {u.photo_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={u.photo_url} alt={n} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                      ) : (n[0] || "U").toUpperCase()}
+                    </a>
+                  );
+                })}
+              </div>
+              {knowCount > previewLimit && (
+                <button
+                  type="button"
+                  onClick={() => openConnList("know")}
+                  style={{ background: "none", border: "none", color: "#1d4ed8", fontSize: compact ? 11 : 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
+                >
+                  +{knowCount - previewLimit} more
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+        <div style={{ textAlign: "center" }}>
+          <button
+            type="button"
+            onClick={() => openConnList("recruited")}
+            style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+          >
+            <div style={{ fontWeight: 900, fontSize: countFontSize, display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6 }}>
+              <BadgeIcon count={referralCount} size={recruiterIconSize} />
+              <span>{referralCount}</span>
+            </div>
+            <div style={{ fontSize: labelFontSize, color: t.textMuted }}>Recruited</div>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   function displayMilitaryStatus(status: string | null | undefined): string {
     if (status === "Active") return "Active Duty";
     return status ?? "";
@@ -3128,7 +3383,7 @@ export default function PublicProfilePage() {
             {isOwnWall && professionalTags.length === 0 && unitHistoryTags.length === 0 && (
               <button
                 type="button"
-                onClick={openWallEditProfile}
+                onClick={() => void openWallEditProfile()}
                 style={{ background: "none", border: "none", color: "#2563eb", fontSize: compact ? 11 : 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
               >
                 Add tags
@@ -3323,7 +3578,10 @@ export default function PublicProfilePage() {
             </>
           )}
 
-          {galleryPhotos.length === 0 && pinnedPhotos.length === 0 && (
+          {profilePhotosLoading && galleryPhotos.length === 0 && pinnedPhotos.length === 0 && (
+            <div style={{ color: t.textFaint, fontSize: 13 }}>Loading photos...</div>
+          )}
+          {!profilePhotosLoading && galleryPhotos.length === 0 && pinnedPhotos.length === 0 && (
             <div style={{ color: t.textFaint, fontSize: 13 }}>No photos yet.</div>
           )}
         </div>}
@@ -3406,66 +3664,7 @@ export default function PublicProfilePage() {
                         <PlankHolderBadge number={profile.plank_holder_number} />
                       </div>
                     )}
-                    {!isEmployerProfile && (
-                    <div style={{ display: "flex", gap: 14, marginTop: 8, alignItems: "flex-start" }}>
-                      <div style={{ textAlign: "center" }}>
-                        <button type="button" onClick={() => openConnList("know")}
-                          style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                          <div style={{ fontWeight: 900, fontSize: 17 }}>{knowCount}</div>
-                          <div style={{ fontSize: 10, color: t.textMuted }}>Know</div>
-                        </button>
-                        {knowCount > 0 && (
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, marginTop: 8 }}>
-                            <div style={{ display: "flex", alignItems: "center" }}>
-                              {knownPreviewUsers.slice(0, 5).map((u, idx) => {
-                                const n = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
-                                return (
-                                  <a
-                                    key={u.user_id}
-                                    href={`/profile/${u.user_id}`}
-                                    title={n}
-                                    style={{
-                                      width: 26,
-                                      height: 26,
-                                      marginLeft: idx === 0 ? 0 : -8,
-                                      borderRadius: "50%",
-                                      border: `2px solid ${t.surface}`,
-                                      overflow: "hidden",
-                                      background: t.badgeBg,
-                                      display: "flex",
-                                      alignItems: "center",
-                                      justifyContent: "center",
-                                      color: t.textMuted,
-                                      fontSize: 11,
-                                      fontWeight: 700,
-                                      textDecoration: "none",
-                                    }}
-                                  >
-                                    {u.photo_url ? <img src={u.photo_url} alt={n} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (n[0] || "U").toUpperCase()}
-                                  </a>
-                                );
-                              })}
-                            </div>
-                            {knowCount > 5 && (
-                              <button type="button" onClick={() => openConnList("know")} style={{ background: "none", border: "none", color: "#1d4ed8", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: 0 }}>
-                                +{knowCount - 5} more
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ textAlign: "center" }}>
-                        <button type="button" onClick={() => openConnList("recruited")}
-                          style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                          <div style={{ fontWeight: 900, fontSize: 17, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            <BadgeIcon count={referralCount} size={16} />
-                            <span>{referralCount}</span>
-                          </div>
-                          <div style={{ fontSize: 10, color: t.textMuted }}>Recruited</div>
-                        </button>
-                      </div>
-                    </div>
-                    )}
+                    {renderConnectionStats(true)}
                   </div>
                 </div>
 
@@ -3530,7 +3729,7 @@ export default function PublicProfilePage() {
                         textMuted={t.textMuted}
                         textFaint={t.textFaint}
                         isOwnWall={isOwnWall}
-                        onCompleteBio={openWallEditProfile}
+                        onCompleteBio={() => void openWallEditProfile()}
                       />
                     ) : (
                     <>
@@ -3560,7 +3759,7 @@ export default function PublicProfilePage() {
                             </div>
                             <button
                               type="button"
-                              onClick={openWallEditProfile}
+                              onClick={() => void openWallEditProfile()}
                               style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                             >
                               Complete Bio
@@ -3637,7 +3836,7 @@ export default function PublicProfilePage() {
                       {!editingProfile && !showDesktopProfileBack && (
                         <button
                           type="button"
-                          onClick={openWallEditProfile}
+                          onClick={() => void openWallEditProfile()}
                           style={{
                             background: "#111",
                             color: "white",
@@ -3738,66 +3937,7 @@ export default function PublicProfilePage() {
                     )}
                   </div>
 
-                  {!isEmployerProfile && (
-                  <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%", alignItems: "flex-start" }}>
-                    <div style={{ textAlign: "center" }}>
-                      <button type="button" onClick={() => openConnList("know")}
-                        style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                        <div style={{ fontWeight: 900, fontSize: 20 }}>{knowCount}</div>
-                        <div style={{ fontSize: 12, color: t.textMuted }}>Know</div>
-                      </button>
-                      {knowCount > 0 && (
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, marginTop: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center" }}>
-                            {knownPreviewUsers.slice(0, 6).map((u, idx) => {
-                              const n = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
-                              return (
-                                <a
-                                  key={u.user_id}
-                                  href={`/profile/${u.user_id}`}
-                                  title={n}
-                                  style={{
-                                    width: 28,
-                                    height: 28,
-                                    marginLeft: idx === 0 ? 0 : -8,
-                                    borderRadius: "50%",
-                                    border: `2px solid ${t.surface}`,
-                                    overflow: "hidden",
-                                    background: t.badgeBg,
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    color: t.textMuted,
-                                    fontSize: 11,
-                                    fontWeight: 700,
-                                    textDecoration: "none",
-                                  }}
-                                >
-                                  {u.photo_url ? <img src={u.photo_url} alt={n} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (n[0] || "U").toUpperCase()}
-                                </a>
-                              );
-                            })}
-                          </div>
-                          {knowCount > 6 && (
-                            <button type="button" onClick={() => openConnList("know")} style={{ background: "none", border: "none", color: "#1d4ed8", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>
-                              +{knowCount - 6} more
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ textAlign: "center" }}>
-                      <button type="button" onClick={() => openConnList("recruited")}
-                        style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                        <div style={{ fontWeight: 900, fontSize: 20, display: "inline-flex", alignItems: "center", gap: 6 }}>
-                          <BadgeIcon count={referralCount} size={18} />
-                          <span>{referralCount}</span>
-                        </div>
-                        <div style={{ fontSize: 12, color: t.textMuted }}>Recruited</div>
-                      </button>
-                    </div>
-                  </div>
-                  )}
+                  {renderConnectionStats(false)}
 
                 {!isEmployerProfile && renderWorkUnitHistorySection(false)}
 
@@ -3859,7 +3999,7 @@ export default function PublicProfilePage() {
                         textMuted={t.textMuted}
                         textFaint={t.textFaint}
                         isOwnWall={isOwnWall}
-                        onCompleteBio={openWallEditProfile}
+                        onCompleteBio={() => void openWallEditProfile()}
                       />
                     ) : (
                     <>
@@ -3889,7 +4029,7 @@ export default function PublicProfilePage() {
                             </div>
                             <button
                               type="button"
-                              onClick={openWallEditProfile}
+                              onClick={() => void openWallEditProfile()}
                               style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                             >
                               Complete Bio
@@ -4079,7 +4219,7 @@ export default function PublicProfilePage() {
                     {isOwnWall && !editingProfile && !showDesktopProfileBack && (
                       <button
                         type="button"
-                        onClick={openWallEditProfile}
+                        onClick={() => void openWallEditProfile()}
                         style={{
                           background: "#111",
                           color: "white",
@@ -4568,7 +4708,7 @@ export default function PublicProfilePage() {
                     {galleryPhotos.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => setGalleryExpanded(!galleryExpanded)}
+                        onClick={() => void toggleGalleryExpanded()}
                         style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
                       >
                         Gallery ({galleryPhotos.length}) {galleryExpanded ? "\u25B2" : "\u25BC"}
@@ -4584,7 +4724,7 @@ export default function PublicProfilePage() {
                     {!isMobile && pinnedPhotos.length > photoPreviewItems.length && (
                       <button
                         type="button"
-                        onClick={() => setShowAllModal("photos")}
+                        onClick={() => void openFullProfilePhotos()}
                         style={{ border: "none", background: "none", color: "#2563eb", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0 }}
                       >
                         Show all ({pinnedPhotos.length})
@@ -4596,7 +4736,9 @@ export default function PublicProfilePage() {
                 <div style={!profileLayoutCompact ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobilePhotoGridCols, gap: 8 }}>
                   {pinnedPhotos.length === 0 && (
                     <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
-                      {photos.length > 0
+                      {profilePhotosLoading
+                        ? "Loading photos..."
+                        : photos.length > 0
                         ? (isOwnWall ? "Pin photos from the gallery to feature them here." : "No featured photos yet.")
                         : "No photos yet."}
                     </div>
@@ -4697,7 +4839,7 @@ export default function PublicProfilePage() {
                 <div style={!profileLayoutCompact ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobileGroupsGridCols, gap: 8 }}>
                   {myGroups.length === 0 && (
                     <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
-                      No groups yet.
+                      {profileGroupsLoading ? "Loading groups..." : "No groups yet."}
                     </div>
                   )}
                   {groupPreviewItems.map((group) => (
@@ -4960,7 +5102,11 @@ export default function PublicProfilePage() {
             )}
 
             <div style={{ marginTop: 12, display: "grid", gap: 0 }}>
-              {posts.length === 0 && <div style={{ color: t.textMuted }}>No wall posts yet.</div>}
+              {posts.length === 0 && (
+                <div style={{ color: t.textMuted }}>
+                  {profileWallLoading ? "Loading wall posts..." : "No wall posts yet."}
+                </div>
+              )}
 
               {posts.map((post) => {
                 const commentsOpen = expandedComments[post.id] || false;
@@ -5515,6 +5661,28 @@ export default function PublicProfilePage() {
                   </div>
                 );
               })}
+              {profileWallHasMorePosts && (
+                <div style={{ display: "flex", justifyContent: "center", padding: "14px 0 4px" }}>
+                  <button
+                    type="button"
+                    onClick={() => void loadMoreProfileWallPosts()}
+                    disabled={profileWallLoadingMore}
+                    style={{
+                      border: `1px solid ${t.border}`,
+                      background: t.surface,
+                      color: t.text,
+                      borderRadius: 10,
+                      padding: "9px 16px",
+                      fontWeight: 800,
+                      fontSize: 13,
+                      cursor: profileWallLoadingMore ? "wait" : "pointer",
+                      opacity: profileWallLoadingMore ? 0.65 : 1,
+                    }}
+                  >
+                    {profileWallLoadingMore ? "Loading..." : "Load more posts"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
     </div>

@@ -12,6 +12,9 @@ type Props = {
   canSave: boolean;
   isTogglingSave: boolean;
   onToggleSave: (job: JobModalData) => void | Promise<void>;
+  canShare?: boolean;
+  isSharing?: boolean;
+  onShare?: (job: JobModalData) => void;
   size?: Size;
 };
 
@@ -38,6 +41,9 @@ export default function JobCardActions({
   canSave,
   isTogglingSave,
   onToggleSave,
+  canShare = false,
+  isSharing = false,
+  onShare,
   size = "default",
 }: Props) {
   const { t } = useTheme();
@@ -109,6 +115,21 @@ export default function JobCardActions({
           No link
         </span>
       )}
+
+      <button
+        type="button"
+        onClick={() => onShare?.(job)}
+        disabled={!canShare || isSharing}
+        title={canShare ? undefined : "Sign in to share jobs"}
+        style={{
+          ...ghostStyle,
+          color: "#2563eb",
+          cursor: !canShare || isSharing ? "not-allowed" : "pointer",
+          opacity: !canShare || isSharing ? 0.6 : 1,
+        }}
+      >
+        {isSharing ? "Sharing..." : "Share"}
+      </button>
 
       <button
         type="button"
