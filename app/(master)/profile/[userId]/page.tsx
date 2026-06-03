@@ -40,6 +40,7 @@ import {
   FEED_SECTION_GAP,
   feedContainedImageStyle,
   feedPostCardStyle,
+  feedSingleMediaFrameStyle,
   feedSingleImageStyle,
 } from "../../../lib/feedLayout";
 import { SkillBadgeValue } from "../../../lib/skillBadges";
@@ -5085,7 +5086,9 @@ export default function PublicProfilePage() {
 
                     {post.gif_url && (
                       <div style={{ marginTop: FEED_SECTION_GAP, width: "100%", maxWidth: FEED_POST_IMAGES_MAX_WIDTH }}>
-                        <img src={post.gif_url} alt="GIF" style={{ width: "100%", maxHeight: 360, borderRadius: FEED_MEDIA_RADIUS, display: "block", objectFit: "contain" }} />
+                        <div style={{ ...feedSingleMediaFrameStyle, maxHeight: 360 }}>
+                          <img src={post.gif_url} alt="GIF" style={feedSingleImageStyle} />
+                        </div>
                       </div>
                     )}
 
@@ -5122,7 +5125,21 @@ export default function PublicProfilePage() {
                           {visible.map((url, i) => {
                             const isSingleImage = visible.length === 1;
                             return (
-                            <div key={i} style={{ position: "relative", aspectRatio: isSingleImage ? undefined : "1/1", borderRadius: FEED_MEDIA_RADIUS, overflow: "hidden", border: isSingleImage ? "none" : `1px solid ${t.borderLight}`, background: FEED_MEDIA_FRAME_BG }}>
+                            <div
+                              key={i}
+                              style={{
+                                ...(isSingleImage
+                                  ? feedSingleMediaFrameStyle
+                                  : {
+                                      position: "relative" as const,
+                                      aspectRatio: "1/1",
+                                      borderRadius: FEED_MEDIA_RADIUS,
+                                      overflow: "hidden",
+                                      background: FEED_MEDIA_FRAME_BG,
+                                    }),
+                                border: isSingleImage ? "none" : `1px solid ${t.borderLight}`,
+                              }}
+                            >
                               {isVideoUrl(url) ? (
                                 <>
                                   <video src={url} preload="metadata" muted playsInline style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle} />

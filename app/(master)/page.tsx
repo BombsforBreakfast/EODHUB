@@ -116,6 +116,7 @@ import {
   FEED_SECTION_GAP,
   feedContainedImageStyle,
   feedPostCardStyle,
+  feedSingleMediaFrameStyle,
   feedSingleImageStyle,
 } from "../lib/feedLayout";
 import { compareFeedPosts } from "../lib/feedRanking";
@@ -7142,12 +7143,16 @@ export default function HomePage() {
                                     type="button"
                                     onClick={() => openGallery(post.image_urls, index)}
                                     style={{
-                                      position: "relative",
-                                      borderRadius: FEED_MEDIA_RADIUS,
-                                      overflow: "hidden",
+                                      ...(isSingleImage
+                                        ? feedSingleMediaFrameStyle
+                                        : {
+                                            position: "relative" as const,
+                                            borderRadius: FEED_MEDIA_RADIUS,
+                                            overflow: "hidden",
+                                            background: FEED_MEDIA_FRAME_BG,
+                                            aspectRatio: "1 / 1",
+                                          }),
                                       border: isSingleImage ? "none" : `1px solid ${t.borderLight}`,
-                                      background: FEED_MEDIA_FRAME_BG,
-                                      aspectRatio: isSingleImage ? "16 / 9" : "1 / 1",
                                       padding: 0,
                                       cursor: "pointer",
                                       width: "100%",
@@ -7213,18 +7218,9 @@ export default function HomePage() {
                         boxSizing: "border-box",
                       }}
                     >
-                      <img
-                        src={post.gif_url}
-                        alt="GIF"
-                        style={{
-                          width: "100%",
-                          height: "auto",
-                          maxHeight: 360,
-                          borderRadius: FEED_MEDIA_RADIUS,
-                          display: "block",
-                          objectFit: "contain",
-                        }}
-                      />
+                      <div style={{ ...feedSingleMediaFrameStyle, maxHeight: 360 }}>
+                        <img src={post.gif_url} alt="GIF" style={feedSingleImageStyle} />
+                      </div>
                     </div>
                   )}
 

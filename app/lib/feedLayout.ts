@@ -42,6 +42,17 @@ export const FEED_SINGLE_IMAGE_MAX_HEIGHT = "min(580px, 78vh)" as const;
 /** Letterbox background behind contained feed / wall post media */
 export const FEED_MEDIA_FRAME_BG = "#111827" as const;
 
+/** Stable frame for single post media — contains full image/video without hard cropping. */
+export const feedSingleMediaFrameStyle = {
+  position: "relative",
+  width: "100%",
+  aspectRatio: "16 / 9",
+  maxHeight: FEED_SINGLE_IMAGE_MAX_HEIGHT,
+  overflow: "hidden",
+  borderRadius: FEED_MEDIA_RADIUS,
+  background: FEED_MEDIA_FRAME_BG,
+} as const;
+
 type FeedThemeLike = {
   borderLight: string;
 };
@@ -69,13 +80,11 @@ export const feedContainedImageStyle = {
   display: "block",
 } as const;
 
-/** Single full-width feed image — natural aspect ratio, no square crop. */
+/** Single full-width feed image inside a reserved frame — no square crop. */
 export const feedSingleImageStyle = {
   width: "100%",
-  height: "auto",
-  maxHeight: FEED_SINGLE_IMAGE_MAX_HEIGHT,
+  height: "100%",
   objectFit: "contain",
   objectPosition: "center",
   display: "block",
-  background: FEED_MEDIA_FRAME_BG,
 } as const;
