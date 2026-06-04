@@ -325,6 +325,50 @@ a.rabbithole-brand-link:focus-visible {
 .nav-admin-bar {
   flex-shrink: 0;
 }
+
+/* Sidebar messaging composer */
+.sidebar-composer-wrap {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.sidebar-composer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.sidebar-composer-row > input,
+.sidebar-composer-row > textarea {
+  flex: 1 1 0%;
+  min-width: 0;
+  box-sizing: border-box;
+  align-self: center;
+}
+.sidebar-composer-row > button,
+.sidebar-composer-row > div {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+}
+.sidebar-send-btn {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.sidebar-send-btn:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+.sidebar-send-btn:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
 @media (max-width: 900px) {
   .nav-admin-bar .nav-btn {
     padding: 6px 9px !important;
@@ -628,7 +672,8 @@ a.rabbithole-brand-link:focus-visible {
     min-width: 0;
     box-sizing: border-box;
   }
-  .sidebar-composer-row > input {
+  .sidebar-composer-row > input,
+  .sidebar-composer-row > textarea {
     flex: 1 1 0%;
     min-width: 0;
     box-sizing: border-box;

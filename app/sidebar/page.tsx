@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import EmojiPickerButton from "../components/EmojiPickerButton";
@@ -179,6 +179,42 @@ function shouldShowMessageMatch(conv: Conversation, query: string, messageMatche
   return !(conv.last_message_preview ?? "").toLowerCase().includes(q);
 }
 
+const COMPOSER_MIN_PX = 44;
+const COMPOSER_MAX_PX = 240;
+const COMPOSER_DEFAULT_PX = 44;
+
+function clampComposerHeight(px: number) {
+  return Math.min(COMPOSER_MAX_PX, Math.max(COMPOSER_MIN_PX, px));
+}
+
+function fitTextareaToContent(textarea: HTMLTextAreaElement, maxPx: number) {
+  textarea.style.height = "0px";
+  const natural = textarea.scrollHeight;
+  const h = Math.min(maxPx, Math.max(COMPOSER_MIN_PX, natural));
+  textarea.style.height = `${h}px`;
+  textarea.style.overflowY = natural > maxPx ? "auto" : "hidden";
+}
+
+function sidebarSendButtonStyle(disabled: boolean, isMobile: boolean): CSSProperties {
+  return {
+    padding: isMobile ? "0 12px" : "0 18px",
+    minHeight: 34,
+    height: 34,
+    borderRadius: 20,
+    border: "none",
+    background: disabled ? "#1a1a1a" : "#000000",
+    color: disabled ? "rgba(255,255,255,0.38)" : "#ffffff",
+    fontWeight: 800,
+    letterSpacing: 0.02,
+    cursor: disabled ? "default" : "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    flexShrink: 0,
+  };
+}
+
 export default function SidebarPage() {
   useRequireFullAccess("app/sidebar/page.tsx");
   usePageTracking(PAGE_TRACKING.sidebar);
@@ -223,7 +259,11 @@ export default function SidebarPage() {
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const conversationsRealtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const conversationRefreshTimerRef = useRef<number | null>(null);
-  const messageInputRef = useRef<HTMLInputElement | null>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const requestInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [composerHeight, setComposerHeight] = useState(COMPOSER_DEFAULT_PX);
+  const [composerResizing, setComposerResizing] = useState(false);
+  const composerResizeStartRef = useRef<{ startY: number; startHeight: number } | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const { t, isDark } = useTheme();
   const { blockIfNeeded, paywallOpen, setPaywallOpen } = useMemberSubscriptionGate();
@@ -234,6 +274,30 @@ export default function SidebarPage() {
     window.addEventListener("resize", check);
     return () => window.removeEventListener("resize", check);
   }, []);
+
+  useLayoutEffect(() => {
+    if (messageInputRef.current) fitTextareaToContent(messageInputRef.current, composerHeight);
+    if (requestInputRef.current) fitTextareaToContent(requestInputRef.current, composerHeight);
+  }, [newMessage, requestDraft, composerHeight]);
+
+  useEffect(() => {
+    if (!composerResizing) return;
+    const onMove = (e: MouseEvent) => {
+      const start = composerResizeStartRef.current;
+      if (!start) return;
+      setComposerHeight(clampComposerHeight(start.startHeight + (start.startY - e.clientY)));
+    };
+    const onUp = () => {
+      composerResizeStartRef.current = null;
+      setComposerResizing(false);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, [composerResizing]);
 
   useEffect(() => {
     async function init() {
@@ -1339,7 +1403,7 @@ export default function SidebarPage() {
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 6, marginTop: 8, alignItems: "center" }}>
-                  <EmojiPickerButton value={editContent} onChange={setEditContent} inputRef={messageInputRef} theme={isDark ? "dark" : "light"} />
+                  <EmojiPickerButton value={editContent} onChange={setEditContent} inputRef={editInputRef} theme={isDark ? "dark" : "light"} />
                   <GifPickerButton onSelect={(url) => setEditGifUrl(url)} theme={isDark ? "dark" : "light"} />
                   <div style={{ flex: 1 }} />
                   <button onClick={() => { setEditingMsgId(null); setEditContent(""); setEditGifUrl(null); }} style={{ padding: "4px 10px", borderRadius: 7, border: `1px solid ${t.border}`, background: "transparent", fontWeight: 700, fontSize: 12, cursor: "pointer", color: t.text }}>Cancel</button>
@@ -1468,6 +1532,212 @@ export default function SidebarPage() {
     </div>
   );
 
+  const showBottomComposer = !isPendingSent && !!(requestTarget || activeConvId);
+
+  const composerTextareaBaseStyle = {
+    flex: 1,
+    minWidth: 0,
+    boxSizing: "border-box" as const,
+    padding: "10px 14px",
+    borderRadius: 20,
+    border: `1px solid ${t.inputBorder}`,
+    background: t.input,
+    color: t.text,
+    fontSize: 14,
+    outline: "none",
+    resize: "none" as const,
+    lineHeight: 1.45,
+    fontFamily: "inherit",
+    width: "100%",
+    maxHeight: composerHeight,
+    minHeight: COMPOSER_MIN_PX,
+  };
+
+  const composerResizeHandle = (
+    <div
+      role="separator"
+      aria-label="Drag to resize message box"
+      onMouseDown={(e) => {
+        e.preventDefault();
+        composerResizeStartRef.current = { startY: e.clientY, startHeight: composerHeight };
+        setComposerResizing(true);
+      }}
+      style={{
+        height: 10,
+        cursor: "ns-resize",
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        touchAction: "none",
+        userSelect: "none",
+      }}
+    >
+      <div style={{ width: 48, height: 4, borderRadius: 999, background: t.border }} />
+    </div>
+  );
+
+  const requestComposerBlock = requestTarget ? (
+    <div className="sidebar-composer-wrap" style={{ padding: isMobile ? "12px 12px" : "12px 16px", borderTop: `1px solid ${t.border}`, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", background: t.surface }}>
+      {composerResizeHandle}
+      <div className="sidebar-composer-row" style={{ display: "flex", gap: isMobile ? 6 : 10, alignItems: "center", width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
+        <textarea
+          ref={requestInputRef}
+          autoFocus
+          rows={1}
+          value={requestDraft}
+          onChange={(e) => {
+            setRequestDraft(e.target.value);
+            fitTextareaToContent(e.target, composerHeight);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && requestDraft.trim()) {
+              e.preventDefault();
+              sendRequest();
+            }
+          }}
+          placeholder={`Message ${requestTarget.name}...`}
+          style={composerTextareaBaseStyle}
+        />
+        <button
+          type="button"
+          className="sidebar-send-btn"
+          onClick={sendRequest}
+          disabled={!requestDraft.trim() || sending}
+          style={sidebarSendButtonStyle(!requestDraft.trim() || sending, isMobile)}
+        >
+          {sending && <span className="btn-spinner" />}
+          Send
+        </button>
+      </div>
+      {(() => {
+        const url = extractFirstUrl(requestDraft);
+        const preview = url ? urlPreviews[url] : null;
+        return preview ? (
+          <div style={{ marginTop: 8 }}>
+            <UrlPreviewCard preview={preview} borderColor={t.border} bgColor={t.surface} titleColor={t.text} mutedTextColor={t.textMuted} compact />
+          </div>
+        ) : null;
+      })()}
+    </div>
+  ) : null;
+
+  const threadComposerBlock = activeConvId && !requestTarget ? (
+    <div
+      onDragOver={(e) => {
+        if (isMobile) return;
+        e.preventDefault();
+        setIsDraggingPhoto(true);
+      }}
+      onDragLeave={() => setIsDraggingPhoto(false)}
+      onDrop={handlePhotoDrop}
+      className="sidebar-composer-wrap"
+      style={{
+        padding: isMobile ? "12px 12px" : "12px 16px",
+        borderTop: `1px solid ${isDraggingPhoto ? "#60a5fa" : t.border}`,
+        background: isDraggingPhoto ? (isDark ? "rgba(96,165,250,0.12)" : "rgba(96,165,250,0.1)") : t.surface,
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+      }}
+    >
+      <input
+        ref={photoInputRef}
+        type="file"
+        accept="image/*"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) setMessagePhoto(file);
+          e.currentTarget.value = "";
+        }}
+        style={{ display: "none" }}
+      />
+      {composerResizeHandle}
+      {selectedGifUrl && (
+        <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
+          <img src={selectedGifUrl} alt="GIF" style={{ maxHeight: 120, maxWidth: 220, borderRadius: 10, display: "block" }} />
+          <button
+            type="button"
+            onClick={() => setSelectedGifUrl(null)}
+            style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {selectedPhoto && (
+        <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
+          <img src={selectedPhoto.previewUrl} alt="Selected attachment" style={{ maxHeight: 140, maxWidth: 240, borderRadius: 10, display: "block" }} />
+          <button
+            type="button"
+            onClick={clearMessagePhoto}
+            style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {isDraggingPhoto && !isMobile && (
+        <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 10, border: "1px dashed #60a5fa", color: "#60a5fa", fontSize: 12, fontWeight: 800 }}>
+          Drop photo to attach
+        </div>
+      )}
+      <div className="sidebar-composer-row" style={{ display: "flex", gap: isMobile ? 6 : 10, alignItems: "center", width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
+        <textarea
+          ref={messageInputRef}
+          rows={1}
+          value={newMessage}
+          onChange={(e) => {
+            setNewMessage(e.target.value);
+            fitTextareaToContent(e.target, composerHeight);
+          }}
+          onPaste={handleMessagePhotoPaste}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              sendMessage();
+            }
+          }}
+          placeholder="Type a message..."
+          style={composerTextareaBaseStyle}
+        />
+        <EmojiPickerButton value={newMessage} onChange={setNewMessage} inputRef={messageInputRef} theme={isDark ? "dark" : "light"} />
+        <button
+          type="button"
+          onClick={() => photoInputRef.current?.click()}
+          disabled={sending}
+          title="Add photo"
+          style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: "50%", width: 34, height: 34, cursor: sending ? "default" : "pointer", fontWeight: 900, opacity: sending ? 0.6 : 1, flexShrink: 0 }}
+        >
+          +
+        </button>
+        <GifPickerButton onSelect={(url) => setSelectedGifUrl(url)} theme={isDark ? "dark" : "light"} variant="circle" />
+        <button
+          type="button"
+          className="sidebar-send-btn"
+          onClick={() => sendMessage()}
+          disabled={(!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending}
+          style={sidebarSendButtonStyle((!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending, isMobile)}
+        >
+          {sending && <span className="btn-spinner" />}
+          Send
+        </button>
+      </div>
+      {(() => {
+        const url = extractFirstUrl(newMessage);
+        const preview = url ? urlPreviews[url] : null;
+        return preview ? (
+          <div style={{ marginTop: 8 }}>
+            <UrlPreviewCard preview={preview} borderColor={t.border} bgColor={t.surface} titleColor={t.text} mutedTextColor={t.textMuted} compact />
+          </div>
+        ) : null;
+      })()}
+    </div>
+  ) : null;
+
+  const bottomComposerBar = showBottomComposer ? (requestTarget ? requestComposerBlock : threadComposerBlock) : null;
+
   const ThreadPane = (
     <div className={isMobile ? "sidebar-mobile-pane" : undefined} style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
       {/* Thread header */}
@@ -1526,42 +1796,7 @@ export default function SidebarPage() {
               Your message will be sent as a request.<br />{requestTarget.name} can choose to accept or decline.
             </div>
           </div>
-          <div className={isMobile ? "sidebar-composer-wrap" : undefined} style={{ padding: isMobile ? "12px 12px" : "12px 16px", borderTop: `1px solid ${t.border}`, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
-            <div className={isMobile ? "sidebar-composer-row" : undefined} style={{ display: "flex", gap: isMobile ? 6 : 10, alignItems: "center", width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
-            <input
-              autoFocus
-              value={requestDraft}
-              onChange={(e) => setRequestDraft(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && requestDraft.trim()) { e.preventDefault(); sendRequest(); } }}
-              placeholder={`Message ${requestTarget.name}...`}
-              style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
-            />
-            <button
-              onClick={sendRequest}
-              disabled={!requestDraft.trim() || sending}
-              style={{ padding: isMobile ? "10px 12px" : "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: !requestDraft.trim() || sending ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}
-            >
-              {sending && <span className="btn-spinner" />}
-              Send
-            </button>
-            </div>
-          </div>
-          {(() => {
-            const url = extractFirstUrl(requestDraft);
-            const preview = url ? urlPreviews[url] : null;
-            return preview ? (
-              <div style={{ padding: "0 16px 12px" }}>
-                <UrlPreviewCard
-                  preview={preview}
-                  borderColor={t.border}
-                  bgColor={t.surface}
-                  titleColor={t.text}
-                  mutedTextColor={t.textMuted}
-                  compact
-                />
-              </div>
-            ) : null;
-          })()}
+          {isMobile ? requestComposerBlock : null}
         </>
       ) : isPendingSent ? (
         /* Pending sent — show the message they sent + waiting footer */
@@ -1589,116 +1824,7 @@ export default function SidebarPage() {
               </div>
             </div>
           )}
-          {activeConvId && (
-            <div
-              onDragOver={(e) => {
-                if (isMobile) return;
-                e.preventDefault();
-                setIsDraggingPhoto(true);
-              }}
-              onDragLeave={() => setIsDraggingPhoto(false)}
-              onDrop={handlePhotoDrop}
-              className={isMobile ? "sidebar-composer-wrap" : undefined}
-              style={{
-                padding: isMobile ? "12px 12px" : "12px 16px",
-                borderTop: `1px solid ${isDraggingPhoto ? "#60a5fa" : t.border}`,
-                background: isDraggingPhoto ? (isDark ? "rgba(96,165,250,0.12)" : "rgba(96,165,250,0.1)") : undefined,
-                width: "100%",
-                maxWidth: "100%",
-                minWidth: 0,
-                boxSizing: "border-box",
-              }}
-            >
-              <input
-                ref={photoInputRef}
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) setMessagePhoto(file);
-                  e.currentTarget.value = "";
-                }}
-                style={{ display: "none" }}
-              />
-              {selectedGifUrl && (
-                <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
-                  <img src={selectedGifUrl} alt="GIF" style={{ maxHeight: 120, maxWidth: 220, borderRadius: 10, display: "block" }} />
-                  <button
-                    type="button"
-                    onClick={() => setSelectedGifUrl(null)}
-                    style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-                  >×</button>
-                </div>
-              )}
-              {selectedPhoto && (
-                <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
-                  <img src={selectedPhoto.previewUrl} alt="Selected attachment" style={{ maxHeight: 140, maxWidth: 240, borderRadius: 10, display: "block" }} />
-                  <button
-                    type="button"
-                    onClick={clearMessagePhoto}
-                    style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
-                  >×</button>
-                </div>
-              )}
-              {isDraggingPhoto && !isMobile && (
-                <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 10, border: "1px dashed #60a5fa", color: "#60a5fa", fontSize: 12, fontWeight: 800 }}>
-                  Drop photo to attach
-                </div>
-              )}
-              <div className={isMobile ? "sidebar-composer-row" : undefined} style={{ display: "flex", gap: isMobile ? 6 : 10, alignItems: "center", width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
-                <input
-                  ref={messageInputRef}
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onPaste={handleMessagePhotoPaste}
-                  onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-                  placeholder="Type a message..."
-                  style={{ flex: 1, minWidth: 0, boxSizing: "border-box", padding: "10px 14px", borderRadius: 20, border: `1px solid ${t.inputBorder}`, background: t.input, color: t.text, fontSize: 14, outline: "none" }}
-                />
-                <EmojiPickerButton
-                  value={newMessage}
-                  onChange={setNewMessage}
-                  inputRef={messageInputRef}
-                  theme={isDark ? "dark" : "light"}
-                />
-                <button
-                  type="button"
-                  onClick={() => photoInputRef.current?.click()}
-                  disabled={sending}
-                  title="Add photo"
-                  style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: "50%", width: 34, height: 34, cursor: sending ? "default" : "pointer", fontWeight: 900, opacity: sending ? 0.6 : 1, flexShrink: 0 }}
-                >
-                  +
-                </button>
-                <GifPickerButton
-                  onSelect={(url) => setSelectedGifUrl(url)}
-                  theme={isDark ? "dark" : "light"}
-                />
-                <button
-                  onClick={() => sendMessage()}
-                  disabled={(!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending}
-                  style={{ padding: isMobile ? "10px 12px" : "10px 18px", borderRadius: 20, border: "none", background: "#111", color: "white", fontWeight: 700, cursor: "pointer", opacity: (!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}
-                >
-                  {sending && <span className="btn-spinner" />}
-                  Send
-                </button>
-              </div>
-              {(() => {
-                const url = extractFirstUrl(newMessage);
-                const preview = url ? urlPreviews[url] : null;
-                return preview ? (
-                  <UrlPreviewCard
-                    preview={preview}
-                    borderColor={t.border}
-                    bgColor={t.surface}
-                    titleColor={t.text}
-                    mutedTextColor={t.textMuted}
-                    compact
-                  />
-                ) : null;
-              })()}
-            </div>
-          )}
+          {isMobile && activeConvId ? threadComposerBlock : null}
         </>
       )}
     </div>
@@ -1712,7 +1838,7 @@ export default function SidebarPage() {
         border: `1px solid ${t.border}`, borderRadius: isMobile ? 12 : 16, overflow: "hidden", background: t.surface,
         display: "grid",
         gridTemplateColumns: isMobile ? "1fr" : "minmax(320px, 35%) minmax(0, 1fr)",
-        gridTemplateRows: "1fr",
+        gridTemplateRows: isMobile ? "1fr" : showBottomComposer ? "1fr auto" : "1fr",
         height: "calc(100dvh - 120px)",
         width: "100%",
         maxWidth: "100%",
@@ -1723,8 +1849,17 @@ export default function SidebarPage() {
           mobileView === "list" ? InboxPane : ThreadPane
         ) : (
           <>
-            {InboxPane}
-            {ThreadPane}
+            <div style={{ gridColumn: 1, gridRow: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              {InboxPane}
+            </div>
+            <div style={{ gridColumn: 2, gridRow: 1, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              {ThreadPane}
+            </div>
+            {showBottomComposer && bottomComposerBar ? (
+              <div style={{ gridColumn: "1 / -1", gridRow: 2, minWidth: 0, flexShrink: 0 }}>
+                {bottomComposerBar}
+              </div>
+            ) : null}
           </>
         )}
       </div>

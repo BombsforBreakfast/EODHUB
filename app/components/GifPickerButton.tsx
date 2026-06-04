@@ -15,9 +15,11 @@ type GiphyGif = {
 type Props = {
   onSelect: (gifUrl: string) => void;
   theme?: "light" | "dark";
+  /** Circle matches sidebar composer + / photo button */
+  variant?: "pill" | "circle";
 };
 
-export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
+export default function GifPickerButton({ onSelect, theme = "light", variant = "pill" }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [gifs, setGifs] = useState<GiphyGif[]>([]);
@@ -111,7 +113,9 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
   const border = theme === "dark" ? "#333" : "#e5e7eb";
   const text = theme === "dark" ? "#fff" : "#111";
   const inputBg = theme === "dark" ? "#2a2a2a" : "#f3f4f6";
+  const surface = theme === "dark" ? "#1e1e1e" : "#fff";
   const isMobileSheet = open && isMobile;
+  const isCircle = variant === "circle";
 
   return (
     <>
@@ -126,18 +130,40 @@ export default function GifPickerButton({ onSelect, theme = "light" }: Props) {
         type="button"
         onClick={() => setOpen((v) => !v)}
         title="Add GIF"
-        style={{
-          background: "transparent",
-          border: "none",
-          fontSize: 12,
-          fontWeight: 800,
-          cursor: "pointer",
-          padding: "4px 8px",
-          borderRadius: 8,
-          opacity: open ? 1 : 0.65,
-          color: text,
-          letterSpacing: 0.5,
-        }}
+        style={
+          isCircle
+            ? {
+                border: `1px solid ${border}`,
+                background: surface,
+                color: text,
+                borderRadius: "50%",
+                width: 34,
+                height: 34,
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 10,
+                fontWeight: 900,
+                cursor: "pointer",
+                opacity: open ? 1 : 0.85,
+                letterSpacing: 0.3,
+                lineHeight: 1,
+                flexShrink: 0,
+              }
+            : {
+                background: "transparent",
+                border: "none",
+                fontSize: 12,
+                fontWeight: 800,
+                cursor: "pointer",
+                padding: "4px 8px",
+                borderRadius: 8,
+                opacity: open ? 1 : 0.65,
+                color: text,
+                letterSpacing: 0.5,
+              }
+        }
       >
         GIF
       </button>
