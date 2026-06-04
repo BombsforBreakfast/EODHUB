@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import type { CommerceProductRow } from "../../lib/commerce/commerceProducts";
 import { formatCommercePrice } from "../../lib/commerce/commerceProducts";
 import type { Theme } from "../../lib/theme";
@@ -11,28 +12,30 @@ type Props = {
 };
 
 export default function CommerceProductCard({ product, t, buttonLabel }: Props) {
-  const href = product.checkout_url || product.product_url || "#";
+  const href = (product.checkout_url || product.product_url || "").trim();
+  const isClickable = href.length > 0 && href !== "#";
   const priceLabel = formatCommercePrice(
     typeof product.price === "number" ? product.price : product.price != null ? Number(product.price) : null,
     product.currency,
   );
-  const label =
-    buttonLabel ||
-    (product.platform_type === "shopify" ? "View on Shopify" : "View Product");
+  const label = buttonLabel || "View Product";
 
-  return (
-    <div
-      style={{
-        border: `1px solid ${t.border}`,
-        borderRadius: 14,
-        background: t.bg,
-        overflow: "hidden",
-        minWidth: 0,
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-      }}
-    >
+  const shellStyle: CSSProperties = {
+    border: `1px solid ${t.border}`,
+    borderRadius: 14,
+    background: t.bg,
+    overflow: "hidden",
+    minWidth: 0,
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
+    textDecoration: "none",
+    color: "inherit",
+    boxSizing: "border-box",
+  };
+
+  const body = (
+    <>
       <div style={{ aspectRatio: "1 / 1", background: t.surface, overflow: "hidden" }}>
         {product.image_url ? (
           <img
@@ -57,26 +60,8 @@ export default function CommerceProductCard({ product, t, buttonLabel }: Props) 
       </div>
 
       <div style={{ padding: 12, display: "grid", gap: 8, flex: 1, alignContent: "start" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, justifyContent: "space-between" }}>
-          <div style={{ color: t.text, fontWeight: 900, fontSize: 14, lineHeight: 1.3, minWidth: 0 }}>
-            {product.title}
-          </div>
-          {product.platform_type === "shopify" && (
-            <span
-              style={{
-                flexShrink: 0,
-                fontSize: 10,
-                fontWeight: 800,
-                color: t.badgeText,
-                background: t.badgeBg,
-                border: `1px solid ${t.border}`,
-                borderRadius: 999,
-                padding: "2px 8px",
-              }}
-            >
-              Shopify
-            </span>
-          )}
+        <div style={{ color: t.text, fontWeight: 900, fontSize: 14, lineHeight: 1.3 }}>
+          {product.title}
         </div>
 
         {priceLabel && (
@@ -101,14 +86,7 @@ export default function CommerceProductCard({ product, t, buttonLabel }: Props) 
         )}
 
         <div style={{ marginTop: "auto", paddingTop: 4 }}>
-          <a
-            href={href}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => {
-              e.preventDefault();
-              window.open(href, "_blank", "noopener,noreferrer");
-            }}
+          <span
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -121,14 +99,32 @@ export default function CommerceProductCard({ product, t, buttonLabel }: Props) 
               color: t.text,
               fontWeight: 800,
               fontSize: 12,
-              textDecoration: "none",
               boxSizing: "border-box",
             }}
           >
             {label}
-          </a>
+          </span>
         </div>
       </div>
-    </div>
+    </>
+  );
+
+  if (!isClickable) {
+    return <div style={shellStyle}>{body}</div>;
+  }
+
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`${label}: ${product.title}`}
+      style={{
+        ...shellStyle,
+        cursor: "pointer",
+      }}
+    >
+      {body}
+    </a>
   );
 }

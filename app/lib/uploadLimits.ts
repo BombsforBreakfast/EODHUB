@@ -4,13 +4,39 @@ export const UPLOAD_LIMITS = {
   image: 8 * 1024 * 1024,
   /** Short in-app video clips (~3–4 min). */
   video: 100 * 1024 * 1024,
+  /** Business organization wall posts (~6–8 min at similar quality). */
+  businessVideo: 200 * 1024 * 1024,
   /** PDFs and document attachments. */
   document: 25 * 1024 * 1024,
   /** Messenger photo attachments after automatic resize/compression. */
   messageImage: 5 * 1024 * 1024,
-  /** Supabase feed-images bucket hard cap (video or pre-compress images). */
+  /** Supabase feed-images bucket hard cap (member video or pre-compress images). */
   feedBucket: 100 * 1024 * 1024,
+  /** feed-images bucket cap when a business org uploads video (matches businessVideo). */
+  businessFeedBucket: 200 * 1024 * 1024,
 } as const;
+
+export type FeedUploadLimits = {
+  video: number;
+  feedBucket: number;
+  videoDurationHint: string;
+};
+
+const MEMBER_FEED_UPLOAD_LIMITS: FeedUploadLimits = {
+  video: UPLOAD_LIMITS.video,
+  feedBucket: UPLOAD_LIMITS.feedBucket,
+  videoDurationHint: "~3–4 minutes",
+};
+
+const BUSINESS_FEED_UPLOAD_LIMITS: FeedUploadLimits = {
+  video: UPLOAD_LIMITS.businessVideo,
+  feedBucket: UPLOAD_LIMITS.businessFeedBucket,
+  videoDurationHint: "~6–8 minutes",
+};
+
+export function feedUploadLimitsForAccount(accountType: string | null | undefined): FeedUploadLimits {
+  return accountType === "business_org" ? BUSINESS_FEED_UPLOAD_LIMITS : MEMBER_FEED_UPLOAD_LIMITS;
+}
 
 export type UploadFileKind = "video" | "image" | "document" | "other";
 
@@ -139,13 +165,15 @@ export function uploadTooLargeMessage(
   file: File,
   limitBytes: number,
   kind: "video" | "image" | "document",
+  options?: { videoDurationHint?: string },
 ): string {
   const sizeLabel = formatUploadBytes(file.size);
   const limitLabel = formatUploadBytes(limitBytes);
 
   if (kind === "video") {
+    const durationHint = options?.videoDurationHint ?? "~3–4 minutes";
     return (
-      `"${file.name}" is too large (${sizeLabel}). Direct video uploads must be under ${limitLabel} (~3–4 minutes). ` +
+      `"${file.name}" is too large (${sizeLabel}). Direct video uploads must be under ${limitLabel} (${durationHint}). ` +
       "For longer or higher-quality video, paste a YouTube or Vimeo link in your post instead."
     );
   }
@@ -168,12 +196,17 @@ export function imageStillTooLargeAfterCompressMessage(file: File): string {
 }
 
 /** Sync validation when the user picks a file (before upload / compression). */
-export function validateFileOnPick(file: File): string | null {
+export function validateFileOnPick(
+  file: File,
+  limits: FeedUploadLimits = MEMBER_FEED_UPLOAD_LIMITS,
+): string | null {
   const kind = uploadFileKind(file);
 
   if (kind === "video") {
-    if (file.size > UPLOAD_LIMITS.video) {
-      return uploadTooLargeMessage(file, UPLOAD_LIMITS.video, "video");
+    if (file.size > limits.video) {
+      return uploadTooLargeMessage(file, limits.video, "video", {
+        videoDurationHint: limits.videoDurationHint,
+      });
     }
     return null;
   }
@@ -186,8 +219,8 @@ export function validateFileOnPick(file: File): string | null {
   }
 
   if (kind === "image") {
-    if (file.size > UPLOAD_LIMITS.feedBucket) {
-      return uploadTooLargeMessage(file, UPLOAD_LIMITS.feedBucket, "image");
+    if (file.size > limits.feedBucket) {
+      return uploadTooLargeMessage(file, limits.feedBucket, "image");
     }
     return null;
   }
@@ -196,9 +229,12 @@ export function validateFileOnPick(file: File): string | null {
 }
 
 /** Validate files for feed/profile attachment pickers; returns first error if any. */
-export function validateFeedAttachmentPick(files: File[]): string | null {
+export function validateFeedAttachmentPick(
+  files: File[],
+  limits: FeedUploadLimits = MEMBER_FEED_UPLOAD_LIMITS,
+): string | null {
   for (const file of files) {
-    const err = validateFileOnPick(file);
+    const err = validateFileOnPick(file, limits);
     if (err) return err;
   }
   return null;

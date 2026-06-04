@@ -1,6 +1,7 @@
 import { compressImageFile } from "./compressImage";
 import {
   UPLOAD_LIMITS,
+  feedUploadLimitsForAccount,
   inferEmployerDocumentContentType,
   isDocumentFile,
   isImageFile,
@@ -17,8 +18,12 @@ export type PrepareUploadResult =
   | { ok: false; error: string };
 
 /** Prepare a feed attachment (image, short video, or PDF) for upload. */
-export async function prepareFeedUploadFile(file: File): Promise<PrepareUploadResult> {
-  const pickError = validateFileOnPick(file);
+export async function prepareFeedUploadFile(
+  file: File,
+  options?: { accountType?: string | null },
+): Promise<PrepareUploadResult> {
+  const limits = feedUploadLimitsForAccount(options?.accountType);
+  const pickError = validateFileOnPick(file, limits);
   if (pickError) return { ok: false, error: pickError };
 
   if (isVideoFile(file)) {

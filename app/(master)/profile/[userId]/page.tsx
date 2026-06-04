@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/lib/supabaseClient";
@@ -21,13 +21,22 @@ import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
 import { EMPLOYER_DOCUMENT_ACCEPT, FEED_ATTACHMENT_ACCEPT, inferEmployerDocumentContentType } from "../../../lib/uploadLimits";
-import { validateFeedAttachmentPick, validateImagePick, UPLOAD_LIMITS, formatUploadBytes, isVideoFile, isVideoUrl } from "../../../lib/uploadLimits";
+import {
+  validateFeedAttachmentPick,
+  validateImagePick,
+  UPLOAD_LIMITS,
+  feedUploadLimitsForAccount,
+  formatUploadBytes,
+  isImageFile,
+  isVideoFile,
+  isVideoUrl,
+} from "../../../lib/uploadLimits";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
 import { postNotifyJson } from "../../../lib/postNotifyClient";
 import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
 import { KangarooCourtVerdictBanner } from "../../../components/KangarooCourtVerdictBanner";
-import { Gem, Medal, Camera, FileText, Play, Check, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
+import { Gem, Medal, Camera, FileText, Play, Check, ArrowRight, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 import { FEED_MEDIA_FRAME_BG, feedContainedImageStyle } from "../../../lib/feedLayout";
 import { SkillBadgeValue } from "../../../lib/skillBadges";
 import type {
@@ -123,6 +132,7 @@ type Profile = {
   has_federal_le_military_crossover: boolean | null;
   is_pure_admin: boolean | null;
   email: string | null;
+  business_profile_intro_seen?: boolean | null;
 };
 
 type RawComment = {
@@ -265,6 +275,12 @@ type ProfilePhoto = {
   caption: string | null;
   is_pinned: boolean;
   created_at: string;
+};
+
+type BusinessWallMediaItem = {
+  url: string;
+  postId: string;
+  createdAt: string;
 };
 
 type PhotoComment = {
@@ -560,7 +576,9 @@ export default function PublicProfilePage() {
   const profileAutoLoadTriggeredRef = useRef(false);
   const [photos, setPhotos] = useState<ProfilePhoto[]>([]);
   const [myGroups, setMyGroups] = useState<GroupTile[]>([]);
-  const [showAllModal, setShowAllModal] = useState<"photos" | "groups" | null>(null);
+  const [showAllModal, setShowAllModal] = useState<
+    "photos" | "groups" | "business-wall-photos" | "business-wall-videos" | null
+  >(null);
   const [loading, setLoading] = useState(true);
 
   /** Own-wall only: saved events (saved jobs live under My Account) */
@@ -586,6 +604,9 @@ export default function PublicProfilePage() {
   const [selectedPostImages, setSelectedPostImages] = useState<{ file: File; previewUrl: string }[]>([]);
   const [selectedPostGif, setSelectedPostGif] = useState<string | null>(null);
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
+  const postWallPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const postWallVideoInputRef = useRef<HTMLInputElement | null>(null);
+  const [lightboxVideoUrl, setLightboxVideoUrl] = useState<string | null>(null);
   const postContentRawRef = useRef("");
   const commentRawsRef = useRef<Record<string, string>>({});
 
@@ -721,6 +742,8 @@ export default function PublicProfilePage() {
   const [uploadingEducationDoc, setUploadingEducationDoc] = useState(false);
   const [uploadingTrainingTag, setUploadingTrainingTag] = useState<string | null>(null);
   const [trainingUploadTargetTag, setTrainingUploadTargetTag] = useState<string | null>(null);
+  const [businessProfileIntroDismissed, setBusinessProfileIntroDismissed] = useState<boolean | null>(null);
+  const [businessProfileVisitorPreview, setBusinessProfileVisitorPreview] = useState(false);
 
   useEffect(() => {
     postsRef.current = posts;
@@ -739,12 +762,53 @@ export default function PublicProfilePage() {
   }, [canViewEmployerBackNow]);
 
   useEffect(() => {
+    setBusinessProfileVisitorPreview(false);
+  }, [userId]);
+
+  useEffect(() => {
+    if (!businessProfileVisitorPreview) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setBusinessProfileVisitorPreview(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [businessProfileVisitorPreview]);
+
+  useEffect(() => {
     setShowAllWorkHistoryTags(false);
     profilePostLimitRef.current = PROFILE_INITIAL_POST_LIMIT;
     setProfileWallHasMorePosts(false);
     setProfileWallLoadingMore(false);
     profileAutoLoadTriggeredRef.current = false;
   }, [userId]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!profile || profile.account_type !== "business_org" || currentUserId !== profile.user_id) {
+      setBusinessProfileIntroDismissed(null);
+      return;
+    }
+    const seen =
+      profile.business_profile_intro_seen === true ||
+      (typeof window !== "undefined" &&
+        !!currentUserId &&
+        window.localStorage.getItem(`business-profile-intro-dismissed:${currentUserId}`) === "1");
+    setBusinessProfileIntroDismissed(seen);
+  }, [loading, profile, currentUserId]);
+
+  async function dismissBusinessProfileIntro() {
+    setBusinessProfileIntroDismissed(true);
+    if (!currentUserId) return;
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(`business-profile-intro-dismissed:${currentUserId}`, "1");
+    }
+    setProfile((prev) => (prev ? { ...prev, business_profile_intro_seen: true } : prev));
+    const { error } = await supabase
+      .from("profiles")
+      .update({ business_profile_intro_seen: true })
+      .eq("user_id", currentUserId);
+    if (error) console.error("Business profile intro dismiss error:", error);
+  }
 
   useEffect(() => {
     if (!editingProfile) return;
@@ -2496,7 +2560,7 @@ export default function PublicProfilePage() {
   }
 
   async function uploadWallImage(file: File, postId: string): Promise<string> {
-    const prepared = await prepareFeedUploadFile(file);
+    const prepared = await prepareFeedUploadFile(file, { accountType: profile?.account_type });
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
     const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
@@ -2506,22 +2570,38 @@ export default function PublicProfilePage() {
     return supabase.storage.from("feed-images").getPublicUrl(filePath).data.publicUrl;
   }
 
-  function addWallPostImagesFromFiles(files: File[]) {
+  function addWallPostImagesFromFiles(
+    files: File[],
+    options?: { photosOnly?: boolean; videosOnly?: boolean },
+  ) {
     if (files.length === 0) return;
+    const filtered = files.filter((file) => {
+      if (options?.photosOnly) return isImageFile(file);
+      if (options?.videosOnly) return isVideoFile(file);
+      return true;
+    });
+    if (filtered.length === 0) {
+      if (options?.videosOnly) alert("Please choose a video file.");
+      else if (options?.photosOnly) alert("Please choose a photo.");
+      return;
+    }
     setSelectedPostImages((prev) => {
       const slots = 10 - prev.length;
       if (slots <= 0) {
         alert("You can attach up to 10 photos or videos per post.");
         return prev;
       }
-      const toAddFiles = files.slice(0, slots);
-      const pickError = validateFeedAttachmentPick(toAddFiles);
+      const toAddFiles = filtered.slice(0, slots);
+      const pickError = validateFeedAttachmentPick(
+        toAddFiles,
+        feedUploadLimitsForAccount(profile?.account_type),
+      );
       if (pickError) {
         alert(pickError);
         return prev;
       }
-      if (files.length > slots) {
-        alert("Only the first files were added. Max is 10 photos or videos per post.");
+      if (filtered.length > slots) {
+        alert("Only the first files were added. Max is 10 attachments per post.");
       }
       const toAdd = toAddFiles.map((f) => ({ file: f, previewUrl: URL.createObjectURL(f) }));
       return [...prev, ...toAdd];
@@ -2611,7 +2691,7 @@ export default function PublicProfilePage() {
       }
 
       // Notify wall owner when someone else posts on their wall
-      if (!isOwnWall && userId && currentUserId !== userId) {
+      if (userId && currentUserId !== userId) {
         await notify(userId, `${currentUserName} posted on your wall`, userId, { type: "wall_post", post_id: postId });
       }
 
@@ -3101,6 +3181,37 @@ export default function PublicProfilePage() {
     };
   }, [userId]);
 
+  const businessWallMedia = useMemo(() => {
+    const photoItems: BusinessWallMediaItem[] = [];
+    const videoItems: BusinessWallMediaItem[] = [];
+    const seenPhotos = new Set<string>();
+    const seenVideos = new Set<string>();
+
+    for (const post of posts) {
+      for (const url of post.image_urls) {
+        const item: BusinessWallMediaItem = {
+          url,
+          postId: post.id,
+          createdAt: post.created_at,
+        };
+        if (isVideoUrl(url)) {
+          if (seenVideos.has(url)) continue;
+          seenVideos.add(url);
+          videoItems.push(item);
+        } else {
+          if (seenPhotos.has(url)) continue;
+          seenPhotos.add(url);
+          photoItems.push(item);
+        }
+      }
+    }
+    const byNewest = (a: BusinessWallMediaItem, b: BusinessWallMediaItem) =>
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    photoItems.sort(byNewest);
+    videoItems.sort(byNewest);
+    return { photos: photoItems, videos: videoItems };
+  }, [posts]);
+
   if (!loading && !profile) {
     return (
       <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
@@ -3217,6 +3328,8 @@ export default function PublicProfilePage() {
 
   const isOwnWall = currentUserId === profile?.user_id;
   const isBusinessOrgProfile = profile?.account_type === "business_org";
+  const wallAsOwner = isOwnWall && !(isBusinessOrgProfile && businessProfileVisitorPreview);
+  const wallFeedUploadLimits = feedUploadLimitsForAccount(profile?.account_type);
   const showEmployerEmailOnCard = isEmployerProfile && (isOwnWall || viewerIsAdmin);
   const canViewEmployerBack =
     !isEmployerProfile &&
@@ -3307,6 +3420,13 @@ export default function PublicProfilePage() {
   const photoPreviewItems = isMobile ? pinnedPhotos : pinnedPhotos.slice(0, 4);
   const groupPreviewItems = isMobile ? myGroups : myGroups.slice(0, 4);
 
+  const businessWallPhotoPreview = isMobile
+    ? businessWallMedia.photos.slice(0, 4)
+    : businessWallMedia.photos.slice(0, 6);
+  const businessWallVideoPreview = isMobile
+    ? businessWallMedia.videos.slice(0, 4)
+    : businessWallMedia.videos.slice(0, 6);
+
   /** Desktop Photos + My Groups share this max width so all 8 thumbnails are the same cell size and line up. */
   const STRIP_THUMB_AREA_MAX = 320;
   const stripThumbGridStyleDesktop: React.CSSProperties = {
@@ -3388,7 +3508,7 @@ export default function PublicProfilePage() {
           </div>
         </div>
 
-        {(hasMore || (isOwnWall && professionalTags.length === 0 && unitHistoryTags.length === 0)) && (
+        {(hasMore || (wallAsOwner && professionalTags.length === 0 && unitHistoryTags.length === 0)) && (
           <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" }}>
             {hasMore && (
               <button
@@ -3399,7 +3519,7 @@ export default function PublicProfilePage() {
                 {showAllWorkHistoryTags ? "Show less" : "Show more"}
               </button>
             )}
-            {isOwnWall && professionalTags.length === 0 && unitHistoryTags.length === 0 && (
+            {wallAsOwner && professionalTags.length === 0 && unitHistoryTags.length === 0 && (
               <button
                 type="button"
                 onClick={openWallEditProfile}
@@ -3448,7 +3568,7 @@ export default function PublicProfilePage() {
         page={pageData}
         subtitle={fullName}
         isMobile={isMobile}
-        isOwnWall={isOwnWall}
+        isOwnWall={wallAsOwner}
         embedded
         showExtendedDetails
         logoUploading={uploadingAvatar}
@@ -3456,11 +3576,253 @@ export default function PublicProfilePage() {
         onLogoClick={() => {
           if (profile.photo_url) {
             setExpandedProfilePhotoUrl(profile.photo_url);
-          } else if (isOwnWall && !uploadingAvatar) {
+          } else if (wallAsOwner && !uploadingAvatar) {
             photoInputRef.current?.click();
           }
         }}
       />
+    );
+  };
+
+  const renderBusinessProfileMediaSections = () => {
+    if (!isBusinessOrgProfile) return null;
+
+    const wallPhotoGridCols = isMobile
+      ? "repeat(auto-fill, minmax(96px, 1fr))"
+      : "repeat(auto-fill, minmax(100px, 1fr))";
+    const wallVideoGridCols = isMobile
+      ? "repeat(auto-fill, minmax(140px, 1fr))"
+      : "repeat(auto-fill, minmax(160px, 1fr))";
+
+    const sectionShell: React.CSSProperties = {
+      border: `1px solid ${t.border}`,
+      borderRadius: 16,
+      background: t.surface,
+      overflow: "hidden",
+      padding: 16,
+      display: "grid",
+      gap: 12,
+    };
+
+    const sectionTitle: React.CSSProperties = {
+      fontSize: 15,
+      fontWeight: 900,
+      color: t.text,
+    };
+
+    const hasPhotosContent =
+      pinnedPhotos.length > 0 ||
+      businessWallMedia.photos.length > 0 ||
+      galleryPhotos.length > 0;
+    const hasVideosContent = businessWallMedia.videos.length > 0;
+    const showPhotosSection = wallAsOwner || hasPhotosContent;
+    const showVideosSection = wallAsOwner || hasVideosContent;
+
+    if (!showPhotosSection && !showVideosSection) return null;
+
+    return (
+      <div style={{ display: "grid", gap: 12 }}>
+        {showPhotosSection && (
+        <section style={sectionShell}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={sectionTitle}>Photos</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {galleryPhotos.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setGalleryExpanded(!galleryExpanded)}
+                  style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
+                >
+                  Gallery ({galleryPhotos.length}) {galleryExpanded ? "\u25B2" : "\u25BC"}
+                </button>
+              )}
+              {wallAsOwner && (
+                <label style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: t.surface, color: t.text, whiteSpace: "nowrap", display: "inline-block" }}>
+                  + Add Photo
+                  <input type="file" accept="image/*" onChange={handleGalleryUpload} style={{ display: "none" }} />
+                </label>
+              )}
+              {uploadingGallery && <span style={{ fontSize: 12, color: t.textMuted }}>Uploading...</span>}
+            </div>
+          </div>
+
+          <div style={!isMobile ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobilePhotoGridCols, gap: 8 }}>
+            {pinnedPhotos.length === 0 && businessWallMedia.photos.length === 0 && (
+              <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
+                {photos.length > 0
+                  ? (wallAsOwner ? "Pin photos from the gallery to feature them here." : "No featured photos yet.")
+                  : "No photos yet. Add gallery photos or post images to your feed."}
+              </div>
+            )}
+            {photoPreviewItems.map((photo) => (
+              <div key={photo.id} style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                <div
+                  onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
+                  style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
+                >
+                  <img src={photo.photo_url} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                </div>
+                {wallAsOwner && (
+                  <div style={{ display: "flex", flexDirection: "row", gap: 6, alignItems: "stretch" }}>
+                    <button
+                      type="button"
+                      onClick={() => deletePhoto(photo)}
+                      disabled={deletingPhotoId === photo.id}
+                      style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1, color: t.text, minWidth: 0 }}
+                    >
+                      {deletingPhotoId === photo.id ? "..." : "Del"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => togglePinned(photo)}
+                      disabled={togglingPinnedId === photo.id}
+                      style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1, color: t.text, minWidth: 0 }}
+                    >
+                      {togglingPinnedId === photo.id ? "..." : "Unpin"}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {galleryExpanded && galleryPhotos.length > 0 && (
+            <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
+              <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Gallery</div>
+              <div style={{ display: "grid", gridTemplateColumns: wallPhotoGridCols, gap: 8 }}>
+                {galleryPhotos.map((photo) => (
+                  <div key={photo.id}>
+                    <div
+                      onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
+                      style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
+                    >
+                      <img src={photo.photo_url} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                    </div>
+                    {wallAsOwner && (
+                      <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                        <button
+                          onClick={() => togglePinned(photo)}
+                          disabled={togglingPinnedId === photo.id}
+                          style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1 }}
+                        >
+                          {togglingPinnedId === photo.id ? "..." : "Pin"}
+                        </button>
+                        <button
+                          onClick={() => deletePhoto(photo)}
+                          disabled={deletingPhotoId === photo.id}
+                          style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1 }}
+                        >
+                          {deletingPhotoId === photo.id ? "..." : "Del"}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {businessWallMedia.photos.length > 0 && (
+            <div style={{ borderTop: pinnedPhotos.length > 0 || galleryExpanded ? `1px solid ${t.border}` : undefined, paddingTop: pinnedPhotos.length > 0 || galleryExpanded ? 12 : 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 1 }}>
+                  From posts ({businessWallMedia.photos.length})
+                </div>
+                {businessWallMedia.photos.length > businessWallPhotoPreview.length && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllModal("business-wall-photos")}
+                    style={{ border: "none", background: "none", color: "#2563eb", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0 }}
+                  >
+                    View all
+                  </button>
+                )}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: wallPhotoGridCols, gap: 8 }}>
+                {businessWallPhotoPreview.map((item, index) => (
+                  <div
+                    key={`${item.postId}-${item.url}`}
+                    onClick={() => setExpandedProfilePhotoUrl(item.url)}
+                    style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer", border: `1px solid ${t.border}` }}
+                  >
+                    <img src={item.url} alt={`Post photo ${index + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+        )}
+
+        {showVideosSection && (
+        <section style={sectionShell}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={sectionTitle}>Videos</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+              {businessWallMedia.videos.length > businessWallVideoPreview.length && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllModal("business-wall-videos")}
+                  style={{ border: "none", background: "none", color: "#2563eb", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
+                >
+                  View all ({businessWallMedia.videos.length})
+                </button>
+              )}
+              {wallAsOwner && (
+                <>
+                  <input
+                    ref={postWallVideoInputRef}
+                    type="file"
+                    accept="video/*,.mp4,.mov,.webm,.m4v"
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      if (files.length === 0) return;
+                      addWallPostImagesFromFiles(files, { videosOnly: true });
+                      if (postWallVideoInputRef.current) postWallVideoInputRef.current.value = "";
+                      document.getElementById("profile-wall-composer")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                    }}
+                    style={{ display: "none" }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => postWallVideoInputRef.current?.click()}
+                    style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: t.surface, color: t.text, whiteSpace: "nowrap" }}
+                  >
+                    + Add Video
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {businessWallMedia.videos.length === 0 ? (
+            <div style={{ color: t.textFaint, fontSize: 13, lineHeight: 1.45 }}>
+              {wallAsOwner
+                ? "No videos yet. Use Add Video above, then post from your feed composer."
+                : "No videos yet. Post a video to your feed and it will appear here."}
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: wallVideoGridCols, gap: 8 }}>
+              {businessWallVideoPreview.map((item, index) => (
+                <div
+                  key={`${item.postId}-${item.url}`}
+                  onClick={() => setLightboxVideoUrl(item.url)}
+                  style={{ position: "relative", aspectRatio: "16 / 9", borderRadius: 10, overflow: "hidden", background: FEED_MEDIA_FRAME_BG, cursor: "pointer", border: `1px solid ${t.border}` }}
+                >
+                  <video src={item.url} preload="metadata" muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                    <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Play size={18} color="white" fill="white" />
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+        )}
+      </div>
     );
   };
 
@@ -3469,7 +3831,92 @@ export default function PublicProfilePage() {
 
     return (
       <div style={{ display: "grid", gap: 12 }}>
-        {isOwnWall && (
+        {wallAsOwner && businessProfileIntroDismissed === false && (
+          <div
+            role="status"
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 12,
+              border: `1px solid ${isDark ? "#ca8a04" : "#b45309"}`,
+              borderLeft: `4px solid ${isDark ? "#facc15" : "#d97706"}`,
+              borderRadius: 12,
+              background: isDark ? "#4a3f0f" : "#ca8a04",
+              padding: "14px 16px",
+              boxShadow: isDark ? "0 2px 8px rgba(0,0,0,0.35)" : "0 2px 8px rgba(180, 83, 9, 0.25)",
+            }}
+          >
+            <div style={{ flex: 1, minWidth: 0, display: "grid", gap: 10 }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 15, color: isDark ? "#fef9c3" : "#422006", marginBottom: 4 }}>
+                  Welcome to Your Business Profile
+                </div>
+                <div style={{ fontSize: 14, color: isDark ? "#fde68a" : "#451a03", lineHeight: 1.55 }}>
+                  Your Business Profile is your hub for showcasing your company to the EOD community.
+                </div>
+              </div>
+              <div style={{ fontWeight: 800, fontSize: 14, color: isDark ? "#fef9c3" : "#422006" }}>
+                Ways to get started:
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 20, color: isDark ? "#fde68a" : "#451a03", lineHeight: 1.55, display: "grid", gap: 6, fontSize: 14 }}>
+                <li>
+                  Connect Shopify to automatically display products from your store. Additional e-commerce integrations are planned for the future.
+                </li>
+                <li>
+                  Add products manually and include links to your website, online store, or external marketplace.
+                </li>
+                <li>
+                  Link your Business Directory listing to your Business Profile. When users discover your business in the directory,
+                  they&apos;ll be able to click through directly to your full profile page for more information, products, services, and contact details.
+                </li>
+              </ul>
+              <div style={{ fontSize: 14, color: isDark ? "#fde68a" : "#451a03", lineHeight: 1.55 }}>
+                A complete profile helps community members learn more about your business and connect with what you offer.
+              </div>
+              <div style={{ fontSize: 14, color: isDark ? "#fde68a" : "#451a03", lineHeight: 1.55, fontStyle: "italic" }}>
+                We will continue to add features to business profiles over time and are open to feedback on how to best serve your business.
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, flexShrink: 0, alignItems: "stretch" }}>
+              <button
+                type="button"
+                onClick={() => { void dismissBusinessProfileIntro(); }}
+                style={{
+                  background: isDark ? "#292524" : "#422006",
+                  color: "#fef9c3",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  borderRadius: 8,
+                  padding: "8px 14px",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Got it
+              </button>
+              <button
+                type="button"
+                aria-label="Close welcome banner"
+                onClick={() => { void dismissBusinessProfileIntro(); }}
+                style={{
+                  background: "transparent",
+                  color: "#fef9c3",
+                  border: "1px solid rgba(255,255,255,0.25)",
+                  borderRadius: 8,
+                  padding: "6px 10px",
+                  fontWeight: 800,
+                  fontSize: 16,
+                  lineHeight: 1,
+                  cursor: "pointer",
+                }}
+              >
+                Ã—
+              </button>
+            </div>
+          </div>
+        )}
+        {wallAsOwner && (
           <BusinessCommerceManager
             businessId={businessOrgPage.id}
             onProductsChanged={async () => {
@@ -3487,11 +3934,99 @@ export default function PublicProfilePage() {
         <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 16 }}>
           <BusinessCommerceSection
             businessId={businessOrgPage.id}
-            isOwnWall={isOwnWall}
+            isOwnWall={wallAsOwner}
             isMobile={isMobile}
             refreshKey={commerceRefreshKey}
           />
         </div>
+      </div>
+    );
+  };
+
+  const renderBusinessProfilePreviewChrome = () => {
+    if (!isBusinessOrgProfile || !isOwnWall) return null;
+
+    if (businessProfileVisitorPreview) {
+      return (
+        <div
+          role="status"
+          style={{
+            position: "sticky",
+            top: isMobile ? 0 : 8,
+            zIndex: 30,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
+            border: `1px solid ${isDark ? "#3b82f6" : "#2563eb"}`,
+            borderLeft: `4px solid ${isDark ? "#60a5fa" : "#1d4ed8"}`,
+            borderRadius: 12,
+            background: isDark ? "rgba(30, 58, 138, 0.45)" : "#eff6ff",
+            padding: "12px 14px",
+            boxShadow: isDark ? "0 2px 8px rgba(0,0,0,0.35)" : "0 2px 8px rgba(37, 99, 235, 0.15)",
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: isDark ? "#dbeafe" : "#1e3a8a", marginBottom: 2 }}>
+              Public preview
+            </div>
+            <div style={{ fontSize: 13, color: isDark ? "#bfdbfe" : "#1e40af", lineHeight: 1.45 }}>
+              This is how other members see your business profile. Press Esc to exit preview.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBusinessProfileVisitorPreview(false)}
+            style={{
+              flexShrink: 0,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              background: isDark ? "#1e3a8a" : "#1d4ed8",
+              color: "#fff",
+              border: "none",
+              borderRadius: 8,
+              padding: "8px 14px",
+              fontWeight: 700,
+              fontSize: 13,
+              cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <ChevronLeft size={16} aria-hidden />
+            Back to editing
+          </button>
+        </div>
+      );
+    }
+
+    return (
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button
+          type="button"
+          onClick={() => {
+            setEditingProfile(false);
+            setBusinessProfileVisitorPreview(true);
+            window.scrollTo({ top: 0, behavior: "smooth" });
+          }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            border: `1px solid ${t.border}`,
+            borderRadius: 999,
+            padding: "8px 14px",
+            background: t.surface,
+            color: t.text,
+            fontWeight: 700,
+            fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          <Eye size={16} aria-hidden />
+          Preview public view
+        </button>
       </div>
     );
   };
@@ -3501,10 +4036,12 @@ export default function PublicProfilePage() {
     return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: isMobile ? 20 : 0 }}>
 
+        {renderBusinessProfilePreviewChrome()}
+
         {false && <div>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <div style={{ fontSize: 16, fontWeight: 900 }}>Photos</div>
-            {isOwnWall && (
+            {wallAsOwner && (
               <div>
                 <label
                   style={{
@@ -3558,7 +4095,7 @@ export default function PublicProfilePage() {
                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />
                     </div>
-                    {isOwnWall && (
+                    {wallAsOwner && (
                       <div style={{ display: "flex", gap: 4, marginTop: 5 }}>
                         <button
                           onClick={() => togglePinned(photo)}
@@ -3633,7 +4170,7 @@ export default function PublicProfilePage() {
                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />
                     </div>
-                    {isOwnWall && (
+                    {wallAsOwner && (
                       <div style={{ display: "flex", gap: 4, marginTop: 5 }}>
                         <button
                           onClick={() => togglePinned(photo)}
@@ -3696,7 +4233,7 @@ export default function PublicProfilePage() {
               background: t.surface,
             }}
           >
-            {isOwnWall && (
+            {wallAsOwner && (
               <>
                 <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} aria-hidden />
                 {!isBusinessOrgProfile && (
@@ -3720,17 +4257,17 @@ export default function PublicProfilePage() {
                     onClick={() => {
                       if (profile.photo_url) {
                         setExpandedProfilePhotoUrl(profile.photo_url);
-                      } else if (isOwnWall && !uploadingAvatar) {
+                      } else if (wallAsOwner && !uploadingAvatar) {
                         photoInputRef.current?.click();
                       }
                     }}
-                    title={profile.photo_url ? "View full photo" : isOwnWall ? (profile.is_employer ? "Add logo" : "Add photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    title={profile.photo_url ? "View full photo" : wallAsOwner ? (profile.is_employer ? "Add logo" : "Add photo") : undefined}
+                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || wallAsOwner ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url
                       ? <img src={profile.photo_url} alt={profileHeadlineName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       : profileAvatarInitial}
-                    {isOwnWall && (
+                    {wallAsOwner && (
                       <div
                         onClick={(e) => {
                           e.stopPropagation();
@@ -3751,7 +4288,7 @@ export default function PublicProfilePage() {
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{employerContactName}</div>
                     )}
                     <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                      {isOwnWall ? "My Profile" : isEmployerProfile ? "Employer Profile" : "Member Profile"}
+                      {wallAsOwner ? "My Profile" : isEmployerProfile ? "Employer Profile" : "Member Profile"}
                       {profile.is_employer && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
                           {profile.employer_verified ? "EOD Employer" : "Employer"}
@@ -3834,7 +4371,7 @@ export default function PublicProfilePage() {
                 {!isEmployerProfile && renderWorkUnitHistorySection(true)}
 
                 {/* Connection buttons */}
-                {!isBusinessOrgProfile && !isOwnWall && currentUserId && (
+                {!isBusinessOrgProfile && !wallAsOwner && currentUserId && (
                   <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                     {!isEmployerProfile && currentUserKnowStatus === "none" && (
                       <button type="button" onClick={requestKnow} disabled={togglingConnection === "know"} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
@@ -3891,7 +4428,7 @@ export default function PublicProfilePage() {
                         textColor={t.text}
                         textMuted={t.textMuted}
                         textFaint={t.textFaint}
-                        isOwnWall={isOwnWall}
+                        isOwnWall={wallAsOwner}
                         onCompleteBio={openWallEditProfile}
                       />
                     ) : (
@@ -3911,7 +4448,7 @@ export default function PublicProfilePage() {
                         <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, paddingInline: 8, color: t.textMuted, lineHeight: 1.6 }}>
                           {profile.bio}
                         </div>
-                      ) : isOwnWall ? (
+                      ) : wallAsOwner ? (
                         <div style={{ marginTop: 12, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, lineHeight: 1.6 }}>
                           <div style={{ border: `1px dashed ${t.border}`, borderRadius: 10, padding: "12px 14px", background: t.bg, marginInline: 8 }}>
                             <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>
@@ -3952,7 +4489,7 @@ export default function PublicProfilePage() {
                       </p>
                     </div>
                   )}
-                  {!isBusinessOrgProfile && isOwnWall && (profile.referral_code || !editingProfile) && (
+                  {!isBusinessOrgProfile && wallAsOwner && (profile.referral_code || !editingProfile) && (
                     <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
                       {profile.referral_code && !showDesktopProfileBack && (
                         <>
@@ -4046,17 +4583,17 @@ export default function PublicProfilePage() {
                     onClick={() => {
                       if (profile.photo_url) {
                         setExpandedProfilePhotoUrl(profile.photo_url);
-                      } else if (isOwnWall && !uploadingAvatar) {
+                      } else if (wallAsOwner && !uploadingAvatar) {
                         photoInputRef.current?.click();
                       }
                     }}
-                    title={profile.photo_url ? "View full photo" : isOwnWall ? (profile.is_employer ? "Add logo" : "Add photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    title={profile.photo_url ? "View full photo" : wallAsOwner ? (profile.is_employer ? "Add logo" : "Add photo") : undefined}
+                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || wallAsOwner ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url ? (
                       <img src={profile.photo_url} alt={profileHeadlineName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     ) : ("Photo")}
-                    {isOwnWall && (
+                    {wallAsOwner && (
                       <div
                         onClick={(e) => {
                           e.stopPropagation();
@@ -4078,7 +4615,7 @@ export default function PublicProfilePage() {
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{employerContactName}</div>
                     )}
                     <div style={{ marginTop: 4, fontSize: 13, color: t.textMuted, display: "flex", gap: 6, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
-                      {isOwnWall ? "My Profile" : isEmployerProfile ? "Employer Profile" : "Member Profile"}
+                      {wallAsOwner ? "My Profile" : isEmployerProfile ? "Employer Profile" : "Member Profile"}
                       {profile.is_employer && (
                         <span style={{ background: profile.employer_verified ? "#1e40af" : "#6b7280", color: "white", borderRadius: 20, padding: "1px 7px", fontSize: 10, fontWeight: 800 }}>
                           {profile.employer_verified ? "EOD Employer" : "Employer"}
@@ -4160,7 +4697,7 @@ export default function PublicProfilePage() {
 
                 {!isEmployerProfile && !isBusinessOrgProfile && renderWorkUnitHistorySection(false)}
 
-                  {!isBusinessOrgProfile && !isOwnWall && currentUserId && (
+                  {!isBusinessOrgProfile && !wallAsOwner && currentUserId && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
                       {!isEmployerProfile && currentUserKnowStatus === "none" && (
                         <button type="button" onClick={requestKnow} disabled={togglingConnection === "know"} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
@@ -4217,7 +4754,7 @@ export default function PublicProfilePage() {
                         textColor={t.text}
                         textMuted={t.textMuted}
                         textFaint={t.textFaint}
-                        isOwnWall={isOwnWall}
+                        isOwnWall={wallAsOwner}
                         onCompleteBio={openWallEditProfile}
                       />
                     ) : (
@@ -4237,7 +4774,7 @@ export default function PublicProfilePage() {
                         <div style={{ marginTop: 14, color: t.textMuted, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14, paddingInline: 8 }}>
                           {profile.bio}
                         </div>
-                      ) : isOwnWall ? (
+                      ) : wallAsOwner ? (
                         <div style={{ marginTop: 14, lineHeight: 1.6, borderTop: `1px solid ${t.borderLight}`, paddingTop: 14 }}>
                           <div style={{ border: `1px dashed ${t.border}`, borderRadius: 10, padding: "12px 14px", background: t.bg, maxWidth: 520, marginInline: 8 }}>
                             <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8 }}>
@@ -4262,7 +4799,7 @@ export default function PublicProfilePage() {
                           <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>Employer View</div>
                           <div style={{ fontSize: 16, fontWeight: 900, color: t.text }}>Candidate Snapshot</div>
                         </div>
-                        {!isOwnWall && (viewerIsEmployer || viewerIsAdmin) && (
+                        {!wallAsOwner && (viewerIsEmployer || viewerIsAdmin) && (
                           <a
                             href={`/sidebar?with=${userId}`}
                             style={{ background: "#111", color: "white", border: "none", borderRadius: 999, padding: "8px 14px", fontWeight: 800, fontSize: 12, textDecoration: "none" }}
@@ -4393,7 +4930,7 @@ export default function PublicProfilePage() {
                     </div>
                   )}
                   {!isBusinessOrgProfile && <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
-                    {isOwnWall && profile.referral_code && !showDesktopProfileBack && (
+                    {wallAsOwner && profile.referral_code && !showDesktopProfileBack && (
                       <>
                         <button
                           type="button"
@@ -4432,7 +4969,7 @@ export default function PublicProfilePage() {
                         </button>
                       </>
                     )}
-                    {isOwnWall && !editingProfile && !showDesktopProfileBack && (
+                    {wallAsOwner && !editingProfile && !showDesktopProfileBack && (
                       <button
                         type="button"
                         onClick={openWallEditProfile}
@@ -4477,8 +5014,8 @@ export default function PublicProfilePage() {
             )}
           </div>
 
-          {/* Edit profile (own wall) GÇö same fields as My Account */}
-          {isOwnWall && editingProfile && (
+          {/* Edit profile (own wall) Î“Ã‡Ã¶ same fields as My Account */}
+          {wallAsOwner && editingProfile && (
             <div
               onClick={(e) => { if (e.target === e.currentTarget) setEditingProfile(false); }}
               style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 1200, display: "flex", alignItems: isMobile ? "stretch" : "center", justifyContent: "center", padding: isMobile ? 0 : 20 }}
@@ -4926,6 +5463,7 @@ export default function PublicProfilePage() {
             </div>
           )}
 
+          {!isBusinessOrgProfile && (
           <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, overflow: "hidden" }}>
             <div
               style={{
@@ -4953,7 +5491,7 @@ export default function PublicProfilePage() {
                         Gallery ({galleryPhotos.length}) {galleryExpanded ? "\u25B2" : "\u25BC"}
                       </button>
                     )}
-                    {isOwnWall && (
+                    {wallAsOwner && (
                       <label style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: t.surface, color: t.text, whiteSpace: "nowrap", display: "inline-block" }}>
                         + Add Photo
                         <input type="file" accept="image/*" onChange={handleGalleryUpload} style={{ display: "none" }} />
@@ -4976,7 +5514,7 @@ export default function PublicProfilePage() {
                   {pinnedPhotos.length === 0 && (
                     <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
                       {photos.length > 0
-                        ? (isOwnWall ? "Pin photos from the gallery to feature them here." : "No featured photos yet.")
+                        ? (wallAsOwner ? "Pin photos from the gallery to feature them here." : "No featured photos yet.")
                         : "No photos yet."}
                     </div>
                   )}
@@ -4988,7 +5526,7 @@ export default function PublicProfilePage() {
                       >
                         <img src={photo.photo_url} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       </div>
-                      {isOwnWall && (
+                      {wallAsOwner && (
                         <div style={{ display: "flex", flexDirection: "row", gap: 6, alignItems: "stretch" }}>
                           <button
                             type="button"
@@ -5115,7 +5653,7 @@ export default function PublicProfilePage() {
                           ) : (
                             <span />
                           )}
-                          {isOwnWall ? (
+                          {wallAsOwner ? (
                             <button
                               type="button"
                               onClick={() => unsaveWallEvent(ev.id)}
@@ -5155,7 +5693,7 @@ export default function PublicProfilePage() {
                       >
                         <img src={photo.photo_url} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       </div>
-                      {isOwnWall && (
+                      {wallAsOwner && (
                         <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
                           <button
                             onClick={() => togglePinned(photo)}
@@ -5179,6 +5717,9 @@ export default function PublicProfilePage() {
               </div>
             )}
           </div>
+          )}
+
+          {isBusinessOrgProfile && renderBusinessProfileMediaSections()}
 
           {renderBusinessProductsSection()}
 
@@ -5192,10 +5733,47 @@ export default function PublicProfilePage() {
                 style={{ width: "100%", maxWidth: 920, maxHeight: "85vh", overflow: "auto", background: t.surface, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <div style={{ fontSize: 16, fontWeight: 900 }}>{showAllModal === "photos" ? "All Pinned Photos" : "All My Groups"}</div>
-                  <button type="button" onClick={() => setShowAllModal(null)} style={{ border: "none", background: "none", fontSize: 20, lineHeight: 1, cursor: "pointer", color: t.textMuted }}>×</button>
+                  <div style={{ fontSize: 16, fontWeight: 900 }}>
+                    {showAllModal === "photos"
+                      ? "All Pinned Photos"
+                      : showAllModal === "groups"
+                        ? "All My Groups"
+                        : showAllModal === "business-wall-photos"
+                          ? "All Post Photos"
+                          : "All Post Videos"}
+                  </div>
+                  <button type="button" onClick={() => setShowAllModal(null)} style={{ border: "none", background: "none", fontSize: 20, lineHeight: 1, cursor: "pointer", color: t.textMuted }}>Ã—</button>
                 </div>
-                {showAllModal === "photos" ? (
+                {showAllModal === "business-wall-photos" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
+                    {businessWallMedia.photos.map((item) => (
+                      <div
+                        key={`${item.postId}-${item.url}`}
+                        onClick={() => { setExpandedProfilePhotoUrl(item.url); setShowAllModal(null); }}
+                        style={{ aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", cursor: "pointer", background: t.bg }}
+                      >
+                        <img src={item.url} alt="Post photo" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      </div>
+                    ))}
+                  </div>
+                ) : showAllModal === "business-wall-videos" ? (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
+                    {businessWallMedia.videos.map((item) => (
+                      <div
+                        key={`${item.postId}-${item.url}`}
+                        onClick={() => { setLightboxVideoUrl(item.url); setShowAllModal(null); }}
+                        style={{ position: "relative", aspectRatio: "16/9", borderRadius: 10, overflow: "hidden", cursor: "pointer", background: FEED_MEDIA_FRAME_BG }}
+                      >
+                        <video src={item.url} preload="metadata" muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                          <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            <Play size={18} color="white" fill="white" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : showAllModal === "photos" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
                     {pinnedPhotos.map((photo) => (
                       <div key={photo.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -5232,10 +5810,10 @@ export default function PublicProfilePage() {
           {/* Wall */}
           <div style={{ paddingTop: 4 }}>
 
-            {(isOwnWall || isMutualConnection) && (
-              <div style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+            {(wallAsOwner || isMutualConnection) && (
+              <div id="profile-wall-composer" style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                 <MentionTextarea
-                  placeholder={isOwnWall ? "Post to your profile..." : `Post on ${fullName}'s profile...`}
+                  placeholder={wallAsOwner ? "Post to your profile..." : `Post on ${fullName}'s profile...`}
                   value={postContent}
                   onChange={handlePostContentChange}
                   onChangeRaw={(raw) => { postContentRawRef.current = raw; }}
@@ -5258,7 +5836,7 @@ export default function PublicProfilePage() {
                   </div>
                 )}
 
-                {/* Hidden file input */}
+                {/* Hidden file inputs */}
                 <input
                   ref={postImageInputRef}
                   type="file"
@@ -5272,6 +5850,38 @@ export default function PublicProfilePage() {
                   }}
                   style={{ display: "none" }}
                 />
+                {isBusinessOrgProfile && (
+                  <>
+                    <input
+                      ref={postWallPhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files ?? []);
+                        if (files.length === 0) return;
+                        addWallPostImagesFromFiles(files, { photosOnly: true });
+                        if (postWallPhotoInputRef.current) postWallPhotoInputRef.current.value = "";
+                      }}
+                      style={{ display: "none" }}
+                    />
+                    {!wallAsOwner && (
+                      <input
+                        ref={postWallVideoInputRef}
+                        type="file"
+                        accept="video/*,.mp4,.mov,.webm,.m4v"
+                        multiple
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files ?? []);
+                          if (files.length === 0) return;
+                          addWallPostImagesFromFiles(files, { videosOnly: true });
+                          if (postWallVideoInputRef.current) postWallVideoInputRef.current.value = "";
+                        }}
+                        style={{ display: "none" }}
+                      />
+                    )}
+                  </>
+                )}
 
                 {/* Image previews */}
                 {selectedPostImages.length > 0 && (
@@ -5306,23 +5916,46 @@ export default function PublicProfilePage() {
                         onClick={() => setSelectedPostImages((prev) => { prev.forEach((item) => URL.revokeObjectURL(item.previewUrl)); return []; })}
                         style={{ background: "transparent", border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 12px", fontWeight: 700, cursor: "pointer", color: t.text }}
                       >
-                        Remove All Photos
+                        Remove All Attachments
                       </button>
                     )}
                   </div>
                   <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
                     Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
-                    Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~3–4 min).
-                    For longer video, paste a YouTube or Vimeo link in your post.
+                    {" "}
+                    Short videos up to {formatUploadBytes(wallFeedUploadLimits.video)} (
+                    {wallFeedUploadLimits.videoDurationHint}).
+                    {isBusinessOrgProfile
+                      ? " Photos and videos appear in separate sections above your feed."
+                      : " For longer video, paste a YouTube or Vimeo link in your post."}
                   </p>
-                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8 }}>
-                    <button
-                      type="button"
-                      onClick={() => postImageInputRef.current?.click()}
-                      style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
-                    >
-                      {selectedPostImages.length > 0 ? "Add More" : "Add Photo or Video"}
-                    </button>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+                    {isBusinessOrgProfile ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => postWallPhotoInputRef.current?.click()}
+                          style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Add Photo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => postWallVideoInputRef.current?.click()}
+                          style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Add Video
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => postImageInputRef.current?.click()}
+                        style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
+                      >
+                        {selectedPostImages.length > 0 ? "Add More" : "Add Photo or Video"}
+                      </button>
+                    )}
                     <GifPickerButton
                       onSelect={(url) => setSelectedPostGif(url)}
                       theme={isDark ? "dark" : "light"}
@@ -5345,7 +5978,7 @@ export default function PublicProfilePage() {
               {posts.map((post) => {
                 const commentsOpen = expandedComments[post.id] || false;
                 const isAuthoredByCurrentUser = currentUserId === post.user_id;
-                const canManagePost = currentUserId === userId && isAuthoredByCurrentUser;
+                const canManagePost = wallAsOwner && currentUserId === userId && isAuthoredByCurrentUser;
                 const isEditingPost = editingPostId === post.id;
 
                 return (
@@ -5494,8 +6127,8 @@ export default function PublicProfilePage() {
                       return null;
                     })()}
 
-                    {/* Post images */}
-                    {post.image_urls.length > 0 && (() => {
+                    {/* Post images (member profiles show inline; business shows in Photos/Videos sections) */}
+                    {post.image_urls.length > 0 && !isBusinessOrgProfile && (() => {
                       const visible = post.image_urls.slice(0, 3);
                       const remaining = post.image_urls.length - 3;
                       return (
@@ -5899,8 +6532,8 @@ export default function PublicProfilePage() {
       {!isDesktopShell ? (
     <div style={{ padding: "24px 16px", background: t.bg, minHeight: "100vh", color: t.text, width: "100%", maxWidth: "100%", boxSizing: "border-box", overflowX: "clip" }}>
 
-      {/* Mobile unread messages banner GÇö own wall only */}
-      {isMobile && isOwnWall && (
+      {/* Mobile unread messages banner Î“Ã‡Ã¶ own wall only */}
+      {isMobile && wallAsOwner && (
         <a
           href="/sidebar"
           style={{
@@ -6372,6 +7005,53 @@ export default function PublicProfilePage() {
             src={expandedProfilePhotoUrl}
             alt={fullName}
             style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12, display: "block", margin: "0 auto" }}
+          />
+        </div>
+      </div>
+    )}
+    {lightboxVideoUrl && (
+      <div
+        onClick={() => setLightboxVideoUrl(null)}
+        style={{
+          position: "fixed",
+          inset: 0,
+          background: "rgba(0,0,0,0.9)",
+          zIndex: 1000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", maxWidth: "min(980px, 100%)", width: "100%" }}>
+          <button
+            type="button"
+            onClick={() => setLightboxVideoUrl(null)}
+            aria-label="Close video"
+            style={{
+              position: "absolute",
+              top: -10,
+              right: 0,
+              background: "rgba(255,255,255,0.14)",
+              color: "white",
+              border: "1px solid rgba(255,255,255,0.25)",
+              borderRadius: 999,
+              width: 42,
+              height: 42,
+              fontSize: 24,
+              fontWeight: 700,
+              cursor: "pointer",
+              zIndex: 1,
+            }}
+          >
+            x
+          </button>
+          <video
+            src={lightboxVideoUrl}
+            controls
+            autoPlay
+            playsInline
+            style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12, display: "block", margin: "0 auto", background: "#000" }}
           />
         </div>
       </div>

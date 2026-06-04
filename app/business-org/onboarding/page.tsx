@@ -6,6 +6,10 @@ import { useTheme } from "../../lib/ThemeContext";
 import { prepareImageUploadFile } from "../../lib/prepareUploadFile";
 
 type Step = "login" | "profile";
+type CompletionState = {
+  businessLoginEmail: string;
+  redirectTo: string;
+};
 
 type FormState = {
   linked_account_email: string;
@@ -49,7 +53,9 @@ export default function BusinessOrgOnboardingPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [googleBusinessEmail, setGoogleBusinessEmail] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [completion, setCompletion] = useState<CompletionState | null>(null);
+  const [billingDisclosureOpen, setBillingDisclosureOpen] = useState(false);
+  const [billingDisclosureAccepted, setBillingDisclosureAccepted] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -144,6 +150,12 @@ export default function BusinessOrgOnboardingPage() {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
+  function openBillingDisclosure() {
+    setError(null);
+    setBillingDisclosureAccepted(false);
+    setBillingDisclosureOpen(true);
+  }
+
   function startGoogleBusinessAuth() {
     if (!form.linked_account_email.trim()) {
       setError("Validate and carry forward the linked EOD-HUB user email first.");
@@ -186,8 +198,8 @@ export default function BusinessOrgOnboardingPage() {
     }
   }
 
-  async function submitBusinessPage(e: React.FormEvent) {
-    e.preventDefault();
+  async function submitBusinessPage(e?: React.SyntheticEvent) {
+    e?.preventDefault();
     setSaving(true);
     setError(null);
     try {
@@ -199,22 +211,26 @@ export default function BusinessOrgOnboardingPage() {
           business_email: form.business_email || form.business_login_email,
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string; redirectTo?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        businessLoginEmail?: string;
+        error?: string;
+        redirectTo?: string;
+      };
       if (!res.ok || !data.redirectTo) {
         setError(data.error ?? "Could not create business profile.");
         return;
       }
-      setSuccessMessage("Your business profile has been successfully created. Return to login and use your business credentials.");
-      window.setTimeout(() => {
-        window.location.href = data.redirectTo || "/login";
-      }, 2600);
+      setCompletion({
+        businessLoginEmail: data.businessLoginEmail ?? form.business_login_email,
+        redirectTo: data.redirectTo,
+      });
     } finally {
       setSaving(false);
     }
   }
 
-  async function submitGoogleBusinessPage(e: React.FormEvent) {
-    e.preventDefault();
+  async function submitGoogleBusinessPage(e?: React.SyntheticEvent) {
+    e?.preventDefault();
     setSaving(true);
     setError(null);
     try {
@@ -234,18 +250,77 @@ export default function BusinessOrgOnboardingPage() {
           business_email: form.business_email || form.business_login_email,
         }),
       });
-      const data = (await res.json().catch(() => ({}))) as { error?: string; redirectTo?: string };
+      const data = (await res.json().catch(() => ({}))) as {
+        businessLoginEmail?: string;
+        error?: string;
+        redirectTo?: string;
+      };
       if (!res.ok || !data.redirectTo) {
         setError(data.error ?? "Could not create business profile.");
         return;
       }
-      setSuccessMessage("Your business profile has been successfully created. Return to login and use your business credentials.");
-      window.setTimeout(() => {
-        window.location.href = data.redirectTo || "/login";
-      }, 2600);
+      setCompletion({
+        businessLoginEmail: data.businessLoginEmail ?? form.business_login_email,
+        redirectTo: data.redirectTo,
+      });
     } finally {
       setSaving(false);
     }
+  }
+
+  if (completion) {
+    return (
+      <main style={{ maxWidth: 680, margin: "0 auto", padding: "48px 18px 64px", color: t.text }}>
+        <section
+          style={{
+            border: `1px solid ${t.border}`,
+            borderRadius: 22,
+            padding: 24,
+            background: t.surface,
+            display: "grid",
+            gap: 14,
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 42, lineHeight: 1 }}>✓</div>
+          <h1 style={{ margin: 0, fontSize: 30, fontWeight: 950 }}>
+            Business Account Successfully Created
+          </h1>
+          <p style={{ margin: 0, color: t.textMuted, lineHeight: 1.6 }}>
+            Please return to login and use your business account username and password to sign in.
+          </p>
+          <div
+            style={{
+              border: `1px solid ${t.border}`,
+              borderRadius: 14,
+              padding: 12,
+              background: t.bg,
+              color: t.text,
+              fontWeight: 800,
+              overflowWrap: "anywhere",
+            }}
+          >
+            Business login: {completion.businessLoginEmail}
+          </div>
+          <a
+            href={completion.redirectTo || "/login"}
+            style={{
+              display: "inline-flex",
+              justifyContent: "center",
+              justifySelf: "center",
+              borderRadius: 12,
+              padding: "11px 16px",
+              background: "#2563eb",
+              color: "white",
+              fontWeight: 900,
+              textDecoration: "none",
+            }}
+          >
+            Return to Login
+          </a>
+        </section>
+      </main>
+    );
   }
 
   return (
@@ -260,14 +335,11 @@ export default function BusinessOrgOnboardingPage() {
           {error}
         </div>
       )}
-      {successMessage && (
-        <div style={{ marginTop: 18, padding: 12, borderRadius: 12, background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0" }}>
-          {successMessage}
-        </div>
-      )}
-
       <form
-        onSubmit={(e) => googleBusinessEmail ? void submitGoogleBusinessPage(e) : void submitBusinessPage(e)}
+        onSubmit={(e) => {
+          e.preventDefault();
+          openBillingDisclosure();
+        }}
         style={{ marginTop: 24, border: `1px solid ${t.border}`, borderRadius: 20, padding: 20, background: t.surface, display: "grid", gap: 14 }}
       >
         {step === "login" ? (
@@ -401,6 +473,117 @@ export default function BusinessOrgOnboardingPage() {
           </>
         )}
       </form>
+
+      {billingDisclosureOpen && (
+        <div
+          role="presentation"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 10060,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="business-billing-title"
+            style={{
+              background: t.surface,
+              borderRadius: 14,
+              border: `1px solid ${t.border}`,
+              maxWidth: 500,
+              width: "100%",
+              padding: "24px 22px",
+              boxShadow: "0 16px 48px rgba(0,0,0,0.2)",
+            }}
+          >
+            <div id="business-billing-title" style={{ fontWeight: 900, fontSize: 18, color: t.text, marginBottom: 12 }}>
+              Business account billing
+            </div>
+            <p style={{ margin: 0, fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>
+              There will be a separate $0.99 per month charge to maintain a business account in addition to your personal account.
+              This will be billed separately in the event you cancel your business subscription. Business accounts are currently
+              free in beta, and you will be notified before billing starts.
+            </p>
+            <div style={{ marginTop: 14, display: "grid", gap: 8, color: t.textMuted, fontSize: 14, lineHeight: 1.5 }}>
+              <div style={{ color: t.text, fontWeight: 900 }}>Business account features include:</div>
+              <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 5 }}>
+                <li>Shopify linking to display products from your store.</li>
+                <li>Business Directory linking so directory visitors can click through to your full profile.</li>
+                <li>Manual products with links to your personal website, online store, or external marketplace.</li>
+                <li>Increased video upload size: standard accounts get 100 MB; business accounts get 200 MB.</li>
+              </ul>
+            </div>
+            <label
+              style={{
+                display: "flex",
+                alignItems: "flex-start",
+                gap: 10,
+                marginTop: 16,
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: 600,
+                color: t.text,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={billingDisclosureAccepted}
+                onChange={(e) => setBillingDisclosureAccepted(e.target.checked)}
+                style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }}
+              />
+              <span>I have read and understand the business account billing information above.</span>
+            </label>
+            <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setBillingDisclosureOpen(false)}
+                disabled={saving}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 10,
+                  border: `1px solid ${t.border}`,
+                  background: t.bg,
+                  color: t.text,
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: saving ? "not-allowed" : "pointer",
+                }}
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                disabled={!billingDisclosureAccepted || saving}
+                onClick={(e) => {
+                  if (!billingDisclosureAccepted || saving) return;
+                  setBillingDisclosureOpen(false);
+                  if (googleBusinessEmail) void submitGoogleBusinessPage(e);
+                  else void submitBusinessPage(e);
+                }}
+                style={{
+                  padding: "10px 18px",
+                  borderRadius: 10,
+                  border: "none",
+                  background: "#111",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: !billingDisclosureAccepted || saving ? "not-allowed" : "pointer",
+                  opacity: !billingDisclosureAccepted || saving ? 0.45 : 1,
+                }}
+              >
+                {saving ? "Creating..." : "Create Business Profile"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

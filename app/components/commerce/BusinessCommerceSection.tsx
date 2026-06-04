@@ -172,7 +172,7 @@ export default function BusinessCommerceSection({
         <div>
           <div style={{ fontSize: 16, fontWeight: 900, color: t.text }}>Products</div>
           <div style={{ marginTop: 4, fontSize: 12, color: t.textFaint, lineHeight: 1.5 }}>
-            Shop directly through this business&apos;s Shopify store.
+            Shop directly through this business&apos;s linked stores and product pages.
           </div>
         </div>
 
