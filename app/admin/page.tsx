@@ -194,7 +194,11 @@ function adminUserDisplayName(u: UserProfile): string {
   );
 }
 
-type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "denied";
+type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "unverified" | "denied";
+
+function isReadyForAdminVerify(u: UserProfile): boolean {
+  return u.verification_status !== "verified" && !blocksSignupApproval(u);
+}
 
 function isAtAdminReviewTier(u: UserProfile): boolean {
   return (
@@ -216,6 +220,7 @@ function userMatchesStatusFilter(u: UserProfile, filter: UserStatusFilter): bool
     if (u.verification_status === "denied") return false;
     return !isAtAdminReviewTier(u);
   }
+  if (filter === "unverified") return isReadyForAdminVerify(u);
   return false;
 }
 
@@ -4245,7 +4250,7 @@ export default function AdminPage() {
           <div style={{ marginTop: 20 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
               <div style={{ display: "flex", gap: 6 }}>
-                {(["all", "pending", "onboarding", "verified", "denied"] as const).map((f) => (
+                {(["all", "pending", "onboarding", "unverified", "verified", "denied"] as const).map((f) => (
                   <button
                     key={f}
                     onClick={() => setUserFilter(f)}
@@ -4256,7 +4261,7 @@ export default function AdminPage() {
                       color: userFilter === f ? "white" : t.badgeText,
                     }}
                   >
-                    {f === "onboarding" ? "Onboarding" : f.charAt(0).toUpperCase() + f.slice(1)}
+                    {f === "onboarding" ? "Onboarding" : f === "unverified" ? "Unverified" : f.charAt(0).toUpperCase() + f.slice(1)}
                     {" "}
                     <span style={{ opacity: 0.7 }}>
                       ({users.filter((u) => userMatchesStatusFilter(u, f)).length})

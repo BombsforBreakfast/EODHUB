@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { isSignupProfileComplete, resolveSignupNames, authMetadataDisplayName, splitFullName } from "@/app/lib/profileCompleteness";
+import {
+  blocksSignupApproval,
+  isSignupProfileComplete,
+  resolveSignupNames,
+  authMetadataDisplayName,
+  splitFullName,
+} from "@/app/lib/profileCompleteness";
 import { referrerDisplayName } from "@/app/lib/referralReferrer";
 
 type ProfilesQueryResult = {
@@ -90,6 +96,16 @@ function isAtAdminReviewTier(row: Record<string, unknown>) {
   );
 }
 
+function isReadyForAdminVerify(row: Record<string, unknown>) {
+  if (row.verification_status === "verified") return false;
+  return !blocksSignupApproval({
+    first_name: typeof row.first_name === "string" ? row.first_name : null,
+    last_name: typeof row.last_name === "string" ? row.last_name : null,
+    created_at: typeof row.created_at === "string" ? row.created_at : null,
+    is_pure_admin: row.is_pure_admin === true,
+  });
+}
+
 function userMatchesStatus(row: Record<string, unknown>, status: UserStatusFilter) {
   if (status === "all") return true;
   if (status === "verified") return row.verification_status === "verified";
@@ -99,9 +115,7 @@ function userMatchesStatus(row: Record<string, unknown>, status: UserStatusFilte
     if (row.verification_status === "verified" || row.verification_status === "denied") return false;
     return row.signup_incomplete === true || !isSignupProfileComplete(row);
   }
-  if (status === "unverified") {
-    return row.verification_status !== "verified" && row.verification_status !== "denied";
-  }
+  if (status === "unverified") return isReadyForAdminVerify(row);
   return true;
 }
 
