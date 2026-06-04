@@ -2953,6 +2953,7 @@ export default function PublicProfilePage() {
     if (!userId || userId === "undefined") return;
     if (!profileWallHasMorePosts || profileAutoLoadTriggeredRef.current) return;
     if (profilePostLimitRef.current >= PROFILE_AUTO_LOAD_LIMIT) return;
+    const targetUserId = userId;
 
     function onScroll() {
       const doc = document.documentElement;
@@ -2960,7 +2961,7 @@ export default function PublicProfilePage() {
       if (distanceFromBottom > 900) return;
       profileAutoLoadTriggeredRef.current = true;
       profilePostLimitRef.current = PROFILE_AUTO_LOAD_LIMIT;
-      void loadPosts(userId, { limit: PROFILE_AUTO_LOAD_LIMIT });
+      void loadPosts(targetUserId, { limit: PROFILE_AUTO_LOAD_LIMIT });
     }
 
     window.addEventListener("scroll", onScroll, { passive: true });
