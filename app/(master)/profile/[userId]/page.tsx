@@ -311,8 +311,11 @@ const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "LEO/FED", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
 const WORK_TAG_PREVIEW_LIMIT = 3;
+const PROFILE_INITIAL_POST_LIMIT = 5;
+const PROFILE_AUTO_LOAD_LIMIT = 10;
+const PROFILE_LOAD_MORE_INCREMENT = 5;
+const PROFILE_POST_QUERY_BUFFER = 10;
 const WORK_TAG_MAX = 30;
-const PROFILE_WALL_PAGE_SIZE = 10;
 const PROFILE_PHOTO_PREVIEW_LIMIT = 12;
 const AVAILABILITY_TYPES = ["ETS", "Retirement", "Available From", "Contract End"];
 const WORK_PREFERENCES = ["Remote", "Hybrid", "Onsite", "Flexible"];
@@ -603,6 +606,8 @@ export default function PublicProfilePage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [profileWallHasMorePosts, setProfileWallHasMorePosts] = useState(false);
   const [profileWallLoadingMore, setProfileWallLoadingMore] = useState(false);
+  const profilePostLimitRef = useRef(PROFILE_INITIAL_POST_LIMIT);
+  const profileAutoLoadTriggeredRef = useRef(false);
   const [photos, setPhotos] = useState<ProfilePhoto[]>([]);
   const [myGroups, setMyGroups] = useState<GroupTile[]>([]);
   const [showAllModal, setShowAllModal] = useState<"photos" | "groups" | null>(null);
@@ -800,6 +805,10 @@ export default function PublicProfilePage() {
 
   useEffect(() => {
     setShowAllWorkHistoryTags(false);
+    profilePostLimitRef.current = PROFILE_INITIAL_POST_LIMIT;
+    setProfileWallHasMorePosts(false);
+    setProfileWallLoadingMore(false);
+    profileAutoLoadTriggeredRef.current = false;
   }, [userId]);
 
   useEffect(() => {
@@ -1251,8 +1260,16 @@ export default function PublicProfilePage() {
     targetUserId: string,
     options: { limit?: number } = {},
   ) {
-    const visibleLimit = Math.max(options.limit ?? postsRef.current.length ?? PROFILE_WALL_PAGE_SIZE, PROFILE_WALL_PAGE_SIZE);
-    const queryLimit = visibleLimit + 1;
+    const visibleLimit = Math.max(
+      PROFILE_INITIAL_POST_LIMIT,
+      options.limit ?? profilePostLimitRef.current,
+    );
+    const queryLimit = visibleLimit + PROFILE_POST_QUERY_BUFFER;
+
+    const { error: closeKcErr } = await supabase.rpc("close_expired_kangaroo_courts");
+    if (closeKcErr) {
+      console.warn("close_expired_kangaroo_courts (wall):", closeKcErr.message);
+    }
 
     const { data: rawData, error } = await supabase
       .from("posts")
@@ -1280,7 +1297,7 @@ export default function PublicProfilePage() {
       rabbithole_contribution_id?: string | null;
     }[];
     const rawPosts = allMatchedPosts;
-    const hasMorePosts = rawPosts.length > visibleLimit;
+    const hasMorePosts = rawPosts.length > visibleLimit || allMatchedPosts.length >= queryLimit;
     const visibleRawPosts = rawPosts.slice(0, visibleLimit);
     setProfileWallHasMorePosts(hasMorePosts);
     if (visibleRawPosts.length === 0) {
@@ -1744,9 +1761,11 @@ export default function PublicProfilePage() {
 
   async function loadMoreProfileWallPosts() {
     if (!userId || profileWallLoadingMore || !profileWallHasMorePosts) return;
+    const nextLimit = profilePostLimitRef.current + PROFILE_LOAD_MORE_INCREMENT;
     try {
       setProfileWallLoadingMore(true);
-      await loadPosts(userId, { limit: postsRef.current.length + PROFILE_WALL_PAGE_SIZE });
+      profilePostLimitRef.current = nextLimit;
+      await loadPosts(userId, { limit: nextLimit });
     } finally {
       setProfileWallLoadingMore(false);
     }
@@ -2826,7 +2845,8 @@ export default function PublicProfilePage() {
         });
 
       setProfileWallLoading(true);
-      void loadPosts(userId, { limit: PROFILE_WALL_PAGE_SIZE })
+      profilePostLimitRef.current = PROFILE_INITIAL_POST_LIMIT;
+      void loadPosts(userId, { limit: PROFILE_INITIAL_POST_LIMIT })
         .catch((err) => console.error("Profile wall load failed:", err))
         .finally(() => {
           if (!cancelled) setProfileWallLoading(false);
@@ -2931,12 +2951,31 @@ export default function PublicProfilePage() {
 
   useEffect(() => {
     if (!userId || userId === "undefined") return;
+    if (!profileWallHasMorePosts || profileAutoLoadTriggeredRef.current) return;
+    if (profilePostLimitRef.current >= PROFILE_AUTO_LOAD_LIMIT) return;
+
+    function onScroll() {
+      const doc = document.documentElement;
+      const distanceFromBottom = doc.scrollHeight - (window.scrollY + window.innerHeight);
+      if (distanceFromBottom > 900) return;
+      profileAutoLoadTriggeredRef.current = true;
+      profilePostLimitRef.current = PROFILE_AUTO_LOAD_LIMIT;
+      void loadPosts(userId, { limit: PROFILE_AUTO_LOAD_LIMIT });
+    }
+
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [profileWallHasMorePosts, userId]);
+
+  useEffect(() => {
+    if (!userId || userId === "undefined") return;
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const schedulePostsRefresh = () => {
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(() => {
         refreshTimer = null;
-        void loadPosts(userId);
+        void loadPosts(userId, { limit: profilePostLimitRef.current });
       }, 350);
     };
 
