@@ -1,4 +1,4 @@
-"use client";
+ï»¿"use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
@@ -264,7 +264,7 @@ type Post = {
   event_going_count: number;
   event_my_attendance: "interested" | "going" | null;
   event_saved: boolean;
-  /** Same feed bundles as home GÇö courts attach via `feed_post_id` */
+  /** Same feed bundles as home Gï¿½ï¿½ courts attach via `feed_post_id` */
   kangaroo?: FeedKangarooBundle | null;
 };
 
@@ -2914,6 +2914,8 @@ export default function PublicProfilePage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function init() {
       if (!userId || userId === "undefined") {
         setLoading(false);
@@ -2968,55 +2970,18 @@ export default function PublicProfilePage() {
         setViewerIsEmployer(false);
         setViewerIsAdmin(false);
       }
-
-      await loadProfile(userId);
       if (cancelled) return;
       setLoading(false);
 
-      void supabase.rpc("close_expired_kangaroo_courts")
-        .then(({ error: closeKcErr }) => {
-          if (closeKcErr) console.warn("close_expired_kangaroo_courts (wall):", closeKcErr.message);
-        });
-
-      setProfileWallLoading(true);
-      profilePostLimitRef.current = PROFILE_INITIAL_POST_LIMIT;
-      void loadPosts(userId, { limit: PROFILE_INITIAL_POST_LIMIT })
-        .catch((err) => console.error("Profile wall load failed:", err))
-        .finally(() => {
-          if (!cancelled) setProfileWallLoading(false);
-        });
-
-      setProfilePhotosLoading(true);
-      void loadPhotos(userId, { full: false })
-        .then((photoResults) => {
-          if (cancelled) return;
-          void loadPhotoInteractions((photoResults ?? []).map((p) => p.id), signedInUserId)
-            .catch((err) => console.error("Profile photo interactions load failed:", err));
-        })
-        .catch((err) => console.error("Profile photos load failed:", err))
-        .finally(() => {
-          if (!cancelled) setProfilePhotosLoading(false);
-        });
-
-      setProfileGroupsLoading(true);
-      void loadMyGroups(userId)
-        .catch((err) => console.error("Profile groups load failed:", err))
-        .finally(() => {
-          if (!cancelled) setProfileGroupsLoading(false);
-        });
-
-      void loadSavedEventsForUser(userId).catch((err) => console.error("Profile saved events load failed:", err));
-      if (signedInUserId) {
-        void loadDesktopSavedEvents(signedInUserId).catch((err) => console.error("Desktop saved events load failed:", err));
-      }
       if (signedInUserId && signedInUserId === userId) {
         void refreshPlankHolderChallenge();
       }
-
-      setLoading(false);
     }
 
     init();
+    return () => {
+      cancelled = true;
+    };
   }, [userId]);
 
   useEffect(() => {
@@ -4221,7 +4186,7 @@ export default function PublicProfilePage() {
           )}
         </div>}
 
-        {/* GöÇGöÇ Content GöÇGöÇ */}
+        {/* Gï¿½ï¿½Gï¿½ï¿½ Content Gï¿½ï¿½Gï¿½ï¿½ */}
 
           {/* Profile / Contact Card */}
           <div
@@ -4248,7 +4213,7 @@ export default function PublicProfilePage() {
             {isBusinessOrgProfile ? (
               renderBusinessOrgProfileCard()
             ) : isMobile ? (
-              /* GöÇGöÇ Mobile profile card layout GöÇGöÇ */
+              /* Gï¿½ï¿½Gï¿½ï¿½ Mobile profile card layout Gï¿½ï¿½Gï¿½ï¿½ */
               <div>
                 {/* Top row: avatar + name + stats */}
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
@@ -4409,7 +4374,7 @@ export default function PublicProfilePage() {
                   </div>
                 )}
 
-                {/* Profile details GÇö full width below */}
+                {/* Profile details Gï¿½ï¿½ full width below */}
                 <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
                   {!showDesktopProfileBack ? (
                     isEmployerProfile ? (
@@ -4574,7 +4539,7 @@ export default function PublicProfilePage() {
                 </div>
               </div>
             ) : (
-              /* GöÇGöÇ Desktop profile card layout GöÇGöÇ */
+              /* Gï¿½ï¿½Gï¿½ï¿½ Desktop profile card layout Gï¿½ï¿½Gï¿½ï¿½ */
               <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
                 {/* Identity: photo + name + stats + buttons */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flexShrink: 0, width: 180 }}>
@@ -5034,7 +4999,7 @@ export default function PublicProfilePage() {
                     aria-label="Close"
                     style={{ background: "none", border: "none", fontSize: 24, lineHeight: 1, cursor: "pointer", color: t.textMuted, padding: 4 }}
                   >
-                    ×
+                    ï¿½
                   </button>
                 </div>
                 <div style={{ overflowY: "auto", flex: 1, padding: isMobile ? 16 : 24 }}>
@@ -5094,11 +5059,11 @@ export default function PublicProfilePage() {
                       <input value={editCompanyName} onChange={(e) => setEditCompanyName(e.target.value)} placeholder="e.g. Acme Defense Group" style={wallEditInputStyle} />
                     </div>
                     <div>
-                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Primary Contact — First Name</label>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Primary Contact ï¿½ First Name</label>
                       <input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} style={wallEditInputStyle} />
                     </div>
                     <div>
-                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Primary Contact — Last Name</label>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Primary Contact ï¿½ Last Name</label>
                       <input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} style={wallEditInputStyle} />
                     </div>
                     <div style={{ gridColumn: "1 / -1" }}>
@@ -5476,7 +5441,7 @@ export default function PublicProfilePage() {
                 alignItems: "start",
               }}
             >
-              {/* GöÇGöÇ Photo Strip GöÇGöÇ */}
+              {/* Gï¿½ï¿½Gï¿½ï¿½ Photo Strip Gï¿½ï¿½Gï¿½ï¿½ */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                 {/* Title + gallery / add (matches common profile strip layout) */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", minHeight: 56, alignContent: "center" }}>
@@ -5552,7 +5517,7 @@ export default function PublicProfilePage() {
               </div>
               {!isMobile && <div style={{ width: 1, alignSelf: "stretch", background: t.border }} />}
 
-              {/* My Groups — desktop: right-aligned strip; mobile: full width below Photos */}
+              {/* My Groups ï¿½ desktop: right-aligned strip; mobile: full width below Photos */}
               <div
                 style={{
                   display: "flex",
@@ -5824,7 +5789,7 @@ export default function PublicProfilePage() {
                 {selectedPostGif && (
                   <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
                     <img src={selectedPostGif} alt="Selected GIF" style={{ maxWidth: 200, borderRadius: 10, display: "block" }} />
-                    <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                    <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>ï¿½</button>
                   </div>
                 )}
 
@@ -5832,7 +5797,7 @@ export default function PublicProfilePage() {
                 {ogPreview && (
                   <div style={{ position: "relative" }}>
                     <OgCard og={ogPreview} />
-                    <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                    <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>ï¿½</button>
                   </div>
                 )}
 
@@ -5902,7 +5867,7 @@ export default function PublicProfilePage() {
                           type="button"
                           onClick={() => setSelectedPostImages((prev) => { URL.revokeObjectURL(prev[i].previewUrl); return prev.filter((_, idx) => idx !== i); })}
                           style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}
-                        >×</button>
+                        >ï¿½</button>
                       </div>
                     ))}
                   </div>
@@ -6229,7 +6194,7 @@ export default function PublicProfilePage() {
                       </>
                     )}
 
-                    {/* Kangaroo Court GÇö same order as home feed: post body above, then verdict, then poll */}
+                    {/* Kangaroo Court Gï¿½ï¿½ same order as home feed: post body above, then verdict, then poll */}
                     {post.kangaroo?.court?.status === "closed" && post.kangaroo?.verdict && (
                       <KangarooCourtVerdictBanner verdict={post.kangaroo.verdict} />
                     )}
@@ -6248,7 +6213,7 @@ export default function PublicProfilePage() {
                       </>
                     )}
 
-                    {/* Reactions / Comment bar GÇö KC chip is display-only on wall (no GÇ£start courtGÇ¥) */}
+                    {/* Reactions / Comment bar Gï¿½ï¿½ KC chip is display-only on wall (no GÇ£start courtGÇ¥) */}
                     <div
                       style={{
                         display: "flex",
@@ -7111,7 +7076,7 @@ export default function PublicProfilePage() {
             <div style={{ fontWeight: 900, fontSize: 17 }}>
               {connListOpen === "know" ? "Know" : "Recruited"}
             </div>
-            <button type="button" onClick={() => setConnListOpen(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>×</button>
+            <button type="button" onClick={() => setConnListOpen(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>ï¿½</button>
           </div>
           <div style={{ overflowY: "auto", flex: 1 }}>
             {connListLoading ? (

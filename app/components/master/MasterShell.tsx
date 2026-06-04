@@ -10,6 +10,7 @@ import DesktopLayout from "../DesktopLayout";
 import MemberPaywallModal from "../MemberPaywallModal";
 import SidebarThreadDrawer from "../SidebarThreadDrawer";
 import { supabase } from "../../lib/lib/supabaseClient";
+import { loadActiveProfile } from "../../lib/auth/activeProfile";
 import { isMemberPaywallExemptPath, isExemptFromMemberPaywall, shouldEnforceMemberPaywall } from "../../lib/paywallPaths";
 import { memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { MasterShellProvider } from "./masterShellContext";
@@ -137,12 +138,12 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       }
     }
 
-    void supabase.auth.getSession().then(({ data: { session } }) => {
-      void loadShellUser(session?.user ?? null);
+    void supabase.auth.getSession().then(() => {
+      void loadShellUser();
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") return;
-      void loadShellUser(session?.user ?? null);
+      void loadShellUser();
     });
     return () => {
       cancelled = true;

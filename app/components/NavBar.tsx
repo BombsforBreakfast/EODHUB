@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { getSupabaseSession, supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "./EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
@@ -12,7 +13,7 @@ import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import NotificationCenter from "./NotificationCenter";
 import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
-import { loadActiveProfile } from "../lib/auth/activeProfile";
+import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import type { User } from "@supabase/supabase-js";
