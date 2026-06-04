@@ -1668,7 +1668,7 @@ export default function AdminPage() {
 
   async function loadUsers() {
     const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch("/api/admin/users", {
+    const res = await fetch("/api/admin/users?full=true", {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
     if (!res.ok) {
