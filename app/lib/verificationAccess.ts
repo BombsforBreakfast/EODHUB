@@ -6,6 +6,7 @@ import {
 } from "./verificationStatus";
 
 export type VerificationProfile = {
+  account_type?: string | null;
   email_verified?: boolean | null;
   admin_verified?: boolean | null;
   verification_status?: string | null;
@@ -16,6 +17,9 @@ export function hasFullPlatformAccess(p: VerificationProfile): boolean {
   // Pure admins always have full access — they never go through the user
   // verification queue and must not be bounced by the new gate.
   if (p.is_pure_admin) return true;
+  // Business / Organization page auth accounts are provisioned only after a
+  // verified owner account passes the server-side gates.
+  if (p.account_type === "business_org") return true;
   return Boolean(
     p.email_verified &&
       p.admin_verified &&
@@ -34,6 +38,7 @@ export function isInAdminReviewQueue(p: VerificationProfile): boolean {
 
 /** Must click Resend verification link before admin queue. */
 export function needsEmailVerification(p: VerificationProfile): boolean {
+  if (p.account_type === "business_org") return false;
   if (p.email_verified) return false;
   const status = p.verification_status;
   if (isAwaitingEmailStatus(status)) return true;

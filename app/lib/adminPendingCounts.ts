@@ -12,6 +12,7 @@ export type AdminPendingBreakdown = {
   locReq: number;
   scrapbook: number;
   failedAuth: number;
+  businessOrgPages: number;
 };
 
 const FAILED_AUTH_REVIEW_WINDOW_DAYS = 30;
@@ -34,6 +35,8 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
     memorialScrapbookRes,
     eventScrapbookRes,
     failedAuthRes,
+    businessOrgPagesRes,
+    businessOrgClaimsRes,
   ] = await Promise.all([
     client.from("business_listings").select("*", { count: "exact", head: true }).neq("is_approved", true),
     client.from("business_listing_claims").select("*", { count: "exact", head: true }).eq("status", "pending"),
@@ -61,6 +64,14 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
       .is("admin_decision", null)
       .gte("created_at", failedAuthCutoffIso)
       .limit(2000),
+    client
+      .from("business_organization_pages")
+      .select("*", { count: "exact", head: true })
+      .in("verification_status", ["pending", "needs_revalidation"]),
+    client
+      .from("business_org_claim_requests")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "pending"),
   ]);
   const claimsPending = bizClaimsRes.error ? 0 : (bizClaimsRes.count ?? 0);
 
@@ -92,6 +103,9 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
       (memorialScrapbookRes.error ? 0 : (memorialScrapbookRes.count ?? 0)) +
       (eventScrapbookRes.error ? 0 : (eventScrapbookRes.count ?? 0)),
     failedAuth,
+    businessOrgPages:
+      (businessOrgPagesRes.error ? 0 : (businessOrgPagesRes.count ?? 0)) +
+      (businessOrgClaimsRes.error ? 0 : (businessOrgClaimsRes.count ?? 0)),
   };
 }
 
@@ -106,7 +120,8 @@ export function sumAdminPending(b: AdminPendingBreakdown): number {
     b.dir +
     b.locReq +
     b.scrapbook +
-    b.failedAuth
+    b.failedAuth +
+    b.businessOrgPages
   );
 }
 

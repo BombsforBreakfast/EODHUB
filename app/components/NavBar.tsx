@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createPortal } from "react-dom";
 import Link from "next/link";
-import { supabase } from "../lib/lib/supabaseClient";
+import { getSupabaseSession, supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "./EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
@@ -13,9 +12,7 @@ import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import NotificationCenter from "./NotificationCenter";
 import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
-import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
-import { fetchNotifications, NOTIFICATIONS_STALE_MS } from "../lib/queries/notifications";
-import { queryKeys } from "../lib/queryKeys";
+import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import type { User } from "@supabase/supabase-js";
@@ -50,11 +47,11 @@ type SearchResult = {
 
 export default function NavBar() {
   const { openMemorialById } = useMemorialNavModal();
-  const queryClient = useQueryClient();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [userInitial, setUserInitial] = useState<string>("?");
   const [avatarPhotoUrl, setAvatarPhotoUrl] = useState<string | null>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showHub, setShowHub] = useState(false);
   const hubBtnRef = useRef<HTMLButtonElement>(null);
   const hubPanelRef = useRef<HTMLDivElement>(null);
@@ -84,61 +81,58 @@ export default function NavBar() {
 
   /** In-app notifications (not DMs — those stay on Sidebars). */
   const notificationsV2Enabled = getNotificationsV2Enabled(isFounder);
-  const notificationsQuery = useQuery({
-    queryKey: currentUserId
-      ? queryKeys.notifications(currentUserId, notificationsV2Enabled)
-      : queryKeys.notifications("pending", notificationsV2Enabled),
-    queryFn: () => fetchNotifications<Notification>(supabase, currentUserId as string, notificationsV2Enabled),
-    enabled: !!currentUserId,
-    staleTime: NOTIFICATIONS_STALE_MS,
-  });
-  const notifications = notificationsQuery.data ?? [];
   const unreadNotifCount = notificationsV2Enabled
     ? notifications.filter((n) => !n.read_at && !n.archived_at).length
     : notifications.length;
   const canAccessRabbithole = isVerifiedRabbitholeViewer(verificationStatus);
 
-  function invalidateNotifications() {
-    if (!currentUserId) return;
-    void queryClient.invalidateQueries({
-      queryKey: queryKeys.notifications(currentUserId, notificationsV2Enabled),
-    });
-  }
+  const NOTIFICATION_SELECT =
+    "id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key, type, actor_id, post_id, unit_id, unit_post_id, metadata";
 
-  function patchNotifications(updater: (rows: Notification[]) => Notification[]) {
-    if (!currentUserId) return;
-    queryClient.setQueryData<Notification[]>(
-      queryKeys.notifications(currentUserId, notificationsV2Enabled),
-      (rows) => updater(rows ?? notifications),
-    );
+  async function loadNotifications(uid: string) {
+    const baseQuery = supabase
+      .from("notifications")
+      .select(NOTIFICATION_SELECT)
+      .order("created_at", { ascending: false });
+    const { data, error } = notificationsV2Enabled
+      ? await baseQuery.eq("recipient_user_id", uid).is("archived_at", null).limit(100)
+      : await baseQuery.eq("user_id", uid).limit(50);
+    if (error) {
+      const { data: fallback } = await supabase
+        .from("notifications")
+        .select("id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key")
+        .eq("user_id", uid)
+        .is("archived_at", null)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      setNotifications((fallback ?? []) as Notification[]);
+      return;
+    }
+    setNotifications((data ?? []) as Notification[]);
   }
 
   async function dismissNotification(id: string) {
     if (!notificationsV2Enabled) {
       await supabase.from("notifications").delete().eq("id", id);
-      patchNotifications((prev) => prev.filter((n) => n.id !== id));
-      invalidateNotifications();
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
       return;
     }
     const now = new Date().toISOString();
     await supabase.from("notifications").update({ archived_at: now, is_read: true, read_at: now }).eq("id", id);
-    patchNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, archived_at: now, read_at: now, is_read: true } : n)));
-    invalidateNotifications();
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, archived_at: now, read_at: now, is_read: true } : n)));
   }
 
   async function openNotification(id: string, href: string) {
     if (!notificationsV2Enabled) {
       await supabase.from("notifications").delete().eq("id", id);
-      patchNotifications((prev) => prev.filter((n) => n.id !== id));
-      invalidateNotifications();
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
       setShowNotifPanel(false);
       window.location.href = href;
       return;
     }
     const now = new Date().toISOString();
     await supabase.from("notifications").update({ is_read: true, read_at: now }).eq("id", id);
-    patchNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: now, is_read: true } : n)));
-    invalidateNotifications();
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: now, is_read: true } : n)));
     setShowNotifPanel(false);
     window.location.href = href;
   }
@@ -153,8 +147,7 @@ export default function NavBar() {
       .eq("recipient_user_id", currentUserId)
       .is("read_at", null)
       .is("archived_at", null);
-    patchNotifications((prev) => prev.map((n) => (n.archived_at || n.read_at ? n : { ...n, is_read: true, read_at: now })));
-    invalidateNotifications();
+    setNotifications((prev) => prev.map((n) => (n.archived_at || n.read_at ? n : { ...n, is_read: true, read_at: now })));
   }
 
   useEffect(() => {
@@ -198,7 +191,20 @@ export default function NavBar() {
     }
 
     async function loadNavProfile(user: User) {
-      const profile = await fetchViewerProfileCached(queryClient, supabase, user);
+      const { profile } = await loadActiveProfile<{
+        user_id: string;
+        email: string | null;
+        display_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        photo_url: string | null;
+        is_admin: boolean | null;
+        account_type: string | null;
+        verification_status: string | null;
+      }>(supabase, user, {
+        route: "app/components/NavBar.tsx:loadNavProfile",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, is_admin, account_type, verification_status",
+      });
       if (!mounted) return;
       const row = profile;
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
@@ -215,7 +221,7 @@ export default function NavBar() {
     }
 
     async function loadUser() {
-      const { data: { session }, error } = await supabase.auth.getSession();
+      const { data: { session }, error } = await getSupabaseSession();
       if (!mounted) return;
       if (error) console.error("Nav auth load error:", error);
 
@@ -226,9 +232,12 @@ export default function NavBar() {
 
       if (uid && session?.user) {
         await loadNavProfile(session.user);
+        await loadNotifications(uid);
         if (session.access_token) {
           void loadFounderStatus(session.access_token);
-          // Load group pending count for any logged-in user (not just site admins)
+        }
+        // Load group pending count for any logged-in user (not just site admins)
+        if (session.access_token) {
           fetch("/api/units/pending-summary", {
             headers: { Authorization: `Bearer ${session.access_token}` },
           })
@@ -253,6 +262,7 @@ export default function NavBar() {
       resetNavProfileState();
       if (uid && session?.user) {
         void loadNavProfile(session.user);
+        void loadNotifications(uid);
         if (session.access_token) {
           void loadFounderStatus(session.access_token);
         }
@@ -300,13 +310,7 @@ export default function NavBar() {
         filter: notificationsV2Enabled
           ? `recipient_user_id=eq.${currentUserId}`
           : `user_id=eq.${currentUserId}`,
-      }, () => {
-        // Live change: drop the cached list so active observers refetch fresh rows
-        // even within the stale window.
-        void queryClient.invalidateQueries({
-          queryKey: queryKeys.notifications(currentUserId, notificationsV2Enabled),
-        });
-      })
+      }, () => loadNotifications(currentUserId))
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [currentUserId, notificationsV2Enabled]);

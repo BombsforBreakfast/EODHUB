@@ -710,6 +710,7 @@ export const DISPOSABLE_DOMAINS_GENERATED: ReadonlySet<string> = Object.freeze(n
   "bluedumpling.info",
   "bluewerks.com",
   "bmoar.com",
+  "bncinema.com",
   "bnote.com",
   "boatmail.us",
   "bobgf.ru",
