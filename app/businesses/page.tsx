@@ -209,6 +209,8 @@ export default function BusinessesPage() {
   const [pendingClaimListingIds, setPendingClaimListingIds] = useState<Set<string>>(() => new Set());
   const [businessOrgPages, setBusinessOrgPages] = useState<BusinessOrgClaimPageOption[]>([]);
   const [pendingBusinessOrgClaimListingIds, setPendingBusinessOrgClaimListingIds] = useState<Set<string>>(() => new Set());
+  const [dismissedLinkSuggestionListingIds, setDismissedLinkSuggestionListingIds] = useState<Set<string>>(() => new Set());
+  const [dismissLinkSuggestionFor, setDismissLinkSuggestionFor] = useState<string | null>(null);
   const [claimAsBusinessPageId, setClaimAsBusinessPageId] = useState("");
   const [claimSubmittingFor, setClaimSubmittingFor] = useState<string | null>(null);
   const [claimConfirmListing, setClaimConfirmListing] = useState<BusinessListing | null>(null);
@@ -264,12 +266,13 @@ export default function BusinessesPage() {
     if (!userId) {
       setPendingClaimListingIds(new Set());
       setPendingBusinessOrgClaimListingIds(new Set());
+      setDismissedLinkSuggestionListingIds(new Set());
       setBusinessOrgPages([]);
       return;
     }
     let cancelled = false;
     void (async () => {
-      const [userClaimsRes, pagesRes] = await Promise.all([
+      const [userClaimsRes, pagesRes, dismissalsRes] = await Promise.all([
         supabase
           .from("business_listing_claims")
           .select("listing_id")
@@ -279,6 +282,10 @@ export default function BusinessesPage() {
           .from("business_organization_pages")
           .select("id, owner_user_id, business_auth_user_id, business_name, business_email, website_url, logo_url, verification_status, subscription_status, is_active")
           .or(`owner_user_id.eq.${userId},business_auth_user_id.eq.${userId}`),
+        supabase
+          .from("business_listing_link_suggestion_dismissals")
+          .select("business_listing_id")
+          .eq("user_id", userId),
       ]);
       if (cancelled) return;
       if (userClaimsRes.error) {
@@ -294,6 +301,14 @@ export default function BusinessesPage() {
         const pageRows = (pagesRes.data ?? []) as BusinessOrgClaimPageOption[];
         setBusinessOrgPages(pageRows);
         setClaimAsBusinessPageId((prev) => prev || pageRows[0]?.id || "");
+      }
+      if (dismissalsRes.error) {
+        console.error("Link suggestion dismissals load error:", dismissalsRes.error);
+        setDismissedLinkSuggestionListingIds(new Set());
+      } else {
+        setDismissedLinkSuggestionListingIds(
+          new Set((dismissalsRes.data ?? []).map((r) => (r as { business_listing_id: string }).business_listing_id)),
+        );
       }
       const pageIds = ((pagesRes.data ?? []) as BusinessOrgClaimPageOption[]).map((page) => page.id);
       if (pageIds.length > 0) {
@@ -700,6 +715,25 @@ export default function BusinessesPage() {
       return;
     }
     await submitBusinessOrgClaim(listing, pageId);
+  }
+
+  async function dismissLinkSuggestion(listing: BusinessListing) {
+    if (!userId) return;
+    setDismissLinkSuggestionFor(listing.id);
+    try {
+      const { error } = await supabase.from("business_listing_link_suggestion_dismissals").upsert(
+        { user_id: userId, business_listing_id: listing.id },
+        { onConflict: "user_id,business_listing_id" },
+      );
+      if (error) {
+        setBizNotice(error.message);
+        window.setTimeout(() => setBizNotice(null), 5500);
+        return;
+      }
+      setDismissedLinkSuggestionListingIds((prev) => new Set(prev).add(listing.id));
+    } finally {
+      setDismissLinkSuggestionFor(null);
+    }
   }
 
   async function handleLinkConfirmSubmit() {
@@ -1272,7 +1306,9 @@ export default function BusinessesPage() {
             const comments = listingCommentsById[listing.id] ?? [];
             const { averageRounded, ratedCount } = getRatingSummary(listing.id);
             const suggestedLinkPage =
-              !listing.claimed_business_org_page_id && !pendingBusinessOrgClaimListingIds.has(listing.id)
+              !listing.claimed_business_org_page_id &&
+              !pendingBusinessOrgClaimListingIds.has(listing.id) &&
+              !dismissedLinkSuggestionListingIds.has(listing.id)
                 ? businessOrgPages.find((page) => pageSuggestsListingLink(page, listing, userId)) ?? null
                 : null;
             const suggestedLinkBlocked =
@@ -1376,29 +1412,52 @@ export default function BusinessesPage() {
                     <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.4 }}>
                       This listing appears connected to your Business / Organization page. Confirming submits an admin-reviewed link request.
                     </div>
-                    <button
-                      type="button"
-                      disabled={claimSubmittingFor === listing.id}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        void submitSuggestedBusinessOrgLink(listing, suggestedLinkPage.id);
-                      }}
-                      style={{
-                        justifySelf: "start",
-                        border: "none",
-                        background: suggestedLinkBlocked ? "#b45309" : "#2563eb",
-                        color: "white",
-                        borderRadius: 8,
-                        padding: "6px 10px",
-                        fontSize: 12,
-                        fontWeight: 850,
-                        cursor: claimSubmittingFor === listing.id ? "wait" : "pointer",
-                        opacity: claimSubmittingFor === listing.id ? 0.7 : 1,
-                      }}
-                    >
-                      {suggestedLinkBlocked ? "Page approval required" : claimSubmittingFor === listing.id ? "Submitting..." : "Link Business Page"}
-                    </button>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                      <button
+                        type="button"
+                        disabled={claimSubmittingFor === listing.id}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void submitSuggestedBusinessOrgLink(listing, suggestedLinkPage.id);
+                        }}
+                        style={{
+                          border: "none",
+                          background: suggestedLinkBlocked ? "#b45309" : "#2563eb",
+                          color: "white",
+                          borderRadius: 8,
+                          padding: "6px 10px",
+                          fontSize: 12,
+                          fontWeight: 850,
+                          cursor: claimSubmittingFor === listing.id ? "wait" : "pointer",
+                          opacity: claimSubmittingFor === listing.id ? 0.7 : 1,
+                        }}
+                      >
+                        {suggestedLinkBlocked ? "Page approval required" : claimSubmittingFor === listing.id ? "Submitting..." : "Link Business Page"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={dismissLinkSuggestionFor === listing.id}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void dismissLinkSuggestion(listing);
+                        }}
+                        style={{
+                          border: `1px solid ${t.border}`,
+                          background: t.surface,
+                          color: t.textMuted,
+                          borderRadius: 8,
+                          padding: "6px 10px",
+                          fontSize: 12,
+                          fontWeight: 750,
+                          cursor: dismissLinkSuggestionFor === listing.id ? "wait" : "pointer",
+                          opacity: dismissLinkSuggestionFor === listing.id ? 0.7 : 1,
+                        }}
+                      >
+                        {dismissLinkSuggestionFor === listing.id ? "Dismissing..." : "Not my listing"}
+                      </button>
+                    </div>
                   </div>
                 ) : null}
                 {listing.claimed_business_org_page_id ? (
