@@ -290,9 +290,11 @@ const JOB_COLUMNS =
 const BUSINESS_LISTING_COLUMNS =
   "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags";
 const PERF_DEBUG = process.env.NODE_ENV !== "production";
-const INITIAL_FEED_POST_LIMIT = 10;
-const FEED_AUTO_LOAD_LIMIT = 20;
+const INITIAL_FEED_POST_LIMIT = 5;
+const FEED_AUTO_LOAD_LIMIT = 10;
 const FEED_LOAD_MORE_INCREMENT = 10;
+const INITIAL_RANKED_POSTS_LIMIT = 60;
+const FULL_FEED_HYDRATION_DELAY_MS = 400;
 const FEED_REALTIME_DEBOUNCE_MS = 2000;
 const FEED_QUERY_BUFFER = 20;
 const HOME_WIDGET_LOAD_DELAY_MS = 1500;
@@ -846,6 +848,7 @@ export default function HomePage() {
   const feedPostLimitRef = useRef(INITIAL_FEED_POST_LIMIT);
   const feedDirtyWhileHiddenRef = useRef(false);
   const feedAutoLoadTriggeredRef = useRef(false);
+  const feedHydrationTimerRef = useRef<number | null>(null);
   const unitFeedHighlightsLoadedForRef = useRef<string | null>(null);
   const unitFeedHighlightsLoadingForRef = useRef<string | null>(null);
   // Set to the postId when a deep-link target post is known to be unavailable
@@ -2486,11 +2489,258 @@ export default function HomePage() {
     unitFeedHighlightsLoadingForRef.current = null;
   }
 
+  function createFeedPostShell(
+    post: RankedPostRow,
+    overrides: Partial<FeedPost> = {},
+  ): FeedPost {
+    return {
+      ...post,
+      image_url: null,
+      image_urls: [],
+      gif_url: null,
+      content_type: "user_post",
+      system_generated: false,
+      news_item_id: null,
+      authorName: "User",
+      authorPhotoUrl: null,
+      authorService: null,
+      authorIsEmployer: null,
+      authorIsPureAdmin: null,
+      authorHasPublicMemberProfile: true,
+      likeCount: 0,
+      commentCount: 0,
+      myReaction: null,
+      reactionCountsByType: {},
+      reactorNamesByType: {},
+      likers: [],
+      comments: [],
+      og_url: null,
+      og_title: null,
+      og_description: null,
+      og_image: null,
+      admin_manual_image_url: null,
+      og_site_name: null,
+      event_id: null,
+      feed_event: null,
+      event_interested_count: 0,
+      event_going_count: 0,
+      event_my_attendance: null,
+      event_saved: false,
+      kangaroo: null,
+      court_verdict_at: null,
+      rabbithole_thread_id: null,
+      rabbithole_contribution_id: null,
+      isInteractionHydrating: false,
+      ...overrides,
+    };
+  }
+
+  async function loadInitialFeedBatch(
+    rawPosts: RankedPostRow[],
+    effectiveUserId: string | null,
+    perfStart: number,
+  ): Promise<void> {
+    const initialPosts = rawPosts.slice(0, INITIAL_FEED_POST_LIMIT);
+    const postIds = initialPosts.map((post) => post.id);
+    const uniqueUserIds = [...new Set(initialPosts.map((post) => post.user_id))];
+
+    const [
+      legacyWithEvent,
+      postImagesRes,
+      reactionRowsResult,
+      commentCountResult,
+      profileRes,
+    ] = await Promise.all([
+      supabase
+        .from("posts")
+        .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id, court_verdict_at, rabbithole_thread_id, rabbithole_contribution_id")
+        .in("id", postIds),
+      supabase
+        .from("post_images")
+        .select("id, post_id, image_url, sort_order")
+        .in("post_id", postIds)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true }),
+      fetchContentReactionsForSubjects(supabase, "post", postIds).catch((error) => {
+        console.error("Initial reactions load error:", error);
+        return [] as { subject_id: string; user_id: string; reaction_type: string }[];
+      }),
+      supabase
+        .from("post_comments")
+        .select("post_id, parent_comment_id")
+        .in("post_id", postIds)
+        .or("hidden_for_review.is.null,hidden_for_review.eq.false")
+        .then(async (result) => {
+          if (!result.error || !isMissingColumnError(result.error, "hidden_for_review")) return result;
+          return supabase
+            .from("post_comments")
+            .select("post_id, parent_comment_id")
+            .in("post_id", postIds);
+        })
+        .then(async (result) => {
+          if (!result.error || !isMissingColumnError(result.error, "parent_comment_id")) return result;
+          const fallback = await supabase
+            .from("post_comments")
+            .select("post_id")
+            .in("post_id", postIds);
+          return {
+            ...fallback,
+            data: (fallback.data ?? []).map((row) => ({ ...row, parent_comment_id: null })),
+          };
+        }),
+      uniqueUserIds.length > 0
+        ? supabase
+            .from("profiles")
+            .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, is_pure_admin, email")
+            .in("user_id", uniqueUserIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
+
+    if (legacyWithEvent.error) {
+      console.error("Initial post media load error:", legacyWithEvent.error);
+    }
+    if (postImagesRes.error) {
+      console.error("Initial post images load error:", postImagesRes.error);
+    }
+    if (commentCountResult.error) {
+      console.error("Initial comment count load error:", commentCountResult.error);
+    }
+    if (profileRes.error) {
+      console.error("Initial profile load error:", profileRes.error);
+    }
+
+    const legacyPostImageMap = new Map<string, string | null>();
+    const postGifMap = new Map<string, string | null>();
+    const postOgMap = new Map<string, { og_url: string | null; og_title: string | null; og_description: string | null; og_image: string | null; og_site_name: string | null }>();
+    const eventIdByPostId = new Map<string, string | null>();
+    const postMetaMap = new Map<string, { content_type: string | null; system_generated: boolean | null; news_item_id: string | null }>();
+    const verdictAtByPostId = new Map<string, string | null>();
+    const rabbitholeThreadIdByPostId = new Map<string, string | null>();
+    const rabbitholeContributionIdByPostId = new Map<string, string | null>();
+
+    ((legacyWithEvent.data ?? []) as Array<LegacyPostRow & {
+      court_verdict_at?: string | null;
+      rabbithole_thread_id?: string | null;
+      rabbithole_contribution_id?: string | null;
+    }>).forEach((row) => {
+      legacyPostImageMap.set(row.id, row.image_url ?? null);
+      postGifMap.set(row.id, row.gif_url ?? null);
+      postOgMap.set(row.id, {
+        og_url: row.og_url ?? null,
+        og_title: row.og_title ?? null,
+        og_description: row.og_description ?? null,
+        og_image: row.og_image ?? null,
+        og_site_name: row.og_site_name ?? null,
+      });
+      eventIdByPostId.set(row.id, row.event_id ?? null);
+      postMetaMap.set(row.id, {
+        content_type: row.content_type ?? null,
+        system_generated: row.system_generated ?? null,
+        news_item_id: row.news_item_id ?? null,
+      });
+      verdictAtByPostId.set(row.id, row.court_verdict_at ?? null);
+      rabbitholeThreadIdByPostId.set(row.id, row.rabbithole_thread_id ?? null);
+      rabbitholeContributionIdByPostId.set(row.id, row.rabbithole_contribution_id ?? null);
+    });
+
+    const multiPostImageMap = new Map<string, string[]>();
+    ((postImagesRes.data ?? []) as PostImageRow[]).forEach((row) => {
+      const existing = multiPostImageMap.get(row.post_id) || [];
+      existing.push(row.image_url);
+      multiPostImageMap.set(row.post_id, existing);
+    });
+
+    const reactionRows = reactionRowsResult as { subject_id: string; user_id: string; reaction_type: string }[];
+    const aggregatesMap = aggregatesBySubjectId(reactionRows, effectiveUserId);
+    const commentCountMap = new Map<string, number>();
+    ((commentCountResult.data ?? []) as { post_id: string; parent_comment_id?: string | null }[]).forEach((comment) => {
+      commentCountMap.set(comment.post_id, (commentCountMap.get(comment.post_id) ?? 0) + 1);
+    });
+
+    const profileNameMap = new Map<string, string>();
+    const profilePhotoMap = new Map<string, string | null>();
+    const profileServiceMap = new Map<string, string | null>();
+    const profileEmployerMap = new Map<string, boolean | null>();
+    const profilePureAdminMap = new Map<string, boolean | null>();
+    const profilePublicMemberMap = new Map<string, boolean>();
+
+    (profileRes.data as ProfileName[] | null)?.forEach((profile) => {
+      const fullName =
+        (profile.display_name?.trim() || null) ||
+        `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
+        "User";
+      profileNameMap.set(profile.user_id, fullName);
+      profilePhotoMap.set(profile.user_id, profile.photo_url ?? null);
+      profileServiceMap.set(profile.user_id, profile.service ?? null);
+      profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
+      profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
+      profilePublicMemberMap.set(
+        profile.user_id,
+        hasPublicMemberProfile({
+          email: profile.email,
+          is_pure_admin: profile.is_pure_admin,
+        }),
+      );
+    });
+
+    const initialFeedPosts = initialPosts.map((post) => {
+      const agg = aggregatesMap.get(post.id) ?? emptyAggregate();
+      const multiImages = multiPostImageMap.get(post.id) || [];
+      const legacyImage = legacyPostImageMap.get(post.id) ?? null;
+      const ogData = postOgMap.get(post.id);
+      const postMeta = postMetaMap.get(post.id);
+
+      return createFeedPostShell(post, {
+        image_url: legacyImage,
+        image_urls: multiImages.length > 0 ? multiImages : legacyImage ? [legacyImage] : [],
+        gif_url: postGifMap.get(post.id) ?? null,
+        content_type: postMeta?.content_type ?? "user_post",
+        system_generated: postMeta?.system_generated ?? false,
+        news_item_id: postMeta?.news_item_id ?? null,
+        authorName: profileNameMap.get(post.user_id) || "User",
+        authorPhotoUrl: profilePhotoMap.get(post.user_id) || null,
+        authorService: profileServiceMap.get(post.user_id) ?? null,
+        authorIsEmployer: profileEmployerMap.get(post.user_id) ?? null,
+        authorIsPureAdmin: profilePureAdminMap.get(post.user_id) ?? null,
+        authorHasPublicMemberProfile: profilePublicMemberMap.get(post.user_id) ?? true,
+        likeCount: agg.totalCount,
+        commentCount: commentCountMap.get(post.id) ?? 0,
+        myReaction: agg.myReaction,
+        reactionCountsByType: agg.countsByType,
+        reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(reactionRows, post.id, profileNameMap),
+        og_url: ogData?.og_url ?? null,
+        og_title: ogData?.og_title ?? null,
+        og_description: ogData?.og_description ?? null,
+        og_image: ogData?.og_image ?? null,
+        og_site_name: ogData?.og_site_name ?? null,
+        event_id: eventIdByPostId.get(post.id) ?? null,
+        court_verdict_at: verdictAtByPostId.get(post.id) ?? null,
+        rabbithole_thread_id: rabbitholeThreadIdByPostId.get(post.id) ?? null,
+        rabbithole_contribution_id: rabbitholeContributionIdByPostId.get(post.id) ?? null,
+        isInteractionHydrating: true,
+      });
+    });
+
+    setPosts(initialFeedPosts);
+    postsLoadedRef.current = true;
+    setPostsLoaded(true);
+    logPerf("home.loadPosts.initialBatch", perfStart, {
+      rankedCount: rawPosts.length,
+      renderedCount: initialFeedPosts.length,
+      postIdsCount: postIds.length,
+    });
+  }
+
   async function loadPosts(
     currentUserId?: string | null,
     options: { forceFullHydration?: boolean; limit?: number } = {},
   ) {
     const perfStart = perfNowMs();
+    const isInitialProgressiveLoad = !postsLoadedRef.current && !options.forceFullHydration;
+    if (options.forceFullHydration && feedHydrationTimerRef.current) {
+      window.clearTimeout(feedHydrationTimerRef.current);
+      feedHydrationTimerRef.current = null;
+    }
     const requestedLimit = Math.max(
       INITIAL_FEED_POST_LIMIT,
       options.limit ?? feedPostLimitRef.current,
@@ -2512,8 +2762,11 @@ export default function HomePage() {
     let rankedPostsQuery = supabase
       .from("ranked_posts")
       .select("id, user_id, content, created_at, score, ranking_score")
-      .lte("created_at", new Date().toISOString())
-      .limit(queryLimit);
+      .lte("created_at", new Date().toISOString());
+
+    rankedPostsQuery = rankedPostsQuery.limit(
+      isInitialProgressiveLoad ? INITIAL_RANKED_POSTS_LIMIT : queryLimit,
+    );
 
     const { data: rankedPostsData, error: postsError } = await rankedPostsQuery;
 
@@ -2610,7 +2863,34 @@ export default function HomePage() {
     }
 
     const hasMoreRankedPosts =
-      rawPosts.length > requestedLimit || fetchedRankedPostCount >= queryLimit;
+      rawPosts.length > requestedLimit || fetchedRankedPostCount >= (isInitialProgressiveLoad ? INITIAL_RANKED_POSTS_LIMIT : queryLimit);
+
+    if (isInitialProgressiveLoad) {
+      setFeedHasMore(hasMoreRankedPosts);
+
+      if (rawPosts.length === 0) {
+        setPosts([]);
+        postsLoadedRef.current = true;
+        setPostsLoaded(true);
+        logPerf("home.loadPosts.empty", perfStart);
+        return;
+      }
+
+      await loadInitialFeedBatch(rawPosts, effectiveUserId, perfStart);
+
+      if (feedHydrationTimerRef.current) {
+        window.clearTimeout(feedHydrationTimerRef.current);
+      }
+      feedHydrationTimerRef.current = window.setTimeout(() => {
+        feedHydrationTimerRef.current = null;
+        void loadPosts(effectiveUserId, {
+          forceFullHydration: true,
+          limit: INITIAL_FEED_POST_LIMIT,
+        }).catch((err) => console.error("loadPosts background hydration failed:", err));
+      }, FULL_FEED_HYDRATION_DELAY_MS);
+      return;
+    }
+
     rawPosts = rawPosts.slice(0, requestedLimit);
     setFeedHasMore(hasMoreRankedPosts);
 
@@ -4557,6 +4837,10 @@ export default function HomePage() {
       setFeedLoadingMore(false);
       feedDirtyWhileHiddenRef.current = false;
       feedAutoLoadTriggeredRef.current = false;
+      if (feedHydrationTimerRef.current) {
+        window.clearTimeout(feedHydrationTimerRef.current);
+        feedHydrationTimerRef.current = null;
+      }
       memberInteractionAllowedRef.current = false;
     }
 
@@ -6528,7 +6812,7 @@ export default function HomePage() {
           )}
 
           <div style={{ marginTop: 12, display: "grid", gap: 0, width: "100%", minWidth: 0, boxSizing: "border-box" }}>
-            {!postsLoaded && [0,1,2,3].map((i) => <SkeletonPost key={i} />)}
+            {!postsLoaded && [0, 1, 2].map((i) => <SkeletonPost key={i} />)}
             {/* Memorial anniversary cards - auto-injected on anniversary date (opt-out in My Account) */}
             {showMemorialFeedCards &&
               todayMemorials.filter(m => !dismissedMemorialIds.has(m.id)).map((m) => {
@@ -7653,7 +7937,7 @@ export default function HomePage() {
                 </React.Fragment>
               );
             })}
-            {postsLoaded && feedHasMore && (
+            {postsLoaded && feedHasMore && feedPostLimit >= FEED_AUTO_LOAD_LIMIT && (
               <div style={{ display: "flex", justifyContent: "center", padding: "18px 0 6px" }}>
                 <button
                   type="button"

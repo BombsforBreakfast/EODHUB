@@ -16,6 +16,12 @@ import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
+import {
+  businessListingSearchBadge,
+  loadBusinessListingProfileLinks,
+  loadBusinessOrgPageTypesById,
+  resolveBusinessListingLinkTarget,
+} from "../lib/businessListingLinks";
 import type { User } from "@supabase/supabase-js";
 
 type Notification = {
@@ -44,6 +50,8 @@ type SearchResult = {
   subtitle: string;
   href: string;
   external: boolean;
+  /** Overrides the default Biz badge for linked business/org profiles. */
+  badgeLabel?: string;
 };
 
 export default function NavBar() {
@@ -313,7 +321,7 @@ export default function NavBar() {
       const [profilesRes, businessesRes, jobsRes, memorialsRes, unitsRes, directoryRes] = await Promise.all([
         supabase.from("profiles").select("user_id, first_name, last_name, display_name, role")
           .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,display_name.ilike.%${q}%,role.ilike.%${q}%`).limit(5),
-        supabase.from("business_listings").select("id, business_name, og_title, og_site_name, website_url, custom_blurb")
+        supabase.from("business_listings").select("id, business_name, og_title, og_site_name, website_url, custom_blurb, claimed_business_org_page_id, listing_type")
           .eq("is_approved", true)
           .or(`business_name.ilike.%${q}%,og_title.ilike.%${q}%,og_site_name.ilike.%${q}%,custom_blurb.ilike.%${q}%`).limit(5),
         supabase.from("jobs").select("id, title, company_name, location, apply_url")
@@ -329,16 +337,51 @@ export default function NavBar() {
         ? await searchRabbitholeThreads(supabase, q, 5)
         : [];
 
+      const businessRows = (businessesRes.data ?? []) as {
+        id: string;
+        business_name: string | null;
+        og_title: string | null;
+        og_site_name: string | null;
+        website_url: string;
+        custom_blurb: string | null;
+        claimed_business_org_page_id: string | null;
+        listing_type: "business" | "organization" | "resource" | null;
+      }[];
+
+      const linkedProfileByPageId = await loadBusinessListingProfileLinks(supabase, businessRows);
+      const linkedPageIds = [
+        ...new Set(
+          businessRows
+            .map((row) => row.claimed_business_org_page_id)
+            .filter((id): id is string => typeof id === "string" && id.length > 0),
+        ),
+      ];
+      const pageTypeByPageId = await loadBusinessOrgPageTypesById(supabase, linkedPageIds);
+      const linkedProfileUserIds = new Set(Object.values(linkedProfileByPageId));
+
       const results: SearchResult[] = [];
 
       ((profilesRes.data ?? []) as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; role: string | null }[]).forEach((p) => {
+        if (linkedProfileUserIds.has(p.user_id)) return;
         const name = p.display_name || `${p.first_name || ""} ${p.last_name || ""}`.trim() || "User";
         results.push({ type: "user", id: p.user_id, title: name, subtitle: p.role || "EOD Professional", href: `/profile/${p.user_id}`, external: false });
       });
 
-      ((businessesRes.data ?? []) as { id: string; business_name: string | null; og_title: string | null; og_site_name: string | null; website_url: string; custom_blurb: string | null }[]).forEach((b) => {
+      businessRows.forEach((b) => {
         const name = b.business_name || b.og_title || b.og_site_name || "Business";
-        results.push({ type: "business", id: b.id, title: name, subtitle: b.custom_blurb || b.website_url, href: b.website_url, external: true });
+        const link = resolveBusinessListingLinkTarget(b, linkedProfileByPageId);
+        const isLinkedProfile = !link.external;
+        results.push({
+          type: "business",
+          id: b.id,
+          title: name,
+          subtitle: isLinkedProfile
+            ? b.custom_blurb?.trim() || "Business profile on EOD Hub"
+            : b.custom_blurb || b.website_url,
+          href: link.href,
+          external: link.external,
+          badgeLabel: isLinkedProfile ? businessListingSearchBadge(b, pageTypeByPageId) : undefined,
+        });
       });
 
       ((jobsRes.data ?? []) as { id: string; title: string | null; company_name: string | null; location: string | null; apply_url: string | null }[]).forEach((j) => {
@@ -804,7 +847,9 @@ export default function NavBar() {
                       return (
                         <div key={type}>
                           <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.8 }}>{label}</div>
-                          {group.map((result) => (
+                          {group.map((result) => {
+                            const badgeType = result.badgeLabel === "Org" ? "directory" : type;
+                            return (
                             <div
                               key={result.id}
                               onClick={() => handleSearchResultClick(result)}
@@ -812,8 +857,8 @@ export default function NavBar() {
                               onMouseEnter={(e) => (e.currentTarget.style.background = t.surfaceHover)}
                               onMouseLeave={(e) => (e.currentTarget.style.background = t.surface)}
                             >
-                              <span style={{ background: badgeColors[type], color: badgeText[type], fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>
-                                {badgeLabel[type]}
+                              <span style={{ background: badgeColors[badgeType], color: badgeText[badgeType], fontSize: 10, fontWeight: 800, padding: "2px 7px", borderRadius: 20, flexShrink: 0, textTransform: "uppercase" }}>
+                                {result.badgeLabel ?? badgeLabel[type]}
                               </span>
                               <div style={{ minWidth: 0 }}>
                                 <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{result.title}</div>
@@ -825,7 +870,8 @@ export default function NavBar() {
                                 </svg>
                               )}
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       );
                     })}
