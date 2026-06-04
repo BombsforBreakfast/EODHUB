@@ -223,17 +223,24 @@ export default function MasterRightColumn({
 
   useEffect(() => {
     if (!sideRailsReady || !userId) return;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleConversationsRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void loadDesktopConversations(userId);
+      }, 500);
+    };
     const ch = supabase
       .channel("master-shell-conversations")
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "messages" },
-        () => {
-          void loadDesktopConversations(userId);
-        }
+        scheduleConversationsRefresh
       )
       .subscribe();
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       void supabase.removeChannel(ch);
     };
   }, [sideRailsReady, userId, loadDesktopConversations]);

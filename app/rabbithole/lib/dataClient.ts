@@ -18,7 +18,7 @@ import {
   emptyAggregate,
   fetchContentReactionsForSubjects,
 } from "../../lib/reactions";
-import { resolveRabbitholeAssetUrl } from "./storageService";
+import { resolveRabbitholeAssetUrls } from "./storageService";
 
 function normalize(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9\s-]/g, " ").replace(/\s+/g, " ").trim();
@@ -137,21 +137,21 @@ async function enrichContributionsWithAssetPreviews(
     else if (rank(row) === rank(prev) && row.created_at < prev.created_at) bestByContrib.set(row.contribution_id, row);
   }
 
-  const urlByContrib = new Map<string, string>();
-  await Promise.all(
-    [...bestByContrib.entries()].map(async ([cid, asset]) => {
-      const res = await resolveRabbitholeAssetUrl(
-        supabase,
-        {
-          accessLevel: asset.access_level as "public" | "private" | "team",
-          bucket: asset.bucket,
-          objectKey: asset.object_key,
-        },
-        { signedUrlTtlSec: 3600 },
-      );
-      if (res.ok) urlByContrib.set(cid, res.url);
-    }),
+  const bestEntries = [...bestByContrib.entries()];
+  const urlByAsset = await resolveRabbitholeAssetUrls(
+    supabase,
+    bestEntries.map(([, asset]) => ({
+      accessLevel: asset.access_level as "public" | "private" | "team",
+      bucket: asset.bucket,
+      objectKey: asset.object_key,
+    })),
+    { signedUrlTtlSec: 3600 },
   );
+  const urlByContrib = new Map<string, string>();
+  for (const [cid, asset] of bestEntries) {
+    const url = urlByAsset.get(`${asset.bucket}:${asset.object_key}`);
+    if (url) urlByContrib.set(cid, url);
+  }
 
   return items.map((item) => {
     if (item.previewImageUrl?.trim()) return item;

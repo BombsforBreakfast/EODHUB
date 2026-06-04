@@ -153,7 +153,8 @@ export default function MasterShell({ children }: { children: React.ReactNode })
     void supabase.auth.getSession().then(({ data: { session } }) => {
       void loadShellUser(session?.user ?? null);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") return;
       void loadShellUser(session?.user ?? null);
     });
     return () => {

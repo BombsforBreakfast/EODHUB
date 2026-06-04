@@ -4879,7 +4879,8 @@ export default function HomePage() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") return;
       const nextUserId = session?.user?.id ?? null;
       setUserId(nextUserId);
       resetActiveProfileState();

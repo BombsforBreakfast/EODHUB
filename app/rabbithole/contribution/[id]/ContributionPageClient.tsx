@@ -13,7 +13,7 @@ import {
   fetchRabbitholeContributionDetail,
   toggleRabbitholeContributionLike,
 } from "../../lib/dataClient";
-import { resolveRabbitholeAssetUrl } from "../../lib/storageService";
+import { resolveRabbitholeAssetUrls } from "../../lib/storageService";
 import type { RabbitholeAsset, RabbitholeContribution, RabbitholeContributionComment } from "../../lib/types";
 import { supabase } from "../../../lib/lib/supabaseClient";
 import { linkifyPlainText } from "../../lib/linkifyPlainText";
@@ -146,16 +146,12 @@ export default function ContributionPageClient() {
         if (!cancelled) setAssetUrls({});
         return;
       }
-      const pairs = await Promise.all(
-        assets.map(async (asset) => {
-          const resolved = await resolveRabbitholeAssetUrl(supabase, asset);
-          return [asset.id, resolved.ok ? resolved.url : ""] as const;
-        })
-      );
+      const urls = await resolveRabbitholeAssetUrls(supabase, assets);
       if (cancelled) return;
       setAssetUrls(
-        pairs.reduce<Record<string, string>>((acc, [id, url]) => {
-          if (url) acc[id] = url;
+        assets.reduce<Record<string, string>>((acc, asset) => {
+          const url = urls.get(`${asset.bucket}:${asset.objectKey}`) ?? "";
+          if (url) acc[asset.id] = url;
           return acc;
         }, {})
       );

@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { isExcludedAnalyticsUser } from "../lib/analyticsExclusions";
 import { isExcludedFromPageTimeAnalytics } from "../lib/analyticsPath";
-import { supabase } from "../lib/lib/supabaseClient";
+import { getSupabaseSession, getSupabaseUser, supabase } from "../lib/lib/supabaseClient";
+import type { User } from "@supabase/supabase-js";
 
 // Owns client-side engagement tracking. Mounted once in the root layout.
 //
@@ -48,23 +49,18 @@ function shouldSkip(path: string | null | undefined): boolean {
   return false;
 }
 
-async function isCurrentUserExcludedFromAnalytics(): Promise<boolean> {
+async function isCurrentUserExcludedFromAnalytics(user: User | null): Promise<boolean> {
+  if (isExcludedAnalyticsUser(user)) return true;
   try {
-    const { data } = await supabase.auth.getUser();
+    const { data } = await getSupabaseUser();
     return isExcludedAnalyticsUser(data.user);
   } catch {
     return false;
   }
 }
 
-async function getAuthHeader(): Promise<HeadersInit> {
-  try {
-    const { data } = await supabase.auth.getSession();
-    const token = data?.session?.access_token;
-    if (token) return { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-  } catch {
-    // ignore
-  }
+function getAuthHeader(accessToken: string | null): HeadersInit {
+  if (accessToken) return { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` };
   return { "Content-Type": "application/json" };
 }
 
@@ -76,6 +72,27 @@ export default function AnalyticsTracker() {
   const lastTickAtRef = useRef<number>(Date.now());
   const startedRef = useRef(false);
   const currentPathRef = useRef<string | null>(null);
+  const accessTokenRef = useRef<string | null>(null);
+  const currentUserRef = useRef<User | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getSupabaseSession().then(({ data }) => {
+      if (cancelled) return;
+      accessTokenRef.current = data.session?.access_token ?? null;
+      currentUserRef.current = data.session?.user ?? null;
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      accessTokenRef.current = session?.access_token ?? null;
+      currentUserRef.current = session?.user ?? null;
+    });
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, []);
 
   // ── Track user activity (mouse/keyboard/touch/scroll) ──────────────────────
   useEffect(() => {
@@ -104,8 +121,8 @@ export default function AnalyticsTracker() {
 
     let cancelled = false;
     void (async () => {
-      if (await isCurrentUserExcludedFromAnalytics()) return;
-      const headers = await getAuthHeader();
+      if (await isCurrentUserExcludedFromAnalytics(currentUserRef.current)) return;
+      const headers = getAuthHeader(accessTokenRef.current);
       try {
         const res = await fetch(TRACK_URL, {
           method: "POST",
@@ -159,7 +176,7 @@ export default function AnalyticsTracker() {
     lastTickAtRef.current = now;
 
     void (async () => {
-      const headers = await getAuthHeader();
+      const headers = getAuthHeader(accessTokenRef.current);
       try {
         const res = await fetch(TRACK_URL, {
           method: "POST",
@@ -199,7 +216,7 @@ export default function AnalyticsTracker() {
       // the session is not considered stale, but with delta=0.
       const delta = sinceActivity < IDLE_THRESHOLD_MS ? Math.max(0, sinceLast) : 0;
       void (async () => {
-        const headers = await getAuthHeader();
+        const headers = getAuthHeader(accessTokenRef.current);
         try {
           await fetch(TRACK_URL, {
             method: "POST",

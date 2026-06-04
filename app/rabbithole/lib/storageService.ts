@@ -14,6 +14,33 @@ export type RabbitholeStorageLocator = {
   objectKey: string;
 };
 
+type AssetUrlResult = { ok: true; url: string } | { ok: false; error: string };
+type ResolvableRabbitholeAsset = Pick<RabbitholeAsset, "accessLevel" | "bucket" | "objectKey">;
+
+const SIGNED_URL_EXPIRY_BUFFER_MS = 60_000;
+const signedUrlCache = new Map<string, { url: string; expiresAt: number }>();
+
+function cacheKey(asset: Pick<RabbitholeAsset, "bucket" | "objectKey">): string {
+  return `${asset.bucket}:${asset.objectKey}`;
+}
+
+function cachedSignedUrl(asset: Pick<RabbitholeAsset, "bucket" | "objectKey">): string | null {
+  const cached = signedUrlCache.get(cacheKey(asset));
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now() + SIGNED_URL_EXPIRY_BUFFER_MS) {
+    signedUrlCache.delete(cacheKey(asset));
+    return null;
+  }
+  return cached.url;
+}
+
+function rememberSignedUrl(asset: Pick<RabbitholeAsset, "bucket" | "objectKey">, url: string, ttlSec: number) {
+  signedUrlCache.set(cacheKey(asset), {
+    url,
+    expiresAt: Date.now() + ttlSec * 1000,
+  });
+}
+
 function sanitizeFilename(filename: string): string {
   const trimmed = filename.trim().toLowerCase();
   const clean = trimmed.replace(/[^a-z0-9._-]/g, "-").replace(/-+/g, "-");
@@ -72,21 +99,71 @@ export async function uploadRabbitholeAsset(
 
 export async function resolveRabbitholeAssetUrl(
   supabase: SupabaseClient,
-  asset: Pick<RabbitholeAsset, "accessLevel" | "bucket" | "objectKey">,
+  asset: ResolvableRabbitholeAsset,
   options?: { signedUrlTtlSec?: number },
-): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+): Promise<AssetUrlResult> {
   if (asset.accessLevel === "public") {
     const { data } = supabase.storage.from(asset.bucket).getPublicUrl(asset.objectKey);
     if (!data?.publicUrl) return { ok: false, error: "Could not resolve public URL." };
     return { ok: true, url: data.publicUrl };
   }
 
+  const ttlSec = options?.signedUrlTtlSec ?? 1800;
+  const cached = cachedSignedUrl(asset);
+  if (cached) return { ok: true, url: cached };
+
   const { data, error } = await supabase.storage
     .from(asset.bucket)
-    .createSignedUrl(asset.objectKey, options?.signedUrlTtlSec ?? 1800);
+    .createSignedUrl(asset.objectKey, ttlSec);
 
   if (error || !data?.signedUrl) {
     return { ok: false, error: error?.message || "Could not create signed URL." };
   }
+  rememberSignedUrl(asset, data.signedUrl, ttlSec);
   return { ok: true, url: data.signedUrl };
+}
+
+export async function resolveRabbitholeAssetUrls(
+  supabase: SupabaseClient,
+  assets: ResolvableRabbitholeAsset[],
+  options?: { signedUrlTtlSec?: number },
+): Promise<Map<string, string>> {
+  const urls = new Map<string, string>();
+  const ttlSec = options?.signedUrlTtlSec ?? 1800;
+  const privateByBucket = new Map<string, ResolvableRabbitholeAsset[]>();
+
+  for (const asset of assets) {
+    const key = cacheKey(asset);
+    if (asset.accessLevel === "public") {
+      const { data } = supabase.storage.from(asset.bucket).getPublicUrl(asset.objectKey);
+      if (data?.publicUrl) urls.set(key, data.publicUrl);
+      continue;
+    }
+
+    const cached = cachedSignedUrl(asset);
+    if (cached) {
+      urls.set(key, cached);
+      continue;
+    }
+
+    const bucketAssets = privateByBucket.get(asset.bucket) ?? [];
+    bucketAssets.push(asset);
+    privateByBucket.set(asset.bucket, bucketAssets);
+  }
+
+  await Promise.all(
+    [...privateByBucket.entries()].map(async ([bucket, bucketAssets]) => {
+      const paths = bucketAssets.map((asset) => asset.objectKey);
+      const { data, error } = await supabase.storage.from(bucket).createSignedUrls(paths, ttlSec);
+      if (error || !data) return;
+      data.forEach((item, index) => {
+        if (!item.signedUrl) return;
+        const asset = bucketAssets[index];
+        urls.set(cacheKey(asset), item.signedUrl);
+        rememberSignedUrl(asset, item.signedUrl, ttlSec);
+      });
+    }),
+  );
+
+  return urls;
 }

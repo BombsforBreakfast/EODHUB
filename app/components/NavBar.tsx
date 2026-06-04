@@ -245,7 +245,8 @@ export default function NavBar() {
 
     loadUser();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") return;
       if (!mounted) return;
       const uid = session?.user?.id ?? null;
       setCurrentUserId(uid);

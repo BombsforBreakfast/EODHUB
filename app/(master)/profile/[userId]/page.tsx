@@ -2931,15 +2931,26 @@ export default function PublicProfilePage() {
 
   useEffect(() => {
     if (!userId || userId === "undefined") return;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const schedulePostsRefresh = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        refreshTimer = null;
+        void loadPosts(userId);
+      }, 350);
+    };
 
     const postsChannel = supabase
       .channel(`profile-posts-${userId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "posts" },
-        () => {
-          loadPosts(userId);
-        }
+        { event: "*", schema: "public", table: "posts", filter: `user_id=eq.${userId}` },
+        schedulePostsRefresh
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "posts", filter: `wall_user_id=eq.${userId}` },
+        schedulePostsRefresh
       )
       .subscribe();
 
@@ -2960,7 +2971,7 @@ export default function PublicProfilePage() {
       .channel(`profile-photos-${userId}`)
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "profile_photos" },
+        { event: "*", schema: "public", table: "profile_photos", filter: `user_id=eq.${userId}` },
         () => {
           loadPhotos(userId);
         }
@@ -2972,7 +2983,7 @@ export default function PublicProfilePage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "post_comments" },
-        () => { loadPosts(userId); }
+        schedulePostsRefresh
       )
       .subscribe();
 
@@ -2981,27 +2992,24 @@ export default function PublicProfilePage() {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "post_likes" },
-        () => {
-          loadPosts(userId);
-        }
+        schedulePostsRefresh
       )
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "content_reactions" },
-        () => {
-          loadPosts(userId);
-        }
+        schedulePostsRefresh
       )
       .subscribe();
 
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       supabase.removeChannel(postsChannel);
       supabase.removeChannel(connectionsChannel);
       supabase.removeChannel(photosChannel);
       supabase.removeChannel(commentsChannel);
       supabase.removeChannel(likesChannel);
     };
-  }, [userId, currentUserId]);
+  }, [userId]);
 
   if (!loading && !profile) {
     return (
