@@ -89,6 +89,16 @@ import {
 } from "../lib/queries/discoverProfiles";
 import { queryKeys } from "../lib/queryKeys";
 import { hasPublicMemberProfile } from "../lib/pureAdminAllowlist";
+import PostAsSelector from "../components/PostAsSelector";
+import {
+  adminPostDisplayName,
+  canUsePostAsSelector,
+  loadStoredPostAsMode,
+  resolvePostAsUserIdForSubmit,
+  storePostAsMode,
+  type PostAsAdminProfile,
+  type PostAsMode,
+} from "../lib/postAsIdentity";
 import type {
   FeedKangarooBundle,
   KangarooCourtOptionRow,
@@ -211,6 +221,7 @@ type SelectedCommentImage = {
 type RankedPostRow = {
   id: string;
   user_id: string;
+  post_as_user_id?: string | null;
   content: string;
   created_at: string;
   score?: number;
@@ -420,6 +431,7 @@ type FeedPost = RankedPostRow & {
   content_type?: string | null;
   system_generated?: boolean | null;
   news_item_id?: string | null;
+  authorUserId: string;
   authorName: string;
   authorPhotoUrl: string | null;
   authorService: string | null;
@@ -896,6 +908,9 @@ export default function HomePage() {
   const { isDesktopShell, openSidebarPeer, showMemorialFeedCards, setShowMemorialFeedCards } = useMasterShell();
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [currentUserPhotoUrl, setCurrentUserPhotoUrl] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [postAsMode, setPostAsMode] = useState<PostAsMode>(() => loadStoredPostAsMode());
+  const [postAsAdminProfile, setPostAsAdminProfile] = useState<PostAsAdminProfile | null>(null);
   const [currentUserReferralCode, setCurrentUserReferralCode] = useState<string | null>(null);
   const [recruiterNudgeHidden, setRecruiterNudgeHidden] = useState(false);
   const [recruiterCount, setRecruiterCount] = useState(0);
@@ -2501,6 +2516,7 @@ export default function HomePage() {
       content_type: "user_post",
       system_generated: false,
       news_item_id: null,
+      authorUserId: post.user_id,
       authorName: "User",
       authorPhotoUrl: null,
       authorService: null,
@@ -2542,18 +2558,21 @@ export default function HomePage() {
   ): Promise<void> {
     const initialPosts = rawPosts.slice(0, INITIAL_FEED_POST_LIMIT);
     const postIds = initialPosts.map((post) => post.id);
-    const uniqueUserIds = [...new Set(initialPosts.map((post) => post.user_id))];
 
     const [
       legacyWithEvent,
+      postAsRes,
       postImagesRes,
       reactionRowsResult,
       commentCountResult,
-      profileRes,
     ] = await Promise.all([
       supabase
         .from("posts")
         .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id, court_verdict_at, rabbithole_thread_id, rabbithole_contribution_id")
+        .in("id", postIds),
+      supabase
+        .from("posts")
+        .select("id, post_as_user_id")
         .in("id", postIds),
       supabase
         .from("post_images")
@@ -2588,13 +2607,25 @@ export default function HomePage() {
             data: (fallback.data ?? []).map((row) => ({ ...row, parent_comment_id: null })),
           };
         }),
-      uniqueUserIds.length > 0
-        ? supabase
+    ]);
+
+    const postAsUserIdByPostId = new Map<string, string | null>();
+    if (!postAsRes.error) {
+      for (const row of (postAsRes.data ?? []) as Array<{ id: string; post_as_user_id: string | null }>) {
+        postAsUserIdByPostId.set(row.id, row.post_as_user_id ?? null);
+      }
+    }
+
+    const authorUserIds = [
+      ...new Set(initialPosts.map((post) => postAsUserIdByPostId.get(post.id) ?? post.user_id)),
+    ];
+    const profileRes =
+      authorUserIds.length > 0
+        ? await supabase
             .from("profiles")
             .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, is_pure_admin, email")
-            .in("user_id", uniqueUserIds)
-        : Promise.resolve({ data: [], error: null }),
-    ]);
+            .in("user_id", authorUserIds)
+        : { data: [], error: null };
 
     if (legacyWithEvent.error) {
       console.error("Initial post media load error:", legacyWithEvent.error);
@@ -2689,20 +2720,23 @@ export default function HomePage() {
       const legacyImage = legacyPostImageMap.get(post.id) ?? null;
       const ogData = postOgMap.get(post.id);
       const postMeta = postMetaMap.get(post.id);
+      const authorUserId = postAsUserIdByPostId.get(post.id) ?? post.user_id;
 
       return createFeedPostShell(post, {
+        post_as_user_id: postAsUserIdByPostId.get(post.id) ?? null,
         image_url: legacyImage,
         image_urls: multiImages.length > 0 ? multiImages : legacyImage ? [legacyImage] : [],
         gif_url: postGifMap.get(post.id) ?? null,
         content_type: postMeta?.content_type ?? "user_post",
         system_generated: postMeta?.system_generated ?? false,
         news_item_id: postMeta?.news_item_id ?? null,
-        authorName: profileNameMap.get(post.user_id) || "User",
-        authorPhotoUrl: profilePhotoMap.get(post.user_id) || null,
-        authorService: profileServiceMap.get(post.user_id) ?? null,
-        authorIsEmployer: profileEmployerMap.get(post.user_id) ?? null,
-        authorIsPureAdmin: profilePureAdminMap.get(post.user_id) ?? null,
-        authorHasPublicMemberProfile: profilePublicMemberMap.get(post.user_id) ?? true,
+        authorUserId,
+        authorName: profileNameMap.get(authorUserId) || "User",
+        authorPhotoUrl: profilePhotoMap.get(authorUserId) || null,
+        authorService: profileServiceMap.get(authorUserId) ?? null,
+        authorIsEmployer: profileEmployerMap.get(authorUserId) ?? null,
+        authorIsPureAdmin: profilePureAdminMap.get(authorUserId) ?? null,
+        authorHasPublicMemberProfile: profilePublicMemberMap.get(authorUserId) ?? true,
         likeCount: agg.totalCount,
         commentCount: commentCountMap.get(post.id) ?? 0,
         myReaction: agg.myReaction,
@@ -2903,12 +2937,28 @@ export default function HomePage() {
     }
 
     const postIds = rawPosts.map((post) => post.id);
-    const uniqueUserIds = [...new Set(rawPosts.map((post) => post.user_id))];
 
-    const legacyWithEvent = await supabase
-      .from("posts")
-      .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id")
-      .in("id", postIds);
+    const [legacyWithEvent, postAsRes] = await Promise.all([
+      supabase
+        .from("posts")
+        .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id")
+        .in("id", postIds),
+      supabase
+        .from("posts")
+        .select("id, post_as_user_id")
+        .in("id", postIds),
+    ]);
+
+    const postAsUserIdByPostId = new Map<string, string | null>();
+    if (!postAsRes.error) {
+      for (const row of (postAsRes.data ?? []) as Array<{ id: string; post_as_user_id: string | null }>) {
+        postAsUserIdByPostId.set(row.id, row.post_as_user_id ?? null);
+      }
+    }
+
+    const uniqueUserIds = [
+      ...new Set(rawPosts.map((post) => postAsUserIdByPostId.get(post.id) ?? post.user_id)),
+    ];
 
     let legacyPostImagesData: LegacyPostRow[] | null = legacyWithEvent.data as LegacyPostRow[] | null;
     if (legacyWithEvent.error) {
@@ -3108,6 +3158,7 @@ export default function HomePage() {
       ...new Set(
         [
           ...uniqueUserIds,
+          ...rawPosts.map((post) => postAsUserIdByPostId.get(post.id) ?? post.user_id),
           ...rawComments.map((comment) => comment.user_id),
           ...postLikerUserIds,
           ...commentReactorUserIds,
@@ -3507,6 +3558,7 @@ export default function HomePage() {
 
       return {
         ...post,
+        post_as_user_id: postAsUserIdByPostId.get(post.id) ?? null,
         image_url: legacyImage,
         image_urls:
           multiImages.length > 0 ? multiImages : legacyImage ? [legacyImage] : [],
@@ -3514,12 +3566,13 @@ export default function HomePage() {
         content_type: postMeta?.content_type ?? "user_post",
         system_generated: postMeta?.system_generated ?? false,
         news_item_id: postMeta?.news_item_id ?? null,
-        authorName: profileNameMap.get(post.user_id) || "User",
-        authorPhotoUrl: profilePhotoMap.get(post.user_id) || null,
-        authorService: profileServiceMap.get(post.user_id) ?? null,
-        authorIsEmployer: profileEmployerMap.get(post.user_id) ?? null,
-        authorIsPureAdmin: profilePureAdminMap.get(post.user_id) ?? null,
-        authorHasPublicMemberProfile: profilePublicMemberMap.get(post.user_id) ?? true,
+        authorUserId: postAsUserIdByPostId.get(post.id) ?? post.user_id,
+        authorName: profileNameMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) || "User",
+        authorPhotoUrl: profilePhotoMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) || null,
+        authorService: profileServiceMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
+        authorIsEmployer: profileEmployerMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
+        authorIsPureAdmin: profilePureAdminMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
+        authorHasPublicMemberProfile: profilePublicMemberMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? true,
         likeCount: agg.totalCount,
         commentCount: commentsForPost.reduce(
           (sum, c) => sum + 1 + c.replyCount,
@@ -3825,6 +3878,12 @@ export default function HomePage() {
 
     if (!content.trim() && selectedPostImages.length === 0 && !selectedPostGif) return;
 
+    const postAsUserId = resolvePostAsUserIdForSubmit(postAsMode, postAsAdminProfile?.userId ?? null);
+    const actorName =
+      postAsMode === "admin" && postAsAdminProfile
+        ? postAsAdminProfile.displayName
+        : (currentUserName ?? "Someone");
+
     try {
       setSubmittingPost(true);
 
@@ -3854,6 +3913,7 @@ export default function HomePage() {
           p_image_urls: uploadedUrls,
           p_option_labels: labelsForKc,
           p_duration_hours: kcComposerDuration,
+          p_post_as_user_id: postAsUserId,
         });
 
         if (kcRpcError || kcRpcData == null) {
@@ -3872,12 +3932,12 @@ export default function HomePage() {
             mentionIds.map((uid) =>
               postNotifyJson(supabase, {
                 user_id: uid,
-                actor_name: currentUserName ?? "Someone",
+                actor_name: actorName,
                 post_owner_id: userId,
                 type: "mention_post",
                 category: "social",
                 post_id: postId,
-                message: `${currentUserName ?? "Someone"} mentioned you in a post`,
+                message: `${actorName} mentioned you in a post`,
                 link: `/?postId=${encodeURIComponent(postId)}`,
                 group_key: `post:${postId}:mentions`,
                 dedupe_key: `mention_post:${postId}:${uid}`,
@@ -3904,6 +3964,7 @@ export default function HomePage() {
         .insert([
           {
             user_id: userId,
+            post_as_user_id: postAsUserId,
             content: contentToPost,
             image_url: null,
             gif_url: gifToPost ?? null,
@@ -3933,12 +3994,12 @@ export default function HomePage() {
           mentionIds.map((uid) =>
             postNotifyJson(supabase, {
               user_id: uid,
-              actor_name: currentUserName ?? "Someone",
+              actor_name: actorName,
               post_owner_id: userId,
               type: "mention_post",
               category: "social",
               post_id: postId,
-              message: `${currentUserName ?? "Someone"} mentioned you in a post`,
+              message: `${actorName} mentioned you in a post`,
               link: `/?postId=${encodeURIComponent(postId)}`,
               group_key: `post:${postId}:mentions`,
               dedupe_key: `mention_post:${postId}:${uid}`,
@@ -4815,6 +4876,9 @@ export default function HomePage() {
     function resetActiveProfileState() {
       setCurrentUserName(null);
       setCurrentUserPhotoUrl(null);
+      setCurrentUserEmail(null);
+      setPostAsAdminProfile(null);
+      setPostAsMode(loadStoredPostAsMode());
       setCurrentUserReferralCode(null);
       setRecruiterCount(0);
       setPlankHolderChallenge(null);
@@ -4924,6 +4988,27 @@ export default function HomePage() {
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
           setCurrentUserPhotoUrl(nd?.photo_url ?? null);
+          const viewerEmail =
+            (profileCheck as { email?: string | null }).email?.trim().toLowerCase() ??
+            authUser.email?.trim().toLowerCase() ??
+            null;
+          setCurrentUserEmail(viewerEmail);
+          if (canUsePostAsSelector(viewerEmail)) {
+            const { data: adminProfile } = await supabase
+              .from("profiles")
+              .select("user_id, display_name, first_name, last_name, photo_url")
+              .eq("email", "hello@eod-hub.com")
+              .maybeSingle();
+            if (isMounted && activeProfileLoadSeqRef.current === loadSeq && adminProfile) {
+              setPostAsAdminProfile({
+                userId: adminProfile.user_id,
+                displayName: adminPostDisplayName(adminProfile),
+                photoUrl: adminProfile.photo_url ?? null,
+              });
+            }
+          } else if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
+            setPostAsAdminProfile(null);
+          }
           setCurrentUserReferralCode(nd?.referral_code ?? null);
           setIsAdmin(!!nd?.is_admin);
           setShowMemorialFeedCards(
@@ -6191,6 +6276,20 @@ export default function HomePage() {
               background: t.surface,
             }}
           >
+            {canUsePostAsSelector(currentUserEmail) && postAsAdminProfile ? (
+              <PostAsSelector
+                mode={postAsMode}
+                onChange={(mode) => {
+                  setPostAsMode(mode);
+                  storePostAsMode(mode);
+                }}
+                selfLabel={currentUserName?.trim() || "Michael Twigg"}
+                selfPhotoUrl={currentUserPhotoUrl}
+                adminLabel="EOD HUB Admin"
+                adminPhotoUrl={postAsAdminProfile.photoUrl}
+                disabled={submittingPost}
+              />
+            ) : null}
             <MentionTextarea
               ref={postTextareaRef}
               placeholder="What's happening in the EOD world?"
@@ -7091,7 +7190,7 @@ export default function HomePage() {
                   style={feedPostCardStyle(t)}
                 >
                   <FeedPostHeader
-                    profileHref={`/profile/${post.user_id}`}
+                    profileHref={`/profile/${post.authorUserId}`}
                     avatar={
                       <Avatar
                         photoUrl={post.authorPhotoUrl}

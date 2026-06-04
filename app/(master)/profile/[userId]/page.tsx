@@ -16,6 +16,16 @@ import { useMasterShell } from "../../../components/master/masterShellContext";
 import EventFeedActions from "../../../components/EventFeedActions";
 import { ExternalSiteLink } from "../../../components/ExternalSiteEmbedModal";
 import FeedPostHeader from "../../../components/FeedPostHeader";
+import PostAsSelector from "../../../components/PostAsSelector";
+import {
+  adminPostDisplayName,
+  canUsePostAsSelector,
+  loadStoredPostAsMode,
+  resolvePostAsUserIdForSubmit,
+  storePostAsMode,
+  type PostAsAdminProfile,
+  type PostAsMode,
+} from "../../../lib/postAsIdentity";
 import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
@@ -236,6 +246,7 @@ type DesktopConversation = {
 type Post = {
   id: string;
   user_id: string;
+  post_as_user_id?: string | null;
   content: string;
   created_at: string;
   image_url: string | null;
@@ -695,6 +706,10 @@ export default function PublicProfilePage() {
   const [submittingPhotoComment, setSubmittingPhotoComment] = useState(false);
 
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [currentUserPhotoUrl, setCurrentUserPhotoUrl] = useState<string | null>(null);
+  const [postAsMode, setPostAsMode] = useState<PostAsMode>(() => loadStoredPostAsMode());
+  const [postAsAdminProfile, setPostAsAdminProfile] = useState<PostAsAdminProfile | null>(null);
   const [viewerIsEmployer, setViewerIsEmployer] = useState(false);
   const [viewerIsAdmin, setViewerIsAdmin] = useState(false);
   const [referralCount, setReferralCount] = useState(0);
@@ -1293,7 +1308,7 @@ export default function PublicProfilePage() {
 
     const { data: rawData, error } = await supabase
       .from("posts")
-      .select("id, user_id, wall_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
+      .select("id, user_id, wall_user_id, post_as_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
       .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
       .order("created_at", { ascending: false });
 
@@ -1306,6 +1321,7 @@ export default function PublicProfilePage() {
       id: string;
       user_id: string;
       wall_user_id?: string | null;
+      post_as_user_id?: string | null;
       content: string;
       created_at: string;
       og_url?: string | null;
@@ -1510,18 +1526,26 @@ export default function PublicProfilePage() {
       commentsByPost.set(c.post_id, arr);
     });
 
-    // For wall posts from other users, fetch their names
-    const wallPosterIds = [...new Set(rawPosts
-      .filter((p) => p.wall_user_id === targetUserId && p.user_id !== targetUserId)
-      .map((p) => p.user_id))];
+    // Wall post author identities (guest posters + post-as overrides).
+    const displayAuthorIds = [
+      ...new Set(
+        rawPosts
+          .map((p) => {
+            if (p.post_as_user_id) return p.post_as_user_id;
+            if (p.wall_user_id === targetUserId && p.user_id !== targetUserId) return p.user_id;
+            return null;
+          })
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
     const authorNameMap = new Map<string, string>();
     const authorPhotoMap = new Map<string, string | null>();
     const authorServiceMap = new Map<string, string | null>();
-    if (wallPosterIds.length > 0) {
+    if (displayAuthorIds.length > 0) {
       const { data: authorProfiles } = await supabase
         .from("profiles")
         .select("user_id, first_name, last_name, display_name, photo_url, service")
-        .in("user_id", wallPosterIds);
+        .in("user_id", displayAuthorIds);
       ((authorProfiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null; service: string | null }[])
         .forEach((ap) => {
           authorNameMap.set(ap.user_id, ap.display_name || `${ap.first_name || ""} ${ap.last_name || ""}`.trim() || "Member");
@@ -1739,8 +1763,12 @@ export default function PublicProfilePage() {
       const postComments = commentsByPost.get(p.id) || [];
       const eventId = eventIdByPostId.get(p.id) ?? null;
       const eventCounts = eventId ? eventAttCounts.get(eventId) ?? { interested: 0, going: 0 } : { interested: 0, going: 0 };
+      const displayAuthorId =
+        p.post_as_user_id ??
+        (p.wall_user_id === targetUserId && p.user_id !== targetUserId ? p.user_id : null);
       return {
         ...p,
+        post_as_user_id: p.post_as_user_id ?? null,
         image_url: legacyImage,
         gif_url: gifUrlMap.get(p.id) ?? null,
         image_urls: multiImages.length > 0 ? multiImages : legacyImage ? [legacyImage] : [],
@@ -1762,9 +1790,9 @@ export default function PublicProfilePage() {
         og_site_name: p.og_site_name ?? null,
         wall_user_id: p.wall_user_id ?? null,
         rabbithole_contribution_id: p.rabbithole_contribution_id ?? null,
-        author_name: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorNameMap.get(p.user_id) ?? null) : null,
-        authorPhotoUrl: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorPhotoMap.get(p.user_id) ?? null) : null,
-        authorService: p.wall_user_id === targetUserId && p.user_id !== targetUserId ? (authorServiceMap.get(p.user_id) ?? null) : null,
+        author_name: displayAuthorId ? (authorNameMap.get(displayAuthorId) ?? null) : null,
+        authorPhotoUrl: displayAuthorId ? (authorPhotoMap.get(displayAuthorId) ?? null) : null,
+        authorService: displayAuthorId ? (authorServiceMap.get(displayAuthorId) ?? null) : null,
         event_id: eventId,
         feed_event: eventId ? eventSnapshotById.get(eventId) ?? null : null,
         event_interested_count: eventCounts.interested,
@@ -2622,6 +2650,11 @@ export default function PublicProfilePage() {
 
     try {
       setSubmittingPost(true);
+      const postAsUserId = resolvePostAsUserIdForSubmit(postAsMode, postAsAdminProfile?.userId ?? null);
+      const actorName =
+        postAsMode === "admin" && postAsAdminProfile
+          ? postAsAdminProfile.displayName
+          : (currentUserName ?? "Someone");
       const currentOg = ogPreview;
       const imagesToUpload = [...selectedPostImages];
       const gifToPost = selectedPostGif;
@@ -2632,6 +2665,7 @@ export default function PublicProfilePage() {
         .insert([{
           user_id: currentUserId,
           wall_user_id: userId ?? null,
+          post_as_user_id: postAsUserId,
           content: rawPostContent,
           image_url: null,
           gif_url: gifToPost ?? null,
@@ -2658,10 +2692,10 @@ export default function PublicProfilePage() {
           mentionIds.map((uid) =>
             postNotifyJson(supabase, {
               user_id: uid,
-              actor_name: currentUserName,
+              actor_name: actorName,
               type: "mention_post",
               category: "social",
-              message: `${currentUserName} mentioned you in a post`,
+              message: `${actorName} mentioned you in a post`,
               post_owner_id: userId ?? null,
               post_id: postId,
               link: `/profile/${encodeURIComponent(userId ?? uid)}`,
@@ -2935,9 +2969,28 @@ export default function PublicProfilePage() {
       setPlankHolderChallenge(null);
 
       if (signedInUserId) {
-        const { data: nameData } = await supabase.from("profiles").select("first_name, last_name, is_employer, is_admin").eq("user_id", signedInUserId).maybeSingle();
-        const nd = nameData as { first_name: string | null; last_name: string | null; is_employer: boolean | null; is_admin?: boolean | null } | null;
+        const { data: nameData } = await supabase.from("profiles").select("first_name, last_name, photo_url, email, is_employer, is_admin").eq("user_id", signedInUserId).maybeSingle();
+        const nd = nameData as { first_name: string | null; last_name: string | null; photo_url: string | null; email: string | null; is_employer: boolean | null; is_admin?: boolean | null } | null;
         setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
+        setCurrentUserPhotoUrl(nd?.photo_url ?? null);
+        const viewerEmail = nd?.email?.trim().toLowerCase() ?? data.user?.email?.trim().toLowerCase() ?? null;
+        setCurrentUserEmail(viewerEmail);
+        if (canUsePostAsSelector(viewerEmail)) {
+          const { data: adminProfile } = await supabase
+            .from("profiles")
+            .select("user_id, display_name, first_name, last_name, photo_url")
+            .eq("email", "hello@eod-hub.com")
+            .maybeSingle();
+          if (!cancelled && adminProfile) {
+            setPostAsAdminProfile({
+              userId: adminProfile.user_id,
+              displayName: adminPostDisplayName(adminProfile),
+              photoUrl: adminProfile.photo_url ?? null,
+            });
+          }
+        } else if (!cancelled) {
+          setPostAsAdminProfile(null);
+        }
         setViewerIsEmployer(!!nd?.is_employer);
         setViewerIsAdmin(!!nd?.is_admin);
 
@@ -5777,6 +5830,20 @@ export default function PublicProfilePage() {
 
             {(wallAsOwner || isMutualConnection) && (
               <div id="profile-wall-composer" style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                {wallAsOwner && canUsePostAsSelector(currentUserEmail) && postAsAdminProfile ? (
+                  <PostAsSelector
+                    mode={postAsMode}
+                    onChange={(mode) => {
+                      setPostAsMode(mode);
+                      storePostAsMode(mode);
+                    }}
+                    selfLabel={currentUserName?.trim() || "Michael Twigg"}
+                    selfPhotoUrl={currentUserPhotoUrl}
+                    adminLabel="EOD HUB Admin"
+                    adminPhotoUrl={postAsAdminProfile.photoUrl}
+                    disabled={submittingPost}
+                  />
+                ) : null}
                 <MentionTextarea
                   placeholder={wallAsOwner ? "Post to your profile..." : `Post on ${fullName}'s profile...`}
                   value={postContent}
@@ -5953,6 +6020,7 @@ export default function PublicProfilePage() {
                       const postAuthorPhoto = post.authorPhotoUrl ?? profile.photo_url;
                       const postAuthorService = post.authorService ?? profile.service;
                       const postAuthorName = post.author_name ?? fullName;
+                      const postAuthorProfileId = post.post_as_user_id ?? post.user_id;
                       const avatar = (
                         <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(postAuthorService) ? `3px solid ${getServiceRingColor(postAuthorService)}` : undefined }}>
                           {postAuthorPhoto
@@ -5962,7 +6030,7 @@ export default function PublicProfilePage() {
                       );
                       return (
                         <FeedPostHeader
-                          profileHref={`/profile/${post.user_id}`}
+                          profileHref={`/profile/${postAuthorProfileId}`}
                           avatar={avatar}
                           authorName={postAuthorName}
                           createdAtLabel={formatDate(post.created_at)}
