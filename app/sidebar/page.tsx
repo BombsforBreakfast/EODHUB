@@ -182,9 +182,16 @@ function shouldShowMessageMatch(conv: Conversation, query: string, messageMatche
 const COMPOSER_MIN_PX = 44;
 const COMPOSER_MAX_PX = 240;
 const COMPOSER_DEFAULT_PX = 44;
+/** 10 lines: 14px × 1.45 line-height × 10 + 20px vertical padding */
+const MOBILE_COMPOSER_LINE_COUNT = 10;
+const MOBILE_COMPOSER_MAX_PX = Math.ceil(14 * 1.45 * MOBILE_COMPOSER_LINE_COUNT + 20);
 
 function clampComposerHeight(px: number) {
   return Math.min(COMPOSER_MAX_PX, Math.max(COMPOSER_MIN_PX, px));
+}
+
+function composerTextMaxPx(isMobile: boolean, desktopComposerHeight: number) {
+  return isMobile ? MOBILE_COMPOSER_MAX_PX : desktopComposerHeight;
 }
 
 function fitTextareaToContent(textarea: HTMLTextAreaElement, maxPx: number) {
@@ -276,9 +283,13 @@ export default function SidebarPage() {
   }, []);
 
   useLayoutEffect(() => {
-    if (messageInputRef.current) fitTextareaToContent(messageInputRef.current, composerHeight);
-    if (requestInputRef.current) fitTextareaToContent(requestInputRef.current, composerHeight);
-  }, [newMessage, requestDraft, composerHeight]);
+    const maxPx = composerTextMaxPx(isMobile, composerHeight);
+    if (messageInputRef.current) fitTextareaToContent(messageInputRef.current, maxPx);
+    if (requestInputRef.current) fitTextareaToContent(requestInputRef.current, maxPx);
+    if (isMobile && activeConvId) {
+      scrollMessagesToBottom(messagesContainerRef.current, bottomRef.current);
+    }
+  }, [newMessage, requestDraft, composerHeight, isMobile, activeConvId]);
 
   useEffect(() => {
     if (!composerResizing) return;
@@ -1534,27 +1545,31 @@ export default function SidebarPage() {
 
   const showBottomComposer = !isPendingSent && !!(requestTarget || activeConvId);
 
-  const composerTextareaBaseStyle = {
-    flex: 1,
+  const composerTextMaxHeight = composerTextMaxPx(isMobile, composerHeight);
+
+  const composerTextareaBaseStyle: CSSProperties = {
+    flex: isMobile ? "none" : 1,
     minWidth: 0,
-    boxSizing: "border-box" as const,
+    boxSizing: "border-box",
     padding: "10px 14px",
-    borderRadius: 20,
+    borderRadius: isMobile ? 14 : 20,
     border: `1px solid ${t.inputBorder}`,
     background: t.input,
     color: t.text,
     fontSize: 14,
     outline: "none",
-    resize: "none" as const,
+    resize: "none",
     lineHeight: 1.45,
     fontFamily: "inherit",
     width: "100%",
-    maxHeight: composerHeight,
+    maxHeight: composerTextMaxHeight,
     minHeight: COMPOSER_MIN_PX,
+    overflowY: "hidden",
   };
 
-  const composerResizeHandle = (
+  const composerResizeHandle = !isMobile ? (
     <div
+      className="sidebar-composer-resize-handle"
       role="separator"
       aria-label="Drag to resize message box"
       onMouseDown={(e) => {
@@ -1575,40 +1590,49 @@ export default function SidebarPage() {
     >
       <div style={{ width: 48, height: 4, borderRadius: 999, background: t.border }} />
     </div>
-  );
+  ) : null;
 
   const requestComposerBlock = requestTarget ? (
-    <div className="sidebar-composer-wrap" style={{ padding: isMobile ? "12px 12px" : "12px 16px", borderTop: `1px solid ${t.border}`, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", background: t.surface }}>
+    <div
+      className={isMobile ? "sidebar-composer-wrap sidebar-composer-wrap--mobile" : "sidebar-composer-wrap"}
+      style={{ padding: isMobile ? "12px 12px" : "12px 16px", borderTop: `1px solid ${t.border}`, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", background: t.surface, flexShrink: 0 }}
+    >
       {composerResizeHandle}
-      <div className="sidebar-composer-row" style={{ display: "flex", gap: isMobile ? 6 : 10, alignItems: "center", width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
-        <textarea
-          ref={requestInputRef}
-          autoFocus
-          rows={1}
-          value={requestDraft}
-          onChange={(e) => {
-            setRequestDraft(e.target.value);
-            fitTextareaToContent(e.target, composerHeight);
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && requestDraft.trim()) {
-              e.preventDefault();
-              sendRequest();
-            }
-          }}
-          placeholder={`Message ${requestTarget.name}...`}
-          style={composerTextareaBaseStyle}
-        />
-        <button
-          type="button"
-          className="sidebar-send-btn"
-          onClick={sendRequest}
-          disabled={!requestDraft.trim() || sending}
-          style={sidebarSendButtonStyle(!requestDraft.trim() || sending, isMobile)}
-        >
-          {sending && <span className="btn-spinner" />}
-          Send
-        </button>
+      <div className="sidebar-composer-row">
+        <div className="sidebar-composer-input-stack">
+          <textarea
+            ref={requestInputRef}
+            className="sidebar-composer-textarea"
+            autoFocus
+            rows={1}
+            aria-label={`Message ${requestTarget.name}`}
+            value={requestDraft}
+            onChange={(e) => {
+              setRequestDraft(e.target.value);
+              fitTextareaToContent(e.target, composerTextMaxPx(isMobile, composerHeight));
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && requestDraft.trim()) {
+                e.preventDefault();
+                sendRequest();
+              }
+            }}
+            placeholder={`Message ${requestTarget.name}...`}
+            style={composerTextareaBaseStyle}
+          />
+        </div>
+        <div className="sidebar-composer-actions">
+          <button
+            type="button"
+            className="sidebar-send-btn"
+            onClick={sendRequest}
+            disabled={!requestDraft.trim() || sending}
+            style={sidebarSendButtonStyle(!requestDraft.trim() || sending, isMobile)}
+          >
+            {sending && <span className="btn-spinner" />}
+            Send
+          </button>
+        </div>
       </div>
       {(() => {
         const url = extractFirstUrl(requestDraft);
@@ -1631,7 +1655,7 @@ export default function SidebarPage() {
       }}
       onDragLeave={() => setIsDraggingPhoto(false)}
       onDrop={handlePhotoDrop}
-      className="sidebar-composer-wrap"
+      className={isMobile ? "sidebar-composer-wrap sidebar-composer-wrap--mobile" : "sidebar-composer-wrap"}
       style={{
         padding: isMobile ? "12px 12px" : "12px 16px",
         borderTop: `1px solid ${isDraggingPhoto ? "#60a5fa" : t.border}`,
@@ -1640,6 +1664,7 @@ export default function SidebarPage() {
         maxWidth: "100%",
         minWidth: 0,
         boxSizing: "border-box",
+        flexShrink: 0,
       }}
     >
       <input
@@ -1683,46 +1708,52 @@ export default function SidebarPage() {
           Drop photo to attach
         </div>
       )}
-      <div className="sidebar-composer-row" style={{ display: "flex", gap: isMobile ? 6 : 10, alignItems: "center", width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
-        <textarea
-          ref={messageInputRef}
-          rows={1}
-          value={newMessage}
-          onChange={(e) => {
-            setNewMessage(e.target.value);
-            fitTextareaToContent(e.target, composerHeight);
-          }}
-          onPaste={handleMessagePhotoPaste}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              sendMessage();
-            }
-          }}
-          placeholder="Type a message..."
-          style={composerTextareaBaseStyle}
-        />
-        <EmojiPickerButton value={newMessage} onChange={setNewMessage} inputRef={messageInputRef} theme={isDark ? "dark" : "light"} />
-        <button
-          type="button"
-          onClick={() => photoInputRef.current?.click()}
-          disabled={sending}
-          title="Add photo"
-          style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: "50%", width: 34, height: 34, cursor: sending ? "default" : "pointer", fontWeight: 900, opacity: sending ? 0.6 : 1, flexShrink: 0 }}
-        >
-          +
-        </button>
-        <GifPickerButton onSelect={(url) => setSelectedGifUrl(url)} theme={isDark ? "dark" : "light"} variant="circle" />
-        <button
-          type="button"
-          className="sidebar-send-btn"
-          onClick={() => sendMessage()}
-          disabled={(!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending}
-          style={sidebarSendButtonStyle((!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending, isMobile)}
-        >
-          {sending && <span className="btn-spinner" />}
-          Send
-        </button>
+      <div className="sidebar-composer-row">
+        <div className="sidebar-composer-input-stack">
+          <textarea
+            ref={messageInputRef}
+            className="sidebar-composer-textarea"
+            rows={1}
+            aria-label="Type a message"
+            value={newMessage}
+            onChange={(e) => {
+              setNewMessage(e.target.value);
+              fitTextareaToContent(e.target, composerTextMaxPx(isMobile, composerHeight));
+            }}
+            onPaste={handleMessagePhotoPaste}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+              }
+            }}
+            placeholder="Type a message..."
+            style={composerTextareaBaseStyle}
+          />
+        </div>
+        <div className="sidebar-composer-actions">
+          <EmojiPickerButton value={newMessage} onChange={setNewMessage} inputRef={messageInputRef} theme={isDark ? "dark" : "light"} />
+          <button
+            type="button"
+            onClick={() => photoInputRef.current?.click()}
+            disabled={sending}
+            title="Add photo"
+            style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: "50%", width: 34, height: 34, cursor: sending ? "default" : "pointer", fontWeight: 900, opacity: sending ? 0.6 : 1, flexShrink: 0 }}
+          >
+            +
+          </button>
+          <GifPickerButton onSelect={(url) => setSelectedGifUrl(url)} theme={isDark ? "dark" : "light"} variant="circle" />
+          <button
+            type="button"
+            className="sidebar-send-btn"
+            onClick={() => sendMessage()}
+            disabled={(!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending}
+            style={sidebarSendButtonStyle((!newMessage.trim() && !selectedGifUrl && !selectedPhoto) || sending, isMobile)}
+          >
+            {sending && <span className="btn-spinner" />}
+            Send
+          </button>
+        </div>
       </div>
       {(() => {
         const url = extractFirstUrl(newMessage);
