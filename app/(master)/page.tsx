@@ -4899,7 +4899,7 @@ export default function HomePage() {
       .channel("feed-updates")
       .on(
         "postgres_changes",
-        { event: "*", schema: "public", table: "posts" },
+        { event: "*", schema: "public", table: "posts", filter: "wall_user_id=is.null" },
         () => scheduleFeedRefresh()
       )
       .on(

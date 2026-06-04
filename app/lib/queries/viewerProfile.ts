@@ -14,7 +14,7 @@ import type { OnboardingGateProfile } from "../onboardingGate";
  * cache missing the field.
  */
 export const VIEWER_PROFILE_SELECT =
-  "user_id, first_name, last_name, service, company_name, account_type, is_pure_admin, must_complete_onboarding, created_at, email_verified, admin_verified, verification_status, is_approved, email, display_name, photo_url, status, professional_tags, unit_history_tags, subscription_status, referral_code, is_admin, show_memorial_feed_cards, nav_helper_seen, is_employer";
+  "user_id, first_name, last_name, service, company_name, account_type, is_pure_admin, must_complete_onboarding, created_at, email_verified, admin_verified, verification_status, is_approved, email, display_name, photo_url, status, professional_tags, unit_history_tags, subscription_status, referral_code, is_admin, show_memorial_feed_cards, nav_helper_seen, is_employer, privacy_show_online";
 
 export const VIEWER_PROFILE_STALE_MS = 5 * 60_000;
 
@@ -31,6 +31,7 @@ export type ViewerProfile = OnboardingGateProfile & {
   show_memorial_feed_cards?: boolean | null;
   nav_helper_seen?: boolean | null;
   is_employer?: boolean | null;
+  privacy_show_online?: boolean | null;
 };
 
 async function rawFetchViewerProfile(

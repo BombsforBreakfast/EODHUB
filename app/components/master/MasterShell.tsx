@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
+import { useQueryClient } from "@tanstack/react-query";
 import { useTheme } from "../../lib/ThemeContext";
 import NavBar from "../NavBar";
 import DesktopLayout from "../DesktopLayout";
@@ -12,13 +13,12 @@ import { supabase } from "../../lib/lib/supabaseClient";
 import { isMemberPaywallExemptPath, isExemptFromMemberPaywall, shouldEnforceMemberPaywall } from "../../lib/paywallPaths";
 import { memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { MasterShellProvider } from "./masterShellContext";
-import { useQueryClient } from "@tanstack/react-query";
-import { fetchViewerProfileCached } from "../../lib/queries/viewerProfile";
 import {
   onboardingRedirectUrl,
   resolvePreAccessRedirectPath,
   shouldRedirectToOnboarding,
 } from "../../lib/onboardingGate";
+import { fetchViewerProfileCached } from "../../lib/queries/viewerProfile";
 import { hasFullPlatformAccess } from "../../lib/verificationAccess";
 import { ensureWelcomeSidebarOnce } from "../../lib/welcomeSidebarClient";
 import {

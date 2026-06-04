@@ -2,7 +2,9 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/app/lib/lib/supabaseClient";
+import { fetchViewerProfileCached } from "@/app/lib/queries/viewerProfile";
 import { MemorialReadModal } from "./MemorialReadModal";
 import type { Memorial } from "./memorialModalShared";
 import { MEMORIAL_COLUMNS } from "./memorialModalShared";
@@ -22,6 +24,7 @@ export function useMemorialNavModal(): MemorialNavModalContextValue {
 }
 
 export function MemorialNavModalProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [memorial, setMemorial] = useState<Memorial | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [scrapbookActorUserId, setScrapbookActorUserId] = useState<string | null>(null);
@@ -48,23 +51,29 @@ export function MemorialNavModalProvider({ children }: { children: ReactNode }) 
         return;
       }
       setScrapbookActorUserId(uid);
-      const { data: pr } = await supabase.from("profiles").select("is_admin").eq("user_id", uid).maybeSingle();
+      const user = session?.user;
+      if (!user) {
+        setScrapbookActorIsAdmin(false);
+        return;
+      }
+      const profile = await fetchViewerProfileCached(queryClient, supabase, user);
       if (!cancelled) {
-        setScrapbookActorIsAdmin(Boolean((pr as { is_admin?: boolean | null } | null)?.is_admin));
+        setScrapbookActorIsAdmin(Boolean(profile?.is_admin));
       }
     }
 
     void supabase.auth.getSession().then(({ data: { session } }) => {
       void syncActorFromSession(session);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") return;
       void syncActorFromSession(session);
     });
     return () => {
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [queryClient]);
 
   const openMemorialById = useCallback((id: string) => {
     if (!id?.trim()) return;

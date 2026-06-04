@@ -49,8 +49,8 @@ type SearchResult = {
 };
 
 export default function NavBar() {
-  const { openMemorialById } = useMemorialNavModal();
   const queryClient = useQueryClient();
+  const { openMemorialById } = useMemorialNavModal();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [authLoaded, setAuthLoaded] = useState(false);
   const [userInitial, setUserInitial] = useState<string>("?");
@@ -198,9 +198,8 @@ export default function NavBar() {
     }
 
     async function loadNavProfile(user: User) {
-      const profile = await fetchViewerProfileCached(queryClient, supabase, user);
+      const row = await fetchViewerProfileCached(queryClient, supabase, user);
       if (!mounted) return;
-      const row = profile;
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
       setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
       setIsEmployer(row?.account_type === "employer");
@@ -266,7 +265,7 @@ export default function NavBar() {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     if (!currentUserId || !isAdmin) return;

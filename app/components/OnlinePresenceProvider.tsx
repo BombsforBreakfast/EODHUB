@@ -2,18 +2,19 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { usePathname } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/lib/supabaseClient";
-import { hasFullPlatformAccess, type VerificationProfile } from "../lib/verificationAccess";
+import { hasFullPlatformAccess } from "../lib/verificationAccess";
+import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 
 /**
  * App-wide online presence.
  *
  * Mounted in the root layout so verified members broadcast while in ANY part of
  * the app (feed, jobs, profile, businesses, rabbithole, etc.) — not just the
- * home feed. Re-tracks on route changes and tab visibility so presence stays
- * fresh across client navigations and websocket reconnects.
+ * home feed. Heartbeats and tab visibility keep presence fresh across websocket
+ * reconnects without re-tracking on every client navigation.
  */
 
 const PRESENCE_CHANNEL = "eod_home_online";
@@ -40,7 +41,7 @@ function presenceUserIds(state: Record<string, unknown[]>): Set<string> {
 }
 
 export function OnlinePresenceProvider({ children }: { children: ReactNode }) {
-  const pathname = usePathname();
+  const queryClient = useQueryClient();
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [onlineUserIds, setOnlineUserIds] = useState<string[]>([]);
   const trackPresenceRef = useRef<(() => Promise<void>) | null>(null);
@@ -55,7 +56,8 @@ export function OnlinePresenceProvider({ children }: { children: ReactNode }) {
     }
 
     void loadUser();
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") return;
       setCurrentUserId(session?.user?.id ?? null);
     });
 
@@ -88,26 +90,23 @@ export function OnlinePresenceProvider({ children }: { children: ReactNode }) {
     trackPresenceRef.current = trackSelf;
 
     (async () => {
-      const { data: meRow } = await supabase
-        .from("profiles")
-        .select(
-          "privacy_show_online, verification_status, email_verified, admin_verified, is_pure_admin",
-        )
-        .eq("user_id", currentUserId)
-        .maybeSingle();
+      const { data: { session } } = await supabase.auth.getSession();
+      const user = session?.user;
+      if (cancelled || !user || user.id !== currentUserId) return;
+
+      const profile = await fetchViewerProfileCached(queryClient, supabase, user);
       if (cancelled) return;
 
-      const profile = (meRow ?? {}) as VerificationProfile & { privacy_show_online?: boolean | null };
-      // Only verified members broadcast; all signed-in viewers still subscribe below.
       broadcastSelf =
-        hasFullPlatformAccess(profile) && profile.privacy_show_online !== false;
+        !!profile && hasFullPlatformAccess(profile) && profile.privacy_show_online !== false;
 
       channel = supabase.channel(PRESENCE_CHANNEL, {
         config: { presence: { key: currentUserId } },
       });
 
       const applyState = () => {
-        const ids = [...presenceUserIds(channel!.presenceState())];
+        if (!channel || cancelled) return;
+        const ids = [...presenceUserIds(channel.presenceState())];
         ids.sort();
         setOnlineUserIds(ids);
       };
@@ -118,7 +117,7 @@ export function OnlinePresenceProvider({ children }: { children: ReactNode }) {
         .on("presence", { event: "leave" }, applyState);
 
       channel.subscribe(async (status) => {
-        if (status !== "SUBSCRIBED") return;
+        if (cancelled || status !== "SUBSCRIBED") return;
         await trackSelf();
       });
 
@@ -142,13 +141,7 @@ export function OnlinePresenceProvider({ children }: { children: ReactNode }) {
         supabase.removeChannel(channel);
       }
     };
-  }, [currentUserId]);
-
-  // Re-broadcast on client navigations so presence stays current on every app surface.
-  useEffect(() => {
-    if (!currentUserId) return;
-    void trackPresenceRef.current?.();
-  }, [pathname, currentUserId]);
+  }, [currentUserId, queryClient]);
 
   const value = useMemo(() => ({ onlineUserIds }), [onlineUserIds]);
 
