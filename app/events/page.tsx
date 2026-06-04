@@ -3471,6 +3471,11 @@ function EventsPageInner() {
             style={{
               width: "100%",
               maxWidth: 560,
+              maxHeight: "min(85vh, calc(100dvh - 40px))",
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
+              boxSizing: "border-box",
               background: t.surface,
               color: t.text,
               borderRadius: 18,
