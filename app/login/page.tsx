@@ -104,6 +104,12 @@ export default function LoginPage() {
   const [emailNotFoundGuidance, setEmailNotFoundGuidance] = useState(false);
   const [highlightSignupCta, setHighlightSignupCta] = useState(false);
   const [signupCtaReducedMotion, setSignupCtaReducedMotion] = useState(false);
+  const [businessOrgPromptOpen, setBusinessOrgPromptOpen] = useState(false);
+  const [businessOrgEmailGateOpen, setBusinessOrgEmailGateOpen] = useState(false);
+  const [businessOrgEmail, setBusinessOrgEmail] = useState("");
+  const [businessOrgEmailStatus, setBusinessOrgEmailStatus] = useState<"idle" | "checking" | "found" | "authenticating" | "not_found" | "not_approved" | "invalid_email" | "error">("idle");
+  const [businessOrgEmailMessage, setBusinessOrgEmailMessage] = useState<string | null>(null);
+  const [businessOrgOwnerPassword, setBusinessOrgOwnerPassword] = useState("");
   const signupCtaRef = useRef<HTMLButtonElement>(null);
 
   function clearEmailNotFoundGuidance() {
@@ -117,17 +123,99 @@ export default function LoginPage() {
     setMode("signup");
   }
 
+  async function validateBusinessOrgEmailGate() {
+    const trimmed = businessOrgEmail.trim().toLowerCase();
+    setBusinessOrgEmailStatus("checking");
+    setBusinessOrgEmailMessage(null);
+    try {
+      const res = await fetch("/api/business-org-pages/validate-owner-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: trimmed }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        status?: string;
+        message?: string;
+        email?: string;
+      };
+      if (res.ok && data.ok) {
+        const validatedEmail = data.email ?? trimmed;
+        setBusinessOrgEmail(validatedEmail);
+        setBusinessOrgEmailStatus("found");
+        setBusinessOrgEmailMessage("Email validated. Sign in to this personal EOD-HUB account to continue.");
+        return;
+      }
+      const status = data.status === "not_approved" ? "not_approved" : data.status === "invalid_email" ? "invalid_email" : "not_found";
+      setBusinessOrgEmailStatus(status);
+      setBusinessOrgEmailMessage(
+        data.message || "Email not found. Please check your email or first create a classic EOD-HUB user account.",
+      );
+    } catch {
+      setBusinessOrgEmailStatus("error");
+      setBusinessOrgEmailMessage("Could not validate this email right now. Please try again.");
+    }
+  }
+
+  async function continueBusinessOrgWithOwnerPassword() {
+    const ownerEmail = businessOrgEmail.trim().toLowerCase();
+    setBusinessOrgEmailStatus("authenticating");
+    setBusinessOrgEmailMessage(null);
+    try {
+      clearAppAuthState();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: ownerEmail,
+        password: businessOrgOwnerPassword,
+      });
+      if (error || !data.session) {
+        setBusinessOrgEmailStatus("found");
+        setBusinessOrgEmailMessage("Password did not match that EOD-HUB user account. Try again or continue with Google.");
+        return;
+      }
+      markAppSessionActive(rememberMe);
+      clearFailedAuthReportsAfterLogin(data.session.access_token);
+      const res = await fetch("/api/business-org-pages/start-onboarding", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${data.session.access_token}`,
+        },
+        body: JSON.stringify({ linkedAccountEmail: ownerEmail }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { redirectTo?: string; error?: string };
+      if (!res.ok || !json.redirectTo) {
+        setBusinessOrgEmailStatus("found");
+        setBusinessOrgEmailMessage(json.error ?? "Could not start business onboarding.");
+        return;
+      }
+      window.location.assign(json.redirectTo);
+    } catch {
+      setBusinessOrgEmailStatus("found");
+      setBusinessOrgEmailMessage("Could not authenticate this account right now. Please try again.");
+    }
+  }
+
+  function continueBusinessOrgWithOwnerGoogle() {
+    const ownerEmail = businessOrgEmail.trim().toLowerCase();
+    if (!ownerEmail) {
+      setBusinessOrgEmailMessage("Validate the owner email first.");
+      return;
+    }
+    clearAppAuthState();
+    const origin = window.location.origin;
+    const next = `/business-org/onboarding?linked_email=${encodeURIComponent(ownerEmail)}`;
+    void supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        queryParams: { login_hint: ownerEmail },
+      },
+    });
+  }
+
   // Persist ?ref= referral code through signup flow (cookie + localStorage)
   useEffect(() => {
     captureReferralFromUrl();
-  }, []);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("deleted") === "1") {
-      setLoginMessage("Your account has been closed. You can sign up again anytime with the same email.");
-      window.history.replaceState({}, "", "/login");
-    }
   }, []);
 
   useEffect(() => {
@@ -343,10 +431,16 @@ export default function LoginPage() {
         email_verified: boolean | null;
         admin_verified: boolean | null;
         must_complete_onboarding: boolean | null;
+        account_type: string | null;
       }>(supabase, session.user, {
         route: "app/login/page.tsx:handleLogin",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, must_complete_onboarding, is_pure_admin",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, must_complete_onboarding, is_pure_admin, account_type",
       });
+
+      if (profile?.account_type === "business_org") {
+        window.location.href = "/";
+        return;
+      }
 
       devClientAuthLog("login", {
         step: "profile_loaded",
@@ -897,6 +991,14 @@ export default function LoginPage() {
               <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("signup"); }} disabled={submitting} style={buttonSecondary}>
                 Need an account? Sign Up
               </button>
+              <button
+                type="button"
+                onClick={() => setBusinessOrgPromptOpen(true)}
+                disabled={submitting}
+                style={buttonSecondary}
+              >
+                Create Business / Organization Profile
+              </button>
             </>
           ) : (
             <>
@@ -1023,6 +1125,186 @@ export default function LoginPage() {
         </>
       )}
 
+      {(businessOrgPromptOpen || businessOrgEmailGateOpen) && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="business-org-gate-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 80,
+            display: "grid",
+            placeItems: "center",
+            padding: 18,
+            background: "rgba(15, 23, 42, 0.55)",
+          }}
+          onClick={() => {
+            setBusinessOrgPromptOpen(false);
+            setBusinessOrgEmailGateOpen(false);
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(100%, 460px)",
+              borderRadius: 18,
+              border: `1px solid ${t.border}`,
+              background: t.surface,
+              color: t.text,
+              padding: 22,
+              boxShadow: "0 24px 70px rgba(0,0,0,.24)",
+            }}
+          >
+            {businessOrgPromptOpen ? (
+              <>
+                <h2 id="business-org-gate-title" style={{ margin: 0, fontSize: 22, fontWeight: 900 }}>
+                  Business / Organization
+                </h2>
+                <p style={{ margin: "10px 0 0", color: t.textMuted, lineHeight: 1.55 }}>
+                  A classic user account is required to create a business / organization.
+                </p>
+                <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+                  <button
+                    type="button"
+                    style={buttonPrimary}
+                    onClick={() => {
+                      setBusinessOrgPromptOpen(false);
+                      setBusinessOrgEmailGateOpen(true);
+                      setBusinessOrgEmail(email.trim());
+                    }}
+                  >
+                    Continue
+                  </button>
+                  <button
+                    type="button"
+                    style={buttonSecondary}
+                    onClick={() => {
+                      setBusinessOrgPromptOpen(false);
+                      clearEmailNotFoundGuidance();
+                      setMode("signup");
+                    }}
+                  >
+                    Create User Account
+                  </button>
+                  <button
+                    type="button"
+                    style={buttonSecondary}
+                    onClick={() => setBusinessOrgPromptOpen(false)}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 id="business-org-gate-title" style={{ margin: 0, fontSize: 22, fontWeight: 900 }}>
+                  Validate User Email
+                </h2>
+                <p style={{ margin: "10px 0 0", color: t.textMuted, lineHeight: 1.55 }}>
+                  Enter the EOD-HUB user email that will own this Business / Organization page.
+                </p>
+                <input
+                  type="email"
+                  placeholder="Validated EOD-HUB user email"
+                  value={businessOrgEmail}
+                  onChange={(e) => {
+                    setBusinessOrgEmail(e.target.value);
+                    setBusinessOrgEmailStatus("idle");
+                    setBusinessOrgEmailMessage(null);
+                    setBusinessOrgOwnerPassword("");
+                  }}
+                  readOnly={businessOrgEmailStatus === "found" || businessOrgEmailStatus === "authenticating"}
+                  style={{ ...inputStyle, marginTop: 16 }}
+                />
+                {(businessOrgEmailStatus === "found" || businessOrgEmailStatus === "authenticating") && (
+                  <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                    <PasswordInput
+                      placeholder="Personal EOD-HUB password"
+                      value={businessOrgOwnerPassword}
+                      onChange={(e) => setBusinessOrgOwnerPassword(e.target.value)}
+                      showPassword={showPassword}
+                      onToggleShow={() => setShowPassword((prev) => !prev)}
+                      inputStyle={inputStyle}
+                      textMuted={t.textMuted}
+                      autoComplete="current-password"
+                    />
+                    <button
+                      type="button"
+                      style={{ ...buttonPrimary, opacity: businessOrgEmailStatus === "authenticating" ? 0.7 : 1 }}
+                      disabled={businessOrgEmailStatus === "authenticating" || !businessOrgOwnerPassword}
+                      onClick={() => void continueBusinessOrgWithOwnerPassword()}
+                    >
+                      {businessOrgEmailStatus === "authenticating" ? "Signing in..." : "Continue with Password"}
+                    </button>
+                    <button
+                      type="button"
+                      style={buttonSecondary}
+                      disabled={businessOrgEmailStatus === "authenticating"}
+                      onClick={() => continueBusinessOrgWithOwnerGoogle()}
+                    >
+                      Continue with Google
+                    </button>
+                  </div>
+                )}
+                {businessOrgEmailMessage && (
+                  <div
+                    role="status"
+                    style={{
+                      marginTop: 12,
+                      padding: 12,
+                      borderRadius: 12,
+                      border: `1px solid ${businessOrgEmailStatus === "found" ? "#bbf7d0" : "#fecaca"}`,
+                      background: businessOrgEmailStatus === "found" ? "#f0fdf4" : "#fef2f2",
+                      color: businessOrgEmailStatus === "found" ? "#166534" : "#991b1b",
+                      fontSize: 13,
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    {businessOrgEmailMessage}
+                  </div>
+                )}
+                <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+                  {businessOrgEmailStatus !== "found" && businessOrgEmailStatus !== "authenticating" && (
+                    <button
+                      type="button"
+                      style={{ ...buttonPrimary, opacity: businessOrgEmailStatus === "checking" ? 0.7 : 1 }}
+                      disabled={businessOrgEmailStatus === "checking"}
+                      onClick={() => void validateBusinessOrgEmailGate()}
+                    >
+                      {businessOrgEmailStatus === "checking" ? "Checking..." : "Validate Email"}
+                    </button>
+                  )}
+                  {(businessOrgEmailStatus === "not_found" || businessOrgEmailStatus === "not_approved" || businessOrgEmailStatus === "invalid_email") && (
+                    <button
+                      type="button"
+                      style={buttonSecondary}
+                      onClick={() => {
+                        setBusinessOrgEmailGateOpen(false);
+                        clearEmailNotFoundGuidance();
+                        setMode("signup");
+                      }}
+                    >
+                      Create user account
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    style={buttonSecondary}
+                    onClick={() => {
+                      setBusinessOrgEmailGateOpen(false);
+                      setMode("login");
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div
         style={{
           marginTop: 18,
@@ -1035,10 +1317,10 @@ export default function LoginPage() {
       >
         Questions or experiencing login issues — email{" "}
         <a
-          href="mailto:hello@eod-hub.com"
+          href="mailto:murphy@eod-hub.com"
           style={{ color: t.text, fontWeight: 700, textDecoration: "underline" }}
         >
-          hello@eod-hub.com
+          murphy@eod-hub.com
         </a>
       </div>
     </div>

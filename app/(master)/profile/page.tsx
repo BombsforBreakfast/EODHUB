@@ -8,7 +8,6 @@ import PrivacySettingsCard from "../../components/account/PrivacySettingsCard";
 import MemorialFeedPreferencesCard from "../../components/account/MemorialFeedPreferencesCard";
 import NotificationPreferencesCard from "../../components/account/NotificationPreferencesCard";
 import ChangePasswordSection from "../../components/account/ChangePasswordSection";
-import DeleteAccountSection from "../../components/account/DeleteAccountSection";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
 import { isPaywallEnforced, memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { hasPublicMemberProfile } from "../../lib/pureAdminAllowlist";
@@ -349,9 +348,6 @@ export default function MyAccountPage() {
           <div style={{ ...card, padding: "18px 24px" }}>
             <ReportProblemButton inline />
           </div>
-
-          {/* Close account */}
-          <DeleteAccountSection isPureAdmin={profile?.is_pure_admin} />
 
           {/* Theme: default dark; toggle label shows the mode you switch to */}
           <div style={{ ...card, padding: "18px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>

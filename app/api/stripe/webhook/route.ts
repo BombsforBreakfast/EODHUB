@@ -35,21 +35,63 @@ export async function POST(req: NextRequest) {
       .eq("stripe_customer_id", customerId);
   }
 
+  async function updateBusinessOrgPageBySubscription(sub: Stripe.Subscription, status: string) {
+    const pageId =
+      typeof sub.metadata?.business_org_page_id === "string"
+        ? sub.metadata.business_org_page_id
+        : null;
+    if (!pageId) {
+      await adminClient
+        .from("business_organization_pages")
+        .update({
+          subscription_status: status,
+          stripe_subscription_id: sub.id,
+        })
+        .eq("stripe_customer_id", sub.customer as string);
+      return;
+    }
+
+    await adminClient
+      .from("business_organization_pages")
+      .update({
+        subscription_status: status,
+        stripe_subscription_id: sub.id,
+      })
+      .eq("id", pageId);
+  }
+
+  function isBusinessOrgSubscription(sub: Stripe.Subscription): boolean {
+    return sub.metadata?.billing_subject === "business_organization_page"
+      || typeof sub.metadata?.business_org_page_id === "string";
+  }
+
   switch (event.type) {
     case "customer.subscription.created": {
       const sub = event.data.object as Stripe.Subscription;
       const status = sub.status === "active" || sub.status === "trialing" ? sub.status : sub.status;
+      if (isBusinessOrgSubscription(sub)) {
+        await updateBusinessOrgPageBySubscription(sub, status);
+        break;
+      }
       // Do not set verification_status here — access approval stays with admin (or community vouch), not payment.
       await updateByCustomer(sub.customer as string, status);
       break;
     }
     case "customer.subscription.updated": {
       const sub = event.data.object as Stripe.Subscription;
+      if (isBusinessOrgSubscription(sub)) {
+        await updateBusinessOrgPageBySubscription(sub, sub.status);
+        break;
+      }
       await updateByCustomer(sub.customer as string, sub.status);
       break;
     }
     case "customer.subscription.deleted": {
       const sub = event.data.object as Stripe.Subscription;
+      if (isBusinessOrgSubscription(sub)) {
+        await updateBusinessOrgPageBySubscription(sub, "cancelled");
+        break;
+      }
       await updateByCustomer(sub.customer as string, "cancelled");
       break;
     }

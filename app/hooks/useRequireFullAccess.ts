@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { getSupabaseUser, supabase } from "../lib/lib/supabaseClient";
+import { loadActiveProfile } from "../lib/auth/activeProfile";
 import {
+  ONBOARDING_GATE_PROFILE_SELECT,
   onboardingRedirectUrl,
   resolvePreAccessRedirectPath,
   shouldRedirectToOnboarding,
+  type OnboardingGateProfile,
 } from "../lib/onboardingGate";
-import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 import { hasFullPlatformAccess } from "../lib/verificationAccess";
 
 type AccessGateState = "checking" | "redirecting" | "ready";
@@ -24,7 +25,6 @@ type AccessGateState = "checking" | "redirecting" | "ready";
  */
 export function useRequireFullAccess(route: string): AccessGateState {
   const [state, setState] = useState<AccessGateState>("checking");
-  const queryClient = useQueryClient();
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +41,10 @@ export function useRequireFullAccess(route: string): AccessGateState {
         return;
       }
 
-      const profile = await fetchViewerProfileCached(queryClient, supabase, user);
+      const { profile } = await loadActiveProfile<OnboardingGateProfile>(supabase, user, {
+        route,
+        select: ONBOARDING_GATE_PROFILE_SELECT,
+      });
       if (cancelled) return;
 
       if (!profile) {
@@ -69,7 +72,7 @@ export function useRequireFullAccess(route: string): AccessGateState {
     return () => {
       cancelled = true;
     };
-  }, [route, queryClient]);
+  }, [route]);
 
   return state;
 }

@@ -16,6 +16,8 @@ function isPublicPath(pathname: string) {
     "/privacy",
     "/guidelines",
     "/auth/callback",
+    "/business-org",
+    "/business-org/onboarding",
     "/email-verified",
   ];
   return publicRoutes.some((p) => pathname === p || pathname.startsWith(`${p}/`));

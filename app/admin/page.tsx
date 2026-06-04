@@ -21,13 +21,13 @@ import TrafficByHourChart from "../components/admin/TrafficByHourChart";
 import type { TrafficByHourSummary } from "../lib/analyticsTrafficByHour";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
-import { reliefWebConfidenceBadge } from "../lib/reliefweb/publicVisibility";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { coerceTagsFromDb, normalizeBizTagsInput } from "../lib/bizListingTags";
 import {
+  blocksSignupApproval,
+  hasRequiredSignupNames,
   isGrandfatheredSignupProfile,
-  isSignupProfileComplete,
   signupProfileMissingFields,
 } from "@/app/lib/profileCompleteness";
 import {
@@ -55,13 +55,6 @@ const STALE_FLAG_REASON_LABELS: Record<string, string> = {
   incorrect_info: "Incorrect info",
   other: "Other",
 };
-
-const BUSINESS_LISTINGS_PAGE_SIZE = 25;
-const BUSINESS_CLAIMS_PAGE_SIZE = 25;
-const JOBS_PAGE_SIZE = 25;
-const USERS_PAGE_SIZE = 50;
-const BUSINESS_LISTING_ADMIN_COLUMNS =
-  "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, tags, managed_by_user_id";
 
 type BusinessListing = {
   id: string;
@@ -93,7 +86,43 @@ type BizListingClaimPending = {
   claimant_label: string;
 };
 
+type BusinessOrgAdminPage = {
+  id: string;
+  owner_user_id: string;
+  business_name: string;
+  description: string;
+  business_email: string;
+  linked_account_email: string;
+  logo_url: string;
+  website_url: string | null;
+  location: string | null;
+  verification_status: string;
+  subscription_status: string;
+  is_active: boolean;
+  created_at: string;
+  owner_auth_email: string | null;
+  linked_email_matches_account: boolean;
+};
+
+type BusinessOrgAdminClaim = {
+  id: string;
+  business_listing_id: string;
+  business_org_page_id: string;
+  requested_by: string;
+  status: string;
+  created_at: string;
+  business_listings:
+    | { business_name: string | null; og_title: string | null; website_url: string | null }
+    | { business_name: string | null; og_title: string | null; website_url: string | null }[]
+    | null;
+  business_organization_pages:
+    | { business_name: string | null; business_email: string | null; linked_account_email: string | null; logo_url: string | null }
+    | { business_name: string | null; business_email: string | null; linked_account_email: string | null; logo_url: string | null }[]
+    | null;
+};
+
 type JobImportMetadata = {
+  matched_keywords?: string[];
   matched_queries?: string[];
   strong_match?: boolean;
   source_url?: string | null;
@@ -101,14 +130,6 @@ type JobImportMetadata = {
   posted_at?: string | null;
   organization?: string | null;
   countries?: string[];
-  themes?: string[];
-  career_categories?: string[];
-  relevance_confidence?: "high" | "possible" | "low";
-  relevance_reasons?: string[];
-  needs_review?: boolean;
-  suppressed?: boolean;
-  /** @deprecated earlier scorer */
-  matched_keywords?: string[];
 };
 
 type Job = {
@@ -135,19 +156,6 @@ function formatJobSourceBadge(sourceType: string | null): string {
   return sourceType;
 }
 
-function formatJobDescriptionPreview(description: string): string {
-  return description
-    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-const jobCardTextStyle: React.CSSProperties = {
-  overflowWrap: "anywhere",
-  wordBreak: "break-word",
-  maxWidth: "100%",
-};
-
 type UserProfile = {
   user_id: string;
   first_name: string | null;
@@ -159,12 +167,8 @@ type UserProfile = {
   company_name?: string | null;
   account_type?: string | null;
   is_pure_admin?: boolean | null;
-  photo_url?: string | null;
   role: string | null;
   service: string | null;
-  status?: string | null;
-  skill_badge?: string | null;
-  years_experience?: string | null;
   verification_status: string | null;
   email_verified?: boolean | null;
   is_admin: boolean | null;
@@ -173,9 +177,6 @@ type UserProfile = {
   created_at: string | null;
   community_flag_count?: number | null;
   signup_incomplete?: boolean;
-  referred_by?: string | null;
-  referrer_user_id?: string | null;
-  referred_by_name?: string | null;
 };
 
 function adminUserDisplayName(u: UserProfile): string {
@@ -193,16 +194,44 @@ function adminUserDisplayName(u: UserProfile): string {
   );
 }
 
-type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "unverified" | "denied";
+type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "denied";
 
 function isAtAdminReviewTier(u: UserProfile): boolean {
   return (
     !!u.email_verified &&
-    isSignupProfileComplete(u) &&
+    !blocksSignupApproval(u) &&
     (u.verification_status === "awaiting_admin_review" ||
       u.verification_status === "pending_admin_review" ||
       u.verification_status === "pending")
   );
+}
+
+function userMatchesStatusFilter(u: UserProfile, filter: UserStatusFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "verified") return u.verification_status === "verified";
+  if (filter === "denied") return u.verification_status === "denied";
+  if (filter === "pending") return isAtAdminReviewTier(u);
+  if (filter === "onboarding") {
+    if (u.verification_status === "verified") return false;
+    if (u.verification_status === "denied") return false;
+    return !isAtAdminReviewTier(u);
+  }
+  return false;
+}
+
+function userMatchesSearchQuery(u: UserProfile, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const haystack = [
+    adminUserDisplayName(u),
+    u.email ?? "",
+    u.service ?? "",
+    u.role ?? "",
+    u.user_id,
+  ]
+    .join(" ")
+    .toLowerCase();
+  return haystack.includes(q);
 }
 
 type UsersFallbackQueryResult = {
@@ -274,58 +303,6 @@ function buildWaitlistCsv(rows: WaitlistSignupRow[]): string {
   return lines.join("\r\n");
 }
 
-function buildOnboardingUsersCsv(rows: UserProfile[]): string {
-  const header = [
-    "User ID",
-    "First Name",
-    "Last Name",
-    "Display Name",
-    "Email",
-    "Account Type",
-    "Service",
-    "Status",
-    "Skill Badge",
-    "Years Experience",
-    "Company",
-    "Verification Status",
-    "Email Verified",
-    "Has Profile Picture",
-    "Profile Picture URL",
-    "Created At",
-    "Referred By Code",
-    "Referred By Name",
-    "Missing Fields",
-  ];
-  const lines = [header.map(escapeCsvField).join(",")];
-  for (const u of rows) {
-    const missingFields = signupProfileMissingFields(u).join("; ");
-    lines.push(
-      [
-        u.user_id,
-        u.first_name ?? "",
-        u.last_name ?? "",
-        u.display_name ?? u.name ?? "",
-        u.email ?? "",
-        u.account_type ?? (u.is_employer ? "employer" : "member"),
-        u.service ?? "",
-        u.status ?? "",
-        u.skill_badge ?? "",
-        u.years_experience ?? "",
-        u.company_name ?? "",
-        u.verification_status ?? "",
-        u.email_verified ? "yes" : "no",
-        u.photo_url ? "yes" : "no",
-        u.photo_url ?? "",
-        u.created_at ? new Date(u.created_at).toLocaleString() : "",
-        u.referred_by ?? "",
-        u.referred_by_name ?? "",
-        missingFields,
-      ].map(escapeCsvField).join(","),
-    );
-  }
-  return lines.join("\r\n");
-}
-
 function downloadWaitlistCsv(rows: WaitlistSignupRow[]): void {
   const csv = buildWaitlistCsv(rows);
   const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
@@ -334,18 +311,6 @@ function downloadWaitlistCsv(rows: WaitlistSignupRow[]): void {
   const stamp = new Date().toISOString().slice(0, 10);
   a.href = url;
   a.download = `eod-hub-waitlist-${stamp}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function downloadOnboardingUsersCsv(rows: UserProfile[]): void {
-  const csv = buildOnboardingUsersCsv(rows);
-  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const stamp = new Date().toISOString().slice(0, 10);
-  a.href = url;
-  a.download = `eod-hub-onboarding-users-${stamp}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -364,6 +329,7 @@ function datetimeLocalValueToIso(local: string): string {
 
 type Tab =
   | "businesses"
+  | "business_org_pages"
   | "jobs"
   | "users"
   | "groups"
@@ -483,24 +449,6 @@ type PreviewResult = {
 
 type EngagementRange = "today" | "7d" | "30d";
 
-type OnboardingFunnelRange = "7d" | "30d" | "90d";
-
-type OnboardingFunnelSummary = {
-  range: OnboardingFunnelRange;
-  generated_at: string;
-  cohort_signups: number;
-  incomplete_profiles_no_events: number;
-  funnel: Array<{
-    step: string;
-    label: string;
-    users: number;
-    conversion_from_previous_pct: number | null;
-    conversion_from_start_pct: number | null;
-  }>;
-  drop_offs: Array<{ step: string; label: string; users: number }>;
-  note: string | null;
-};
-
 type EngagementSummary = {
   range: EngagementRange;
   generated_at: string;
@@ -577,9 +525,6 @@ type BugReport = {
   admin_notes: string | null;
   created_at: string;
   reporter_name?: string | null;
-  reporter_first_name?: string | null;
-  reporter_last_name?: string | null;
-  reporter_email?: string | null;
 };
 
 type Flag = {
@@ -772,20 +717,12 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<Tab>("businesses");
 
   const [businesses, setBusinesses] = useState<BusinessListing[]>([]);
-  const [businessTotalCount, setBusinessTotalCount] = useState(0);
-  const [businessesLoadingMore, setBusinessesLoadingMore] = useState(false);
   const [bizClaimsPending, setBizClaimsPending] = useState<BizListingClaimPending[]>([]);
-  const [bizClaimsTotalCount, setBizClaimsTotalCount] = useState(0);
-  const [bizClaimsLoadingMore, setBizClaimsLoadingMore] = useState(false);
   const [bizManagerLabels, setBizManagerLabels] = useState<Record<string, string>>({});
+  const [businessOrgPages, setBusinessOrgPages] = useState<BusinessOrgAdminPage[]>([]);
+  const [businessOrgClaims, setBusinessOrgClaims] = useState<BusinessOrgAdminClaim[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [jobsTotalCount, setJobsTotalCount] = useState(0);
-  const [jobsLoadingMore, setJobsLoadingMore] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [usersTotalCount, setUsersTotalCount] = useState(0);
-  const [usersLoadingMore, setUsersLoadingMore] = useState(false);
-  const [usersLoadingFullList, setUsersLoadingFullList] = useState(false);
-  const [usersShowingFullList, setUsersShowingFullList] = useState(false);
   const [groups, setGroups] = useState<AdminGroup[]>([]);
   const [groupSearch, setGroupSearch] = useState("");
   const [flags, setFlags] = useState<Flag[]>([]);
@@ -795,9 +732,16 @@ export default function AdminPage() {
   const [staleFlagGroups, setStaleFlagGroups] = useState<StaleFlagJobGroup[]>([]);
   const [staleFlagsLoading, setStaleFlagsLoading] = useState(false);
   const [resolvingStaleJobId, setResolvingStaleJobId] = useState<string | null>(null);
-  const [userFilter, setUserFilter] = useState<UserStatusFilter>("all");
+  const [userFilter, setUserFilter] = useState<UserStatusFilter>("pending");
   const [userSearch, setUserSearch] = useState("");
-  const [debouncedUserSearch, setDebouncedUserSearch] = useState("");
+
+  const filteredAdminUsers = useMemo(
+    () =>
+      users.filter(
+        (u) => userMatchesStatusFilter(u, userFilter) && userMatchesSearchQuery(u, userSearch),
+      ),
+    [users, userFilter, userSearch],
+  );
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
@@ -881,9 +825,6 @@ export default function AdminPage() {
   const [engagement, setEngagement] = useState<EngagementSummary | null>(null);
   const [engagementLoading, setEngagementLoading] = useState(false);
   const [engagementRange, setEngagementRange] = useState<EngagementRange>("7d");
-  const [onboardingFunnel, setOnboardingFunnel] = useState<OnboardingFunnelSummary | null>(null);
-  const [onboardingFunnelLoading, setOnboardingFunnelLoading] = useState(false);
-  const [onboardingFunnelRange, setOnboardingFunnelRange] = useState<OnboardingFunnelRange>("30d");
   const [pageAnalytics, setPageAnalytics] = useState<PageAnalyticsSummary | null>(null);
   const [pageAnalyticsLoading, setPageAnalyticsLoading] = useState(false);
   const [pageAnalyticsRange, setPageAnalyticsRange] = useState<PageAnalyticsRange>("7d");
@@ -957,6 +898,7 @@ export default function AdminPage() {
     locReq: 0,
     scrapbook: 0,
     failedAuth: 0,
+    businessOrgPages: 0,
   });
 
   /** When true, Events tab shows the scrapbook moderation queue instead of calendars/memorials. */
@@ -976,27 +918,6 @@ export default function AdminPage() {
   async function loadPendingCounts() {
     const next = await fetchAdminPendingBreakdown(supabase);
     setPendingCounts(next);
-  }
-
-  async function loadOnboardingFunnel(range: OnboardingFunnelRange = onboardingFunnelRange) {
-    setOnboardingFunnelLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`/api/admin/onboarding-funnel?range=${range}`, {
-        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
-      });
-      if (!res.ok) {
-        const errJson = await res.json().catch(() => ({} as { error?: string }));
-        console.error("loadOnboardingFunnel error", res.status, errJson.error ?? "");
-        return;
-      }
-      const json = (await res.json()) as OnboardingFunnelSummary;
-      setOnboardingFunnel(json);
-    } catch (err) {
-      console.error("loadOnboardingFunnel failed", err);
-    } finally {
-      setOnboardingFunnelLoading(false);
-    }
   }
 
   async function loadEngagement(range: EngagementRange = engagementRange) {
@@ -1556,7 +1477,17 @@ export default function AdminPage() {
     }
   }
 
-  async function hydrateBusinessManagerLabels(rows: BusinessListing[]) {
+  async function loadBusinesses() {
+    const query = supabase
+      .from("business_listings")
+      .select("*")
+      .order("created_at", { ascending: false });
+    const { data, error } = pendingOnly
+      ? await query.neq("is_approved", true)
+      : await query;
+    if (error) { console.error(error); return; }
+    const rows = (data ?? []) as BusinessListing[];
+    setBusinesses(rows);
     const mgrIds = [...new Set(rows.map((r) => r.managed_by_user_id).filter(Boolean))] as string[];
     if (mgrIds.length === 0) {
       setBizManagerLabels({});
@@ -1581,51 +1512,15 @@ export default function AdminPage() {
     setBizManagerLabels(next);
   }
 
-  async function loadBusinesses(page = 0, append = false) {
-    if (append) setBusinessesLoadingMore(true);
-    const from = page * BUSINESS_LISTINGS_PAGE_SIZE;
-    const to = from + BUSINESS_LISTINGS_PAGE_SIZE - 1;
-    const query = supabase
-      .from("business_listings")
-      .select(BUSINESS_LISTING_ADMIN_COLUMNS, { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(from, to);
-    const { data, error, count } = pendingOnly
-      ? await query.neq("is_approved", true)
-      : await query;
-    if (error) {
-      console.error(error);
-      if (append) setBusinessesLoadingMore(false);
-      return;
-    }
-    const rows = (data ?? []) as BusinessListing[];
-    const nextRows = append ? [...businesses, ...rows] : rows;
-    setBusinesses(nextRows);
-    setBusinessTotalCount(count ?? nextRows.length);
-    await hydrateBusinessManagerLabels(nextRows);
-    if (append) setBusinessesLoadingMore(false);
-  }
-
-  async function loadMoreBusinesses() {
-    await loadBusinesses(Math.floor(businesses.length / BUSINESS_LISTINGS_PAGE_SIZE), true);
-  }
-
-  async function loadBizClaims(page = 0, append = false) {
-    if (append) setBizClaimsLoadingMore(true);
-    const from = page * BUSINESS_CLAIMS_PAGE_SIZE;
-    const to = from + BUSINESS_CLAIMS_PAGE_SIZE - 1;
-    const { data, error, count } = await supabase
+  async function loadBizClaims() {
+    const { data, error } = await supabase
       .from("business_listing_claims")
-      .select("id, listing_id, claimant_user_id, created_at, business_listings(business_name, og_title, website_url)", {
-        count: "exact",
-      })
+      .select("id, listing_id, claimant_user_id, created_at, business_listings(business_name, og_title, website_url)")
       .eq("status", "pending")
-      .order("created_at", { ascending: false })
-      .range(from, to);
+      .order("created_at", { ascending: false });
     if (error) {
       console.error(error);
-      if (!append) setBizClaimsPending([]);
-      if (append) setBizClaimsLoadingMore(false);
+      setBizClaimsPending([]);
       return;
     }
     const rows = (data ?? []) as unknown as Array<{
@@ -1654,59 +1549,52 @@ export default function AdminPage() {
       const composed = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
       return p.display_name?.trim() || composed || p.email || `${uid.slice(0, 8)}…`;
     }
-    const nextRows = rows.map((r) => {
-      const rawNested = r.business_listings;
-      const nested = Array.isArray(rawNested) ? rawNested[0] : rawNested;
-      const listing_label = nested?.business_name || nested?.og_title || nested?.website_url || r.listing_id.slice(0, 8);
-      return {
-        id: r.id,
-        listing_id: r.listing_id,
-        claimant_user_id: r.claimant_user_id,
-        created_at: r.created_at,
-        listing_label,
-        claimant_label: claimantLabel(r.claimant_user_id),
-      };
-    });
-    const nextClaims = append ? [...bizClaimsPending, ...nextRows] : nextRows;
-    setBizClaimsPending(nextClaims);
-    setBizClaimsTotalCount(count ?? nextClaims.length);
-    if (append) setBizClaimsLoadingMore(false);
+    setBizClaimsPending(
+      rows.map((r) => {
+        const rawNested = r.business_listings;
+        const nested = Array.isArray(rawNested) ? rawNested[0] : rawNested;
+        const listing_label = nested?.business_name || nested?.og_title || nested?.website_url || r.listing_id.slice(0, 8);
+        return {
+          id: r.id,
+          listing_id: r.listing_id,
+          claimant_user_id: r.claimant_user_id,
+          created_at: r.created_at,
+          listing_label,
+          claimant_label: claimantLabel(r.claimant_user_id),
+        };
+      }),
+    );
   }
 
-  async function loadMoreBizClaims() {
-    await loadBizClaims(Math.floor(bizClaimsPending.length / BUSINESS_CLAIMS_PAGE_SIZE), true);
-  }
-
-  async function loadJobs(page = 0, append = false) {
-    if (append) setJobsLoadingMore(true);
+  async function loadBusinessOrgAdminQueues() {
     const { data: { session } } = await supabase.auth.getSession();
-    const offset = page * JOBS_PAGE_SIZE;
-    const params = new URLSearchParams({
-      pendingOnly: String(pendingOnly),
-      offset: String(offset),
-      limit: String(JOBS_PAGE_SIZE),
-    });
-    const res = await fetch(`/api/admin/jobs?${params.toString()}`, {
+    const res = await fetch("/api/business-org-pages/admin", {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      cache: "no-store",
     });
+    const json = (await res.json().catch(() => ({}))) as {
+      pages?: BusinessOrgAdminPage[];
+      claims?: BusinessOrgAdminClaim[];
+      error?: string;
+    };
     if (!res.ok) {
-      console.error("loadJobs API error", res.status);
-      if (append) setJobsLoadingMore(false);
+      console.error("loadBusinessOrgAdminQueues API error", res.status, json.error);
+      setBusinessOrgPages([]);
+      setBusinessOrgClaims([]);
       return;
     }
-    const json = await res.json();
-    const nextJobs = append ? [...jobs, ...((json.jobs ?? []) as Job[])] : ((json.jobs ?? []) as Job[]);
-    setJobs(nextJobs);
-    setJobsTotalCount(typeof json.totalCount === "number" ? json.totalCount : nextJobs.length);
-    setSelectedJobs((prev) => {
-      const visibleIds = new Set(nextJobs.map((job) => job.id));
-      return new Set([...prev].filter((id) => visibleIds.has(id)));
-    });
-    if (append) setJobsLoadingMore(false);
+    setBusinessOrgPages(json.pages ?? []);
+    setBusinessOrgClaims(json.claims ?? []);
   }
 
-  async function loadMoreJobs() {
-    await loadJobs(Math.floor(jobs.length / JOBS_PAGE_SIZE), true);
+  async function loadJobs() {
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`/api/admin/jobs?pendingOnly=${pendingOnly}`, {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+    });
+    if (!res.ok) { console.error("loadJobs API error", res.status); return; }
+    const json = await res.json();
+    setJobs((json.jobs ?? []) as Job[]);
   }
 
   async function loadStaleFlags() {
@@ -1778,66 +1666,34 @@ export default function AdminPage() {
     }
   }
 
-  async function loadUsers(page = 0, append = false, full = false) {
-    if (append) setUsersLoadingMore(true);
-    if (full) setUsersLoadingFullList(true);
+  async function loadUsers() {
     const { data: { session } } = await supabase.auth.getSession();
-    const params = new URLSearchParams({
-      status: userFilter,
-      q: debouncedUserSearch.trim(),
-      offset: String(page * USERS_PAGE_SIZE),
-      limit: String(USERS_PAGE_SIZE),
-    });
-    if (full) params.set("full", "true");
-    const res = await fetch(`/api/admin/users?${params.toString()}`, {
+    const res = await fetch("/api/admin/users", {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
     if (!res.ok) {
       // Fallback: direct query (works if RLS allows admin to read all profiles)
       let fallback = (await supabase
         .from("profiles")
-        .select("user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, referred_by, referrer_user_id")
-        .order("created_at", { ascending: false })
-        .limit(USERS_PAGE_SIZE)) as UsersFallbackQueryResult;
+        .select("user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
+        .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
       if (fallback.error) {
         fallback = (await supabase
           .from("profiles")
-          .select("user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, referred_by, referrer_user_id")
-          .order("created_at", { ascending: false })
-          .limit(USERS_PAGE_SIZE)) as UsersFallbackQueryResult;
+          .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
+          .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
       }
       if (fallback.error) {
         fallback = (await supabase
           .from("profiles")
-          .select("user_id, first_name, last_name, display_name, role, service, company_name, account_type, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at")
-          .order("created_at", { ascending: false })
-          .limit(USERS_PAGE_SIZE)) as UsersFallbackQueryResult;
+          .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
+          .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
       }
-      if (!fallback.error) {
-        const fallbackUsers = (fallback.data ?? []).map((u) => ({ ...u, email: (u as { email?: string | null }).email ?? null })) as UserProfile[];
-        setUsers(fallbackUsers);
-        setUsersTotalCount(fallbackUsers.length);
-        setUsersShowingFullList(false);
-      }
-      setUsersLoadingMore(false);
-      setUsersLoadingFullList(false);
+      if (!fallback.error) setUsers((fallback.data ?? []).map((u) => ({ ...u, email: (u as { email?: string | null }).email ?? null })) as UserProfile[]);
       return;
     }
     const json = await res.json();
-    const nextUsers = append ? [...users, ...((json.users ?? []) as UserProfile[])] : ((json.users ?? []) as UserProfile[]);
-    setUsers(nextUsers);
-    setUsersTotalCount(typeof json.totalCount === "number" ? json.totalCount : nextUsers.length);
-    setUsersShowingFullList(!!json.full || full);
-    setUsersLoadingMore(false);
-    setUsersLoadingFullList(false);
-  }
-
-  async function loadMoreUsers() {
-    await loadUsers(Math.floor(users.length / USERS_PAGE_SIZE), true, false);
-  }
-
-  async function loadFullUsersList() {
-    await loadUsers(0, false, true);
+    setUsers((json.users ?? []) as UserProfile[]);
   }
 
   async function loadGroups(search = groupSearch) {
@@ -1962,7 +1818,7 @@ export default function AdminPage() {
 
       setAuthorized(true);
       setAdminActorUserId(user.id);
-      await Promise.all([loadBusinesses(), loadBizClaims(), loadPendingCounts()]);
+      await Promise.all([loadBusinesses(), loadBizClaims(), loadBusinessOrgAdminQueues(), loadJobs(), loadUsers(), loadFlags(), loadPendingCounts()]);
       setLoading(false);
     }
     init();
@@ -1972,12 +1828,14 @@ export default function AdminPage() {
     if (!authorized) return;
     if (activeTab === "businesses") {
       void loadBusinesses();
-      if (bizClaimsPending.length === 0) void loadBizClaims();
+      void loadBizClaims();
     }
+    if (activeTab === "business_org_pages") void loadBusinessOrgAdminQueues();
     if (activeTab === "jobs") {
       loadJobs();
       loadStaleFlags();
     }
+    if (activeTab === "users") loadUsers();
     if (activeTab === "groups") loadGroups();
     if (activeTab === "flags") loadFlags();
     if (activeTab === "events") {
@@ -1989,24 +1847,11 @@ export default function AdminPage() {
     if (activeTab === "engagement") {
       void loadEngagement(engagementRange);
       void loadPageAnalytics(pageAnalyticsRange);
-      void loadOnboardingFunnel(onboardingFunnelRange);
     }
     if (activeTab === "news") void loadNews(newsFilter);
     if (activeTab === "waitlist") void loadWaitlist();
     if (activeTab === "lemon_lot") void loadLemonLot();
-  }, [pendingOnly, activeTab, authorized, engagementRange, pageAnalyticsRange, onboardingFunnelRange, newsFilter, bugsFilter]);
-
-  useEffect(() => {
-    const id = window.setTimeout(() => {
-      setDebouncedUserSearch(userSearch.trim());
-    }, 250);
-    return () => window.clearTimeout(id);
-  }, [userSearch]);
-
-  useEffect(() => {
-    if (!authorized || activeTab !== "users") return;
-    void loadUsers();
-  }, [authorized, activeTab, userFilter, debouncedUserSearch]);
+  }, [pendingOnly, activeTab, authorized, engagementRange, pageAnalyticsRange, newsFilter, bugsFilter]);
 
   useEffect(() => {
     if (!authorized) return;
@@ -2072,6 +1917,48 @@ export default function AdminPage() {
     });
   }
 
+  async function reviewBusinessOrgPage(pageId: string, action: "approve" | "deny") {
+    setActionLoading(`${pageId}-business-org-${action}`);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`/api/business-org-pages/admin/pages/${action}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token ?? ""}`,
+      },
+      body: JSON.stringify({ pageId }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      alert(json.error ?? "Could not review business page.");
+    } else {
+      showToast(action === "approve" ? "Business / Organization page approved." : "Business / Organization page denied.");
+      await Promise.all([loadBusinessOrgAdminQueues(), loadPendingCounts()]);
+    }
+    setActionLoading(null);
+  }
+
+  async function reviewBusinessOrgClaim(claimId: string, action: "approve" | "deny") {
+    setActionLoading(`${claimId}-business-org-claim-${action}`);
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch("/api/business-org-pages/admin/claims", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token ?? ""}`,
+      },
+      body: JSON.stringify({ claimId, action }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      alert(json.error ?? "Could not review business page claim.");
+    } else {
+      showToast(action === "approve" ? "Business page claim approved." : "Business page claim denied.");
+      await Promise.all([loadBusinessOrgAdminQueues(), loadBusinesses(), loadPendingCounts()]);
+    }
+    setActionLoading(null);
+  }
+
   function revokeListingManager(listingId: string) {
     askConfirm("Remove this user as listing manager? They will lose edit access.", async () => {
       setActionLoading(`${listingId}-revoke-mgr`);
@@ -2113,7 +2000,6 @@ export default function AdminPage() {
   async function approveJob(id: string) {
     // Optimistically remove from pending list immediately
     if (pendingOnly) setJobs((prev) => prev.filter((j) => j.id !== id));
-    if (pendingOnly) setJobsTotalCount((prev) => Math.max(0, prev - 1));
     setPendingCounts((prev) => ({ ...prev, jobs: Math.max(0, prev.jobs - 1) }));
     showToast("Job approved!");
 
@@ -2122,7 +2008,7 @@ export default function AdminPage() {
       method: "POST",
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
-    await Promise.all([loadJobs(), loadPendingCounts()]);
+    await loadPendingCounts();
   }
 
   async function rejectJob(id: string) {
@@ -2140,8 +2026,7 @@ export default function AdminPage() {
       } else {
         showToast("Job removed.");
         setJobs((prev) => prev.filter((j) => j.id !== id));
-        setJobsTotalCount((prev) => Math.max(0, prev - 1));
-        await Promise.all([loadJobs(), loadPendingCounts()]);
+        await loadPendingCounts();
       }
       setActionLoading(null);
     });
@@ -2160,14 +2045,13 @@ export default function AdminPage() {
     ));
     if (pendingOnly) {
       setJobs((prev) => prev.filter((j) => !selectedJobs.has(j.id)));
-      setJobsTotalCount((prev) => Math.max(0, prev - selectedJobs.size));
     } else {
       setJobs((prev) => prev.map((j) => selectedJobs.has(j.id) ? { ...j, is_approved: true } : j));
     }
     showToast(`${ids.length} job${ids.length > 1 ? "s" : ""} approved!`);
     setSelectedJobs(new Set());
     setBatchActing(false);
-    await Promise.all([loadJobs(), loadPendingCounts()]);
+    await loadPendingCounts();
   }
 
   async function batchRejectJobs() {
@@ -2183,11 +2067,10 @@ export default function AdminPage() {
         })
       ));
       setJobs((prev) => prev.filter((j) => !selectedJobs.has(j.id)));
-      setJobsTotalCount((prev) => Math.max(0, prev - selectedJobs.size));
       showToast(`${ids.length} job${ids.length > 1 ? "s" : ""} deleted.`);
       setSelectedJobs(new Set());
       setBatchActing(false);
-      await Promise.all([loadJobs(), loadPendingCounts()]);
+      await loadPendingCounts();
     });
   }
 
@@ -2250,8 +2133,8 @@ export default function AdminPage() {
     try {
       if (status === "verified") {
         const target = users.find((u) => u.user_id === userId);
-        if (target && !isSignupProfileComplete(target)) {
-          alert("Cannot verify: signup profile is incomplete (name, service/company, etc.).");
+        if (target && blocksSignupApproval(target)) {
+          alert("Cannot verify: new signup must finish onboarding with first and last name.");
           return;
         }
 
@@ -2553,35 +2436,16 @@ export default function AdminPage() {
     if (userIds.length > 0) {
       const { data: profiles } = await supabase
         .from("profiles")
-        .select("user_id, first_name, last_name, display_name, name, email")
+        .select("user_id, first_name, last_name")
         .in("user_id", userIds);
-      type ReporterProfile = {
-        user_id: string;
-        first_name: string | null;
-        last_name: string | null;
-        display_name: string | null;
-        name: string | null;
-        email: string | null;
-      };
-      const profileMap = new Map(
-        (profiles ?? []).map((p) => {
-          const row = p as ReporterProfile;
-          return [row.user_id, row] as const;
-        }),
+      const nameMap = new Map(
+        (profiles ?? []).map((p: { user_id: string; first_name: string | null; last_name: string | null }) => [
+          p.user_id,
+          `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Unknown",
+        ]),
       );
       reports.forEach((r) => {
-        if (!r.user_id) return;
-        const p = profileMap.get(r.user_id);
-        if (!p) return;
-        r.reporter_first_name = p.first_name?.trim() || null;
-        r.reporter_last_name = p.last_name?.trim() || null;
-        r.reporter_email = p.email?.trim() || null;
-        r.reporter_name =
-          p.display_name?.trim() ||
-          p.name?.trim() ||
-          `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
-          p.email?.trim() ||
-          null;
+        r.reporter_name = r.user_id ? (nameMap.get(r.user_id) ?? null) : null;
       });
     }
     setBugReports(reports);
@@ -3159,55 +3023,7 @@ export default function AdminPage() {
     return (
       <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box", background: t.bg, minHeight: "100vh", color: t.text, overflowX: "clip" }}>
         <NavBar />
-        <div style={{ maxWidth: 1000, width: "100%", minWidth: 0, margin: "0 auto", boxSizing: "border-box" }} aria-busy="true">
-          <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 20, flexWrap: "wrap" }}>
-            <div style={{ width: 210, height: 38, borderRadius: 10, background: t.badgeBg }} />
-            <div style={{ width: 94, height: 22, borderRadius: 999, background: t.badgeBg }} />
-            <div style={{ width: 72, height: 18, borderRadius: 8, background: t.badgeBg }} />
-          </div>
-          <div style={{ display: "flex", gap: 8, marginTop: 24, flexWrap: "wrap" }}>
-            {Array.from({ length: 8 }).map((_, index) => (
-              <div
-                key={index}
-                style={{
-                  width: index === 0 ? 116 : 86,
-                  height: 36,
-                  borderRadius: 999,
-                  background: index === 0 ? "#111" : t.badgeBg,
-                  opacity: index === 0 ? 0.95 : 0.8,
-                }}
-              />
-            ))}
-          </div>
-          <div style={{ marginTop: 20, display: "grid", gap: 14 }}>
-            {Array.from({ length: 3 }).map((_, index) => (
-              <div
-                key={index}
-                style={{
-                  border: `1px solid ${t.border}`,
-                  borderRadius: 14,
-                  background: t.surface,
-                  overflow: "hidden",
-                  minHeight: 136,
-                  display: "flex",
-                }}
-              >
-                <div style={{ width: 140, height: 110, margin: 13, borderRadius: 10, background: t.badgeBg, flexShrink: 0 }} />
-                <div style={{ padding: "18px 16px", flex: 1, minWidth: 0 }}>
-                  <div style={{ width: "42%", height: 18, borderRadius: 8, background: t.badgeBg }} />
-                  <div style={{ width: "62%", height: 12, borderRadius: 8, background: t.badgeBg, marginTop: 10 }} />
-                  <div style={{ width: "90%", height: 12, borderRadius: 8, background: t.badgeBg, marginTop: 14 }} />
-                  <div style={{ width: "74%", height: 12, borderRadius: 8, background: t.badgeBg, marginTop: 8 }} />
-                  <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-                    <div style={{ width: 78, height: 28, borderRadius: 8, background: t.badgeBg }} />
-                    <div style={{ width: 92, height: 28, borderRadius: 8, background: t.badgeBg }} />
-                    <div style={{ width: 68, height: 28, borderRadius: 8, background: t.badgeBg }} />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <div style={{ marginTop: 40, textAlign: "center", color: t.textMuted }}>Loading...</div>
       </div>
     );
   }
@@ -3225,11 +3041,11 @@ export default function AdminPage() {
     );
   }
 
+  const pendingBizCount = businesses.filter((b) => !b.is_approved).length;
+  const pendingJobCount = jobs.filter((j) => !j.is_approved).length;
+  const unreviewedFlagCount = flags.filter((f) => !f.reviewed).length;
   const adminTotalPending = sumAdminPending(pendingCounts);
   const directoryPendingTotal = pendingCounts.dir + pendingCounts.locReq;
-  const hasMoreBusinesses = businesses.length < businessTotalCount;
-  const hasMoreBizClaims = bizClaimsPending.length < bizClaimsTotalCount;
-  const hasMoreJobs = jobs.length < jobsTotalCount;
 
   return (
     <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box", background: t.bg, minHeight: "100vh", color: t.text, overflowX: "clip" }}>
@@ -3532,6 +3348,10 @@ export default function AdminPage() {
             Businesses
             {tabNotifyBadge(pendingCounts.biz)}
           </button>
+          <button type="button" style={tabStyle("business_org_pages")} onClick={() => setActiveTab("business_org_pages")}>
+            Business Pages
+            {tabNotifyBadge(pendingCounts.businessOrgPages)}
+          </button>
           <button type="button" style={tabStyle("jobs")} onClick={() => setActiveTab("jobs")}>
             Jobs
             {tabNotifyBadge(pendingCounts.jobs + pendingCounts.jobsStale)}
@@ -3632,19 +3452,6 @@ export default function AdminPage() {
                     </div>
                   ))}
                 </div>
-                {hasMoreBizClaims && (
-                  <div style={{ display: "flex", justifyContent: "center", marginTop: 14 }}>
-                    <button
-                      type="button"
-                      style={{ ...actionBtn("#92400e"), minWidth: 170, justifyContent: "center", display: "flex", alignItems: "center", gap: 6 }}
-                      disabled={bizClaimsLoadingMore}
-                      onClick={() => void loadMoreBizClaims()}
-                    >
-                      {bizClaimsLoadingMore && <span className="btn-spinner" />}
-                      {bizClaimsLoadingMore ? "Loading..." : `Load more claims (${bizClaimsPending.length}/${bizClaimsTotalCount})`}
-                    </button>
-                  </div>
-                )}
               </div>
             )}
             {businesses.length === 0 && (
@@ -3871,19 +3678,120 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
-            {hasMoreBusinesses && (
-              <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
-                <button
-                  type="button"
-                  style={{ ...actionBtn("#374151"), minWidth: 160, justifyContent: "center", display: "flex", alignItems: "center", gap: 6 }}
-                  disabled={businessesLoadingMore}
-                  onClick={() => void loadMoreBusinesses()}
-                >
-                  {businessesLoadingMore && <span className="btn-spinner" />}
-                  {businessesLoadingMore ? "Loading..." : `Load more (${businesses.length}/${businessTotalCount})`}
-                </button>
+          </div>
+        )}
+
+        {/* ── BUSINESS / ORG PAGES TAB ── */}
+        {activeTab === "business_org_pages" && (
+          <div style={{ marginTop: 20, display: "grid", gap: 18 }}>
+            <section style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 14, background: t.surface }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900 }}>Pending Business / Organization Pages</h2>
+              <p style={{ margin: "6px 0 0", color: t.textMuted, fontSize: 13 }}>
+                Linked Email Validation is a health check against the owning auth account. Do not approve mismatches.
+              </p>
+              <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                {businessOrgPages.length === 0 ? (
+                  <div style={{ color: t.textFaint }}>No pending Business / Organization pages.</div>
+                ) : (
+                  businessOrgPages.map((page) => (
+                    <article key={page.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 12, background: t.surface }}>
+                      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                        <div style={{ width: 96, height: 62, borderRadius: 12, border: `1px solid ${t.border}`, background: t.surface, display: "grid", placeItems: "center", overflow: "hidden" }}>
+                          <img src={page.logo_url} alt={`${page.business_name} logo`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 900, color: t.text }}>{page.business_name}</div>
+                          <div style={{ fontSize: 13, color: t.textMuted }}>Business Email: {page.business_email}</div>
+                          <div style={{ fontSize: 13, color: t.textMuted }}>Linked Account Email: {page.linked_account_email}</div>
+                          <div style={{ fontSize: 13, color: t.textMuted }}>Authenticated User Email: {page.owner_auth_email ?? "Unknown"}</div>
+                        </div>
+                      </div>
+                      <p style={{ color: t.textMuted, lineHeight: 1.45 }}>{page.description}</p>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                        <span
+                          style={{
+                            borderRadius: 999,
+                            padding: "5px 9px",
+                            fontSize: 12,
+                            fontWeight: 900,
+                            background: page.linked_email_matches_account ? "#dcfce7" : "#fee2e2",
+                            color: page.linked_email_matches_account ? "#166534" : "#991b1b",
+                          }}
+                        >
+                          Linked Email Validation: {page.linked_email_matches_account ? "YES" : "NO"}
+                        </span>
+                        <span style={{ fontSize: 12, color: t.textMuted }}>Review: {page.verification_status}</span>
+                        <span style={{ fontSize: 12, color: t.textMuted }}>Billing: {page.subscription_status}</span>
+                        <button
+                          type="button"
+                          style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }}
+                          disabled={!page.linked_email_matches_account || actionLoading === `${page.id}-business-org-approve`}
+                          onClick={() => void reviewBusinessOrgPage(page.id, "approve")}
+                        >
+                          {actionLoading === `${page.id}-business-org-approve` && <span className="btn-spinner" />}
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          style={{ ...actionBtn("#6b7280"), display: "flex", alignItems: "center", gap: 5 }}
+                          disabled={actionLoading === `${page.id}-business-org-deny`}
+                          onClick={() => void reviewBusinessOrgPage(page.id, "deny")}
+                        >
+                          {actionLoading === `${page.id}-business-org-deny` && <span className="btn-spinner" />}
+                          Deny
+                        </button>
+                      </div>
+                    </article>
+                  ))
+                )}
               </div>
-            )}
+            </section>
+
+            <section style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 14, background: t.surface }}>
+              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900 }}>Pending Directory Link Requests</h2>
+              <p style={{ margin: "6px 0 0", color: t.textMuted, fontSize: 13 }}>
+                Approve a link to send directory visitors to the business profile inside EOD HUB instead of an external website.
+              </p>
+              <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                {businessOrgClaims.length === 0 ? (
+                  <div style={{ color: t.textFaint }}>No pending business page claims.</div>
+                ) : (
+                  businessOrgClaims.map((claim) => {
+                    const listing = Array.isArray(claim.business_listings) ? claim.business_listings[0] : claim.business_listings;
+                    const page = Array.isArray(claim.business_organization_pages) ? claim.business_organization_pages[0] : claim.business_organization_pages;
+                    const listingLabel = listing?.business_name || listing?.og_title || listing?.website_url || claim.business_listing_id.slice(0, 8);
+                    return (
+                      <article key={claim.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 12, background: t.surface }}>
+                        <div style={{ fontWeight: 900, color: t.text }}>{listingLabel}</div>
+                        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>Claiming page: {page?.business_name ?? claim.business_org_page_id}</div>
+                        <div style={{ fontSize: 13, color: t.textMuted }}>Page email: {page?.business_email ?? "Unknown"}</div>
+                        <div style={{ fontSize: 12, color: t.textFaint, marginTop: 2 }}>Requested {new Date(claim.created_at).toLocaleString()}</div>
+                        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }}
+                            disabled={actionLoading === `${claim.id}-business-org-claim-approve`}
+                            onClick={() => void reviewBusinessOrgClaim(claim.id, "approve")}
+                          >
+                            {actionLoading === `${claim.id}-business-org-claim-approve` && <span className="btn-spinner" />}
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            style={{ ...actionBtn("#6b7280"), display: "flex", alignItems: "center", gap: 5 }}
+                            disabled={actionLoading === `${claim.id}-business-org-claim-deny`}
+                            onClick={() => void reviewBusinessOrgClaim(claim.id, "deny")}
+                          >
+                            {actionLoading === `${claim.id}-business-org-claim-deny` && <span className="btn-spinner" />}
+                            Deny
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })
+                )}
+              </div>
+            </section>
           </div>
         )}
 
@@ -4087,27 +3995,27 @@ export default function AdminPage() {
                 {pendingOnly ? "No pending job submissions." : "No jobs found."}
               </div>
             )}
-            <div style={{ display: "grid", gap: 14, maxWidth: "100%", minWidth: 0 }}>
+            <div style={{ display: "grid", gap: 14 }}>
               {jobs.map((job) => (
                 <div
                   key={job.id}
-                  style={{ border: `1px solid ${selectedJobs.has(job.id) ? "#6366f1" : t.border}`, borderRadius: 14, padding: 16, background: selectedJobs.has(job.id) ? (t.bg === "#fff" || t.bg === "#f9fafb" ? "#f5f3ff" : "#1e1b4b22") : t.surface, transition: "border-color 0.1s", overflow: "hidden", maxWidth: "100%", boxSizing: "border-box" }}
+                  style={{ border: `1px solid ${selectedJobs.has(job.id) ? "#6366f1" : t.border}`, borderRadius: 14, padding: 16, background: selectedJobs.has(job.id) ? (t.bg === "#fff" || t.bg === "#f9fafb" ? "#f5f3ff" : "#1e1b4b22") : t.surface, transition: "border-color 0.1s" }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: 1, minWidth: 0, maxWidth: "100%" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flex: 1, minWidth: 0 }}>
                       <input
                         type="checkbox"
                         checked={selectedJobs.has(job.id)}
                         onChange={() => toggleJobSelection(job.id)}
                         style={{ width: 16, height: 16, marginTop: 3, cursor: "pointer", flexShrink: 0 }}
                       />
-                      <div style={{ flex: 1, minWidth: 0, maxWidth: "100%" }}>
-                        <div style={{ fontWeight: 900, fontSize: 17, color: t.text, ...jobCardTextStyle }}>{job.title || "Untitled Job"}</div>
-                        <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted, ...jobCardTextStyle }}>{job.company_name || "Unknown company"}</div>
-                        <div style={{ marginTop: 2, fontSize: 13, color: t.textMuted, ...jobCardTextStyle }}>{[job.location, job.category].filter(Boolean).join(" · ")}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 900, fontSize: 17, color: t.text }}>{job.title || "Untitled Job"}</div>
+                        <div style={{ marginTop: 4, fontSize: 14, color: t.textMuted }}>{job.company_name || "Unknown company"}</div>
+                        <div style={{ marginTop: 2, fontSize: 13, color: t.textMuted }}>{[job.location, job.category].filter(Boolean).join(" · ")}</div>
                         {job.description && (
-                          <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden", ...jobCardTextStyle }}>
-                            {formatJobDescriptionPreview(job.description)}
+                          <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden" }}>
+                            {job.description}
                           </div>
                         )}
                         <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint, display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -4117,29 +4025,11 @@ export default function AdminPage() {
                           )}
                           <span>{job.created_at ? new Date(job.created_at).toLocaleDateString() : ""}</span>
                           <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "1px 8px" }}>{formatJobSourceBadge(job.source_type)}</span>
-                          {job.source_type?.toLowerCase() === "reliefweb" && job.relevance_score != null && (() => {
-                            const badge = reliefWebConfidenceBadge(job.import_metadata?.relevance_confidence);
-                            return (
-                              <>
-                                <span style={{ background: badge.bg, color: badge.color, borderRadius: 20, padding: "1px 8px", fontWeight: 800 }}>
-                                  {badge.label}
-                                </span>
-                                <span style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 20, padding: "1px 8px", fontWeight: 700 }}>
-                                  Score: {job.relevance_score}
-                                </span>
-                                {job.import_metadata?.suppressed && (
-                                  <span style={{ background: "#fee2e2", color: "#b91c1c", borderRadius: 20, padding: "1px 8px", fontWeight: 700 }}>
-                                    Suppressed
-                                  </span>
-                                )}
-                                {job.import_metadata?.needs_review && !job.import_metadata?.suppressed && (
-                                  <span style={{ background: "#fef9c3", color: "#854d0e", borderRadius: 20, padding: "1px 8px", fontWeight: 700 }}>
-                                    Needs review
-                                  </span>
-                                )}
-                              </>
-                            );
-                          })()}
+                          {job.source_type?.toLowerCase() === "reliefweb" && job.relevance_score != null && (
+                            <span style={{ background: job.import_metadata?.strong_match ? "#dcfce7" : t.badgeBg, color: job.import_metadata?.strong_match ? "#15803d" : t.badgeText, borderRadius: 20, padding: "1px 8px", fontWeight: 700 }}>
+                              Score: {job.relevance_score}{job.import_metadata?.strong_match ? " · Strong match" : ""}
+                            </span>
+                          )}
                         </div>
                         {job.source_type?.toLowerCase() === "reliefweb" && (
                           <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>
@@ -4152,26 +4042,10 @@ export default function AdminPage() {
                             {job.import_metadata?.deadline && (
                               <div><strong>Deadline:</strong> {new Date(job.import_metadata.deadline).toLocaleDateString()}</div>
                             )}
-                            {job.import_metadata?.themes && job.import_metadata.themes.length > 0 && (
-                              <div><strong>Themes:</strong> {job.import_metadata.themes.join(", ")}</div>
-                            )}
-                            {job.import_metadata?.career_categories && job.import_metadata.career_categories.length > 0 && (
-                              <div><strong>Career categories:</strong> {job.import_metadata.career_categories.join(", ")}</div>
-                            )}
-                            {job.import_metadata?.relevance_reasons && job.import_metadata.relevance_reasons.length > 0 && (
-                              <div style={{ marginTop: 6 }}>
-                                <strong>Score reasons:</strong>
-                                <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>
-                                  {job.import_metadata.relevance_reasons.slice(0, 8).map((reason, i) => (
-                                    <li key={`${reason}-${i}`} style={{ fontSize: 11, color: reason.startsWith("-") ? "#b91c1c" : "#15803d" }}>{reason}</li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
                             {job.import_metadata?.matched_keywords && job.import_metadata.matched_keywords.length > 0 && (
                               <div style={{ marginTop: 4, display: "flex", flexWrap: "wrap", gap: 4 }}>
-                                {[...new Set(job.import_metadata.matched_keywords)].slice(0, 12).map((kw, i) => (
-                                  <span key={`${kw}-${i}`} style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 12, padding: "2px 8px", fontSize: 11 }}>{kw}</span>
+                                {job.import_metadata.matched_keywords.slice(0, 12).map((kw) => (
+                                  <span key={kw} style={{ background: t.badgeBg, color: t.badgeText, borderRadius: 12, padding: "2px 8px", fontSize: 11 }}>{kw}</span>
                                 ))}
                               </div>
                             )}
@@ -4184,18 +4058,7 @@ export default function AdminPage() {
                         <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Live</span>
                       )}
                       {!job.is_approved && (
-                        <button
-                          style={{
-                            ...actionBtn("#16a34a"),
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 5,
-                            opacity: job.source_type?.toLowerCase() === "reliefweb" && job.import_metadata?.suppressed ? 0.45 : 1,
-                          }}
-                          disabled={actionLoading === job.id || (job.source_type?.toLowerCase() === "reliefweb" && job.import_metadata?.suppressed)}
-                          title={job.source_type?.toLowerCase() === "reliefweb" && job.import_metadata?.suppressed ? "Suppressed ReliefWeb listings cannot be approved" : undefined}
-                          onClick={() => approveJob(job.id)}
-                        >
+                        <button style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }} disabled={actionLoading === job.id} onClick={() => approveJob(job.id)}>
                           {actionLoading === job.id && <span className="btn-spinner" />}
                           Approve
                         </button>
@@ -4209,19 +4072,6 @@ export default function AdminPage() {
                 </div>
               ))}
             </div>
-            {hasMoreJobs && (
-              <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
-                <button
-                  type="button"
-                  style={{ ...actionBtn("#374151"), minWidth: 160, justifyContent: "center", display: "flex", alignItems: "center", gap: 6 }}
-                  disabled={jobsLoadingMore}
-                  onClick={() => void loadMoreJobs()}
-                >
-                  {jobsLoadingMore && <span className="btn-spinner" />}
-                  {jobsLoadingMore ? "Loading..." : `Load more (${jobs.length}/${jobsTotalCount})`}
-                </button>
-              </div>
-            )}
               </>
             )}
           </div>
@@ -4395,13 +4245,10 @@ export default function AdminPage() {
           <div style={{ marginTop: 20 }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, marginBottom: 14 }}>
               <div style={{ display: "flex", gap: 6 }}>
-                {(["all", "pending", "onboarding", "verified", "unverified", "denied"] as const).map((f) => (
+                {(["all", "pending", "onboarding", "verified", "denied"] as const).map((f) => (
                   <button
                     key={f}
-                    onClick={() => {
-                      setUsersShowingFullList(false);
-                      setUserFilter(f);
-                    }}
+                    onClick={() => setUserFilter(f)}
                     style={{
                       padding: "6px 14px", borderRadius: 20, fontSize: 13, fontWeight: 700, cursor: "pointer",
                       border: userFilter === f ? "none" : `1px solid ${t.border}`,
@@ -4410,7 +4257,10 @@ export default function AdminPage() {
                     }}
                   >
                     {f === "onboarding" ? "Onboarding" : f.charAt(0).toUpperCase() + f.slice(1)}
-                    {userFilter === f && <span style={{ opacity: 0.7, marginLeft: 6 }}>({usersTotalCount})</span>}
+                    {" "}
+                    <span style={{ opacity: 0.7 }}>
+                      ({users.filter((u) => userMatchesStatusFilter(u, f)).length})
+                    </span>
                   </button>
                 ))}
               </div>
@@ -4432,51 +4282,14 @@ export default function AdminPage() {
                   }}
                 />
                 {userSearch.trim() && (
-                  <button
-                    type="button"
-                    style={actionBtn("#6b7280")}
-                    onClick={() => {
-                      setUsersShowingFullList(false);
-                      setUserSearch("");
-                    }}
-                  >
+                  <button type="button" style={actionBtn("#6b7280")} onClick={() => setUserSearch("")}>
                     Clear
                   </button>
                 )}
-                {userFilter === "onboarding" && (
-                  <button
-                    type="button"
-                    onClick={() => downloadOnboardingUsersCsv(users)}
-                    disabled={users.length === 0}
-                    style={{
-                      ...actionBtn("#374151"),
-                      opacity: users.length === 0 ? 0.5 : 1,
-                      cursor: users.length === 0 ? "not-allowed" : "pointer",
-                    }}
-                  >
-                    Export CSV
-                  </button>
-                )}
                 <button type="button" onClick={() => void loadUsers()} style={actionBtn("#374151")}>↻ Refresh</button>
-                <button
-                  type="button"
-                  onClick={() => void loadFullUsersList()}
-                  disabled={usersLoadingFullList || usersShowingFullList}
-                  style={{
-                    ...actionBtn("#6b7280"),
-                    opacity: usersLoadingFullList || usersShowingFullList ? 0.65 : 1,
-                    cursor: usersLoadingFullList || usersShowingFullList ? "default" : "pointer",
-                  }}
-                >
-                  {usersLoadingFullList ? "Loading full list..." : usersShowingFullList ? "Full list shown" : "Show full list"}
-                </button>
               </div>
             </div>
-            <div style={{ color: t.textFaint, fontSize: 13, marginBottom: 10 }}>
-              Showing {users.length} of {usersTotalCount} {usersTotalCount === 1 ? "user" : "users"}
-              {usersShowingFullList ? " (full list)" : ""}
-            </div>
-            {users.length === 0 && (
+            {filteredAdminUsers.length === 0 && (
               <div
                 style={{
                   padding: 32,
@@ -4492,14 +4305,13 @@ export default function AdminPage() {
               </div>
             )}
             <div style={{ display: "grid", gap: 10 }}>
-              {users.map((u) => {
+              {filteredAdminUsers.map((u) => {
                 const name = adminUserDisplayName(u);
                 const isGrandfathered = isGrandfatheredSignupProfile(u);
-                const isIncompleteSignup = !!u.signup_incomplete || !isSignupProfileComplete(u);
-                const missingSignupFields = isIncompleteSignup && !isGrandfathered
-                  ? signupProfileMissingFields(u)
-                  : [];
-                const canVerify = isSignupProfileComplete(u);
+                const isIncompleteSignup = !!u.signup_incomplete || blocksSignupApproval(u);
+                const missingSignupFields =
+                  !hasRequiredSignupNames(u) ? signupProfileMissingFields(u).filter((f) => f === "first name" || f === "last name") : [];
+                const canVerify = !blocksSignupApproval(u);
                 const isVerified = u.verification_status === "verified";
                 const isDenied = u.verification_status === "denied";
                 const isPending = isAtAdminReviewTier(u);
@@ -4530,23 +4342,6 @@ export default function AdminPage() {
                           ? [u.company_name, u.email].filter(Boolean).join(" · ")
                           : [u.role, u.service, u.email].filter(Boolean).join(" · ")}
                       </div>
-                      {u.referred_by_name && (
-                        <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
-                          Referred by:{" "}
-                          {u.referrer_user_id ? (
-                            <a
-                              href={`/profile/${u.referrer_user_id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              style={{ color: "#2563eb", fontWeight: 600, textDecoration: "none" }}
-                            >
-                              {u.referred_by_name}
-                            </a>
-                          ) : (
-                            <span style={{ fontWeight: 600 }}>{u.referred_by_name}</span>
-                          )}
-                        </div>
-                      )}
                       {missingSignupFields.length > 0 && (
                         <div style={{ fontSize: 12, color: isGrandfathered ? t.textMuted : "#c2410c", marginTop: 4, fontWeight: 600 }}>
                           {isGrandfathered ? "Legacy — missing " : "Missing: "}
@@ -4563,7 +4358,7 @@ export default function AdminPage() {
                           disabled={actionLoading === u.user_id + "-verify" || !canVerify}
                           title={
                             !canVerify
-                              ? "Signup must finish onboarding (name, service/company) before approval"
+                              ? "New signup must finish onboarding with first and last name"
                               : undefined
                           }
                           onClick={() => setVerification(u.user_id, "verified")}
@@ -4635,19 +4430,6 @@ export default function AdminPage() {
                 );
               })}
             </div>
-            {users.length < usersTotalCount && !usersShowingFullList && (
-              <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
-                <button
-                  type="button"
-                  style={{ ...actionBtn("#374151"), minWidth: 160, justifyContent: "center", display: "flex", alignItems: "center", gap: 6 }}
-                  disabled={usersLoadingMore}
-                  onClick={() => void loadMoreUsers()}
-                >
-                  {usersLoadingMore && <span className="btn-spinner" />}
-                  {usersLoadingMore ? "Loading..." : `Load more (${users.length}/${usersTotalCount})`}
-                </button>
-              </div>
-            )}
           </div>
         )}
         {/* ── BUGS TAB ── */}
@@ -4726,22 +4508,7 @@ export default function AdminPage() {
                           </>
                         )}
                       </div>
-                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, wordBreak: "break-word" }}>
-                        <strong style={{ color: t.textMuted }}>First name:</strong> {r.reporter_first_name ?? "—"}
-                        {" · "}
-                        <strong style={{ color: t.textMuted }}>Last name:</strong> {r.reporter_last_name ?? "—"}
-                      </div>
-                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, wordBreak: "break-all" }}>
-                        <strong style={{ color: t.textMuted }}>Email:</strong>{" "}
-                        {r.reporter_email ? (
-                          <a href={`mailto:${r.reporter_email}`} style={{ color: "#2563eb", textDecoration: "none" }}>
-                            {r.reporter_email}
-                          </a>
-                        ) : (
-                          "—"
-                        )}
-                      </div>
-                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, wordBreak: "break-all" }}>
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6, wordBreak: "break-all" }}>
                         <strong style={{ color: t.textMuted }}>User ID:</strong> {r.user_id ?? "—"}
                       </div>
                       <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, wordBreak: "break-all" }}>
@@ -5002,153 +4769,6 @@ export default function AdminPage() {
                   {engagementLoading ? "Refreshing…" : "Refresh"}
                 </button>
               </div>
-            </div>
-
-            {/* Onboarding funnel */}
-            <div
-              style={{
-                border: `1px solid ${t.border}`,
-                borderRadius: 14,
-                padding: "16px 18px",
-                background: t.surface,
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: 12,
-                  flexWrap: "wrap",
-                  marginBottom: 14,
-                }}
-              >
-                <div>
-                  <div style={{ fontWeight: 900, fontSize: 16, color: t.text }}>Signup funnel</div>
-                  <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
-                    Where new users drop off between account creation and admin approval.
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {(["7d", "30d", "90d"] as const).map((r) => {
-                    const active = onboardingFunnelRange === r;
-                    return (
-                      <button
-                        key={r}
-                        type="button"
-                        onClick={() => setOnboardingFunnelRange(r)}
-                        style={{
-                          padding: "6px 12px",
-                          borderRadius: 8,
-                          border: "none",
-                          fontWeight: 700,
-                          fontSize: 12,
-                          cursor: "pointer",
-                          background: active ? "#111" : t.badgeBg,
-                          color: active ? "white" : t.text,
-                        }}
-                      >
-                        {r === "7d" ? "7 days" : r === "30d" ? "30 days" : "90 days"}
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={() => void loadOnboardingFunnel(onboardingFunnelRange)}
-                    disabled={onboardingFunnelLoading}
-                    style={{
-                      padding: "6px 12px",
-                      borderRadius: 8,
-                      border: `1px solid ${t.border}`,
-                      background: t.surface,
-                      color: t.text,
-                      fontWeight: 600,
-                      fontSize: 12,
-                      cursor: onboardingFunnelLoading ? "default" : "pointer",
-                      opacity: onboardingFunnelLoading ? 0.6 : 1,
-                    }}
-                  >
-                    {onboardingFunnelLoading ? "…" : "Refresh"}
-                  </button>
-                </div>
-              </div>
-
-              {onboardingFunnel?.note && (
-                <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 12 }}>{onboardingFunnel.note}</div>
-              )}
-
-              {onboardingFunnel && (
-                <>
-                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16, fontSize: 13, color: t.textMuted }}>
-                    <span>
-                      <strong style={{ color: t.text }}>{onboardingFunnel.cohort_signups}</strong> accounts with funnel events
-                    </span>
-                    {onboardingFunnel.incomplete_profiles_no_events > 0 && (
-                      <span>
-                        <strong style={{ color: "#c2410c" }}>{onboardingFunnel.incomplete_profiles_no_events}</strong> stuck before onboarding (no profile fields)
-                      </span>
-                    )}
-                  </div>
-
-                  <div style={{ display: "grid", gap: 8 }}>
-                    {onboardingFunnel.funnel.map((row, index) => {
-                      const maxUsers = onboardingFunnel.funnel[0]?.users || 1;
-                      const widthPct = Math.max(4, Math.round((row.users / maxUsers) * 100));
-                      return (
-                        <div key={row.step} style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "220px 1fr 80px", gap: 10, alignItems: "center" }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>
-                            {index + 1}. {row.label}
-                          </div>
-                          <div style={{ background: t.badgeBg, borderRadius: 6, height: 22, overflow: "hidden" }}>
-                            <div
-                              style={{
-                                width: `${widthPct}%`,
-                                height: "100%",
-                                background: index === 0 ? "#374151" : "#2563eb",
-                                borderRadius: 6,
-                                minWidth: row.users > 0 ? 8 : 0,
-                              }}
-                            />
-                          </div>
-                          <div style={{ fontSize: 12, color: t.textMuted, textAlign: isMobile ? "left" : "right" }}>
-                            {row.users}
-                            {row.conversion_from_start_pct != null && index > 0 && (
-                              <span style={{ marginLeft: 6 }}>({row.conversion_from_start_pct}%)</span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {onboardingFunnel.drop_offs.length > 0 && (
-                    <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${t.border}` }}>
-                      <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 8, color: t.text }}>Last step reached (not yet verified)</div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        {onboardingFunnel.drop_offs.slice(0, 6).map((d) => (
-                          <span
-                            key={d.step}
-                            style={{
-                              background: "#ffedd5",
-                              color: "#9a3412",
-                              fontSize: 12,
-                              fontWeight: 700,
-                              padding: "4px 10px",
-                              borderRadius: 20,
-                            }}
-                          >
-                            {d.label}: {d.users}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {!onboardingFunnel && onboardingFunnelLoading && (
-                <div style={{ fontSize: 13, color: t.textMuted }}>Loading funnel…</div>
-              )}
             </div>
 
             {!engagement && engagementLoading && (

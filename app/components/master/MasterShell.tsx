@@ -14,18 +14,15 @@ import { isMemberPaywallExemptPath, isExemptFromMemberPaywall, shouldEnforceMemb
 import { memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { MasterShellProvider } from "./masterShellContext";
 import {
+  ONBOARDING_GATE_PROFILE_SELECT,
   onboardingRedirectUrl,
   resolvePreAccessRedirectPath,
   shouldRedirectToOnboarding,
+  type OnboardingGateProfile,
 } from "../../lib/onboardingGate";
 import { fetchViewerProfileCached } from "../../lib/queries/viewerProfile";
 import { hasFullPlatformAccess } from "../../lib/verificationAccess";
 import { ensureWelcomeSidebarOnce } from "../../lib/welcomeSidebarClient";
-import {
-  COMPACT_DESKTOP_MAX,
-  MOBILE_SHELL_MAX,
-  SHRINK_COLLAPSE_RATIO,
-} from "../../lib/viewportLayout";
 
 const MasterLeftColumn = dynamic(() => import("./MasterLeftColumn"), { ssr: true });
 const MasterRightColumn = dynamic(() => import("./MasterRightColumn"), { ssr: true });
@@ -42,7 +39,6 @@ function getSavedRailState(key: string): "expanded" | "collapsed" {
 
 export default function MasterShell({ children }: { children: React.ReactNode }) {
   const { t } = useTheme();
-  const queryClient = useQueryClient();
   // Must match server first paint: never read `window` / `localStorage` in useState initializers,
   // or wide viewports hydrate as desktop while SSR always emitted mobile shell → hydration mismatch.
   const [isDesktop, setIsDesktop] = useState(false);
@@ -59,46 +55,27 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   const [sideRailsReady, setSideRailsReady] = useState(false);
   const [showMemorialFeedCards, setShowMemorialFeedCards] = useState(true);
   const [isBusinessOrgAccount, setIsBusinessOrgAccount] = useState(false);
-  const [isCompactDesktop, setIsCompactDesktop] = useState(false);
-  const baselineViewportWidthRef = useRef<number | null>(null);
 
   useLayoutEffect(() => {
-    const mq = window.matchMedia(`(min-width: ${MOBILE_SHELL_MAX + 1}px)`);
+    const mq = window.matchMedia("(min-width: 901px)");
     function syncViewport() {
-      const width = window.innerWidth;
       const desktop = mq.matches;
       setIsDesktop(desktop);
-
-      if (baselineViewportWidthRef.current == null || width > baselineViewportWidthRef.current) {
-        baselineViewportWidthRef.current = width;
-      }
-      const baseline = baselineViewportWidthRef.current ?? width;
-      const shouldAutoCollapse =
-        width < COMPACT_DESKTOP_MAX || width <= baseline * SHRINK_COLLAPSE_RATIO;
-      setIsCompactDesktop(desktop && shouldAutoCollapse);
-
       if (desktop) {
-        if (shouldAutoCollapse) {
-          setLeftRailState("collapsed");
-          setRightRailState("collapsed");
-        } else {
-          setLeftRailState(getSavedRailState("eod-master-rail-left"));
-          setRightRailState(getSavedRailState("eod-master-rail-right"));
-        }
+        setLeftRailState(getSavedRailState("eod-master-rail-left"));
+        setRightRailState(getSavedRailState("eod-master-rail-right"));
       }
     }
     syncViewport();
     mq.addEventListener("change", syncViewport);
-    window.addEventListener("resize", syncViewport);
-    return () => {
-      mq.removeEventListener("change", syncViewport);
-      window.removeEventListener("resize", syncViewport);
-    };
+    return () => mq.removeEventListener("change", syncViewport);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-    async function loadShellUser(user: User | null) {
+    async function loadShellUser() {
+      const { data } = await supabase.auth.getUser();
+      const user = data.user ?? null;
       const uid = user?.id ?? null;
       if (cancelled) return;
       setUserId(uid);
@@ -108,7 +85,17 @@ export default function MasterShell({ children }: { children: React.ReactNode })
         memberInteractionAllowedRef.current = false;
         return;
       }
-      const profileCheck = await fetchViewerProfileCached(queryClient, supabase, user);
+      const { profile: profileCheck } = await loadActiveProfile<
+        OnboardingGateProfile & {
+          account_type: string | null;
+          subscription_status: string | null;
+          is_admin: boolean | null;
+          show_memorial_feed_cards: boolean | null;
+        }
+      >(supabase, user, {
+        route: "app/components/master/MasterShell.tsx:loadShellUser",
+        select: `${ONBOARDING_GATE_PROFILE_SELECT}, display_name, photo_url, account_type, subscription_status, is_admin, show_memorial_feed_cards, verification_status, email_verified, admin_verified`,
+      });
       if (cancelled) return;
       if (shouldRedirectToOnboarding(profileCheck)) {
         window.location.replace(onboardingRedirectUrl(true));
@@ -161,7 +148,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       cancelled = true;
       subscription.unsubscribe();
     };
-  }, [queryClient]);
+  }, []);
 
   useEffect(() => {
     if (!isDesktop) {
@@ -205,13 +192,12 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   const ctxValue = useMemo(
     () => ({
       isDesktopShell: isDesktop,
-      isCompactDesktop,
       openSidebarPeer: isDesktop ? openSidebarPeer : () => {},
       showMemorialFeedCards,
       setShowMemorialFeedCards,
       isBusinessOrgAccount,
     }),
-    [isDesktop, isCompactDesktop, openSidebarPeer, showMemorialFeedCards, isBusinessOrgAccount]
+    [isDesktop, openSidebarPeer, showMemorialFeedCards, isBusinessOrgAccount]
   );
 
   if (!isDesktop) {

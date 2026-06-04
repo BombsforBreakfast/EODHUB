@@ -1,7 +1,7 @@
 "use client";
 
 import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
 import ShareListingToFeedModal from "../components/ShareListingToFeedModal";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
@@ -18,17 +18,15 @@ import {
   type BusinessListingRow,
 } from "../components/master/masterShared";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
+import { loadBusinessListingProfileLinks, resolveBusinessListingLinkTarget } from "../lib/businessListingLinks";
 import { useTheme } from "../lib/ThemeContext";
-import { supabase } from "../lib/lib/supabaseClient";
+import { getSupabaseSession, supabase } from "../lib/lib/supabaseClient";
 import { prepareImageUploadFile } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { shareListingToFeed } from "../lib/shareListingToFeed";
-import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
-import { fetchApprovedBusinessListings, BUSINESSES_STALE_MS } from "../lib/queries/businesses";
-import { queryKeys } from "../lib/queryKeys";
 
 type BusinessOrgListingType = "business" | "organization";
 
@@ -72,8 +70,23 @@ type ListingComment = ListingCommentRow & {
   authorPhotoUrl: string | null;
 };
 
+type BusinessOrgClaimPageOption = {
+  id: string;
+  owner_user_id: string;
+  business_auth_user_id: string | null;
+  business_name: string;
+  business_email: string;
+  website_url: string | null;
+  logo_url: string;
+  verification_status: string;
+  subscription_status: string;
+  is_active: boolean;
+};
+
 const BUSINESS_LISTING_COLUMNS =
   "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags, managed_by_user_id, claimed_business_org_page_id";
+const BUSINESS_LISTING_COLUMNS_FALLBACK =
+  "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags, managed_by_user_id";
 
 function coerceBizOrgType(listing: Pick<BusinessListing, "listing_type">): BusinessOrgListingType {
   return listing.listing_type === "organization" ? "organization" : "business";
@@ -84,7 +97,6 @@ function listingEligibleForClaim(listing: BusinessListing): boolean {
   if (t !== "business" && t !== "organization") return false;
   if (!listing.is_approved) return false;
   if (listing.managed_by_user_id) return false;
-  if (listing.claimed_business_org_page_id) return false;
   return true;
 }
 
@@ -97,12 +109,68 @@ function canEditBizListing(listing: BusinessListing, uid: string | null, admin: 
   return userManagesListing(listing, uid);
 }
 
+function hostnameFromUrl(value: string | null | undefined): string | null {
+  if (!value?.trim()) return null;
+  try {
+    const normalized = normalizeUrl(value);
+    return new URL(normalized).hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+}
+
+function emailDomain(value: string | null | undefined): string | null {
+  const email = value?.trim().toLowerCase();
+  if (!email || !email.includes("@")) return null;
+  return email.split("@").pop()?.replace(/^www\./, "") || null;
+}
+
+function pageSuggestsListingLink(
+  page: BusinessOrgClaimPageOption,
+  listing: BusinessListing,
+  currentUserId: string | null,
+): boolean {
+  if (!currentUserId) return false;
+  if (listing.claimed_business_org_page_id) return false;
+  if (listing.managed_by_user_id && listing.managed_by_user_id !== page.owner_user_id) return false;
+
+  const pageWebsiteHost = hostnameFromUrl(page.website_url);
+  const listingWebsiteHost = hostnameFromUrl(listing.website_url);
+  const pageEmailDomain = emailDomain(page.business_email);
+  const listingEmailDomain = emailDomain(listing.contact_email);
+  const pageName = page.business_name.trim().toLowerCase();
+  const listingName = (listing.business_name || listing.og_title || listing.og_site_name || "").trim().toLowerCase();
+
+  return (
+    listing.managed_by_user_id === page.owner_user_id ||
+    (!!pageWebsiteHost && pageWebsiteHost === listingWebsiteHost) ||
+    (!!pageEmailDomain && pageEmailDomain === listingWebsiteHost) ||
+    (!!listingEmailDomain && (listingEmailDomain === pageWebsiteHost || listingEmailDomain === pageEmailDomain)) ||
+    (!!pageName && !!listingName && (pageName === listingName || listingName.includes(pageName) || pageName.includes(listingName)))
+  );
+}
+
+function listingEligibleForBusinessOrgLink(
+  listing: BusinessListing,
+  approvedBusinessOrgPages: BusinessOrgClaimPageOption[],
+  pendingBusinessOrgClaimListingIds: Set<string>,
+): boolean {
+  const listingType = normalizeBizListingTypeForListing(listing);
+  if (listingType !== "business" && listingType !== "organization") return false;
+  if (!listing.is_approved) return false;
+  if (listing.claimed_business_org_page_id) return false;
+  if (pendingBusinessOrgClaimListingIds.has(listing.id)) return false;
+  return approvedBusinessOrgPages.length > 0;
+}
+
 export default function BusinessesPage() {
+  const router = useRouter();
   useRequireFullAccess("app/businesses/page.tsx");
   usePageTracking(PAGE_TRACKING.businesses);
   const { t } = useTheme();
-  const queryClient = useQueryClient();
+  const [loading, setLoading] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+  const [listings, setListings] = useState<BusinessListing[]>([]);
   const [filters, setFilters] = useState<BizFilterState>({ listingType: "all", keyword: "" });
   const [userId, setUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -139,11 +207,22 @@ export default function BusinessesPage() {
   const [submittingListingCommentFor, setSubmittingListingCommentFor] = useState<string | null>(null);
   const [selectedListing, setSelectedListing] = useState<BusinessListing | null>(null);
   const [pendingClaimListingIds, setPendingClaimListingIds] = useState<Set<string>>(() => new Set());
+  const [businessOrgPages, setBusinessOrgPages] = useState<BusinessOrgClaimPageOption[]>([]);
+  const [pendingBusinessOrgClaimListingIds, setPendingBusinessOrgClaimListingIds] = useState<Set<string>>(() => new Set());
+  const [claimAsBusinessPageId, setClaimAsBusinessPageId] = useState("");
   const [claimSubmittingFor, setClaimSubmittingFor] = useState<string | null>(null);
   const [claimConfirmListing, setClaimConfirmListing] = useState<BusinessListing | null>(null);
+  const [linkConfirmListing, setLinkConfirmListing] = useState<BusinessListing | null>(null);
+  const [linkAsBusinessPageId, setLinkAsBusinessPageId] = useState("");
+  const [linkedProfileByPageId, setLinkedProfileByPageId] = useState<Record<string, string>>({});
   const [bizNotice, setBizNotice] = useState<string | null>(null);
   const [sharingListingId, setSharingListingId] = useState<string | null>(null);
   const [shareComposerListing, setShareComposerListing] = useState<BusinessListing | null>(null);
+
+  const approvedBusinessOrgPages = useMemo(
+    () => businessOrgPages.filter((page) => page.verification_status === "approved" && page.is_active),
+    [businessOrgPages],
+  );
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 900);
@@ -155,14 +234,22 @@ export default function BusinessesPage() {
   useEffect(() => {
     let mounted = true;
     async function loadUser() {
-      const { data } = await supabase.auth.getSession();
-      const sessionUser = data.session?.user ?? null;
-      const uid = sessionUser?.id ?? null;
+      const { data } = await getSupabaseSession();
+      const uid = data.session?.user?.id ?? null;
       if (!mounted) return;
       setUserId(uid);
-      if (!uid || !sessionUser) return;
-      const p = await fetchViewerProfileCached(queryClient, supabase, sessionUser);
-      if (!mounted) return;
+      if (!uid) return;
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("display_name, first_name, last_name, is_admin")
+        .eq("user_id", uid)
+        .maybeSingle();
+      const p = profile as {
+        display_name?: string | null;
+        first_name?: string | null;
+        last_name?: string | null;
+        is_admin?: boolean | null;
+      } | null;
       const composed = [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
       setCurrentUserName(p?.display_name?.trim() || composed || "You");
       setIsAdmin(Boolean(p?.is_admin));
@@ -171,27 +258,63 @@ export default function BusinessesPage() {
     return () => {
       mounted = false;
     };
-  }, [queryClient]);
+  }, []);
 
   useEffect(() => {
     if (!userId) {
       setPendingClaimListingIds(new Set());
+      setPendingBusinessOrgClaimListingIds(new Set());
+      setBusinessOrgPages([]);
       return;
     }
     let cancelled = false;
     void (async () => {
-      const { data, error } = await supabase
-        .from("business_listing_claims")
-        .select("listing_id")
-        .eq("claimant_user_id", userId)
-        .eq("status", "pending");
+      const [userClaimsRes, pagesRes] = await Promise.all([
+        supabase
+          .from("business_listing_claims")
+          .select("listing_id")
+          .eq("claimant_user_id", userId)
+          .eq("status", "pending"),
+        supabase
+          .from("business_organization_pages")
+          .select("id, owner_user_id, business_auth_user_id, business_name, business_email, website_url, logo_url, verification_status, subscription_status, is_active")
+          .or(`owner_user_id.eq.${userId},business_auth_user_id.eq.${userId}`),
+      ]);
       if (cancelled) return;
-      if (error) {
-        console.error("Pending business claims load error:", error);
+      if (userClaimsRes.error) {
+        console.error("Pending business claims load error:", userClaimsRes.error);
         setPendingClaimListingIds(new Set());
-        return;
+      } else {
+        setPendingClaimListingIds(new Set((userClaimsRes.data ?? []).map((r) => (r as { listing_id: string }).listing_id)));
       }
-      setPendingClaimListingIds(new Set((data ?? []).map((r) => (r as { listing_id: string }).listing_id)));
+      if (pagesRes.error) {
+        console.error("Business org pages load error:", pagesRes.error);
+        setBusinessOrgPages([]);
+      } else {
+        const pageRows = (pagesRes.data ?? []) as BusinessOrgClaimPageOption[];
+        setBusinessOrgPages(pageRows);
+        setClaimAsBusinessPageId((prev) => prev || pageRows[0]?.id || "");
+      }
+      const pageIds = ((pagesRes.data ?? []) as BusinessOrgClaimPageOption[]).map((page) => page.id);
+      if (pageIds.length > 0) {
+        const { data: orgClaims, error: orgClaimsError } = await supabase
+          .from("business_org_claim_requests")
+          .select("business_listing_id")
+          .in("business_org_page_id", pageIds)
+          .in("status", ["pending"]);
+        if (!cancelled) {
+          if (orgClaimsError) {
+            console.error("Pending business org claims load error:", orgClaimsError);
+            setPendingBusinessOrgClaimListingIds(new Set());
+          } else {
+            setPendingBusinessOrgClaimListingIds(
+              new Set((orgClaims ?? []).map((r) => (r as { business_listing_id: string }).business_listing_id)),
+            );
+          }
+        }
+      } else {
+        setPendingBusinessOrgClaimListingIds(new Set());
+      }
     })();
     return () => {
       cancelled = true;
@@ -204,37 +327,80 @@ export default function BusinessesPage() {
     return p.display_name?.trim() || composed || (fallbackUserId === userId ? currentUserName : "Member");
   }
 
-  const listingsQuery = useQuery({
-    queryKey: queryKeys.businessesApproved(500),
-    queryFn: () =>
-      fetchApprovedBusinessListings<BusinessListing>(supabase, BUSINESS_LISTING_COLUMNS, 500),
-    staleTime: BUSINESSES_STALE_MS,
-  });
+  useEffect(() => {
+    let mounted = true;
+    async function init() {
+      let { data, error } = await supabase
+        .from("business_listings")
+        .select(BUSINESS_LISTING_COLUMNS)
+        .eq("is_approved", true)
+        .order("is_featured", { ascending: false })
+        .order("business_name", { ascending: true, nullsFirst: false })
+        .limit(500);
+      if (error) {
+        const fallback = await supabase
+          .from("business_listings")
+          .select(BUSINESS_LISTING_COLUMNS_FALLBACK)
+          .eq("is_approved", true)
+          .order("is_featured", { ascending: false })
+          .order("business_name", { ascending: true, nullsFirst: false })
+          .limit(500);
+        data = fallback.data?.map((row) => ({ ...row, claimed_business_org_page_id: null })) ?? null;
+        error = fallback.error;
+      }
 
-  const EMPTY_LISTINGS = useMemo<BusinessListing[]>(() => [], []);
-  const listings = listingsQuery.data ?? EMPTY_LISTINGS;
-  const loading = listingsQuery.isLoading;
+      const combined = (data ?? []) as BusinessListing[];
+
+      if (error && combined.length === 0) {
+        console.error("Businesses page load error:", error);
+        if (mounted) setListings([]);
+      } else if (mounted) {
+        setListings(combined);
+        const profileLinks = await loadBusinessListingProfileLinks(supabase, combined);
+        if (mounted) setLinkedProfileByPageId(profileLinks);
+      }
+      if (mounted) setLoading(false);
+    }
+    void init();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   async function refreshApprovedBizListings() {
-    let combined: BusinessListing[];
-    try {
-      // Force a fresh read (mutation just changed the data) and update the cache
-      // so the listings query re-renders with the new rows.
-      combined = await queryClient.fetchQuery({
-        queryKey: queryKeys.businessesApproved(500),
-        queryFn: () =>
-          fetchApprovedBusinessListings<BusinessListing>(supabase, BUSINESS_LISTING_COLUMNS, 500),
-        staleTime: 0,
-      });
-    } catch (err) {
-      console.error("Businesses list refresh error:", err);
+    let { data, error } = await supabase
+      .from("business_listings")
+      .select(BUSINESS_LISTING_COLUMNS)
+      .eq("is_approved", true)
+      .order("is_featured", { ascending: false })
+      .order("business_name", { ascending: true, nullsFirst: false })
+      .limit(500);
+    if (error) {
+      const fallback = await supabase
+        .from("business_listings")
+        .select(BUSINESS_LISTING_COLUMNS_FALLBACK)
+        .eq("is_approved", true)
+        .order("is_featured", { ascending: false })
+        .order("business_name", { ascending: true, nullsFirst: false })
+        .limit(500);
+      data = fallback.data?.map((row) => ({ ...row, claimed_business_org_page_id: null })) ?? null;
+      error = fallback.error;
+    }
+
+    const combined = (data ?? []) as BusinessListing[];
+
+    if (error && combined.length === 0) {
+      console.error("Businesses list refresh error:", error);
       return;
     }
 
+    setListings(combined);
     setSelectedListing((prev) => {
       if (!prev) return null;
       return combined.find((r) => r.id === prev.id) ?? null;
     });
+    const profileLinks = await loadBusinessListingProfileLinks(supabase, combined);
+    setLinkedProfileByPageId(profileLinks);
   }
 
   function handleBizUrlChange(value: string) {
@@ -480,10 +646,87 @@ export default function BusinessesPage() {
     }
   }
 
+  async function submitBusinessOrgClaim(listing: BusinessListing, pageId: string) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    const page = businessOrgPages.find((p) => p.id === pageId) ?? null;
+    const isSuggestedOwnerLink = !!page && pageSuggestsListingLink(page, listing, userId);
+    if (!listingEligibleForClaim(listing) && !isSuggestedOwnerLink) return;
+    if (!pageId) {
+      setBizNotice("Choose a Business / Organization page for this claim.");
+      window.setTimeout(() => setBizNotice(null), 4500);
+      return;
+    }
+    if (pendingBusinessOrgClaimListingIds.has(listing.id)) {
+      setBizNotice("A Business / Organization page claim is already pending for this listing.");
+      window.setTimeout(() => setBizNotice(null), 4500);
+      return;
+    }
+    setClaimSubmittingFor(listing.id);
+    try {
+      const { data: { session } } = await getSupabaseSession();
+      const res = await fetch("/api/business-org-pages/claims", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ pageId, listingId: listing.id }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setBizNotice(data.error ?? "Could not submit Business / Organization page claim.");
+        window.setTimeout(() => setBizNotice(null), 5500);
+        return;
+      }
+      setPendingBusinessOrgClaimListingIds((prev) => new Set(prev).add(listing.id));
+      setBizNotice("Link request submitted for admin review.");
+      await refreshApprovedBizListings();
+      window.setTimeout(() => setBizNotice(null), 5500);
+    } finally {
+      setClaimSubmittingFor(null);
+    }
+  }
+
+  async function submitSuggestedBusinessOrgLink(listing: BusinessListing, pageId: string) {
+    if (!pageId) return;
+    const page = businessOrgPages.find((p) => p.id === pageId);
+    if (!page) return;
+    if (page.verification_status !== "approved" || !page.is_active) {
+      setBizNotice("This match was detected, but the Business / Organization page must be admin-approved before the link request can be submitted.");
+      window.setTimeout(() => setBizNotice(null), 6500);
+      return;
+    }
+    await submitBusinessOrgClaim(listing, pageId);
+  }
+
+  async function handleLinkConfirmSubmit() {
+    if (!linkConfirmListing) return;
+    const pageId = linkAsBusinessPageId || approvedBusinessOrgPages[0]?.id || "";
+    if (!pageId) {
+      setBizNotice("Choose an approved Business / Organization page to link.");
+      window.setTimeout(() => setBizNotice(null), 4500);
+      return;
+    }
+    await submitBusinessOrgClaim(linkConfirmListing, pageId);
+    setLinkConfirmListing(null);
+  }
+
+  function openLinkConfirm(listing: BusinessListing) {
+    setLinkAsBusinessPageId(approvedBusinessOrgPages[0]?.id ?? "");
+    setLinkConfirmListing(listing);
+  }
+
   async function handleClaimConfirmSubmit() {
     if (!claimConfirmListing) return;
     const listing = claimConfirmListing;
-    await submitBizClaim(listing);
+    if (claimAsBusinessPageId) {
+      await submitBusinessOrgClaim(listing, claimAsBusinessPageId);
+    } else {
+      await submitBizClaim(listing);
+    }
     setClaimConfirmListing(null);
   }
 
@@ -1028,16 +1271,38 @@ export default function BusinessesPage() {
             const displayDescription = listing.custom_blurb || listing.og_description || "Visit website";
             const comments = listingCommentsById[listing.id] ?? [];
             const { averageRounded, ratedCount } = getRatingSummary(listing.id);
+            const suggestedLinkPage =
+              !listing.claimed_business_org_page_id && !pendingBusinessOrgClaimListingIds.has(listing.id)
+                ? businessOrgPages.find((page) => pageSuggestsListingLink(page, listing, userId)) ?? null
+                : null;
+            const suggestedLinkBlocked =
+              !!suggestedLinkPage && (suggestedLinkPage.verification_status !== "approved" || !suggestedLinkPage.is_active);
+            const linkTarget = resolveBusinessListingLinkTarget(listing, linkedProfileByPageId);
+            const canRequestLink = listingEligibleForBusinessOrgLink(
+              listing,
+              approvedBusinessOrgPages,
+              pendingBusinessOrgClaimListingIds,
+            );
 
             return (
               <article
                 key={listing.id}
-                onClick={() => setSelectedListing(listing)}
+                onClick={() => {
+                  if (!linkTarget.external) {
+                    router.push(linkTarget.href);
+                    return;
+                  }
+                  setSelectedListing(listing);
+                }}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
+                    if (!linkTarget.external) {
+                      router.push(linkTarget.href);
+                      return;
+                    }
                     setSelectedListing(listing);
                   }
                 }}
@@ -1093,6 +1358,54 @@ export default function BusinessesPage() {
                 <div style={{ padding: "0 14px 8px" }}>
                   <BizListingTagChips tags={coerceTagsFromDb(listing.tags)} maxVisible={3} />
                 </div>
+                {suggestedLinkPage ? (
+                  <div
+                    style={{
+                      margin: "0 14px 10px",
+                      padding: "10px 12px",
+                      borderRadius: 10,
+                      border: `1px solid ${suggestedLinkBlocked ? "#f59e0b" : "#93c5fd"}`,
+                      background: suggestedLinkBlocked ? "rgba(245,158,11,0.12)" : "rgba(37,99,235,0.10)",
+                      display: "grid",
+                      gap: 7,
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 900, color: suggestedLinkBlocked ? "#b45309" : "#2563eb" }}>
+                      Suggested match: {suggestedLinkPage.business_name}
+                    </div>
+                    <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.4 }}>
+                      This listing appears connected to your Business / Organization page. Confirming submits an admin-reviewed link request.
+                    </div>
+                    <button
+                      type="button"
+                      disabled={claimSubmittingFor === listing.id}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void submitSuggestedBusinessOrgLink(listing, suggestedLinkPage.id);
+                      }}
+                      style={{
+                        justifySelf: "start",
+                        border: "none",
+                        background: suggestedLinkBlocked ? "#b45309" : "#2563eb",
+                        color: "white",
+                        borderRadius: 8,
+                        padding: "6px 10px",
+                        fontSize: 12,
+                        fontWeight: 850,
+                        cursor: claimSubmittingFor === listing.id ? "wait" : "pointer",
+                        opacity: claimSubmittingFor === listing.id ? 0.7 : 1,
+                      }}
+                    >
+                      {suggestedLinkBlocked ? "Page approval required" : claimSubmittingFor === listing.id ? "Submitting..." : "Link Business Page"}
+                    </button>
+                  </div>
+                ) : null}
+                {listing.claimed_business_org_page_id ? (
+                  <div style={{ margin: "0 14px 10px", fontSize: 12, fontWeight: 800, color: "#15803d" }}>
+                    Linked to EOD HUB business profile
+                  </div>
+                ) : null}
                 <div style={{ padding: "0 14px 12px", display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                   <div style={{ display: "inline-flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
                     <button
@@ -1137,8 +1450,35 @@ export default function BusinessesPage() {
                     >
                       {sharingListingId === listing.id ? "Sharing..." : "Share"}
                     </button>
+                    {canRequestLink ? (
+                      pendingBusinessOrgClaimListingIds.has(listing.id) ? (
+                        <span style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Link pending</span>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={claimSubmittingFor === listing.id}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openLinkConfirm(listing);
+                          }}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color: "#2563eb",
+                            cursor: claimSubmittingFor === listing.id ? "wait" : "pointer",
+                            opacity: claimSubmittingFor === listing.id ? 0.65 : 1,
+                          }}
+                        >
+                          {claimSubmittingFor === listing.id ? "Linking…" : "Link"}
+                        </button>
+                      )
+                    ) : null}
                     {userId && listingEligibleForClaim(listing) ? (
-                      pendingClaimListingIds.has(listing.id) ? (
+                      pendingClaimListingIds.has(listing.id) || pendingBusinessOrgClaimListingIds.has(listing.id) ? (
                         <span style={{ fontSize: 12, fontWeight: 700, color: t.textMuted }}>Claim pending</span>
                       ) : (
                         <button
@@ -1208,6 +1548,118 @@ export default function BusinessesPage() {
         </div>
       )}
 
+      {linkConfirmListing && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="link-confirm-title"
+          onClick={() => {
+            if (claimSubmittingFor === linkConfirmListing.id) return;
+            setLinkConfirmListing(null);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.55)",
+            zIndex: 1300,
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(420px, 100%)",
+              background: t.surface,
+              border: `1px solid ${t.border}`,
+              borderRadius: 14,
+              padding: 20,
+              boxSizing: "border-box",
+            }}
+          >
+            <div id="link-confirm-title" style={{ fontSize: 18, fontWeight: 900, color: t.text, lineHeight: 1.3, marginBottom: 10 }}>
+              Link directory listing
+            </div>
+            <p style={{ margin: "0 0 8px", fontSize: 15, color: t.text, lineHeight: 1.55 }}>
+              Link this directory card to your Business / Organization profile inside EOD HUB.
+            </p>
+            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18, lineHeight: 1.45 }}>
+              <strong style={{ color: t.text }}>Listing:</strong>{" "}
+              {linkConfirmListing.og_title || linkConfirmListing.business_name || linkConfirmListing.og_site_name || "This listing"}
+            </div>
+            {approvedBusinessOrgPages.length > 1 ? (
+              <label style={{ display: "grid", gap: 6, fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 18 }}>
+                Link to
+                <select
+                  value={linkAsBusinessPageId}
+                  onChange={(e) => setLinkAsBusinessPageId(e.target.value)}
+                  style={{
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 10,
+                    padding: "9px 10px",
+                    background: t.input,
+                    color: t.text,
+                  }}
+                >
+                  {approvedBusinessOrgPages.map((page) => (
+                    <option key={page.id} value={page.id}>
+                      {page.business_name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18 }}>
+                <strong style={{ color: t.text }}>Profile:</strong> {approvedBusinessOrgPages[0]?.business_name}
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 18, lineHeight: 1.45 }}>
+              An admin must approve the link. After approval, visitors stay in EOD HUB and open your business profile instead of leaving for an external website.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                disabled={claimSubmittingFor === linkConfirmListing.id}
+                onClick={() => setLinkConfirmListing(null)}
+                style={{
+                  background: t.surface,
+                  color: t.text,
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 8,
+                  padding: "9px 16px",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: claimSubmittingFor === linkConfirmListing.id ? "not-allowed" : "pointer",
+                  opacity: claimSubmittingFor === linkConfirmListing.id ? 0.6 : 1,
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={claimSubmittingFor === linkConfirmListing.id}
+                onClick={() => void handleLinkConfirmSubmit()}
+                style={{
+                  background: "#2563eb",
+                  color: "white",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "9px 16px",
+                  fontWeight: 700,
+                  fontSize: 14,
+                  cursor: claimSubmittingFor === linkConfirmListing.id ? "wait" : "pointer",
+                  opacity: claimSubmittingFor === linkConfirmListing.id ? 0.85 : 1,
+                }}
+              >
+                {claimSubmittingFor === linkConfirmListing.id ? "Submitting…" : "Submit link request"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {claimConfirmListing && (
         <div
           role="dialog"
@@ -1249,6 +1701,32 @@ export default function BusinessesPage() {
               <strong style={{ color: t.text }}>Listing:</strong>{" "}
               {claimConfirmListing.og_title || claimConfirmListing.business_name || claimConfirmListing.og_site_name || "This listing"}
             </div>
+            {businessOrgPages.length > 0 && (
+              <label style={{ display: "grid", gap: 6, fontSize: 13, fontWeight: 800, color: t.text, marginBottom: 18 }}>
+                Claim as
+                <select
+                  value={claimAsBusinessPageId}
+                  onChange={(e) => setClaimAsBusinessPageId(e.target.value)}
+                  style={{
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 10,
+                    padding: "9px 10px",
+                    background: t.input,
+                    color: t.text,
+                  }}
+                >
+                  <option value="">My personal account ({currentUserName})</option>
+                  {businessOrgPages.map((page) => (
+                    <option key={page.id} value={page.id}>
+                      {page.business_name} ({page.subscription_status})
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 12, fontWeight: 500, color: t.textMuted }}>
+                  Individual user claims stay available. Business / Organization page claims require admin review and an active page subscription.
+                </span>
+              </label>
+            )}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
               <button
                 type="button"
@@ -1426,15 +1904,31 @@ export default function BusinessesPage() {
                   );
                 })()}
                 <div style={{ marginLeft: "auto", display: "inline-flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                  <a
-                    href={selectedListing.website_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    onClick={(e) => e.stopPropagation()}
-                    style={{ background: "#2563eb", color: "white", borderRadius: 8, padding: "7px 12px", fontWeight: 700, fontSize: 13, textDecoration: "none" }}
-                  >
-                    Visit Website
-                  </a>
+                  {(() => {
+                    const destination = resolveBusinessListingLinkTarget(selectedListing, linkedProfileByPageId);
+                    if (destination.external) {
+                      return (
+                        <a
+                          href={destination.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          style={{ background: "#2563eb", color: "white", borderRadius: 8, padding: "7px 12px", fontWeight: 700, fontSize: 13, textDecoration: "none" }}
+                        >
+                          {destination.label}
+                        </a>
+                      );
+                    }
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => router.push(destination.href)}
+                        style={{ background: "#2563eb", color: "white", border: "none", borderRadius: 8, padding: "7px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                      >
+                        {destination.label}
+                      </button>
+                    );
+                  })()}
                   <button
                     type="button"
                     disabled={sharingListingId === selectedListing.id}
@@ -1454,7 +1948,7 @@ export default function BusinessesPage() {
                     {sharingListingId === selectedListing.id ? "Sharing..." : "Share to feed"}
                   </button>
                   {userId && listingEligibleForClaim(selectedListing) ? (
-                    pendingClaimListingIds.has(selectedListing.id) ? (
+                    pendingClaimListingIds.has(selectedListing.id) || pendingBusinessOrgClaimListingIds.has(selectedListing.id) ? (
                       <span style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>Claim pending review</span>
                     ) : (
                       <button

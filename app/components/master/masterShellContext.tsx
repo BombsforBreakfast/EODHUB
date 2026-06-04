@@ -5,21 +5,21 @@ import React, { createContext, useContext } from "react";
 export type MasterShellContextValue = {
   /** True when viewport is desktop and the persistent shell is active. */
   isDesktopShell: boolean;
-  /** Desktop shell with collapsed side rails (narrow viewport or user toggled). */
-  isCompactDesktop: boolean;
   /** Opens the shell message drawer (desktop). No-op when not on desktop shell. */
   openSidebarPeer: (peerId: string) => void;
   /** When false, home feed does not show large memorial anniversary post cards (default true). */
   showMemorialFeedCards: boolean;
   setShowMemorialFeedCards: (v: boolean) => void;
+  /** Business / Organization auth accounts use the main shell without personal-member missions. */
+  isBusinessOrgAccount: boolean;
 };
 
 const MasterShellContext = createContext<MasterShellContextValue>({
   isDesktopShell: false,
-  isCompactDesktop: false,
   openSidebarPeer: () => {},
   showMemorialFeedCards: true,
   setShowMemorialFeedCards: () => {},
+  isBusinessOrgAccount: false,
 });
 
 export function MasterShellProvider({

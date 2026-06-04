@@ -1,10 +1,9 @@
-Ôªø"use client";
+"use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { getSupabaseUser, supabase } from "../../../lib/lib/supabaseClient";
+import { supabase } from "../../../lib/lib/supabaseClient";
 import DesktopLayout from "../../../components/DesktopLayout";
 import ImageCropDialog from "../../../components/ImageCropDialog";
 import { useTheme } from "../../../lib/ThemeContext";
@@ -21,7 +20,7 @@ import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
-import { EMPLOYER_DOCUMENT_ACCEPT, FEED_ATTACHMENT_ACCEPT, formatEmployerDocumentUploadError, inferEmployerDocumentContentType, validateEmployerDocumentPick } from "../../../lib/uploadLimits";
+import { EMPLOYER_DOCUMENT_ACCEPT, FEED_ATTACHMENT_ACCEPT, inferEmployerDocumentContentType } from "../../../lib/uploadLimits";
 import { validateFeedAttachmentPick, validateImagePick, UPLOAD_LIMITS, formatUploadBytes, isVideoFile, isVideoUrl } from "../../../lib/uploadLimits";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
@@ -29,20 +28,7 @@ import { postNotifyJson } from "../../../lib/postNotifyClient";
 import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
 import { KangarooCourtVerdictBanner } from "../../../components/KangarooCourtVerdictBanner";
 import { Gem, Medal, Camera, FileText, Play, Check, ArrowRight, ChevronLeft, ChevronRight } from "lucide-react";
-import {
-  FEED_ACTION_ROW_GAP,
-  FEED_ACTION_ROW_PADDING,
-  FEED_MEDIA_FRAME_BG,
-  FEED_MEDIA_GRID_GAP,
-  FEED_MEDIA_RADIUS,
-  FEED_POST_AVATAR_SIZE,
-  FEED_POST_IMAGES_MAX_WIDTH,
-  FEED_SECTION_GAP,
-  feedContainedImageStyle,
-  feedPostCardStyle,
-  feedSingleMediaFrameStyle,
-  feedSingleImageStyle,
-} from "../../../lib/feedLayout";
+import { FEED_MEDIA_FRAME_BG, feedContainedImageStyle } from "../../../lib/feedLayout";
 import { SkillBadgeValue } from "../../../lib/skillBadges";
 import type {
   FeedKangarooBundle,
@@ -73,10 +59,12 @@ import { PAGE_TRACKING } from "../../../lib/pageTrackingPaths";
 import { PlankHolderBadge } from "../../../components/challenges/PlankHolderBadge";
 import { PlankHolderEarnedModal } from "../../../components/challenges/PlankHolderEarnedModal";
 import { PlankHolderChallengeToast } from "../../../components/challenges/PlankHolderChallengeToast";
+import BusinessCommerceManager from "../../../components/commerce/BusinessCommerceManager";
+import BusinessCommerceSection from "../../../components/commerce/BusinessCommerceSection";
+import BusinessProfileCard from "../../../components/commerce/BusinessProfileCard";
 import {
   dismissPlankHolderModal,
   fetchPlankHolderProgress,
-  isPlankHolderChallengeOpen,
   newlyCompletedTasks,
   PLANK_HOLDER_TASK_LABELS,
   recordPlankHolderInvite,
@@ -86,25 +74,7 @@ import {
 } from "../../../lib/plankHolderChallengeClient";
 import { isEmployerAccount } from "../../../lib/profileCompleteness";
 import EmployerAccountCardDetails from "../../../components/profile/EmployerAccountCardDetails";
-import ProfileSocialLinks from "../../../components/profile/ProfileSocialLinks";
-import { normalizeLinkedInUrl } from "../../../lib/linkedInUrl";
-import {
-  fetchSavedJobs,
-  SAVED_JOBS_STALE_MS,
-  toggleSavedJob,
-  type SavedJobRow,
-} from "../../../lib/queries/savedJobs";
-import { queryKeys } from "../../../lib/queryKeys";
-import {
-  deriveProfileConnectionView,
-  fetchProfileConnections,
-  PROFILE_CONNECTIONS_STALE_MS,
-  runProfileConnectionAction,
-  type KnownPreviewUser,
-  type ProfileConnectionsData,
-} from "../../../lib/queries/profileConnections";
-import { fetchViewerProfileCached } from "../../../lib/queries/viewerProfile";
-import { MOBILE_SHELL_MAX, STACKED_PROFILE_MAX } from "../../../lib/viewportLayout";
+import { BUSINESS_ORG_PAGE_SELECT, type BusinessOrgPageRow } from "../../../lib/businessOrgPages";
 
 type Profile = {
   user_id: string;
@@ -130,7 +100,6 @@ type Profile = {
   company_name: string | null;
   account_type: string | null;
   company_website: string | null;
-  linkedin_url: string | null;
   professional_tags: string[] | null;
   unit_history_tags: string[] | null;
   open_to_opportunities: boolean | null;
@@ -191,6 +160,17 @@ type SavedEventRow = {
   signup_url: string | null;
   unit_id?: string | null;
   visibility?: string | null;
+};
+
+type SavedJobRow = {
+  id: string;
+  job_id: string;
+  title: string | null;
+  company_name: string | null;
+  location: string | null;
+  category: string | null;
+  apply_url: string | null;
+  created_at: string | null;
 };
 
 type FeedEventSnapshot = {
@@ -274,7 +254,7 @@ type Post = {
   event_going_count: number;
   event_my_attendance: "interested" | "going" | null;
   event_saved: boolean;
-  /** Same feed bundles as home Œì√á√∂ courts attach via `feed_post_id` */
+  /** Same feed bundles as home G«ˆ courts attach via `feed_post_id` */
   kangaroo?: FeedKangarooBundle | null;
 };
 
@@ -322,56 +302,36 @@ const WORK_PREFERENCES = ["Remote", "Hybrid", "Onsite", "Flexible"];
 const CLEARANCE_LEVELS = ["None", "Secret", "TS", "TS-SCI"];
 const CLEARANCE_STATUSES = ["Active", "Expired"];
 
-const PROFILE_DISPLAY_COLUMNS = [
-  "user_id",
-  "display_name",
-  "first_name",
-  "last_name",
-  "bio",
-  "photo_url",
-  "role",
-  "resume_text",
-  "tech_types",
-  "verification_status",
-  "service",
-  "status",
-  "years_experience",
-  "skill_badge",
-  "referral_code",
-  "plank_holder_awarded",
-  "plank_holder_number",
-  "plank_holder_seen_modal",
-  "is_employer",
-  "employer_verified",
-  "company_name",
-  "account_type",
-  "company_website",
-  "linkedin_url",
-  "professional_tags",
-  "unit_history_tags",
-  "open_to_opportunities",
-  "employer_summary",
-  "resume_url",
-  "education_url",
-  "specialized_training",
-  "availability_type",
-  "availability_date",
-  "current_city",
-  "current_state",
-  "willing_to_relocate",
-  "willing_to_travel",
-  "work_preference",
-  "clearance_level",
-  "clearance_status",
-  "clearance_expiration_date",
-  "has_oconus_experience",
-  "has_contract_experience",
-  "has_federal_le_military_crossover",
-  "is_pure_admin",
-  "email",
-].join(", ");
-
 type KnowStatus = "none" | "pending_outgoing" | "pending_incoming" | "accepted";
+
+type KnownPreviewUser = {
+  user_id: string;
+  first_name: string | null;
+  last_name: string | null;
+  photo_url: string | null;
+  worked_with: boolean;
+  viewer_worked_with?: boolean;
+};
+
+type ProfileConnectionsResponse = {
+  knowCount: number;
+  knownPreviewUsers: KnownPreviewUser[];
+  relation: {
+    id: string;
+    status: "pending" | "accepted" | "denied";
+    knowStatus: KnowStatus;
+    workedWith: boolean;
+    viewerWorkedWith: boolean;
+  } | null;
+};
+
+type ConnectionActionResponse = {
+  ok: boolean;
+  state?: KnowStatus | "denied";
+  connectionId?: string;
+  workedWith?: boolean;
+  error?: string;
+};
 
 function httpsAssetUrl(url: string | null | undefined): string {
   if (!url?.trim()) return "";
@@ -408,7 +368,7 @@ function extractLegacyEventTitle(content: string | null | undefined): string | n
   if (!line) return null;
   const afterLabel = line.replace(/^.*?\bnew event:\s*/i, "").trim();
   if (!afterLabel) return null;
-  const titleOnly = afterLabel.replace(/\s+[üóìüìÖüè¢üìç].*$/u, "").trim();
+  const titleOnly = afterLabel.replace(/\s+[????????].*$/u, "").trim();
   return titleOnly || null;
 }
 
@@ -540,16 +500,6 @@ function normalizeTrainingDocs(value: unknown): Record<string, string> {
   return out;
 }
 
-function referralMatchFilter(profile: Pick<Profile, "user_id" | "referral_code">): string | null {
-  const parts = [`referrer_user_id.eq.${profile.user_id}`];
-  const code = profile.referral_code?.trim();
-  if (code) {
-    const escapedCode = code.replace(/[%_]/g, (match) => `\\${match}`).replace(/,/g, " ");
-    parts.push(`referred_by.ilike.${escapedCode}`);
-  }
-  return parts.join(",");
-}
-
 function addUniqueTag(tags: string[], rawValue: string): string[] {
   const nextValue = normalizeTagInput(rawValue);
   if (!nextValue) return tags;
@@ -599,10 +549,10 @@ export default function PublicProfilePage() {
       : null;
 
   const { t, isDark } = useTheme();
-  const queryClient = useQueryClient();
 
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [profileFullyLoaded, setProfileFullyLoaded] = useState(false);
+  const [businessOrgPage, setBusinessOrgPage] = useState<BusinessOrgPageRow | null>(null);
+  const [commerceRefreshKey, setCommerceRefreshKey] = useState(0);
   const [posts, setPosts] = useState<Post[]>([]);
   const [profileWallHasMorePosts, setProfileWallHasMorePosts] = useState(false);
   const [profileWallLoadingMore, setProfileWallLoadingMore] = useState(false);
@@ -612,16 +562,13 @@ export default function PublicProfilePage() {
   const [myGroups, setMyGroups] = useState<GroupTile[]>([]);
   const [showAllModal, setShowAllModal] = useState<"photos" | "groups" | null>(null);
   const [loading, setLoading] = useState(true);
-  const [profileWallLoading, setProfileWallLoading] = useState(false);
-  const [profilePhotosLoading, setProfilePhotosLoading] = useState(false);
-  const [profilePhotosFullyLoaded, setProfilePhotosFullyLoaded] = useState(false);
-  const [profileGroupsLoading, setProfileGroupsLoading] = useState(false);
 
   /** Own-wall only: saved events (saved jobs live under My Account) */
   const [wallSavedEvents, setWallSavedEvents] = useState<
     SavedEventRow[]
   >([]);
   const [desktopSavedEvents, setDesktopSavedEvents] = useState<SavedEventRow[]>([]);
+  const [desktopSavedJobs, setDesktopSavedJobs] = useState<SavedJobRow[]>([]);
   const [unsavingWallEvent, setUnsavingWallEvent] = useState<string | null>(null);
   const [unsavingDesktopJobId, setUnsavingDesktopJobId] = useState<string | null>(null);
   const [desktopCalendarDate, setDesktopCalendarDate] = useState(() => new Date());
@@ -632,30 +579,6 @@ export default function PublicProfilePage() {
 
   const [postContent, setPostContent] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const savedJobsQuery = useQuery({
-    queryKey: currentUserId ? queryKeys.savedJobs(currentUserId) : queryKeys.savedJobs("pending"),
-    queryFn: () => fetchSavedJobs(supabase, currentUserId as string),
-    enabled: !!currentUserId,
-    staleTime: SAVED_JOBS_STALE_MS,
-  });
-  const EMPTY_SAVED_JOBS = useMemo<SavedJobRow[]>(() => [], []);
-  const desktopSavedJobs = savedJobsQuery.data ?? EMPTY_SAVED_JOBS;
-  const profileConnectionsQuery = useQuery({
-    queryKey: queryKeys.profileConnections(currentUserId, userId),
-    queryFn: () => fetchProfileConnections(supabase, userId as string, currentUserId),
-    enabled: !!userId,
-    staleTime: PROFILE_CONNECTIONS_STALE_MS,
-  });
-  const {
-    knowCount,
-    knownPreviewUsers,
-    currentUserKnowStatus,
-    currentUserWorkedWith,
-    isMutualConnection,
-  } = useMemo(
-    () => deriveProfileConnectionView(profileConnectionsQuery.data, currentUserId, userId),
-    [profileConnectionsQuery.data, currentUserId, userId],
-  );
   const [submittingPost, setSubmittingPost] = useState(false);
   const [ogPreview, setOgPreview] = useState<OgPreview | null>(null);
   const [fetchingOg, setFetchingOg] = useState(false);
@@ -666,6 +589,12 @@ export default function PublicProfilePage() {
   const postContentRawRef = useRef("");
   const commentRawsRef = useRef<Record<string, string>>({});
 
+  const [knowCount, setKnowCount] = useState(0);
+  const [knownPreviewUsers, setKnownPreviewUsers] = useState<KnownPreviewUser[]>([]);
+  const [currentUserWorkedWith, setCurrentUserWorkedWith] = useState(false);
+  const [currentUserKnowStatus, setCurrentUserKnowStatus] = useState<KnowStatus>("none");
+  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
+  const [isMutualConnection, setIsMutualConnection] = useState(false);
   const [togglingConnection, setTogglingConnection] = useState<"know" | "worked_with" | "confirm" | "deny" | null>(null);
 
   const [uploadingGallery, setUploadingGallery] = useState(false);
@@ -673,7 +602,6 @@ export default function PublicProfilePage() {
   const [deletingPhotoId, setDeletingPhotoId] = useState<string | null>(null);
   const [galleryExpanded, setGalleryExpanded] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-  const [profileLayoutCompact, setProfileLayoutCompact] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
 
   const [sidebarDrawer, setSidebarDrawer] = useState<{ open: boolean; peerId: string | null }>({
@@ -692,7 +620,6 @@ export default function PublicProfilePage() {
   const [editingProfile, setEditingProfile] = useState(false);
   const [editRole, setEditRole] = useState("");
   const [editCompanyName, setEditCompanyName] = useState("");
-  const [editDisplayName, setEditDisplayName] = useState("");
   const [editFirstName, setEditFirstName] = useState("");
   const [editLastName, setEditLastName] = useState("");
   const [editBio, setEditBio] = useState("");
@@ -701,7 +628,14 @@ export default function PublicProfilePage() {
   const [editYearsExp, setEditYearsExp] = useState("");
   const [editSkillBadge, setEditSkillBadge] = useState("");
   const [editCompanyWebsite, setEditCompanyWebsite] = useState("");
-  const [editLinkedInUrl, setEditLinkedInUrl] = useState("");
+  const [editBusinessName, setEditBusinessName] = useState("");
+  const [editBusinessEmail, setEditBusinessEmail] = useState("");
+  const [editBusinessWebsite, setEditBusinessWebsite] = useState("");
+  const [editBusinessLocation, setEditBusinessLocation] = useState("");
+  const [editBusinessAddress, setEditBusinessAddress] = useState("");
+  const [editBusinessPhone, setEditBusinessPhone] = useState("");
+  const [editBusinessOwnerInfo, setEditBusinessOwnerInfo] = useState("");
+  const [editBusinessPageType, setEditBusinessPageType] = useState<"business" | "organization">("business");
   const [editOpenToOpportunities, setEditOpenToOpportunities] = useState(false);
   const [editEmployerSummary, setEditEmployerSummary] = useState("");
   const [editResumeUrl, setEditResumeUrl] = useState("");
@@ -750,6 +684,7 @@ export default function PublicProfilePage() {
   const [connListLoading, setConnListLoading] = useState(false);
 
   const [expandedComments, setExpandedComments] = useState<Record<string, boolean>>({});
+  const [expandedCommentTexts, setExpandedCommentTexts] = useState<Record<string, boolean>>({});
   const [commentInputs, setCommentInputs] = useState<Record<string, string>>({});
   const [togglingLikeFor, setTogglingLikeFor] = useState<string | null>(null);
   const [submittingCommentFor, setSubmittingCommentFor] = useState<string | null>(null);
@@ -825,6 +760,17 @@ export default function PublicProfilePage() {
     };
   }, [editingProfile]);
 
+  useEffect(() => {
+    if (!currentUserId) return;
+    const onSavedJobsChanged = () => {
+      void loadDesktopSavedJobs(currentUserId);
+    };
+    window.addEventListener("eod:saved-jobs-changed", onSavedJobsChanged as EventListener);
+    return () => {
+      window.removeEventListener("eod:saved-jobs-changed", onSavedJobsChanged as EventListener);
+    };
+  }, [currentUserId]);
+
   const applyPlankHolderResponse = useCallback((next: PlankHolderResponse | null) => {
     if (!next) return;
     const previous = plankHolderChallengeRef.current;
@@ -833,10 +779,10 @@ export default function PublicProfilePage() {
     plankHolderChallengeRef.current = next;
     setPlankHolderChallenge(next);
 
-    if (plankHolderInitializedRef.current && completed.length > 0 && isPlankHolderChallengeOpen(next)) {
+    if (plankHolderInitializedRef.current && completed.length > 0) {
       const task = completed[0];
       setPlankHolderToast({
-        title: "‚öì Challenge Updated",
+        title: "? Challenge Updated",
         detail: `${PLANK_HOLDER_TASK_LABELS[task]} Complete`,
         progress: `${next.progress.completedCount} / ${next.progress.total} Complete`,
       });
@@ -952,25 +898,18 @@ export default function PublicProfilePage() {
 
   async function uploadEmployerDocument(file: File, folder: string): Promise<string> {
     if (!currentUserId || currentUserId !== userId) throw new Error("Not authorized");
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) throw new Error("Your session expired. Please sign in again and retry.");
-
     const prepared = await prepareEmployerDocumentUpload(file);
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
     const ext = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "bin";
     const safeExt = ext && /^[a-z0-9]+$/.test(ext) ? ext : "bin";
     const filePath = `${currentUserId}/${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
-    const contentType = file.type || inferEmployerDocumentContentType(file);
-    try {
-      const { error } = await supabase.storage.from("feed-images").upload(filePath, file, {
-        upsert: true,
-        contentType,
-      });
-      if (error) throw error;
-    } catch (err) {
-      throw new Error(formatEmployerDocumentUploadError(err));
-    }
+    const contentType = inferEmployerDocumentContentType(file);
+    const { error } = await supabase.storage.from("feed-images").upload(filePath, file, {
+      upsert: true,
+      contentType,
+    });
+    if (error) throw error;
     const { data } = supabase.storage.from("feed-images").getPublicUrl(filePath);
     return data.publicUrl;
   }
@@ -979,11 +918,6 @@ export default function PublicProfilePage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const pickError = validateEmployerDocumentPick(file);
-    if (pickError) {
-      alert(pickError);
-      return;
-    }
     try {
       setUploadingResumeDoc(true);
       const url = await uploadEmployerDocument(file, "resume");
@@ -999,11 +933,6 @@ export default function PublicProfilePage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    const pickError = validateEmployerDocumentPick(file);
-    if (pickError) {
-      alert(pickError);
-      return;
-    }
     try {
       setUploadingEducationDoc(true);
       const url = await uploadEmployerDocument(file, "education");
@@ -1019,12 +948,6 @@ export default function PublicProfilePage() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file || !trainingUploadTargetTag) return;
-    const pickError = validateEmployerDocumentPick(file);
-    if (pickError) {
-      alert(pickError);
-      setTrainingUploadTargetTag(null);
-      return;
-    }
     try {
       setUploadingTrainingTag(trainingUploadTargetTag);
       const url = await uploadEmployerDocument(file, "training");
@@ -1037,43 +960,53 @@ export default function PublicProfilePage() {
     }
   }
 
-  async function openWallEditProfile() {
+  function openWallEditProfile() {
     if (!profile || currentUserId !== profile.user_id) return;
-    const editableProfile = (await ensureFullProfileLoaded()) ?? profile;
-    setEditCompanyName(editableProfile.company_name ?? "");
-    setEditDisplayName(editableProfile.display_name ?? "");
-    setEditFirstName(editableProfile.first_name ?? "");
-    setEditLastName(editableProfile.last_name ?? "");
-    setEditRole(editableProfile.role ?? "");
-    setEditBio(editableProfile.bio ?? "");
-    setEditService(editableProfile.service ?? "");
-    setEditStatus(editableProfile.status === "Active" ? "Active Duty" : (editableProfile.status ?? ""));
-    setEditYearsExp(editableProfile.years_experience ?? "");
-    setEditSkillBadge(editableProfile.skill_badge ?? "");
-    setEditCompanyWebsite(editableProfile.company_website ?? "");
-    setEditLinkedInUrl(editableProfile.linkedin_url ?? "");
-    setEditOpenToOpportunities(!!editableProfile.open_to_opportunities);
-    setEditEmployerSummary(editableProfile.employer_summary ?? "");
-    setEditResumeUrl(editableProfile.resume_url ?? "");
-    setEditEducationUrl(editableProfile.education_url ?? "");
-    setEditSpecializedTraining(normalizeTagArray(editableProfile.specialized_training));
-    setEditSpecializedTrainingDocs(normalizeTrainingDocs(editableProfile.specialized_training_docs));
+    if (profile.account_type === "business_org") {
+      setEditBusinessName(businessOrgPage?.business_name ?? profileHeadlineName);
+      setEditBusinessEmail(businessOrgPage?.business_email ?? profile.email ?? "");
+      setEditBusinessWebsite(businessOrgPage?.website_url ?? "");
+      setEditBusinessLocation(businessOrgPage?.location ?? "");
+      setEditBusinessAddress(businessOrgPage?.address ?? "");
+      setEditBusinessPhone(businessOrgPage?.phone ?? "");
+      setEditBusinessOwnerInfo(businessOrgPage?.owner_info ?? "");
+      setEditBusinessPageType(businessOrgPage?.page_type === "organization" ? "organization" : "business");
+      setEditBio(businessOrgPage?.description ?? profile.bio ?? "");
+      setEditingProfile(true);
+      return;
+    }
+    setEditCompanyName(profile.company_name ?? "");
+    setEditFirstName(profile.first_name ?? "");
+    setEditLastName(profile.last_name ?? "");
+    setEditRole(profile.role ?? "");
+    setEditBio(profile.bio ?? "");
+    setEditService(profile.service ?? "");
+    setEditStatus(profile.status === "Active" ? "Active Duty" : (profile.status ?? ""));
+    setEditYearsExp(profile.years_experience ?? "");
+    setEditSkillBadge(profile.skill_badge ?? "");
+    setEditCompanyWebsite(profile.company_website ?? "");
+    setEditOpenToOpportunities(!!profile.open_to_opportunities);
+    setEditEmployerSummary(profile.employer_summary ?? "");
+    setEditResumeUrl(profile.resume_url ?? "");
+    setEditEducationUrl(profile.education_url ?? "");
+    setEditSpecializedTraining(normalizeTagArray(profile.specialized_training));
+    setEditSpecializedTrainingDocs(normalizeTrainingDocs(profile.specialized_training_docs));
     setDraftSpecializedTraining("");
-    setEditAvailabilityType(editableProfile.availability_type ?? "");
-    setEditAvailabilityDate(editableProfile.availability_date ?? "");
-    setEditCurrentCity(editableProfile.current_city ?? "");
-    setEditCurrentState(editableProfile.current_state ?? "");
-    setEditWillingToRelocate(!!editableProfile.willing_to_relocate);
-    setEditWillingToTravel(editableProfile.willing_to_travel ?? "");
-    setEditWorkPreference(editableProfile.work_preference ?? "");
-    setEditClearanceLevel(editableProfile.clearance_level ?? "");
-    setEditClearanceStatus(editableProfile.clearance_status ?? "");
-    setEditClearanceExpirationDate(editableProfile.clearance_expiration_date ?? "");
-    setEditHasOconusExperience(!!editableProfile.has_oconus_experience);
-    setEditHasContractExperience(!!editableProfile.has_contract_experience);
-    setEditHasFederalLeMilitaryCrossover(!!editableProfile.has_federal_le_military_crossover);
-    setEditProfessionalTags(normalizeTagArray(editableProfile.professional_tags));
-    setEditUnitHistoryTags(normalizeTagArray(editableProfile.unit_history_tags));
+    setEditAvailabilityType(profile.availability_type ?? "");
+    setEditAvailabilityDate(profile.availability_date ?? "");
+    setEditCurrentCity(profile.current_city ?? "");
+    setEditCurrentState(profile.current_state ?? "");
+    setEditWillingToRelocate(!!profile.willing_to_relocate);
+    setEditWillingToTravel(profile.willing_to_travel ?? "");
+    setEditWorkPreference(profile.work_preference ?? "");
+    setEditClearanceLevel(profile.clearance_level ?? "");
+    setEditClearanceStatus(profile.clearance_status ?? "");
+    setEditClearanceExpirationDate(profile.clearance_expiration_date ?? "");
+    setEditHasOconusExperience(!!profile.has_oconus_experience);
+    setEditHasContractExperience(!!profile.has_contract_experience);
+    setEditHasFederalLeMilitaryCrossover(!!profile.has_federal_le_military_crossover);
+    setEditProfessionalTags(normalizeTagArray(profile.professional_tags));
+    setEditUnitHistoryTags(normalizeTagArray(profile.unit_history_tags));
     setDraftProfessionalTag("");
     setDraftUnitHistoryTag("");
     setEditingProfile(true);
@@ -1081,138 +1014,162 @@ export default function PublicProfilePage() {
 
   async function handleSaveWallProfile() {
     if (!currentUserId || !profile || currentUserId !== profile.user_id || !userId) return;
-    const savingEmployerAccount = !!profile.is_employer || isEmployerAccount(profile);
-    const linkedInResult = normalizeLinkedInUrl(editLinkedInUrl);
-    if (!savingEmployerAccount && !linkedInResult.ok) {
-      alert(linkedInResult.error);
-      return;
-    }
-    try {
-      setSavingProfile(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        alert("Your session expired. Please sign in again and retry.");
-        window.location.href = "/login";
+    if (profile.account_type === "business_org") {
+      if (!businessOrgPage) {
+        alert("Business profile details are not available yet.");
         return;
       }
-
+      try {
+        setSavingProfile(true);
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+        if (!accessToken) {
+          alert("Please sign in again to save changes.");
+          return;
+        }
+        const res = await fetch(`/api/business-org-pages/${encodeURIComponent(businessOrgPage.id)}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            business_name: editBusinessName,
+            description: editBio,
+            business_email: editBusinessEmail,
+            linked_account_email: businessOrgPage.linked_account_email,
+            logo_url: businessOrgPage.logo_url,
+            website_url: editBusinessWebsite,
+            location: editBusinessLocation,
+            address: editBusinessAddress,
+            phone: editBusinessPhone,
+            owner_info: editBusinessOwnerInfo,
+            page_type: editBusinessPageType,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { page?: BusinessOrgPageRow; error?: string };
+        if (!res.ok || !data.page) {
+          alert(data.error ?? "Could not save business profile.");
+          return;
+        }
+        setBusinessOrgPage(data.page);
+        await loadProfile(userId);
+        setEditingProfile(false);
+      } finally {
+        setSavingProfile(false);
+      }
+      return;
+    }
+    const savingEmployerAccount = !!profile.is_employer || isEmployerAccount(profile);
+    try {
+      setSavingProfile(true);
       const payload = savingEmployerAccount
         ? {
-            accountKind: "employer" as const,
-            company_name: editCompanyName,
-            first_name: editFirstName,
-            last_name: editLastName,
-            company_website: editCompanyWebsite,
-            bio: editBio,
+            company_name: editCompanyName.trim() || null,
+            first_name: editFirstName.trim() || null,
+            last_name: editLastName.trim() || null,
+            company_website: editCompanyWebsite.trim() || null,
+            bio: editBio.trim() || null,
           }
         : {
-            accountKind: "member" as const,
-            display_name: editDisplayName,
-            role: editRole,
-            bio: editBio,
-            service: editService,
-            status: editStatus,
-            years_experience: editYearsExp,
-            skill_badge: editSkillBadge,
-            company_website: editCompanyWebsite,
-            linkedin_url: editLinkedInUrl,
+            role: editRole || null,
+            bio: editBio || null,
+            service: editService || null,
+            status: editStatus || null,
+            years_experience: editYearsExp || null,
+            skill_badge: editSkillBadge || null,
+            company_website: editCompanyWebsite || null,
             open_to_opportunities: editOpenToOpportunities,
-            employer_summary: editEmployerSummary,
-            resume_url: editResumeUrl,
-            education_url: editEducationUrl,
-            specialized_training: editSpecializedTraining,
-            specialized_training_docs: editSpecializedTrainingDocs,
-            availability_type: editAvailabilityType,
-            availability_date: editAvailabilityDate,
-            current_city: editCurrentCity,
-            current_state: editCurrentState,
+            employer_summary: editEmployerSummary || null,
+            resume_url: editResumeUrl || null,
+            education_url: editEducationUrl || null,
+            specialized_training: editSpecializedTraining.length ? editSpecializedTraining : null,
+            specialized_training_docs: Object.keys(editSpecializedTrainingDocs).length ? editSpecializedTrainingDocs : null,
+            availability_type: editAvailabilityType || null,
+            availability_date: editAvailabilityDate || null,
+            current_city: editCurrentCity || null,
+            current_state: editCurrentState || null,
             willing_to_relocate: editWillingToRelocate,
-            willing_to_travel: editWillingToTravel,
-            work_preference: editWorkPreference,
-            clearance_level: editClearanceLevel,
-            clearance_status: editClearanceStatus,
-            clearance_expiration_date: editClearanceExpirationDate,
+            willing_to_travel: editWillingToTravel || null,
+            work_preference: editWorkPreference || null,
+            clearance_level: editClearanceLevel || null,
+            clearance_status: editClearanceStatus || null,
+            clearance_expiration_date: editClearanceExpirationDate || null,
             has_oconus_experience: editHasOconusExperience,
             has_contract_experience: editHasContractExperience,
             has_federal_le_military_crossover: editHasFederalLeMilitaryCrossover,
-            professional_tags: editProfessionalTags,
-            unit_history_tags: editUnitHistoryTags,
+            professional_tags: editProfessionalTags.length ? editProfessionalTags : null,
+            unit_history_tags: editUnitHistoryTags.length ? editUnitHistoryTags : null,
           };
-
-      const saveRes = await fetch("/api/account/save-profile", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-      const saveJson = (await saveRes.json().catch(() => ({}))) as { error?: string; profile?: Profile };
-      if (!saveRes.ok) {
-        const message = saveJson.error ?? "Could not save profile.";
-        if (message.toLowerCase().includes("lock") || message.toLowerCase().includes("timeout")) {
-          alert("Your connection had trouble confirming your session. Your changes were not saved. Please check your signal and try again.");
-        } else {
-          alert(message);
-        }
+      const { error } = await supabase
+        .from("profiles")
+        .update(payload)
+        .eq("user_id", currentUserId);
+      if (error) {
+        alert(error.message);
         return;
       }
-      if (!saveJson.profile) {
-        alert("Your changes were not saved. Please refresh and try again.");
-        return;
-      }
-
-      setProfile(saveJson.profile);
       await loadProfile(userId);
       void refreshPlankHolderChallenge();
       setEditingProfile(false);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (message.toLowerCase().includes("lock") || message.toLowerCase().includes("timeout")) {
-        alert("Your connection had trouble confirming your session. Your changes were not saved. Please check your signal and try again.");
-      } else {
-        alert(`Could not save profile: ${message}`);
-      }
     } finally {
       setSavingProfile(false);
     }
   }
 
-  async function loadProfile(targetUserId: string, options: { full?: boolean } = {}): Promise<Profile | null> {
+  async function loadProfile(targetUserId: string) {
     const { data, error } = await supabase
       .from("profiles")
-      .select(options.full ? "*" : PROFILE_DISPLAY_COLUMNS)
+      .select("*")
       .eq("user_id", targetUserId)
       .maybeSingle();
 
     if (error) {
       console.error("Profile load error:", error);
-      return null;
+      return;
     }
 
     const profileData = (data as Profile | null) ?? null;
     setProfile(profileData);
-    setProfileFullyLoaded(Boolean(options.full));
+    setBusinessOrgPage(null);
 
-    // Fetch verified recruit count using both canonical referrer_user_id and legacy referral code.
-    const referralFilter = profileData ? referralMatchFilter(profileData) : null;
-    if (profileData && referralFilter) {
+    if (profileData?.account_type === "business_org") {
+      let resolvedPage: BusinessOrgPageRow | null = null;
+      const { data: directPageData, error: pageError } = await supabase
+        .from("business_organization_pages")
+        .select(BUSINESS_ORG_PAGE_SELECT)
+        .eq("business_auth_user_id", targetUserId)
+        .maybeSingle();
+
+      if (pageError) {
+        console.error("Business organization page load error:", pageError);
+      } else {
+        resolvedPage = (directPageData as BusinessOrgPageRow | null) ?? null;
+        setBusinessOrgPage(resolvedPage);
+      }
+
+      if (!resolvedPage) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const accessToken = sessionData.session?.access_token;
+        const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined;
+        const res = await fetch(`/api/business-org-pages/by-auth-user/${encodeURIComponent(targetUserId)}`, { headers });
+        if (res.ok) {
+          const json = (await res.json()) as { page?: BusinessOrgPageRow | null };
+          resolvedPage = json.page ?? null;
+          setBusinessOrgPage(resolvedPage);
+        }
+      }
+    }
+
+    // Fetch referral count if they have a code
+    if (profileData?.referral_code) {
       const { count } = await supabase
         .from("profiles")
         .select("*", { count: "exact", head: true })
-        .or(referralFilter)
+        .eq("referred_by", profileData.referral_code)
         .eq("verification_status", "verified");
       setReferralCount(count ?? 0);
-    } else {
-      setReferralCount(0);
     }
-    return profileData;
-  }
-
-  async function ensureFullProfileLoaded(): Promise<Profile | null> {
-    if (!userId) return profile;
-    if (profileFullyLoaded) return profile;
-    return loadProfile(userId, { full: true });
   }
 
   async function openConnList(type: ConnListType) {
@@ -1221,35 +1178,34 @@ export default function PublicProfilePage() {
     setConnListUsers([]);
     try {
       if (type === "recruited") {
-        const referralFilter = profile ? referralMatchFilter(profile) : null;
-        if (!profile || !referralFilter) { setConnListLoading(false); return; }
+        if (!profile?.referral_code) { setConnListLoading(false); return; }
         const { data } = await supabase
           .from("profiles")
           .select("user_id, first_name, last_name, photo_url, service")
-          .or(referralFilter)
+          .eq("referred_by", profile.referral_code)
           .eq("verification_status", "verified");
         setConnListUsers(
           ((data ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null; service: string | null }[])
             .map((u) => ({ ...u, worked_with: false })),
         );
       } else {
-        const cached = queryClient.getQueryData<ProfileConnectionsData>(
-          queryKeys.profileConnections(currentUserId, userId),
-        );
-        if (cached) {
-          setConnListUsers(cached.connections ?? cached.knownPreviewUsers ?? []);
+        const targetId = userId as string;
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          setConnListUsers([]);
           return;
         }
-        try {
-          const fresh = await queryClient.fetchQuery({
-            queryKey: queryKeys.profileConnections(currentUserId, userId),
-            queryFn: () => fetchProfileConnections(supabase, userId as string, currentUserId),
-            staleTime: PROFILE_CONNECTIONS_STALE_MS,
-          });
-          setConnListUsers(fresh.connections ?? fresh.knownPreviewUsers ?? []);
-        } catch (error) {
-          console.error("Connection list load error:", error);
+        const res = await fetch(`/api/profile-connections?targetUserId=${encodeURIComponent(targetId)}`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (!res.ok) {
+          console.error("Connection list load error:", await res.text().catch(() => res.statusText));
+          return;
         }
+        const connectionData = (await res.json()) as ProfileConnectionsResponse & {
+          connections?: (KnownPreviewUser & { service?: string | null })[];
+        };
+        setConnListUsers(connectionData.connections ?? connectionData.knownPreviewUsers ?? []);
       }
     } finally {
       setConnListLoading(false);
@@ -1274,9 +1230,8 @@ export default function PublicProfilePage() {
     const { data: rawData, error } = await supabase
       .from("posts")
       .select("id, user_id, wall_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
-      .or(`wall_user_id.eq.${targetUserId},and(user_id.eq.${targetUserId},wall_user_id.is.null)`)
-      .order("created_at", { ascending: false })
-      .limit(queryLimit);
+      .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
+      .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Profile posts load error:", error);
@@ -1305,7 +1260,7 @@ export default function PublicProfilePage() {
       return;
     }
 
-    const postIds = visibleRawPosts.map((p) => p.id);
+    const postIds = rawPosts.map((p) => p.id);
 
     // Legacy single image_url
     const legacyWithEvent = await supabase
@@ -1343,7 +1298,7 @@ export default function PublicProfilePage() {
       eventIdByPostId.set(r.id, r.event_id ?? null);
     });
 
-    const missingEventCandidates = visibleRawPosts
+    const missingEventCandidates = rawPosts
       .filter((post) => !eventIdByPostId.get(post.id))
       .map((post) => ({
         postId: post.id,
@@ -1492,7 +1447,7 @@ export default function PublicProfilePage() {
     });
 
     // For wall posts from other users, fetch their names
-    const wallPosterIds = [...new Set(visibleRawPosts
+    const wallPosterIds = [...new Set(rawPosts
       .filter((p) => p.wall_user_id === targetUserId && p.user_id !== targetUserId)
       .map((p) => p.user_id))];
     const authorNameMap = new Map<string, string>();
@@ -1699,7 +1654,7 @@ export default function PublicProfilePage() {
       }
     }
 
-    const merged: Post[] = visibleRawPosts.map((p) => {
+    const merged: Post[] = rawPosts.map((p) => {
       const agg = aggregatesMap.get(p.id) ?? emptyAggregate();
       const postLikes = agg.userIds;
       const seenLiker = new Set<string>();
@@ -1795,6 +1750,71 @@ export default function PublicProfilePage() {
         ? `${extra?.type ?? "wall_activity"}:${extra.post_id}:${currentUserId}`
         : `${extra?.type ?? "wall_activity"}:${recipientId}:${currentUserId}`,
     });
+  }
+
+  function isConnV2MissingColumnError(error: unknown): boolean {
+    if (!error || typeof error !== "object") return false;
+    const msg = String((error as { message?: unknown }).message ?? "").toLowerCase();
+    return msg.includes("status") || msg.includes("worked_with");
+  }
+
+  async function loadConnectionsLegacy(targetUserId: string, effectiveCurrentUserId?: string | null) {
+    const { data: outgoing, error } = await supabase
+      .from("profile_connections")
+      .select("requester_user_id, target_user_id, connection_type")
+      .eq("requester_user_id", targetUserId);
+
+    if (error) {
+      console.error("Legacy profile connections load error:", error);
+      return;
+    }
+
+    const rows = (outgoing ?? []) as {
+      requester_user_id: string;
+      target_user_id: string;
+      connection_type: "know" | "worked_with";
+    }[];
+
+    const knowRows = rows.filter((r) => r.connection_type === "know" || r.connection_type === "worked_with");
+    setKnowCount(knowRows.length);
+
+    if (knowRows.length > 0) {
+      const previewIds = knowRows.slice(0, 6).map((r) => r.target_user_id);
+      const workedMap = new Map<string, boolean>();
+      knowRows.forEach((r) => workedMap.set(r.target_user_id, r.connection_type === "worked_with"));
+      const { data: previewProfiles } = await supabase
+        .from("profiles")
+        .select("user_id, first_name, last_name, photo_url")
+        .in("user_id", previewIds);
+      setKnownPreviewUsers(
+        ((previewProfiles ?? []) as { user_id: string; first_name: string | null; last_name: string | null; photo_url: string | null }[])
+          .map((u) => ({ ...u, worked_with: workedMap.get(u.user_id) ?? false }))
+      );
+    } else {
+      setKnownPreviewUsers([]);
+    }
+
+    if (!effectiveCurrentUserId || effectiveCurrentUserId === targetUserId) {
+      setCurrentUserWorkedWith(false);
+      setCurrentUserKnowStatus("none");
+      setActiveConnectionId(null);
+      setIsMutualConnection(false);
+      return;
+    }
+
+    const { data: viewerConn } = await supabase
+      .from("profile_connections")
+      .select("connection_type")
+      .eq("requester_user_id", effectiveCurrentUserId)
+      .eq("target_user_id", targetUserId);
+
+    const viewerRows = (viewerConn ?? []) as { connection_type: "know" | "worked_with" }[];
+    const myWorkedWith = viewerRows.some((r) => r.connection_type === "worked_with");
+    const myKnows = viewerRows.some((r) => r.connection_type === "know");
+    setCurrentUserWorkedWith(myWorkedWith);
+    setCurrentUserKnowStatus(myWorkedWith || myKnows ? "accepted" : "none");
+    setActiveConnectionId(null);
+    setIsMutualConnection(myWorkedWith || myKnows);
   }
 
   async function handleWallPostReaction(postId: string, picked: ReactionType) {
@@ -2033,18 +2053,12 @@ export default function PublicProfilePage() {
     } finally { setDeletingCommentId(null); }
   }
 
-  async function loadPhotos(targetUserId: string, options: { full?: boolean } = {}): Promise<ProfilePhoto[]> {
-    let query = supabase
+  async function loadPhotos(targetUserId: string): Promise<ProfilePhoto[]> {
+    const { data, error } = await supabase
       .from("profile_photos")
       .select("*")
       .eq("user_id", targetUserId)
       .order("created_at", { ascending: false });
-
-    if (!options.full) {
-      query = query.limit(PROFILE_PHOTO_PREVIEW_LIMIT);
-    }
-
-    const { data, error } = await query;
 
     if (error) {
       console.error("Profile photos load error:", error);
@@ -2053,34 +2067,7 @@ export default function PublicProfilePage() {
 
     const result = (data as ProfilePhoto[]) ?? [];
     setPhotos(result);
-    setProfilePhotosFullyLoaded(Boolean(options.full) || result.length < PROFILE_PHOTO_PREVIEW_LIMIT);
     return result;
-  }
-
-  async function ensureFullProfilePhotosLoaded(): Promise<ProfilePhoto[]> {
-    if (!userId) return photos;
-    if (profilePhotosFullyLoaded) return photos;
-    setProfilePhotosLoading(true);
-    try {
-      const fullPhotos = await loadPhotos(userId, { full: true });
-      await loadPhotoInteractions(fullPhotos.map((p) => p.id), currentUserId);
-      return fullPhotos;
-    } finally {
-      setProfilePhotosLoading(false);
-    }
-  }
-
-  async function openFullProfilePhotos() {
-    await ensureFullProfilePhotosLoaded();
-    setShowAllModal("photos");
-  }
-
-  async function toggleGalleryExpanded() {
-    const expanding = !galleryExpanded;
-    if (expanding) {
-      await ensureFullProfilePhotosLoaded();
-    }
-    setGalleryExpanded(expanding);
   }
 
   async function loadMyGroups(targetUserId: string): Promise<GroupTile[]> {
@@ -2217,6 +2204,37 @@ export default function PublicProfilePage() {
     setDesktopSavedEvents(rows);
   }
 
+  async function loadDesktopSavedJobs(uid: string) {
+    const { data, error } = await supabase
+      .from("saved_jobs")
+      .select("id, job_id, jobs(title, company_name, location, category, apply_url, created_at)")
+      .eq("user_id", uid)
+      .order("created_at", { ascending: false });
+    if (error) {
+      setDesktopSavedJobs([]);
+      return;
+    }
+    type RawRow = {
+      id: string;
+      job_id: string;
+      jobs: { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null } | { title: string | null; company_name: string | null; location: string | null; category: string | null; apply_url: string | null; created_at: string | null }[] | null;
+    };
+    const rows = ((data ?? []) as unknown as RawRow[]).map((r) => {
+      const job = Array.isArray(r.jobs) ? r.jobs[0] ?? null : r.jobs;
+      return {
+        id: r.id,
+        job_id: r.job_id,
+        title: job?.title ?? null,
+        company_name: job?.company_name ?? null,
+        location: job?.location ?? null,
+        category: job?.category ?? null,
+        apply_url: job?.apply_url ?? null,
+        created_at: job?.created_at ?? null,
+      };
+    });
+    setDesktopSavedJobs(rows);
+  }
+
   async function unsaveWallEvent(rowId: string) {
     try {
       setUnsavingWallEvent(rowId);
@@ -2232,14 +2250,12 @@ export default function PublicProfilePage() {
     try {
       setUnsavingDesktopJobId(savedJobRowId);
       const removed = desktopSavedJobs.find((j) => j.id === savedJobRowId);
-      if (removed?.job_id && currentUserId) {
-        await toggleSavedJob({
-          queryClient,
-          supabase,
-          userId: currentUserId,
-          jobId: removed.job_id,
-          saved: true,
-        });
+      await supabase.from("saved_jobs").delete().eq("id", savedJobRowId);
+      setDesktopSavedJobs((prev) => prev.filter((j) => j.id !== savedJobRowId));
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("eod:saved-jobs-changed", { detail: { jobId: removed?.job_id ?? null } })
+        );
       }
     } finally {
       setUnsavingDesktopJobId(null);
@@ -2411,6 +2427,47 @@ export default function PublicProfilePage() {
     } finally { setSubmittingPhotoComment(false); }
   }
 
+  async function loadConnections(targetUserId: string, signedInUserId?: string | null) {
+    const effectiveCurrentUserId = signedInUserId ?? currentUserId;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      await loadConnectionsLegacy(targetUserId, effectiveCurrentUserId);
+      return;
+    }
+
+    const res = await fetch(`/api/profile-connections?targetUserId=${encodeURIComponent(targetUserId)}`, {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    });
+    if (!res.ok) {
+      console.error("Profile connections load error:", await res.text().catch(() => res.statusText));
+      return;
+    }
+    const data = (await res.json()) as ProfileConnectionsResponse;
+    setKnowCount(data.knowCount);
+    setKnownPreviewUsers(data.knownPreviewUsers ?? []);
+
+    if (!effectiveCurrentUserId || effectiveCurrentUserId === targetUserId || !data.relation) {
+      setCurrentUserWorkedWith(false);
+      setCurrentUserKnowStatus("none");
+      setActiveConnectionId(null);
+      setIsMutualConnection(false);
+      return;
+    }
+
+    if (data.relation.status === "denied") {
+      setCurrentUserKnowStatus("none");
+      setCurrentUserWorkedWith(false);
+      setActiveConnectionId(null);
+      setIsMutualConnection(false);
+      return;
+    }
+
+    setActiveConnectionId(data.relation.id);
+    setCurrentUserWorkedWith(data.relation.viewerWorkedWith);
+    setCurrentUserKnowStatus(data.relation.knowStatus);
+    setIsMutualConnection(data.relation.knowStatus === "accepted");
+  }
+
   function handlePostContentChange(value: string) {
     setPostContent(value);
     const url = extractFirstUrl(value);
@@ -2580,16 +2637,12 @@ export default function PublicProfilePage() {
     if (!userId || currentUserId === userId) return;
     try {
       setTogglingConnection("know");
-      const result = await runProfileConnectionAction({
-        queryClient,
-        supabase,
-        viewerId: currentUserId,
-        targetUserId: userId,
-        action: "know",
-      });
+      const result = await postConnectionAction("know");
       if (!result.ok) {
         alert(result.error || "Failed to update connection");
+        return;
       }
+      await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Request know error:", err);
       alert("Failed to update connection");
@@ -2598,20 +2651,39 @@ export default function PublicProfilePage() {
     }
   }
 
+  async function postConnectionAction(
+    action: "know" | "confirm" | "deny" | "cancel" | "worked_with",
+    workedWith?: boolean,
+  ): Promise<ConnectionActionResponse> {
+    if (!userId) return { ok: false, error: "Missing profile user" };
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return { ok: false, error: "Please sign in again." };
+
+    const res = await fetch("/api/profile-connections/action", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ action, targetUserId: userId, workedWith }),
+    });
+    const result = await res.json().catch(() => null) as ConnectionActionResponse | null;
+    if (!res.ok || !result) {
+      return { ok: false, error: result?.error || "Connection action failed" };
+    }
+    return result;
+  }
+
   async function cancelKnowRequest() {
     if (!currentUserId || !userId || currentUserId === userId) return;
     try {
       setTogglingConnection("know");
-      const result = await runProfileConnectionAction({
-        queryClient,
-        supabase,
-        viewerId: currentUserId,
-        targetUserId: userId,
-        action: "cancel",
-      });
+      const result = await postConnectionAction("cancel");
       if (!result.ok) {
         alert(result.error || "Failed to update connection");
+        return;
       }
+      await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Cancel know request error:", err);
       alert("Failed to update connection");
@@ -2624,16 +2696,12 @@ export default function PublicProfilePage() {
     if (!currentUserId || !userId) return;
     try {
       setTogglingConnection(accept ? "confirm" : "deny");
-      const result = await runProfileConnectionAction({
-        queryClient,
-        supabase,
-        viewerId: currentUserId,
-        targetUserId: userId,
-        action: accept ? "confirm" : "deny",
-      });
+      const result = await postConnectionAction(accept ? "confirm" : "deny");
       if (!result.ok) {
         alert(result.error || "Failed to update connection");
+        return;
       }
+      await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Respond know request error:", err);
       alert("Failed to update connection");
@@ -2647,17 +2715,13 @@ export default function PublicProfilePage() {
     if (currentUserKnowStatus !== "accepted") return;
     try {
       setTogglingConnection("worked_with");
-      const result = await runProfileConnectionAction({
-        queryClient,
-        supabase,
-        viewerId: currentUserId,
-        targetUserId: userId,
-        action: "worked_with",
-        workedWith: !currentUserWorkedWith,
-      });
+      const turningOn = !currentUserWorkedWith;
+      const result = await postConnectionAction("worked_with", turningOn);
       if (!result.ok) {
         alert(result.error || "Failed to update connection");
+        return;
       }
+      await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Toggle worked_with error:", err);
       alert("Failed to update connection");
@@ -2763,74 +2827,64 @@ export default function PublicProfilePage() {
   }
 
   useEffect(() => {
-    function checkViewport() {
-      const width = window.innerWidth;
-      setIsMobile(width <= MOBILE_SHELL_MAX);
-      setProfileLayoutCompact(width <= STACKED_PROFILE_MAX);
-    }
-    checkViewport();
-    window.addEventListener("resize", checkViewport);
-    return () => window.removeEventListener("resize", checkViewport);
+    function checkMobile() { setIsMobile(window.innerWidth <= 900); }
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
     async function init() {
       if (!userId || userId === "undefined") {
         setLoading(false);
         return;
       }
 
-      setLoading(true);
-      setPosts([]);
-      setPhotos([]);
-      setMyGroups([]);
-      setWallSavedEvents([]);
-      setProfileWallHasMorePosts(false);
-      setProfileWallLoading(false);
-      setProfilePhotosLoading(false);
-      setProfileGroupsLoading(false);
-
-      const { data, error } = await getSupabaseUser();
+      const { data, error } = await supabase.auth.getUser();
 
       if (error) {
         console.error("Auth error:", error);
       }
 
       const signedInUserId = data.user?.id ?? null;
-      if (cancelled) return;
       setCurrentUserId(signedInUserId);
       plankHolderChallengeRef.current = null;
       plankHolderInitializedRef.current = false;
       setPlankHolderChallenge(null);
 
       if (signedInUserId) {
-        void (async () => {
-          const viewerProfile = data.user
-            ? await fetchViewerProfileCached(queryClient, supabase, data.user)
-            : null;
-          if (cancelled) return;
-          setCurrentUserName(
-            `${viewerProfile?.first_name || ""} ${viewerProfile?.last_name || ""}`.trim() || "Someone",
-          );
-          setViewerIsEmployer(!!viewerProfile?.is_employer);
-          setViewerIsAdmin(!!viewerProfile?.is_admin);
-        })();
+        const { data: nameData } = await supabase.from("profiles").select("first_name, last_name, is_employer, is_admin").eq("user_id", signedInUserId).maybeSingle();
+        const nd = nameData as { first_name: string | null; last_name: string | null; is_employer: boolean | null; is_admin?: boolean | null } | null;
+        setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
+        setViewerIsEmployer(!!nd?.is_employer);
+        setViewerIsAdmin(!!nd?.is_admin);
 
-        void (async () => {
-          const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
-          const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);
-          if (convIds.length > 0) {
-            const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("is_read", false).neq("sender_id", signedInUserId).in("conversation_id", convIds);
-            if (!cancelled) setUnreadMessages(count ?? 0);
-          } else if (!cancelled) {
-            setUnreadMessages(0);
-          }
-        })();
+        const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
+        const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);
+        if (convIds.length > 0) {
+          const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("is_read", false).neq("sender_id", signedInUserId).in("conversation_id", convIds);
+          setUnreadMessages(count ?? 0);
+        } else {
+          setUnreadMessages(0);
+        }
+      }
+
+      const [,, photoResults] = await Promise.all([
+        loadProfile(userId),
+        loadPosts(userId),
+        loadPhotos(userId),
+        loadConnections(userId, signedInUserId),
+        loadMyGroups(userId),
+        loadSavedEventsForUser(userId),
+      ]);
+      if (signedInUserId) {
+        await Promise.all([
+          loadDesktopSavedEvents(signedInUserId),
+          loadDesktopSavedJobs(signedInUserId),
+        ]);
       } else {
-        setUnreadMessages(0);
         setDesktopSavedEvents([]);
+        setDesktopSavedJobs([]);
         setViewerIsEmployer(false);
         setViewerIsAdmin(false);
       }
@@ -2878,12 +2932,11 @@ export default function PublicProfilePage() {
       if (signedInUserId && signedInUserId === userId) {
         void refreshPlankHolderChallenge();
       }
+
+      setLoading(false);
     }
 
     init();
-    return () => {
-      cancelled = true;
-    };
   }, [userId]);
 
   useEffect(() => {
@@ -2932,9 +2985,8 @@ export default function PublicProfilePage() {
     handledChallengeParamRef.current = marker;
 
     if (challengeTarget === "bio") {
-      void openWallEditProfile().then(() => {
-        window.setTimeout(() => bioTextareaRef.current?.focus(), 150);
-      });
+      openWallEditProfile();
+      window.setTimeout(() => bioTextareaRef.current?.focus(), 150);
       return;
     }
 
@@ -3000,10 +3052,8 @@ export default function PublicProfilePage() {
         "postgres_changes",
         { event: "*", schema: "public", table: "profile_connections" },
         () => {
-          void queryClient.invalidateQueries({
-            queryKey: ["profiles", "connections"],
-          });
-        },
+          loadConnections(userId);
+        }
       )
       .subscribe();
 
@@ -3166,9 +3216,11 @@ export default function PublicProfilePage() {
     : "";
 
   const isOwnWall = currentUserId === profile?.user_id;
+  const isBusinessOrgProfile = profile?.account_type === "business_org";
   const showEmployerEmailOnCard = isEmployerProfile && (isOwnWall || viewerIsAdmin);
   const canViewEmployerBack =
     !isEmployerProfile &&
+    !isBusinessOrgProfile &&
     (isOwnWall || viewerIsAdmin || (viewerIsEmployer && !!profile?.open_to_opportunities));
   const professionalTags = normalizeTagArray(profile?.professional_tags);
   const unitHistoryTags = normalizeTagArray(profile?.unit_history_tags);
@@ -3234,89 +3286,6 @@ export default function PublicProfilePage() {
   }
   const referralBadge = getReferralBadge(referralCount);
 
-  function renderConnectionStats(compact: boolean): React.ReactElement {
-    const previewLimit = compact ? 5 : 6;
-    const countFontSize = compact ? 17 : 20;
-    const labelFontSize = compact ? 10 : 12;
-    const avatarSize = compact ? 26 : 28;
-    const recruiterIconSize = compact ? 16 : 18;
-    const avatarPreview = knownPreviewUsers.slice(0, previewLimit);
-
-    return (
-      <div style={{ display: "flex", gap: compact ? 14 : 16, marginTop: compact ? 8 : 0, justifyContent: compact ? undefined : "center", width: compact ? undefined : "100%", alignItems: "flex-start" }}>
-        <div style={{ textAlign: "center" }}>
-          <button
-            type="button"
-            onClick={() => openConnList("know")}
-            style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}
-          >
-            <div style={{ fontWeight: 900, fontSize: countFontSize }}>{knowCount}</div>
-            <div style={{ fontSize: labelFontSize, color: t.textMuted }}>Know</div>
-          </button>
-          {knowCount > 0 && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, marginTop: 8 }}>
-              <div style={{ display: "flex", alignItems: "center" }}>
-                {avatarPreview.map((u, idx) => {
-                  const n = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
-                  return (
-                    <a
-                      key={u.user_id}
-                      href={`/profile/${u.user_id}`}
-                      title={n}
-                      style={{
-                        width: avatarSize,
-                        height: avatarSize,
-                        marginLeft: idx === 0 ? 0 : -8,
-                        borderRadius: "50%",
-                        border: `2px solid ${t.surface}`,
-                        overflow: "hidden",
-                        background: t.badgeBg,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        color: t.textMuted,
-                        fontSize: 11,
-                        fontWeight: 700,
-                        textDecoration: "none",
-                      }}
-                    >
-                      {u.photo_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={u.photo_url} alt={n} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                      ) : (n[0] || "U").toUpperCase()}
-                    </a>
-                  );
-                })}
-              </div>
-              {knowCount > previewLimit && (
-                <button
-                  type="button"
-                  onClick={() => openConnList("know")}
-                  style={{ background: "none", border: "none", color: "#1d4ed8", fontSize: compact ? 11 : 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
-                >
-                  +{knowCount - previewLimit} more
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-        <div style={{ textAlign: "center" }}>
-          <button
-            type="button"
-            onClick={() => openConnList("recruited")}
-            style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}
-          >
-            <div style={{ fontWeight: 900, fontSize: countFontSize, display: "inline-flex", alignItems: "center", gap: compact ? 4 : 6 }}>
-              <BadgeIcon count={referralCount} size={recruiterIconSize} />
-              <span>{referralCount}</span>
-            </div>
-            <div style={{ fontSize: labelFontSize, color: t.textMuted }}>Recruited</div>
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   function displayMilitaryStatus(status: string | null | undefined): string {
     if (status === "Active") return "Active Duty";
     return status ?? "";
@@ -3351,6 +3320,8 @@ export default function PublicProfilePage() {
   const mobileGroupsGridCols = "repeat(auto-fill, minmax(110px, 1fr))";
 
   const renderWorkUnitHistorySection = (compact: boolean) => {
+    if (isBusinessOrgProfile) return null;
+
     const visibleProfessional = showAllWorkHistoryTags ? professionalTags : professionalTags.slice(0, WORK_TAG_PREVIEW_LIMIT);
     const visibleUnitHistory = showAllWorkHistoryTags ? unitHistoryTags : unitHistoryTags.slice(0, WORK_TAG_PREVIEW_LIMIT);
     const hasMore = professionalTags.length > WORK_TAG_PREVIEW_LIMIT || unitHistoryTags.length > WORK_TAG_PREVIEW_LIMIT;
@@ -3431,7 +3402,7 @@ export default function PublicProfilePage() {
             {isOwnWall && professionalTags.length === 0 && unitHistoryTags.length === 0 && (
               <button
                 type="button"
-                onClick={() => void openWallEditProfile()}
+                onClick={openWallEditProfile}
                 style={{ background: "none", border: "none", color: "#2563eb", fontSize: compact ? 11 : 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
               >
                 Add tags
@@ -3439,6 +3410,88 @@ export default function PublicProfilePage() {
             )}
           </div>
         )}
+      </div>
+    );
+  };
+
+  const renderBusinessOrgProfileCard = () => {
+    if (!profile) return null;
+
+    const pageData = businessOrgPage
+      ? {
+          business_name: businessOrgPage.business_name,
+          description: businessOrgPage.description,
+          business_email: businessOrgPage.business_email,
+          logo_url: businessOrgPage.logo_url ?? profile.photo_url ?? null,
+          website_url: businessOrgPage.website_url,
+          location: businessOrgPage.location,
+          address: businessOrgPage.address,
+          phone: businessOrgPage.phone,
+          owner_info: businessOrgPage.owner_info,
+          page_type: businessOrgPage.page_type,
+        }
+      : {
+          business_name: profileHeadlineName,
+          description: profile.bio ?? "",
+          business_email: profile.email ?? "",
+          logo_url: profile.photo_url ?? null,
+          website_url: null,
+          location: null,
+          address: null,
+          phone: null,
+          owner_info: null,
+          page_type: "business" as const,
+        };
+
+    return (
+      <BusinessProfileCard
+        page={pageData}
+        subtitle={fullName}
+        isMobile={isMobile}
+        isOwnWall={isOwnWall}
+        embedded
+        showExtendedDetails
+        logoUploading={uploadingAvatar}
+        onEditProfile={openWallEditProfile}
+        onLogoClick={() => {
+          if (profile.photo_url) {
+            setExpandedProfilePhotoUrl(profile.photo_url);
+          } else if (isOwnWall && !uploadingAvatar) {
+            photoInputRef.current?.click();
+          }
+        }}
+      />
+    );
+  };
+
+  const renderBusinessProductsSection = () => {
+    if (!isBusinessOrgProfile || !businessOrgPage) return null;
+
+    return (
+      <div style={{ display: "grid", gap: 12 }}>
+        {isOwnWall && (
+          <BusinessCommerceManager
+            businessId={businessOrgPage.id}
+            onProductsChanged={async () => {
+              setCommerceRefreshKey((value) => value + 1);
+              const { data } = await supabase
+                .from("business_organization_pages")
+                .select(BUSINESS_ORG_PAGE_SELECT)
+                .eq("id", businessOrgPage.id)
+                .maybeSingle();
+              if (data) setBusinessOrgPage(data as unknown as BusinessOrgPageRow);
+            }}
+            collapsible
+          />
+        )}
+        <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, background: t.surface, padding: 16 }}>
+          <BusinessCommerceSection
+            businessId={businessOrgPage.id}
+            isOwnWall={isOwnWall}
+            isMobile={isMobile}
+            refreshKey={commerceRefreshKey}
+          />
+        </div>
       </div>
     );
   };
@@ -3626,15 +3679,12 @@ export default function PublicProfilePage() {
             </>
           )}
 
-          {profilePhotosLoading && galleryPhotos.length === 0 && pinnedPhotos.length === 0 && (
-            <div style={{ color: t.textFaint, fontSize: 13 }}>Loading photos...</div>
-          )}
-          {!profilePhotosLoading && galleryPhotos.length === 0 && pinnedPhotos.length === 0 && (
+          {galleryPhotos.length === 0 && pinnedPhotos.length === 0 && (
             <div style={{ color: t.textFaint, fontSize: 13 }}>No photos yet.</div>
           )}
         </div>}
 
-        {/* Œì√∂√áŒì√∂√á Content Œì√∂√áŒì√∂√á */}
+        {/* Gˆ«Gˆ« Content Gˆ«Gˆ« */}
 
           {/* Profile / Contact Card */}
           <div
@@ -3642,20 +3692,26 @@ export default function PublicProfilePage() {
               position: "relative",
               border: `1px solid ${t.border}`,
               borderRadius: 16,
-              padding: 24,
+              padding: isBusinessOrgProfile ? (isMobile ? "10px 16px" : "12px 24px") : 24,
               background: t.surface,
             }}
           >
             {isOwnWall && (
               <>
                 <input ref={photoInputRef} type="file" accept="image/*" onChange={handleAvatarUpload} style={{ display: "none" }} aria-hidden />
-                <input ref={resumeFileInputRef} type="file" accept={EMPLOYER_DOCUMENT_ACCEPT} onChange={handleResumeFilePick} style={{ display: "none" }} aria-hidden />
-                <input ref={educationFileInputRef} type="file" accept={EMPLOYER_DOCUMENT_ACCEPT} onChange={handleEducationFilePick} style={{ display: "none" }} aria-hidden />
-                <input ref={trainingFileInputRef} type="file" accept={EMPLOYER_DOCUMENT_ACCEPT} onChange={handleTrainingFilePick} style={{ display: "none" }} aria-hidden />
+                {!isBusinessOrgProfile && (
+                  <>
+                    <input ref={resumeFileInputRef} type="file" accept={EMPLOYER_DOCUMENT_ACCEPT} onChange={handleResumeFilePick} style={{ display: "none" }} aria-hidden />
+                    <input ref={educationFileInputRef} type="file" accept={EMPLOYER_DOCUMENT_ACCEPT} onChange={handleEducationFilePick} style={{ display: "none" }} aria-hidden />
+                    <input ref={trainingFileInputRef} type="file" accept={EMPLOYER_DOCUMENT_ACCEPT} onChange={handleTrainingFilePick} style={{ display: "none" }} aria-hidden />
+                  </>
+                )}
               </>
             )}
-            {profileLayoutCompact ? (
-              /* Œì√∂√áŒì√∂√á Mobile profile card layout Œì√∂√áŒì√∂√á */
+            {isBusinessOrgProfile ? (
+              renderBusinessOrgProfileCard()
+            ) : isMobile ? (
+              /* Gˆ«Gˆ« Mobile profile card layout Gˆ«Gˆ« */
               <div>
                 {/* Top row: avatar + name + stats */}
                 <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
@@ -3669,7 +3725,7 @@ export default function PublicProfilePage() {
                       }
                     }}
                     title={profile.photo_url ? "View full photo" : isOwnWall ? (profile.is_employer ? "Add logo" : "Add photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: profile.photo_url || isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url
                       ? <img src={profile.photo_url} alt={profileHeadlineName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -3712,14 +3768,73 @@ export default function PublicProfilePage() {
                         <PlankHolderBadge number={profile.plank_holder_number} />
                       </div>
                     )}
-                    {renderConnectionStats(true)}
+                    {!isEmployerProfile && (
+                    <div style={{ display: "flex", gap: 14, marginTop: 8, alignItems: "flex-start" }}>
+                      <div style={{ textAlign: "center" }}>
+                        <button type="button" onClick={() => openConnList("know")}
+                          style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                          <div style={{ fontWeight: 900, fontSize: 17 }}>{knowCount}</div>
+                          <div style={{ fontSize: 10, color: t.textMuted }}>Know</div>
+                        </button>
+                        {knowCount > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, marginTop: 8 }}>
+                            <div style={{ display: "flex", alignItems: "center" }}>
+                              {knownPreviewUsers.slice(0, 5).map((u, idx) => {
+                                const n = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
+                                return (
+                                  <a
+                                    key={u.user_id}
+                                    href={`/profile/${u.user_id}`}
+                                    title={n}
+                                    style={{
+                                      width: 26,
+                                      height: 26,
+                                      marginLeft: idx === 0 ? 0 : -8,
+                                      borderRadius: "50%",
+                                      border: `2px solid ${t.surface}`,
+                                      overflow: "hidden",
+                                      background: t.badgeBg,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      color: t.textMuted,
+                                      fontSize: 11,
+                                      fontWeight: 700,
+                                      textDecoration: "none",
+                                    }}
+                                  >
+                                    {u.photo_url ? <img src={u.photo_url} alt={n} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (n[0] || "U").toUpperCase()}
+                                  </a>
+                                );
+                              })}
+                            </div>
+                            {knowCount > 5 && (
+                              <button type="button" onClick={() => openConnList("know")} style={{ background: "none", border: "none", color: "#1d4ed8", fontSize: 11, fontWeight: 700, cursor: "pointer", padding: 0 }}>
+                                +{knowCount - 5} more
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ textAlign: "center" }}>
+                        <button type="button" onClick={() => openConnList("recruited")}
+                          style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                          <div style={{ fontWeight: 900, fontSize: 17, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            <BadgeIcon count={referralCount} size={16} />
+                            <span>{referralCount}</span>
+                          </div>
+                          <div style={{ fontSize: 10, color: t.textMuted }}>Recruited</div>
+                        </button>
+                      </div>
+                    </div>
+                    )}
                   </div>
                 </div>
 
                 {!isEmployerProfile && renderWorkUnitHistorySection(true)}
 
                 {/* Connection buttons */}
-                {!isOwnWall && currentUserId && (
+                {!isBusinessOrgProfile && !isOwnWall && currentUserId && (
                   <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                     {!isEmployerProfile && currentUserKnowStatus === "none" && (
                       <button type="button" onClick={requestKnow} disabled={togglingConnection === "know"} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
@@ -3757,7 +3872,7 @@ export default function PublicProfilePage() {
                   </div>
                 )}
 
-                {/* Profile details Œì√á√∂ full width below */}
+                {/* Profile details G«ˆ full width below */}
                 <div style={{ marginTop: 14, borderTop: `1px solid ${t.borderLight}`, paddingTop: 12, color: t.textMuted, fontSize: 14, lineHeight: 1.7 }}>
                   {!showDesktopProfileBack ? (
                     isEmployerProfile ? (
@@ -3777,7 +3892,7 @@ export default function PublicProfilePage() {
                         textMuted={t.textMuted}
                         textFaint={t.textFaint}
                         isOwnWall={isOwnWall}
-                        onCompleteBio={() => void openWallEditProfile()}
+                        onCompleteBio={openWallEditProfile}
                       />
                     ) : (
                     <>
@@ -3787,10 +3902,7 @@ export default function PublicProfilePage() {
                           <strong>Service:</strong> <ServiceSealValue service={profile.service} size={50} />
                         </div>
                         <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
-                        <div>
-                          <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
-                          <ProfileSocialLinks linkedinUrl={profile.linkedin_url} />
-                        </div>
+                        <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
                           <strong>Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={52} />
                         </div>
@@ -3807,7 +3919,7 @@ export default function PublicProfilePage() {
                             </div>
                             <button
                               type="button"
-                              onClick={() => void openWallEditProfile()}
+                              onClick={openWallEditProfile}
                               style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                             >
                               Complete Bio
@@ -3840,7 +3952,7 @@ export default function PublicProfilePage() {
                       </p>
                     </div>
                   )}
-                  {isOwnWall && (profile.referral_code || !editingProfile) && (
+                  {!isBusinessOrgProfile && isOwnWall && (profile.referral_code || !editingProfile) && (
                     <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
                       {profile.referral_code && !showDesktopProfileBack && (
                         <>
@@ -3853,14 +3965,14 @@ export default function PublicProfilePage() {
                               border: "none",
                               borderRadius: 999,
                               padding: "6px 12px",
-                              minWidth: copiedReferral ? 148 : 112,
+                              minWidth: 112,
                               fontWeight: 700,
                               fontSize: 11,
                               cursor: "pointer",
                               transition: "background 0.2s",
                             }}
                           >
-                            {copiedReferral ? "Copied to clipboard" : "Referral Link"}
+                            {copiedReferral ? "Copied" : "Referral Link"}
                           </button>
                           <button
                             type="button"
@@ -3884,7 +3996,7 @@ export default function PublicProfilePage() {
                       {!editingProfile && !showDesktopProfileBack && (
                         <button
                           type="button"
-                          onClick={() => void openWallEditProfile()}
+                          onClick={openWallEditProfile}
                           style={{
                             background: "#111",
                             color: "white",
@@ -3925,7 +4037,7 @@ export default function PublicProfilePage() {
                 </div>
               </div>
             ) : (
-              /* Œì√∂√áŒì√∂√á Desktop profile card layout Œì√∂√áŒì√∂√á */
+              /* Gˆ«Gˆ« Desktop profile card layout Gˆ«Gˆ« */
               <div style={{ display: "flex", gap: 32, alignItems: "flex-start" }}>
                 {/* Identity: photo + name + stats + buttons */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, flexShrink: 0, width: 180 }}>
@@ -3939,7 +4051,7 @@ export default function PublicProfilePage() {
                       }
                     }}
                     title={profile.photo_url ? "View full photo" : isOwnWall ? (profile.is_employer ? "Add logo" : "Add photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : undefined, padding: 0, cursor: profile.photo_url || isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || isOwnWall ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url ? (
                       <img src={profile.photo_url} alt={profileHeadlineName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
@@ -3985,11 +4097,70 @@ export default function PublicProfilePage() {
                     )}
                   </div>
 
-                  {renderConnectionStats(false)}
+                  {!isEmployerProfile && (
+                  <div style={{ display: "flex", gap: 16, justifyContent: "center", width: "100%", alignItems: "flex-start" }}>
+                    <div style={{ textAlign: "center" }}>
+                      <button type="button" onClick={() => openConnList("know")}
+                        style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                        <div style={{ fontWeight: 900, fontSize: 20 }}>{knowCount}</div>
+                        <div style={{ fontSize: 12, color: t.textMuted }}>Know</div>
+                      </button>
+                      {knowCount > 0 && (
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-start", gap: 6, marginTop: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center" }}>
+                            {knownPreviewUsers.slice(0, 6).map((u, idx) => {
+                              const n = `${u.first_name || ""} ${u.last_name || ""}`.trim() || "Member";
+                              return (
+                                <a
+                                  key={u.user_id}
+                                  href={`/profile/${u.user_id}`}
+                                  title={n}
+                                  style={{
+                                    width: 28,
+                                    height: 28,
+                                    marginLeft: idx === 0 ? 0 : -8,
+                                    borderRadius: "50%",
+                                    border: `2px solid ${t.surface}`,
+                                    overflow: "hidden",
+                                    background: t.badgeBg,
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    color: t.textMuted,
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    textDecoration: "none",
+                                  }}
+                                >
+                                  {u.photo_url ? <img src={u.photo_url} alt={n} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : (n[0] || "U").toUpperCase()}
+                                </a>
+                              );
+                            })}
+                          </div>
+                          {knowCount > 6 && (
+                            <button type="button" onClick={() => openConnList("know")} style={{ background: "none", border: "none", color: "#1d4ed8", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>
+                              +{knowCount - 6} more
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <button type="button" onClick={() => openConnList("recruited")}
+                        style={{ textAlign: "center", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                        <div style={{ fontWeight: 900, fontSize: 20, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                          <BadgeIcon count={referralCount} size={18} />
+                          <span>{referralCount}</span>
+                        </div>
+                        <div style={{ fontSize: 12, color: t.textMuted }}>Recruited</div>
+                      </button>
+                    </div>
+                  </div>
+                  )}
 
-                {!isEmployerProfile && renderWorkUnitHistorySection(false)}
+                {!isEmployerProfile && !isBusinessOrgProfile && renderWorkUnitHistorySection(false)}
 
-                  {!isOwnWall && currentUserId && (
+                  {!isBusinessOrgProfile && !isOwnWall && currentUserId && (
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
                       {!isEmployerProfile && currentUserKnowStatus === "none" && (
                         <button type="button" onClick={requestKnow} disabled={togglingConnection === "know"} style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 700, cursor: "pointer", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
@@ -4047,7 +4218,7 @@ export default function PublicProfilePage() {
                         textMuted={t.textMuted}
                         textFaint={t.textFaint}
                         isOwnWall={isOwnWall}
-                        onCompleteBio={() => void openWallEditProfile()}
+                        onCompleteBio={openWallEditProfile}
                       />
                     ) : (
                     <>
@@ -4057,10 +4228,7 @@ export default function PublicProfilePage() {
                           <strong>Service:</strong> <ServiceSealValue service={profile.service} size={60} />
                         </div>
                         <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
-                        <div>
-                          <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
-                          <ProfileSocialLinks linkedinUrl={profile.linkedin_url} />
-                        </div>
+                        <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
                           <strong>Skill Badge:</strong> <SkillBadgeValue skillBadge={profile.skill_badge} width={64} />
                         </div>
@@ -4077,7 +4245,7 @@ export default function PublicProfilePage() {
                             </div>
                             <button
                               type="button"
-                              onClick={() => void openWallEditProfile()}
+                              onClick={openWallEditProfile}
                               style={{ background: "#111", color: "white", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                             >
                               Complete Bio
@@ -4224,7 +4392,7 @@ export default function PublicProfilePage() {
                       </div>
                     </div>
                   )}
-                  <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
+                  {!isBusinessOrgProfile && <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-start", flexWrap: "wrap", alignItems: "center", gap: 10 }}>
                     {isOwnWall && profile.referral_code && !showDesktopProfileBack && (
                       <>
                         <button
@@ -4236,14 +4404,14 @@ export default function PublicProfilePage() {
                             border: "none",
                             borderRadius: 999,
                             padding: "6px 12px",
-                            minWidth: copiedReferral ? 148 : 112,
+                            minWidth: 112,
                             fontWeight: 700,
                             fontSize: 11,
                             cursor: "pointer",
                             transition: "background 0.2s",
                           }}
                         >
-                          {copiedReferral ? "Copied to clipboard" : "Referral Link"}
+                          {copiedReferral ? "Copied" : "Referral Link"}
                         </button>
                         <button
                           type="button"
@@ -4267,7 +4435,7 @@ export default function PublicProfilePage() {
                     {isOwnWall && !editingProfile && !showDesktopProfileBack && (
                       <button
                         type="button"
-                        onClick={() => void openWallEditProfile()}
+                        onClick={openWallEditProfile}
                         style={{
                           background: "#111",
                           color: "white",
@@ -4303,13 +4471,13 @@ export default function PublicProfilePage() {
                         {showDesktopProfileBack ? "See front of profile" : "Employment information"}
                       </button>
                     )}
-                  </div>
+                  </div>}
                 </div>
               </div>
             )}
           </div>
 
-          {/* Edit profile (own wall) Œì√á√∂ same fields as My Account */}
+          {/* Edit profile (own wall) G«ˆ same fields as My Account */}
           {isOwnWall && editingProfile && (
             <div
               onClick={(e) => { if (e.target === e.currentTarget) setEditingProfile(false); }}
@@ -4329,23 +4497,71 @@ export default function PublicProfilePage() {
                     aria-label="Close"
                     style={{ background: "none", border: "none", fontSize: 24, lineHeight: 1, cursor: "pointer", color: t.textMuted, padding: 4 }}
                   >
-                    √ó
+                    ◊
                   </button>
                 </div>
                 <div style={{ overflowY: "auto", flex: 1, padding: isMobile ? 16 : 24 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: profileLayoutCompact ? "1fr" : "1fr 1fr", gap: 14 }}>
-                {isEmployerProfile ? (
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
+                {isBusinessOrgProfile ? (
+                  <>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>
+                        Display As
+                      </label>
+                      <select
+                        value={editBusinessPageType}
+                        onChange={(e) => setEditBusinessPageType(e.target.value === "organization" ? "organization" : "business")}
+                        style={wallEditSelectStyle}
+                      >
+                        <option value="business">Business Profile</option>
+                        <option value="organization">Organization Profile</option>
+                      </select>
+                    </div>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Business Name</label>
+                      <input value={editBusinessName} onChange={(e) => setEditBusinessName(e.target.value)} placeholder="Business display name" style={wallEditInputStyle} />
+                    </div>
+                    <div>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Public Email</label>
+                      <input type="email" value={editBusinessEmail} onChange={(e) => setEditBusinessEmail(e.target.value)} placeholder="public@email.com" style={wallEditInputStyle} />
+                    </div>
+                    <div>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Location</label>
+                      <input value={editBusinessLocation} onChange={(e) => setEditBusinessLocation(e.target.value)} placeholder="City, State" style={wallEditInputStyle} />
+                    </div>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Website</label>
+                      <input value={editBusinessWebsite} onChange={(e) => setEditBusinessWebsite(e.target.value)} placeholder="https://yourbusiness.com" style={wallEditInputStyle} />
+                    </div>
+                    <div>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Phone</label>
+                      <input value={editBusinessPhone} onChange={(e) => setEditBusinessPhone(e.target.value)} placeholder="Optional public phone" style={wallEditInputStyle} />
+                    </div>
+                    <div>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Address</label>
+                      <input value={editBusinessAddress} onChange={(e) => setEditBusinessAddress(e.target.value)} placeholder="Optional public address" style={wallEditInputStyle} />
+                    </div>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Owner Info</label>
+                      <input value={editBusinessOwnerInfo} onChange={(e) => setEditBusinessOwnerInfo(e.target.value)} placeholder="Optional ownership / POC note" style={wallEditInputStyle} />
+                    </div>
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Bio</label>
+                      <textarea ref={bioTextareaRef} value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Tell people about this business or organization..." rows={4} style={{ ...wallEditInputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }} />
+                    </div>
+                  </>
+                ) : isEmployerProfile ? (
                   <>
                     <div style={{ gridColumn: "1 / -1" }}>
                       <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Company / Organization Name</label>
                       <input value={editCompanyName} onChange={(e) => setEditCompanyName(e.target.value)} placeholder="e.g. Acme Defense Group" style={wallEditInputStyle} />
                     </div>
                     <div>
-                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Primary Contact ‚Äî First Name</label>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Primary Contact ó First Name</label>
                       <input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} style={wallEditInputStyle} />
                     </div>
                     <div>
-                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Primary Contact ‚Äî Last Name</label>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Primary Contact ó Last Name</label>
                       <input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} style={wallEditInputStyle} />
                     </div>
                     <div style={{ gridColumn: "1 / -1" }}>
@@ -4359,22 +4575,6 @@ export default function PublicProfilePage() {
                   </>
                 ) : (
                   <>
-                <div style={{ gridColumn: "1 / -1" }}>
-                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Display Name</label>
-                  <input
-                    value={editDisplayName}
-                    onChange={(e) => setEditDisplayName(e.target.value)}
-                    placeholder={
-                      `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
-                      "How your name appears publicly"
-                    }
-                    maxLength={80}
-                    style={wallEditInputStyle}
-                  />
-                  <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted, lineHeight: 1.4 }}>
-                    Shown on posts, comments, reactions, and your profile. Leave blank to use your account name on file.
-                  </div>
-                </div>
                 <div>
                   <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Current Position</label>
                   <input value={editRole} onChange={(e) => setEditRole(e.target.value)} placeholder="e.g. EOD Tech" style={wallEditInputStyle} />
@@ -4406,15 +4606,6 @@ export default function PublicProfilePage() {
                     <option value="">Select years...</option>
                     {YEARS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
-                </div>
-                <div>
-                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>LinkedIn Profile</label>
-                  <input
-                    value={editLinkedInUrl}
-                    onChange={(e) => setEditLinkedInUrl(e.target.value)}
-                    placeholder="https://linkedin.com/in/your-name"
-                    style={wallEditInputStyle}
-                  />
                 </div>
                 <div style={{ gridColumn: "1 / -1", border: `1px solid ${t.border}`, borderRadius: 12, padding: 12, background: t.bg }}>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
@@ -4740,14 +4931,14 @@ export default function PublicProfilePage() {
               style={{
                 padding: 16,
                 display: "grid",
-                gridTemplateColumns: profileLayoutCompact
+                gridTemplateColumns: isMobile
                   ? "1fr"
                   : "minmax(0, 1fr) 1px minmax(0, max-content)",
                 gap: 14,
                 alignItems: "start",
               }}
             >
-              {/* Œì√∂√áŒì√∂√á Photo Strip Œì√∂√áŒì√∂√á */}
+              {/* Gˆ«Gˆ« Photo Strip Gˆ«Gˆ« */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 0 }}>
                 {/* Title + gallery / add (matches common profile strip layout) */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", minHeight: 56, alignContent: "center" }}>
@@ -4756,7 +4947,7 @@ export default function PublicProfilePage() {
                     {galleryPhotos.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => void toggleGalleryExpanded()}
+                        onClick={() => setGalleryExpanded(!galleryExpanded)}
                         style={{ border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap" }}
                       >
                         Gallery ({galleryPhotos.length}) {galleryExpanded ? "\u25B2" : "\u25BC"}
@@ -4772,7 +4963,7 @@ export default function PublicProfilePage() {
                     {!isMobile && pinnedPhotos.length > photoPreviewItems.length && (
                       <button
                         type="button"
-                        onClick={() => void openFullProfilePhotos()}
+                        onClick={() => setShowAllModal("photos")}
                         style={{ border: "none", background: "none", color: "#2563eb", fontWeight: 700, fontSize: 12, cursor: "pointer", padding: 0 }}
                       >
                         Show all ({pinnedPhotos.length})
@@ -4781,12 +4972,10 @@ export default function PublicProfilePage() {
                   </div>
                 </div>
 
-                <div style={!profileLayoutCompact ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobilePhotoGridCols, gap: 8 }}>
+                <div style={!isMobile ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobilePhotoGridCols, gap: 8 }}>
                   {pinnedPhotos.length === 0 && (
                     <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
-                      {profilePhotosLoading
-                        ? "Loading photos..."
-                        : photos.length > 0
+                      {photos.length > 0
                         ? (isOwnWall ? "Pin photos from the gallery to feature them here." : "No featured photos yet.")
                         : "No photos yet."}
                     </div>
@@ -4822,57 +5011,20 @@ export default function PublicProfilePage() {
                     </div>
                   ))}
                 </div>
-                {galleryExpanded && galleryPhotos.length > 0 && (
-                  <div style={{ borderTop: `1px solid ${t.border}`, paddingTop: 12 }}>
-                    <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Gallery</div>
-                    <div style={{ display: "grid", gridTemplateColumns: mobilePhotoGridCols, gap: 8 }}>
-                      {galleryPhotos.map((photo) => (
-                        <div key={photo.id}>
-                          <div
-                            onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
-                            style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
-                          >
-                            <img src={photo.photo_url} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                          </div>
-                          {isOwnWall && (
-                            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
-                              <button
-                                type="button"
-                                onClick={() => togglePinned(photo)}
-                                disabled={togglingPinnedId === photo.id}
-                                style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1, minWidth: 0 }}
-                              >
-                                {togglingPinnedId === photo.id ? "..." : "Pin"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => deletePhoto(photo)}
-                                disabled={deletingPhotoId === photo.id}
-                                style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1, minWidth: 0 }}
-                              >
-                                {deletingPhotoId === photo.id ? "..." : "Del"}
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
               {!isMobile && <div style={{ width: 1, alignSelf: "stretch", background: t.border }} />}
 
-              {/* My Groups ‚Äî desktop: right-aligned strip; mobile: full width below Photos */}
+              {/* My Groups ó desktop: right-aligned strip; mobile: full width below Photos */}
               <div
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   gap: 10,
                   minWidth: 0,
-                  ...(!profileLayoutCompact ? { alignItems: "flex-end" as const, width: "100%" } : {}),
+                  ...(!isMobile ? { alignItems: "flex-end" as const, width: "100%" } : {}),
                 }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: 56, alignContent: "center", width: "100%", maxWidth: !profileLayoutCompact ? STRIP_THUMB_AREA_MAX : undefined }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap", minHeight: 56, alignContent: "center", width: "100%", maxWidth: !isMobile ? STRIP_THUMB_AREA_MAX : undefined }}>
                   <div style={{ fontSize: 15, fontWeight: 900 }}>My Groups</div>
                   {!isMobile && myGroups.length > groupPreviewItems.length && (
                     <button
@@ -4884,10 +5036,10 @@ export default function PublicProfilePage() {
                     </button>
                   )}
                 </div>
-                <div style={!profileLayoutCompact ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobileGroupsGridCols, gap: 8 }}>
+                <div style={!isMobile ? stripThumbGridStyleDesktop : { display: "grid", gridTemplateColumns: mobileGroupsGridCols, gap: 8 }}>
                   {myGroups.length === 0 && (
                     <div style={{ color: t.textFaint, fontSize: 13, alignSelf: "center", gridColumn: "1 / -1" }}>
-                      {profileGroupsLoading ? "Loading groups..." : "No groups yet."}
+                      No groups yet.
                     </div>
                   )}
                   {groupPreviewItems.map((group) => (
@@ -4990,7 +5142,45 @@ export default function PublicProfilePage() {
                 )}
               </div>}
             </div>
+            {/* Expanded gallery grid */}
+            {galleryExpanded && galleryPhotos.length > 0 && (
+              <div style={{ borderTop: `1px solid ${t.border}`, padding: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>Gallery</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
+                  {galleryPhotos.map((photo) => (
+                    <div key={photo.id}>
+                      <div
+                        onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
+                        style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
+                      >
+                        <img src={photo.photo_url} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      </div>
+                      {isOwnWall && (
+                        <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
+                          <button
+                            onClick={() => togglePinned(photo)}
+                            disabled={togglingPinnedId === photo.id}
+                            style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: togglingPinnedId === photo.id ? "not-allowed" : "pointer", opacity: togglingPinnedId === photo.id ? 0.7 : 1 }}
+                          >
+                            {togglingPinnedId === photo.id ? "..." : "Pin"}
+                          </button>
+                          <button
+                            onClick={() => deletePhoto(photo)}
+                            disabled={deletingPhotoId === photo.id}
+                            style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: deletingPhotoId === photo.id ? "not-allowed" : "pointer", opacity: deletingPhotoId === photo.id ? 0.7 : 1 }}
+                          >
+                            {deletingPhotoId === photo.id ? "..." : "Del"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
+
+          {renderBusinessProductsSection()}
 
           {showAllModal && (
             <div
@@ -5003,7 +5193,7 @@ export default function PublicProfilePage() {
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                   <div style={{ fontSize: 16, fontWeight: 900 }}>{showAllModal === "photos" ? "All Pinned Photos" : "All My Groups"}</div>
-                  <button type="button" onClick={() => setShowAllModal(null)} style={{ border: "none", background: "none", fontSize: 20, lineHeight: 1, cursor: "pointer", color: t.textMuted }}>√ó</button>
+                  <button type="button" onClick={() => setShowAllModal(null)} style={{ border: "none", background: "none", fontSize: 20, lineHeight: 1, cursor: "pointer", color: t.textMuted }}>◊</button>
                 </div>
                 {showAllModal === "photos" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
@@ -5045,7 +5235,7 @@ export default function PublicProfilePage() {
             {(isOwnWall || isMutualConnection) && (
               <div style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                 <MentionTextarea
-                  placeholder={isOwnWall ? "Post to your wall..." : `Post on ${fullName}'s wall...`}
+                  placeholder={isOwnWall ? "Post to your profile..." : `Post on ${fullName}'s profile...`}
                   value={postContent}
                   onChange={handlePostContentChange}
                   onChangeRaw={(raw) => { postContentRawRef.current = raw; }}
@@ -5056,7 +5246,7 @@ export default function PublicProfilePage() {
                 {selectedPostGif && (
                   <div style={{ marginTop: 10, position: "relative", display: "inline-block" }}>
                     <img src={selectedPostGif} alt="Selected GIF" style={{ maxWidth: 200, borderRadius: 10, display: "block" }} />
-                    <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>√ó</button>
+                    <button type="button" onClick={() => setSelectedPostGif(null)} style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", border: "none", borderRadius: "50%", width: 22, height: 22, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>◊</button>
                   </div>
                 )}
 
@@ -5064,7 +5254,7 @@ export default function PublicProfilePage() {
                 {ogPreview && (
                   <div style={{ position: "relative" }}>
                     <OgCard og={ogPreview} />
-                    <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>√ó</button>
+                    <button type="button" onClick={() => setOgPreview(null)} style={{ position: "absolute", top: 20, right: 8, background: "rgba(0,0,0,0.5)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>◊</button>
                   </div>
                 )}
 
@@ -5102,7 +5292,7 @@ export default function PublicProfilePage() {
                           type="button"
                           onClick={() => setSelectedPostImages((prev) => { URL.revokeObjectURL(prev[i].previewUrl); return prev.filter((_, idx) => idx !== i); })}
                           style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}
-                        >√ó</button>
+                        >◊</button>
                       </div>
                     ))}
                   </div>
@@ -5122,7 +5312,7 @@ export default function PublicProfilePage() {
                   </div>
                   <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
                     Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
-                    Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~3‚Äì4 min).
+                    Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~3ñ4 min).
                     For longer video, paste a YouTube or Vimeo link in your post.
                   </p>
                   <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8 }}>
@@ -5149,12 +5339,8 @@ export default function PublicProfilePage() {
               </div>
             )}
 
-            <div style={{ marginTop: 12, display: "grid", gap: 0 }}>
-              {posts.length === 0 && (
-                <div style={{ color: t.textMuted }}>
-                  {profileWallLoading ? "Loading wall posts..." : "No wall posts yet."}
-                </div>
-              )}
+            <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+              {posts.length === 0 && <div style={{ color: t.textMuted }}>No wall posts yet.</div>}
 
               {posts.map((post) => {
                 const commentsOpen = expandedComments[post.id] || false;
@@ -5163,14 +5349,14 @@ export default function PublicProfilePage() {
                 const isEditingPost = editingPostId === post.id;
 
                 return (
-                  <div key={post.id} style={feedPostCardStyle(t)}>
+                  <div key={post.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                     {/* Post header */}
                     {(() => {
                       const postAuthorPhoto = post.authorPhotoUrl ?? profile.photo_url;
                       const postAuthorService = post.authorService ?? profile.service;
                       const postAuthorName = post.author_name ?? fullName;
                       const avatar = (
-                        <div style={{ width: FEED_POST_AVATAR_SIZE, height: FEED_POST_AVATAR_SIZE, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(postAuthorService) ? `3px solid ${getServiceRingColor(postAuthorService)}` : undefined }}>
+                        <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(postAuthorService) ? `3px solid ${getServiceRingColor(postAuthorService)}` : undefined }}>
                           {postAuthorPhoto
                             ? <img src={postAuthorPhoto} alt={postAuthorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                             : postAuthorName[0]?.toUpperCase()}
@@ -5265,7 +5451,7 @@ export default function PublicProfilePage() {
                       ) && (
                       <ExpandableText
                         textLength={post.content.length}
-                        wrapperStyle={{ marginTop: FEED_SECTION_GAP }}
+                        wrapperStyle={{ marginTop: 10 }}
                         toggleColor={t.textMuted}
                       >
                         {renderContent(post.content)}
@@ -5279,10 +5465,8 @@ export default function PublicProfilePage() {
                     })()}
 
                     {post.gif_url && (
-                      <div style={{ marginTop: FEED_SECTION_GAP, width: "100%", maxWidth: FEED_POST_IMAGES_MAX_WIDTH }}>
-                        <div style={{ ...feedSingleMediaFrameStyle, maxHeight: 360 }}>
-                          <img src={post.gif_url} alt="GIF" style={feedSingleImageStyle} />
-                        </div>
+                      <div style={{ marginTop: 10 }}>
+                        <img src={post.gif_url} alt="GIF" style={{ maxWidth: "100%", maxHeight: 300, borderRadius: 12, display: "block" }} />
                       </div>
                     )}
 
@@ -5315,28 +5499,12 @@ export default function PublicProfilePage() {
                       const visible = post.image_urls.slice(0, 3);
                       const remaining = post.image_urls.length - 3;
                       return (
-                        <div style={{ marginTop: FEED_SECTION_GAP, display: "grid", gridTemplateColumns: visible.length === 1 ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: FEED_MEDIA_GRID_GAP, maxWidth: FEED_POST_IMAGES_MAX_WIDTH, width: "100%" }}>
-                          {visible.map((url, i) => {
-                            const isSingleImage = visible.length === 1;
-                            return (
-                            <div
-                              key={i}
-                              style={{
-                                ...(isSingleImage
-                                  ? feedSingleMediaFrameStyle
-                                  : {
-                                      position: "relative" as const,
-                                      aspectRatio: "1/1",
-                                      borderRadius: FEED_MEDIA_RADIUS,
-                                      overflow: "hidden",
-                                      background: FEED_MEDIA_FRAME_BG,
-                                    }),
-                                border: isSingleImage ? "none" : `1px solid ${t.borderLight}`,
-                              }}
-                            >
+                        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: visible.length === 1 ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 8, maxWidth: 420 }}>
+                          {visible.map((url, i) => (
+                            <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
                               {isVideoUrl(url) ? (
                                 <>
-                                  <video src={url} preload="metadata" muted playsInline style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle} />
+                                  <video src={url} preload="metadata" muted playsInline style={feedContainedImageStyle} />
                                   {!(i === 2 && remaining > 0) && (
                                     <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
                                       <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -5346,7 +5514,7 @@ export default function PublicProfilePage() {
                                   )}
                                 </>
                               ) : (
-                                <img src={url} alt={`Post image ${i + 1}`} style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle} />
+                                <img src={url} alt={`Post image ${i + 1}`} style={feedContainedImageStyle} />
                               )}
                               {i === 2 && remaining > 0 && (
                                 <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 24, fontWeight: 800 }}>
@@ -5354,7 +5522,7 @@ export default function PublicProfilePage() {
                                 </div>
                               )}
                             </div>
-                          );})}
+                          ))}
                         </div>
                       );
                     })()}
@@ -5428,7 +5596,7 @@ export default function PublicProfilePage() {
                       </>
                     )}
 
-                    {/* Kangaroo Court Œì√á√∂ same order as home feed: post body above, then verdict, then poll */}
+                    {/* Kangaroo Court G«ˆ same order as home feed: post body above, then verdict, then poll */}
                     {post.kangaroo?.court?.status === "closed" && post.kangaroo?.verdict && (
                       <KangarooCourtVerdictBanner verdict={post.kangaroo.verdict} />
                     )}
@@ -5447,15 +5615,13 @@ export default function PublicProfilePage() {
                       </>
                     )}
 
-                    {/* Reactions / Comment bar Œì√á√∂ KC chip is display-only on wall (no Œì√á¬£start courtŒì√á¬•) */}
+                    {/* Reactions / Comment bar G«ˆ KC chip is display-only on wall (no G«£start courtG«•) */}
                     <div
                       style={{
                         display: "flex",
-                        gap: FEED_ACTION_ROW_GAP,
+                        gap: 16,
                         alignItems: "center",
-                        marginTop: FEED_SECTION_GAP,
-                        padding: FEED_ACTION_ROW_PADDING,
-                        borderTop: `1px solid ${t.borderLight}`,
+                        marginTop: 14,
                         flexWrap: "wrap",
                         width: "100%",
                         minWidth: 0,
@@ -5495,17 +5661,19 @@ export default function PublicProfilePage() {
                         countsByType={post.reactionCountsByType}
                         reactorNamesByType={post.reactorNamesByType}
                       />
-                      <div style={{ fontSize: 13, color: t.textMuted }}>
+                      <div style={{ fontSize: 14, color: t.textMuted }}>
                         {post.commentCount} {post.commentCount === 1 ? "comment" : "comments"}
                       </div>
                     </div>
 
                     {/* Comments section */}
                     {(post.comments.length > 0 || commentsOpen) && (
-                      <div style={{ marginTop: FEED_SECTION_GAP, paddingTop: FEED_SECTION_GAP, borderTop: `1px solid ${t.borderLight}` }}>
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
                         {post.comments.length > 0 && (
                         <div style={{ display: "grid", gap: 4 }}>
                           {(commentsOpen ? post.comments : post.comments.slice(0, 2)).map((comment) => {
+                            const textExpanded = expandedCommentTexts[comment.id] || false;
+                            const isLong = (comment.content?.length ?? 0) > 100;
                             return (
                             <div key={comment.id} style={{ background: t.bg, borderRadius: 10, padding: 6 }}>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -5536,18 +5704,16 @@ export default function PublicProfilePage() {
                                 )}
                               </div>
                               {comment.content && (
-                                <ExpandableText
-                                  textLength={comment.content.length}
-                                  maxLines={2}
-                                  minCharsToToggle={99999}
-                                  style={{ fontSize: 13 }}
-                                  wrapperStyle={{ marginTop: 3 }}
-                                  toggleColor={t.textMuted}
-                                  expandLabel="Show more"
-                                  collapseLabel="Show less"
-                                >
-                                  {renderContent(comment.content)}
-                                </ExpandableText>
+                                <div style={{ marginTop: 3 }}>
+                                  <div style={{ fontSize: 13, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
+                                    {renderContent(comment.content)}
+                                  </div>
+                                  {isLong && (
+                                    <button type="button" onClick={() => setExpandedCommentTexts((p) => ({ ...p, [comment.id]: !textExpanded }))} style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: t.textMuted, fontSize: 12, fontWeight: 700, marginTop: 1 }}>
+                                      {textExpanded ? "Show less" : "Show more"}
+                                    </button>
+                                  )}
+                                </div>
                               )}
                               {comment.content && (() => {
                                 const youtubeUrl = firstYouTubeUrlFromText(comment.content);
@@ -5709,28 +5875,6 @@ export default function PublicProfilePage() {
                   </div>
                 );
               })}
-              {profileWallHasMorePosts && (
-                <div style={{ display: "flex", justifyContent: "center", padding: "14px 0 4px" }}>
-                  <button
-                    type="button"
-                    onClick={() => void loadMoreProfileWallPosts()}
-                    disabled={profileWallLoadingMore}
-                    style={{
-                      border: `1px solid ${t.border}`,
-                      background: t.surface,
-                      color: t.text,
-                      borderRadius: 10,
-                      padding: "9px 16px",
-                      fontWeight: 800,
-                      fontSize: 13,
-                      cursor: profileWallLoadingMore ? "wait" : "pointer",
-                      opacity: profileWallLoadingMore ? 0.65 : 1,
-                    }}
-                  >
-                    {profileWallLoadingMore ? "Loading..." : "Load more posts"}
-                  </button>
-                </div>
-              )}
             </div>
           </div>
     </div>
@@ -5755,7 +5899,7 @@ export default function PublicProfilePage() {
       {!isDesktopShell ? (
     <div style={{ padding: "24px 16px", background: t.bg, minHeight: "100vh", color: t.text, width: "100%", maxWidth: "100%", boxSizing: "border-box", overflowX: "clip" }}>
 
-      {/* Mobile unread messages banner Œì√á√∂ own wall only */}
+      {/* Mobile unread messages banner G«ˆ own wall only */}
       {isMobile && isOwnWall && (
         <a
           href="/sidebar"
@@ -6287,7 +6431,7 @@ export default function PublicProfilePage() {
             <div style={{ fontWeight: 900, fontSize: 17 }}>
               {connListOpen === "know" ? "Know" : "Recruited"}
             </div>
-            <button type="button" onClick={() => setConnListOpen(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>√ó</button>
+            <button type="button" onClick={() => setConnListOpen(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted, lineHeight: 1 }}>◊</button>
           </div>
           <div style={{ overflowY: "auto", flex: 1 }}>
             {connListLoading ? (
@@ -6381,7 +6525,7 @@ export default function PublicProfilePage() {
         modalOnDesktop
       />
     )}
-    {profile?.referral_code ? (
+    {!isBusinessOrgProfile && profile?.referral_code ? (
       <ReferralQrModal
         open={referralQrOpen}
         onClose={() => setReferralQrOpen(false)}
@@ -6389,13 +6533,17 @@ export default function PublicProfilePage() {
         onInviteAction={recordInviteForPlankHolder}
       />
     ) : null}
-    <PlankHolderEarnedModal
-      open={plankHolderModalOpen}
-      number={plankHolderChallenge?.plankHolderNumber}
-      profileHref={currentUserId ? `/profile/${currentUserId}` : "/profile"}
-      onClose={closePlankHolderModal}
-    />
-    <PlankHolderChallengeToast toast={plankHolderToast} />
+    {!isBusinessOrgProfile && (
+      <>
+        <PlankHolderEarnedModal
+          open={plankHolderModalOpen}
+          number={plankHolderChallenge?.plankHolderNumber}
+          profileHref={currentUserId ? `/profile/${currentUserId}` : "/profile"}
+          onClose={closePlankHolderModal}
+        />
+        <PlankHolderChallengeToast toast={plankHolderToast} />
+      </>
+    )}
     </>
   );
 }

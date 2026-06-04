@@ -2,8 +2,6 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup";
 import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
-import { hydrateProfileNamesFromAuth } from "@/app/lib/auth/hydrateProfileNames";
-import { insertOnboardingEvent } from "@/app/lib/onboardingAnalyticsServer";
 import { clearFailedAuthReportsOnSuccessfulLogin } from "@/app/lib/server/clearFailedAuthReportsOnLogin";
 import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
 
@@ -54,14 +52,15 @@ export async function GET(request: NextRequest) {
         const oauthEmail = sessionData.user?.email;
         if (sessionData.user?.id && oauthEmail) {
           void ensureProfileStubForUser(adminClient, sessionData.user.id, oauthEmail);
-          void hydrateProfileNamesFromAuth(
-            adminClient,
-            sessionData.user.id,
-            sessionData.user.user_metadata ?? null,
-          );
-          void insertOnboardingEvent(adminClient, sessionData.user.id, "signup_complete", "success", {
-            provider: "oauth",
-          });
+          const nextUrl = new URL(next, origin);
+          if (nextUrl.pathname === "/business-org/onboarding" && nextUrl.searchParams.get("business_oauth") === "google") {
+            void adminClient.auth.admin.updateUserById(sessionData.user.id, {
+              app_metadata: {
+                ...(sessionData.user.app_metadata ?? {}),
+                account_kind: "business_organization_page",
+              },
+            });
+          }
         }
         void clearFailedAuthReportsOnSuccessfulLogin(adminClient, oauthEmail);
       }
