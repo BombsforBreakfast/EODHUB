@@ -7,7 +7,7 @@ import EmojiPickerButton from "../components/EmojiPickerButton";
 import GifPickerButton from "../components/GifPickerButton";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
-import { useVisualViewportKeyboardInset } from "../hooks/useVisualViewportKeyboardInset";
+import { mobileComposerBottomOffset, useVisualViewportKeyboardInset } from "../hooks/useVisualViewportKeyboardInset";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { postNotifyJson } from "../lib/postNotifyClient";
@@ -319,9 +319,11 @@ export default function SidebarPage() {
     window.setTimeout(() => setMobileComposerPinned(false), 150);
   }
 
+  const mobileComposerBottom = mobileComposerBottomOffset(mobileKeyboardInset);
+
   const mobileComposerPinnedStyle: CSSProperties | undefined =
     isMobile && mobileComposerPinned
-      ? { bottom: mobileKeyboardInset }
+      ? { bottom: mobileComposerBottom }
       : undefined;
 
   useEffect(() => {
@@ -1388,7 +1390,7 @@ export default function SidebarPage() {
   }
 
   const MessageBubbles = (
-    <div ref={messagesContainerRef} className={isMobile ? "sidebar-messages-scroll" : undefined} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: isMobile ? "16px 12px" : "16px 20px", paddingBottom: isMobile && mobileComposerPinned ? composerBarHeight + 16 : undefined, display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
+    <div ref={messagesContainerRef} className={isMobile ? "sidebar-messages-scroll" : undefined} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: isMobile ? "16px 12px" : "16px 20px", paddingBottom: isMobile && mobileComposerPinned ? composerBarHeight + mobileComposerBottom + 16 : undefined, display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
       {messages.map((msg) => {
         const isMe = msg.sender_id === userId;
         const isHovered = hoveredMsgId === msg.id;

@@ -7,7 +7,7 @@ import UrlPreviewCard from "./UrlPreviewCard";
 import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
 import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
-import { useVisualViewportKeyboardInset } from "../hooks/useVisualViewportKeyboardInset";
+import { mobileComposerBottomOffset, useVisualViewportKeyboardInset } from "../hooks/useVisualViewportKeyboardInset";
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -220,8 +220,10 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
     window.setTimeout(() => setMobileComposerPinned(false), 150);
   }
 
+  const mobileComposerBottom = mobileComposerBottomOffset(mobileKeyboardInset);
+
   const mobileComposerPinnedStyle: CSSProperties | undefined =
-    isMobile && mobileComposerPinned ? { bottom: mobileKeyboardInset } : undefined;
+    isMobile && mobileComposerPinned ? { bottom: mobileComposerBottom } : undefined;
 
   useEffect(() => {
     return () => {
@@ -484,7 +486,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
           flex: 1,
           overflowY: "auto",
           padding: 14,
-          paddingBottom: isMobile && mobileComposerPinned ? composerBarHeight + 14 : undefined,
+          paddingBottom: isMobile && mobileComposerPinned ? composerBarHeight + mobileComposerBottom + 14 : undefined,
           display: "flex",
           flexDirection: "column",
           gap: 10,
