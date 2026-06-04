@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type CSSProperties, type DragEvent } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import UrlPreviewCard from "./UrlPreviewCard";
 import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
 import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
+import { useVisualViewportKeyboardInset } from "../hooks/useVisualViewportKeyboardInset";
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -43,10 +44,14 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
   const [urlPreviews, setUrlPreviews] = useState<Record<string, UrlPreview | null>>({});
   const previewFetchesRef = useRef<Set<string>>(new Set());
   const inputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLDivElement>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
+  const [mobileComposerPinned, setMobileComposerPinned] = useState(false);
+  const [composerBarHeight, setComposerBarHeight] = useState(72);
+  const mobileKeyboardInset = useVisualViewportKeyboardInset(isMobile && mobileComposerPinned && open);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth <= 900);
@@ -176,6 +181,47 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
     }, 150);
     return () => window.clearTimeout(timer);
   }, [open, loading, conversationId, messages]);
+
+  useLayoutEffect(() => {
+    if (!isMobile || !mobileComposerPinned || !composerRef.current) return;
+    const el = composerRef.current;
+    const syncHeight = () => setComposerBarHeight(el.getBoundingClientRect().height);
+    syncHeight();
+    const ro = new ResizeObserver(syncHeight);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile, mobileComposerPinned, draft, selectedPhoto, mobileKeyboardInset]);
+
+  useLayoutEffect(() => {
+    if (!isMobile || !mobileComposerPinned) return;
+    requestAnimationFrame(() => {
+      const el = listRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    });
+  }, [isMobile, mobileComposerPinned, mobileKeyboardInset, draft]);
+
+  useEffect(() => {
+    if (!open) setMobileComposerPinned(false);
+  }, [open]);
+
+  function handleMobileComposerFocus() {
+    if (!isMobile) return;
+    setMobileComposerPinned(true);
+    requestAnimationFrame(() => {
+      const el = listRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+      bottomRef.current?.scrollIntoView({ block: "end" });
+    });
+  }
+
+  function handleMobileComposerBlur() {
+    if (!isMobile) return;
+    window.setTimeout(() => setMobileComposerPinned(false), 150);
+  }
+
+  const mobileComposerPinnedStyle: CSSProperties | undefined =
+    isMobile && mobileComposerPinned ? { bottom: mobileKeyboardInset } : undefined;
 
   useEffect(() => {
     return () => {
@@ -432,7 +478,18 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
         </button>
       </div>
 
-      <div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+      <div
+        ref={listRef}
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: 14,
+          paddingBottom: isMobile && mobileComposerPinned ? composerBarHeight + 14 : undefined,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
         {loading && <div style={{ color: t.textMuted, fontSize: 14 }}>Loading…</div>}
         {!loading && messages.length === 0 && (
           <div style={{ color: t.textFaint, fontSize: 14 }}>No messages yet. Say hi below.</div>
@@ -489,6 +546,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
       </div>
 
       <div
+        ref={composerRef}
         onDragOver={(e) => {
           if (isMobile) return;
           e.preventDefault();
@@ -496,11 +554,16 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
         }}
         onDragLeave={() => setIsDraggingPhoto(false)}
         onDrop={handlePhotoDrop}
+        className={[
+          isMobile ? "sidebar-composer-wrap sidebar-composer-wrap--mobile" : "",
+          isMobile && mobileComposerPinned ? "sidebar-composer-wrap--keyboard-pinned" : "",
+        ].filter(Boolean).join(" ") || undefined}
         style={{
           padding: 12,
           borderTop: `1px solid ${isDraggingPhoto ? "#60a5fa" : t.border}`,
           flexShrink: 0,
-          background: isDraggingPhoto ? (isDark ? "rgba(96,165,250,0.12)" : "rgba(96,165,250,0.1)") : undefined,
+          background: isDraggingPhoto ? (isDark ? "rgba(96,165,250,0.12)" : "rgba(96,165,250,0.1)") : t.surface,
+          ...mobileComposerPinnedStyle,
         }}
       >
         <input
@@ -534,6 +597,8 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
             ref={inputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onFocus={handleMobileComposerFocus}
+            onBlur={handleMobileComposerBlur}
             onPaste={handleMessagePhotoPaste}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {

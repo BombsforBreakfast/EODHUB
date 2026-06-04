@@ -7,6 +7,7 @@ import EmojiPickerButton from "../components/EmojiPickerButton";
 import GifPickerButton from "../components/GifPickerButton";
 import MemberPaywallModal from "../components/MemberPaywallModal";
 import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
+import { useVisualViewportKeyboardInset } from "../hooks/useVisualViewportKeyboardInset";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { postNotifyJson } from "../lib/postNotifyClient";
@@ -268,6 +269,10 @@ export default function SidebarPage() {
   const conversationRefreshTimerRef = useRef<number | null>(null);
   const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const requestInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const activeComposerRef = useRef<HTMLDivElement | null>(null);
+  const [mobileComposerPinned, setMobileComposerPinned] = useState(false);
+  const [composerBarHeight, setComposerBarHeight] = useState(88);
+  const mobileKeyboardInset = useVisualViewportKeyboardInset(isMobile && mobileComposerPinned);
   const [composerHeight, setComposerHeight] = useState(COMPOSER_DEFAULT_PX);
   const [composerResizing, setComposerResizing] = useState(false);
   const composerResizeStartRef = useRef<{ startY: number; startHeight: number } | null>(null);
@@ -289,7 +294,35 @@ export default function SidebarPage() {
     if (isMobile && activeConvId) {
       scrollMessagesToBottom(messagesContainerRef.current, bottomRef.current);
     }
-  }, [newMessage, requestDraft, composerHeight, isMobile, activeConvId]);
+  }, [newMessage, requestDraft, composerHeight, isMobile, activeConvId, mobileKeyboardInset, mobileComposerPinned]);
+
+  useLayoutEffect(() => {
+    if (!isMobile || !mobileComposerPinned || !activeComposerRef.current) return;
+    const el = activeComposerRef.current;
+    const syncHeight = () => setComposerBarHeight(el.getBoundingClientRect().height);
+    syncHeight();
+    const ro = new ResizeObserver(syncHeight);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile, mobileComposerPinned, newMessage, requestDraft, selectedPhoto, selectedGifUrl, mobileKeyboardInset]);
+
+  function handleMobileComposerFocus() {
+    if (!isMobile) return;
+    setMobileComposerPinned(true);
+    requestAnimationFrame(() => {
+      scrollMessagesToBottom(messagesContainerRef.current, bottomRef.current);
+    });
+  }
+
+  function handleMobileComposerBlur() {
+    if (!isMobile) return;
+    window.setTimeout(() => setMobileComposerPinned(false), 150);
+  }
+
+  const mobileComposerPinnedStyle: CSSProperties | undefined =
+    isMobile && mobileComposerPinned
+      ? { bottom: mobileKeyboardInset }
+      : undefined;
 
   useEffect(() => {
     if (!composerResizing) return;
@@ -1355,7 +1388,7 @@ export default function SidebarPage() {
   }
 
   const MessageBubbles = (
-    <div ref={messagesContainerRef} className={isMobile ? "sidebar-messages-scroll" : undefined} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: isMobile ? "16px 12px" : "16px 20px", display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
+    <div ref={messagesContainerRef} className={isMobile ? "sidebar-messages-scroll" : undefined} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: isMobile ? "16px 12px" : "16px 20px", paddingBottom: isMobile && mobileComposerPinned ? composerBarHeight + 16 : undefined, display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
       {messages.map((msg) => {
         const isMe = msg.sender_id === userId;
         const isHovered = hoveredMsgId === msg.id;
@@ -1594,8 +1627,12 @@ export default function SidebarPage() {
 
   const requestComposerBlock = requestTarget ? (
     <div
-      className={isMobile ? "sidebar-composer-wrap sidebar-composer-wrap--mobile" : "sidebar-composer-wrap"}
-      style={{ padding: isMobile ? "12px 12px" : "12px 16px", borderTop: `1px solid ${t.border}`, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", background: t.surface, flexShrink: 0 }}
+      ref={activeComposerRef}
+      className={[
+        isMobile ? "sidebar-composer-wrap sidebar-composer-wrap--mobile" : "sidebar-composer-wrap",
+        isMobile && mobileComposerPinned ? "sidebar-composer-wrap--keyboard-pinned" : "",
+      ].filter(Boolean).join(" ")}
+      style={{ padding: isMobile ? "12px 12px" : "12px 16px", borderTop: `1px solid ${t.border}`, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", background: t.surface, flexShrink: 0, ...mobileComposerPinnedStyle }}
     >
       {composerResizeHandle}
       <div className="sidebar-composer-row">
@@ -1611,6 +1648,8 @@ export default function SidebarPage() {
               setRequestDraft(e.target.value);
               fitTextareaToContent(e.target, composerTextMaxPx(isMobile, composerHeight));
             }}
+            onFocus={handleMobileComposerFocus}
+            onBlur={handleMobileComposerBlur}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey && requestDraft.trim()) {
                 e.preventDefault();
@@ -1648,6 +1687,7 @@ export default function SidebarPage() {
 
   const threadComposerBlock = activeConvId && !requestTarget ? (
     <div
+      ref={activeComposerRef}
       onDragOver={(e) => {
         if (isMobile) return;
         e.preventDefault();
@@ -1655,7 +1695,10 @@ export default function SidebarPage() {
       }}
       onDragLeave={() => setIsDraggingPhoto(false)}
       onDrop={handlePhotoDrop}
-      className={isMobile ? "sidebar-composer-wrap sidebar-composer-wrap--mobile" : "sidebar-composer-wrap"}
+      className={[
+        isMobile ? "sidebar-composer-wrap sidebar-composer-wrap--mobile" : "sidebar-composer-wrap",
+        isMobile && mobileComposerPinned ? "sidebar-composer-wrap--keyboard-pinned" : "",
+      ].filter(Boolean).join(" ")}
       style={{
         padding: isMobile ? "12px 12px" : "12px 16px",
         borderTop: `1px solid ${isDraggingPhoto ? "#60a5fa" : t.border}`,
@@ -1665,6 +1708,7 @@ export default function SidebarPage() {
         minWidth: 0,
         boxSizing: "border-box",
         flexShrink: 0,
+        ...mobileComposerPinnedStyle,
       }}
     >
       <input
@@ -1720,6 +1764,8 @@ export default function SidebarPage() {
               setNewMessage(e.target.value);
               fitTextareaToContent(e.target, composerTextMaxPx(isMobile, composerHeight));
             }}
+            onFocus={handleMobileComposerFocus}
+            onBlur={handleMobileComposerBlur}
             onPaste={handleMessagePhotoPaste}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {

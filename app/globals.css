@@ -672,6 +672,15 @@ a.rabbithole-brand-link:focus-visible {
     padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
     flex-shrink: 0;
   }
+  .sidebar-composer-wrap--keyboard-pinned {
+    position: fixed;
+    left: 0;
+    right: 0;
+    z-index: 1200;
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+  }
   .sidebar-composer-resize-handle {
     display: none;
   }
