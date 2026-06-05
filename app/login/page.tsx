@@ -32,6 +32,10 @@ import {
   mapSupabaseLoginError,
   type FailedAuthReason,
 } from "../lib/auth/failedAuthReasons";
+import {
+  BETA_CODE_AS_PASSWORD_HELPER_MESSAGE,
+  passwordContainsBetaAccessCode,
+} from "../lib/auth/betaCodeInPassword";
 import { clearFailedAuthReportsAfterLogin } from "../lib/auth/clearFailedAuthReportsOnLogin";
 
 function devClientAuthLog(tag: string, data: Record<string, unknown>) {
@@ -110,11 +114,26 @@ export default function LoginPage() {
   const [businessOrgEmailStatus, setBusinessOrgEmailStatus] = useState<"idle" | "checking" | "found" | "authenticating" | "not_found" | "not_approved" | "invalid_email" | "error">("idle");
   const [businessOrgEmailMessage, setBusinessOrgEmailMessage] = useState<string | null>(null);
   const [businessOrgOwnerPassword, setBusinessOrgOwnerPassword] = useState("");
+  const [betaCodeHelperOpen, setBetaCodeHelperOpen] = useState(false);
   const signupCtaRef = useRef<HTMLButtonElement>(null);
 
   function clearEmailNotFoundGuidance() {
     setEmailNotFoundGuidance(false);
     setHighlightSignupCta(false);
+  }
+
+  function showBetaCodeAsPasswordHelper(
+    context: "login" | "signup" | "business_org",
+    emailForReport?: string,
+  ) {
+    setBetaCodeHelperOpen(true);
+    reportAuthFailure({
+      email: emailForReport ?? email,
+      failureReason: "BETA_CODE_AS_PASSWORD",
+      errorCode: `beta_code_as_password:${context}`,
+      rawErrorMessage: "Retired public beta access code entered in password field.",
+      sourceRoute: "/login",
+    });
   }
 
   function guideToSignupAfterEmailNotFound() {
@@ -159,6 +178,10 @@ export default function LoginPage() {
 
   async function continueBusinessOrgWithOwnerPassword() {
     const ownerEmail = businessOrgEmail.trim().toLowerCase();
+    if (passwordContainsBetaAccessCode(businessOrgOwnerPassword)) {
+      showBetaCodeAsPasswordHelper("business_org", ownerEmail);
+      return;
+    }
     setBusinessOrgEmailStatus("authenticating");
     setBusinessOrgEmailMessage(null);
     try {
@@ -361,6 +384,10 @@ export default function LoginPage() {
   async function handleLogin() {
     setLoginMessage(null);
     clearEmailNotFoundGuidance();
+    if (passwordContainsBetaAccessCode(password)) {
+      showBetaCodeAsPasswordHelper("login");
+      return;
+    }
     try {
       setSubmitting(true);
 
@@ -480,6 +507,14 @@ export default function LoginPage() {
     setSignupAwaitingEmail(false);
     setOauthExistsProviders(null);
     setOauthSetupSent(false);
+
+    if (
+      passwordContainsBetaAccessCode(password) ||
+      passwordContainsBetaAccessCode(confirmPassword)
+    ) {
+      showBetaCodeAsPasswordHelper("signup");
+      return;
+    }
 
     if (password !== confirmPassword) {
       setSignupError("Passwords do not match.");
@@ -1123,6 +1158,75 @@ export default function LoginPage() {
 
         </form>
         </>
+      )}
+
+      {betaCodeHelperOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="beta-code-helper-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 85,
+            display: "grid",
+            placeItems: "center",
+            padding: 18,
+            background: "rgba(15, 23, 42, 0.55)",
+          }}
+          onClick={() => setBetaCodeHelperOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(100%, 460px)",
+              borderRadius: 18,
+              border: `1px solid ${t.border}`,
+              background: t.surface,
+              color: t.text,
+              padding: 22,
+              boxShadow: "0 24px 70px rgba(0,0,0,.24)",
+            }}
+          >
+            <h2 id="beta-code-helper-title" style={{ margin: 0, fontSize: 22, fontWeight: 900 }}>
+              Beta access code retired
+            </h2>
+            <p style={{ margin: "12px 0 0", color: t.textMuted, lineHeight: 1.55 }}>
+              {BETA_CODE_AS_PASSWORD_HELPER_MESSAGE}
+            </p>
+            <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+              <button
+                type="button"
+                style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+                onClick={() => {
+                  setBetaCodeHelperOpen(false);
+                  void signInWithGoogleOAuth();
+                }}
+              >
+                <GoogleIcon />
+                Sign up with Google
+              </button>
+              <button
+                type="button"
+                style={buttonPrimary}
+                onClick={() => {
+                  setBetaCodeHelperOpen(false);
+                  clearEmailNotFoundGuidance();
+                  setMode("signup");
+                }}
+              >
+                Sign up to create account
+              </button>
+              <button
+                type="button"
+                style={buttonSecondary}
+                onClick={() => setBetaCodeHelperOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {(businessOrgPromptOpen || businessOrgEmailGateOpen) && (
