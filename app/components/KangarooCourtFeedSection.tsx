@@ -71,10 +71,11 @@ export default function KangarooCourtFeedSection({
   /** OAuth can lag React `userId`; session is enough to vote / open KC CTA. */
   const [viewerIdFromSession, setViewerIdFromSession] = useState<string | null>(null);
   useEffect(() => {
+    if (userId) return;
     void supabase.auth.getSession().then(({ data: { session } }) => {
       setViewerIdFromSession(session?.user?.id ?? null);
     });
-  }, []);
+  }, [userId]);
   const effectiveViewerId = userId ?? viewerIdFromSession;
 
   const [confirmOpen, setConfirmOpen] = useState(false);

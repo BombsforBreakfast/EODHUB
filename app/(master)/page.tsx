@@ -8,13 +8,8 @@ import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { getSupabaseUser, supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
-import EmojiPickerButton from "../components/EmojiPickerButton";
-import GifPickerButton from "../components/GifPickerButton";
 import MentionTextarea, { extractMentionIds } from "../components/MentionTextarea";
 import { PostLikersStack, type PostLikerBrief } from "../components/PostLikersStack";
-import OnlineNowStrip from "../components/OnlineNowStrip";
-import MemberPaywallModal from "../components/MemberPaywallModal";
-import SidebarThreadDrawer from "../components/SidebarThreadDrawer";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
 import { prepareFeedUploadFile } from "../lib/prepareUploadFile";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
@@ -28,42 +23,26 @@ import {
   validateImagePick,
 } from "../lib/uploadLimits";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
-import UpgradePromptModal from "../components/UpgradePromptModal";
+import type { JobModalData } from "../components/jobs/JobDetailsModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobFeedCard from "../components/jobs/JobFeedCard";
-import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
 import EventFeedActions from "../components/EventFeedActions";
-import EventPostCard from "../components/EventPostCard";
 import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
-import EventScrapbookPreview from "../components/events/EventScrapbookPreview";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
 import ExpandableText from "../components/ExpandableText";
-import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
-import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
-import FeedImageGalleryModal from "../components/FeedImageGalleryModal";
 import { FeedMediaAttachment } from "../components/FeedMediaAttachment";
 import FeedPostHeader from "../components/FeedPostHeader";
 import OptimizedAvatarImg from "../components/OptimizedAvatarImg";
 import { useFeedImageGallery } from "../hooks/useFeedImageGallery";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../components/YouTubeEmbed";
-import KangarooCourtFeedSection from "../components/KangarooCourtFeedSection";
-import AddToRabbitholeModal from "../rabbithole/components/AddToRabbitholeModal";
-import { MurphyRabbitholeBanner } from "../components/MurphyRabbitholeBanner";
-import { KangarooCourtVerdictBanner } from "../components/KangarooCourtVerdictBanner";
 import DesktopLayout from "../components/DesktopLayout";
 import { useMasterShell } from "../components/master/masterShellContext";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { sectionTitleLinkZoom } from "../components/master/masterShared";
-import { PlankHolderChallengeCard } from "../components/challenges/PlankHolderChallengeCard";
-import { PlankHolderFeedBanner } from "../components/challenges/PlankHolderFeedBanner";
-import { PlankHolderEarnedModal } from "../components/challenges/PlankHolderEarnedModal";
-import { PlankHolderChallengeToast } from "../components/challenges/PlankHolderChallengeToast";
-
-import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
-import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../components/StarRating";
+import { roundToNearestHalf, StarRatingDisplay } from "../components/StarRating";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 import { Award, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
@@ -174,6 +153,60 @@ import {
 
 const EODWF_DONATION_URL = "https://eod-wf.org/?form=supportEODWF";
 const BTMF_DONATION_URL = "https://www.paypal.com/ncp/payment/SMU4NWRW55V6L";
+
+/** Lazy chunks — load on interaction or when feed content needs them (no extra data fetching). */
+const EmojiPickerButton = dynamic(() => import("../components/EmojiPickerButton"), { ssr: false });
+const GifPickerButton = dynamic(() => import("../components/GifPickerButton"), { ssr: false });
+const OnlineNowStrip = dynamic(() => import("../components/OnlineNowStrip"), { ssr: false });
+const MemberPaywallModal = dynamic(() => import("../components/MemberPaywallModal"), { ssr: false });
+const SidebarThreadDrawer = dynamic(() => import("../components/SidebarThreadDrawer"), { ssr: false });
+const UpgradePromptModal = dynamic(() => import("../components/UpgradePromptModal"), { ssr: false });
+const JobDetailsModal = dynamic(() => import("../components/jobs/JobDetailsModal"), { ssr: false });
+const EventPostCard = dynamic(() => import("../components/EventPostCard"), { ssr: false });
+const EventScrapbookPreview = dynamic(() => import("../components/events/EventScrapbookPreview"), { ssr: false });
+const MemorialScrapbookPreview = dynamic(
+  () => import("../components/memorial/scrapbook").then((m) => m.MemorialScrapbookPreview),
+  { ssr: false },
+);
+const EventAttendeesListModal = dynamic(
+  () => import("../components/events/EventAttendeesListModal").then((m) => m.EventAttendeesListModal),
+  { ssr: false },
+);
+const FeedImageGalleryModal = dynamic(() => import("../components/FeedImageGalleryModal"), { ssr: false });
+const KangarooCourtFeedSection = dynamic(() => import("../components/KangarooCourtFeedSection"), { ssr: false });
+const AddToRabbitholeModal = dynamic(() => import("../rabbithole/components/AddToRabbitholeModal"), { ssr: false });
+const MurphyRabbitholeBanner = dynamic(
+  () => import("../components/MurphyRabbitholeBanner").then((m) => m.MurphyRabbitholeBanner),
+  { ssr: false },
+);
+const KangarooCourtVerdictBanner = dynamic(
+  () => import("../components/KangarooCourtVerdictBanner").then((m) => m.KangarooCourtVerdictBanner),
+  { ssr: false },
+);
+const PlankHolderChallengeCard = dynamic(
+  () => import("../components/challenges/PlankHolderChallengeCard").then((m) => m.PlankHolderChallengeCard),
+  { ssr: false },
+);
+const PlankHolderFeedBanner = dynamic(
+  () => import("../components/challenges/PlankHolderFeedBanner").then((m) => m.PlankHolderFeedBanner),
+  { ssr: false },
+);
+const PlankHolderEarnedModal = dynamic(
+  () => import("../components/challenges/PlankHolderEarnedModal").then((m) => m.PlankHolderEarnedModal),
+  { ssr: false },
+);
+const PlankHolderChallengeToast = dynamic(
+  () => import("../components/challenges/PlankHolderChallengeToast").then((m) => m.PlankHolderChallengeToast),
+  { ssr: false },
+);
+const BizListingTagsField = dynamic(
+  () => import("../components/biz/BizListingTagsField").then((m) => m.BizListingTagsField),
+  { ssr: false },
+);
+const StarRatingInput = dynamic(
+  () => import("../components/StarRating").then((m) => m.StarRatingInput),
+  { ssr: false },
+);
 
 type MemorialCategory = "military" | "leo_fed" | null | undefined;
 
@@ -7616,19 +7649,21 @@ export default function HomePage() {
                   )}
 
                   {/* KC poll card: order is original post → verdict → poll → toolbar → comments */}
-                  <KangarooCourtFeedSection
-                    postId={post.id}
-                    userId={userId}
-                    bundle={post.kangaroo ?? null}
-                    onAfterChange={() => {
-                      void loadPosts();
-                      void refreshPlankHolderChallenge();
-                    }}
-                    mode="card-only"
-                    suppressVerdictFooter={
-                      post.kangaroo?.court?.status === "closed" && Boolean(post.kangaroo?.verdict)
-                    }
-                  />
+                  {post.kangaroo?.court && (
+                    <KangarooCourtFeedSection
+                      postId={post.id}
+                      userId={userId}
+                      bundle={post.kangaroo ?? null}
+                      onAfterChange={() => {
+                        void loadPosts();
+                        void refreshPlankHolderChallenge();
+                      }}
+                      mode="card-only"
+                      suppressVerdictFooter={
+                        post.kangaroo?.court?.status === "closed" && Boolean(post.kangaroo?.verdict)
+                      }
+                    />
+                  )}
 
                   <div
                     style={{
@@ -7647,16 +7682,18 @@ export default function HomePage() {
                   >
                     {/* Feature icon cluster — KC + Rabbithole grouped tightly, distinct from user avatars */}
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                      <KangarooCourtFeedSection
-                        postId={post.id}
-                        userId={userId}
-                        bundle={post.kangaroo ?? null}
-                        onAfterChange={() => {
-                          void loadPosts();
-                          void refreshPlankHolderChallenge();
-                        }}
-                        mode="trigger-inline"
-                      />
+                      {userId && (
+                        <KangarooCourtFeedSection
+                          postId={post.id}
+                          userId={userId}
+                          bundle={post.kangaroo ?? null}
+                          onAfterChange={() => {
+                            void loadPosts();
+                            void refreshPlankHolderChallenge();
+                          }}
+                          mode="trigger-inline"
+                        />
+                      )}
 
                       {userId && (RABBITHOLE_THRESHOLD_BYPASS || post.likeCount >= 3 || post.commentCount >= 2) && (
                         post.rabbithole_thread_id ? (
@@ -8749,14 +8786,16 @@ export default function HomePage() {
         </div>
       )}
 
-      <FeedImageGalleryModal
-        open={isGalleryOpen}
-        images={galleryImages}
-        index={galleryIndex}
-        onClose={closeGallery}
-        onPrev={showPrevGalleryImage}
-        onNext={showNextGalleryImage}
-      />
+      {isGalleryOpen && (
+        <FeedImageGalleryModal
+          open
+          images={galleryImages}
+          index={galleryIndex}
+          onClose={closeGallery}
+          onPrev={showPrevGalleryImage}
+          onNext={showNextGalleryImage}
+        />
+      )}
 
       {flagModal && (
         <div
@@ -8860,17 +8899,23 @@ export default function HomePage() {
         </div>
       )}
 
-      <UpgradePromptModal open={showJobsUpgradePrompt} onClose={() => setShowJobsUpgradePrompt(false)} />
-      <MemberPaywallModal open={memberPaywallOpen} onClose={() => setMemberPaywallOpen(false)} />
-      <JobDetailsModal
-        job={jobDetailsModal}
-        open={!!jobDetailsModal}
-        onClose={() => setJobDetailsModal(null)}
-        saved={jobDetailsModal ? savedJobIds.has(jobDetailsModal.id) : false}
-        canSave={!!userId}
-        isTogglingSave={jobDetailsModal ? togglingJobSaveFor === jobDetailsModal.id : false}
-        onToggleSave={(j) => toggleSaveJob(j.id)}
-      />
+      {showJobsUpgradePrompt && (
+        <UpgradePromptModal open onClose={() => setShowJobsUpgradePrompt(false)} />
+      )}
+      {memberPaywallOpen && (
+        <MemberPaywallModal open onClose={() => setMemberPaywallOpen(false)} />
+      )}
+      {jobDetailsModal && (
+        <JobDetailsModal
+          job={jobDetailsModal}
+          open
+          onClose={() => setJobDetailsModal(null)}
+          saved={savedJobIds.has(jobDetailsModal.id)}
+          canSave={!!userId}
+          isTogglingSave={togglingJobSaveFor === jobDetailsModal.id}
+          onToggleSave={(j) => toggleSaveJob(j.id)}
+        />
+      )}
 
       {mobileBizDetailListing && (
         <div
@@ -9303,12 +9348,14 @@ export default function HomePage() {
           document.body
         )}
 
-      <EventAttendeesListModal
-        open={feedEventAttendeesListModal !== null}
-        eventId={selectedFeedEvent?.id ?? null}
-        status={feedEventAttendeesListModal}
-        onClose={() => setFeedEventAttendeesListModal(null)}
-      />
+      {feedEventAttendeesListModal !== null && selectedFeedEvent?.id && (
+        <EventAttendeesListModal
+          open
+          eventId={selectedFeedEvent.id}
+          status={feedEventAttendeesListModal}
+          onClose={() => setFeedEventAttendeesListModal(null)}
+        />
+      )}
       {rabbitholeModalPost && (
         <AddToRabbitholeModal
           open={true}
@@ -9324,21 +9371,23 @@ export default function HomePage() {
           }}
         />
       )}
-      {userId && !isDesktopShell && (
+      {userId && !isDesktopShell && sidebarDrawer.open && (
         <SidebarThreadDrawer
-          open={sidebarDrawer.open}
+          open
           onClose={() => setSidebarDrawer({ open: false, peerId: null })}
           currentUserId={userId}
           peerUserId={sidebarDrawer.peerId}
         />
       )}
-      <PlankHolderEarnedModal
-        open={plankHolderModalOpen}
-        number={plankHolderChallenge?.plankHolderNumber}
-        profileHref={userId ? `/profile/${userId}` : "/profile"}
-        onClose={closePlankHolderModal}
-      />
-      <PlankHolderChallengeToast toast={plankHolderToast} />
+      {plankHolderModalOpen && (
+        <PlankHolderEarnedModal
+          open
+          number={plankHolderChallenge?.plankHolderNumber}
+          profileHref={userId ? `/profile/${userId}` : "/profile"}
+          onClose={closePlankHolderModal}
+        />
+      )}
+      {plankHolderToast && <PlankHolderChallengeToast toast={plankHolderToast} />}
     </>
   );
 }
