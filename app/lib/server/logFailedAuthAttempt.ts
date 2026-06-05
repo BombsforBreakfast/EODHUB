@@ -9,7 +9,7 @@ import { devAuthLog } from "@/app/lib/auth/signupErrors";
 
 /**
  * Fire-and-forget logger for failed auth attempts. Used by signup, login
- * (via /api/auth/report-failure), beta gate, OAuth callback, and others.
+ * (via /api/auth/report-failure), OAuth callback, and others.
  *
  * Never throws. Auth flows must never block on this — call sites should
  * always invoke as `void logFailedAuthAttempt(...)`.

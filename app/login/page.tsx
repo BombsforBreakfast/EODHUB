@@ -699,22 +699,6 @@ export default function LoginPage() {
     >
       <div style={{ textAlign: "center", marginBottom: 18 }}>
         <div style={{ fontSize: 50, fontWeight: 900, letterSpacing: -1, lineHeight: 1, color: t.text }}>EOD HUB</div>
-        <div
-          style={{
-            display: "inline-block",
-            marginTop: 8,
-            padding: "4px 12px",
-            borderRadius: 999,
-            background: "#d4c45c",
-            color: "#1a1c14",
-            fontSize: 12,
-            fontWeight: 800,
-            letterSpacing: 1,
-            textTransform: "uppercase",
-          }}
-        >
-          Currently in Beta
-        </div>
         <div style={{ marginTop: 8, display: "flex", justifyContent: "center" }}>
           <EodCrabLogo variant="login" priority />
         </div>
