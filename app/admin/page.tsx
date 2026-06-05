@@ -6197,8 +6197,11 @@ export default function AdminPage() {
               }}
             >
               <div>
-                <div style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>Beta waitlist</div>
-                <div style={{ fontSize: 22, fontWeight: 900, color: t.text, marginTop: 2 }}>
+                <div style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>Member waitlist</div>
+                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4, maxWidth: 420, lineHeight: 1.45 }}>
+                  Pre-signup leads for recruiting and approvals. Admin-only — removed automatically when a member is approved.
+                </div>
+                <div style={{ fontSize: 22, fontWeight: 900, color: t.text, marginTop: 8 }}>
                   {waitlistLoading ? "…" : `${waitlistRows.length.toLocaleString()} total`}
                   {waitlistSearch.trim() ? (
                     <span style={{ fontSize: 14, fontWeight: 600, color: t.textMuted, marginLeft: 8 }}>

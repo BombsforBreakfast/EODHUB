@@ -6,7 +6,7 @@ import { supabase } from "../lib/lib/supabaseClient";
 import BetaBugReportFab from "./bug-report/BetaBugReportFab";
 
 /**
- * Shows the beta bug-report FAB only for signed-in users (any route, including login/waitlist).
+ * Shows the beta bug-report FAB only for signed-in users (any route, including login).
  */
 export default function BugReportGate() {
   const pathname = usePathname();
