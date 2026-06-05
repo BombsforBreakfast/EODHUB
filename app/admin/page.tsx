@@ -4590,7 +4590,7 @@ export default function AdminPage() {
                         )}
                         {isIncompleteSignup && !isGrandfathered && <span style={{ background: "#ffedd5", color: "#c2410c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Incomplete signup</span>}
                         {isIncompleteSignup && isGrandfathered && <span style={{ background: "#e5e7eb", color: "#4b5563", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Legacy profile</span>}
-                        {isAwaitingEmail && <span style={{ background: "#e0e7ff", color: "#3730a3", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Awaiting email</span>}
+                        {isAwaitingEmail && <span style={{ background: "#e0e7ff", color: "#3730a3", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Awaiting email verification</span>}
                         {isVerified && <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Verified</span>}
                         {isPending && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
                         {isDenied && <span style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Denied</span>}
