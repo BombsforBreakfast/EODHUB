@@ -1,17 +1,15 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import LemonLotListingCard from "@/app/components/lemonLot/LemonLotListingCard";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { supabase } from "@/app/lib/lib/supabaseClient";
 import {
-  coerceGalleryImages,
-  coerceListingTags,
   displayListingDescription,
   displayListingTitle,
   isPubliclyLive,
   listingMatchesLemonLotKeyword,
-  LEMON_LOT_BADGE_OPTIONS,
   LEMON_LOT_CATEGORIES,
   lemonLotListingUrl,
   listingDetailImageUrls,
@@ -19,9 +17,18 @@ import {
   type LemonLotCategoryId,
   type MarketplaceListingRow,
 } from "@/app/lib/lemonLot";
+import { useViewerGate } from "@/app/hooks/useRequireFullAccess";
 import { postNotifyJson } from "@/app/lib/postNotifyClient";
-import { prepareImageUploadFile } from "@/app/lib/prepareUploadFile";
-import { validateImagePick } from "@/app/lib/uploadLimits";
+
+const LemonLotComposer = dynamic(() => import("@/app/components/lemonLot/LemonLotComposer"), {
+  ssr: false,
+  loading: () => (
+    <div style={{ marginBottom: 24, padding: 18, borderRadius: 14, border: "1px dashed rgba(128,128,128,0.35)" }}>
+      <div style={{ height: 18, width: 140, borderRadius: 4, background: "rgba(128,128,128,0.12)" }} />
+      <div style={{ marginTop: 14, height: 120, borderRadius: 8, background: "rgba(128,128,128,0.08)" }} />
+    </div>
+  ),
+});
 
 const THIRTY_DAYS_MS = 30 * 86400000;
 const LEMON_LOT_INITIAL_LIMIT = 50;
@@ -37,77 +44,31 @@ function rowPriceNumber(price: string | null): number | null {
   return parsePriceFilterNumber(price);
 }
 
-type GalleryEntry = { type: "url"; url: string } | { type: "file"; file: File; preview: string };
-
-function extFromFile(file: File): string {
-  if (file.type === "image/png") return "png";
-  if (file.type === "image/webp") return "webp";
-  if (file.type === "image/gif") return "gif";
-  return "jpg";
-}
-
-/** Returns canonical http(s) URL string, or null if the field is not a usable public URL yet. */
-function normalizeWebsiteUrlInput(raw: string): string | null {
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  try {
-    const u = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
-    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
-    if (!u.hostname) return null;
-    return u.toString();
-  } catch {
-    return null;
-  }
-}
-
-function plainPreviewSnippet(s: string, maxLen: number): string {
-  const t = s.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
-  if (!t) return "";
-  return t.length <= maxLen ? t : `${t.slice(0, maxLen)}…`;
-}
-
 export type LemonLotMarketplaceVariant = "page" | "embedded";
 
 type Props = { variant?: LemonLotMarketplaceVariant };
 
 export function LemonLotMarketplaceView({ variant = "page" }: Props) {
   const { t, isDark } = useTheme();
-  const [loading, setLoading] = useState(true);
+  const viewerGate = useViewerGate();
+  const [listLoading, setListLoading] = useState(true);
   const [rows, setRows] = useState<MarketplaceListingRow[]>([]);
   const [profilesByUser, setProfilesByUser] = useState<Record<string, string>>({});
-  const [userId, setUserId] = useState<string | null>(null);
-  const [myName, setMyName] = useState("Someone");
+  const [userId, setUserId] = useState<string | null>(viewerGate?.userId ?? null);
+  const [myName, setMyName] = useState(viewerGate?.displayName ?? "Someone");
 
   const [keyword, setKeyword] = useState("");
   const [filterCategory, setFilterCategory] = useState<LemonLotCategoryId | "">("");
-  const [formCategory, setFormCategory] = useState<LemonLotCategoryId>("misc");
   const [locationQ, setLocationQ] = useState("");
   const [priceMin, setPriceMin] = useState("");
   const [priceMax, setPriceMax] = useState("");
   const [sort, setSort] = useState<"newest" | "priceAsc" | "priceDesc">("newest");
 
   const [showComposer, setShowComposer] = useState(false);
-  const photoInputRef = useRef<HTMLInputElement | null>(null);
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const [scrapedOgImage, setScrapedOgImage] = useState<string | null>(null);
-  const [fetchingOg, setFetchingOg] = useState(false);
-  const [ogErr, setOgErr] = useState<string | null>(null);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("");
-  const [location, setLocation] = useState("");
-  const [mileage, setMileage] = useState("");
-  const [ogSiteName, setOgSiteName] = useState("");
-  const [subcategory, setSubcategory] = useState("");
-  const [tagsSel, setTagsSel] = useState<Set<string>>(() => new Set());
-  const [galleryEntries, setGalleryEntries] = useState<GalleryEntry[]>([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [formErr, setFormErr] = useState<string | null>(null);
+  const [composerEditRow, setComposerEditRow] = useState<MarketplaceListingRow | null>(null);
 
   const [detail, setDetail] = useState<MarketplaceListingRow | null>(null);
   const [galleryLightbox, setGalleryLightbox] = useState<{ urls: string[]; index: number } | null>(null);
-  /** When set, next publish updates this row instead of inserting. */
-  const [editingId, setEditingId] = useState<string | null>(null);
   const [contactingId, setContactingId] = useState<string | null>(null);
   const [relistingId, setRelistingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -116,7 +77,7 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
   const loadRows = useCallback(async (uid: string | null) => {
     const seq = ++loadRowsSeqRef.current;
     const nowIso = new Date().toISOString();
-    setLoading(true);
+    setListLoading(true);
     let q = supabase.from("marketplace_listings").select(LEMON_LOT_LISTING_COLUMNS);
     if (uid) {
       q = q.or(`user_id.eq.${uid},and(status.eq.active,approved.eq.true,expires_at.gt.${nowIso})`);
@@ -129,7 +90,7 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
       if (seq !== loadRowsSeqRef.current) return;
       setRows([]);
       setProfilesByUser({});
-      setLoading(false);
+      setListLoading(false);
       return;
     }
     const list = (data ?? []) as MarketplaceListingRow[];
@@ -139,7 +100,7 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
     if (ids.length === 0) {
       if (seq !== loadRowsSeqRef.current) return;
       setProfilesByUser({});
-      setLoading(false);
+      setListLoading(false);
       return;
     }
     const { data: profs } = await supabase
@@ -153,13 +114,21 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
     });
     if (seq !== loadRowsSeqRef.current) return;
     setProfilesByUser(map);
-    setLoading(false);
+    setListLoading(false);
   }, []);
 
   useEffect(() => {
+    if (viewerGate) {
+      setUserId(viewerGate.userId);
+      setMyName(viewerGate.displayName);
+      void loadRows(viewerGate.userId);
+      return;
+    }
     let cancelled = false;
     void (async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (cancelled) return;
       const uid = session?.user?.id ?? null;
       if (!uid) return;
@@ -178,7 +147,7 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [loadRows]);
+  }, [viewerGate, loadRows]);
 
   useEffect(() => {
     const id = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("listing");
@@ -210,230 +179,14 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
     return list;
   }, [rows, keyword, filterCategory, locationQ, priceMin, priceMax, sort]);
 
-  const resolvedWebsiteUrl = useMemo(() => normalizeWebsiteUrlInput(websiteUrl), [websiteUrl]);
-
-  useEffect(() => {
-    if (!showComposer || !userId) return;
-    if (!resolvedWebsiteUrl) {
-      setFetchingOg(false);
-      setOgErr(null);
-      setScrapedOgImage(null);
-      setOgSiteName("");
-      return;
-    }
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void (async () => {
-        setFetchingOg(true);
-        setOgErr(null);
-        try {
-          const { data: { session } } = await supabase.auth.getSession();
-          const token = session?.access_token;
-          if (!token) {
-            if (!cancelled) {
-              setFetchingOg(false);
-              setOgErr("Sign in to load a website preview.");
-            }
-            return;
-          }
-          const res = await fetch("/api/preview-url", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ url: resolvedWebsiteUrl }),
-          });
-          const json = (await res.json()) as {
-            title?: string | null;
-            description?: string | null;
-            image?: string | null;
-            siteName?: string | null;
-            error?: string;
-          };
-          if (cancelled) return;
-          if (!res.ok) throw new Error(json.error || "Preview failed");
-          setTitle(json.title ?? "");
-          setDescription(json.description ?? "");
-          setScrapedOgImage(json.image ?? null);
-          setOgSiteName(json.siteName ?? "");
-          setOgErr(null);
-        } catch (e) {
-          if (cancelled) return;
-          setOgErr(e instanceof Error ? e.message : "Could not load preview");
-          setScrapedOgImage(null);
-          setOgSiteName("");
-        } finally {
-          if (!cancelled) setFetchingOg(false);
-        }
-      })();
-    }, 550);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [resolvedWebsiteUrl, showComposer, userId]);
-
-  function resetComposerState() {
-    setGalleryEntries((prev) => {
-      for (const e of prev) {
-        if (e.type === "file") URL.revokeObjectURL(e.preview);
-      }
-      return [];
-    });
-    setEditingId(null);
-    setWebsiteUrl("");
-    setScrapedOgImage(null);
-    setOgSiteName("");
-    setTitle("");
-    setDescription("");
-    setPrice("");
-    setLocation("");
-    setMileage("");
-    setSubcategory("");
-    setFormCategory("misc");
-    setTagsSel(new Set());
-    setOgErr(null);
-    setFormErr(null);
+  function closeComposer() {
+    setShowComposer(false);
+    setComposerEditRow(null);
   }
 
-  async function resolveGalleryEntriesToUrls(uid: string, entries: GalleryEntry[]): Promise<string[]> {
-    const out: string[] = [];
-    for (const e of entries) {
-      if (e.type === "url") {
-        out.push(e.url);
-        continue;
-      }
-      const prepared = await prepareImageUploadFile(e.file);
-      if (!prepared.ok) throw new Error(prepared.error);
-      const file = prepared.file;
-      const ext = extFromFile(file);
-      const path = `lemon-lot/${uid}/${crypto.randomUUID()}.${ext}`;
-      const { error } = await supabase.storage.from("feed-images").upload(path, file, {
-        upsert: false,
-        contentType: file.type || undefined,
-      });
-      if (error) throw new Error(error.message);
-      const { data } = supabase.storage.from("feed-images").getPublicUrl(path);
-      out.push(data.publicUrl);
-    }
-    return out.slice(0, 10);
-  }
-
-  function populateFormFromRow(row: MarketplaceListingRow) {
-    setEditingId(row.id);
-    setFormCategory((row.category as LemonLotCategoryId) || "misc");
-    setSubcategory(row.subcategory ?? "");
-    setTitle(row.title ?? "");
-    setDescription(row.description ?? "");
-    setPrice(row.price ?? "");
-    setLocation(row.location ?? "");
-    setMileage(row.mileage != null ? String(row.mileage) : "");
-    setOgSiteName(row.og_site_name ?? "");
-    setWebsiteUrl(row.external_url ?? "");
-    setScrapedOgImage(row.og_image?.trim() || null);
-    setGalleryEntries((prev) => {
-      for (const e of prev) {
-        if (e.type === "file") URL.revokeObjectURL(e.preview);
-      }
-      return coerceGalleryImages(row.gallery_images).map((u) => ({ type: "url" as const, url: u }));
-    });
-    setTagsSel(new Set(coerceListingTags(row.tags)));
-    setFormErr(null);
+  function openComposer(editRow: MarketplaceListingRow | null = null) {
+    setComposerEditRow(editRow);
     setShowComposer(true);
-  }
-
-  function onPickGalleryPhotos(e: React.ChangeEvent<HTMLInputElement>) {
-    const picked = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith("image/"));
-    e.target.value = "";
-    if (picked.length === 0) return;
-    for (const f of picked) {
-      const err = validateImagePick(f);
-      if (err) {
-        setFormErr(err);
-        return;
-      }
-    }
-    setFormErr(null);
-    setGalleryEntries((prev) => {
-      const next = [...prev];
-      for (const f of picked) {
-        if (next.length >= 10) break;
-        next.push({ type: "file", file: f, preview: URL.createObjectURL(f) });
-      }
-      return next;
-    });
-  }
-
-  function removeGalleryAt(index: number) {
-    setGalleryEntries((prev) => {
-      const e = prev[index];
-      if (e?.type === "file") URL.revokeObjectURL(e.preview);
-      return prev.filter((_, j) => j !== index);
-    });
-  }
-
-  async function submitListing() {
-    setFormErr(null);
-    if (!userId) {
-      window.location.href = "/login";
-      return;
-    }
-    if (!title.trim() || !description.trim()) {
-      setFormErr("Title and description are required.");
-      return;
-    }
-    const tags = coerceListingTags([...tagsSel]);
-    setSubmitting(true);
-    try {
-      const galleryUrls = await resolveGalleryEntriesToUrls(userId, galleryEntries);
-      const base = {
-        listing_mode: "native" as const,
-        category: formCategory,
-        subcategory: subcategory.trim() || null,
-        title: title.trim(),
-        description: description.trim() || null,
-        manual_notes: null,
-        price: price.trim() || null,
-        location: location.trim() || null,
-        mileage: (() => {
-          if (!mileage.trim()) return null;
-          const n = Number.parseInt(mileage, 10);
-          return Number.isFinite(n) ? n : null;
-        })(),
-        external_url: websiteUrl.trim() || null,
-        og_title: null,
-        og_description: null,
-        og_image: scrapedOgImage?.trim() || null,
-        og_site_name: websiteUrl.trim() ? ogSiteName.trim() || null : null,
-        gallery_images: galleryUrls,
-        tags,
-      };
-      if (editingId) {
-        const patch: Record<string, unknown> = { ...base };
-        const { error } = await supabase
-          .from("marketplace_listings")
-          .update(patch)
-          .eq("id", editingId)
-          .eq("user_id", userId);
-        if (error) throw new Error(error.message);
-      } else {
-        const row = {
-          user_id: userId,
-          ...base,
-          status: "active" as const,
-          expires_at: expiryIsoFromNow(),
-          approved: true,
-          featured: false,
-        };
-        const { error } = await supabase.from("marketplace_listings").insert(row);
-        if (error) throw new Error(error.message);
-      }
-      setShowComposer(false);
-      resetComposerState();
-      await loadRows(userId);
-    } catch (e) {
-      setFormErr(e instanceof Error ? e.message : "Save failed");
-    } finally {
-      setSubmitting(false);
-    }
   }
 
   async function contactSeller(listing: MarketplaceListingRow) {
@@ -577,12 +330,8 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
               window.location.href = "/login";
               return;
             }
-            setShowComposer((v) => {
-              const next = !v;
-              if (!next) resetComposerState();
-              else setFormErr(null);
-              return next;
-            });
+            if (showComposer) closeComposer();
+            else openComposer(null);
           }}
           style={{
             padding: "12px 18px",
@@ -599,241 +348,18 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
         </button>
       </div>
 
-      {showComposer && userId && (
-        <section
-          style={{
-            marginBottom: 24,
-            padding: 18,
-            borderRadius: 14,
-            border: `1px solid ${t.border}`,
-            background: isDark ? "rgba(22,24,28,0.55)" : t.surface,
+      {showComposer && userId ? (
+        <LemonLotComposer
+          key={composerEditRow?.id ?? "new"}
+          userId={userId}
+          editRow={composerEditRow}
+          onClose={closeComposer}
+          onSaved={() => {
+            closeComposer();
+            void loadRows(userId);
           }}
-        >
-          <h2 style={{ margin: "0 0 14px", fontSize: 17, fontWeight: 900, color: t.text, letterSpacing: -0.02 }}>
-            {editingId ? "Edit listing" : "Post a listing"}
-          </h2>
-
-          <div style={{ marginBottom: 14 }}>
-            <label style={{ display: "block", fontSize: 12, fontWeight: 800, marginBottom: 6, color: t.textMuted }}>Website (optional)</label>
-            <input
-              value={websiteUrl}
-              onChange={(e) => setWebsiteUrl(e.target.value)}
-              placeholder="https://example.com/your-listing"
-              style={{ ...inputStyle, width: "100%" }}
-            />
-            <p style={{ margin: "6px 0 0", fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
-              When this looks like a full web address, a preview loads automatically (title, description, and image when available).
-            </p>
-            {resolvedWebsiteUrl ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  borderRadius: 12,
-                  border: `1px solid ${t.border}`,
-                  background: isDark ? "rgba(0,0,0,0.25)" : t.badgeBg,
-                  padding: 12,
-                  boxSizing: "border-box",
-                }}
-              >
-                <div style={{ fontSize: 11, fontWeight: 700, color: t.textFaint, marginBottom: 8, wordBreak: "break-all" }}>{resolvedWebsiteUrl}</div>
-                {fetchingOg ? (
-                  <div style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>Loading preview…</div>
-                ) : null}
-                {ogErr ? <div style={{ fontSize: 13, color: "#b91c1c", fontWeight: 600 }}>{ogErr}</div> : null}
-                {!fetchingOg && !ogErr ? (
-                  scrapedOgImage || title.trim() || description.trim() || ogSiteName ? (
-                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-                    {scrapedOgImage && galleryEntries.length === 0 ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={scrapedOgImage}
-                        alt=""
-                        style={{
-                          width: 120,
-                          height: 72,
-                          objectFit: "cover",
-                          borderRadius: 8,
-                          border: `1px solid ${t.border}`,
-                          flexShrink: 0,
-                        }}
-                      />
-                    ) : null}
-                    <div style={{ flex: "1 1 160px", minWidth: 0 }}>
-                      {ogSiteName ? (
-                        <div style={{ fontSize: 11, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.04 }}>{ogSiteName}</div>
-                      ) : null}
-                      {title.trim() ? (
-                        <div style={{ fontSize: 15, fontWeight: 900, color: t.text, marginTop: 4, lineHeight: 1.3 }}>{title}</div>
-                      ) : (
-                        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>No title returned for this URL.</div>
-                      )}
-                      {description.trim() ? (
-                        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 8, lineHeight: 1.45 }}>{plainPreviewSnippet(description, 220)}</div>
-                      ) : null}
-                    </div>
-                  </div>
-                  ) : (
-                    <div style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>
-                      Loaded the page, but no title, description, or preview image was found.
-                    </div>
-                  )
-                ) : null}
-              </div>
-            ) : null}
-          </div>
-
-          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 800, marginBottom: 6, color: t.textMuted }}>Title *</label>
-              <input value={title} onChange={(e) => setTitle(e.target.value)} style={inputStyle} />
-            </div>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 800, marginBottom: 6, color: t.textMuted }}>Description *</label>
-              <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} style={{ ...inputStyle, minHeight: 100, resize: "vertical" as const }} />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 800, marginBottom: 6, color: t.textMuted }}>Category *</label>
-              <select
-                value={formCategory}
-                onChange={(e) => setFormCategory(e.target.value as LemonLotCategoryId)}
-                style={inputStyle}
-              >
-                {LEMON_LOT_CATEGORIES.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 800, marginBottom: 6, color: t.textMuted }}>Subcategory</label>
-              <input value={subcategory} onChange={(e) => setSubcategory(e.target.value)} placeholder="Optional" style={inputStyle} />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 800, marginBottom: 6, color: t.textMuted }}>Price</label>
-              <input value={price} onChange={(e) => setPrice(e.target.value)} placeholder="$800 / mo, OBO…" style={inputStyle} />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 800, marginBottom: 6, color: t.textMuted }}>Location</label>
-              <input value={location} onChange={(e) => setLocation(e.target.value)} style={inputStyle} />
-            </div>
-            <div>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 800, marginBottom: 6, color: t.textMuted }}>Mileage</label>
-              <input value={mileage} onChange={(e) => setMileage(e.target.value.replace(/[^\d]/g, ""))} placeholder="Vehicles / bikes" style={inputStyle} />
-            </div>
-            <div style={{ gridColumn: "1 / -1" }}>
-              <label style={{ display: "block", fontSize: 12, fontWeight: 800, marginBottom: 6, color: t.textMuted }}>Photos (optional, up to 10)</label>
-              <p style={{ margin: "0 0 8px", fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
-                Your photos show first on the card and override the website preview image.
-              </p>
-              <input ref={photoInputRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={onPickGalleryPhotos} />
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-start" }}>
-                <button
-                  type="button"
-                  onClick={() => photoInputRef.current?.click()}
-                  disabled={galleryEntries.length >= 10}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 10,
-                    fontWeight: 800,
-                    border: `1px solid ${t.border}`,
-                    background: t.surface,
-                    cursor: galleryEntries.length >= 10 ? "not-allowed" : "pointer",
-                    opacity: galleryEntries.length >= 10 ? 0.55 : 1,
-                  }}
-                >
-                  Add photo
-                </button>
-                <span style={{ fontSize: 12, color: t.textMuted, alignSelf: "center" }}>
-                  {galleryEntries.length}/10
-                </span>
-              </div>
-              {galleryEntries.length > 0 ? (
-                <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {galleryEntries.map((entry, i) => (
-                    <div key={entry.type === "url" ? `${entry.url}-${i}` : entry.preview} style={{ position: "relative", width: 88, height: 88 }}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={entry.type === "url" ? entry.url : entry.preview}
-                        alt=""
-                        style={{ width: "100%", height: "100%", objectFit: "cover", borderRadius: 8, border: `1px solid ${t.border}`, display: "block" }}
-                      />
-                      <button
-                        type="button"
-                        aria-label="Remove photo"
-                        onClick={() => removeGalleryAt(i)}
-                        style={{
-                          position: "absolute",
-                          top: 2,
-                          right: 2,
-                          width: 22,
-                          height: 22,
-                          borderRadius: 6,
-                          border: "none",
-                          background: "rgba(0,0,0,0.65)",
-                          color: "#fff",
-                          fontWeight: 900,
-                          fontSize: 14,
-                          lineHeight: 1,
-                          cursor: "pointer",
-                          padding: 0,
-                        }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-            </div>
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 8, color: t.textMuted }}>Tags</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-              {LEMON_LOT_BADGE_OPTIONS.map((b) => (
-                <label key={b} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={tagsSel.has(b)}
-                    onChange={() => {
-                      setTagsSel((prev) => {
-                        const n = new Set(prev);
-                        if (n.has(b)) n.delete(b);
-                        else n.add(b);
-                        return n;
-                      });
-                    }}
-                  />
-                  {b}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {formErr ? <p style={{ color: "#b91c1c", fontSize: 13, marginTop: 12 }}>{formErr}</p> : null}
-          <button
-            type="button"
-            onClick={() => void submitListing()}
-            disabled={submitting}
-            style={{
-              marginTop: 16,
-              padding: "12px 20px",
-              borderRadius: 10,
-              border: "none",
-              background: "#111827",
-              color: "#fff",
-              fontWeight: 800,
-              fontSize: 15,
-              cursor: submitting ? "wait" : "pointer",
-              width: "100%",
-              maxWidth: 320,
-            }}
-          >
-            {submitting ? (editingId ? "Saving…" : "Publishing…") : editingId ? "Save changes" : "Publish listing"}
-          </button>
-        </section>
-      )}
+        />
+      ) : null}
 
       <section
         style={{
@@ -946,7 +472,7 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
         </div>
       </section>
 
-      {loading && rows.length === 0 ? (
+      {listLoading && rows.length === 0 ? (
         <div style={{ padding: 28, textAlign: "center", color: t.textMuted, border: `1px dashed ${t.border}`, borderRadius: 14 }}>
           Loading Lemon Lot listings…
         </div>
@@ -966,7 +492,7 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
               onContact={() => void contactSeller(row)}
               onRelist={() => void relist(row.id)}
               onRemove={() => void removeListing(row.id)}
-              onEdit={userId === row.user_id ? () => populateFormFromRow(row) : undefined}
+              onEdit={userId === row.user_id ? () => openComposer(row) : undefined}
               contacting={contactingId === row.id}
               relisting={relistingId === row.id}
               removing={removingId === row.id}
@@ -1066,7 +592,7 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
                 <button
                   type="button"
                   onClick={() => {
-                    populateFormFromRow(detail);
+                    openComposer(detail);
                     setDetail(null);
                   }}
                   style={{

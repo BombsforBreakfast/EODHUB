@@ -1,17 +1,74 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from "react";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { getSupabaseUser, supabase } from "../lib/lib/supabaseClient";
 import {
   onboardingRedirectUrl,
   resolvePreAccessRedirectPath,
   shouldRedirectToOnboarding,
 } from "../lib/onboardingGate";
-import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
+import {
+  fetchViewerProfileCached,
+  type ViewerProfile,
+} from "../lib/queries/viewerProfile";
 import { hasFullPlatformAccess } from "../lib/verificationAccess";
 
 type AccessGateState = "checking" | "redirecting" | "ready";
+
+export type ViewerGateContextValue = {
+  userId: string;
+  displayName: string;
+};
+
+const ViewerGateContext = createContext<ViewerGateContextValue | null>(null);
+
+/** Viewer id + display name when rendered inside {@link RequireFullAccess}. */
+export function useViewerGate(): ViewerGateContextValue | null {
+  return useContext(ViewerGateContext);
+}
+
+function viewerDisplayName(profile: ViewerProfile): string {
+  return (
+    profile.display_name?.trim() ||
+    `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
+    "You"
+  );
+}
+
+type GateResolveResult =
+  | { status: "redirecting" }
+  | { status: "ready"; userId: string; profile: ViewerProfile };
+
+async function resolveViewerGate(queryClient: QueryClient): Promise<GateResolveResult> {
+  const {
+    data: { user },
+  } = await getSupabaseUser();
+
+  if (!user) {
+    window.location.replace("/login");
+    return { status: "redirecting" };
+  }
+
+  const profile = await fetchViewerProfileCached(queryClient, supabase, user);
+
+  if (!profile) {
+    window.location.replace(onboardingRedirectUrl(false));
+    return { status: "redirecting" };
+  }
+
+  if (shouldRedirectToOnboarding(profile)) {
+    window.location.replace(onboardingRedirectUrl(true));
+    return { status: "redirecting" };
+  }
+
+  if (!hasFullPlatformAccess(profile)) {
+    window.location.replace(resolvePreAccessRedirectPath(profile));
+    return { status: "redirecting" };
+  }
+
+  return { status: "ready", userId: user.id, profile };
+}
 
 /**
  * Gate for any in-app page that requires a fully created + onboarded + verified
@@ -30,39 +87,9 @@ export function useRequireFullAccess(route: string): AccessGateState {
     let cancelled = false;
 
     async function check() {
-      const {
-        data: { user },
-      } = await getSupabaseUser();
+      const result = await resolveViewerGate(queryClient);
       if (cancelled) return;
-
-      if (!user) {
-        setState("redirecting");
-        window.location.replace("/login");
-        return;
-      }
-
-      const profile = await fetchViewerProfileCached(queryClient, supabase, user);
-      if (cancelled) return;
-
-      if (!profile) {
-        setState("redirecting");
-        window.location.replace(onboardingRedirectUrl(false));
-        return;
-      }
-
-      if (shouldRedirectToOnboarding(profile)) {
-        setState("redirecting");
-        window.location.replace(onboardingRedirectUrl(true));
-        return;
-      }
-
-      if (!hasFullPlatformAccess(profile)) {
-        setState("redirecting");
-        window.location.replace(resolvePreAccessRedirectPath(profile));
-        return;
-      }
-
-      setState("ready");
+      setState(result.status === "ready" ? "ready" : "redirecting");
     }
 
     void check();
@@ -82,7 +109,33 @@ export function RequireFullAccess({
   route: string;
   children: ReactNode;
 }) {
-  const gate = useRequireFullAccess(route);
-  if (gate !== "ready") return null;
-  return children;
+  const queryClient = useQueryClient();
+  const [gate, setGate] = useState<AccessGateState>("checking");
+  const [viewer, setViewer] = useState<ViewerGateContextValue | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      const result = await resolveViewerGate(queryClient);
+      if (cancelled) return;
+      if (result.status === "ready") {
+        setViewer({
+          userId: result.userId,
+          displayName: viewerDisplayName(result.profile),
+        });
+        setGate("ready");
+      } else {
+        setViewer(null);
+        setGate("redirecting");
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [route, queryClient]);
+
+  if (gate !== "ready" || !viewer) return null;
+  return createElement(ViewerGateContext.Provider, { value: viewer }, children);
 }
