@@ -313,6 +313,8 @@ const FULL_FEED_HYDRATION_DELAY_MS = 400;
 const FEED_REALTIME_DEBOUNCE_MS = 2000;
 const FEED_QUERY_BUFFER = 20;
 const HOME_WIDGET_LOAD_DELAY_MS = 1500;
+/** Defer vouch/discover/memorial/banners until after the first feed paint to limit CLS. */
+const FEED_ABOVE_FOLD_EXTRAS_DELAY_MS = 600;
 
 function perfNowMs(): number {
   if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -855,6 +857,8 @@ export default function HomePage() {
 
   const [loading, setLoading] = useState(true);
   const [postsLoaded, setPostsLoaded] = useState(false);
+  const [feedAboveFoldExtrasReady, setFeedAboveFoldExtrasReady] = useState(false);
+  const feedAboveFoldExtrasTimerRef = useRef<number | null>(null);
   const [feedPostLimit, setFeedPostLimit] = useState(INITIAL_FEED_POST_LIMIT);
   const [feedHasMore, setFeedHasMore] = useState(false);
   const [feedLoadingMore, setFeedLoadingMore] = useState(false);
@@ -902,7 +906,7 @@ export default function HomePage() {
   const discoverProfilesQuery = useQuery({
     queryKey: userId ? queryKeys.discoverProfiles(userId) : queryKeys.discoverProfiles("pending"),
     queryFn: () => fetchDiscoverProfiles(supabase, userId as string),
-    enabled: !!userId,
+    enabled: !!userId && feedAboveFoldExtrasReady,
     staleTime: DISCOVER_PROFILES_STALE_MS,
   });
   const discoverProfiles = discoverProfilesQuery.data ?? [];
@@ -1974,8 +1978,7 @@ export default function HomePage() {
   }
 
   useEffect(() => {
-    if (!userId) return;
-    if (!showMemorialFeedCards) {
+    if (!userId || !showMemorialFeedCards) {
       setTodayMemorials([]);
       setMemorialLikes({});
       setMemorialComments({});
@@ -1984,10 +1987,55 @@ export default function HomePage() {
       setExpandedMemorialCards({});
       return;
     }
+    if (!feedAboveFoldExtrasReady) return;
     void loadTodayMemorials(userId);
     // loadTodayMemorials is re-created each render; this effect is intentionally keyed on userId + showMemorialFeedCards only
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId, showMemorialFeedCards]);
+  }, [userId, showMemorialFeedCards, feedAboveFoldExtrasReady]);
+
+  useEffect(() => {
+    if (!feedAboveFoldExtrasReady || !userId) return;
+    void loadPendingMembers().catch((err) => console.error("loadPendingMembers failed:", err));
+  }, [feedAboveFoldExtrasReady, userId]);
+
+  useEffect(() => {
+    if (!postsLoaded) {
+      setFeedAboveFoldExtrasReady(false);
+      if (feedAboveFoldExtrasTimerRef.current) {
+        window.clearTimeout(feedAboveFoldExtrasTimerRef.current);
+        feedAboveFoldExtrasTimerRef.current = null;
+      }
+      return;
+    }
+
+    const markExtrasReady = () => {
+      feedAboveFoldExtrasTimerRef.current = window.setTimeout(() => {
+        feedAboveFoldExtrasTimerRef.current = null;
+        setFeedAboveFoldExtrasReady(true);
+      }, FEED_ABOVE_FOLD_EXTRAS_DELAY_MS);
+    };
+
+    if (typeof window.requestIdleCallback === "function") {
+      const idleId = window.requestIdleCallback(markExtrasReady, {
+        timeout: FEED_ABOVE_FOLD_EXTRAS_DELAY_MS + 500,
+      });
+      return () => {
+        window.cancelIdleCallback(idleId);
+        if (feedAboveFoldExtrasTimerRef.current) {
+          window.clearTimeout(feedAboveFoldExtrasTimerRef.current);
+          feedAboveFoldExtrasTimerRef.current = null;
+        }
+      };
+    }
+
+    markExtrasReady();
+    return () => {
+      if (feedAboveFoldExtrasTimerRef.current) {
+        window.clearTimeout(feedAboveFoldExtrasTimerRef.current);
+        feedAboveFoldExtrasTimerRef.current = null;
+      }
+    };
+  }, [postsLoaded]);
 
   async function loadPendingMembers() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -4927,6 +4975,7 @@ export default function HomePage() {
       queryClient.removeQueries({ queryKey: ["profiles", "discover"] });
       setDiscoverPageIndex(0);
       setPendingMembers([]);
+      setFeedAboveFoldExtrasReady(false);
       setPosts([]);
       postsLoadedRef.current = false;
       setPostsLoaded(false);
@@ -5070,7 +5119,6 @@ export default function HomePage() {
         }
 
         void refreshPlankHolderChallenge().catch((err) => console.error("refreshPlankHolderChallenge failed:", err));
-        void loadPendingMembers().catch((err) => console.error("loadPendingMembers failed:", err));
 
         const feedReady = loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err));
         await feedReady;
@@ -5560,22 +5608,6 @@ export default function HomePage() {
     );
   }
 
-  function InlineSkeletonPill({ width = 42 }: { width?: number }) {
-    return (
-      <span
-        aria-hidden
-        style={{
-          ...skeletonStyle,
-          display: "inline-block",
-          width,
-          height: 14,
-          marginBottom: 0,
-          verticalAlign: "middle",
-        }}
-      />
-    );
-  }
-
   // Renders a single comment card (used for both top-level comments and their
   // one-level replies). `replyTargetId` is the top-level comment the Reply
   // button should attach to (a reply attaches to its parent, keeping depth at 1).
@@ -6021,8 +6053,8 @@ export default function HomePage() {
           }}
         >
             <>
-          {/* Pending Members ΓÇö community vouching */}
-          {userId && pendingMembers.some((m) => !hiddenPendingMemberIds.has(m.user_id)) && (
+          {/* Pending Members ΓÇö community vouching (deferred until after first feed paint) */}
+          {feedAboveFoldExtrasReady && userId && pendingMembers.some((m) => !hiddenPendingMemberIds.has(m.user_id)) && (
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
               {pendingMembers.filter((m) => !hiddenPendingMemberIds.has(m.user_id)).map((m) => {
                 const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
@@ -6178,7 +6210,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {showNavHelper && (
+          {feedAboveFoldExtrasReady && showNavHelper && (
             <div
               role="status"
               style={{
@@ -6222,23 +6254,27 @@ export default function HomePage() {
             </div>
           )}
 
-          <PlankHolderFeedBanner
-            challenge={plankHolderChallenge}
-            onViewChallenge={handlePlankHolderBannerClick}
-            profileHref={userId ? `/profile/${userId}` : "/profile"}
-            earnedBannerDismissed={plankHolderBannerDismissed}
-            onDismissEarnedBanner={dismissPlankHolderEarnedBanner}
-          />
+          {feedAboveFoldExtrasReady && (
+            <PlankHolderFeedBanner
+              challenge={plankHolderChallenge}
+              onViewChallenge={handlePlankHolderBannerClick}
+              profileHref={userId ? `/profile/${userId}` : "/profile"}
+              earnedBannerDismissed={plankHolderBannerDismissed}
+              onDismissEarnedBanner={dismissPlankHolderEarnedBanner}
+            />
+          )}
 
-          <PlankHolderChallengeCard
-            challenge={plankHolderChallenge}
-            userId={userId}
-            onCtaClick={handlePlankHolderCta}
-            hidden={plankHolderCardHidden}
-            onHide={hidePlankHolderCard}
-          />
+          {feedAboveFoldExtrasReady && (
+            <PlankHolderChallengeCard
+              challenge={plankHolderChallenge}
+              userId={userId}
+              onCtaClick={handlePlankHolderCta}
+              hidden={plankHolderCardHidden}
+              onHide={hidePlankHolderCard}
+            />
+          )}
 
-          {currentUserReferralCode && !recruiterNudgeHidden && (
+          {feedAboveFoldExtrasReady && currentUserReferralCode && !recruiterNudgeHidden && (
             <div className="referral-nudge" style={{
               marginBottom: 12,
               border: `1px solid #6366f1`,
@@ -6718,7 +6754,7 @@ export default function HomePage() {
           </div>
 
           {/* People You May Know ΓÇö verified members only; below composer so vouch cards stay above */}
-          {discoverProfiles.length > 0 && (
+          {feedAboveFoldExtrasReady && discoverProfiles.length > 0 && (
             <div style={{ marginTop: 16, marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, minHeight: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
@@ -6884,7 +6920,7 @@ export default function HomePage() {
             </div>
           )}
 
-          {unitFeedHighlights.length > 0 && (
+          {feedAboveFoldExtrasReady && unitFeedHighlights.length > 0 && (
             <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
               {unitFeedHighlights.map((p) => (
                 <div key={`unit-highlight-${p.id}`} style={{ border: `1px solid ${t.border}`, borderRadius: 14, overflow: "hidden", background: t.surface }}>
@@ -6948,7 +6984,7 @@ export default function HomePage() {
           <div style={{ marginTop: 12, display: "grid", gap: 0, width: "100%", minWidth: 0, boxSizing: "border-box" }}>
             {!postsLoaded && [0, 1, 2].map((i) => <SkeletonPost key={i} />)}
             {/* Memorial anniversary cards - auto-injected on anniversary date (opt-out in My Account) */}
-            {showMemorialFeedCards &&
+            {feedAboveFoldExtrasReady && showMemorialFeedCards &&
               todayMemorials.filter(m => !dismissedMemorialIds.has(m.id)).map((m) => {
               const isExpanded = !!expandedMemorialCards[m.id];
               const memorialCommentList = memorialComments[m.id] ?? [];
@@ -7692,24 +7728,24 @@ export default function HomePage() {
                       onPick={(type) => void handleFeedPostReaction(post.id, type)}
                     />
 
-                    {post.isInteractionHydrating ? (
-                      <InlineSkeletonPill width={70} />
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => toggleComments(post.id)}
-                        style={{
-                          background: "transparent",
-                          border: "none",
-                          padding: 0,
-                          cursor: "pointer",
-                          fontWeight: 700,
-                          color: t.textMuted,
-                        }}
-                      >
-                        {commentsOpen ? "Hide Comments" : "Comment"}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => toggleComments(post.id)}
+                      disabled={post.isInteractionHydrating}
+                      aria-busy={post.isInteractionHydrating}
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        padding: 0,
+                        minWidth: 70,
+                        cursor: post.isInteractionHydrating ? "default" : "pointer",
+                        fontWeight: 700,
+                        color: t.textMuted,
+                        opacity: post.isInteractionHydrating ? 0.45 : 1,
+                      }}
+                    >
+                      {commentsOpen ? "Hide Comments" : "Comment"}
+                    </button>
 
                     {post.likeCount > 0 && <PostLikersStack likers={post.likers} />}
 
@@ -7721,15 +7757,17 @@ export default function HomePage() {
                       reactorNamesByType={post.reactorNamesByType}
                     />
 
-                    <div style={{ fontSize: 14, color: t.textMuted }}>
-                      {post.isInteractionHydrating ? (
-                        <InlineSkeletonPill width={86} />
-                      ) : (
-                        <>
-                          {post.commentCount}{" "}
-                          {post.commentCount === 1 ? "comment" : "comments"}
-                        </>
-                      )}
+                    <div
+                      style={{
+                        fontSize: 14,
+                        color: t.textMuted,
+                        minWidth: 86,
+                        opacity: post.isInteractionHydrating ? 0.45 : 1,
+                      }}
+                      aria-busy={post.isInteractionHydrating}
+                    >
+                      {post.commentCount}{" "}
+                      {post.commentCount === 1 ? "comment" : "comments"}
                     </div>
                   </div>
 
