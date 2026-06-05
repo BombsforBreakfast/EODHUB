@@ -2,15 +2,17 @@
 
 import { Eye, EyeOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "../components/EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
 import { clearAppAuthState, markAppSessionActive } from "../lib/auth/sessionState";
 import {
-  hasFullPlatformAccess,
-  needsEmailVerification,
-} from "../lib/verificationAccess";
+  ONBOARDING_GATE_PROFILE_SELECT,
+  resolveLoginRedirectPath,
+  type OnboardingGateProfile,
+} from "../lib/onboardingGate";
 import {
   captureReferralFromUrl,
   readStoredReferral,
@@ -112,6 +114,22 @@ export default function LoginPage() {
   const [businessOrgEmailMessage, setBusinessOrgEmailMessage] = useState<string | null>(null);
   const [businessOrgOwnerPassword, setBusinessOrgOwnerPassword] = useState("");
   const signupCtaRef = useRef<HTMLButtonElement>(null);
+
+  async function redirectForSessionUser(user: User) {
+    const { profile } = await loadActiveProfile<OnboardingGateProfile & { email?: string | null }>(supabase, user, {
+      route: "app/login/page.tsx:redirectForSessionUser",
+      select: `${ONBOARDING_GATE_PROFILE_SELECT}, email`,
+    });
+
+    devClientAuthLog("login", {
+      step: "profile_loaded",
+      verification_status: profile?.verification_status ?? null,
+      email_verified: profile?.email_verified ?? null,
+      admin_verified: profile?.admin_verified ?? null,
+    });
+
+    window.location.href = resolveLoginRedirectPath(profile);
+  }
 
   function clearEmailNotFoundGuidance() {
     setEmailNotFoundGuidance(false);
@@ -218,6 +236,31 @@ export default function LoginPage() {
   useEffect(() => {
     captureReferralFromUrl();
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("error") === "auth") {
+      setLoginMessage("Sign-in could not be completed. Please try again, or use the password reset link if you need to set a password.");
+    } else if (params.get("deleted") === "1") {
+      setLoginMessage("Your account has been deleted.");
+    } else if (params.get("business_page_created") === "1") {
+      setLoginMessage("Business page created. Sign in with the business login email to continue.");
+    }
+
+    let cancelled = false;
+    void (async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (cancelled || !session?.user) return;
+      markAppSessionActive(rememberMe);
+      await redirectForSessionUser(session.user);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rememberMe]);
 
   useEffect(() => {
     let cancelled = false;
@@ -421,56 +464,7 @@ export default function LoginPage() {
       markAppSessionActive(rememberMe);
       clearFailedAuthReportsAfterLogin(session.access_token);
 
-      const { profile } = await loadActiveProfile<{
-        user_id: string;
-        email: string | null;
-        display_name: string | null;
-        first_name: string | null;
-        last_name: string | null;
-        photo_url: string | null;
-        verification_status: string | null;
-        email_verified: boolean | null;
-        admin_verified: boolean | null;
-        must_complete_onboarding: boolean | null;
-        account_type: string | null;
-      }>(supabase, session.user, {
-        route: "app/login/page.tsx:handleLogin",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, verification_status, email_verified, admin_verified, must_complete_onboarding, is_pure_admin, account_type",
-      });
-
-      if (profile?.account_type === "business_org") {
-        window.location.href = "/";
-        return;
-      }
-
-      devClientAuthLog("login", {
-        step: "profile_loaded",
-        verification_status: profile?.verification_status ?? null,
-        email_verified: profile?.email_verified ?? null,
-        admin_verified: profile?.admin_verified ?? null,
-      });
-
-      if (profile && hasFullPlatformAccess(profile)) {
-        window.location.href = "/";
-        return;
-      }
-
-      if (profile?.must_complete_onboarding) {
-        window.location.href = "/onboarding";
-        return;
-      }
-
-      if (!profile) {
-        window.location.href = "/onboarding";
-        return;
-      }
-
-      if (needsEmailVerification(profile)) {
-        window.location.href = "/verify-email";
-        return;
-      }
-
-      window.location.href = "/pending";
+      await redirectForSessionUser(session.user);
     } finally {
       setSubmitting(false);
     }
