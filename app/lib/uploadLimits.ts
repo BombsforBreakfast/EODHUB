@@ -6,6 +6,8 @@ export const UPLOAD_LIMITS = {
   avatarImage: 512 * 1024,
   /** Target size after feed / gallery image compression. */
   feedImage: 1536 * 1024,
+  /** RUMINT news link-card override images after compression. */
+  newsThumbnail: 512 * 1024,
   /** Short in-app video clips (~3–4 min). */
   video: 100 * 1024 * 1024,
   /** Business organization wall posts (~6–8 min at similar quality). */

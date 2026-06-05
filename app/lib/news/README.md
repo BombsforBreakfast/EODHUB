@@ -26,50 +26,14 @@ external content starts showing up to users.
 
 ## Operations
 
-### One-time setup
+### Ingestion trigger (admin only)
 
-1. **Pick a long random secret** (e.g. `openssl rand -hex 32`).
-2. **Set it as `NEWS_CRON_SECRET`** in the Vercel project env (Production +
-   Preview).
-3. **Store the same value in Supabase Vault** so pg_cron can read it at call
-   time. Run this once in the Supabase SQL editor (you do NOT need superuser
-   for Vault — `alter database … set app.*` would require superuser and is
-   rejected on managed Supabase, which is why we use Vault instead):
+News is **not** on a schedule. Pull stories only when you want them:
 
-   ```sql
-   select vault.create_secret(
-     '<the-same-secret>',
-     'news_cron_secret',
-     'Bearer token for /api/cron/news-ingest'
-   );
-   ```
+- **Admin Panel → News → Run ingestion now** calls
+  `POST /api/admin/news/run-ingestion` (same caps and idempotency as before).
 
-   To rotate later:
-
-   ```sql
-   select vault.update_secret(
-     (select id from vault.secrets where name = 'news_cron_secret'),
-     '<new-secret>'
-   );
-   ```
-
-   This is intentionally NOT in the migration (the secret should never live
-   in git).
-
-4. The migration `20260420000000_news_items.sql` already enabled `pg_cron` +
-   `pg_net` and scheduled the hourly call. Verify with:
-
-   ```sql
-   select * from cron.job where jobname = 'news-ingest-hourly';
-   ```
-
-### Manual trigger (admin only)
-
-The Admin Panel → News tab has a **Run ingestion now** button that calls
-`POST /api/admin/news/run-ingestion`. Same caps, same idempotency. Useful
-for validating scoring after editing config files.
-
-You can also call from a shell with the cron secret:
+Optional shell trigger (requires `NEWS_CRON_SECRET` on Vercel if you keep the route):
 
 ```bash
 curl -X POST -H "Authorization: Bearer $NEWS_CRON_SECRET" \
@@ -77,6 +41,9 @@ curl -X POST -H "Authorization: Bearer $NEWS_CRON_SECRET" \
 ```
 
 The endpoint returns `{ ok, stats: { fetched, scored, belowThreshold, duplicates, inserted, capped, errors } }`.
+
+The hourly Supabase pg_cron job was removed in migration
+`20260605120000_unschedule_news_ingest_cron.sql`.
 
 ## Tuning
 
@@ -92,7 +59,7 @@ The endpoint returns `{ ok, stats: { fetched, scored, belowThreshold, duplicates
 
 | Var | Where | Purpose |
 | --- | --- | --- |
-| `NEWS_CRON_SECRET` | Vercel + `alter database … set app.news_cron_secret = …` | Shared secret between Supabase pg_cron and the Next.js cron route |
+| `NEWS_CRON_SECRET` | Vercel (optional) | Bearer auth for `/api/cron/news-ingest` if invoked manually via curl |
 | `NEXT_PUBLIC_SUPABASE_URL` | Already set | Used by both client + service-role server code |
 | `SUPABASE_SERVICE_ROLE_KEY` | Already set | Service-role inserts into `news_items` |
 

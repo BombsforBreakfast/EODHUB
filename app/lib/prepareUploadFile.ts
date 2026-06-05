@@ -73,6 +73,30 @@ export async function prepareImageUploadFile(file: File): Promise<PrepareUploadR
   }
 }
 
+/** RUMINT news manual photo override — smaller cap for link-preview cards. */
+export async function prepareNewsThumbnailUploadFile(file: File): Promise<PrepareUploadResult> {
+  if (!isImageFile(file)) {
+    return { ok: false, error: "Please choose an image file." };
+  }
+
+  if (file.size > UPLOAD_LIMITS.feedBucket) {
+    return {
+      ok: false,
+      error: uploadTooLargeMessage(file, UPLOAD_LIMITS.feedBucket, "image"),
+    };
+  }
+
+  try {
+    const compressed = await compressImageFile(file, UPLOAD_LIMITS.newsThumbnail, 1200);
+    return { ok: true, file: compressed };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Could not compress image.",
+    };
+  }
+}
+
 /** Profile avatars — smaller dimensions and byte cap to limit storage egress. */
 export async function prepareAvatarUploadFile(file: File): Promise<PrepareUploadResult> {
   if (!isImageFile(file)) {

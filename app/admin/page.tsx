@@ -37,7 +37,7 @@ import {
 } from "../components/memorial/memorialModalShared";
 import { isMarinesService, MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
 import { displayListingTitle, LEMON_LOT_CATEGORIES, type MarketplaceListingRow } from "../lib/lemonLot";
-import { prepareImageUploadFile } from "../lib/prepareUploadFile";
+import { prepareImageUploadFile, prepareNewsThumbnailUploadFile } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
 
 // Lazy-loaded — only loaded when the admin opens the Failed Auth tab.
@@ -743,6 +743,7 @@ export default function AdminPage() {
   const [bizManagerLabels, setBizManagerLabels] = useState<Record<string, string>>({});
   const [businessOrgPages, setBusinessOrgPages] = useState<BusinessOrgAdminPage[]>([]);
   const [businessOrgListedPages, setBusinessOrgListedPages] = useState<BusinessOrgListedPage[]>([]);
+  const [businessOrgPausedPages, setBusinessOrgPausedPages] = useState<BusinessOrgListedPage[]>([]);
   const [businessOrgClaims, setBusinessOrgClaims] = useState<BusinessOrgAdminClaim[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -1141,12 +1142,14 @@ export default function AdminPage() {
   }
 
   async function uploadNewsThumbnail(file: File): Promise<string> {
-    const prepared = await prepareImageUploadFile(file);
+    const prepared = await prepareNewsThumbnailUploadFile(file);
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
-    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-    const path = `news-overrides/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-    const { error } = await supabase.storage.from("feed-images").upload(path, file, { upsert: false });
+    const path = `news-overrides/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+    const { error } = await supabase.storage.from("feed-images").upload(path, file, {
+      upsert: false,
+      contentType: file.type || "image/jpeg",
+    });
     if (error) throw error;
     return supabase.storage.from("feed-images").getPublicUrl(path).data.publicUrl;
   }
@@ -1182,10 +1185,8 @@ export default function AdminPage() {
     try {
       const publicUrl = await uploadNewsThumbnail(file);
       setManualNewsImageUrl(publicUrl);
-      showToast("Photo ready — will apply when you add to queue");
     } catch (err) {
-      const msg = (err as { message?: string } | null)?.message || "Failed to upload photo.";
-      showToast(msg);
+      showToast((err as Error).message || "Failed to upload photo.");
     } finally {
       setManualNewsImageUploading(false);
     }
@@ -1594,6 +1595,7 @@ export default function AdminPage() {
     const json = (await res.json().catch(() => ({}))) as {
       pages?: BusinessOrgAdminPage[];
       listedPages?: BusinessOrgListedPage[];
+      pausedPages?: BusinessOrgListedPage[];
       claims?: BusinessOrgAdminClaim[];
       error?: string;
     };
@@ -1601,11 +1603,13 @@ export default function AdminPage() {
       console.error("loadBusinessOrgAdminQueues API error", res.status, json.error);
       setBusinessOrgPages([]);
       setBusinessOrgListedPages([]);
+      setBusinessOrgPausedPages([]);
       setBusinessOrgClaims([]);
       return;
     }
     setBusinessOrgPages(json.pages ?? []);
     setBusinessOrgListedPages(json.listedPages ?? []);
+    setBusinessOrgPausedPages(json.pausedPages ?? []);
     setBusinessOrgClaims(json.claims ?? []);
   }
 
@@ -1993,6 +1997,41 @@ export default function AdminPage() {
       await Promise.all([loadBusinessOrgAdminQueues(), loadPendingCounts()]);
     }
     setActionLoading(null);
+  }
+
+  async function businessOrgListedPageAction(pageId: string, action: "pause" | "resume" | "delete", businessName: string) {
+    const confirmMessages = {
+      pause: `Pause "${businessName}"? It will be hidden from the public directory. The owner's account is not deleted.`,
+      resume: `Resume "${businessName}"? It will appear on the public directory again.`,
+      delete: `Delete "${businessName}" permanently? The owner's account is not deleted, but their business page and related products will be removed.`,
+    } as const;
+
+    askConfirm(confirmMessages[action], async () => {
+      setActionLoading(`${pageId}-business-org-${action}`);
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/business-org-pages/admin/pages/${action}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ pageId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        alert(json.error ?? `Could not ${action} business page.`);
+      } else {
+        showToast(
+          action === "pause"
+            ? "Business page paused."
+            : action === "resume"
+              ? "Business page resumed."
+              : "Business page deleted.",
+        );
+        await Promise.all([loadBusinessOrgAdminQueues(), loadPendingCounts()]);
+      }
+      setActionLoading(null);
+    });
   }
 
   async function reviewBusinessOrgClaim(claimId: string, action: "approve" | "deny") {
@@ -3773,9 +3812,84 @@ export default function AdminPage() {
                             {page.website_url ? ` · ${page.website_url}` : ""}
                           </div>
                         </div>
-                        <Link href={`/business-org/${page.id}`} style={{ ...actionBtn("#2563eb"), textDecoration: "none" }}>
-                          Open page
-                        </Link>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <Link href={`/business-org/${page.id}`} style={{ ...actionBtn("#2563eb"), textDecoration: "none" }}>
+                            Open page
+                          </Link>
+                          <button
+                            type="button"
+                            style={{ ...actionBtn("#f59e0b"), display: "flex", alignItems: "center", gap: 5 }}
+                            disabled={actionLoading === `${page.id}-business-org-pause`}
+                            onClick={() => void businessOrgListedPageAction(page.id, "pause", page.business_name)}
+                          >
+                            {actionLoading === `${page.id}-business-org-pause` && <span className="btn-spinner" />}
+                            Pause
+                          </button>
+                          <button
+                            type="button"
+                            style={{ ...actionBtn("#ef4444"), display: "flex", alignItems: "center", gap: 5 }}
+                            disabled={actionLoading === `${page.id}-business-org-delete`}
+                            onClick={() => void businessOrgListedPageAction(page.id, "delete", page.business_name)}
+                          >
+                            {actionLoading === `${page.id}-business-org-delete` && <span className="btn-spinner" />}
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                      <p style={{ color: t.textMuted, lineHeight: 1.45, margin: "10px 0 0" }}>{page.description}</p>
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
+
+            <section style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 14, background: t.surface }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900 }}>Paused Business Pages</h2>
+                <p style={{ margin: "6px 0 0", color: t.textMuted, fontSize: 13 }}>
+                  Approved pages hidden from the public directory. Owner accounts remain active.
+                </p>
+              </div>
+              <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                {businessOrgPausedPages.length === 0 ? (
+                  <div style={{ color: t.textFaint }}>No paused business pages.</div>
+                ) : (
+                  businessOrgPausedPages.map((page) => (
+                    <article key={page.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 12, background: t.surface }}>
+                      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                        <div style={{ width: 96, height: 62, borderRadius: 12, border: `1px solid ${t.border}`, background: t.surface, display: "grid", placeItems: "center", overflow: "hidden", flexShrink: 0 }}>
+                          <img src={page.logo_url} alt={`${page.business_name} logo`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontWeight: 900, color: t.text, fontSize: 16 }}>{page.business_name}</div>
+                          <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
+                            {[page.page_type, page.location, page.business_email].filter(Boolean).join(" · ")}
+                          </div>
+                          <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
+                            Billing: {page.subscription_status}
+                            {page.website_url ? ` · ${page.website_url}` : ""}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          <button
+                            type="button"
+                            style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }}
+                            disabled={actionLoading === `${page.id}-business-org-resume`}
+                            onClick={() => void businessOrgListedPageAction(page.id, "resume", page.business_name)}
+                          >
+                            {actionLoading === `${page.id}-business-org-resume` && <span className="btn-spinner" />}
+                            Resume
+                          </button>
+                          <button
+                            type="button"
+                            style={{ ...actionBtn("#ef4444"), display: "flex", alignItems: "center", gap: 5 }}
+                            disabled={actionLoading === `${page.id}-business-org-delete`}
+                            onClick={() => void businessOrgListedPageAction(page.id, "delete", page.business_name)}
+                          >
+                            {actionLoading === `${page.id}-business-org-delete` && <span className="btn-spinner" />}
+                            Delete
+                          </button>
+                        </div>
                       </div>
                       <p style={{ color: t.textMuted, lineHeight: 1.45, margin: "10px 0 0" }}>{page.description}</p>
                     </article>
@@ -5347,7 +5461,7 @@ export default function AdminPage() {
             </div>
 
             <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>
-              External stories ingest hourly via Supabase cron. Nothing reaches the public feed until you approve it here. Items below the relevance threshold are dropped before they ever land in this queue. Use <strong>Preview pipeline</strong> to inspect every candidate the scorer saw and surface false negatives.
+              External stories are pulled only when you click <strong>Run ingestion now</strong> below. Nothing reaches the public feed until you approve it here. Items below the relevance threshold are dropped before they ever land in this queue. Use <strong>Preview pipeline</strong> to inspect every candidate the scorer saw and surface false negatives.
             </div>
 
             <div
@@ -5362,7 +5476,7 @@ export default function AdminPage() {
             >
               <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>Manual RUMINT source</div>
               <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
-                Paste a story URL. We pull Open Graph title, description, image, and outlet name when possible, then enqueue a normal pending item. You can override the feed photo below before adding. Approving creates the same RUMINT shadow post as automated ingestion.
+                Paste a story URL. We pull Open Graph title, description, image, and outlet name when possible, then enqueue a normal pending item. Optionally pick a photo to override the scraped image. Approving creates the same RUMINT shadow post as automated ingestion.
               </div>
               <input
                 type="url"
@@ -5419,11 +5533,11 @@ export default function AdminPage() {
                 />
               </div>
               <div style={{ display: "grid", gap: 8, maxWidth: 560 }}>
-                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Override feed photo (optional)</label>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Override photo (optional)</label>
                 {manualNewsImageUrl && (
                   <img
                     src={manualNewsImageUrl}
-                    alt="Manual feed photo preview"
+                    alt=""
                     style={{ width: 120, height: 80, objectFit: "cover", borderRadius: 8, border: `1px solid ${t.border}` }}
                   />
                 )}
@@ -5448,8 +5562,7 @@ export default function AdminPage() {
                       style={{ display: "none" }}
                       disabled={manualNewsImageUploading || manualNewsBusy}
                       onChange={(e) => {
-                        const file = e.target.files?.[0] ?? null;
-                        void handleManualNewsImagePick(file);
+                        void handleManualNewsImagePick(e.target.files?.[0] ?? null);
                         e.currentTarget.value = "";
                       }}
                     />
@@ -5470,14 +5583,9 @@ export default function AdminPage() {
                         cursor: manualNewsBusy ? "default" : "pointer",
                       }}
                     >
-                      Remove photo
+                      Remove
                     </button>
                   )}
-                  <span style={{ fontSize: 11, color: t.textMuted }}>
-                    {manualNewsImageUrl
-                      ? "Manual photo takes priority over scraped OG image"
-                      : "No override — scraped OG image will be used if available"}
-                  </span>
                 </div>
               </div>
               <button
@@ -5987,7 +6095,7 @@ export default function AdminPage() {
                     <div style={{ display: "grid", gap: 8 }}>
                       <div style={{ display: "grid", gap: 5 }}>
                         <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>
-                          Manual feed photo (optional)
+                          Override photo (optional)
                         </label>
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                           <label
@@ -6032,16 +6140,9 @@ export default function AdminPage() {
                               disabled={newsManualImageSavingId === n.id}
                               style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 12, cursor: newsManualImageSavingId === n.id ? "default" : "pointer", opacity: newsManualImageSavingId === n.id ? 0.7 : 1 }}
                             >
-                              Remove photo
+                              Remove
                             </button>
                           )}
-                          <span style={{ fontSize: 11, color: t.textMuted }}>
-                            {newsManualImageOverrides[n.id]?.trim()
-                              ? "Manual photo takes priority over OG"
-                              : n.thumbnail_url
-                                ? "Using scraped OG image"
-                                : "No image; feed will show text-only card"}
-                          </span>
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
