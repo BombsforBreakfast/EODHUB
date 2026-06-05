@@ -338,6 +338,8 @@ const BUSINESS_LISTING_COLUMNS =
   "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags";
 const PERF_DEBUG = process.env.NODE_ENV !== "production";
 const INITIAL_FEED_POST_LIMIT = 5;
+/** Above-fold feed avatars load eagerly (small transforms; helps first paint). */
+const EAGER_FEED_AVATAR_COUNT = 2;
 const FEED_AUTO_LOAD_LIMIT = 10;
 const FEED_LOAD_MORE_INCREMENT = 10;
 /** Ranked rows to prefetch before wall/moderation filters; keep small — only 5 render on first paint. */
@@ -818,6 +820,8 @@ function Avatar({
   service,
   isEmployer,
   isPureAdmin,
+  imageLoading = "lazy",
+  imageFetchPriority = "auto",
 }: {
   photoUrl: string | null;
   name: string;
@@ -825,6 +829,8 @@ function Avatar({
   service?: string | null;
   isEmployer?: boolean | null;
   isPureAdmin?: boolean | null;
+  imageLoading?: "lazy" | "eager";
+  imageFetchPriority?: "high" | "low" | "auto";
 }) {
   const { t } = useTheme();
   const useLogoTile = Boolean(isEmployer || isPureAdmin);
@@ -857,6 +863,8 @@ function Avatar({
           displayName={name}
           sizePx={size}
           objectFit={isPureAdmin ? "contain" : "cover"}
+          loading={imageLoading}
+          fetchPriority={imageFetchPriority}
           style={{
             padding: isPureAdmin ? 2 : 0,
             background: isPureAdmin ? "#f0f0f0" : undefined,
@@ -7275,8 +7283,9 @@ export default function HomePage() {
               );
             })}
 
-            {posts.map((post) => {
+            {posts.map((post, postIndex) => {
               const commentsOpen = expandedComments[post.id] || false;
+              const eagerFeedAvatar = postIndex < EAGER_FEED_AVATAR_COUNT;
               const isOwnPost = userId === post.user_id;
               const isRumintPost = post.user_id === RUMINT_USER_ID;
               const isPureAdminPost = Boolean(post.authorIsPureAdmin);
@@ -7303,6 +7312,7 @@ export default function HomePage() {
                         service={post.authorService}
                         isEmployer={post.authorIsEmployer}
                         isPureAdmin={isInternalPureAdminPost}
+                        imageLoading={eagerFeedAvatar ? "eager" : "lazy"}
                       />
                     }
                     authorName={post.authorName}
@@ -7515,6 +7525,8 @@ export default function HomePage() {
                                       url={url}
                                       alt={`Post image ${index + 1}`}
                                       style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
+                                      loading={postIndex === 0 ? "eager" : "lazy"}
+                                      fetchPriority={postIndex === 0 && index === 0 ? "high" : "auto"}
                                     />
 
                                     {showOverlay && (

@@ -4364,6 +4364,8 @@ export default function PublicProfilePage() {
                           photoUrl={profile.photo_url}
                           displayName={profileHeadlineName}
                           sizePx={profile.is_employer ? 160 : 76}
+                          loading="eager"
+                          fetchPriority="high"
                         />
                       )
                       : profileAvatarInitial}
@@ -4695,6 +4697,8 @@ export default function PublicProfilePage() {
                         photoUrl={profile.photo_url}
                         displayName={profileHeadlineName}
                         sizePx={profile.is_employer ? 160 : 120}
+                        loading="eager"
+                        fetchPriority="high"
                       />
                     ) : ("Photo")}
                     {wallAsOwner && (
@@ -6093,8 +6097,9 @@ export default function PublicProfilePage() {
             <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
               {posts.length === 0 && <div style={{ color: t.textMuted }}>No wall posts yet.</div>}
 
-              {posts.map((post) => {
+              {posts.map((post, postIndex) => {
                 const commentsOpen = expandedComments[post.id] || false;
+                const eagerWallAvatar = postIndex === 0;
                 const isAuthoredByCurrentUser = currentUserId === post.user_id;
                 const canManagePost = wallAsOwner && currentUserId === userId && isAuthoredByCurrentUser;
                 const isEditingPost = editingPostId === post.id;
@@ -6114,6 +6119,7 @@ export default function PublicProfilePage() {
                               photoUrl={postAuthorPhoto}
                               displayName={postAuthorName}
                               sizePx={42}
+                              loading={eagerWallAvatar ? "eager" : "lazy"}
                             />
                           ) : postAuthorName[0]?.toUpperCase()}
                         </div>
@@ -6262,6 +6268,7 @@ export default function PublicProfilePage() {
                                 url={url}
                                 alt={`Post image ${i + 1}`}
                                 style={feedContainedImageStyle}
+                                loading={postIndex === 0 ? "eager" : "lazy"}
                               />
                               {i === 2 && remaining > 0 && (
                                 <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 24, fontWeight: 800 }}>

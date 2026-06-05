@@ -9,6 +9,8 @@ type Props = {
   className?: string;
   style?: React.CSSProperties;
   objectFit?: "cover" | "contain";
+  loading?: "lazy" | "eager";
+  fetchPriority?: "high" | "low" | "auto";
 };
 
 /** Optimized profile photo for small display sizes (uses Supabase image transforms). */
@@ -19,6 +21,8 @@ export default function OptimizedAvatarImg({
   className,
   style,
   objectFit = "cover",
+  loading = "lazy",
+  fetchPriority = "auto",
 }: Props) {
   if (!photoUrl) return null;
 
@@ -30,7 +34,8 @@ export default function OptimizedAvatarImg({
       src={src}
       alt={displayName}
       className={className}
-      loading="lazy"
+      loading={loading}
+      fetchPriority={fetchPriority}
       decoding="async"
       style={{
         width: "100%",

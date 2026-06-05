@@ -11,6 +11,8 @@ type Props = {
   style?: CSSProperties;
   /** When true (default), videos do not hit the CDN until the user taps play. */
   deferVideoLoad?: boolean;
+  loading?: "lazy" | "eager";
+  fetchPriority?: "high" | "low" | "auto";
 };
 
 export function FeedMediaAttachment({
@@ -18,6 +20,8 @@ export function FeedMediaAttachment({
   alt = "",
   style,
   deferVideoLoad = true,
+  loading = "lazy",
+  fetchPriority = "auto",
 }: Props) {
   if (isVideoUrl(url)) {
     return <FeedVideoAttachment url={url} style={style} deferLoad={deferVideoLoad} />;
@@ -27,7 +31,8 @@ export function FeedMediaAttachment({
     <img
       src={feedImageDisplayUrl(url)}
       alt={alt}
-      loading="lazy"
+      loading={loading}
+      fetchPriority={fetchPriority}
       decoding="async"
       style={style}
     />

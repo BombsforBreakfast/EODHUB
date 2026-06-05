@@ -622,6 +622,7 @@ export default function NavBar() {
                 photoUrl={avatarPhotoUrl}
                 displayName={userInitial}
                 sizePx={81}
+                loading="eager"
               />
             ) : (
               userInitial
