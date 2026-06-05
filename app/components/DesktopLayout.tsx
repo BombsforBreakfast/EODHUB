@@ -25,22 +25,21 @@ export default function DesktopLayout({
 }: DesktopLayoutProps) {
   return (
     <div
+      className="desktop-layout desktop-layout--grid"
       style={
-        isMobile
-          ? mobileStyle ?? { marginTop: 12 }
-          : {
-              display: "grid",
-              gridTemplateColumns: desktopColumns,
-              gap: desktopGap,
-              alignItems: desktopAlignItems,
-              marginTop: desktopMarginTop,
-              width: "100%",
-            }
+        {
+          ["--desktop-layout-columns" as string]: desktopColumns,
+          ["--desktop-layout-gap" as string]: `${desktopGap}px`,
+          ["--desktop-layout-margin-top" as string]: `${desktopMarginTop}px`,
+          ["--desktop-layout-align" as string]: desktopAlignItems,
+          width: "100%",
+          ...(isMobile ? (mobileStyle ?? { marginTop: 12 }) : {}),
+        } as React.CSSProperties
       }
     >
-      {left}
-      {center}
-      {right}
+      <div className="desktop-layout-rail">{left}</div>
+      <div className="desktop-layout-center">{center}</div>
+      <div className="desktop-layout-rail">{right}</div>
     </div>
   );
 }

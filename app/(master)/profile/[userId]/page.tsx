@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "../../../lib/lib/supabaseClient";
@@ -97,6 +97,10 @@ import {
 import { isEmployerAccount } from "../../../lib/profileCompleteness";
 import EmployerAccountCardDetails from "../../../components/profile/EmployerAccountCardDetails";
 import { BUSINESS_ORG_PAGE_SELECT, type BusinessOrgPageRow } from "../../../lib/businessOrgPages";
+import {
+  fetchFeedPostEnrichment,
+  type FeedPostEnrichmentProfile,
+} from "../../../lib/queries/feedPostEnrichment";
 
 type Profile = {
   user_id: string;
@@ -324,7 +328,6 @@ const WORK_TAG_PREVIEW_LIMIT = 3;
 const PROFILE_INITIAL_POST_LIMIT = 5;
 const PROFILE_AUTO_LOAD_LIMIT = 10;
 const PROFILE_LOAD_MORE_INCREMENT = 5;
-const PROFILE_POST_QUERY_BUFFER = 10;
 const WORK_TAG_MAX = 30;
 const PROFILE_PHOTO_PREVIEW_LIMIT = 12;
 const AVAILABILITY_TYPES = ["ETS", "Retirement", "Available From", "Contract End"];
@@ -1296,24 +1299,27 @@ export default function PublicProfilePage() {
 
   async function loadPosts(
     targetUserId: string,
-    options: { limit?: number } = {},
+    options: { limit?: number; viewerUserId?: string | null } = {},
   ) {
+    const effectiveViewerId = options.viewerUserId ?? currentUserId ?? null;
     const visibleLimit = Math.max(
       PROFILE_INITIAL_POST_LIMIT,
       options.limit ?? profilePostLimitRef.current,
     );
-    const queryLimit = visibleLimit + PROFILE_POST_QUERY_BUFFER;
+    const fetchLimit = visibleLimit + 1;
 
-    const { error: closeKcErr } = await supabase.rpc("close_expired_kangaroo_courts");
-    if (closeKcErr) {
-      console.warn("close_expired_kangaroo_courts (wall):", closeKcErr.message);
-    }
+    void supabase.rpc("close_expired_kangaroo_courts").then(({ error: closeKcErr }) => {
+      if (closeKcErr) {
+        console.warn("close_expired_kangaroo_courts (wall):", closeKcErr.message);
+      }
+    });
 
     const { data: rawData, error } = await supabase
       .from("posts")
       .select("id, user_id, wall_user_id, post_as_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
       .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .limit(fetchLimit);
 
     if (error) {
       console.error("Profile posts load error:", error);
@@ -1334,16 +1340,15 @@ export default function PublicProfilePage() {
       og_site_name?: string | null;
       rabbithole_contribution_id?: string | null;
     }[];
-    const rawPosts = allMatchedPosts;
-    const hasMorePosts = rawPosts.length > visibleLimit || allMatchedPosts.length >= queryLimit;
-    const visibleRawPosts = rawPosts.slice(0, visibleLimit);
+    const hasMorePosts = allMatchedPosts.length > visibleLimit;
+    const visibleRawPosts = allMatchedPosts.slice(0, visibleLimit);
     setProfileWallHasMorePosts(hasMorePosts);
     if (visibleRawPosts.length === 0) {
       setPosts([]);
       return;
     }
 
-    const postIds = rawPosts.map((p) => p.id);
+    const postIds = visibleRawPosts.map((p) => p.id);
 
     // Legacy single image_url
     const legacyWithEvent = await supabase
@@ -1381,7 +1386,7 @@ export default function PublicProfilePage() {
       eventIdByPostId.set(r.id, r.event_id ?? null);
     });
 
-    const missingEventCandidates = rawPosts
+    const missingEventCandidates = visibleRawPosts
       .filter((post) => !eventIdByPostId.get(post.id))
       .map((post) => ({
         postId: post.id,
@@ -1432,80 +1437,103 @@ export default function PublicProfilePage() {
       }
     }
 
-    // Multi-image post_images table
-    const { data: postImgData } = await supabase
-      .from("post_images").select("id, post_id, image_url, sort_order")
-      .in("post_id", postIds).order("sort_order", { ascending: true });
-    const multiImageMap = new Map<string, string[]>();
-    ((postImgData ?? []) as { id: string; post_id: string; image_url: string; sort_order: number | null }[]).forEach((r) => {
-      const arr = multiImageMap.get(r.post_id) || [];
-      arr.push(r.image_url);
-      multiImageMap.set(r.post_id, arr);
-    });
+    const enrichment = await fetchFeedPostEnrichment(supabase, postIds);
+
+    const multiImageMap = enrichment?.multiPostImageMap ?? new Map<string, string[]>();
+    if (!enrichment) {
+      const { data: postImgData } = await supabase
+        .from("post_images")
+        .select("id, post_id, image_url, sort_order")
+        .in("post_id", postIds)
+        .order("sort_order", { ascending: true });
+      ((postImgData ?? []) as { id: string; post_id: string; image_url: string; sort_order: number | null }[]).forEach((r) => {
+        const arr = multiImageMap.get(r.post_id) || [];
+        arr.push(r.image_url);
+        multiImageMap.set(r.post_id, arr);
+      });
+    }
 
     let reactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
-    try {
-      reactionRows = await fetchContentReactionsForSubjects(supabase, "post", postIds);
-    } catch (reactionsErr) {
-      console.error("Wall reactions load error:", reactionsErr);
+    if (enrichment) {
+      reactionRows = enrichment.postReactionRows;
+    } else {
+      try {
+        reactionRows = await fetchContentReactionsForSubjects(supabase, "post", postIds);
+      } catch (reactionsErr) {
+        console.error("Wall reactions load error:", reactionsErr);
+      }
     }
-    const aggregatesMap = aggregatesBySubjectId(reactionRows, currentUserId ?? null);
+    const aggregatesMap = aggregatesBySubjectId(reactionRows, effectiveViewerId);
 
-    // Comments
-    const { data: commentsData } = await supabase
-      .from("post_comments").select("id, post_id, user_id, content, created_at, image_url")
-      .in("post_id", postIds).order("created_at", { ascending: true });
-    const rawComments = (commentsData ?? []) as RawComment[];
+    const rawComments: RawComment[] = enrichment
+      ? enrichment.comments.map((c) => ({
+          id: c.id,
+          post_id: c.post_id,
+          user_id: c.user_id,
+          content: c.content,
+          created_at: c.created_at,
+          image_url: c.image_url,
+        }))
+      : ((
+          await supabase
+            .from("post_comments")
+            .select("id, post_id, user_id, content, created_at, image_url")
+            .in("post_id", postIds)
+            .order("created_at", { ascending: true })
+        ).data ?? []) as RawComment[];
 
     const commentIds = rawComments.map((c) => c.id);
     let commentReactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
-    try {
-      commentReactionRows =
-        commentIds.length > 0
-          ? await fetchContentReactionsForSubjects(supabase, "post_comment", commentIds)
-          : [];
-    } catch (commentReactionsErr) {
-      console.error("Wall comment reactions load error:", commentReactionsErr);
+    if (enrichment) {
+      commentReactionRows = enrichment.commentReactionRows;
+    } else {
+      try {
+        commentReactionRows =
+          commentIds.length > 0
+            ? await fetchContentReactionsForSubjects(supabase, "post_comment", commentIds)
+            : [];
+      } catch (commentReactionsErr) {
+        console.error("Wall comment reactions load error:", commentReactionsErr);
+      }
     }
-    const commentAggregatesMap = aggregatesBySubjectId(commentReactionRows, currentUserId ?? null);
+    const commentAggregatesMap = aggregatesBySubjectId(commentReactionRows, effectiveViewerId);
 
-    const postLikerUserIds = reactionRows.map((r) => r.user_id);
-    const commentReactorUserIds = commentReactionRows.map((r) => r.user_id);
-
-    // Comment authors + everyone who liked a post or comment (for avatars / names)
-    const commentAuthorIds = [...new Set(rawComments.map((c) => c.user_id))];
-    const commentAndLikerIds = [
-      ...new Set([...commentAuthorIds, ...postLikerUserIds, ...commentReactorUserIds].filter(Boolean)),
-    ];
-    const { data: commentProfileData } = commentAndLikerIds.length > 0
-      ? await supabase
-          .from("profiles")
-          .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer")
-          .in("user_id", commentAndLikerIds)
-      : { data: [] };
     const commentNameMap = new Map<string, string>();
     const commentPhotoMap = new Map<string, string | null>();
     const commentServiceMap = new Map<string, string | null>();
     const commentEmployerMap = new Map<string, boolean | null>();
-    ((commentProfileData ?? []) as {
-      user_id: string;
-      display_name: string | null;
-      first_name: string | null;
-      last_name: string | null;
-      photo_url: string | null;
-      service: string | null;
-      is_employer: boolean | null;
-    }[]).forEach((p) => {
-      commentNameMap.set(
-        p.user_id,
-        (p.display_name?.trim() || null) ||
-          `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
-          "User",
-      );
-      commentPhotoMap.set(p.user_id, p.photo_url ?? null);
-      commentServiceMap.set(p.user_id, p.service ?? null);
-      commentEmployerMap.set(p.user_id, p.is_employer ?? null);
-    });
+
+    function applyEnrichmentProfileMaps(profiles: FeedPostEnrichmentProfile[]) {
+      profiles.forEach((p) => {
+        commentNameMap.set(
+          p.user_id,
+          (p.display_name?.trim() || null) ||
+            `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+            "User",
+        );
+        commentPhotoMap.set(p.user_id, p.photo_url ?? null);
+        commentServiceMap.set(p.user_id, p.service ?? null);
+        commentEmployerMap.set(p.user_id, p.is_employer ?? null);
+      });
+    }
+
+    if (enrichment) {
+      applyEnrichmentProfileMaps(enrichment.profiles);
+    } else {
+      const postLikerUserIds = reactionRows.map((r) => r.user_id);
+      const commentReactorUserIds = commentReactionRows.map((r) => r.user_id);
+      const commentAuthorIds = [...new Set(rawComments.map((c) => c.user_id))];
+      const commentAndLikerIds = [
+        ...new Set([...commentAuthorIds, ...postLikerUserIds, ...commentReactorUserIds].filter(Boolean)),
+      ];
+      const { data: commentProfileData } = commentAndLikerIds.length > 0
+        ? await supabase
+            .from("profiles")
+            .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer")
+            .in("user_id", commentAndLikerIds)
+        : { data: [] };
+      applyEnrichmentProfileMaps((commentProfileData ?? []) as FeedPostEnrichmentProfile[]);
+    }
 
     // Build comment map
     const commentsByPost = new Map<string, WallComment[]>();
@@ -1532,7 +1560,7 @@ export default function PublicProfilePage() {
     // Wall post author identities (guest posters + post-as overrides).
     const displayAuthorIds = [
       ...new Set(
-        rawPosts
+        visibleRawPosts
           .map((p) => {
             if (p.post_as_user_id) return p.post_as_user_id;
             if (p.wall_user_id === targetUserId && p.user_id !== targetUserId) return p.user_id;
@@ -1560,7 +1588,7 @@ export default function PublicProfilePage() {
     const uniqueFeedEventIds = [
       ...new Set(Array.from(eventIdByPostId.values()).filter((id): id is string => Boolean(id))),
     ];
-    const visibleProfileUnitIds = await loadVisibleProfileUnitIds(targetUserId, currentUserId);
+    const visibleProfileUnitIds = await loadVisibleProfileUnitIds(targetUserId, effectiveViewerId);
     const eventSnapshotById = new Map<string, FeedEventSnapshot>();
     const eventAttCounts = new Map<string, { interested: number; going: number }>();
     const eventMyAttendance = new Map<string, "interested" | "going" | null>();
@@ -1629,17 +1657,17 @@ export default function PublicProfilePage() {
           const cur = eventAttCounts.get(row.event_id) ?? { interested: 0, going: 0 };
           cur[row.status]++;
           eventAttCounts.set(row.event_id, cur);
-          if (currentUserId && row.user_id === currentUserId) {
+          if (effectiveViewerId && row.user_id === effectiveViewerId) {
             eventMyAttendance.set(row.event_id, row.status);
           }
         });
       }
 
-      if (currentUserId) {
+      if (effectiveViewerId) {
         const { data: savedRows, error: savedErr } = await supabase
           .from("saved_events")
           .select("event_id")
-          .eq("user_id", currentUserId)
+          .eq("user_id", effectiveViewerId)
           .in("event_id", uniqueFeedEventIds);
         if (savedErr) {
           console.error("Profile feed saved events load error:", savedErr);
@@ -1745,7 +1773,7 @@ export default function PublicProfilePage() {
       }
     }
 
-    const merged: Post[] = rawPosts.map((p) => {
+    const merged: Post[] = visibleRawPosts.map((p) => {
       const agg = aggregatesMap.get(p.id) ?? emptyAggregate();
       const postLikes = agg.userIds;
       const seenLiker = new Set<string>();
@@ -1801,7 +1829,7 @@ export default function PublicProfilePage() {
         event_interested_count: eventCounts.interested,
         event_going_count: eventCounts.going,
         event_my_attendance: eventId ? eventMyAttendance.get(eventId) ?? null : null,
-        event_saved: Boolean(eventId && currentUserId && savedFeedEventIds.has(eventId)),
+        event_saved: Boolean(eventId && effectiveViewerId && savedFeedEventIds.has(eventId)),
         kangaroo: kcBundleByPostId.get(p.id) ?? null,
       };
     });
@@ -2952,21 +2980,108 @@ export default function PublicProfilePage() {
     }
   }
 
-  useEffect(() => {
-    function checkMobile() { setIsMobile(window.innerWidth <= 900); }
-    checkMobile();
-    window.addEventListener("resize", checkMobile);
-    return () => window.removeEventListener("resize", checkMobile);
+  useLayoutEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    function syncViewport() {
+      setIsMobile(mq.matches);
+    }
+    syncViewport();
+    mq.addEventListener("change", syncViewport);
+    return () => mq.removeEventListener("change", syncViewport);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
+
+    async function loadViewerExtras(signedInUserId: string) {
+      const { data: nameData } = await supabase
+        .from("profiles")
+        .select("first_name, last_name, photo_url, email, is_employer, is_admin")
+        .eq("user_id", signedInUserId)
+        .maybeSingle();
+      if (cancelled) return;
+      const nd = nameData as {
+        first_name: string | null;
+        last_name: string | null;
+        photo_url: string | null;
+        email: string | null;
+        is_employer: boolean | null;
+        is_admin?: boolean | null;
+      } | null;
+      setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
+      setCurrentUserPhotoUrl(nd?.photo_url ?? null);
+      const viewerEmail = nd?.email?.trim().toLowerCase() ?? null;
+      setCurrentUserEmail(viewerEmail);
+      setViewerIsEmployer(!!nd?.is_employer);
+      setViewerIsAdmin(!!nd?.is_admin);
+
+      if (canUsePostAsSelector(viewerEmail)) {
+        const { data: adminProfile } = await supabase
+          .from("profiles")
+          .select("user_id, display_name, first_name, last_name, photo_url")
+          .eq("email", "hello@eod-hub.com")
+          .maybeSingle();
+        if (!cancelled && adminProfile) {
+          setPostAsAdminProfile({
+            userId: adminProfile.user_id,
+            displayName: adminPostDisplayName(adminProfile),
+            photoUrl: adminProfile.photo_url ?? null,
+          });
+        }
+      } else if (!cancelled) {
+        setPostAsAdminProfile(null);
+      }
+
+      const convs = await supabase
+        .from("conversations")
+        .select("id")
+        .or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
+      if (cancelled) return;
+      const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);
+      if (convIds.length > 0) {
+        const { count } = await supabase
+          .from("messages")
+          .select("*", { count: "exact", head: true })
+          .eq("is_read", false)
+          .neq("sender_id", signedInUserId)
+          .in("conversation_id", convIds);
+        if (!cancelled) setUnreadMessages(count ?? 0);
+      } else if (!cancelled) {
+        setUnreadMessages(0);
+      }
+
+      await Promise.all([
+        loadDesktopSavedEvents(signedInUserId),
+        loadDesktopSavedJobs(signedInUserId),
+      ]);
+    }
+
+    async function loadDeferredWallData(targetUserId: string, signedInUserId: string | null) {
+      await Promise.all([
+        loadPhotos(targetUserId),
+        loadConnections(targetUserId, signedInUserId),
+        loadMyGroups(targetUserId),
+        loadSavedEventsForUser(targetUserId),
+      ]);
+      if (signedInUserId) {
+        await loadViewerExtras(signedInUserId);
+        if (!cancelled && signedInUserId === targetUserId) {
+          void refreshPlankHolderChallenge();
+        }
+      }
+    }
 
     async function init() {
       if (!userId || userId === "undefined") {
         setLoading(false);
         return;
       }
+
+      const targetUserId = userId;
+
+      setLoading(true);
+      setProfile(null);
+      setPosts([]);
 
       const { data, error } = await supabase.auth.getUser();
 
@@ -2980,67 +3095,23 @@ export default function PublicProfilePage() {
       plankHolderInitializedRef.current = false;
       setPlankHolderChallenge(null);
 
-      if (signedInUserId) {
-        const { data: nameData } = await supabase.from("profiles").select("first_name, last_name, photo_url, email, is_employer, is_admin").eq("user_id", signedInUserId).maybeSingle();
-        const nd = nameData as { first_name: string | null; last_name: string | null; photo_url: string | null; email: string | null; is_employer: boolean | null; is_admin?: boolean | null } | null;
-        setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
-        setCurrentUserPhotoUrl(nd?.photo_url ?? null);
-        const viewerEmail = nd?.email?.trim().toLowerCase() ?? data.user?.email?.trim().toLowerCase() ?? null;
-        setCurrentUserEmail(viewerEmail);
-        if (canUsePostAsSelector(viewerEmail)) {
-          const { data: adminProfile } = await supabase
-            .from("profiles")
-            .select("user_id, display_name, first_name, last_name, photo_url")
-            .eq("email", "hello@eod-hub.com")
-            .maybeSingle();
-          if (!cancelled && adminProfile) {
-            setPostAsAdminProfile({
-              userId: adminProfile.user_id,
-              displayName: adminPostDisplayName(adminProfile),
-              photoUrl: adminProfile.photo_url ?? null,
-            });
-          }
-        } else if (!cancelled) {
-          setPostAsAdminProfile(null);
-        }
-        setViewerIsEmployer(!!nd?.is_employer);
-        setViewerIsAdmin(!!nd?.is_admin);
-
-        const convs = await supabase.from("conversations").select("id").or(`participant_1.eq.${signedInUserId},participant_2.eq.${signedInUserId}`);
-        const convIds = (convs.data ?? []).map((c: { id: string }) => c.id);
-        if (convIds.length > 0) {
-          const { count } = await supabase.from("messages").select("*", { count: "exact", head: true }).eq("is_read", false).neq("sender_id", signedInUserId).in("conversation_id", convIds);
-          setUnreadMessages(count ?? 0);
-        } else {
-          setUnreadMessages(0);
-        }
-      }
-
-      const [,, photoResults] = await Promise.all([
-        loadProfile(userId),
-        loadPosts(userId),
-        loadPhotos(userId),
-        loadConnections(userId, signedInUserId),
-        loadMyGroups(userId),
-        loadSavedEventsForUser(userId),
-      ]);
-      if (signedInUserId) {
-        await Promise.all([
-          loadDesktopSavedEvents(signedInUserId),
-          loadDesktopSavedJobs(signedInUserId),
-        ]);
-      } else {
-        setDesktopSavedEvents([]);
-        setDesktopSavedJobs([]);
+      if (!signedInUserId) {
         setViewerIsEmployer(false);
         setViewerIsAdmin(false);
+        setDesktopSavedEvents([]);
+        setDesktopSavedJobs([]);
       }
+
+      await Promise.all([
+        loadProfile(targetUserId),
+        loadPosts(targetUserId, { viewerUserId: signedInUserId }),
+      ]);
       if (cancelled) return;
       setLoading(false);
 
-      if (signedInUserId && signedInUserId === userId) {
-        void refreshPlankHolderChallenge();
-      }
+      void loadDeferredWallData(targetUserId, signedInUserId).catch((err) => {
+        console.error("Profile deferred wall load failed:", err);
+      });
     }
 
     init();
@@ -3050,16 +3121,17 @@ export default function PublicProfilePage() {
   }, [userId]);
 
   useEffect(() => {
-    if (!currentUserId) {
+    if (!currentUserId || isMobile || isDesktopShell) {
       setDesktopConversations([]);
       return;
     }
     loadDesktopConversations(currentUserId).catch((err) => {
       console.error("Desktop conversations load failed:", err);
     });
-  }, [currentUserId]);
+  }, [currentUserId, isMobile, isDesktopShell]);
 
   useEffect(() => {
+    if (isMobile || isDesktopShell) return;
     loadDesktopCalendarData(desktopCalendarDate).then(() => {
       setDesktopSelectedDay(
         toDateStr(
@@ -3071,7 +3143,7 @@ export default function PublicProfilePage() {
     }).catch((err) => {
       console.error("Desktop calendar load failed:", err);
     });
-  }, [desktopCalendarDate]);
+  }, [desktopCalendarDate, isMobile, isDesktopShell]);
 
   // Auto-generate referral code for existing users who don't have one yet
   useEffect(() => {
@@ -3241,14 +3313,6 @@ export default function PublicProfilePage() {
     videoItems.sort(byNewest);
     return { photos: photoItems, videos: videoItems };
   }, [posts]);
-
-  if (!loading && !profile) {
-    return (
-      <div style={{ padding: 24, maxWidth: 1100, margin: "0 auto" }}>
-        <div style={{ marginTop: 20 }}>Profile not found.</div>
-      </div>
-    );
-  }
 
   if (!loading && profile?.user_id === RUMINT_USER_ID) {
     return (
@@ -6564,6 +6628,51 @@ export default function PublicProfilePage() {
     );
   };
 
+  const renderProfileLoadingSkeleton = () => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: isMobile ? 20 : 0 }}>
+      <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
+        <div style={{ display: "flex", gap: 20 }}>
+          <div style={{ ...skeletonBase, width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ ...skeletonBase, height: 24, width: "40%", marginBottom: 10 }} />
+            <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 8 }} />
+            <div style={{ ...skeletonBase, height: 14, width: "60%" }} />
+          </div>
+        </div>
+      </div>
+      <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 16, background: t.surface, display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ ...skeletonBase, height: 14, width: 56, flexShrink: 0 }} />
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} style={{ ...skeletonBase, width: 100, height: 100, borderRadius: 10, flexShrink: 0 }} />
+        ))}
+      </div>
+      {[1, 2, 3].map((i) => (
+        <div key={i} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+          <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
+            <div style={{ ...skeletonBase, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 6 }} />
+              <div style={{ ...skeletonBase, height: 11, width: "20%" }} />
+            </div>
+          </div>
+          <div style={{ ...skeletonBase, height: 13, marginBottom: 6 }} />
+          <div style={{ ...skeletonBase, height: 13, width: "75%", marginBottom: 6 }} />
+          <div style={{ ...skeletonBase, height: 13, width: "50%" }} />
+        </div>
+      ))}
+    </div>
+  );
+
+  const renderProfileCenterContent = () => {
+    if (loading) return renderProfileLoadingSkeleton();
+    if (!profile) {
+      return (
+        <div style={{ marginTop: 20, fontSize: 15, color: t.textMuted }}>Profile not found.</div>
+      );
+    }
+    return renderProfileCenter();
+  };
+
   return (
     <>
       <ImageCropDialog
@@ -6610,49 +6719,13 @@ export default function PublicProfilePage() {
         </a>
       )}
 
-      {/* Skeleton while loading */}
-      {loading && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20 }}>
-          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
-            <div style={{ display: "flex", gap: 20 }}>
-              <div style={{ ...skeletonBase, width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ ...skeletonBase, height: 24, width: "40%", marginBottom: 10 }} />
-                <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 8 }} />
-                <div style={{ ...skeletonBase, height: 14, width: "60%" }} />
-              </div>
-            </div>
-          </div>
-          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 16, background: t.surface, display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ ...skeletonBase, height: 14, width: 56, flexShrink: 0 }} />
-            {[1,2,3,4].map((i) => <div key={i} style={{ ...skeletonBase, width: 100, height: 100, borderRadius: 10, flexShrink: 0 }} />)}
-          </div>
-          {[1,2,3].map((i) => (
-            <div key={i} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
-              <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
-                <div style={{ ...skeletonBase, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 6 }} />
-                  <div style={{ ...skeletonBase, height: 11, width: "20%" }} />
-                </div>
-              </div>
-              <div style={{ ...skeletonBase, height: 13, marginBottom: 6 }} />
-              <div style={{ ...skeletonBase, height: 13, width: "75%", marginBottom: 6 }} />
-              <div style={{ ...skeletonBase, height: 13, width: "50%" }} />
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Single-column mobile layout + three-column desktop layout */}
-      {!loading && profile && <DesktopLayout
+      <DesktopLayout
         isMobile={isMobile}
         desktopColumns="320px minmax(0, 1fr) 360px"
         desktopGap={24}
         left={
           <aside
             style={{
-              display: isMobile ? "none" : "block",
               position: "sticky",
               top: 20,
               marginRight: isMobile ? undefined : -11,
@@ -6829,11 +6902,10 @@ export default function PublicProfilePage() {
             </div>
           </aside>
         }
-        center={renderProfileCenter()}
+        center={renderProfileCenterContent()}
         right={
           <aside
             style={{
-              display: isMobile ? "none" : "block",
               position: "sticky",
               top: 20,
             }}
@@ -6886,44 +6958,10 @@ export default function PublicProfilePage() {
             </div>
           </aside>
         }
-      />}
+      />
     </div>
       ) : (
-        <>
-          {loading && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 20 }}>
-          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 24, background: t.surface }}>
-            <div style={{ display: "flex", gap: 20 }}>
-              <div style={{ ...skeletonBase, width: 100, height: 100, borderRadius: "50%", flexShrink: 0 }} />
-              <div style={{ flex: 1 }}>
-                <div style={{ ...skeletonBase, height: 24, width: "40%", marginBottom: 10 }} />
-                <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 8 }} />
-                <div style={{ ...skeletonBase, height: 14, width: "60%" }} />
-              </div>
-            </div>
-          </div>
-          <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: 16, background: t.surface, display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ ...skeletonBase, height: 14, width: 56, flexShrink: 0 }} />
-            {[1,2,3,4].map((i) => <div key={i} style={{ ...skeletonBase, width: 100, height: 100, borderRadius: 10, flexShrink: 0 }} />)}
-          </div>
-          {[1,2,3].map((i) => (
-            <div key={i} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
-              <div style={{ display: "flex", gap: 12, marginBottom: 12 }}>
-                <div style={{ ...skeletonBase, width: 46, height: 46, borderRadius: "50%", flexShrink: 0 }} />
-                <div style={{ flex: 1 }}>
-                  <div style={{ ...skeletonBase, height: 14, width: "30%", marginBottom: 6 }} />
-                  <div style={{ ...skeletonBase, height: 11, width: "20%" }} />
-                </div>
-              </div>
-              <div style={{ ...skeletonBase, height: 13, marginBottom: 6 }} />
-              <div style={{ ...skeletonBase, height: 13, width: "75%", marginBottom: 6 }} />
-              <div style={{ ...skeletonBase, height: 13, width: "50%" }} />
-            </div>
-          ))}
-        </div>
-          )}
-          {!loading && profile && renderProfileCenter()}
-        </>
+        renderProfileCenterContent()
       )}
 
     {/* Photo Lightbox Modal */}

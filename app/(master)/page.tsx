@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import React, { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { ChangeEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
@@ -1326,11 +1326,14 @@ export default function HomePage() {
     feedPostLimitRef.current = feedPostLimit;
   }, [feedPostLimit]);
 
-  useEffect(() => {
-    function check() { setIsMobile(window.innerWidth <= 900); }
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
+  useLayoutEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    function syncViewport() {
+      setIsMobile(mq.matches);
+    }
+    syncViewport();
+    mq.addEventListener("change", syncViewport);
+    return () => mq.removeEventListener("change", syncViewport);
   }, []);
 
   useEffect(() => {

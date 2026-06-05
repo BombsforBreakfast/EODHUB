@@ -376,6 +376,27 @@ a.rabbithole-brand-link:focus-visible {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
 }
 
+/* Three-column shells: hide side rails on narrow viewports before JS viewport detection runs. */
+@media (max-width: 900px) {
+  .desktop-layout.desktop-layout--grid {
+    display: block !important;
+    margin-top: 12px;
+  }
+  .desktop-layout-rail {
+    display: none !important;
+  }
+}
+
+@media (min-width: 901px) {
+  .desktop-layout.desktop-layout--grid {
+    display: grid;
+    grid-template-columns: var(--desktop-layout-columns, 280px minmax(0, 1fr) 360px);
+    gap: var(--desktop-layout-gap, 24px);
+    align-items: var(--desktop-layout-align, start);
+    margin-top: var(--desktop-layout-margin-top, 20px);
+  }
+}
+
 @media (max-width: 900px) {
   .nav-admin-bar .nav-btn {
     padding: 6px 9px !important;
