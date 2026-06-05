@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { jobListingCutoffIso } from "../../lib/jobRetention";
+import {
+  chunkArray,
+  JOB_IMPORT_LOOKUP_CHUNK,
+  JOB_IMPORT_WRITE_CHUNK,
+} from "../../lib/jobImportBatch";
 
 const EOD_KEYWORDS = [
   "Explosive Ordnance Disposal",
@@ -110,6 +115,14 @@ interface USAJobsItem {
   };
 }
 
+type USAJobCandidate = {
+  positionURI: string;
+  title: string;
+  location: string;
+  orgName: string;
+  summary: string;
+};
+
 async function fetchUSAJobsPage(
   keyword: string,
   page: number
@@ -143,7 +156,6 @@ async function fetchUSAJobsPage(
 }
 
 export async function GET(req: NextRequest) {
-  // Allow Vercel cron (Authorization: Bearer <CRON_SECRET>) or manual ?secret= param
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const querySecret = req.nextUrl.searchParams.get("secret");
   const cronSecret = process.env.CRON_SECRET;
@@ -168,7 +180,6 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // 1. Purge USAJobs listings older than the feed retention window (keep rejected blocklist rows).
   const cutoff = jobListingCutoffIso();
   const { count: purged } = await supabase
     .from("jobs")
@@ -177,114 +188,123 @@ export async function GET(req: NextRequest) {
     .neq("is_rejected", true)
     .lt("created_at", cutoff);
 
-  // 2. Scrape and upsert
   const seenPositionURIs = new Set<string>();
-  let imported = 0;
-  let refreshed = 0;
-  let skipped = 0;
-  const importedTitles: string[] = [];
+  const candidates: USAJobCandidate[] = [];
   const errors: string[] = [];
 
   for (const keyword of EOD_KEYWORDS) {
     for (let page = 1; page <= MAX_PAGES_PER_KEYWORD; page++) {
-    const { items, error: fetchErr } = await fetchUSAJobsPage(keyword, page);
-    if (fetchErr) {
-      errors.push(`[${keyword} p${page}] ${fetchErr}`);
-      break;
+      const { items, error: fetchErr } = await fetchUSAJobsPage(keyword, page);
+      if (fetchErr) {
+        errors.push(`[${keyword} p${page}] ${fetchErr}`);
+        break;
+      }
+      if (items.length === 0) break;
+
+      for (const item of items) {
+        const pos = item.MatchedObjectDescriptor;
+        const positionURI = pos.PositionURI;
+        const title = pos.PositionTitle;
+
+        if (seenPositionURIs.has(positionURI)) continue;
+        seenPositionURIs.add(positionURI);
+
+        if (!isRelevantTitle(title) || isMilitaryRecruitment(title)) continue;
+
+        candidates.push({
+          positionURI,
+          title,
+          location: pos.PositionLocationDisplay,
+          orgName: pos.OrganizationName,
+          summary: pos.UserArea?.Details?.JobSummary ?? pos.QualificationSummary ?? "",
+        });
+      }
+
+      if (items.length < 25) break;
     }
-    if (items.length === 0) break;
+  }
 
-    for (const item of items) {
-      const pos = item.MatchedObjectDescriptor;
-      const positionURI = pos.PositionURI; // stable canonical URL — used as dedup key
-      const title = pos.PositionTitle;
-      const location = pos.PositionLocationDisplay;
-      const orgName = pos.OrganizationName;
-      const summary =
-        pos.UserArea?.Details?.JobSummary ?? pos.QualificationSummary ?? "";
+  const applyUrls = candidates.map((c) => c.positionURI);
+  const existingByUrl = new Map<string, { id: string; is_rejected: boolean }>();
 
-      // Skip dupes within this run
-      if (seenPositionURIs.has(positionURI)) {
-        skipped++;
-        continue;
-      }
-      seenPositionURIs.add(positionURI);
-
-      // Skip if title isn't EOD-relevant (avoids description-match noise)
-      if (!isRelevantTitle(title)) {
-        skipped++;
-        continue;
-      }
-
-      // Skip military recruitment posts
-      if (isMilitaryRecruitment(title)) {
-        skipped++;
-        continue;
-      }
-
-      // Check if already in database (by stable PositionURI)
-      const { data: existing, error: selectErr } = await supabase
-        .from("jobs")
-        .select("id, is_rejected")
-        .eq("source_type", "usajobs")
-        .eq("apply_url", positionURI)
-        .maybeSingle();
-
-      if (selectErr) {
-        errors.push(`[select usajobs ${positionURI}] ${selectErr.message}`);
-        continue;
-      }
-
-      if (existing) {
-        // Never re-import a job an admin has rejected
-        if (existing.is_rejected) {
-          skipped++;
-          continue;
-        }
-        // Job still active — refresh last_seen_at for "last updated" display
-        const { error: upErr } = await supabase
-          .from("jobs")
-          .update({ last_seen_at: new Date().toISOString() })
-          .eq("id", existing.id);
-        if (upErr) {
-          errors.push(`[update usajobs ${positionURI}] ${upErr.message}`);
-          continue;
-        }
-        refreshed++;
-        continue;
-      }
-
-      // New job — insert as pending
-      const { error: insErr } = await supabase.from("jobs").insert({
-        title,
-        company_name: orgName,
-        location,
-        apply_url: positionURI,
-        description: summary,
-        og_description: summary,
-        og_site_name: "USAJobs.gov",
-        category: detectCategory(title),
-        is_approved: false,
-        source_type: "usajobs",
-        last_seen_at: new Date().toISOString(),
-      });
-
-      if (insErr) {
-        errors.push(`[insert usajobs ${positionURI}] ${insErr.message}`);
-        continue;
-      }
-      imported++;
-      importedTitles.push(title);
+  for (const urlChunk of chunkArray(applyUrls, JOB_IMPORT_LOOKUP_CHUNK)) {
+    const { data, error: lookupErr } = await supabase
+      .from("jobs")
+      .select("id, apply_url, is_rejected")
+      .eq("source_type", "usajobs")
+      .in("apply_url", urlChunk);
+    if (lookupErr) {
+      errors.push(`[lookup usajobs batch] ${lookupErr.message}`);
+      continue;
     }
-    if (items.length < 25) break; // fewer than a full page = last page
-    } // end page loop
-  } // end keyword loop
+    for (const row of data ?? []) {
+      if (row.apply_url) {
+        existingByUrl.set(row.apply_url, { id: row.id, is_rejected: row.is_rejected === true });
+      }
+    }
+  }
+
+  let imported = 0;
+  let refreshed = 0;
+  let skipped = 0;
+  const importedTitles: string[] = [];
+  const refreshIds: string[] = [];
+  const inserts: Record<string, unknown>[] = [];
+  const now = new Date().toISOString();
+
+  for (const candidate of candidates) {
+    const existing = existingByUrl.get(candidate.positionURI);
+    if (existing) {
+      if (existing.is_rejected) {
+        skipped++;
+        continue;
+      }
+      refreshIds.push(existing.id);
+      refreshed++;
+      continue;
+    }
+
+    inserts.push({
+      title: candidate.title,
+      company_name: candidate.orgName,
+      location: candidate.location,
+      apply_url: candidate.positionURI,
+      description: candidate.summary,
+      og_description: candidate.summary,
+      og_site_name: "USAJobs.gov",
+      category: detectCategory(candidate.title),
+      is_approved: false,
+      source_type: "usajobs",
+      last_seen_at: now,
+    });
+    importedTitles.push(candidate.title);
+  }
+
+  for (const insertChunk of chunkArray(inserts, JOB_IMPORT_WRITE_CHUNK)) {
+    const { error: insErr } = await supabase.from("jobs").insert(insertChunk);
+    if (insErr) {
+      errors.push(`[insert usajobs batch] ${insErr.message}`);
+      continue;
+    }
+    imported += insertChunk.length;
+  }
+
+  for (const idChunk of chunkArray(refreshIds, JOB_IMPORT_LOOKUP_CHUNK)) {
+    const { error: upErr } = await supabase
+      .from("jobs")
+      .update({ last_seen_at: now })
+      .in("id", idChunk);
+    if (upErr) {
+      errors.push(`[refresh usajobs batch] ${upErr.message}`);
+    }
+  }
 
   return NextResponse.json({
     imported,
     refreshed,
     purged: purged ?? 0,
     skipped,
+    candidates: candidates.length,
     sample: importedTitles.slice(0, 10),
     errors: errors.length > 0 ? errors : undefined,
   });

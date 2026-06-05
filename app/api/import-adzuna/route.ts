@@ -5,6 +5,11 @@ import {
   canonicalAdzunaDetailsUrl,
   parseAdzunaAdIdFromUrl,
 } from "../../lib/adzunaJob";
+import {
+  chunkArray,
+  JOB_IMPORT_LOOKUP_CHUNK,
+  JOB_IMPORT_WRITE_CHUNK,
+} from "../../lib/jobImportBatch";
 
 const EOD_KEYWORDS = [
   "explosive ordnance disposal",
@@ -100,6 +105,17 @@ interface AdzunaJob {
   created: string;
 }
 
+type AdzunaCandidate = {
+  adId: string;
+  title: string;
+  companyName: string;
+  location: string;
+  description: string;
+  applyUrl: string;
+  payMin: number | null;
+  payMax: number | null;
+};
+
 async function fetchAdzunaPage(
   keyword: string,
   page: number
@@ -149,7 +165,6 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
 
-  // Purge Adzuna listings older than the feed retention window.
   const cutoff = jobListingCutoffIso();
   const { count: purged } = await supabase
     .from("jobs")
@@ -159,16 +174,17 @@ export async function GET(req: NextRequest) {
     .lt("created_at", cutoff);
 
   const seenAdzunaIds = new Set<string>();
-  let imported = 0;
-  let refreshed = 0;
-  let skipped = 0;
-  const importedTitles: string[] = [];
+  const candidates: AdzunaCandidate[] = [];
   const errors: string[] = [];
+  let skipped = 0;
 
   for (const keyword of EOD_KEYWORDS) {
     for (let page = 1; page <= MAX_PAGES_PER_KEYWORD; page++) {
       const { jobs: items, error } = await fetchAdzunaPage(keyword, page);
-      if (error) { errors.push(`[${keyword} p${page}] ${error}`); break; }
+      if (error) {
+        errors.push(`[${keyword} p${page}] ${error}`);
+        break;
+      }
       if (items.length === 0) break;
 
       for (const job of items) {
@@ -178,92 +194,103 @@ export async function GET(req: NextRequest) {
           continue;
         }
 
-        // Same listing can appear on many keyword searches with different redirect URLs
         if (seenAdzunaIds.has(adId)) {
           skipped++;
           continue;
         }
         seenAdzunaIds.add(adId);
 
-        if (!isRelevantTitle(job.title)) {
+        if (!isRelevantTitle(job.title) || isMilitaryRecruitment(job.title)) {
           skipped++;
           continue;
         }
 
-        if (isMilitaryRecruitment(job.title)) {
-          skipped++;
-          continue;
-        }
-
-        const applyUrl = canonicalAdzunaDetailsUrl(adId);
-        const now = new Date().toISOString();
-
-        const { data: existing, error: selectErr } = await supabase
-          .from("jobs")
-          .select("id, is_rejected")
-          .eq("source_type", "adzuna")
-          .eq("adzuna_ad_id", adId)
-          .maybeSingle();
-
-        if (selectErr) {
-          errors.push(`[select adzuna ${adId}] ${selectErr.message}`);
-          continue;
-        }
-
-        if (existing) {
-          if (existing.is_rejected) {
-            skipped++;
-            continue;
-          }
-          const { error: upErr } = await supabase
-            .from("jobs")
-            .update({
-              last_seen_at: now,
-              apply_url: applyUrl,
-              title: job.title,
-              company_name: job.company.display_name,
-              location: job.location.display_name,
-              description: job.description,
-              og_description: job.description,
-              pay_min: roundSalary(job.salary_min),
-              pay_max: roundSalary(job.salary_max),
-              category: detectCategory(job.title),
-            })
-            .eq("id", existing.id);
-          if (upErr) {
-            errors.push(`[update adzuna ${adId}] ${upErr.message}`);
-            continue;
-          }
-          refreshed++;
-          continue;
-        }
-
-        const { error: insErr } = await supabase.from("jobs").insert({
+        candidates.push({
+          adId,
           title: job.title,
-          company_name: job.company.display_name,
+          companyName: job.company.display_name,
           location: job.location.display_name,
-          apply_url: applyUrl,
-          adzuna_ad_id: adId,
           description: job.description,
-          og_description: job.description,
-          og_site_name: "Adzuna",
-          pay_min: roundSalary(job.salary_min),
-          pay_max: roundSalary(job.salary_max),
-          category: detectCategory(job.title),
-          is_approved: false,
-          source_type: "adzuna",
-          last_seen_at: now,
+          applyUrl: canonicalAdzunaDetailsUrl(adId),
+          payMin: roundSalary(job.salary_min),
+          payMax: roundSalary(job.salary_max),
         });
-
-        if (insErr) {
-          errors.push(`[insert adzuna ${adId}] ${insErr.message}`);
-          continue;
-        }
-        imported++;
-        importedTitles.push(job.title);
       }
 
       if (items.length < RESULTS_PER_PAGE) break;
+    }
+  }
+
+  const adIds = candidates.map((c) => c.adId);
+  const existingByAdId = new Map<
+    string,
+    { id: string; is_rejected: boolean; is_approved: boolean | null }
+  >();
+
+  for (const idChunk of chunkArray(adIds, JOB_IMPORT_LOOKUP_CHUNK)) {
+    const { data, error: lookupErr } = await supabase
+      .from("jobs")
+      .select("id, adzuna_ad_id, is_rejected, is_approved")
+      .eq("source_type", "adzuna")
+      .in("adzuna_ad_id", idChunk);
+    if (lookupErr) {
+      errors.push(`[lookup adzuna batch] ${lookupErr.message}`);
+      continue;
+    }
+    for (const row of data ?? []) {
+      if (row.adzuna_ad_id) {
+        existingByAdId.set(row.adzuna_ad_id, {
+          id: row.id,
+          is_rejected: row.is_rejected === true,
+          is_approved: row.is_approved ?? null,
+        });
+      }
+    }
+  }
+
+  let imported = 0;
+  let refreshed = 0;
+  const importedTitles: string[] = [];
+  const now = new Date().toISOString();
+  const upsertRows: Record<string, unknown>[] = [];
+
+  for (const candidate of candidates) {
+    const existing = existingByAdId.get(candidate.adId);
+    if (existing?.is_rejected) {
+      skipped++;
+      continue;
+    }
+
+    if (existing) refreshed++;
+    else {
+      imported++;
+      importedTitles.push(candidate.title);
+    }
+
+    upsertRows.push({
+      title: candidate.title,
+      company_name: candidate.companyName,
+      location: candidate.location,
+      apply_url: candidate.applyUrl,
+      adzuna_ad_id: candidate.adId,
+      description: candidate.description,
+      og_description: candidate.description,
+      og_site_name: "Adzuna",
+      pay_min: candidate.payMin,
+      pay_max: candidate.payMax,
+      category: detectCategory(candidate.title),
+      is_approved: existing?.is_approved ?? false,
+      source_type: "adzuna",
+      last_seen_at: now,
+    });
+  }
+
+  for (const upsertChunk of chunkArray(upsertRows, JOB_IMPORT_WRITE_CHUNK)) {
+    const { error: upsertErr } = await supabase
+      .from("jobs")
+      .upsert(upsertChunk, { onConflict: "adzuna_ad_id" });
+    if (upsertErr) {
+      errors.push(`[upsert adzuna batch] ${upsertErr.message}`);
     }
   }
 
@@ -272,6 +299,7 @@ export async function GET(req: NextRequest) {
     refreshed,
     purged: purged ?? 0,
     skipped,
+    candidates: candidates.length,
     sample: importedTitles.slice(0, 10),
     errors: errors.length > 0 ? errors : undefined,
   });
