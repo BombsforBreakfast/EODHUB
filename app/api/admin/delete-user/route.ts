@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { hardDeleteUserAccount } from "@/app/lib/server/hardDeleteUserAccount";
 
 export async function DELETE(req: NextRequest) {
   try {
@@ -41,43 +42,11 @@ export async function DELETE(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // Admin deletion is a true hard delete (unlike self-service deletion, which
-    // anonymizes into a ghost profile). The profiles -> auth.users cascade was
-    // removed for ghost profiles, so deleting the auth user alone would leave an
-    // orphaned profile row that still shows in the admin list and vouch feed.
-    // We delete the profile row directly; cascades clear posts, vouches, unit
-    // data, conversations, messages, notifications, cert uploads, etc. The only
-    // RESTRICT dependency (post_comments) must be cleared first.
-    const { error: commentsErr } = await adminClient
-      .from("post_comments")
-      .delete()
-      .eq("user_id", userId);
-    if (commentsErr) {
-      return NextResponse.json(
-        { error: `Failed clearing comments: ${commentsErr.message}` },
-        { status: 500 }
-      );
-    }
-
-    const { error: profileErr } = await adminClient
-      .from("profiles")
-      .delete()
-      .eq("user_id", userId);
-    if (profileErr) {
-      return NextResponse.json(
-        { error: `Failed deleting profile: ${profileErr.message}` },
-        { status: 500 }
-      );
-    }
-
-    const { error } = await adminClient.auth.admin.deleteUser(userId);
-    if (error) {
-      // Profile is already gone (removed from admin list and vouch). Surface the
-      // auth failure so the admin knows the auth record may need manual cleanup.
-      return NextResponse.json(
-        { error: `Profile removed, but auth user delete failed: ${error.message}` },
-        { status: 500 }
-      );
+    const result = await hardDeleteUserAccount(adminClient, userId, {
+      actorUserId: authData.user.id,
+    });
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 500 });
     }
 
     return NextResponse.json({ success: true });

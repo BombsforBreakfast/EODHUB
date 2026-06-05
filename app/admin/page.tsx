@@ -768,7 +768,13 @@ export default function AdminPage() {
   const [toast, setToast] = useState<string | null>(null);
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [confirmDialog, setConfirmDialog] = useState<{ message: string; onConfirm: () => void } | null>(null);
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title?: string;
+    message: string;
+    detail?: string;
+    confirmLabel?: string;
+    onConfirm: () => void;
+  } | null>(null);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [batchActing, setBatchActing] = useState(false);
   const [memWizUrl, setMemWizUrl] = useState("");
@@ -933,8 +939,12 @@ export default function AdminPage() {
     setTimeout(() => setToast(null), 3000);
   }
 
-  function askConfirm(message: string, onConfirm: () => void) {
-    setConfirmDialog({ message, onConfirm });
+  function askConfirm(
+    message: string,
+    onConfirm: () => void,
+    options?: { title?: string; detail?: string; confirmLabel?: string },
+  ) {
+    setConfirmDialog({ message, onConfirm, ...options });
   }
 
   async function loadPendingCounts() {
@@ -2180,28 +2190,39 @@ export default function AdminPage() {
     });
   }
 
-  async function deleteUser(userId: string) {
-    askConfirm("Delete this user account?", async () => {
-      setActionLoading(userId + "-delete");
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch(`/api/admin/delete-user?id=${userId}`, {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
-        });
-        let json: { error?: string } = {};
-        try { json = await res.json(); } catch { /* ignore */ }
-        if (!res.ok) {
-          alert(json.error ?? "Delete failed");
-        } else {
-          showToast("User deleted.");
-          await loadUsers();
-          await loadPendingCounts();
+  async function deleteUser(user: UserProfile) {
+    const label = adminUserDisplayName(user);
+    const emailSuffix = user.email ? ` (${user.email})` : "";
+    askConfirm(
+      `${label}${emailSuffix}`,
+      async () => {
+        setActionLoading(user.user_id + "-delete");
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const res = await fetch(`/api/admin/delete-user?id=${user.user_id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+          });
+          let json: { error?: string } = {};
+          try { json = await res.json(); } catch { /* ignore */ }
+          if (!res.ok) {
+            alert(json.error ?? "Delete failed");
+          } else {
+            showToast("User permanently deleted.");
+            await loadUsers();
+            await loadPendingCounts();
+          }
+        } finally {
+          setActionLoading(null);
         }
-      } finally {
-        setActionLoading(null);
-      }
-    });
+      },
+      {
+        title: "Permanently delete this user?",
+        detail:
+          "This removes their auth account, profile, and related signup data. They can create a fresh account with the same email afterward.",
+        confirmLabel: "Delete permanently",
+      },
+    );
   }
 
   async function deleteGroup(group: AdminGroup) {
@@ -3159,8 +3180,20 @@ export default function AdminPage() {
       {/* Confirm Dialog */}
       {confirmDialog && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-          <div style={{ background: t.surface, borderRadius: 16, padding: "28px 32px", maxWidth: 400, width: "100%", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
-            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8, color: t.text }}>{confirmDialog.message}</div>
+          <div style={{ background: t.surface, borderRadius: 16, padding: "28px 32px", maxWidth: 440, width: "100%", boxShadow: "0 8px 40px rgba(0,0,0,0.2)" }}>
+            <div style={{ fontWeight: 900, fontSize: 18, marginBottom: 8, color: t.text }}>
+              {confirmDialog.title ?? confirmDialog.message}
+            </div>
+            {confirmDialog.title && (
+              <div style={{ fontSize: 15, color: t.text, fontWeight: 700, marginBottom: 10, lineHeight: 1.5 }}>
+                {confirmDialog.message}
+              </div>
+            )}
+            {confirmDialog.detail && (
+              <div style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.55, marginBottom: 12 }}>
+                {confirmDialog.detail}
+              </div>
+            )}
             <div style={{ fontSize: 14, color: "#ef4444", fontWeight: 700, marginBottom: 24 }}>This action cannot be undone.</div>
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
               <button
@@ -3173,7 +3206,7 @@ export default function AdminPage() {
                 onClick={() => { confirmDialog.onConfirm(); setConfirmDialog(null); }}
                 style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: "#ef4444", color: "white", fontWeight: 700, cursor: "pointer", fontSize: 14 }}
               >
-                Continue
+                {confirmDialog.confirmLabel ?? "Continue"}
               </button>
             </div>
           </div>
@@ -4679,7 +4712,7 @@ export default function AdminPage() {
                       <button
                         style={actionBtn("#ef4444")}
                         disabled={actionLoading === u.user_id + "-delete"}
-                        onClick={() => deleteUser(u.user_id)}
+                        onClick={() => deleteUser(u)}
                       >
                         {actionLoading === u.user_id + "-delete" ? "..." : "Delete"}
                       </button>
