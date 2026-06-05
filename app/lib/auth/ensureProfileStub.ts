@@ -1,5 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { devAuthLog } from "@/app/lib/auth/signupErrors";
+import {
+  authMetadataDisplayName,
+  parseSignupFullName,
+} from "@/app/lib/profileCompleteness";
 
 /**
  * Ensure a profiles row exists for a newly created auth user.
@@ -26,9 +30,16 @@ export async function ensureProfileStubForUser(
     return { ok: true, error: null };
   }
 
+  const { data: authData } = await admin.auth.admin.getUserById(userId);
+  const authName = authMetadataDisplayName(authData?.user?.user_metadata ?? null);
+  const parsedName = authName ? parseSignupFullName(authName) : null;
+
   const { error: insertErr } = await admin.from("profiles").insert({
     user_id: userId,
     email,
+    ...(parsedName
+      ? { first_name: parsedName.firstName, last_name: parsedName.lastName }
+      : {}),
   });
 
   if (insertErr) {

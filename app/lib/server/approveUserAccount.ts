@@ -8,6 +8,8 @@ import {
 } from "@/app/lib/email/approvalEmail";
 import {
   blocksSignupApproval,
+  buildSignupProfileContext,
+  resolveSignupNames,
   signupProfileMissingFields,
 } from "@/app/lib/profileCompleteness";
 import { VERIFICATION } from "@/app/lib/verificationStatus";
@@ -51,7 +53,7 @@ export async function approveUserAccount(
   const { data: profile, error: profileError } = await adminClient
     .from("profiles")
     .select(
-      "first_name, last_name, service, company_name, account_type, is_pure_admin, created_at, referral_code, email_verified, admin_verified, verification_status, approval_email_sent_at, admin_approved_at",
+      "first_name, last_name, display_name, name, service, company_name, account_type, is_pure_admin, created_at, referral_code, email_verified, admin_verified, verification_status, approval_email_sent_at, admin_approved_at",
     )
     .eq("user_id", userId)
     .maybeSingle();
@@ -67,13 +69,15 @@ export async function approveUserAccount(
   const authUser = userData?.user ?? null;
   const email = authUser?.email ?? null;
 
-  // Admin verification mirrors the vouching gate: a new signup must finish
-  // onboarding (first name + last name + service/company) before either an
-  // admin or a vouch can flip them to verified. No trusted-auth override —
-  // incomplete users belong in the "Onboarding" tab until they complete the
-  // funnel.
-  if (blocksSignupApproval(profile)) {
-    const missing = signupProfileMissingFields(profile).filter((field) =>
+  const signupProfile = buildSignupProfileContext(profile, authUser?.user_metadata ?? null);
+  const { first_name: resolvedFirstName, last_name: resolvedLastName } =
+    resolveSignupNames(signupProfile);
+
+  // Admin verification mirrors the vouching gate: a new signup must have a
+  // resolvable first + last name (profile columns, mirrored OAuth name, or Auth
+  // metadata) before an admin or vouch can flip them to verified.
+  if (blocksSignupApproval(signupProfile)) {
+    const missing = signupProfileMissingFields(signupProfile).filter((field) =>
       field === "first name" || field === "last name",
     );
     devAuthLog("approve-user", { step: "incomplete_profile", userId, source, missing });
@@ -94,6 +98,14 @@ export async function approveUserAccount(
     approvalEmailSentAt: profile.approval_email_sent_at ?? null,
   });
 
+  const nameBackfill: { first_name?: string; last_name?: string } = {};
+  if (!profile.first_name?.trim() && resolvedFirstName) {
+    nameBackfill.first_name = resolvedFirstName;
+  }
+  if (!profile.last_name?.trim() && resolvedLastName) {
+    nameBackfill.last_name = resolvedLastName;
+  }
+
   const { error: updateError } = await adminClient
     .from("profiles")
     .update({
@@ -102,6 +114,7 @@ export async function approveUserAccount(
       email_verified: true,
       admin_verified: true,
       admin_approved_at: profile.admin_approved_at ?? now,
+      ...nameBackfill,
     })
     .eq("user_id", userId);
 
@@ -225,7 +238,7 @@ export async function approveUserAccount(
     };
   }
 
-  const firstName = profile.first_name?.trim() || "EOD Member";
+  const firstName = resolvedFirstName || profile.first_name?.trim() || "EOD Member";
   const loginUrl = buildLoginUrl(origin);
   const html = buildApprovalEmailHtml({
     firstName,

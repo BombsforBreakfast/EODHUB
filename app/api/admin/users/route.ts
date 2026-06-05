@@ -101,6 +101,8 @@ function isReadyForAdminVerify(row: Record<string, unknown>) {
   return !blocksSignupApproval({
     first_name: typeof row.first_name === "string" ? row.first_name : null,
     last_name: typeof row.last_name === "string" ? row.last_name : null,
+    display_name: typeof row.display_name === "string" ? row.display_name : null,
+    name: typeof row.name === "string" ? row.name : null,
     created_at: typeof row.created_at === "string" ? row.created_at : null,
     is_pure_admin: row.is_pure_admin === true,
   });

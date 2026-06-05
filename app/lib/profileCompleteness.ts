@@ -56,6 +56,18 @@ export function parseSignupFullName(fullName: string): {
   return { firstName: parsed.first_name, lastName: parsed.last_name };
 }
 
+/** Merge DB profile mirrors with Auth metadata for signup approval checks. */
+export function buildSignupProfileContext(
+  profile: SignupProfileFields,
+  authMetadata?: Record<string, unknown> | null,
+): SignupProfileFields {
+  const authName = authMetadataDisplayName(authMetadata);
+  return {
+    ...profile,
+    name: profile.name?.trim() || authName || profile.name,
+  };
+}
+
 /** Read display name from Supabase Auth user_metadata (Google OAuth, etc.). */
 export function authMetadataDisplayName(
   metadata: Record<string, unknown> | null | undefined,
