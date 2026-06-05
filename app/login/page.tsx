@@ -136,6 +136,14 @@ export default function LoginPage() {
     });
   }
 
+  function closeBetaCodeAsPasswordHelper() {
+    setBetaCodeHelperOpen(false);
+    setBusinessOrgPromptOpen(false);
+    setBusinessOrgEmailGateOpen(false);
+    clearEmailNotFoundGuidance();
+    setMode("login");
+  }
+
   function guideToSignupAfterEmailNotFound() {
     setLoginMessage(null);
     setEmailNotFoundGuidance(true);
@@ -1174,57 +1182,47 @@ export default function LoginPage() {
             padding: 18,
             background: "rgba(15, 23, 42, 0.55)",
           }}
-          onClick={() => setBetaCodeHelperOpen(false)}
+          onClick={closeBetaCodeAsPasswordHelper}
         >
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
+              position: "relative",
               width: "min(100%, 460px)",
               borderRadius: 18,
               border: `1px solid ${t.border}`,
               background: t.surface,
               color: t.text,
               padding: 22,
+              paddingTop: 28,
               boxShadow: "0 24px 70px rgba(0,0,0,.24)",
             }}
           >
-            <h2 id="beta-code-helper-title" style={{ margin: 0, fontSize: 22, fontWeight: 900 }}>
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={closeBetaCodeAsPasswordHelper}
+              style={{
+                position: "absolute",
+                top: 12,
+                right: 12,
+                border: "none",
+                background: "transparent",
+                fontSize: 22,
+                lineHeight: 1,
+                cursor: "pointer",
+                color: t.textMuted,
+                padding: 4,
+              }}
+            >
+              ×
+            </button>
+            <h2 id="beta-code-helper-title" style={{ margin: 0, fontSize: 22, fontWeight: 900, paddingRight: 28 }}>
               Beta access code retired
             </h2>
             <p style={{ margin: "12px 0 0", color: t.textMuted, lineHeight: 1.55 }}>
               {BETA_CODE_AS_PASSWORD_HELPER_MESSAGE}
             </p>
-            <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
-              <button
-                type="button"
-                style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
-                onClick={() => {
-                  setBetaCodeHelperOpen(false);
-                  void signInWithGoogleOAuth();
-                }}
-              >
-                <GoogleIcon />
-                Sign up with Google
-              </button>
-              <button
-                type="button"
-                style={buttonPrimary}
-                onClick={() => {
-                  setBetaCodeHelperOpen(false);
-                  clearEmailNotFoundGuidance();
-                  setMode("signup");
-                }}
-              >
-                Sign up to create account
-              </button>
-              <button
-                type="button"
-                style={buttonSecondary}
-                onClick={() => setBetaCodeHelperOpen(false)}
-              >
-                Close
-              </button>
-            </div>
           </div>
         </div>
       )}
