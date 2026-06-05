@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import { useMasterShell } from "../../components/master/masterShellContext";
-import ImageCropDialog from "../../components/ImageCropDialog";
+import { RequireFullAccess } from "../../hooks/useRequireFullAccess";
+
+const ImageCropDialog = dynamic(() => import("../../components/ImageCropDialog"), { ssr: false });
 import { ASPECT_UNIT_COVER } from "../../lib/imageCropTargets";
 import { prepareCroppedImageBlob } from "../../lib/prepareUploadFile";
 import { validateImagePick } from "../../lib/uploadLimits";
@@ -60,7 +63,7 @@ function unitMatchesLocalFilter(unit: Unit, raw: string): boolean {
   return haystack.includes(q);
 }
 
-export default function UnitsPage() {
+function UnitsPageContent() {
   usePageTracking(PAGE_TRACKING.groups);
   const { t, isDark } = useTheme();
   const router = useRouter();
@@ -978,5 +981,13 @@ export default function UnitsPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function UnitsPage() {
+  return (
+    <RequireFullAccess route="app/(master)/units/page.tsx">
+      <UnitsPageContent />
+    </RequireFullAccess>
   );
 }

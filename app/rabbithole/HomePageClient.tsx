@@ -9,7 +9,12 @@ import { supabase } from "../lib/lib/supabaseClient";
 import ContributeToRabbitholeModal from "./components/ContributeToRabbitholeModal";
 import { appendToTrail } from "./lib/helpers";
 import { linkifyPlainText } from "./lib/linkifyPlainText";
-import { fetchRabbitholeContributions, fetchRabbitholeThreads, fetchRabbitholeTopics } from "./lib/dataClient";
+import {
+  fetchRabbitholeContributions,
+  fetchRabbitholeThreads,
+  fetchRabbitholeTopics,
+  RABBITHOLE_HOME_LIST_LIMIT,
+} from "./lib/dataClient";
 import type { RabbitholeContentType, RabbitholeContribution, RabbitholeThread, RabbitholeTopic } from "./lib/types";
 import { httpsAssetUrl } from "../lib/urlPreview";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
@@ -47,7 +52,7 @@ function contentTypeLabel(type: RabbitholeContentType): string {
 }
 
 export default function RabbitholeHomePageClient() {
-  useRequireFullAccess("app/rabbithole/page.tsx");
+  const gate = useRequireFullAccess("app/rabbithole/page.tsx");
   const { t } = useTheme();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -70,6 +75,7 @@ export default function RabbitholeHomePageClient() {
   const activeTag = searchParams.get("tag") ?? null;
 
   useEffect(() => {
+    if (gate !== "ready") return;
     let mounted = true;
     async function load() {
       setLoading(true);
@@ -78,8 +84,11 @@ export default function RabbitholeHomePageClient() {
       if (mounted) setViewerUserId(userId);
       const [topicsData, threadsData, contributionData] = await Promise.all([
         fetchRabbitholeTopics(supabase),
-        fetchRabbitholeThreads(supabase, { limit: 200 }),
-        fetchRabbitholeContributions(supabase, { limit: 200, viewerUserId: userId }),
+        fetchRabbitholeThreads(supabase, { limit: RABBITHOLE_HOME_LIST_LIMIT }),
+        fetchRabbitholeContributions(supabase, {
+          limit: RABBITHOLE_HOME_LIST_LIMIT,
+          viewerUserId: userId,
+        }),
       ]);
       if (!mounted) return;
       setTopics(topicsData);
@@ -89,7 +98,7 @@ export default function RabbitholeHomePageClient() {
     }
     void load();
     return () => { mounted = false; };
-  }, []);
+  }, [gate]);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 768px)");
@@ -201,6 +210,8 @@ export default function RabbitholeHomePageClient() {
     fontSize: 13,
     boxSizing: "border-box",
   };
+
+  if (gate !== "ready") return null;
 
   return (
     <div
@@ -420,7 +431,10 @@ export default function RabbitholeHomePageClient() {
           onCreated={async (contributionId) => {
             setContributeOpen(false);
             clearContributeQuery();
-            const fresh = await fetchRabbitholeContributions(supabase, { limit: 200, viewerUserId });
+            const fresh = await fetchRabbitholeContributions(supabase, {
+              limit: RABBITHOLE_HOME_LIST_LIMIT,
+              viewerUserId,
+            });
             setContributions(fresh);
             const trail = appendToTrail([], "Contributions");
             router.push(`/rabbithole/contribution/${contributionId}?trail=${trail}`);

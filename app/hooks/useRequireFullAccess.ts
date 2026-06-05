@@ -1,15 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { getSupabaseUser, supabase } from "../lib/lib/supabaseClient";
-import { loadActiveProfile } from "../lib/auth/activeProfile";
 import {
-  ONBOARDING_GATE_PROFILE_SELECT,
   onboardingRedirectUrl,
   resolvePreAccessRedirectPath,
   shouldRedirectToOnboarding,
-  type OnboardingGateProfile,
 } from "../lib/onboardingGate";
+import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 import { hasFullPlatformAccess } from "../lib/verificationAccess";
 
 type AccessGateState = "checking" | "redirecting" | "ready";
@@ -24,6 +23,7 @@ type AccessGateState = "checking" | "redirecting" | "ready";
  * verification gate the same way they did before this hook landed.
  */
 export function useRequireFullAccess(route: string): AccessGateState {
+  const queryClient = useQueryClient();
   const [state, setState] = useState<AccessGateState>("checking");
 
   useEffect(() => {
@@ -41,10 +41,7 @@ export function useRequireFullAccess(route: string): AccessGateState {
         return;
       }
 
-      const { profile } = await loadActiveProfile<OnboardingGateProfile>(supabase, user, {
-        route,
-        select: ONBOARDING_GATE_PROFILE_SELECT,
-      });
+      const profile = await fetchViewerProfileCached(queryClient, supabase, user);
       if (cancelled) return;
 
       if (!profile) {
@@ -72,7 +69,20 @@ export function useRequireFullAccess(route: string): AccessGateState {
     return () => {
       cancelled = true;
     };
-  }, [route]);
+  }, [route, queryClient]);
 
   return state;
+}
+
+/** Renders children only after auth + verification gates pass (no content flash while checking). */
+export function RequireFullAccess({
+  route,
+  children,
+}: {
+  route: string;
+  children: ReactNode;
+}) {
+  const gate = useRequireFullAccess(route);
+  if (gate !== "ready") return null;
+  return children;
 }

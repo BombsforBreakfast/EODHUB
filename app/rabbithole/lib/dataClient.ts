@@ -227,6 +227,9 @@ function mapThreadRow(row: any): RabbitholeThread {
   };
 }
 
+/** Home grid initial load — keep small; topic pages use higher limits. */
+export const RABBITHOLE_HOME_LIST_LIMIT = 24;
+
 const THREAD_SELECT = `
   id, title, body, author_id, created_at, last_activity_at, reply_count, is_high_value,
   subtopic_custom, source_type, promoted_from_post_id, promoted_from_unit_post_id,
@@ -258,7 +261,7 @@ export async function fetchRabbitholeTopics(supabase: SupabaseClient): Promise<R
       .from("rabbithole_threads")
       .select("topic_id, rabbithole_thread_tags(rabbithole_tags(name))")
       .in("topic_id", topicIds)
-      .limit(200),
+      .limit(40),
   ]);
 
   const topicById = new Map<string, RabbitholeTopic>();

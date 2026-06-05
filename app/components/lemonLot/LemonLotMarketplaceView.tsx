@@ -159,26 +159,21 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      void loadRows(null);
-
       const { data: { session } } = await supabase.auth.getSession();
       if (cancelled) return;
       const uid = session?.user?.id ?? null;
+      if (!uid) return;
       setUserId(uid);
-      if (uid) {
-        void loadRows(uid);
-        void (async () => {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("display_name, first_name, last_name")
-            .eq("user_id", uid)
-            .maybeSingle();
-          if (cancelled) return;
-          const p = profile as { display_name: string | null; first_name: string | null; last_name: string | null } | null;
-          const n = p?.display_name?.trim() || [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
-          setMyName(n || "You");
-        })();
-      }
+      void loadRows(uid);
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("display_name, first_name, last_name")
+        .eq("user_id", uid)
+        .maybeSingle();
+      if (cancelled) return;
+      const p = profile as { display_name: string | null; first_name: string | null; last_name: string | null } | null;
+      const n = p?.display_name?.trim() || [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
+      setMyName(n || "You");
     })();
     return () => {
       cancelled = true;

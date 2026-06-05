@@ -1,12 +1,14 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
-import ImageCropDialog from "../components/ImageCropDialog";
+import { RequireFullAccess } from "../hooks/useRequireFullAccess";
+
+const ImageCropDialog = dynamic(() => import("../components/ImageCropDialog"), { ssr: false });
 import { ASPECT_AVATAR } from "../lib/imageCropTargets";
 import { prepareCroppedImageBlob } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
-import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 
 const US_STATES = [
   "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut",
@@ -58,8 +60,7 @@ function isValidPhone(phone: string): boolean {
   return /^\d{3}-\d{3}-\d{4}$/.test(phone);
 }
 
-export default function DirectoryPage() {
-  useRequireFullAccess("app/directory/page.tsx");
+function DirectoryPageContent() {
   const { t } = useTheme();
   const [entries, setEntries] = useState<DirectoryEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
@@ -609,5 +610,13 @@ export default function DirectoryPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function DirectoryPage() {
+  return (
+    <RequireFullAccess route="app/directory/page.tsx">
+      <DirectoryPageContent />
+    </RequireFullAccess>
   );
 }
