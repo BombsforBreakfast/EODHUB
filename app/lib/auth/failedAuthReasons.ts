@@ -14,7 +14,6 @@ export type FailedAuthReason =
   | "RATE_LIMITED"
   | "USER_NOT_VERIFIED"
   | "BETA_DENIED"
-  | "BETA_CODE_AS_PASSWORD"
   | "EMAIL_VALIDATION_FAILED"
   | "ACCOUNT_CREATION_FAILED"
   | "PROFILE_CREATION_FAILED"
@@ -33,7 +32,6 @@ export const FAILED_AUTH_REASONS: readonly FailedAuthReason[] = [
   "RATE_LIMITED",
   "USER_NOT_VERIFIED",
   "BETA_DENIED",
-  "BETA_CODE_AS_PASSWORD",
   "EMAIL_VALIDATION_FAILED",
   "ACCOUNT_CREATION_FAILED",
   "PROFILE_CREATION_FAILED",
@@ -122,17 +120,6 @@ export function classifyFailedLoginAttempt({
       adminCanOverride: false,
       displayReason:
         "Security controls flagged this attempt. Resolve the abuse signal before approving access.",
-    };
-  }
-
-  if (reason === "BETA_CODE_AS_PASSWORD") {
-    return {
-      reviewable: true,
-      suspicious: false,
-      severity: "low",
-      adminCanOverride: false,
-      displayReason:
-        "User entered the retired public beta access code (EODHUBBETA) in the login password field (helper modal shown; classic login/signup/onboarding unchanged).",
     };
   }
 
