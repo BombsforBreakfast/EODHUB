@@ -32,6 +32,10 @@ import {
   mapSupabaseLoginError,
   type FailedAuthReason,
 } from "../lib/auth/failedAuthReasons";
+import {
+  BETA_CODE_AS_PASSWORD_HELPER_MESSAGE,
+  passwordContainsBetaAccessCode,
+} from "../lib/auth/betaCodeInPassword";
 import { clearFailedAuthReportsAfterLogin } from "../lib/auth/clearFailedAuthReportsOnLogin";
 
 function devClientAuthLog(tag: string, data: Record<string, unknown>) {
@@ -110,11 +114,27 @@ export default function LoginPage() {
   const [businessOrgEmailStatus, setBusinessOrgEmailStatus] = useState<"idle" | "checking" | "found" | "authenticating" | "not_found" | "not_approved" | "invalid_email" | "error">("idle");
   const [businessOrgEmailMessage, setBusinessOrgEmailMessage] = useState<string | null>(null);
   const [businessOrgOwnerPassword, setBusinessOrgOwnerPassword] = useState("");
+  const [betaCodeHelperOpen, setBetaCodeHelperOpen] = useState(false);
   const signupCtaRef = useRef<HTMLButtonElement>(null);
 
   function clearEmailNotFoundGuidance() {
     setEmailNotFoundGuidance(false);
     setHighlightSignupCta(false);
+  }
+
+  function showBetaCodeAsPasswordHelper() {
+    setBetaCodeHelperOpen(true);
+    reportAuthFailure({
+      email,
+      failureReason: "BETA_CODE_AS_PASSWORD",
+      errorCode: "beta_code_as_password:login",
+      rawErrorMessage: "Retired public beta access code entered in password field.",
+      sourceRoute: "/login",
+    });
+  }
+
+  function closeBetaCodeAsPasswordHelper() {
+    setBetaCodeHelperOpen(false);
   }
 
   function guideToSignupAfterEmailNotFound() {
@@ -361,6 +381,10 @@ export default function LoginPage() {
   async function handleLogin() {
     setLoginMessage(null);
     clearEmailNotFoundGuidance();
+    if (passwordContainsBetaAccessCode(password)) {
+      showBetaCodeAsPasswordHelper();
+      return;
+    }
     try {
       setSubmitting(true);
 
@@ -1123,6 +1147,62 @@ export default function LoginPage() {
 
         </form>
         </>
+      )}
+
+      {betaCodeHelperOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="beta-code-helper-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 85,
+            display: "grid",
+            placeItems: "center",
+            padding: 18,
+            background: "rgba(15, 23, 42, 0.55)",
+          }}
+          onClick={closeBetaCodeAsPasswordHelper}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "relative",
+              width: "min(100%, 460px)",
+              borderRadius: 18,
+              border: `1px solid ${t.border}`,
+              background: t.surface,
+              color: t.text,
+              padding: 22,
+              paddingTop: 28,
+              boxShadow: "0 24px 70px rgba(0,0,0,.24)",
+            }}
+          >
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={closeBetaCodeAsPasswordHelper}
+              style={{
+                position: "absolute",
+                top: 12,
+                right: 12,
+                border: "none",
+                background: "transparent",
+                fontSize: 22,
+                lineHeight: 1,
+                cursor: "pointer",
+                color: t.textMuted,
+                padding: 4,
+              }}
+            >
+              ×
+            </button>
+            <p id="beta-code-helper-title" style={{ margin: 0, fontSize: 15, lineHeight: 1.55, color: t.text, paddingRight: 28 }}>
+              {BETA_CODE_AS_PASSWORD_HELPER_MESSAGE}
+            </p>
+          </div>
+        </div>
       )}
 
       {(businessOrgPromptOpen || businessOrgEmailGateOpen) && (
