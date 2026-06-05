@@ -137,7 +137,10 @@ import {
   fetchViewerProfileCached,
   invalidateViewerProfile,
 } from "../lib/queries/viewerProfile";
-import { fetchFeedPostEnrichment } from "../lib/queries/feedPostEnrichment";
+import {
+  fetchFeedPostEnrichment,
+  type FeedPostEnrichmentBundle,
+} from "../lib/queries/feedPostEnrichment";
 import {
   dismissPlankHolderModal,
   fetchPlankHolderProgress,
@@ -345,6 +348,41 @@ const FEED_LOAD_MORE_INCREMENT = 10;
 /** Ranked rows to prefetch before wall/moderation filters; keep small — only 5 render on first paint. */
 const INITIAL_RANKED_POSTS_LIMIT = INITIAL_FEED_POST_LIMIT + 10;
 const FULL_FEED_HYDRATION_DELAY_MS = 400;
+
+/** Cached Pass-1 feed data so Pass-2 interaction hydrate avoids re-querying ranked posts / enrichment. */
+type InitialFeedBatchCache = {
+  initialPosts: RankedPostRow[];
+  postAsUserIdByPostId: Map<string, string | null>;
+  legacyPostImageMap: Map<string, string | null>;
+  postGifMap: Map<string, string | null>;
+  postOgMap: Map<
+    string,
+    {
+      og_url: string | null;
+      og_title: string | null;
+      og_description: string | null;
+      og_image: string | null;
+      og_site_name: string | null;
+    }
+  >;
+  eventIdByPostId: Map<string, string | null>;
+  postMetaMap: Map<
+    string,
+    { content_type: string | null; system_generated: boolean | null; news_item_id: string | null }
+  >;
+  verdictAtByPostId: Map<string, string | null>;
+  rabbitholeThreadIdByPostId: Map<string, string | null>;
+  rabbitholeContributionIdByPostId: Map<string, string | null>;
+  multiPostImageMap: Map<string, string[]>;
+  reactionRows: { subject_id: string; user_id: string; reaction_type: string }[];
+  enrichment: FeedPostEnrichmentBundle | null;
+  profileNameMap: Map<string, string>;
+  profilePhotoMap: Map<string, string | null>;
+  profileServiceMap: Map<string, string | null>;
+  profileEmployerMap: Map<string, boolean | null>;
+  profilePureAdminMap: Map<string, boolean | null>;
+  profilePublicMemberMap: Map<string, boolean>;
+};
 const FEED_REALTIME_DEBOUNCE_MS = 2000;
 const FEED_QUERY_BUFFER = 20;
 const HOME_WIDGET_LOAD_DELAY_MS = 1500;
@@ -2649,7 +2687,7 @@ export default function HomePage() {
     rawPosts: RankedPostRow[],
     effectiveUserId: string | null,
     perfStart: number,
-  ): Promise<void> {
+  ): Promise<InitialFeedBatchCache> {
     const initialPosts = rawPosts.slice(0, INITIAL_FEED_POST_LIMIT);
     const postIds = initialPosts.map((post) => post.id);
 
@@ -2874,6 +2912,590 @@ export default function HomePage() {
       renderedCount: initialFeedPosts.length,
       postIdsCount: postIds.length,
     });
+
+    return {
+      initialPosts,
+      postAsUserIdByPostId,
+      legacyPostImageMap,
+      postGifMap,
+      postOgMap,
+      eventIdByPostId,
+      postMetaMap,
+      verdictAtByPostId,
+      rabbitholeThreadIdByPostId,
+      rabbitholeContributionIdByPostId,
+      multiPostImageMap,
+      reactionRows,
+      enrichment,
+      profileNameMap,
+      profilePhotoMap,
+      profileServiceMap,
+      profileEmployerMap,
+      profilePureAdminMap,
+      profilePublicMemberMap,
+    };
+  }
+
+  async function hydrateFromInitialCache(
+    cache: InitialFeedBatchCache,
+    effectiveUserId: string | null,
+  ): Promise<void> {
+    const perfStart = perfNowMs();
+    const rawPosts = cache.initialPosts;
+    const postIds = rawPosts.map((post) => post.id);
+    if (postIds.length === 0) return;
+
+    const {
+      postAsUserIdByPostId,
+      legacyPostImageMap,
+      postGifMap,
+      postOgMap,
+      eventIdByPostId,
+      postMetaMap,
+      verdictAtByPostId,
+      rabbitholeThreadIdByPostId,
+      rabbitholeContributionIdByPostId,
+      multiPostImageMap,
+      reactionRows,
+      enrichment,
+    } = cache;
+
+    const profileNameMap = new Map(cache.profileNameMap);
+    const profilePhotoMap = new Map(cache.profilePhotoMap);
+    const profileServiceMap = new Map(cache.profileServiceMap);
+    const profileEmployerMap = new Map(cache.profileEmployerMap);
+    const profilePureAdminMap = new Map(cache.profilePureAdminMap);
+    const profilePublicMemberMap = new Map(cache.profilePublicMemberMap);
+
+    const mergeProfiles = (rows: ProfileName[] | null | undefined) => {
+      (rows ?? []).forEach((profile) => {
+        const fullName =
+          (profile.display_name?.trim() || null) ||
+          `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
+          "User";
+        if (!profileNameMap.has(profile.user_id)) {
+          profileNameMap.set(profile.user_id, fullName);
+        }
+        if (!profilePhotoMap.has(profile.user_id)) {
+          profilePhotoMap.set(profile.user_id, profile.photo_url ?? null);
+        }
+        if (!profileServiceMap.has(profile.user_id)) {
+          profileServiceMap.set(profile.user_id, profile.service ?? null);
+        }
+        if (!profileEmployerMap.has(profile.user_id)) {
+          profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
+        }
+        if (!profilePureAdminMap.has(profile.user_id)) {
+          profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
+        }
+        if (!profilePublicMemberMap.has(profile.user_id)) {
+          profilePublicMemberMap.set(
+            profile.user_id,
+            hasPublicMemberProfile({
+              email: profile.email,
+              is_pure_admin: profile.is_pure_admin,
+            }),
+          );
+        }
+      });
+    };
+
+    mergeProfiles(enrichment?.profiles as ProfileName[] | undefined);
+
+    const newsItemIdsForPosts = [
+      ...new Set(
+        Array.from(postMetaMap.values())
+          .map((meta) => meta.news_item_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const newsManualImageById = new Map<string, string | null>();
+    if (newsItemIdsForPosts.length > 0) {
+      const { data: newsImageRows, error: newsImageError } = await supabase
+        .from("news_items")
+        .select("id, admin_manual_image_url")
+        .in("id", newsItemIdsForPosts);
+      if (newsImageError) {
+        console.error("News manual image override load error:", newsImageError);
+      } else {
+        ((newsImageRows ?? []) as Array<{ id: string; admin_manual_image_url: string | null }>).forEach((row) => {
+          newsManualImageById.set(row.id, row.admin_manual_image_url ?? null);
+        });
+      }
+    }
+
+    const missingEventCandidates = rawPosts
+      .filter((post) => !eventIdByPostId.get(post.id))
+      .map((post) => ({
+        postId: post.id,
+        userId: post.user_id,
+        postCreatedAt: post.created_at,
+        eventTitle: extractLegacyEventTitle(post.content),
+      }))
+      .filter(
+        (
+          p,
+        ): p is {
+          postId: string;
+          userId: string;
+          postCreatedAt: string;
+          eventTitle: string;
+        } => Boolean(p.eventTitle),
+      );
+
+    if (missingEventCandidates.length > 0) {
+      const candidateUserIds = [...new Set(missingEventCandidates.map((c) => c.userId))];
+      const { data: candidateEvents, error: candidateEventsErr } = await supabase
+        .from("events")
+        .select("id, user_id, title, date")
+        .in("user_id", candidateUserIds);
+      if (candidateEventsErr) {
+        console.error("Legacy event inference load error:", candidateEventsErr);
+      } else {
+        const grouped = new Map<string, Array<{ id: string; user_id: string; title: string; date: string }>>();
+        ((candidateEvents ?? []) as Array<{ id: string; user_id: string; title: string; date: string }>).forEach((ev) => {
+          const key = `${ev.user_id}::${normalizeEventTitle(ev.title)}`;
+          const arr = grouped.get(key) ?? [];
+          arr.push(ev);
+          grouped.set(key, arr);
+        });
+
+        missingEventCandidates.forEach((candidate) => {
+          const key = `${candidate.userId}::${normalizeEventTitle(candidate.eventTitle)}`;
+          const matches = grouped.get(key) ?? [];
+          if (matches.length === 0) return;
+          const postTs = new Date(candidate.postCreatedAt).getTime();
+          const best = [...matches].sort((a, b) => {
+            const da = Math.abs(new Date(a.date).getTime() - postTs);
+            const db = Math.abs(new Date(b.date).getTime() - postTs);
+            return da - db;
+          })[0];
+          if (best?.id) eventIdByPostId.set(candidate.postId, best.id);
+        });
+      }
+    }
+
+    const rawComments: Comment[] = enrichment
+      ? (enrichment.comments as Comment[])
+      : (await loadCommentsForPosts(postIds)).comments;
+
+    const commentIds = rawComments.map((comment) => comment.id);
+
+    let commentReactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
+    if (enrichment) {
+      commentReactionRows = enrichment.commentReactionRows;
+    } else {
+      try {
+        commentReactionRows =
+          commentIds.length > 0
+            ? await fetchContentReactionsForSubjects(supabase, "post_comment", commentIds)
+            : [];
+      } catch (commentReactionsErr) {
+        console.error("Comment reactions load error:", commentReactionsErr);
+      }
+    }
+
+    const aggregatesMap = aggregatesBySubjectId(reactionRows, effectiveUserId);
+    const commentAggregatesMap = aggregatesBySubjectId(commentReactionRows, effectiveUserId);
+
+    const postLikerUserIds = reactionRows.map((l) => l.user_id);
+    const commentReactorUserIds = commentReactionRows.map((l) => l.user_id);
+    const uniqueUserIds = [
+      ...new Set(rawPosts.map((post) => postAsUserIdByPostId.get(post.id) ?? post.user_id)),
+    ];
+    const missingProfileIds = [
+      ...new Set(
+        [
+          ...uniqueUserIds,
+          ...rawPosts.map((post) => postAsUserIdByPostId.get(post.id) ?? post.user_id),
+          ...rawComments.map((comment) => comment.user_id),
+          ...postLikerUserIds,
+          ...commentReactorUserIds,
+        ].filter((id): id is string => Boolean(id) && !profileNameMap.has(id)),
+      ),
+    ];
+
+    if (missingProfileIds.length > 0) {
+      const { data: profileData, error: profileError } = await supabase
+        .from("profiles")
+        .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, is_pure_admin, email")
+        .in("user_id", missingProfileIds);
+      if (profileError) {
+        console.error("Profile name load error:", profileError);
+      } else {
+        mergeProfiles(profileData as ProfileName[] | null);
+      }
+    }
+
+    const enrichedById = new Map<string, FeedComment>();
+    rawComments.forEach((comment) => {
+      const agg = commentAggregatesMap.get(comment.id) ?? emptyAggregate();
+      enrichedById.set(comment.id, {
+        ...comment,
+        authorName: profileNameMap.get(comment.user_id) || "User",
+        authorPhotoUrl: profilePhotoMap.get(comment.user_id) || null,
+        authorService: profileServiceMap.get(comment.user_id) ?? null,
+        authorIsEmployer: profileEmployerMap.get(comment.user_id) ?? null,
+        likeCount: agg.totalCount,
+        myReaction: agg.myReaction,
+        reactionCountsByType: agg.countsByType,
+        reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(
+          commentReactionRows,
+          comment.id,
+          profileNameMap,
+        ),
+        replies: [],
+        replyCount: 0,
+      });
+    });
+
+    const commentsByPost = new Map<string, FeedComment[]>();
+    rawComments.forEach((comment) => {
+      const enriched = enrichedById.get(comment.id);
+      if (!enriched) return;
+      const isReply =
+        comment.parent_comment_id != null &&
+        enrichedById.has(comment.parent_comment_id);
+      if (isReply) return;
+      const existing = commentsByPost.get(comment.post_id) || [];
+      existing.push(enriched);
+      commentsByPost.set(comment.post_id, existing);
+    });
+    rawComments.forEach((comment) => {
+      if (comment.parent_comment_id == null) return;
+      const enriched = enrichedById.get(comment.id);
+      const parent = enrichedById.get(comment.parent_comment_id);
+      if (!enriched || !parent) return;
+      parent.replies.push(enriched);
+      parent.replyCount = parent.replies.length;
+    });
+
+    const uniqueFeedEventIds = [
+      ...new Set(
+        Array.from(eventIdByPostId.values()).filter((id): id is string => Boolean(id)),
+      ),
+    ];
+
+    const eventSnapshotById = new Map<string, FeedEventSnapshot>();
+    const eventAttCounts = new Map<string, { interested: number; going: number }>();
+    const eventMyAttendance = new Map<string, "interested" | "going" | null>();
+    const savedFeedEventIds = new Set<string>();
+
+    if (uniqueFeedEventIds.length > 0) {
+      const eventsResult = await supabase
+        .from("events")
+        .select("id, user_id, title, date, description, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, unit_id, visibility")
+        .in("id", uniqueFeedEventIds);
+      let eventRows: FeedEventSnapshot[] = [];
+      if (
+        eventsResult.error &&
+        (
+          isMissingColumnError(eventsResult.error, "image_url") ||
+          isMissingColumnError(eventsResult.error, "description") ||
+          isMissingColumnError(eventsResult.error, "location") ||
+          isMissingColumnError(eventsResult.error, "event_time") ||
+          isMissingColumnError(eventsResult.error, "poc_name") ||
+          isMissingColumnError(eventsResult.error, "poc_phone")
+        )
+      ) {
+        const fallback = await supabase
+          .from("events")
+          .select("id, user_id, title, date, organization, signup_url, unit_id, visibility")
+          .in("id", uniqueFeedEventIds);
+        if (fallback.error) {
+          console.error("Feed events load error:", fallback.error);
+        } else {
+          eventRows = ((fallback.data ?? []) as Array<{
+            id: string;
+            user_id: string;
+            title: string;
+            date: string;
+            organization: string | null;
+            signup_url: string | null;
+            unit_id?: string | null;
+            visibility?: string | null;
+          }>).map((row) => ({
+            ...row,
+            description: null as string | null,
+            image_url: null as string | null,
+            location: null as string | null,
+            event_time: null as string | null,
+            poc_name: null as string | null,
+            poc_phone: null as string | null,
+          }));
+        }
+      } else if (eventsResult.error) {
+        console.error("Feed events load error:", eventsResult.error);
+      } else {
+        eventRows = (eventsResult.data ?? []) as FeedEventSnapshot[];
+      }
+      eventRows.forEach((e) => {
+        eventSnapshotById.set(e.id, e);
+      });
+
+      const { data: attRows, error: attErr } = await supabase
+        .from("event_attendance")
+        .select("event_id, user_id, status")
+        .in("event_id", uniqueFeedEventIds);
+      if (attErr) {
+        console.error("Feed event attendance load error:", attErr);
+      } else {
+        ((attRows ?? []) as { event_id: string; user_id: string; status: "interested" | "going" }[]).forEach((r) => {
+          const cur = eventAttCounts.get(r.event_id) ?? { interested: 0, going: 0 };
+          cur[r.status]++;
+          eventAttCounts.set(r.event_id, cur);
+          if (effectiveUserId && r.user_id === effectiveUserId) {
+            eventMyAttendance.set(r.event_id, r.status);
+          }
+        });
+      }
+
+      if (effectiveUserId) {
+        const { data: savedEv, error: savedErr } = await supabase
+          .from("saved_events")
+          .select("event_id")
+          .eq("user_id", effectiveUserId)
+          .in("event_id", uniqueFeedEventIds);
+        if (savedErr) {
+          console.error("Feed saved events load error:", savedErr);
+        } else {
+          ((savedEv ?? []) as { event_id: string }[]).forEach((r) => savedFeedEventIds.add(r.event_id));
+        }
+      }
+    }
+
+    const kcBundleByPostId = new Map<string, FeedKangarooBundle>();
+    const kcDebug =
+      typeof window !== "undefined" && window.localStorage?.getItem("eod_debug_kc") === "1";
+    const kcViewerId = effectiveUserId;
+
+    if (postIds.length > 0) {
+      const { data: courtsRaw, error: courtsErr } = await supabase
+        .from("kangaroo_courts")
+        .select(
+          "id, feed_post_id, unit_post_id, unit_id, opened_by, status, duration_hours, expires_at, closed_at, winning_option_id, total_votes, source, created_at",
+        )
+        .in("feed_post_id", postIds);
+
+      if (courtsErr) {
+        console.error("[KC] Phase A kangaroo_courts failed:", courtsErr.message, courtsErr);
+      } else if (kcDebug) {
+        console.info("[KC] courts rows:", (courtsRaw ?? []).length, courtsRaw);
+      }
+
+      const courtsList = (courtsRaw ?? []) as KangarooCourtRow[];
+      if (!courtsErr && courtsList.length > 0) {
+        const byPost = new Map<string, KangarooCourtRow[]>();
+        for (const c of courtsList) {
+          if (!c.feed_post_id) continue;
+          const arr = byPost.get(c.feed_post_id) ?? [];
+          arr.push(c);
+          byPost.set(c.feed_post_id, arr);
+        }
+
+        const courtIds = courtsList.map((c) => c.id);
+
+        const optsRes = await supabase
+          .from("kangaroo_court_options")
+          .select("id, court_id, label, sort_order")
+          .in("court_id", courtIds)
+          .order("sort_order", { ascending: true });
+        const verdictsRes = await supabase
+          .from("kangaroo_court_verdicts")
+          .select("id, court_id, winning_option_id, winning_label_snapshot, total_votes, body, created_at")
+          .in("court_id", courtIds);
+        const voteTotalsRes = await supabase.rpc("kangaroo_court_vote_totals", {
+          p_court_ids: courtIds,
+        });
+        const myVoteRes = kcViewerId
+          ? await supabase
+              .from("kangaroo_court_votes")
+              .select("court_id, option_id")
+              .in("court_id", courtIds)
+              .eq("user_id", kcViewerId)
+          : { data: [] as { court_id: string; option_id: string }[], error: null };
+
+        if (optsRes.error) {
+          console.error("[KC] Phase A kangaroo_court_options failed:", optsRes.error.message, optsRes.error);
+        }
+        if (verdictsRes.error) {
+          console.error("[KC] Phase A kangaroo_court_verdicts failed:", verdictsRes.error.message, verdictsRes.error);
+        }
+        if (voteTotalsRes.error) {
+          console.error("[KC] Phase A kangaroo_court_vote_totals failed:", voteTotalsRes.error.message, voteTotalsRes.error);
+        }
+        if (myVoteRes.error) {
+          console.error("[KC] Phase B kangaroo_court_votes (mine) failed:", myVoteRes.error.message, myVoteRes.error);
+        }
+
+        if (!optsRes.error) {
+          const optsByCourt = new Map<string, KangarooCourtOptionRow[]>();
+          for (const o of (optsRes.data ?? []) as KangarooCourtOptionRow[]) {
+            const arr = optsByCourt.get(o.court_id) ?? [];
+            arr.push(o);
+            optsByCourt.set(o.court_id, arr);
+          }
+
+          const verdictByCourt = new Map<string, KangarooCourtVerdictRow>();
+          if (!verdictsRes.error) {
+            for (const v of (verdictsRes.data ?? []) as KangarooCourtVerdictRow[]) {
+              verdictByCourt.set(v.court_id, v);
+            }
+          }
+
+          const voteCountsByCourt = voteTotalsRes.error
+            ? new Map<string, Record<string, number>>()
+            : voteCountsByCourtFromTotals((voteTotalsRes.data ?? []) as KangarooCourtVoteTotalRow[]);
+          const myVoteByCourtId = new Map<string, string>();
+          if (!myVoteRes.error) {
+            for (const v of (myVoteRes.data ?? []) as { court_id: string; option_id: string }[]) {
+              myVoteByCourtId.set(v.court_id, v.option_id);
+            }
+          }
+
+          for (const [, courtArr] of byPost) {
+            courtArr.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+            const court = courtArr[0];
+            const postKey = court.feed_post_id;
+            if (!postKey) continue;
+
+            const opts = optsByCourt.get(court.id) ?? [];
+            const verdict = verdictByCourt.get(court.id) ?? null;
+            const voteCounts = voteCountsByCourt.get(court.id) ?? {};
+            const myVoteOptionId: string | null = myVoteByCourtId.get(court.id) ?? null;
+
+            kcBundleByPostId.set(postKey, {
+              court,
+              options: opts,
+              verdict,
+              myVoteOptionId,
+              voteCounts,
+            });
+          }
+        }
+      }
+    }
+
+    const mergedPosts: FeedPost[] = rawPosts.map((post) => {
+      const agg = aggregatesMap.get(post.id) ?? emptyAggregate();
+      const likesForPost = agg.userIds;
+      const seenLiker = new Set<string>();
+      const orderedLikerIds = likesForPost.filter((uid) => {
+        if (seenLiker.has(uid)) return false;
+        seenLiker.add(uid);
+        return true;
+      });
+      const likers: PostLikerBrief[] = orderedLikerIds.map((uid) => ({
+        userId: uid,
+        name: profileNameMap.get(uid) || "User",
+        photoUrl: profilePhotoMap.get(uid) ?? null,
+        service: profileServiceMap.get(uid) ?? null,
+        isEmployer: profileEmployerMap.get(uid) ?? null,
+      }));
+      const commentsForPost = commentsByPost.get(post.id) || [];
+      const multiImages = multiPostImageMap.get(post.id) || [];
+      const legacyImage = legacyPostImageMap.get(post.id) ?? null;
+      const gifUrl = postGifMap.get(post.id) ?? null;
+      const ogData = postOgMap.get(post.id);
+      const postMeta = postMetaMap.get(post.id);
+
+      const eid = eventIdByPostId.get(post.id) ?? null;
+      const feedEvent = eid ? eventSnapshotById.get(eid) ?? null : null;
+      const ac = eid ? eventAttCounts.get(eid) ?? { interested: 0, going: 0 } : { interested: 0, going: 0 };
+      const myEvAtt = eid ? eventMyAttendance.get(eid) ?? null : null;
+      const evSaved = Boolean(eid && effectiveUserId && savedFeedEventIds.has(eid));
+      const authorUserId = postAsUserIdByPostId.get(post.id) ?? post.user_id;
+
+      return {
+        ...post,
+        post_as_user_id: postAsUserIdByPostId.get(post.id) ?? null,
+        image_url: legacyImage,
+        image_urls: multiImages.length > 0 ? multiImages : legacyImage ? [legacyImage] : [],
+        gif_url: gifUrl,
+        content_type: postMeta?.content_type ?? "user_post",
+        system_generated: postMeta?.system_generated ?? false,
+        news_item_id: postMeta?.news_item_id ?? null,
+        authorUserId,
+        authorName: profileNameMap.get(authorUserId) || "User",
+        authorPhotoUrl: profilePhotoMap.get(authorUserId) || null,
+        authorService: profileServiceMap.get(authorUserId) ?? null,
+        authorIsEmployer: profileEmployerMap.get(authorUserId) ?? null,
+        authorIsPureAdmin: profilePureAdminMap.get(authorUserId) ?? null,
+        authorHasPublicMemberProfile: profilePublicMemberMap.get(authorUserId) ?? true,
+        likeCount: agg.totalCount,
+        commentCount: commentsForPost.reduce((sum, c) => sum + 1 + c.replyCount, 0),
+        myReaction: agg.myReaction,
+        reactionCountsByType: agg.countsByType,
+        reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(
+          reactionRows,
+          post.id,
+          profileNameMap,
+        ),
+        likers,
+        comments: commentsForPost,
+        og_url: ogData?.og_url ?? null,
+        og_title: ogData?.og_title ?? null,
+        og_description: ogData?.og_description ?? null,
+        og_image: ogData?.og_image ?? null,
+        admin_manual_image_url: postMeta?.news_item_id
+          ? newsManualImageById.get(postMeta.news_item_id) ?? null
+          : null,
+        og_site_name: ogData?.og_site_name ?? null,
+        event_id: eid,
+        feed_event: feedEvent,
+        event_interested_count: ac.interested,
+        event_going_count: ac.going,
+        event_my_attendance: myEvAtt,
+        event_saved: evSaved,
+        kangaroo: kcBundleByPostId.get(post.id) ?? null,
+        court_verdict_at: verdictAtByPostId.get(post.id) ?? null,
+        rabbithole_thread_id: rabbitholeThreadIdByPostId.get(post.id) ?? null,
+        rabbithole_contribution_id: rabbitholeContributionIdByPostId.get(post.id) ?? null,
+        isInteractionHydrating: false,
+      };
+    });
+
+    const authorAffinityBoost = new Map<string, number>();
+    if (effectiveUserId) {
+      const affinityResult = await supabase
+        .from("profile_connections")
+        .select("requester_user_id, target_user_id, requester_worked_with_target, target_worked_with_requester")
+        .eq("status", "accepted")
+        .or(`requester_user_id.eq.${effectiveUserId},target_user_id.eq.${effectiveUserId}`);
+      const acceptedConnections = affinityResult.error &&
+        String(affinityResult.error.message ?? "").toLowerCase().includes("requester_worked_with_target")
+        ? await supabase
+          .from("profile_connections")
+          .select("requester_user_id, target_user_id, worked_with")
+          .eq("status", "accepted")
+          .or(`requester_user_id.eq.${effectiveUserId},target_user_id.eq.${effectiveUserId}`)
+        : affinityResult;
+      ((acceptedConnections.data ?? []) as {
+        requester_user_id: string;
+        target_user_id: string;
+        worked_with?: boolean | null;
+        requester_worked_with_target?: boolean | null;
+        target_worked_with_requester?: boolean | null;
+      }[]).forEach((row) => {
+        const otherId =
+          row.requester_user_id === effectiveUserId
+            ? row.target_user_id
+            : row.requester_user_id;
+        const viewerWorkedWithAuthor = row.requester_user_id === effectiveUserId
+          ? row.requester_worked_with_target === true
+          : row.target_worked_with_requester === true;
+        authorAffinityBoost.set(otherId, viewerWorkedWithAuthor || row.worked_with === true ? 1.45 : 1.25);
+      });
+    }
+
+    const feedSortOpts = { nowMs: Date.now(), authorAffinityBoost };
+    mergedPosts.sort((a, b) => compareFeedPosts(a, b, feedSortOpts));
+
+    setPosts(mergedPosts);
+    logPerf("home.loadPosts.interactionHydrate", perfStart, {
+      renderedCount: mergedPosts.length,
+      postIdsCount: postIds.length,
+    });
   }
 
   async function loadPosts(
@@ -3021,17 +3643,16 @@ export default function HomePage() {
         return;
       }
 
-      await loadInitialFeedBatch(rawPosts, effectiveUserId, perfStart);
+      const initialCache = await loadInitialFeedBatch(rawPosts, effectiveUserId, perfStart);
 
       if (feedHydrationTimerRef.current) {
         window.clearTimeout(feedHydrationTimerRef.current);
       }
       feedHydrationTimerRef.current = window.setTimeout(() => {
         feedHydrationTimerRef.current = null;
-        void loadPosts(effectiveUserId, {
-          forceFullHydration: true,
-          limit: INITIAL_FEED_POST_LIMIT,
-        }).catch((err) => console.error("loadPosts background hydration failed:", err));
+        void hydrateFromInitialCache(initialCache, effectiveUserId).catch((err) =>
+          console.error("Feed interaction hydration failed:", err),
+        );
       }, FULL_FEED_HYDRATION_DELAY_MS);
       return;
     }
