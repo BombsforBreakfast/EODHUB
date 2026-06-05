@@ -156,6 +156,7 @@ import {
   fetchViewerProfileCached,
   invalidateViewerProfile,
 } from "../lib/queries/viewerProfile";
+import { fetchFeedPostEnrichment } from "../lib/queries/feedPostEnrichment";
 import {
   dismissPlankHolderModal,
   fetchPlankHolderProgress,
@@ -2938,7 +2939,7 @@ export default function HomePage() {
 
     const postIds = rawPosts.map((post) => post.id);
 
-    const [legacyWithEvent, postAsRes] = await Promise.all([
+    const [legacyWithEvent, postAsRes, enrichment] = await Promise.all([
       supabase
         .from("posts")
         .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id")
@@ -2947,6 +2948,7 @@ export default function HomePage() {
         .from("posts")
         .select("id, post_as_user_id")
         .in("id", postIds),
+      fetchFeedPostEnrichment(supabase, postIds),
     ]);
 
     const postAsUserIdByPostId = new Map<string, string | null>();
@@ -3014,17 +3016,6 @@ export default function HomePage() {
       } else {
         console.error("Legacy post image load error:", legacyWithEvent.error);
       }
-    }
-
-    const { data: postImagesData, error: postImagesError } = await supabase
-      .from("post_images")
-      .select("id, post_id, image_url, sort_order")
-      .in("post_id", postIds)
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
-
-    if (postImagesError) {
-      console.error("Post images load error:", postImagesError);
     }
 
     const legacyPostImageMap = new Map<string, string | null>();
@@ -3119,34 +3110,57 @@ export default function HomePage() {
       }
     }
 
-    const multiPostImageMap = new Map<string, string[]>();
-    ((postImagesData ?? []) as PostImageRow[]).forEach((row) => {
-      const existing = multiPostImageMap.get(row.post_id) || [];
-      existing.push(row.image_url);
-      multiPostImageMap.set(row.post_id, existing);
-    });
+    const multiPostImageMap = enrichment?.multiPostImageMap ?? new Map<string, string[]>();
+    if (!enrichment) {
+      const { data: postImagesData, error: postImagesError } = await supabase
+        .from("post_images")
+        .select("id, post_id, image_url, sort_order")
+        .in("post_id", postIds)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+
+      if (postImagesError) {
+        console.error("Post images load error:", postImagesError);
+      }
+
+      ((postImagesData ?? []) as PostImageRow[]).forEach((row) => {
+        const existing = multiPostImageMap.get(row.post_id) || [];
+        existing.push(row.image_url);
+        multiPostImageMap.set(row.post_id, existing);
+      });
+    }
 
     let reactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
-    try {
-      reactionRows = await fetchContentReactionsForSubjects(supabase, "post", postIds);
-    } catch (reactionsErr) {
-      console.error("Reactions load error:", reactionsErr);
+    if (enrichment) {
+      reactionRows = enrichment.postReactionRows;
+    } else {
+      try {
+        reactionRows = await fetchContentReactionsForSubjects(supabase, "post", postIds);
+      } catch (reactionsErr) {
+        console.error("Reactions load error:", reactionsErr);
+      }
     }
 
     const aggregatesMap = aggregatesBySubjectId(reactionRows, effectiveUserId);
 
-    const { comments: rawComments } = await loadCommentsForPosts(postIds);
+    const rawComments: Comment[] = enrichment
+      ? enrichment.comments
+      : (await loadCommentsForPosts(postIds)).comments;
 
     const commentIds = rawComments.map((comment) => comment.id);
 
     let commentReactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
-    try {
-      commentReactionRows =
-        commentIds.length > 0
-          ? await fetchContentReactionsForSubjects(supabase, "post_comment", commentIds)
-          : [];
-    } catch (commentReactionsErr) {
-      console.error("Comment reactions load error:", commentReactionsErr);
+    if (enrichment) {
+      commentReactionRows = enrichment.commentReactionRows;
+    } else {
+      try {
+        commentReactionRows =
+          commentIds.length > 0
+            ? await fetchContentReactionsForSubjects(supabase, "post_comment", commentIds)
+            : [];
+      } catch (commentReactionsErr) {
+        console.error("Comment reactions load error:", commentReactionsErr);
+      }
     }
 
     const commentAggregatesMap = aggregatesBySubjectId(commentReactionRows, effectiveUserId);
