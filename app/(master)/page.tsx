@@ -307,7 +307,8 @@ const PERF_DEBUG = process.env.NODE_ENV !== "production";
 const INITIAL_FEED_POST_LIMIT = 5;
 const FEED_AUTO_LOAD_LIMIT = 10;
 const FEED_LOAD_MORE_INCREMENT = 10;
-const INITIAL_RANKED_POSTS_LIMIT = 60;
+/** Ranked rows to prefetch before wall/moderation filters; keep small — only 5 render on first paint. */
+const INITIAL_RANKED_POSTS_LIMIT = INITIAL_FEED_POST_LIMIT + 10;
 const FULL_FEED_HYDRATION_DELAY_MS = 400;
 const FEED_REALTIME_DEBOUNCE_MS = 2000;
 const FEED_QUERY_BUFFER = 20;
@@ -2563,13 +2564,7 @@ export default function HomePage() {
     const initialPosts = rawPosts.slice(0, INITIAL_FEED_POST_LIMIT);
     const postIds = initialPosts.map((post) => post.id);
 
-    const [
-      legacyWithEvent,
-      postAsRes,
-      postImagesRes,
-      reactionRowsResult,
-      commentCountResult,
-    ] = await Promise.all([
+    const [legacyWithEvent, postAsRes, enrichment] = await Promise.all([
       supabase
         .from("posts")
         .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id, court_verdict_at, rabbithole_thread_id, rabbithole_contribution_id")
@@ -2578,39 +2573,7 @@ export default function HomePage() {
         .from("posts")
         .select("id, post_as_user_id")
         .in("id", postIds),
-      supabase
-        .from("post_images")
-        .select("id, post_id, image_url, sort_order")
-        .in("post_id", postIds)
-        .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: true }),
-      fetchContentReactionsForSubjects(supabase, "post", postIds).catch((error) => {
-        console.error("Initial reactions load error:", error);
-        return [] as { subject_id: string; user_id: string; reaction_type: string }[];
-      }),
-      supabase
-        .from("post_comments")
-        .select("post_id, parent_comment_id")
-        .in("post_id", postIds)
-        .or("hidden_for_review.is.null,hidden_for_review.eq.false")
-        .then(async (result) => {
-          if (!result.error || !isMissingColumnError(result.error, "hidden_for_review")) return result;
-          return supabase
-            .from("post_comments")
-            .select("post_id, parent_comment_id")
-            .in("post_id", postIds);
-        })
-        .then(async (result) => {
-          if (!result.error || !isMissingColumnError(result.error, "parent_comment_id")) return result;
-          const fallback = await supabase
-            .from("post_comments")
-            .select("post_id")
-            .in("post_id", postIds);
-          return {
-            ...fallback,
-            data: (fallback.data ?? []).map((row) => ({ ...row, parent_comment_id: null })),
-          };
-        }),
+      fetchFeedPostEnrichment(supabase, postIds),
     ]);
 
     const postAsUserIdByPostId = new Map<string, string | null>();
@@ -2633,12 +2596,6 @@ export default function HomePage() {
 
     if (legacyWithEvent.error) {
       console.error("Initial post media load error:", legacyWithEvent.error);
-    }
-    if (postImagesRes.error) {
-      console.error("Initial post images load error:", postImagesRes.error);
-    }
-    if (commentCountResult.error) {
-      console.error("Initial comment count load error:", commentCountResult.error);
     }
     if (profileRes.error) {
       console.error("Initial profile load error:", profileRes.error);
@@ -2678,19 +2635,71 @@ export default function HomePage() {
       rabbitholeContributionIdByPostId.set(row.id, row.rabbithole_contribution_id ?? null);
     });
 
-    const multiPostImageMap = new Map<string, string[]>();
-    ((postImagesRes.data ?? []) as PostImageRow[]).forEach((row) => {
-      const existing = multiPostImageMap.get(row.post_id) || [];
-      existing.push(row.image_url);
-      multiPostImageMap.set(row.post_id, existing);
-    });
+    const multiPostImageMap = enrichment?.multiPostImageMap ?? new Map<string, string[]>();
+    if (!enrichment) {
+      const { data: postImagesData, error: postImagesError } = await supabase
+        .from("post_images")
+        .select("id, post_id, image_url, sort_order")
+        .in("post_id", postIds)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+      if (postImagesError) {
+        console.error("Initial post images load error:", postImagesError);
+      }
+      ((postImagesData ?? []) as PostImageRow[]).forEach((row) => {
+        const existing = multiPostImageMap.get(row.post_id) || [];
+        existing.push(row.image_url);
+        multiPostImageMap.set(row.post_id, existing);
+      });
+    }
 
-    const reactionRows = reactionRowsResult as { subject_id: string; user_id: string; reaction_type: string }[];
+    let reactionRows: { subject_id: string; user_id: string; reaction_type: string }[] = [];
+    if (enrichment) {
+      reactionRows = enrichment.postReactionRows;
+    } else {
+      try {
+        reactionRows = await fetchContentReactionsForSubjects(supabase, "post", postIds);
+      } catch (error) {
+        console.error("Initial reactions load error:", error);
+      }
+    }
     const aggregatesMap = aggregatesBySubjectId(reactionRows, effectiveUserId);
     const commentCountMap = new Map<string, number>();
-    ((commentCountResult.data ?? []) as { post_id: string; parent_comment_id?: string | null }[]).forEach((comment) => {
-      commentCountMap.set(comment.post_id, (commentCountMap.get(comment.post_id) ?? 0) + 1);
-    });
+    if (enrichment) {
+      enrichment.comments.forEach((comment) => {
+        commentCountMap.set(comment.post_id, (commentCountMap.get(comment.post_id) ?? 0) + 1);
+      });
+    } else {
+      const commentCountResult = await supabase
+        .from("post_comments")
+        .select("post_id, parent_comment_id")
+        .in("post_id", postIds)
+        .or("hidden_for_review.is.null,hidden_for_review.eq.false")
+        .then(async (result) => {
+          if (!result.error || !isMissingColumnError(result.error, "hidden_for_review")) return result;
+          return supabase
+            .from("post_comments")
+            .select("post_id, parent_comment_id")
+            .in("post_id", postIds);
+        })
+        .then(async (result) => {
+          if (!result.error || !isMissingColumnError(result.error, "parent_comment_id")) return result;
+          const fallback = await supabase
+            .from("post_comments")
+            .select("post_id")
+            .in("post_id", postIds);
+          return {
+            ...fallback,
+            data: (fallback.data ?? []).map((row) => ({ ...row, parent_comment_id: null })),
+          };
+        });
+      if (commentCountResult.error) {
+        console.error("Initial comment count load error:", commentCountResult.error);
+      }
+      ((commentCountResult.data ?? []) as { post_id: string; parent_comment_id?: string | null }[]).forEach((comment) => {
+        commentCountMap.set(comment.post_id, (commentCountMap.get(comment.post_id) ?? 0) + 1);
+      });
+    }
 
     const profileNameMap = new Map<string, string>();
     const profilePhotoMap = new Map<string, string | null>();
@@ -2716,6 +2725,15 @@ export default function HomePage() {
           is_pure_admin: profile.is_pure_admin,
         }),
       );
+    });
+
+    enrichment?.profiles.forEach((profile) => {
+      if (profileNameMap.has(profile.user_id)) return;
+      const fullName =
+        (profile.display_name?.trim() || null) ||
+        `${profile.first_name || ""} ${profile.last_name || ""}`.trim() ||
+        "User";
+      profileNameMap.set(profile.user_id, fullName);
     });
 
     const initialFeedPosts = initialPosts.map((post) => {
