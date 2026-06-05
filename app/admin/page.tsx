@@ -104,6 +104,22 @@ type BusinessOrgAdminPage = {
   linked_email_matches_account: boolean;
 };
 
+type BusinessOrgListedPage = {
+  id: string;
+  business_name: string;
+  description: string;
+  business_email: string;
+  linked_account_email: string;
+  logo_url: string;
+  website_url: string | null;
+  location: string | null;
+  page_type: string | null;
+  verification_status: string;
+  subscription_status: string;
+  is_active: boolean;
+  created_at: string;
+};
+
 type BusinessOrgAdminClaim = {
   id: string;
   business_listing_id: string;
@@ -726,6 +742,7 @@ export default function AdminPage() {
   const [bizClaimsPending, setBizClaimsPending] = useState<BizListingClaimPending[]>([]);
   const [bizManagerLabels, setBizManagerLabels] = useState<Record<string, string>>({});
   const [businessOrgPages, setBusinessOrgPages] = useState<BusinessOrgAdminPage[]>([]);
+  const [businessOrgListedPages, setBusinessOrgListedPages] = useState<BusinessOrgListedPage[]>([]);
   const [businessOrgClaims, setBusinessOrgClaims] = useState<BusinessOrgAdminClaim[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -1576,16 +1593,19 @@ export default function AdminPage() {
     });
     const json = (await res.json().catch(() => ({}))) as {
       pages?: BusinessOrgAdminPage[];
+      listedPages?: BusinessOrgListedPage[];
       claims?: BusinessOrgAdminClaim[];
       error?: string;
     };
     if (!res.ok) {
       console.error("loadBusinessOrgAdminQueues API error", res.status, json.error);
       setBusinessOrgPages([]);
+      setBusinessOrgListedPages([]);
       setBusinessOrgClaims([]);
       return;
     }
     setBusinessOrgPages(json.pages ?? []);
+    setBusinessOrgListedPages(json.listedPages ?? []);
     setBusinessOrgClaims(json.claims ?? []);
   }
 
@@ -3721,6 +3741,49 @@ export default function AdminPage() {
         {/* ── BUSINESS / ORG PAGES TAB ── */}
         {activeTab === "business_org_pages" && (
           <div style={{ marginTop: 20, display: "grid", gap: 18 }}>
+            <section style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 14, background: t.surface }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900 }}>Listed Business Pages</h2>
+                  <p style={{ margin: "6px 0 0", color: t.textMuted, fontSize: 13 }}>
+                    Approved, active pages shown on the public directory.
+                  </p>
+                </div>
+                <Link href="/business-org" style={{ color: "#2563eb", fontWeight: 800, fontSize: 13 }}>
+                  View public directory
+                </Link>
+              </div>
+              <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
+                {businessOrgListedPages.length === 0 ? (
+                  <div style={{ color: t.textFaint }}>No listed business pages yet.</div>
+                ) : (
+                  businessOrgListedPages.map((page) => (
+                    <article key={page.id} style={{ border: `1px solid ${t.border}`, borderRadius: 12, padding: 12, background: t.surface }}>
+                      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+                        <div style={{ width: 96, height: 62, borderRadius: 12, border: `1px solid ${t.border}`, background: t.surface, display: "grid", placeItems: "center", overflow: "hidden", flexShrink: 0 }}>
+                          <img src={page.logo_url} alt={`${page.business_name} logo`} style={{ width: "100%", height: "100%", objectFit: "contain" }} />
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontWeight: 900, color: t.text, fontSize: 16 }}>{page.business_name}</div>
+                          <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
+                            {[page.page_type, page.location, page.business_email].filter(Boolean).join(" · ")}
+                          </div>
+                          <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
+                            Billing: {page.subscription_status}
+                            {page.website_url ? ` · ${page.website_url}` : ""}
+                          </div>
+                        </div>
+                        <Link href={`/business-org/${page.id}`} style={{ ...actionBtn("#2563eb"), textDecoration: "none" }}>
+                          Open page
+                        </Link>
+                      </div>
+                      <p style={{ color: t.textMuted, lineHeight: 1.45, margin: "10px 0 0" }}>{page.description}</p>
+                    </article>
+                  ))
+                )}
+              </div>
+            </section>
+
             <section style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 14, background: t.surface }}>
               <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900 }}>Pending Business / Organization Pages</h2>
               <p style={{ margin: "6px 0 0", color: t.textMuted, fontSize: 13 }}>

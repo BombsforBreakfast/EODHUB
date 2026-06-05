@@ -35,12 +35,21 @@ export async function GET(req: NextRequest) {
   const auth = await authenticateAdmin(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [pagesRes, claimsRes] = await Promise.all([
+  const LISTED_PAGE_SELECT =
+    "id, business_name, description, business_email, linked_account_email, logo_url, website_url, location, page_type, verification_status, subscription_status, is_active, created_at";
+
+  const [pagesRes, listedPagesRes, claimsRes] = await Promise.all([
     auth.client
       .from("business_organization_pages")
       .select(BUSINESS_ORG_PAGE_SELECT)
       .in("verification_status", ["pending", "needs_revalidation"])
       .order("created_at", { ascending: false }),
+    auth.client
+      .from("business_organization_pages")
+      .select(LISTED_PAGE_SELECT)
+      .eq("verification_status", "approved")
+      .eq("is_active", true)
+      .order("business_name", { ascending: true }),
     auth.client
       .from("business_org_claim_requests")
       .select("id, business_listing_id, business_org_page_id, requested_by, status, created_at, business_listings(business_name, og_title, website_url), business_organization_pages(business_name, business_email, linked_account_email, logo_url)")
@@ -49,6 +58,7 @@ export async function GET(req: NextRequest) {
   ]);
 
   if (pagesRes.error) return NextResponse.json({ error: pagesRes.error.message }, { status: 500 });
+  if (listedPagesRes.error) return NextResponse.json({ error: listedPagesRes.error.message }, { status: 500 });
   if (claimsRes.error) return NextResponse.json({ error: claimsRes.error.message }, { status: 500 });
 
   const pages = await Promise.all(
@@ -65,6 +75,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     pages,
+    listedPages: listedPagesRes.data ?? [],
     claims: claimsRes.data ?? [],
   });
 }
