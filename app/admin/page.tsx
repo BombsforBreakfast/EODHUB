@@ -242,6 +242,7 @@ function userMatchesSearchQuery(u: UserProfile, query: string): boolean {
 type UsersFallbackQueryResult = {
   data: Array<Record<string, unknown>> | null;
   error: { message: string } | null;
+  count?: number | null;
 };
 
 type AdminGroup = {
@@ -739,14 +740,10 @@ export default function AdminPage() {
   const [resolvingStaleJobId, setResolvingStaleJobId] = useState<string | null>(null);
   const [userFilter, setUserFilter] = useState<UserStatusFilter>("pending");
   const [userSearch, setUserSearch] = useState("");
-
-  const filteredAdminUsers = useMemo(
-    () =>
-      users.filter(
-        (u) => userMatchesStatusFilter(u, userFilter) && userMatchesSearchQuery(u, userSearch),
-      ),
-    [users, userFilter, userSearch],
-  );
+  const [userSearchDebounced, setUserSearchDebounced] = useState("");
+  const [usersShowAll, setUsersShowAll] = useState(false);
+  const [usersTotalCount, setUsersTotalCount] = useState(0);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
@@ -1672,33 +1669,59 @@ export default function AdminPage() {
   }
 
   async function loadUsers() {
-    const { data: { session } } = await supabase.auth.getSession();
-    const res = await fetch("/api/admin/users?full=true", {
-      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
-    });
-    if (!res.ok) {
-      // Fallback: direct query (works if RLS allows admin to read all profiles)
-      let fallback = (await supabase
-        .from("profiles")
-        .select("user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
-        .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
-      if (fallback.error) {
-        fallback = (await supabase
-          .from("profiles")
-          .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
-          .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
+    const full = usersShowAll;
+    setUsersLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const params = new URLSearchParams();
+      params.set("status", userFilter);
+      if (userSearchDebounced.trim()) params.set("q", userSearchDebounced.trim());
+      if (full) {
+        params.set("full", "true");
+      } else {
+        params.set("limit", "50");
       }
-      if (fallback.error) {
-        fallback = (await supabase
+
+      const res = await fetch(`/api/admin/users?${params.toString()}`, {
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      if (!res.ok) {
+        // Fallback: direct query (works if RLS allows admin to read all profiles)
+        let fallbackQuery = supabase
           .from("profiles")
-          .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at")
-          .order("created_at", { ascending: false })) as UsersFallbackQueryResult;
+          .select("user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at", { count: "exact" })
+          .order("created_at", { ascending: false });
+        if (!full) fallbackQuery = fallbackQuery.limit(50);
+        let fallback = (await fallbackQuery) as UsersFallbackQueryResult;
+        if (fallback.error) {
+          let narrowQuery = supabase
+            .from("profiles")
+            .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at", { count: "exact" })
+            .order("created_at", { ascending: false });
+          if (!full) narrowQuery = narrowQuery.limit(50);
+          fallback = (await narrowQuery) as UsersFallbackQueryResult;
+        }
+        if (!fallback.error) {
+          const rows = (fallback.data ?? []).map((u) => ({
+            ...u,
+            email: (u as { email?: string | null }).email ?? null,
+          })) as UserProfile[];
+          setUsers(rows);
+          setUsersTotalCount(fallback.count ?? rows.length);
+        }
+        return;
       }
-      if (!fallback.error) setUsers((fallback.data ?? []).map((u) => ({ ...u, email: (u as { email?: string | null }).email ?? null })) as UserProfile[]);
-      return;
+      const json = (await res.json()) as {
+        users?: UserProfile[];
+        totalCount?: number;
+        full?: boolean;
+      };
+      const rows = (json.users ?? []) as UserProfile[];
+      setUsers(rows);
+      setUsersTotalCount(json.totalCount ?? rows.length);
+    } finally {
+      setUsersLoading(false);
     }
-    const json = await res.json();
-    setUsers((json.users ?? []) as UserProfile[]);
   }
 
   async function loadGroups(search = groupSearch) {
@@ -1823,7 +1846,7 @@ export default function AdminPage() {
 
       setAuthorized(true);
       setAdminActorUserId(user.id);
-      await Promise.all([loadBusinesses(), loadBizClaims(), loadBusinessOrgAdminQueues(), loadJobs(), loadUsers(), loadFlags(), loadPendingCounts()]);
+      await Promise.all([loadBusinesses(), loadBizClaims(), loadBusinessOrgAdminQueues(), loadJobs(), loadFlags(), loadPendingCounts()]);
       setLoading(false);
     }
     init();
@@ -1840,7 +1863,6 @@ export default function AdminPage() {
       loadJobs();
       loadStaleFlags();
     }
-    if (activeTab === "users") loadUsers();
     if (activeTab === "groups") loadGroups();
     if (activeTab === "flags") loadFlags();
     if (activeTab === "events") {
@@ -1857,6 +1879,16 @@ export default function AdminPage() {
     if (activeTab === "waitlist") void loadWaitlist();
     if (activeTab === "lemon_lot") void loadLemonLot();
   }, [pendingOnly, activeTab, authorized, engagementRange, pageAnalyticsRange, newsFilter, bugsFilter]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setUserSearchDebounced(userSearch), 350);
+    return () => window.clearTimeout(timer);
+  }, [userSearch]);
+
+  useEffect(() => {
+    if (!authorized || activeTab !== "users") return;
+    void loadUsers();
+  }, [authorized, activeTab, userFilter, userSearchDebounced, usersShowAll]);
 
   useEffect(() => {
     if (!authorized) return;
@@ -4253,7 +4285,10 @@ export default function AdminPage() {
                 {(["all", "pending", "onboarding", "unverified", "verified", "denied"] as const).map((f) => (
                   <button
                     key={f}
-                    onClick={() => setUserFilter(f)}
+                    onClick={() => {
+                      setUserFilter(f);
+                      setUsersShowAll(false);
+                    }}
                     style={{
                       padding: "6px 14px", borderRadius: 20, fontSize: 13, fontWeight: 700, cursor: "pointer",
                       border: userFilter === f ? "none" : `1px solid ${t.border}`,
@@ -4263,9 +4298,13 @@ export default function AdminPage() {
                   >
                     {f === "onboarding" ? "Onboarding" : f === "unverified" ? "Unverified" : f.charAt(0).toUpperCase() + f.slice(1)}
                     {" "}
-                    <span style={{ opacity: 0.7 }}>
-                      ({users.filter((u) => userMatchesStatusFilter(u, f)).length})
-                    </span>
+                    {f === "pending" && userFilter !== f ? (
+                      <span style={{ opacity: 0.7 }}>({pendingCounts.users})</span>
+                    ) : userFilter === f ? (
+                      <span style={{ opacity: 0.7 }}>
+                        ({usersShowAll ? users.length : usersTotalCount || users.length})
+                      </span>
+                    ) : null}
                   </button>
                 ))}
               </div>
@@ -4273,7 +4312,10 @@ export default function AdminPage() {
                 <input
                   type="search"
                   value={userSearch}
-                  onChange={(e) => setUserSearch(e.target.value)}
+                  onChange={(e) => {
+                    setUserSearch(e.target.value);
+                    setUsersShowAll(false);
+                  }}
                   placeholder="Search name, email, service…"
                   aria-label="Search users"
                   style={{
@@ -4287,14 +4329,46 @@ export default function AdminPage() {
                   }}
                 />
                 {userSearch.trim() && (
-                  <button type="button" style={actionBtn("#6b7280")} onClick={() => setUserSearch("")}>
+                  <button
+                    type="button"
+                    style={actionBtn("#6b7280")}
+                    onClick={() => {
+                      setUserSearch("");
+                      setUsersShowAll(false);
+                    }}
+                  >
                     Clear
                   </button>
                 )}
-                <button type="button" onClick={() => void loadUsers()} style={actionBtn("#374151")}>↻ Refresh</button>
+                {!usersShowAll && usersTotalCount > users.length && (
+                  <button
+                    type="button"
+                    style={actionBtn("#1d4ed8")}
+                    onClick={() => setUsersShowAll(true)}
+                  >
+                    Show all ({usersTotalCount})
+                  </button>
+                )}
+                {usersShowAll && (
+                  <button
+                    type="button"
+                    style={actionBtn("#6b7280")}
+                    onClick={() => setUsersShowAll(false)}
+                  >
+                    Show first 50
+                  </button>
+                )}
+                <button type="button" onClick={() => void loadUsers()} style={actionBtn("#374151")} disabled={usersLoading}>
+                  {usersLoading ? "Loading…" : "↻ Refresh"}
+                </button>
               </div>
             </div>
-            {filteredAdminUsers.length === 0 && (
+            {!usersShowAll && users.length > 0 && usersTotalCount > users.length && (
+              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10 }}>
+                Showing {users.length} of {usersTotalCount} users in this filter. Use search or Show all for the full list.
+              </div>
+            )}
+            {users.length === 0 && !usersLoading && (
               <div
                 style={{
                   padding: 32,
@@ -4310,7 +4384,7 @@ export default function AdminPage() {
               </div>
             )}
             <div style={{ display: "grid", gap: 10 }}>
-              {filteredAdminUsers.map((u) => {
+              {users.map((u) => {
                 const name = adminUserDisplayName(u);
                 const isGrandfathered = isGrandfatheredSignupProfile(u);
                 const isIncompleteSignup = !!u.signup_incomplete || blocksSignupApproval(u);
