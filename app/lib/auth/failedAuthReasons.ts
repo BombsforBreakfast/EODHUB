@@ -132,7 +132,7 @@ export function classifyFailedLoginAttempt({
       severity: "low",
       adminCanOverride: false,
       displayReason:
-        "User entered the retired public beta access code (EODHUBBETA) as a password. The beta gate is closed; they should sign up with Google or create an account.",
+        "User entered the retired public beta access code (EODHUBBETA) in the login password field (helper modal shown; classic login/signup/onboarding unchanged).",
     };
   }
 

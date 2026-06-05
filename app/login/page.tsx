@@ -122,15 +122,12 @@ export default function LoginPage() {
     setHighlightSignupCta(false);
   }
 
-  function showBetaCodeAsPasswordHelper(
-    context: "login" | "signup" | "business_org",
-    emailForReport?: string,
-  ) {
+  function showBetaCodeAsPasswordHelper() {
     setBetaCodeHelperOpen(true);
     reportAuthFailure({
-      email: emailForReport ?? email,
+      email,
       failureReason: "BETA_CODE_AS_PASSWORD",
-      errorCode: `beta_code_as_password:${context}`,
+      errorCode: "beta_code_as_password:login",
       rawErrorMessage: "Retired public beta access code entered in password field.",
       sourceRoute: "/login",
     });
@@ -138,10 +135,6 @@ export default function LoginPage() {
 
   function closeBetaCodeAsPasswordHelper() {
     setBetaCodeHelperOpen(false);
-    setBusinessOrgPromptOpen(false);
-    setBusinessOrgEmailGateOpen(false);
-    clearEmailNotFoundGuidance();
-    setMode("login");
   }
 
   function guideToSignupAfterEmailNotFound() {
@@ -186,10 +179,6 @@ export default function LoginPage() {
 
   async function continueBusinessOrgWithOwnerPassword() {
     const ownerEmail = businessOrgEmail.trim().toLowerCase();
-    if (passwordContainsBetaAccessCode(businessOrgOwnerPassword)) {
-      showBetaCodeAsPasswordHelper("business_org", ownerEmail);
-      return;
-    }
     setBusinessOrgEmailStatus("authenticating");
     setBusinessOrgEmailMessage(null);
     try {
@@ -393,7 +382,7 @@ export default function LoginPage() {
     setLoginMessage(null);
     clearEmailNotFoundGuidance();
     if (passwordContainsBetaAccessCode(password)) {
-      showBetaCodeAsPasswordHelper("login");
+      showBetaCodeAsPasswordHelper();
       return;
     }
     try {
@@ -515,14 +504,6 @@ export default function LoginPage() {
     setSignupAwaitingEmail(false);
     setOauthExistsProviders(null);
     setOauthSetupSent(false);
-
-    if (
-      passwordContainsBetaAccessCode(password) ||
-      passwordContainsBetaAccessCode(confirmPassword)
-    ) {
-      showBetaCodeAsPasswordHelper("signup");
-      return;
-    }
 
     if (password !== confirmPassword) {
       setSignupError("Passwords do not match.");
@@ -1217,10 +1198,7 @@ export default function LoginPage() {
             >
               ×
             </button>
-            <h2 id="beta-code-helper-title" style={{ margin: 0, fontSize: 22, fontWeight: 900, paddingRight: 28 }}>
-              Beta access code retired
-            </h2>
-            <p style={{ margin: "12px 0 0", color: t.textMuted, lineHeight: 1.55 }}>
+            <p id="beta-code-helper-title" style={{ margin: 0, fontSize: 15, lineHeight: 1.55, color: t.text, paddingRight: 28 }}>
               {BETA_CODE_AS_PASSWORD_HELPER_MESSAGE}
             </p>
           </div>

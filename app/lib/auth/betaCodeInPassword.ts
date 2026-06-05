@@ -2,8 +2,9 @@
 const BETA_ACCESS_CODE_MARKER = "eodhubbeta";
 
 /**
- * True when the password field contains the retired public beta code
- * (EODHUBBETA), ignoring case and optional asterisks.
+ * True when a login password field contains the retired public beta code
+ * (EODHUBBETA), ignoring case and optional asterisks. Used only to show
+ * helper copy on /login — does not alter signup, onboarding, or beta gate flows.
  */
 export function passwordContainsBetaAccessCode(
   password: string | null | undefined,
