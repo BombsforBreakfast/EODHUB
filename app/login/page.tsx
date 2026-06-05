@@ -81,7 +81,8 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [forgotEmail, setForgotEmail] = useState("");
@@ -931,10 +932,11 @@ export default function LoginPage() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            showPassword={showPassword}
-            onToggleShow={() => setShowPassword((prev) => !prev)}
+            showPassword={showLoginPassword}
+            onToggleShow={() => setShowLoginPassword((prev) => !prev)}
             inputStyle={inputStyle}
             textMuted={t.textMuted}
+            autoComplete={mode === "login" ? "current-password" : "new-password"}
           />
 
           {mode === "signup" && (
@@ -942,11 +944,12 @@ export default function LoginPage() {
               placeholder="Confirm Password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              showPassword={showPassword}
-              onToggleShow={() => setShowPassword((prev) => !prev)}
+              showPassword={showConfirmPassword}
+              onToggleShow={() => setShowConfirmPassword((prev) => !prev)}
               inputStyle={inputStyle}
               textMuted={t.textMuted}
               borderColor={confirmPassword && confirmPassword !== password ? "#ef4444" : undefined}
+              autoComplete="new-password"
             />
           )}
 
@@ -1303,8 +1306,8 @@ export default function LoginPage() {
                       placeholder="Personal EOD-HUB password"
                       value={businessOrgOwnerPassword}
                       onChange={(e) => setBusinessOrgOwnerPassword(e.target.value)}
-                      showPassword={showPassword}
-                      onToggleShow={() => setShowPassword((prev) => !prev)}
+                      showPassword={showLoginPassword}
+                      onToggleShow={() => setShowLoginPassword((prev) => !prev)}
                       inputStyle={inputStyle}
                       textMuted={t.textMuted}
                       autoComplete="current-password"
@@ -1439,11 +1442,14 @@ function PasswordInput({
   borderColor?: string;
   autoComplete?: string;
 }) {
+  const inputType = showPassword ? "text" : "password";
+
   return (
     <div style={{ position: "relative" }}>
       <input
+        key={inputType}
         placeholder={placeholder}
-        type={showPassword ? "text" : "password"}
+        type={inputType}
         value={value}
         onChange={onChange}
         autoComplete={autoComplete}
@@ -1451,17 +1457,25 @@ function PasswordInput({
           ...inputStyle,
           paddingRight: 48,
           borderColor,
+          position: "relative",
+          zIndex: 0,
         }}
       />
       <button
         type="button"
+        tabIndex={-1}
         aria-label={showPassword ? "Hide password" : "Show password"}
-        onClick={onToggleShow}
+        aria-pressed={showPassword}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          onToggleShow();
+        }}
         style={{
           position: "absolute",
           right: 4,
           top: "50%",
           transform: "translateY(-50%)",
+          zIndex: 2,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
@@ -1472,6 +1486,7 @@ function PasswordInput({
           cursor: "pointer",
           color: textMuted,
           padding: 0,
+          touchAction: "manipulation",
         }}
       >
         {showPassword ? (
