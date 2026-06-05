@@ -486,7 +486,7 @@ export default function OnboardingPage() {
   }
 
   const inputStyle: React.CSSProperties = {
-    width: "100%", padding: "10px 14px", borderRadius: 10,
+    width: "100%", maxWidth: "100%", minWidth: 0, padding: "10px 14px", borderRadius: 10,
     border: "1px solid #d1d5db", fontSize: 16, boxSizing: "border-box",
     fontFamily: "inherit", color: "#111827", background: "#ffffff",
   };
@@ -507,8 +507,8 @@ export default function OnboardingPage() {
             ? "Google"
             : duplicateProviders.join(", ");
     return (
-      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
-        <div style={{ maxWidth: 420, width: "100%", textAlign: "center" }}>
+      <div className="onboarding-page-shell" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="onboarding-page-inner" style={{ maxWidth: 420, textAlign: "center" }}>
           <div style={{ fontSize: 40, marginBottom: 16 }}>👤</div>
           <div style={{ fontSize: 22, fontWeight: 900, marginBottom: 10 }}>Account already exists</div>
           <div style={{ fontSize: 15, color: "#1f2937", lineHeight: 1.6, marginBottom: 24 }}>
@@ -538,16 +538,10 @@ export default function OnboardingPage() {
     return (
       <>
         <div
-          style={{
-            minHeight: "100vh",
-            background: "#f9fafb",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 24,
-          }}
+          className="onboarding-page-shell"
+          style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
         >
-          <div style={{ textAlign: "center", maxWidth: 420 }}>
+          <div className="onboarding-page-inner" style={{ textAlign: "center", maxWidth: 420 }}>
             <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>EOD HUB</div>
             <p style={{ margin: "18px 0 0", fontSize: 16, color: "#1f2937", lineHeight: 1.55 }}>
               Finish member signup: review subscription details, then continue to verification.
@@ -564,8 +558,8 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: "#f9fafb", padding: "40px 20px" }}>
-      <div style={{ maxWidth: 520, margin: "0 auto" }}>
+    <div className="onboarding-page-shell">
+      <div className="onboarding-page-inner">
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, lineHeight: 1, color: "#111827" }}>EOD HUB</div>
@@ -574,7 +568,7 @@ export default function OnboardingPage() {
           </div>
         </div>
 
-        <div style={{ background: "white", borderRadius: 16, padding: "32px 28px", boxShadow: "0 2px 16px rgba(0,0,0,0.06)" }}>
+        <div className="onboarding-page-card">
           <h2 style={{ fontSize: 22, fontWeight: 900, margin: "0 0 6px", color: "#111827" }}>Set up your account</h2>
           <p style={{ fontSize: 14, color: "#1f2937", margin: "0 0 28px", lineHeight: 1.6 }}>
             Tell us who you are. Your account will be reviewed before access is granted.
@@ -633,7 +627,7 @@ export default function OnboardingPage() {
               </button>
             </div>
           ) : (
-            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} style={{ display: "grid", gap: 14 }}>
+            <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="onboarding-form">
 
               {/* Back to type selection */}
               <button
@@ -712,15 +706,15 @@ export default function OnboardingPage() {
                     {isMissing("field-member-status") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
 
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                    <div>
+                  <div className="onboarding-two-col">
+                    <div className="onboarding-field">
                       <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Skill Badge</label>
                       <select value={skillBadge} onChange={(e) => setSkillBadge(e.target.value)} style={selectStyle}>
                         <option value="">Select badge...</option>
                         {SKILL_BADGE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                       </select>
                     </div>
-                    <div>
+                    <div className="onboarding-field">
                       <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Years of Experience</label>
                       <select value={yearsExperience} onChange={(e) => setYearsExperience(e.target.value)} style={selectStyle}>
                         <option value="">Select years...</option>
@@ -736,7 +730,7 @@ export default function OnboardingPage() {
                     <div style={{ fontSize: 12, color: "#047857", fontWeight: 800, marginBottom: 10 }}>
                       *users who include a profile picture get vouched 50% faster.
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                    <div className="onboarding-photo-row">
                       {profilePhotoPreviewUrl && (
                         <img
                           src={profilePhotoPreviewUrl}
@@ -748,7 +742,7 @@ export default function OnboardingPage() {
                         type="file"
                         accept="image/*"
                         onChange={handleProfilePhotoPick}
-                        style={{ color: "#111827", fontSize: 13 }}
+                        className="onboarding-file-input"
                       />
                       {profilePhotoFile && (
                         <button
@@ -801,7 +795,7 @@ export default function OnboardingPage() {
                   id="field-legal-agreement"
                   style={isMissing("field-legal-agreement") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 10 } : undefined}
                 >
-                  <label style={{ display: "flex", alignItems: "flex-start", gap: 10, fontSize: 14, lineHeight: 1.55, cursor: "pointer", color: "#111827" }}>
+                  <label className="onboarding-legal-label" style={{ fontSize: 14, lineHeight: 1.55, color: "#111827" }}>
                     <input
                       type="checkbox"
                       checked={agreedLegal}
@@ -838,6 +832,7 @@ export default function OnboardingPage() {
               <button
                 type="submit"
                 disabled={submitting}
+                className="onboarding-submit-btn"
                 style={{
                   padding: "13px", borderRadius: 12, border: "none", background: "black",
                   color: "white", fontWeight: 700, fontSize: 15, cursor: submitting ? "not-allowed" : "pointer",
