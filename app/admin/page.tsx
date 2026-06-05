@@ -187,6 +187,8 @@ type UserProfile = {
   service: string | null;
   verification_status: string | null;
   email_verified?: boolean | null;
+  admin_verified?: boolean | null;
+  is_approved?: boolean | null;
   is_admin: boolean | null;
   is_employer: boolean | null;
   employer_verified: boolean | null;
@@ -1713,14 +1715,14 @@ export default function AdminPage() {
         // Fallback: direct query (works if RLS allows admin to read all profiles)
         let fallbackQuery = supabase
           .from("profiles")
-          .select("user_id, first_name, last_name, display_name, name, email, role, service, verification_status, is_admin, is_employer, employer_verified, created_at", { count: "exact" })
+          .select("user_id, first_name, last_name, display_name, name, email, role, service, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at", { count: "exact" })
           .order("created_at", { ascending: false });
         if (!full) fallbackQuery = fallbackQuery.limit(50);
         let fallback = (await fallbackQuery) as UsersFallbackQueryResult;
         if (fallback.error) {
           let narrowQuery = supabase
             .from("profiles")
-            .select("user_id, first_name, last_name, display_name, role, service, verification_status, is_admin, is_employer, employer_verified, created_at", { count: "exact" })
+            .select("user_id, first_name, last_name, display_name, role, service, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at", { count: "exact" })
             .order("created_at", { ascending: false });
           if (!full) narrowQuery = narrowQuery.limit(50);
           fallback = (await narrowQuery) as UsersFallbackQueryResult;

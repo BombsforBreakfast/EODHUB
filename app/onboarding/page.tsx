@@ -16,10 +16,12 @@ import {
 import { devAuthLog } from "../lib/auth/signupErrors";
 
 import {
+  hasFullLastName,
   MEMBER_SERVICE_OPTIONS,
   MEMBER_STATUS_OPTIONS,
   parseSignupFullName,
-  SIGNUP_FULL_NAME_REQUIRED_MESSAGE,
+  SIGNUP_LAST_NAME_REQUIRED_MESSAGE,
+  splitFullName,
 } from "../lib/profileCompleteness";
 import { ONBOARDING_REQUIRED_FIELDS_MESSAGE } from "../lib/onboardingGate";
 import { validateImagePick } from "../lib/uploadLimits";
@@ -42,7 +44,8 @@ export default function OnboardingPage() {
   const [checking, setChecking] = useState(true);
   const [duplicateProviders, setDuplicateProviders] = useState<string[] | null>(null);
   // Member fields
-  const [fullName, setFullName] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [service, setService] = useState("");
   const [status, setStatus] = useState("");
   const [skillBadge, setSkillBadge] = useState("");
@@ -108,6 +111,18 @@ export default function OnboardingPage() {
       setMissingFieldId(null);
       setShowRequiredHelper(false);
     }
+  }
+
+  function setNameFieldsFromFullName(name: string) {
+    const parsed = parseSignupFullName(name);
+    if (parsed) {
+      setFirstName(parsed.firstName);
+      setLastName(parsed.lastName);
+      return;
+    }
+    const split = splitFullName(name);
+    setFirstName(split.first_name);
+    setLastName(split.last_name);
   }
 
   const isMissing = (fieldId: string) => missingFieldId === fieldId;
@@ -213,7 +228,7 @@ export default function OnboardingPage() {
       // Pre-fill name from Google OAuth metadata
       const googleName = user.user_metadata?.full_name || user.user_metadata?.name;
       if (googleName) {
-        setFullName(String(googleName).trim());
+        setNameFieldsFromFullName(String(googleName).trim());
       }
 
       // Check for duplicate accounts sharing this email (e.g. Google + email/password)
@@ -256,7 +271,7 @@ export default function OnboardingPage() {
 
       if (profile?.must_complete_onboarding) {
         const prefilled = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim();
-        if (prefilled) setFullName(prefilled);
+        if (prefilled) setNameFieldsFromFullName(prefilled);
         const params = new URLSearchParams(window.location.search);
         if (params.get("notice") === "required" || params.get("error") === "incomplete") {
           setShowRequiredHelper(true);
@@ -314,9 +329,9 @@ export default function OnboardingPage() {
         .join(" ")
         .trim();
       if (profileFullName) {
-        setFullName(profileFullName);
+        setNameFieldsFromFullName(profileFullName);
       } else if (profile?.display_name?.trim()) {
-        setFullName(profile.display_name.trim());
+        setNameFieldsFromFullName(profile.display_name.trim());
       }
 
       // Pre-fill referral code from URL param or localStorage
@@ -358,7 +373,8 @@ export default function OnboardingPage() {
   async function handleSubmit() {
     if (!userId || !accountType) return;
 
-    if (!parseSignupFullName(fullName)) return markMissingField("field-full-name");
+    if (!firstName.trim()) return markMissingField("field-first-name");
+    if (!lastName.trim() || !hasFullLastName(lastName)) return markMissingField("field-last-name");
 
     if (accountType === "member") {
       if (!service) return markMissingField("field-member-service");
@@ -403,7 +419,8 @@ export default function OnboardingPage() {
         },
         body: JSON.stringify({
           accountType,
-          fullName: fullName.trim(),
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
           service,
           status,
           skillBadge,
@@ -643,26 +660,52 @@ export default function OnboardingPage() {
                 {accountType === "employer" ? "Employer Account" : "EOD Community Member"}
               </div>
 
-              <div
-                id="field-full-name"
-                style={isMissing("field-full-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
-              >
-                <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Full Name *</label>
-                <input
-                  value={fullName}
-                  onChange={(e) => {
-                    setFullName(e.target.value);
-                    if (parseSignupFullName(e.target.value)) clearMissingFieldIfMatch("field-full-name");
-                  }}
-                  style={inputStyle}
-                  placeholder="First and last name"
-                  autoComplete="name"
-                />
-                {isMissing("field-full-name") && (
-                  <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>
-                    {SIGNUP_FULL_NAME_REQUIRED_MESSAGE}
-                  </div>
-                )}
+              <div className="onboarding-two-col">
+                <div
+                  id="field-first-name"
+                  className="onboarding-field"
+                  style={isMissing("field-first-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                >
+                  <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>First Name *</label>
+                  <input
+                    value={firstName}
+                    onChange={(e) => {
+                      setFirstName(e.target.value);
+                      if (e.target.value.trim()) clearMissingFieldIfMatch("field-first-name");
+                    }}
+                    style={inputStyle}
+                    placeholder="First name"
+                    autoComplete="given-name"
+                  />
+                  {isMissing("field-first-name") && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>
+                      First name is required.
+                    </div>
+                  )}
+                </div>
+
+                <div
+                  id="field-last-name"
+                  className="onboarding-field"
+                  style={isMissing("field-last-name") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                >
+                  <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Last Name *</label>
+                  <input
+                    value={lastName}
+                    onChange={(e) => {
+                      setLastName(e.target.value);
+                      if (hasFullLastName(e.target.value)) clearMissingFieldIfMatch("field-last-name");
+                    }}
+                    style={inputStyle}
+                    placeholder="Last name"
+                    autoComplete="family-name"
+                  />
+                  {isMissing("field-last-name") && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>
+                      {lastName.trim() ? SIGNUP_LAST_NAME_REQUIRED_MESSAGE : "Last name is required."}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* MEMBER FORM */}

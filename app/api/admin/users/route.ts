@@ -20,9 +20,9 @@ const MAX_LIMIT = 100;
 const FULL_LIST_LIMIT = 5000;
 const PENDING_REVIEW_STATUSES = ["awaiting_admin_review", "pending_admin_review", "pending"];
 const PROFILE_SELECT_WITH_MIRRORS =
-  "user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
+  "user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
 const PROFILE_SELECT_BASE =
-  "user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
+  "user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
 
 type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "unverified" | "denied";
 
@@ -104,6 +104,10 @@ function isReadyForAdminVerify(row: Record<string, unknown>) {
     display_name: typeof row.display_name === "string" ? row.display_name : null,
     name: typeof row.name === "string" ? row.name : null,
     created_at: typeof row.created_at === "string" ? row.created_at : null,
+    verification_status: typeof row.verification_status === "string" ? row.verification_status : null,
+    email_verified: row.email_verified === true,
+    admin_verified: row.admin_verified === true,
+    is_approved: row.is_approved === true,
     is_pure_admin: row.is_pure_admin === true,
   });
 }
@@ -341,6 +345,10 @@ export async function GET(req: NextRequest) {
       company_name: typeof row.company_name === "string" ? row.company_name : null,
       account_type: typeof row.account_type === "string" ? row.account_type : null,
       is_pure_admin: row.is_pure_admin === true,
+      verification_status: typeof row.verification_status === "string" ? row.verification_status : null,
+      email_verified: row.email_verified === true,
+      admin_verified: row.admin_verified === true,
+      is_approved: row.is_approved === true,
       created_at: typeof row.created_at === "string" ? row.created_at : null,
     };
 

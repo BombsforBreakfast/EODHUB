@@ -25,6 +25,10 @@ export const SIGNUP_PROFILE_ENFORCEMENT_START = "2026-05-28T00:00:00.000Z";
 export type SignupProfileFields = {
   is_pure_admin?: boolean | null;
   account_type?: string | null;
+  is_approved?: boolean | null;
+  admin_verified?: boolean | null;
+  email_verified?: boolean | null;
+  verification_status?: string | null;
   first_name?: string | null;
   last_name?: string | null;
   /** Mirrored OAuth / display label — may exist while first/last columns are empty. */
@@ -46,13 +50,21 @@ export function splitFullName(fullName: string): { first_name: string; last_name
 export const SIGNUP_FULL_NAME_REQUIRED_MESSAGE =
   "Please enter your first and last name.";
 
+export const SIGNUP_LAST_NAME_REQUIRED_MESSAGE =
+  "Please povide your full last name. This helps us verifiy your account and maintain the integrity of a trusted all EOD platform";
+
+export function hasFullLastName(lastName: string | null | undefined): boolean {
+  const lettersOnly = (lastName ?? "").trim().replace(/[^\p{L}]/gu, "");
+  return lettersOnly.length >= 2;
+}
+
 /** Split a single full-name field into first + last; null when last name is missing. */
 export function parseSignupFullName(fullName: string): {
   firstName: string;
   lastName: string;
 } | null {
   const parsed = splitFullName(fullName);
-  if (!parsed.first_name || !parsed.last_name) return null;
+  if (!parsed.first_name || !hasFullLastName(parsed.last_name)) return null;
   return { firstName: parsed.first_name, lastName: parsed.last_name };
 }
 
@@ -115,11 +127,18 @@ export function resolveSignupNames(profile: SignupProfileFields): {
 
 export function hasRequiredSignupNames(profile: SignupProfileFields): boolean {
   const { first_name, last_name } = resolveSignupNames(profile);
-  return !!(first_name && last_name);
+  return !!(first_name && hasFullLastName(last_name));
 }
 
 /** Legacy accounts keep existing access even when name/service fields are empty. */
 export function isGrandfatheredSignupProfile(profile: SignupProfileFields): boolean {
+  if (
+    profile.verification_status === "verified" ||
+    profile.admin_verified === true ||
+    profile.is_approved === true
+  ) {
+    return true;
+  }
   if (!profile.created_at) return true;
   return profile.created_at < SIGNUP_PROFILE_ENFORCEMENT_START;
 }
@@ -156,7 +175,7 @@ export function signupProfileMissingFields(profile: SignupProfileFields): string
   const { first_name, last_name } = resolveSignupNames(profile);
   const missing: string[] = [];
   if (!first_name) missing.push("first name");
-  if (!last_name) missing.push("last name");
+  if (!hasFullLastName(last_name)) missing.push("last name");
 
   if (isEmployerAccount(profile)) {
     if (!profile.company_name?.trim()) missing.push("company name");
@@ -175,6 +194,7 @@ export function validateMemberOnboardingInput(input: {
 }): string | null {
   if (!input.firstName.trim()) return "First name is required.";
   if (!input.lastName.trim()) return "Last name is required.";
+  if (!hasFullLastName(input.lastName)) return SIGNUP_LAST_NAME_REQUIRED_MESSAGE;
   if (!input.service.trim()) return "Service is required.";
   if (!(MEMBER_SERVICE_OPTIONS as readonly string[]).includes(input.service)) {
     return "Invalid service selection.";
@@ -193,6 +213,7 @@ export function validateEmployerOnboardingInput(input: {
 }): string | null {
   if (!input.firstName.trim()) return "First name is required.";
   if (!input.lastName.trim()) return "Last name is required.";
+  if (!hasFullLastName(input.lastName)) return SIGNUP_LAST_NAME_REQUIRED_MESSAGE;
   if (!input.companyName.trim()) return "Company name is required.";
   return null;
 }
