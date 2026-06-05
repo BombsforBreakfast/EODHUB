@@ -28,7 +28,10 @@ import {
 } from "../../../lib/postAsIdentity";
 import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
-import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload } from "../../../lib/prepareUploadFile";
+import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
+import { FeedMediaAttachment } from "../../../components/FeedMediaAttachment";
+import OptimizedAvatarImg from "../../../components/OptimizedAvatarImg";
+import { galleryImageDisplayUrl } from "../../../lib/storageImageUrl";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
 import { EMPLOYER_DOCUMENT_ACCEPT, FEED_ATTACHMENT_ACCEPT, inferEmployerDocumentContentType } from "../../../lib/uploadLimits";
 import {
@@ -2853,11 +2856,20 @@ export default function PublicProfilePage() {
     try {
       setUploadingGallery(true);
 
-      const filePath = `${currentUserId}/${Date.now()}-${file.name}`;
+      const prepared = await prepareImageUploadFile(file);
+      if (!prepared.ok) {
+        alert(prepared.error);
+        return;
+      }
+
+      const uploadFile = prepared.file;
+      const filePath = `${currentUserId}/${Date.now()}-gallery.jpg`;
 
       const { error: uploadError } = await supabase.storage
         .from("profile-gallery")
-        .upload(filePath, file);
+        .upload(filePath, uploadFile, {
+          contentType: uploadFile.type || "image/jpeg",
+        });
 
       if (uploadError) throw uploadError;
 
@@ -3678,7 +3690,7 @@ export default function PublicProfilePage() {
                   onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
                   style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
                 >
-                  <img src={photo.photo_url} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                  <img src={galleryImageDisplayUrl(photo.photo_url)} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                 </div>
                 {wallAsOwner && (
                   <div style={{ display: "flex", flexDirection: "row", gap: 6, alignItems: "stretch" }}>
@@ -3714,7 +3726,7 @@ export default function PublicProfilePage() {
                       onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
                       style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
                     >
-                      <img src={photo.photo_url} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      <img src={galleryImageDisplayUrl(photo.photo_url)} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     </div>
                     {wallAsOwner && (
                       <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
@@ -4108,7 +4120,7 @@ export default function PublicProfilePage() {
                       }}
                     >
                       <img
-                        src={photo.photo_url}
+                        src={galleryImageDisplayUrl(photo.photo_url)}
                         alt="Pinned photo"
                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />
@@ -4183,7 +4195,7 @@ export default function PublicProfilePage() {
                       }}
                     >
                       <img
-                        src={photo.photo_url}
+                        src={galleryImageDisplayUrl(photo.photo_url)}
                         alt="Gallery photo"
                         style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                       />
@@ -4283,7 +4295,13 @@ export default function PublicProfilePage() {
                     style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || wallAsOwner ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url
-                      ? <img src={profile.photo_url} alt={profileHeadlineName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      ? (
+                        <OptimizedAvatarImg
+                          photoUrl={profile.photo_url}
+                          displayName={profileHeadlineName}
+                          sizePx={profile.is_employer ? 160 : 76}
+                        />
+                      )
                       : profileAvatarInitial}
                     {wallAsOwner && (
                       <div
@@ -4609,7 +4627,11 @@ export default function PublicProfilePage() {
                     style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || wallAsOwner ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url ? (
-                      <img src={profile.photo_url} alt={profileHeadlineName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      <OptimizedAvatarImg
+                        photoUrl={profile.photo_url}
+                        displayName={profileHeadlineName}
+                        sizePx={profile.is_employer ? 160 : 120}
+                      />
                     ) : ("Photo")}
                     {wallAsOwner && (
                       <div
@@ -5542,7 +5564,7 @@ export default function PublicProfilePage() {
                         onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
                         style={{ width: "100%", aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
                       >
-                        <img src={photo.photo_url} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        <img src={galleryImageDisplayUrl(photo.photo_url)} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       </div>
                       {wallAsOwner && (
                         <div style={{ display: "flex", flexDirection: "row", gap: 6, alignItems: "stretch" }}>
@@ -5709,7 +5731,7 @@ export default function PublicProfilePage() {
                         onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); }}
                         style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer" }}
                       >
-                        <img src={photo.photo_url} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                        <img src={galleryImageDisplayUrl(photo.photo_url)} alt="Gallery" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                       </div>
                       {wallAsOwner && (
                         <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
@@ -5796,7 +5818,7 @@ export default function PublicProfilePage() {
                     {pinnedPhotos.map((photo) => (
                       <div key={photo.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                         <div onClick={() => { setLightboxPhoto(photo); setPhotoCommentInput(""); setShowAllModal(null); }} style={{ aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", cursor: "pointer", background: t.bg }}>
-                          <img src={photo.photo_url} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          <img src={galleryImageDisplayUrl(photo.photo_url)} alt="Pinned" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                         </div>
                       </div>
                     ))}
@@ -6023,9 +6045,13 @@ export default function PublicProfilePage() {
                       const postAuthorProfileId = post.post_as_user_id ?? post.user_id;
                       const avatar = (
                         <div style={{ width: 42, height: 42, borderRadius: "50%", overflow: "hidden", background: t.bg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, fontSize: 14, boxSizing: "border-box", border: getServiceRingColor(postAuthorService) ? `3px solid ${getServiceRingColor(postAuthorService)}` : undefined }}>
-                          {postAuthorPhoto
-                            ? <img src={postAuthorPhoto} alt={postAuthorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                            : postAuthorName[0]?.toUpperCase()}
+                          {postAuthorPhoto ? (
+                            <OptimizedAvatarImg
+                              photoUrl={postAuthorPhoto}
+                              displayName={postAuthorName}
+                              sizePx={42}
+                            />
+                          ) : postAuthorName[0]?.toUpperCase()}
                         </div>
                       );
                       return (
@@ -6168,20 +6194,11 @@ export default function PublicProfilePage() {
                         <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: visible.length === 1 ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 8, maxWidth: 420 }}>
                           {visible.map((url, i) => (
                             <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
-                              {isVideoUrl(url) ? (
-                                <>
-                                  <video src={url} preload="metadata" muted playsInline style={feedContainedImageStyle} />
-                                  {!(i === 2 && remaining > 0) && (
-                                    <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                                      <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                        <Play size={16} color="white" fill="white" />
-                                      </div>
-                                    </div>
-                                  )}
-                                </>
-                              ) : (
-                                <img src={url} alt={`Post image ${i + 1}`} style={feedContainedImageStyle} />
-                              )}
+                              <FeedMediaAttachment
+                                url={url}
+                                alt={`Post image ${i + 1}`}
+                                style={feedContainedImageStyle}
+                              />
                               {i === 2 && remaining > 0 && (
                                 <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontSize: 24, fontWeight: 800 }}>
                                   +{remaining}

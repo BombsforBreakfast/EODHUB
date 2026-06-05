@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { getSupabaseSession, supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "./EodCrabLogo";
+import OptimizedAvatarImg from "./OptimizedAvatarImg";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
 import { isVerifiedRabbitholeViewer } from "../lib/rabbitholeAccess";
@@ -617,8 +618,11 @@ export default function NavBar() {
               textDecoration: "none",
             } as const;
             const inner = avatarPhotoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element -- user-uploaded profile photo URL
-              <img src={avatarPhotoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              <OptimizedAvatarImg
+                photoUrl={avatarPhotoUrl}
+                displayName={userInitial}
+                sizePx={81}
+              />
             ) : (
               userInitial
             );

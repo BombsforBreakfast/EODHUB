@@ -4,6 +4,7 @@ import Link from "next/link";
 import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "../lib/ThemeContext";
+import OptimizedAvatarImg from "./OptimizedAvatarImg";
 import { getServiceRingColor } from "../lib/serviceBranchVisual";
 
 export type PostLikerBrief = {
@@ -51,17 +52,7 @@ export function LikerAvatar({
       }}
     >
       {photoUrl ? (
-        <img
-          src={photoUrl}
-          alt={name}
-          style={{
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            display: "block",
-            padding: 0,
-          }}
-        />
+        <OptimizedAvatarImg photoUrl={photoUrl} displayName={name} sizePx={size} />
       ) : (
         (name?.trim()?.[0] || "U").toUpperCase()
       )}

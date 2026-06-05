@@ -23,6 +23,7 @@ import {
 } from "../lib/profileCompleteness";
 import { ONBOARDING_REQUIRED_FIELDS_MESSAGE } from "../lib/onboardingGate";
 import { validateImagePick } from "../lib/uploadLimits";
+import { prepareAvatarUploadFile } from "../lib/prepareUploadFile";
 import {
   clearStoredReferral,
   readStoredReferral,
@@ -141,12 +142,13 @@ export default function OnboardingPage() {
   }
 
   async function uploadOnboardingProfilePhoto(file: File, ownerUserId: string): Promise<string> {
-    const extension = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() : "jpg";
-    const safeExtension = extension?.replace(/[^a-z0-9]/g, "") || "jpg";
-    const filePath = `${ownerUserId}/${Date.now()}-onboarding.${safeExtension}`;
-    const { error } = await supabase.storage.from("profile-photos").upload(filePath, file, {
+    const prepared = await prepareAvatarUploadFile(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    const uploadFile = prepared.file;
+    const filePath = `${ownerUserId}/${Date.now()}-onboarding.jpg`;
+    const { error } = await supabase.storage.from("profile-photos").upload(filePath, uploadFile, {
       upsert: true,
-      contentType: file.type || "image/jpeg",
+      contentType: uploadFile.type || "image/jpeg",
     });
     if (error) throw error;
     return supabase.storage.from("profile-photos").getPublicUrl(filePath).data.publicUrl;

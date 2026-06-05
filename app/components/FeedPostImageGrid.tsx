@@ -1,6 +1,6 @@
 "use client";
 
-import { Play } from "lucide-react";
+import { FeedMediaAttachment } from "./FeedMediaAttachment";
 import {
   FEED_MEDIA_FRAME_BG,
   FEED_MEDIA_GRID_GAP,
@@ -10,7 +10,6 @@ import {
   feedContainedImageStyle,
   feedSingleImageStyle,
 } from "../lib/feedLayout";
-import { isVideoUrl } from "../lib/uploadLimits";
 
 type Props = {
   imageUrls: string[];
@@ -68,49 +67,11 @@ export default function FeedPostImageGrid({
               width: "100%",
             }}
           >
-            {isVideoUrl(url) ? (
-              <>
-                <video
-                  src={url}
-                  preload="metadata"
-                  muted
-                  playsInline
-                  style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
-                />
-                {!showOverlay && (
-                  <div
-                    style={{
-                      position: "absolute",
-                      inset: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      pointerEvents: "none",
-                    }}
-                  >
-                    <div
-                      style={{
-                        background: "rgba(0,0,0,0.5)",
-                        borderRadius: "50%",
-                        width: 38,
-                        height: 38,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                      }}
-                    >
-                      <Play size={16} color="white" fill="white" />
-                    </div>
-                  </div>
-                )}
-              </>
-            ) : (
-              <img
-                src={url}
-                alt={`Post image ${index + 1}`}
-                style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
-              />
-            )}
+            <FeedMediaAttachment
+              url={url}
+              alt={`Post image ${index + 1}`}
+              style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
+            />
 
             {showOverlay && (
               <div

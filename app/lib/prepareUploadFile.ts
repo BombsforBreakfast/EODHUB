@@ -36,7 +36,7 @@ export async function prepareFeedUploadFile(
 
   if (isImageFile(file)) {
     try {
-      const compressed = await compressImageFile(file);
+      const compressed = await compressImageFile(file, UPLOAD_LIMITS.feedImage, 1600);
       return { ok: true, file: compressed };
     } catch (err) {
       return {
@@ -63,7 +63,31 @@ export async function prepareImageUploadFile(file: File): Promise<PrepareUploadR
   }
 
   try {
-    const compressed = await compressImageFile(file);
+    const compressed = await compressImageFile(file, UPLOAD_LIMITS.feedImage, 1600);
+    return { ok: true, file: compressed };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Could not compress image.",
+    };
+  }
+}
+
+/** Profile avatars — smaller dimensions and byte cap to limit storage egress. */
+export async function prepareAvatarUploadFile(file: File): Promise<PrepareUploadResult> {
+  if (!isImageFile(file)) {
+    return { ok: false, error: "Please choose an image file." };
+  }
+
+  if (file.size > UPLOAD_LIMITS.feedBucket) {
+    return {
+      ok: false,
+      error: uploadTooLargeMessage(file, UPLOAD_LIMITS.feedBucket, "image"),
+    };
+  }
+
+  try {
+    const compressed = await compressImageFile(file, UPLOAD_LIMITS.avatarImage, 800);
     return { ok: true, file: compressed };
   } catch (err) {
     return {
@@ -100,11 +124,15 @@ export async function prepareMessagePhotoUploadFile(file: File): Promise<Prepare
 /** Prepare a JPEG blob from a crop dialog for upload. */
 export async function prepareCroppedImageBlob(blob: Blob, filename: string): Promise<PrepareUploadResult> {
   const file = new File([blob], filename, { type: blob.type || "image/jpeg" });
-  if (file.size <= UPLOAD_LIMITS.image) {
+  const isAvatar = /avatar/i.test(filename);
+  if (isAvatar) {
+    return prepareAvatarUploadFile(file);
+  }
+  if (file.size <= UPLOAD_LIMITS.feedImage) {
     return { ok: true, file };
   }
   try {
-    const compressed = await compressImageFile(file);
+    const compressed = await compressImageFile(file, UPLOAD_LIMITS.feedImage, 1600);
     return { ok: true, file: compressed };
   } catch (err) {
     return {

@@ -42,7 +42,9 @@ import { MemorialScrapbookPreview } from "../components/memorial/scrapbook";
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
 import FeedImageGalleryModal from "../components/FeedImageGalleryModal";
+import { FeedMediaAttachment } from "../components/FeedMediaAttachment";
 import FeedPostHeader from "../components/FeedPostHeader";
+import OptimizedAvatarImg from "../components/OptimizedAvatarImg";
 import { useFeedImageGallery } from "../hooks/useFeedImageGallery";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../components/YouTubeEmbed";
 import KangarooCourtFeedSection from "../components/KangarooCourtFeedSection";
@@ -63,7 +65,7 @@ import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../components/StarRating";
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
-import { Award, Play, Medal } from "lucide-react";
+import { Award, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
 import { applyJobFilters, uniqueJobRegionOptions, type JobFilterState } from "../lib/jobFilters";
 import { jobListingCutoffIso } from "../lib/jobRetention";
@@ -814,14 +816,12 @@ function Avatar({
       }}
     >
       {photoUrl ? (
-        <img
-          src={photoUrl}
-          alt={name}
+        <OptimizedAvatarImg
+          photoUrl={photoUrl}
+          displayName={name}
+          sizePx={size}
+          objectFit={isPureAdmin ? "contain" : "cover"}
           style={{
-            width: "100%",
-            height: "100%",
-            objectFit: isPureAdmin ? "contain" : "cover",
-            display: "block",
             padding: isPureAdmin ? 2 : 0,
             background: isPureAdmin ? "#f0f0f0" : undefined,
           }}
@@ -7421,30 +7421,11 @@ export default function HomePage() {
                                       width: "100%",
                                     }}
                                   >
-                                    {isVideoUrl(url) ? (
-                                      <>
-                                        <video
-                                          src={url}
-                                          preload="metadata"
-                                          muted
-                                          playsInline
-                                          style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
-                                        />
-                                        {!showOverlay && (
-                                          <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                                            <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 38, height: 38, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                                              <Play size={16} color="white" fill="white" />
-                                            </div>
-                                          </div>
-                                        )}
-                                      </>
-                                    ) : (
-                                      <img
-                                        src={url}
-                                        alt={`Post image ${index + 1}`}
-                                        style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
-                                      />
-                                    )}
+                                    <FeedMediaAttachment
+                                      url={url}
+                                      alt={`Post image ${index + 1}`}
+                                      style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
+                                    />
 
                                     {showOverlay && (
                                       <div
