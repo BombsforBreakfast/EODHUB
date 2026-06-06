@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { extractMetadata } from "@/app/lib/metadata/extractMetadata";
 import { dedupeKeyFromArticleUrl } from "@/app/lib/news/dedupe";
+import { ensurePublishedNewsPosts } from "@/app/lib/news/publishApprovedNews";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -56,8 +57,8 @@ function hostnameOnly(url: string): string {
  * POST /api/admin/news/manual
  * Body: { url: string, headline?: string, summary?: string, admin_manual_image_url?: string | null }
  *
- * Inserts `news_items` as pending with the same fields ingestion uses. Approve
- * via existing /api/admin/news — shadow post + feed behave like any RUMINT story.
+ * Inserts `news_items` as published immediately and creates the RUMINT shadow post
+ * (same outcome as approving a pending item).
  */
 export async function POST(req: NextRequest) {
   const auth = await requireAdmin(req);
@@ -147,6 +148,7 @@ export async function POST(req: NextRequest) {
         ? null
         : null;
 
+  const reviewedAt = new Date().toISOString();
   const row = {
     headline,
     source_name: ogSiteName?.trim() || host,
@@ -173,7 +175,10 @@ export async function POST(req: NextRequest) {
     },
     content_type: "news",
     is_satire: false,
-    status: "pending" as const,
+    status: "published" as const,
+    reviewed_at: reviewedAt,
+    reviewed_by: auth.userId,
+    approved_at: reviewedAt,
   };
 
   const { data: inserted, error } = await supabase.from("news_items").insert(row).select("id").single();
@@ -182,10 +187,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const newsItemId = (inserted as { id: string }).id;
+  try {
+    await ensurePublishedNewsPosts(supabase, [newsItemId]);
+  } catch (syncErr) {
+    await supabase.from("news_items").delete().eq("id", newsItemId);
+    return NextResponse.json(
+      { error: `Saved but feed publish failed: ${(syncErr as Error).message}` },
+      { status: 500 },
+    );
+  }
+
   return NextResponse.json({
     ok: true,
-    id: (inserted as { id: string }).id,
+    id: newsItemId,
     headline,
+    status: "published",
     metadata_fetched: !metadataError,
     metadata_error: metadataError,
   });

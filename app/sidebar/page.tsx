@@ -18,6 +18,7 @@ import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
 import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
+import { scrollMessagesToBottom } from "../lib/messageScroll";
 import {
   displayListingDescription,
   displayListingImage,
@@ -133,14 +134,6 @@ function matchesInboxSearch(conv: Conversation, query: string, messageMatches: R
   if (conv.last_message_preview?.toLowerCase().includes(q)) return true;
   if (messageMatches[conv.id]) return true;
   return false;
-}
-
-function scrollMessagesToBottom(container: HTMLDivElement | null, anchor: HTMLDivElement | null) {
-  if (!container) return;
-  requestAnimationFrame(() => {
-    container.scrollTop = container.scrollHeight;
-    anchor?.scrollIntoView({ block: "end" });
-  });
 }
 
 function timeAgo(dateString: string) {
@@ -263,6 +256,7 @@ export default function SidebarPage() {
   const previewFetchesRef = useRef<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const prevActiveConvIdRef = useRef<string | null>(null);
   const editInputRef = useRef<HTMLTextAreaElement | null>(null);
   const realtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const conversationsRealtimeRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -291,10 +285,7 @@ export default function SidebarPage() {
     const maxPx = composerTextMaxPx(isMobile, composerHeight);
     if (messageInputRef.current) fitTextareaToContent(messageInputRef.current, maxPx);
     if (requestInputRef.current) fitTextareaToContent(requestInputRef.current, maxPx);
-    if (isMobile && activeConvId) {
-      scrollMessagesToBottom(messagesContainerRef.current, bottomRef.current);
-    }
-  }, [newMessage, requestDraft, composerHeight, isMobile, activeConvId, mobileKeyboardInset, mobileComposerPinned]);
+  }, [newMessage, requestDraft, composerHeight, isMobile]);
 
   useLayoutEffect(() => {
     if (!isMobile || !mobileComposerPinned || !activeComposerRef.current) return;
@@ -304,14 +295,16 @@ export default function SidebarPage() {
     const ro = new ResizeObserver(syncHeight);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [isMobile, mobileComposerPinned, newMessage, requestDraft, selectedPhoto, selectedGifUrl, mobileKeyboardInset]);
+  }, [isMobile, mobileComposerPinned, newMessage, requestDraft, selectedPhoto, selectedGifUrl]);
+
+  function handleMessageImageLoad() {
+    scrollMessagesToBottom(messagesContainerRef.current);
+  }
 
   function handleMobileComposerFocus() {
     if (!isMobile) return;
     setMobileComposerPinned(true);
-    requestAnimationFrame(() => {
-      scrollMessagesToBottom(messagesContainerRef.current, bottomRef.current);
-    });
+    scrollMessagesToBottom(messagesContainerRef.current, { force: true });
   }
 
   function handleMobileComposerBlur() {
@@ -634,12 +627,20 @@ export default function SidebarPage() {
 
   useLayoutEffect(() => {
     if (!activeConvId || messages.length === 0) return;
-    scrollMessagesToBottom(messagesContainerRef.current, bottomRef.current);
+    const convSwitched = prevActiveConvIdRef.current !== activeConvId;
+    prevActiveConvIdRef.current = activeConvId;
+    scrollMessagesToBottom(messagesContainerRef.current, { force: convSwitched });
+    if (!convSwitched) return;
     const timer = window.setTimeout(() => {
-      scrollMessagesToBottom(messagesContainerRef.current, bottomRef.current);
+      scrollMessagesToBottom(messagesContainerRef.current, { force: true });
     }, 150);
     return () => window.clearTimeout(timer);
   }, [activeConvId, messages]);
+
+  useLayoutEffect(() => {
+    if (!activeConvId) return;
+    scrollMessagesToBottom(messagesContainerRef.current);
+  }, [activeConvId, urlPreviews, eventInviteMeta, listingShareMeta]);
 
   useEffect(() => {
     return () => { if (realtimeRef.current) supabase.removeChannel(realtimeRef.current); };
@@ -1480,6 +1481,7 @@ export default function SidebarPage() {
                     <img
                       src={msg.image_url}
                       alt="Message attachment"
+                      onLoad={handleMessageImageLoad}
                       style={{ display: "block", maxWidth: isMobile ? "100%" : 260, width: "100%", maxHeight: 320, borderRadius: 12, objectFit: "cover" }}
                     />
                   </a>
@@ -1491,7 +1493,7 @@ export default function SidebarPage() {
                     style={{ marginTop: visibleMessageContent ? 8 : 0, width: "100%", textAlign: "left", border: `1px solid ${isMe ? "rgba(255,255,255,0.22)" : t.border}`, borderRadius: 14, padding: 0, overflow: "hidden", background: isMe ? "rgba(255,255,255,0.08)" : t.surface, color: isMe ? "#fff" : t.text, cursor: "pointer" }}
                   >
                     {inviteMeta.event.image_url ? (
-                      <img src={inviteMeta.event.image_url} alt="" style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover", display: "block" }} />
+                      <img src={inviteMeta.event.image_url} alt="" onLoad={handleMessageImageLoad} style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover", display: "block" }} />
                     ) : null}
                     <div style={{ padding: 12 }}>
                       <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: 0.8, textTransform: "uppercase", opacity: 0.75 }}>Event Invite</div>
@@ -1531,6 +1533,7 @@ export default function SidebarPage() {
                       <img
                         src={displayListingImage(lemonRow as MarketplaceListingRow)!}
                         alt=""
+                        onLoad={handleMessageImageLoad}
                         style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover", display: "block" }}
                       />
                     ) : null}
@@ -1565,7 +1568,7 @@ export default function SidebarPage() {
                 })()}
                 {msg.gif_url && (
                   <div style={{ marginTop: msg.content ? 8 : 0 }}>
-                    <img src={msg.gif_url} alt="GIF" style={{ maxWidth: isMobile ? "100%" : 220, width: "100%", borderRadius: 12, display: "block" }} />
+                    <img src={msg.gif_url} alt="GIF" onLoad={handleMessageImageLoad} style={{ maxWidth: isMobile ? "100%" : 220, width: "100%", borderRadius: 12, display: "block" }} />
                   </div>
                 )}
                 <div style={{ fontSize: 10, marginTop: 4, opacity: 0.6, textAlign: isMe ? "right" : "left" }}>{timeAgo(msg.created_at)}</div>

@@ -8,6 +8,7 @@ import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
 import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import { mobileComposerBottomOffset, useVisualViewportKeyboardInset } from "../hooks/useVisualViewportKeyboardInset";
+import { scrollMessagesToBottom } from "../lib/messageScroll";
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -48,6 +49,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const prevConversationIdRef = useRef<string | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const [mobileComposerPinned, setMobileComposerPinned] = useState(false);
   const [composerBarHeight, setComposerBarHeight] = useState(72);
@@ -169,15 +171,12 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
 
   useLayoutEffect(() => {
     if (!open || loading || messages.length === 0) return;
-    requestAnimationFrame(() => {
-      const el = listRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-      bottomRef.current?.scrollIntoView({ block: "end" });
-    });
+    const convSwitched = prevConversationIdRef.current !== conversationId;
+    prevConversationIdRef.current = conversationId;
+    scrollMessagesToBottom(listRef.current, { force: convSwitched });
+    if (!convSwitched) return;
     const timer = window.setTimeout(() => {
-      const el = listRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-      bottomRef.current?.scrollIntoView({ block: "end" });
+      scrollMessagesToBottom(listRef.current, { force: true });
     }, 150);
     return () => window.clearTimeout(timer);
   }, [open, loading, conversationId, messages]);
@@ -190,29 +189,28 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
     const ro = new ResizeObserver(syncHeight);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [isMobile, mobileComposerPinned, draft, selectedPhoto, mobileKeyboardInset]);
+  }, [isMobile, mobileComposerPinned, draft, selectedPhoto]);
 
   useLayoutEffect(() => {
-    if (!isMobile || !mobileComposerPinned) return;
-    requestAnimationFrame(() => {
-      const el = listRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-      bottomRef.current?.scrollIntoView({ block: "end" });
-    });
-  }, [isMobile, mobileComposerPinned, mobileKeyboardInset, draft]);
+    if (!open || !conversationId) return;
+    scrollMessagesToBottom(listRef.current);
+  }, [open, conversationId, urlPreviews]);
 
   useEffect(() => {
-    if (!open) setMobileComposerPinned(false);
+    if (!open) {
+      setMobileComposerPinned(false);
+      prevConversationIdRef.current = null;
+    }
   }, [open]);
+
+  function handleMessageImageLoad() {
+    scrollMessagesToBottom(listRef.current);
+  }
 
   function handleMobileComposerFocus() {
     if (!isMobile) return;
     setMobileComposerPinned(true);
-    requestAnimationFrame(() => {
-      const el = listRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
-      bottomRef.current?.scrollIntoView({ block: "end" });
-    });
+    scrollMessagesToBottom(listRef.current, { force: true });
   }
 
   function handleMobileComposerBlur() {
@@ -523,6 +521,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
                   <img
                     src={m.image_url}
                     alt="Message attachment"
+                    onLoad={handleMessageImageLoad}
                     style={{ display: "block", maxWidth: 240, maxHeight: 300, borderRadius: 12, objectFit: "cover" }}
                   />
                 </a>

@@ -39,6 +39,9 @@ import { isMarinesService, MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serv
 import { displayListingTitle, LEMON_LOT_CATEGORIES, type MarketplaceListingRow } from "../lib/lemonLot";
 import { prepareImageUploadFile, prepareNewsThumbnailUploadFile } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
+import { fetchUrlPreview } from "../lib/fetchUrlPreview";
+import { httpsAssetUrl, type UrlPreview } from "../lib/urlPreview";
+import { sanitizeRumintOgDescription } from "../lib/sanitizeRumintOgDescription";
 
 // Lazy-loaded — only loaded when the admin opens the Failed Auth tab.
 const FailedAuthPanel = lazy(() => import("../components/admin/FailedAuthPanel"));
@@ -886,6 +889,10 @@ export default function AdminPage() {
   const [manualNewsImageUrl, setManualNewsImageUrl] = useState<string | null>(null);
   const [manualNewsImageUploading, setManualNewsImageUploading] = useState(false);
   const [manualNewsBusy, setManualNewsBusy] = useState(false);
+  const [manualNewsUrlPreview, setManualNewsUrlPreview] = useState<UrlPreview | null>(null);
+  const [manualNewsUrlPreviewLoading, setManualNewsUrlPreviewLoading] = useState(false);
+  const [manualNewsUrlPreviewError, setManualNewsUrlPreviewError] = useState<string | null>(null);
+  const manualNewsPreviewUrlRef = useRef<string | null>(null);
 
   const [waitlistRows, setWaitlistRows] = useState<WaitlistSignupRow[]>([]);
   const [waitlistLoading, setWaitlistLoading] = useState(false);
@@ -1032,6 +1039,47 @@ export default function AdminPage() {
     } catch { /* noop */ }
   }
 
+  function clearManualNewsUrlPreview() {
+    setManualNewsUrlPreview(null);
+    setManualNewsUrlPreviewError(null);
+    manualNewsPreviewUrlRef.current = null;
+  }
+
+  async function loadManualNewsUrlPreview(rawUrl: string) {
+    const url = rawUrl.trim();
+    if (!url) {
+      clearManualNewsUrlPreview();
+      return;
+    }
+    if (manualNewsPreviewUrlRef.current === url && manualNewsUrlPreview) return;
+
+    setManualNewsUrlPreviewLoading(true);
+    setManualNewsUrlPreviewError(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setManualNewsUrlPreviewError("Not signed in");
+        setManualNewsUrlPreview(null);
+        return;
+      }
+      const { preview, error } = await fetchUrlPreview(url, session.access_token);
+      if (error || !preview) {
+        setManualNewsUrlPreviewError(error ?? "Could not load preview");
+        setManualNewsUrlPreview(null);
+        return;
+      }
+      manualNewsPreviewUrlRef.current = url;
+      setManualNewsUrlPreview(preview);
+      setManualNewsHeadline((prev) => prev.trim() || preview.title?.trim() || prev);
+      setManualNewsSummary((prev) => {
+        if (prev.trim()) return prev;
+        return sanitizeRumintOgDescription(preview.description) ?? prev;
+      });
+    } finally {
+      setManualNewsUrlPreviewLoading(false);
+    }
+  }
+
   async function submitManualNews() {
     const url = manualNewsUrl.trim();
     if (!url) {
@@ -1056,24 +1104,26 @@ export default function AdminPage() {
       });
       const j = await res.json().catch(() => ({}));
       if (res.status === 409) {
-        showToast(j.error || "That URL is already in the queue");
+        showToast(j.error || "That URL is already in the news queue");
         return;
       }
       if (!res.ok) {
-        showToast(`Could not add: ${j.error || res.status}`);
+        showToast(`Could not publish: ${j.error || res.status}`);
         return;
       }
       setManualNewsUrl("");
       setManualNewsHeadline("");
       setManualNewsSummary("");
       setManualNewsImageUrl(null);
-      setNewsFilter("pending");
+      clearManualNewsUrlPreview();
       showToast(
         j.metadata_fetched === false
-          ? "Added to pending (page metadata could not be fetched — optional headline/summary help next time)"
-          : "Added to pending queue"
+          ? "Published to feed (page metadata could not be fetched — headline/summary overrides were used)"
+          : "Published to feed"
       );
-      await loadNews("pending");
+      if (newsFilter === "published") {
+        await loadNews("published");
+      }
       void loadNewsPendingCount();
     } finally {
       setManualNewsBusy(false);
@@ -5511,14 +5561,18 @@ export default function AdminPage() {
             >
               <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>Manual RUMINT source</div>
               <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
-                Paste a story URL. We pull Open Graph title, description, image, and outlet name when possible, then enqueue a normal pending item. Optionally pick a photo to override the scraped image. Approving creates the same RUMINT shadow post as automated ingestion.
+                Paste a story URL and tab out — we fetch Open Graph title, description, image, and outlet name into the fields below. Optionally edit those values or pick a photo to override the scraped image, then publish straight to the feed as a RUMINT shadow post (no pending review).
               </div>
               <input
                 type="url"
                 value={manualNewsUrl}
-                onChange={(e) => setManualNewsUrl(e.target.value)}
+                onChange={(e) => {
+                  setManualNewsUrl(e.target.value);
+                  if (!e.target.value.trim()) clearManualNewsUrlPreview();
+                }}
+                onBlur={() => { void loadManualNewsUrlPreview(manualNewsUrl); }}
                 placeholder="https://…"
-                disabled={manualNewsBusy}
+                disabled={manualNewsBusy || manualNewsUrlPreviewLoading}
                 style={{
                   width: "100%",
                   maxWidth: 560,
@@ -5530,6 +5584,56 @@ export default function AdminPage() {
                   fontSize: 14,
                 }}
               />
+              {manualNewsUrlPreviewLoading ? (
+                <div style={{ fontSize: 12, color: t.textMuted }}>Fetching page title, summary, and image…</div>
+              ) : null}
+              {manualNewsUrlPreviewError ? (
+                <div style={{ fontSize: 12, color: "#f87171" }}>{manualNewsUrlPreviewError}</div>
+              ) : null}
+              {manualNewsUrlPreview && !manualNewsUrlPreviewLoading ? (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: 12,
+                    alignItems: "flex-start",
+                    maxWidth: 560,
+                    padding: 10,
+                    borderRadius: 10,
+                    border: `1px solid ${t.border}`,
+                    background: t.bg,
+                  }}
+                >
+                  {(manualNewsImageUrl || manualNewsUrlPreview.image) ? (
+                    <img
+                      src={httpsAssetUrl(manualNewsImageUrl ?? manualNewsUrlPreview.image)}
+                      alt=""
+                      style={{
+                        width: 120,
+                        height: 80,
+                        objectFit: "cover",
+                        borderRadius: 8,
+                        border: `1px solid ${t.border}`,
+                        flexShrink: 0,
+                      }}
+                    />
+                  ) : null}
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    {manualNewsUrlPreview.siteName ? (
+                      <div style={{ fontSize: 11, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                        {manualNewsUrlPreview.siteName}
+                      </div>
+                    ) : null}
+                    <div style={{ marginTop: manualNewsUrlPreview.siteName ? 4 : 0, fontSize: 13, fontWeight: 800, color: t.text, lineHeight: 1.35 }}>
+                      {manualNewsHeadline.trim() || manualNewsUrlPreview.title || "No title found"}
+                    </div>
+                    {(manualNewsSummary.trim() || manualNewsUrlPreview.description) ? (
+                      <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted, lineHeight: 1.45 }}>
+                        {manualNewsSummary.trim() || sanitizeRumintOgDescription(manualNewsUrlPreview.description) || manualNewsUrlPreview.description}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
               <div style={{ display: "grid", gap: 8, maxWidth: 560 }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Override headline (optional)</label>
                 <input
@@ -5640,7 +5744,7 @@ export default function AdminPage() {
                   opacity: manualNewsBusy ? 0.75 : 1,
                 }}
               >
-                {manualNewsBusy ? "Adding…" : "Add to pending queue"}
+                {manualNewsBusy ? "Publishing…" : "Publish to feed"}
               </button>
             </div>
 
