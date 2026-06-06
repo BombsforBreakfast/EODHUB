@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useLayoutEffect, useState, type CSSProperties } from "react";
 import { Camera, Pencil } from "lucide-react";
 import { useTheme } from "../../lib/ThemeContext";
 
@@ -54,7 +54,17 @@ export default function BusinessProfileCard({
   onEditProfile,
 }: Props) {
   const { t } = useTheme();
-  const logoSize = isMobile ? 160 : 280;
+  const [viewportCompact, setViewportCompact] = useState(false);
+
+  useLayoutEffect(() => {
+    const mq = window.matchMedia("(max-width: 900px)");
+    const sync = () => setViewportCompact(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  const compact = isMobile || viewportCompact;
   const showSubtitle =
     subtitle?.trim() &&
     subtitle.trim().toLowerCase() !== page.business_name.trim().toLowerCase();
@@ -69,54 +79,44 @@ export default function BusinessProfileCard({
     color: "#fff",
     border: "none",
     borderRadius: 999,
-    padding: isMobile ? "8px 12px" : "7px 12px",
+    padding: compact ? "8px 12px" : "7px 12px",
     fontWeight: 800,
     fontSize: 12,
     cursor: "pointer",
     textDecoration: "none",
     boxSizing: "border-box",
     width: "auto",
-    justifySelf: isMobile ? "center" : "end",
   };
 
   return (
     <div
+      className={`business-profile-card${embedded ? " business-profile-card--embedded" : ""}${compact ? " business-profile-card--compact" : ""}`}
       style={{
         border: embedded ? "none" : `1px solid ${t.border}`,
         borderRadius: embedded ? 0 : 16,
         background: embedded ? "transparent" : t.surface,
-        overflow: "hidden",
       }}
     >
       <div
+        className="business-profile-card__inner"
         style={{
-          padding: embedded ? 0 : isMobile ? "8px 14px" : "10px 18px",
-          display: "grid",
-          gridTemplateColumns: "1fr",
-          gap: isMobile ? 10 : 12,
-          alignItems: isMobile ? "stretch" : "start",
+          padding: embedded ? 0 : undefined,
         }}
       >
-        <div style={{ minWidth: 0, display: "grid", gap: 8, position: "relative", paddingRight: isMobile ? 0 : 130 }}>
+        <div className="business-profile-card__header">
           <h1
+            className="business-profile-card__title"
             style={{
-              margin: 0,
-              fontSize: isMobile ? 26 : 36,
-              fontWeight: 950,
-              lineHeight: 1.08,
               color: t.text,
-              textAlign: isMobile ? "center" : "left",
             }}
           >
             {page.business_name}
           </h1>
           {showSubtitle && (
             <div
+              className="business-profile-card__subtitle"
               style={{
-                fontSize: 14,
-                fontWeight: 700,
                 color: t.textMuted,
-                textAlign: isMobile ? "center" : "left",
               }}
             >
               {subtitle}
@@ -126,12 +126,8 @@ export default function BusinessProfileCard({
             <button
               type="button"
               onClick={onEditProfile}
-              style={{
-                ...editButtonStyle,
-                position: isMobile ? "static" : "absolute",
-                top: 0,
-                right: 0,
-              }}
+              className="business-profile-card__edit"
+              style={editButtonStyle}
               aria-label="Edit business profile"
             >
               <Pencil size={12} aria-hidden />
@@ -140,30 +136,15 @@ export default function BusinessProfileCard({
           )}
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : `${logoSize}px minmax(0, 1fr)`,
-            gap: isMobile ? 14 : 56,
-            alignItems: "start",
-          }}
-        >
+        <div className="business-profile-card__body">
           <div
             id="profile-wall-avatar"
+            className="business-profile-card__logo"
             onClick={onLogoClick}
             title={page.logo_url ? "View logo" : isOwnWall ? "Add logo" : undefined}
             style={{
-              width: logoSize,
-              height: logoSize,
-              borderRadius: 16,
-              overflow: "hidden",
               background: t.bg,
               border: `1px solid ${t.border}`,
-              display: "grid",
-              placeItems: "center",
-              position: "relative",
-              flexShrink: 0,
-              margin: isMobile ? "0 auto" : undefined,
               cursor: onLogoClick ? (logoUploading ? "not-allowed" : "pointer") : "default",
             }}
           >
@@ -208,29 +189,17 @@ export default function BusinessProfileCard({
           </div>
 
           <div
+            className="business-profile-card__details"
             style={{
-              display: "grid",
-              gap: 10,
               color: t.textMuted,
-              fontSize: 13,
-              lineHeight: 1.5,
-              paddingLeft: isMobile ? 0 : 24,
-              paddingTop: isMobile ? 0 : 4,
             }}
           >
             <span
+              className="business-profile-card__badge"
               style={{
-                display: "inline-flex",
-                alignItems: "center",
-                alignSelf: isMobile ? "center" : "flex-start",
                 background: t.badgeBg,
                 color: t.badgeText,
                 border: `1px solid ${t.border}`,
-                borderRadius: 999,
-                padding: "4px 10px",
-                fontSize: 11,
-                fontWeight: 800,
-                letterSpacing: 0.2,
               }}
             >
               {profileLabel}
@@ -294,14 +263,10 @@ export default function BusinessProfileCard({
 
       {showExtendedDetails && (page.address || page.phone || page.owner_info) && (
         <div
+          className="business-profile-card__extended"
           style={{
             borderTop: `1px solid ${t.borderLight}`,
-            padding: isMobile ? "10px 14px 8px" : "10px 18px 8px",
-            display: "grid",
-            gridTemplateColumns: isMobile ? "1fr" : "repeat(2, minmax(0, 1fr))",
-            gap: "8px 20px",
             color: t.textMuted,
-            fontSize: 13,
           }}
         >
           {page.phone && (
@@ -311,7 +276,7 @@ export default function BusinessProfileCard({
             </div>
           )}
           {page.address && (
-            <div style={{ gridColumn: isMobile ? "auto" : page.phone ? "auto" : "1 / -1" }}>
+            <div className={page.phone ? undefined : "business-profile-card__extended-full"}>
               <span style={{ color: t.textFaint, fontWeight: 800 }}>Address </span>
               <span style={{ color: t.text }}>{page.address}</span>
             </div>
