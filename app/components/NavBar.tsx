@@ -963,6 +963,7 @@ export default function NavBar() {
                     { label: "Resources", href: "/resources", emoji: "📚", badge: 0, onNav: null },
                     { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
                     { label: "Lemon Lot", href: "/lemon-lot", emoji: "🍋", badge: 0, onNav: null },
+                    { label: "Render Safe Game", href: "/render-safe", emoji: "💣", badge: 0, onNav: null },
                     { label: "Groups", href: "/units", emoji: "🪖", badge: groupPendingTotal, onNav: null },
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
                     { label: "User Directory", href: "/user-directory", emoji: "👥", badge: 0, onNav: null },
