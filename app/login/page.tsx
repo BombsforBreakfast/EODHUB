@@ -35,6 +35,7 @@ import {
   type FailedAuthReason,
 } from "../lib/auth/failedAuthReasons";
 import { clearFailedAuthReportsAfterLogin } from "../lib/auth/clearFailedAuthReportsOnLogin";
+import ProudPartnersSection from "../components/login/ProudPartnersSection";
 
 function devClientAuthLog(tag: string, data: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
@@ -1121,6 +1122,8 @@ export default function LoginPage() {
         </form>
         </>
       )}
+
+      <ProudPartnersSection />
 
       {(businessOrgPromptOpen || businessOrgEmailGateOpen) && (
         <div
