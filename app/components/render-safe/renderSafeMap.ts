@@ -1,3 +1,4 @@
+import { buildClearingRoomsMapRows } from "./renderSafeIndoorMap";
 import type { RenderSafeEncounter } from "./renderSafeTypes";
 
 export type RenderSafeTile =
@@ -143,6 +144,7 @@ let activeRoute: RouteTile[] = [];
 let encounterPlacements: Record<string, RouteTile> = {};
 let activeRockSpots: Array<[number, number]> = [];
 let activeMapSeed = 1;
+let activeMapTheme = "night_raid_route";
 
 export const LEVEL_1_TILES: RenderSafeTile[][] = activeTiles;
 
@@ -154,6 +156,10 @@ export function isWalkableTile(tile: RenderSafeTile): boolean {
 
 export function getMapSeed(): number {
   return activeMapSeed;
+}
+
+export function getMapTheme(): string {
+  return activeMapTheme;
 }
 
 export function getMainRoute(): RouteTile[] {
@@ -250,15 +256,28 @@ function generateRockSpots(tiles: RenderSafeTile[][], route: RouteTile[], seed: 
   return spots;
 }
 
-function loadMapFromSeed(seed: number): void {
+function loadIndoorMap(): void {
+  activeMapTheme = "building_interior";
+  activeMapSeed = 1;
+  activeTiles = parseRows(buildClearingRoomsMapRows());
+  activeRoute = buildMainRoute(activeTiles);
+  activeRockSpots = [];
+}
+
+function loadMapFromSeed(seed: number, theme = activeMapTheme): void {
+  activeMapTheme = theme;
+  if (theme === "building_interior") {
+    loadIndoorMap();
+    return;
+  }
   activeMapSeed = seed >>> 0;
   activeTiles = parseRows(stitchLevelRows(activeMapSeed));
   activeRoute = buildMainRoute(activeTiles);
   activeRockSpots = generateRockSpots(activeTiles, activeRoute, activeMapSeed);
 }
 
-export function initRenderSafeMap(seed: number): RenderSafeTile[][] {
-  loadMapFromSeed(seed);
+export function initRenderSafeMap(seed: number, theme?: string): RenderSafeTile[][] {
+  loadMapFromSeed(seed, theme ?? activeMapTheme);
   return activeTiles;
 }
 
@@ -334,7 +353,12 @@ export function placeEncountersOnRoute(
   const usedIndices = new Set<number>();
 
   for (const enc of encounters) {
-    if (enc.type === "target_building") {
+    if (enc.mapCol != null && enc.mapRow != null) {
+      placements[enc.id] = { col: enc.mapCol, row: enc.mapRow };
+      continue;
+    }
+
+    if (enc.type === "target_building" || enc.type === "final_room") {
       placements[enc.id] = findTargetRouteTile(route);
       continue;
     }
@@ -367,11 +391,18 @@ export function placeEncountersOnRoute(
 export function prepareRenderSafeLevelRun(
   encounters: RenderSafeEncounter[],
   seed = Math.floor(Math.random() * 0xffffffff),
+  mapTheme = "night_raid_route",
 ): number {
+  if (mapTheme === "building_interior") {
+    loadIndoorMap();
+    encounterPlacements = placeEncountersOnRoute(encounters, activeRoute);
+    return 1;
+  }
+
   let attemptSeed = seed >>> 0;
 
   for (let attempt = 0; attempt < 24; attempt++) {
-    loadMapFromSeed(attemptSeed);
+    loadMapFromSeed(attemptSeed, mapTheme);
     if (validateWalkableConnectivity(activeTiles, activeRockSpots)) {
       encounterPlacements = placeEncountersOnRoute(encounters, activeRoute);
       return attemptSeed;
@@ -379,7 +410,7 @@ export function prepareRenderSafeLevelRun(
     attemptSeed = (attemptSeed * 1664525 + 1013904223) >>> 0;
   }
 
-  loadMapFromSeed(1);
+  loadMapFromSeed(1, mapTheme);
   encounterPlacements = placeEncountersOnRoute(encounters, activeRoute);
   return 1;
 }

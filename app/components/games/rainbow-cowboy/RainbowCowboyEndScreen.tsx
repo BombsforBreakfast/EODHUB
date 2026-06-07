@@ -1,6 +1,8 @@
 "use client";
 
 import { useTheme } from "@/app/lib/ThemeContext";
+import { formatRainbowCowboyDuration } from "./rainbowCowboyFormat";
+import { getVictoryTitle } from "./rainbowCowboyScoring";
 import type { RainbowCowboyRunResult } from "./rainbowCowboyTypes";
 
 interface Props {
@@ -8,6 +10,8 @@ interface Props {
   personalBestMessage: string;
   isAuthenticated: boolean;
   isVictory: boolean;
+  nextLevel?: { title: string } | null;
+  onNextLevel?: () => void;
   onRestart: () => void;
   onBack: () => void;
 }
@@ -26,12 +30,15 @@ export function RainbowCowboyEndScreen({
   personalBestMessage,
   isAuthenticated,
   isVictory,
+  nextLevel,
+  onNextLevel,
   onRestart,
   onBack,
 }: Props) {
   const { t } = useTheme();
-  const minutes = Math.floor(result.durationSeconds / 60);
-  const seconds = result.durationSeconds % 60;
+  const timeDisplay = formatRainbowCowboyDuration(result.durationSeconds);
+  const isLevel2 = result.levelId === "level-2";
+  const victoryTitle = getVictoryTitle(result);
 
   return (
     <div
@@ -45,10 +52,8 @@ export function RainbowCowboyEndScreen({
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 40, marginBottom: 8 }}>{isVictory ? "🦄" : "💥"}</div>
-      <h2 style={{ margin: "0 0 4px", color: isVictory ? "#ff60c0" : "#aaa" }}>
-        {isVictory ? "Level Complete" : "Game Over"}
-      </h2>
+      <div style={{ fontSize: 40, marginBottom: 8 }}>{isVictory ? (isLevel2 ? "🏜️" : "🦄") : "💥"}</div>
+      <h2 style={{ margin: "0 0 4px", color: isVictory ? "#ff60c0" : "#aaa" }}>{victoryTitle}</h2>
       {!isVictory && result.deathCause && (
         <p style={{ color: t.textMuted, fontSize: 13, marginBottom: 16 }}>{result.deathCause}</p>
       )}
@@ -68,6 +73,13 @@ export function RainbowCowboyEndScreen({
           <>
             <Stat label="Hearts Left" value={String(result.heartsRemaining)} t={t} />
             <Stat label="Drones Eaten" value={String(result.dronesEaten)} t={t} />
+            {isLevel2 && (
+              <>
+                <Stat label="Red Barons Down" value={String(result.redBaronsDestroyed)} t={t} />
+                <Stat label="Nests Destroyed" value={String(result.nestsDestroyed)} t={t} />
+                <Stat label="Bombs Dodged" value={String(result.bombsDodged)} t={t} />
+              </>
+            )}
             <Stat label="Balloons Avoided" value={String(result.balloonsSurvived)} t={t} />
             <Stat label="Rainbow Blasts" value={String(result.rainbowBlastsUsed)} t={t} />
             <Stat label="Damage Taken" value={String(result.damageTaken)} t={t} />
@@ -75,7 +87,7 @@ export function RainbowCowboyEndScreen({
         )}
         <Stat
           label="Time"
-          value={`${minutes}:${seconds.toString().padStart(2, "0")}`}
+          value={timeDisplay}
           t={t}
         />
       </div>
@@ -102,6 +114,23 @@ export function RainbowCowboyEndScreen({
       )}
 
       <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+        {isVictory && nextLevel && onNextLevel && (
+          <button
+            type="button"
+            onClick={onNextLevel}
+            style={{
+              padding: "12px 22px",
+              borderRadius: 10,
+              border: "none",
+              background: "linear-gradient(135deg, #ff60c0, #a855f7)",
+              color: "#fff",
+              fontWeight: 700,
+              cursor: "pointer",
+            }}
+          >
+            Next Level: {nextLevel.title}
+          </button>
+        )}
         <button
           type="button"
           onClick={onRestart}
@@ -130,7 +159,7 @@ export function RainbowCowboyEndScreen({
             cursor: "pointer",
           }}
         >
-          Back to Arcade
+          Back to Levels
         </button>
       </div>
     </div>

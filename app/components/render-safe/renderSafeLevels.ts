@@ -1,4 +1,5 @@
 import type { RenderSafeEncounter, RenderSafeLevel } from "./renderSafeTypes";
+import { LEVEL_2 } from "./renderSafeLevel2";
 
 // Future levels should use the same RenderSafeLevel shape.
 // Keep all level logic data-driven where possible.
@@ -295,17 +296,42 @@ Move deliberately, read the cues, and do not be a hero, cowboy.`,
   encounters: LEVEL_1_ENCOUNTERS,
 };
 
-// Future levels should use the same RenderSafeLevel shape.
-// Keep all level logic data-driven where possible.
-// Avoid hardcoding level-specific behavior inside the main game component.
-// Additional levels will be added here when ready — not shown in the UI until playable.
+export const LEVEL_3: RenderSafeLevel = {
+  id: "level-3",
+  slug: "consolidation-point",
+  title: "Consolidation Point",
+  subtitle: "Coming Soon.",
+  difficulty: "Intermediate",
+  description: "Consolidate ordnance and prepare for controlled disposal.",
+  missionBrief: "This mission is not yet available.",
+  objective: "Coming soon.",
+  mapTheme: "night_raid_route",
+  estimatedMinutes: "TBD",
+  locked: true,
+  status: "Coming Soon",
+  encounters: [],
+};
+
+export { LEVEL_2 } from "./renderSafeLevel2";
 
 export function getRenderSafeLevels(): RenderSafeLevel[] {
-  return [LEVEL_1];
+  return [LEVEL_1, LEVEL_2, LEVEL_3];
 }
 
 export function getRenderSafeLevelById(levelId: string): RenderSafeLevel | undefined {
   return getRenderSafeLevels().find((l) => l.id === levelId);
+}
+
+export function getNextPlayableLevel(currentLevelId: string): RenderSafeLevel | undefined {
+  const levels = getRenderSafeLevels();
+  const idx = levels.findIndex((l) => l.id === currentLevelId);
+  if (idx < 0) return undefined;
+  for (let i = idx + 1; i < levels.length; i++) {
+    const level = levels[i];
+    if (level.locked || level.encounters.length === 0) continue;
+    return level;
+  }
+  return undefined;
 }
 
 function mulberry32(seed: number) {
@@ -327,6 +353,7 @@ export function applyRandomizedHazardReduction(
   return encounters.filter((enc) => {
     if (
       enc.type === "target_building" ||
+      enc.type === "final_room" ||
       enc.type === "choke_point" ||
       enc.blocksPassage ||
       enc.type === "bridge_crossing"
@@ -342,8 +369,8 @@ export function rollEncounterThreats(
 ): Record<string, { isThreat: boolean }> {
   const result: Record<string, { isThreat: boolean }> = {};
   for (const enc of encounters) {
-    if (enc.type === "target_building") {
-      result[enc.id] = { isThreat: false };
+    if (enc.type === "target_building" || enc.type === "final_room") {
+      result[enc.id] = { isThreat: enc.type === "final_room" };
     } else if (enc.type === "trip_wire") {
       result[enc.id] = { isThreat: true };
     } else if (enc.forceThreat) {
@@ -357,7 +384,6 @@ export function rollEncounterThreats(
   return result;
 }
 
-/** Encounters that count toward mission progress (excludes decoys and finish line). */
 export function getMandatoryEncounters(level: RenderSafeLevel): RenderSafeEncounter[] {
   return level.encounters.filter(
     (e) => e.type !== "target_building" && !e.optionalDecoy,

@@ -4,23 +4,27 @@ export type RenderSafeActionAnimationType =
   | "rope_disarm"
   | "bridge_remote_pull"
   | "target_assault"
+  | "avalanche_evac"
   | "detonation";
 
 export const ACTION_ANIMATION_DURATION_MS = 1900;
 export const DETONATION_ANIMATION_DURATION_MS = 1500;
 export const BRIDGE_PULL_ANIMATION_DURATION_MS = 5200;
 export const TARGET_ASSAULT_ANIMATION_DURATION_MS = 4500;
+export const AVALANCHE_ANIMATION_DURATION_MS = 6200;
 
 export function getActionAnimationDuration(type: RenderSafeActionAnimationType): number {
   if (type === "detonation") return DETONATION_ANIMATION_DURATION_MS;
   if (type === "bridge_remote_pull") return BRIDGE_PULL_ANIMATION_DURATION_MS;
   if (type === "target_assault") return TARGET_ASSAULT_ANIMATION_DURATION_MS;
+  if (type === "avalanche_evac") return AVALANCHE_ANIMATION_DURATION_MS;
   return ACTION_ANIMATION_DURATION_MS;
 }
 
 export function getActionAnimationSize(type: RenderSafeActionAnimationType): { width: number; height: number } {
   if (type === "bridge_remote_pull") return { width: 320, height: 200 };
   if (type === "target_assault") return { width: 340, height: 220 };
+  if (type === "avalanche_evac") return { width: 340, height: 220 };
   return { width: 280, height: 168 };
 }
 
@@ -709,6 +713,118 @@ export function drawTargetAssaultAnimation(
   ctx.fillText("TARGET BUILDING — ASSAULT IN", width / 2, height * 0.94);
 }
 
+export function drawAvalancheEvacAnimation(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  progress: number,
+) {
+  const p = clamp01(progress);
+  const groundY = height * 0.78;
+  const buildingX = width * 0.62;
+
+  ctx.fillStyle = "#070b08";
+  ctx.fillRect(0, 0, width, height);
+
+  const sky = ctx.createLinearGradient(0, 0, width * 0.5, height * 0.35);
+  sky.addColorStop(0, "rgba(140,170,190,0.1)");
+  sky.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = "#1a2418";
+  ctx.fillRect(0, groundY, width, height - groundY);
+
+  // Building exterior
+  ctx.fillStyle = "#181820";
+  ctx.fillRect(buildingX - 48, groundY - 88, 96, 88);
+  ctx.fillStyle = "#222228";
+  ctx.fillRect(buildingX - 44, groundY - 84, 88, 80);
+  ctx.fillStyle = "#2a2a32";
+  ctx.fillRect(buildingX - 12, groundY - 36, 24, 32);
+
+  const evacStart = 0.08;
+  const evacEnd = 0.42;
+  const evacT = easeOutCubic(clamp01((p - evacStart) / (evacEnd - evacStart)));
+
+  const teamStartX = buildingX - 8;
+  const teamEndX = width * 0.18;
+  for (let i = 0; i < 4; i++) {
+    const lag = i * 0.06;
+    const t = easeOutCubic(clamp01((p - evacStart - lag) / (evacEnd - evacStart)));
+    const x = teamStartX + (teamEndX - teamStartX) * t;
+    const y = groundY - 6 - i * 3;
+    drawMiniOperator(ctx, x, y, 1 - t * 0.15, i === 0);
+  }
+
+  // Countdown timer (top)
+  const timerSeconds = Math.max(0, Math.ceil(60 * (1 - p * 1.1)));
+  const flash = Math.sin(p * 40) > 0 ? 1 : 0.55;
+  ctx.textAlign = "center";
+  ctx.fillStyle = `rgba(239,68,68,${flash})`;
+  ctx.font = "bold 16px monospace";
+  ctx.fillText(`0:${timerSeconds.toString().padStart(2, "0")}`, width / 2, height * 0.1);
+  ctx.font = "bold 10px monospace";
+  ctx.fillStyle = `rgba(239,68,68,${flash * 0.8})`;
+  ctx.fillText("THREAT CONFIRMED", width / 2, height * 0.16);
+
+  // Red alarm lights during evac
+  if (p >= evacStart && p < 0.55) {
+    const alarm = Math.sin(p * 50) > 0;
+    ctx.fillStyle = alarm ? "rgba(239,68,68,0.12)" : "rgba(239,68,68,0.04)";
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  // Building detonation
+  const blastStart = 0.48;
+  if (p >= blastStart) {
+    const blastT = clamp01((p - blastStart) / 0.35);
+    const cx = buildingX;
+    const cy = groundY - 44;
+    const blastR = 8 + blastT * 72;
+    const core = ctx.createRadialGradient(cx, cy, 0, cx, cy, blastR);
+    core.addColorStop(0, `rgba(255,240,200,${(1 - blastT) * 0.95})`);
+    core.addColorStop(0.25, `rgba(255,120,40,${(1 - blastT) * 0.75})`);
+    core.addColorStop(0.55, `rgba(220,40,20,${(1 - blastT) * 0.45})`);
+    core.addColorStop(1, "rgba(80,20,10,0)");
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(cx, cy, blastR, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = `rgba(60,55,50,${blastT * 0.4})`;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy - blastT * 20, 20 + blastT * 40, 12 + blastT * 24, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (p >= 0.72) {
+    const panelA = easeOutCubic(clamp01((p - 0.72) / 0.2));
+    ctx.save();
+    ctx.globalAlpha = panelA;
+    ctx.fillStyle = "rgba(8,14,10,0.92)";
+    ctx.strokeStyle = "rgba(34,197,94,0.65)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(14, height * 0.04, width - 28, height * 0.22, 10);
+    ctx.fill();
+    ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#22c55e";
+    ctx.font = "bold 12px monospace";
+    ctx.fillText("MISSION SUCCESS", width / 2, height * 0.12);
+    ctx.fillStyle = "#e8ece8";
+    ctx.font = "10px monospace";
+    ctx.fillText("Good call. Everyone got out safely.", width / 2, height * 0.19);
+    ctx.restore();
+  }
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "rgba(249,115,22,0.75)";
+  ctx.font = "bold 10px monospace";
+  ctx.fillText("CALL AVALANCHE — EVACUATING", width / 2, height * 0.94);
+}
+
 export function drawDetonationAnimation(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -794,6 +910,9 @@ export function drawActionAnimation(
       break;
     case "target_assault":
       drawTargetAssaultAnimation(ctx, width, height, progress);
+      break;
+    case "avalanche_evac":
+      drawAvalancheEvacAnimation(ctx, width, height, progress);
       break;
     case "detonation":
       drawDetonationAnimation(ctx, width, height, progress);

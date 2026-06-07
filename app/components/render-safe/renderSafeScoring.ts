@@ -17,9 +17,10 @@ export function calculateTimeBonus(durationSeconds: number): number {
 export function calculateCompletionBonus(
   mistakes: number,
   missionFailed: boolean,
+  levelId?: string,
 ): { completionBonus: number; perfectBonus: number } {
   if (missionFailed) return { completionBonus: 0, perfectBonus: 0 };
-  const completionBonus = 300;
+  const completionBonus = levelId === "level-2" ? 500 : 300;
   const perfectBonus = mistakes === 0 ? 250 : 0;
   return { completionBonus, perfectBonus };
 }
@@ -33,6 +34,9 @@ export function buildRunResult(params: {
   completed: boolean;
   compromised?: boolean;
   playerKilled?: boolean;
+  roomsCleared?: number;
+  threatsIdentified?: number;
+  correctDecisions?: number;
 }): RenderSafeRunResult {
   return {
     levelId: params.levelId,
@@ -45,15 +49,20 @@ export function buildRunResult(params: {
     playerKilled: params.playerKilled ?? false,
     durationSeconds: params.durationSeconds,
     completedAt: new Date().toISOString(),
+    roomsCleared: params.roomsCleared,
+    threatsIdentified: params.threatsIdentified,
+    correctDecisions: params.correctDecisions,
   };
 }
 
 export const SCORE_VALUES = {
   correctMarkBypass: 150,
-  investigateThenMarkBypass: 125,
+  investigateThenMarkBypass: 150,
   bridgeRemoteMove: 200,
   noThreatInvestigated: 75,
+  threatIdentified: 100,
   ignoreBenign: 25,
   markBenign: 25,
   tripWireSecure: 175,
+  avalancheDecision: 500,
 } as const;

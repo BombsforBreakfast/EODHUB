@@ -8,6 +8,7 @@ interface Props {
   mistakes: number;
   progress: number;
   missionStatus: string;
+  finalRoomTimer?: number | null;
   overlay?: boolean;
 }
 
@@ -40,6 +41,7 @@ export function RenderSafeHud({
   mistakes,
   progress,
   missionStatus,
+  finalRoomTimer = null,
   overlay = true,
 }: Props) {
   if (!overlay) {
@@ -69,9 +71,28 @@ export function RenderSafeHud({
         <div style={valueStyle}>{level.title}</div>
         <div style={{ ...labelStyle, marginTop: 6 }}>Objective</div>
         <div style={{ ...valueStyle, fontSize: 10, lineHeight: 1.3 }}>
-          Get assault force to target
+          {level.objective}
         </div>
       </div>
+
+      {finalRoomTimer != null && finalRoomTimer >= 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            left: "50%",
+            transform: "translateX(-50%)",
+            ...hudBoxStyle,
+            border: "1px solid rgba(239,68,68,0.55)",
+            textAlign: "center",
+          }}
+        >
+          <div style={{ ...labelStyle, color: "#ef4444" }}>Timer</div>
+          <div style={{ ...valueStyle, color: "#ef4444", fontSize: 16 }}>
+            0:{Math.max(0, finalRoomTimer).toString().padStart(2, "0")}
+          </div>
+        </div>
+      )}
 
       <div style={{ position: "absolute", top: 8, right: 52, ...hudBoxStyle }}>
         <div style={{ display: "flex", gap: 14 }}>

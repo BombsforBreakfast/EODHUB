@@ -1,3 +1,4 @@
+import { LEVEL_2_CONFIG, LEVEL_2_META } from "./rainbowCowboyLevel2";
 import type { LevelConfig, RainbowCowboyLevel } from "./rainbowCowboyTypes";
 
 const GROUND_Y = 460;
@@ -20,21 +21,6 @@ export const LEVEL_1_META: RainbowCowboyLevel = {
 };
 
 const LOCKED_LEVELS: RainbowCowboyLevel[] = [
-  {
-    id: "level-2",
-    slug: "drone-valley",
-    title: "Drone Valley",
-    subtitle: "Coming Soon",
-    objective: "",
-    description: "",
-    difficulty: "—",
-    estimatedMinutes: "TBD",
-    levelWidth: 0,
-    groundY: 0,
-    targetTimeSeconds: 0,
-    locked: true,
-    status: "coming_soon",
-  },
   {
     id: "level-3",
     slug: "dynamite-fields",
@@ -122,15 +108,11 @@ export const LEVEL_1_CONFIG: LevelConfig = {
     { kind: "rainbow", x: 6800, y: 320 },
   ],
   hazards: [
-    // Section 3 minefield lite
-    { kind: "landmine", x: 2450, y: GROUND_Y },
-    { kind: "landmine", x: 2550, y: GROUND_Y },
-    { kind: "landmine", x: 2650, y: GROUND_Y },
-    { kind: "landmine", x: 2750, y: GROUND_Y },
-    { kind: "landmine", x: 2850, y: GROUND_Y },
-    { kind: "landmine", x: 2950, y: GROUND_Y },
-    { kind: "landmine", x: 3050, y: GROUND_Y },
-    { kind: "landmine", x: 3150, y: GROUND_Y },
+    // Section 3 minefield — spaced so duck/jump gaps are survivable
+    { kind: "landmine", x: 2480, y: GROUND_Y },
+    { kind: "landmine", x: 2820, y: GROUND_Y },
+    { kind: "landmine", x: 3160, y: GROUND_Y },
+    { kind: "landmine", x: 3500, y: GROUND_Y },
     // Section 4 trash balloons (altitude randomized at runtime)
     { kind: "trash_balloon", x: 3600, y: GROUND_Y - 90 },
     { kind: "trash_balloon", x: 3800, y: GROUND_Y - 130 },
@@ -173,7 +155,7 @@ LEVEL_1_CONFIG.enemies = LEVEL_1_CONFIG.enemies.filter(
 );
 
 export function getRainbowCowboyLevels(): RainbowCowboyLevel[] {
-  return [LEVEL_1_META, ...LOCKED_LEVELS];
+  return [LEVEL_1_META, LEVEL_2_META, ...LOCKED_LEVELS];
 }
 
 export function getRainbowCowboyLevelById(levelId: string): RainbowCowboyLevel | undefined {
@@ -182,5 +164,18 @@ export function getRainbowCowboyLevelById(levelId: string): RainbowCowboyLevel |
 
 export function getLevelConfig(levelId: string): LevelConfig | undefined {
   if (levelId === "level-1") return LEVEL_1_CONFIG;
+  if (levelId === "level-2") return LEVEL_2_CONFIG;
+  return undefined;
+}
+
+export function getNextPlayableLevel(currentLevelId: string): RainbowCowboyLevel | undefined {
+  const levels = getRainbowCowboyLevels();
+  const idx = levels.findIndex((l) => l.id === currentLevelId);
+  if (idx < 0) return undefined;
+  for (let i = idx + 1; i < levels.length; i++) {
+    const level = levels[i];
+    if (level.locked || level.status === "coming_soon") continue;
+    if (getLevelConfig(level.id)) return level;
+  }
   return undefined;
 }

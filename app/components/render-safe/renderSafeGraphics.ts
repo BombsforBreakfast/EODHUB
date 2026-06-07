@@ -4,6 +4,7 @@ import {
   PLAYER_ACCENT_COLOR,
   PLAYER_BODY_COLOR,
   TILE_SIZE,
+  getMapTheme,
   getTile,
   isWalkableTile,
   type RenderSafeTile,
@@ -164,13 +165,26 @@ function drawPathCornerAO(ctx: CanvasRenderingContext2D, x: number, y: number, c
 }
 
 function drawPathTile(ctx: CanvasRenderingContext2D, x: number, y: number, col: number, row: number) {
+  const interior = getMapTheme() === "building_interior";
   const v = tileVariant(col, row);
-  ctx.fillStyle = "#3a3224";
+  ctx.fillStyle = interior ? "#2a2824" : "#3a3224";
   ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-  ctx.fillStyle = "#4f4534";
+  ctx.fillStyle = interior ? "#3a3630" : "#4f4534";
   ctx.fillRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
-  ctx.fillStyle = "#5a5038";
+  ctx.fillStyle = interior ? "#444038" : "#5a5038";
   ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+
+  if (interior) {
+    ctx.fillStyle = "rgba(0,0,0,0.1)";
+    ctx.fillRect(x + 3, y + TILE_SIZE - 4, TILE_SIZE - 6, 2);
+    if (v === 0) {
+      ctx.fillStyle = "rgba(255,255,255,0.03)";
+      ctx.fillRect(x + 6, y + 6, TILE_SIZE - 12, 1);
+    }
+    drawPathCornerAO(ctx, x, y, col, row);
+    applySurfaceNoise(ctx, x, y, 0.04);
+    return;
+  }
 
   ctx.fillStyle = "rgba(0,0,0,0.12)";
   ctx.fillRect(x + 3, y + TILE_SIZE - 5, TILE_SIZE - 6, 2);
@@ -207,20 +221,23 @@ function drawStartTile(ctx: CanvasRenderingContext2D, x: number, y: number, col:
 }
 
 function drawWallTile(ctx: CanvasRenderingContext2D, x: number, y: number, col: number, row: number) {
+  const interior = getMapTheme() === "building_interior";
   const northWall = neighborTile(col, row, 0, -1) === "wall";
-  ctx.fillStyle = "#2a2a2a";
+  ctx.fillStyle = interior ? "#1e1e22" : "#2a2a2a";
   ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
-  ctx.fillStyle = northWall ? "#363636" : "#404040";
+  ctx.fillStyle = interior ? (northWall ? "#282830" : "#323238") : northWall ? "#363636" : "#404040";
   ctx.fillRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 3);
-  ctx.fillStyle = northWall ? "#484848" : "#565656";
+  ctx.fillStyle = interior ? (northWall ? "#383840" : "#424248") : northWall ? "#484848" : "#565656";
   ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, 4);
-  ctx.fillStyle = "#1a1a1a";
+  ctx.fillStyle = interior ? "#121216" : "#1a1a1a";
   ctx.fillRect(x + 2, y + TILE_SIZE - 4, TILE_SIZE - 4, 3);
   if (!northWall) {
-    ctx.fillStyle = "rgba(255,255,255,0.07)";
+    ctx.fillStyle = interior ? "rgba(255,255,255,0.04)" : "rgba(255,255,255,0.07)";
     ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, 1);
   }
-  drawWallAutotileOverlay(ctx, x, y, col, row);
+  if (!interior) {
+    drawWallAutotileOverlay(ctx, x, y, col, row);
+  }
   applySurfaceNoise(ctx, x, y, 0.04);
 }
 

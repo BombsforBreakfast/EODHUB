@@ -12,7 +12,7 @@ const GAMES = [
     accent: "#f97316",
   },
   {
-    title: "Rainbow Cowboy",
+    title: "Unicorn Hero",
     subtitle: "Ride a pink unicorn. Eat drones. Make poor life choices.",
     href: "/games/rainbow-cowboy",
     emoji: "🦄",

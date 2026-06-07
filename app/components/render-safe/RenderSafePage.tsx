@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { useViewerGate } from "@/app/hooks/useRequireFullAccess";
+import { GameLeaderboard } from "@/app/components/games/GameLeaderboard";
 import { RenderSafeEndScreen } from "./RenderSafeEndScreen";
 import { RenderSafeGame } from "./RenderSafeGame";
 import { RenderSafeLevelSelect } from "./RenderSafeLevelSelect";
 import { RenderSafeMissionBrief } from "./RenderSafeMissionBrief";
-import { getRenderSafeLevelById, getRenderSafeLevels } from "./renderSafeLevels";
+import { getRenderSafeLevelById, getNextPlayableLevel, getRenderSafeLevels } from "./renderSafeLevels";
 import {
   getLocalPersonalBest,
   getRenderSafePersonalBest,
@@ -135,6 +136,21 @@ export function RenderSafePage() {
     setRunResult(null);
   };
 
+  const handleNextLevel = () => {
+    if (!runResult) return;
+    const next = getNextPlayableLevel(runResult.levelId);
+    if (!next) return;
+    setSelectedLevelId(next.id);
+    setRunResult(null);
+    setPersonalBestMessage("");
+    setScreen("brief");
+  };
+
+  const nextLevel =
+    screen === "complete" && runResult
+      ? getNextPlayableLevel(runResult.levelId)
+      : undefined;
+
   return (
     <div
       style={{
@@ -172,6 +188,15 @@ export function RenderSafePage() {
             personalBests={personalBests}
             onSelectLevel={handleSelectLevel}
           />
+          {levels.filter((l) => !l.locked).map((level) => (
+            <GameLeaderboard
+              key={level.id}
+              game="render_safe"
+              levelId={level.id}
+              levelTitle={level.title}
+              accentColor="#f97316"
+            />
+          ))}
         </>
       )}
 
@@ -210,8 +235,11 @@ export function RenderSafePage() {
         <div style={{ padding: "16px 12px 48px", maxWidth: 520, margin: "0 auto" }}>
           <RenderSafeEndScreen
             result={runResult}
+            level={getRenderSafeLevelById(runResult.levelId)}
             personalBestMessage={personalBestMessage}
             isAuthenticated={!!userId}
+            nextLevel={nextLevel ? { title: nextLevel.title } : null}
+            onNextLevel={nextLevel ? handleNextLevel : undefined}
             onPlayAgain={handleRestart}
             onBackToLevels={() => {
               setScreen("select");

@@ -12,6 +12,7 @@ import {
   getMandatoryEncounters,
   rollEncounterThreats,
 } from "./renderSafeLevels";
+import { prepareLevel2Encounters } from "./renderSafeLevel2";
 import {
   canMoveTo,
   computeCameraY,
@@ -36,6 +37,7 @@ import {
   buildRunResult,
   calculateCompletionBonus,
   calculateTimeBonus,
+  SCORE_VALUES,
 } from "./renderSafeScoring";
 import { RenderSafeActionAnimationOverlay } from "./RenderSafeActionAnimationOverlay";
 import type { RenderSafeActionAnimationType } from "./renderSafeActionAnimations";
@@ -59,6 +61,7 @@ import type {
 const MOVE_SPEED = 2.2;
 const TRIGGER_THRESHOLD = 3;
 const FOLLOWER_LAG = 6;
+const FINAL_ROOM_TIMER_SECONDS = 60;
 
 interface Props {
   level: RenderSafeLevel;
@@ -74,6 +77,8 @@ function createInitialRunState() {
     score: 0,
     mistakes: 0,
     resolvedCount: 0,
+    correctDecisions: 0,
+    threatsIdentified: 0,
     playerX: start.x,
     playerY: start.y,
     startTime: Date.now(),
@@ -105,6 +110,8 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
   const [cameraY, setCameraY] = useState(0);
   const [positionHistory, setPositionHistory] = useState<Array<{ x: number; y: number }>>([]);
   const [playerFacing, setPlayerFacing] = useState<PlayerFacing>("up");
+  const [finalRoomTimer, setFinalRoomTimer] = useState<number | null>(null);
+  const finalRoomFailedRef = useRef(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeEncounters, setActiveEncounters] = useState(level.encounters);
@@ -123,8 +130,11 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
 
   useEffect(() => {
     const runSeed = Math.floor(Math.random() * 0xffffffff);
-    const encounters = applyRandomizedHazardReduction(level.encounters, runSeed);
-    const seed = prepareRenderSafeLevelRun(encounters, runSeed);
+    const isInterior = level.mapTheme === "building_interior";
+    const encounters = isInterior
+      ? prepareLevel2Encounters(level.encounters, runSeed)
+      : applyRandomizedHazardReduction(level.encounters, runSeed);
+    const seed = prepareRenderSafeLevelRun(encounters, runSeed, level.mapTheme);
     setActiveEncounters(encounters);
     setMapSeed(seed);
     setStartPos(findStartPosition());
@@ -132,6 +142,8 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
     encounterThreatsRef.current = rollEncounterThreats(encounters);
     encounterStatesRef.current = {};
     triggeredRef.current = new Set();
+    finalRoomFailedRef.current = false;
+    setFinalRoomTimer(null);
     setRun(createInitialRunState());
     setGameState("playing");
     setActiveEncounter(null);
@@ -140,7 +152,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
     setFinishPulse(0);
     setPositionHistory([]);
     setPlayerFacing("up");
-  }, [level.id, level.encounters]);
+  }, [level.id, level.encounters, level.mapTheme]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -235,9 +247,17 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
   const finishLevel = useCallback(() => {
     const current = runRef.current;
     const durationSeconds = Math.floor((Date.now() - current.startTime) / 1000);
-    const { completionBonus, perfectBonus } = calculateCompletionBonus(current.mistakes, false);
+    const { completionBonus, perfectBonus } = calculateCompletionBonus(
+      current.mistakes,
+      false,
+      level.id,
+    );
     const timeBonus = calculateTimeBonus(durationSeconds);
     const finalScore = current.score + completionBonus + perfectBonus + timeBonus;
+
+    const roomsCleared = activeEncounters.filter(
+      (e) => e.roomTitle && encounterStatesRef.current[e.id]?.resolved,
+    ).length;
 
     const result = buildRunResult({
       levelId: level.id,
@@ -246,11 +266,14 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
       mistakes: current.mistakes,
       durationSeconds,
       completed: true,
+      roomsCleared,
+      threatsIdentified: current.threatsIdentified,
+      correctDecisions: current.correctDecisions,
     });
 
     setGameState("completed");
     onComplete(result);
-  }, [level, onComplete]);
+  }, [level, onComplete, activeEncounters]);
 
   const triggerTargetReached = useCallback(() => {
     triggeredRef.current.add(
@@ -310,7 +333,15 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
         setActiveEncounter(encounter);
         setDecisionPhase("initial");
         setGameState("encounter");
-        setRun((r) => ({ ...r, missionStatus: "Encounter" }));
+        if (encounter.type === "final_room") {
+          setFinalRoomTimer(FINAL_ROOM_TIMER_SECONDS);
+          setRun((r) => ({ ...r, missionStatus: "THREAT CONFIRMED" }));
+        } else {
+          setRun((r) => ({
+            ...r,
+            missionStatus: encounter.roomTitle ? encounter.roomTitle : "Encounter",
+          }));
+        }
       }
     },
     [triggerTargetReached],
@@ -376,6 +407,31 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
     }
   }, [gameState, activeEncounters, run.playerX, run.playerY, targetReached, tryTriggerEncounter]);
 
+  useEffect(() => {
+    if (finalRoomTimer == null || finalRoomTimer <= 0) return;
+    if (gameState === "completed" || gameState === "mission_failed") return;
+
+    const interval = window.setInterval(() => {
+      setFinalRoomTimer((t) => {
+        if (t == null || t <= 1) {
+          if (!finalRoomFailedRef.current) {
+            finalRoomFailedRef.current = true;
+            setFailureMessage("You stayed too long. The device detonated. Mission failed.");
+            setFailureVariant("mission_failed");
+            playActionAnimation("detonation", () => {
+              setGameState("mission_failed");
+              setRun((r) => ({ ...r, missionStatus: "Mission Compromised" }));
+            });
+          }
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [finalRoomTimer, gameState, playActionAnimation]);
+
   const handleAction = useCallback(
     (actionId: RenderSafeActionId) => {
       if (!activeEncounter) return;
@@ -409,6 +465,13 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
               setGameState("post_investigation_decision");
               return;
             }
+            if (encState.isThreat) {
+              setRun((r) => ({
+                ...r,
+                score: r.score + SCORE_VALUES.threatIdentified,
+                threatsIdentified: r.threatsIdentified + 1,
+              }));
+            }
             if (!encState.isThreat) {
               setGameState("feedback");
               const noThreatMsg = activeEncounter.optionalDecoy
@@ -416,7 +479,8 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
                 : "No threat detected. You kept the force moving.";
               setRun((r) => ({
                 ...r,
-                score: r.score + 75,
+                score: r.score + (activeEncounter.points || SCORE_VALUES.noThreatInvestigated),
+                correctDecisions: r.correctDecisions + 1,
                 feedbackMessage: noThreatMsg,
                 feedbackType: activeEncounter.optionalDecoy ? "warning" : "success",
               }));
@@ -449,6 +513,23 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
         return;
       }
 
+      if (result.type === "level_complete") {
+        setFinalRoomTimer(null);
+        setRun((r) => ({
+          ...r,
+          score: r.score + result.scoreDelta,
+          correctDecisions: r.correctDecisions + 1,
+          feedbackMessage: result.message,
+          feedbackType: "success",
+        }));
+        markResolved(activeEncounter);
+        playActionAnimation("avalanche_evac", () => {
+          setTargetReached(true);
+          setTimeout(() => finishLevel(), 400);
+        });
+        return;
+      }
+
       if (result.type === "continue") {
         const scoreDelta = result.scoreDelta;
         const mistake = result.mistake ?? false;
@@ -456,6 +537,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
           ...r,
           score: r.score + scoreDelta,
           mistakes: mistake ? r.mistakes + 1 : r.mistakes,
+          correctDecisions: result.correctDecision ? r.correctDecisions + 1 : r.correctDecisions,
           feedbackMessage: result.message || null,
           feedbackType: mistake ? "warning" : "success",
         }));
@@ -486,6 +568,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
       markResolved,
       playActionAnimation,
       finishAfterContinue,
+      finishLevel,
     ],
   );
 
@@ -494,7 +577,10 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
       keysRef.current.add(e.key.toLowerCase());
       if (gameState === "encounter" || gameState === "post_investigation_decision") {
         const isTripWire = activeEncounter?.type === "trip_wire";
-        const hotkeyMap: Record<string, RenderSafeActionId> = isTripWire
+        const isFinalRoom = activeEncounter?.type === "final_room";
+        const hotkeyMap: Record<string, RenderSafeActionId> = isFinalRoom
+          ? { "1": "hands_on", "2": "call_avalanche", "3": "call_avalanche" }
+          : isTripWire
           ? {
               "1":
                 decisionPhase === "post_investigation" ? "cut_and_secure" : "cut_trip_line",
@@ -659,6 +745,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
           mistakes={run.mistakes}
           progress={progress}
           missionStatus={run.missionStatus}
+          finalRoomTimer={finalRoomTimer}
           overlay
         />
 
@@ -679,6 +766,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
             playerFacing={playerFacing}
             mapSeed={mapSeed}
             fillContainer={immersive}
+            showTargetBanner={level.mapTheme !== "building_interior"}
           />
         </div>
 
@@ -700,6 +788,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
               ? activeEncounter.initialOptions
               : activeEncounter.postInvestigationOptions
           }
+          finalRoomTimer={activeEncounter.type === "final_room" ? finalRoomTimer : null}
           onAction={handleAction}
         />
       )}

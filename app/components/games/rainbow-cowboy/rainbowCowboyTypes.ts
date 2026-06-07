@@ -4,7 +4,13 @@ export type RainbowCowboyGamePhase =
   | "complete"
   | "game_over";
 
-export type RainbowCowboyEnemyKind = "quad" | "fpv" | "fixed_wing";
+export type RainbowCowboyEnemyKind =
+  | "quad"
+  | "fpv"
+  | "fixed_wing"
+  | "recon"
+  | "red_baron"
+  | "cargo";
 
 export type RainbowCowboyPickupKind =
   | "range_beer"
@@ -14,6 +20,8 @@ export type RainbowCowboyPickupKind =
   | "unicorn_treat";
 
 export type RainbowCowboyHazardKind = "landmine" | "dynamite" | "trash_balloon";
+
+export type RainbowCowboyLevelTheme = "pasture" | "canyon";
 
 export interface RainbowCowboyLevel {
   id: string;
@@ -43,6 +51,10 @@ export interface RainbowCowboyRunResult {
   rainbowBlastsUsed: number;
   damageTaken: number;
   durationSeconds: number;
+  redBaronsDestroyed: number;
+  nestsDestroyed: number;
+  bombsDodged: number;
+  completeBanner?: string;
   deathCause?: string;
   completedAt: string;
 }
@@ -59,6 +71,7 @@ export interface RainbowCowboyHudSnapshot {
   maxHearts: number;
   score: number;
   rainbowCharges: number;
+  elapsedSeconds: number;
   status: string;
   gassed: boolean;
   rampage: boolean;
@@ -108,14 +121,32 @@ export interface LevelEnemySpawn {
   triggerX: number;
   y: number;
   delayMs?: number;
+  popupOnSpawn?: string;
+}
+
+export interface LevelWarning {
+  triggerX: number;
+  message: string;
+}
+
+export interface LevelNestSpawn {
+  x: number;
+  y: number;
+  spawnIntervalMs?: number;
+  spawnKinds?: RainbowCowboyEnemyKind[];
 }
 
 export interface LevelConfig {
   level: RainbowCowboyLevel;
+  theme?: RainbowCowboyLevelTheme;
+  storyIntro?: string;
+  completeBanner?: string;
   platforms: LevelPlatform[];
   walls: LevelWall[];
   pickups: LevelPickupSpawn[];
   hazards: LevelHazardSpawn[];
   enemies: LevelEnemySpawn[];
+  warnings?: LevelWarning[];
+  nests?: LevelNestSpawn[];
   extractionX: number;
 }

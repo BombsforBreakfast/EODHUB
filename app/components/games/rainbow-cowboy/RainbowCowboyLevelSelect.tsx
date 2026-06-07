@@ -1,11 +1,12 @@
 "use client";
 
 import { useTheme } from "@/app/lib/ThemeContext";
-import type { RainbowCowboyLevel } from "./rainbowCowboyTypes";
+import { formatRainbowCowboyDuration } from "./rainbowCowboyFormat";
+import type { RainbowCowboyLevel, RainbowCowboyPersonalBest } from "./rainbowCowboyTypes";
 
 interface Props {
   levels: RainbowCowboyLevel[];
-  personalBests: Record<string, number | null>;
+  personalBests: Record<string, RainbowCowboyPersonalBest | null>;
   onSelectLevel: (levelId: string) => void;
 }
 
@@ -44,7 +45,12 @@ export function RainbowCowboyLevelSelect({ levels, personalBests, onSelectLevel 
               <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>{level.subtitle}</div>
             )}
             {!locked && best != null && (
-              <div style={{ fontSize: 12, color: "#ff60c0", marginTop: 8 }}>Personal Best: {best}</div>
+              <div style={{ fontSize: 12, color: "#ff60c0", marginTop: 8, lineHeight: 1.5 }}>
+                <div>Score PB: {best.score}</div>
+                {best.durationSeconds != null && (
+                  <div>Time PB: {formatRainbowCowboyDuration(best.durationSeconds)}</div>
+                )}
+              </div>
             )}
           </button>
         );

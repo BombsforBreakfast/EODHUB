@@ -71,6 +71,13 @@ export const RENDER_SAFE_ACTIONS: Record<RenderSafeActionId, RenderSafeAction> =
     hotkey: "1",
     description: "Cut the trip line and secure the fictional grenade pin.",
   },
+  call_avalanche: {
+    id: "call_avalanche",
+    label: "Call Avalanche",
+    shortLabel: "Avalanche",
+    hotkey: "2",
+    description: "Order controlled detonation and evacuate the assault force.",
+  },
 } as const;
 
 export const RENDER_SAFE_FEEDBACK = {
@@ -99,4 +106,29 @@ export const RENDER_SAFE_FEEDBACK = {
     "You hooked the line and pulled. The assault was compromised. The target escaped.",
   tripWireSecureSuccess:
     "Good work. You traced the line, cut it, and secured the pin. The force keeps moving.",
+  ordnanceBipFail:
+    "The operation was interrupted before the structure was fully cleared. Mission compromised.",
+  finalHandsOnFail:
+    "You stayed too long. The device detonated. Mission failed.",
+  avalancheSuccess: "Good call. Everyone got out safely.",
 } as const;
+
+export function getActionLabel(
+  actionId: RenderSafeActionId,
+  encounter?: { ordnanceCache?: boolean },
+): string {
+  if (actionId === "bip" && encounter?.ordnanceCache) {
+    return "Consolidate and BIP";
+  }
+  return RENDER_SAFE_ACTIONS[actionId].label;
+}
+
+export function getActionDescription(
+  actionId: RenderSafeActionId,
+  encounter?: { ordnanceCache?: boolean },
+): string {
+  if (actionId === "bip" && encounter?.ordnanceCache) {
+    return "Consolidate the cache and blow in place before the structure is fully cleared.";
+  }
+  return RENDER_SAFE_ACTIONS[actionId].description;
+}

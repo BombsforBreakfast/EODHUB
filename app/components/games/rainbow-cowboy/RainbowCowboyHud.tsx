@@ -1,14 +1,16 @@
 "use client";
 
-import type { RainbowCowboyHudSnapshot } from "./rainbowCowboyTypes";
+import { formatRainbowCowboyDuration } from "./rainbowCowboyFormat";
+import type { RainbowCowboyHudSnapshot, RainbowCowboyPersonalBest } from "./rainbowCowboyTypes";
 
 interface Props {
   hud: RainbowCowboyHudSnapshot;
-  personalBest: number | null;
+  personalBest: RainbowCowboyPersonalBest | null;
   levelTitle: string;
+  rideLabel?: string;
 }
 
-export function RainbowCowboyHud({ hud, personalBest, levelTitle }: Props) {
+export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: Props) {
   return (
     <div
       style={{
@@ -36,7 +38,9 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle }: Props) {
           }}
         >
           <div style={{ color: "#ff80d0", fontWeight: 700 }}>{levelTitle}</div>
-          <div style={{ opacity: 0.85 }}>Eat drones · dodge hazards</div>
+          <div style={{ opacity: 0.85 }}>
+            {rideLabel ? `${rideLabel} · ` : ""}Eat drones · dodge hazards
+          </div>
         </div>
 
         <div
@@ -53,18 +57,40 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle }: Props) {
           }}
         >
           <div>Score: {hud.score}</div>
-          {personalBest != null && <div style={{ opacity: 0.75 }}>Best: {personalBest}</div>}
-          <div style={{ color: "#8fd4ff" }}>🌈 {hud.rainbowCharges}</div>
+          <div style={{ color: "#ffe080" }}>Time: {formatRainbowCowboyDuration(hud.elapsedSeconds)}</div>
+          {personalBest != null && (
+            <div style={{ opacity: 0.75 }}>
+              PB: {personalBest.score}
+              {personalBest.durationSeconds != null &&
+                ` · ${formatRainbowCowboyDuration(personalBest.durationSeconds)}`}
+            </div>
+          )}
         </div>
       </div>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-        <div style={{ display: "flex", gap: 4 }}>
-          {Array.from({ length: hud.maxHearts }).map((_, i) => (
-            <span key={i} style={{ fontSize: 18, opacity: i < hud.hearts ? 1 : 0.25 }}>
-              ❤️
-            </span>
-          ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ display: "flex", gap: 4 }}>
+            {Array.from({ length: hud.maxHearts }).map((_, i) => (
+              <span key={i} style={{ fontSize: 18, opacity: i < hud.hearts ? 1 : 0.25 }}>
+                ❤️
+              </span>
+            ))}
+          </div>
+          <div
+            style={{
+              background: "rgba(0,0,0,0.55)",
+              border: `2px solid ${hud.rainbowCharges > 0 ? "rgba(255,224,128,0.7)" : "rgba(143,212,255,0.35)"}`,
+              borderRadius: 8,
+              padding: "4px 10px",
+              fontFamily: "monospace",
+              fontSize: hud.rainbowCharges > 0 ? 14 : 12,
+              fontWeight: hud.rainbowCharges > 0 ? 800 : 500,
+              color: hud.rainbowCharges > 0 ? "#ffe080" : "#8fd4ff",
+            }}
+          >
+            🌈 ({hud.rainbowCharges})
+          </div>
         </div>
 
         <div

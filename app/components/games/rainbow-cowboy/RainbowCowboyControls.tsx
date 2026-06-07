@@ -3,9 +3,12 @@
 interface Props {
   onLeft: (active: boolean) => void;
   onRight: (active: boolean) => void;
+  onDuck: (active: boolean) => void;
   onJump: () => void;
   onTongue: () => void;
   onRainbow: () => void;
+  attackLabel: string;
+  specialLabel: string;
   disabled?: boolean;
 }
 
@@ -26,11 +29,16 @@ const btnStyle: React.CSSProperties = {
 export function RainbowCowboyControls({
   onLeft,
   onRight,
+  onDuck,
   onJump,
   onTongue,
   onRainbow,
+  attackLabel,
+  specialLabel,
   disabled,
 }: Props) {
+  const attackShort = attackLabel.split(" ")[0]?.toUpperCase() ?? "ATTACK";
+  const specialShort = specialLabel.includes("Rainbow") ? "🌈" : "SPC";
   return (
     <>
       <div
@@ -82,15 +90,30 @@ export function RainbowCowboyControls({
           <button type="button" style={{ ...btnStyle, minWidth: 64, minHeight: 56 }} onClick={onJump}>
             JUMP
           </button>
-          <button type="button" style={{ ...btnStyle, minWidth: 72, minHeight: 56 }} onClick={onTongue}>
-            TONGUE
+          <button
+            type="button"
+            style={{ ...btnStyle, minWidth: 64, minHeight: 56 }}
+            onTouchStart={(e) => {
+              e.preventDefault();
+              onDuck(true);
+            }}
+            onTouchEnd={() => onDuck(false)}
+            onMouseDown={() => onDuck(true)}
+            onMouseUp={() => onDuck(false)}
+            onMouseLeave={() => onDuck(false)}
+          >
+            DUCK
+          </button>
+          <button type="button" style={{ ...btnStyle, minWidth: 72, minHeight: 56, fontSize: 11 }} onClick={onTongue}>
+            {attackShort}
           </button>
           <button
             type="button"
-            style={{ ...btnStyle, minWidth: 72, minHeight: 56, borderColor: "rgba(255,120,220,0.7)" }}
+            style={{ ...btnStyle, minWidth: 72, minHeight: 56, borderColor: "rgba(255,120,220,0.7)", fontSize: 11 }}
             onClick={onRainbow}
+            title={specialLabel}
           >
-            🌈
+            {specialShort}
           </button>
         </div>
       </div>

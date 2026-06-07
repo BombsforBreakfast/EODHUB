@@ -47,6 +47,7 @@ interface Props {
   playerFacing?: PlayerFacing;
   mapSeed?: number;
   fillContainer?: boolean;
+  showTargetBanner?: boolean;
 }
 
 function drawEncounterCue(
@@ -108,6 +109,17 @@ function drawEncounterCue(
       break;
     }
     case "abandoned_item": {
+      if (encounter.ordnanceCache) {
+        ctx.fillStyle = "#3a3028";
+        ctx.fillRect(-10, -2, 8, 8);
+        ctx.fillRect(-1, -4, 7, 10);
+        ctx.fillStyle = "#5a4838";
+        ctx.fillRect(-8, 0, 5, 4);
+        ctx.fillRect(1, -2, 4, 6);
+        ctx.fillStyle = "#f97316";
+        ctx.fillRect(-6, 2, 2, 2);
+        break;
+      }
       ctx.fillStyle = "#1a1814";
       ctx.fillRect(-8, -5, 16, 11);
       ctx.fillStyle = "#3a3530";
@@ -158,6 +170,23 @@ function drawEncounterCue(
       ctx.lineTo(12, 0);
       ctx.stroke();
       ctx.setLineDash([]);
+      break;
+    }
+    case "final_room": {
+      ctx.fillStyle = "#2a3028";
+      ctx.fillRect(-12, -6, 10, 14);
+      ctx.fillRect(2, -8, 10, 16);
+      ctx.fillStyle = "#3a4038";
+      ctx.fillRect(-10, -4, 6, 10);
+      ctx.fillRect(4, -6, 6, 12);
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(-8, -2, 3, 3);
+      ctx.fillRect(6, -4, 3, 3);
+      const blink = Math.sin(time / 200) > 0;
+      if (blink) {
+        ctx.fillStyle = "rgba(239,68,68,0.35)";
+        ctx.fillRect(-14, -10, 28, 20);
+      }
       break;
     }
     default:
@@ -231,6 +260,7 @@ export function RenderSafeMapCanvas({
   playerFacing = "up",
   mapSeed = 1,
   fillContainer = false,
+  showTargetBanner = true,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const clickHandlerRef = useRef(onEncounterClick);
@@ -311,7 +341,7 @@ export function RenderSafeMapCanvas({
       drawChemlightAmbient(ctx, chemlights, startRow, endRow, time);
 
       for (const enc of encounters) {
-        if (enc.type === "target_building") continue;
+        if (enc.type === "target_building" || enc.type === "final_room") continue;
         const { col, row } = encounterToTile(enc);
         if (row >= startRow && row < endRow) {
           drawEncounterCue(ctx, enc, col, row, getEncounterState(enc.id), time);
@@ -326,7 +356,7 @@ export function RenderSafeMapCanvas({
 
       particles.draw(ctx, cameraY, viewportHeight);
 
-      if (targetReached) {
+      if (targetReached && showTargetBanner) {
         drawTargetBanner(ctx, cameraY, viewportHeight, time, finishPulse);
       }
 
@@ -352,6 +382,7 @@ export function RenderSafeMapCanvas({
     viewportHeight,
     playerFacing,
     mapSeed,
+    showTargetBanner,
   ]);
 
   useEffect(() => {
@@ -364,7 +395,7 @@ export function RenderSafeMapCanvas({
       const py = cameraY + ((e.clientY - rect.top) / rect.height) * viewportHeight;
 
       for (const enc of encounters) {
-        if (enc.type === "target_building") continue;
+        if (enc.type === "target_building" || enc.type === "final_room") continue;
         const { col, row } = encounterToTile(enc);
         const cx = col * TILE_SIZE + TILE_SIZE / 2;
         const cy = row * TILE_SIZE + TILE_SIZE / 2;

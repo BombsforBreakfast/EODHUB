@@ -4,6 +4,8 @@ import {
   DYNAMITE_SIZE,
   GROUND_TILE,
   LANDMINE_EXPLODE_MS,
+  NEST_H,
+  NEST_W,
   PICKUP_SIZE,
   PLAYER_H,
   PLAYER_W,
@@ -11,6 +13,7 @@ import {
   VIEW_W,
 } from "./rainbowCowboyConstants";
 import type { RainbowCowboyEngine } from "./rainbowCowboyEngine";
+import { getRideExtractionLine } from "../unicorn-hero/unicornHeroRides";
 import type { LevelConfig } from "./rainbowCowboyTypes";
 import type { RainbowCowboyParticlePool } from "./rainbowCowboyParticles";
 
@@ -107,6 +110,161 @@ function drawParallaxSky(ctx: CanvasRenderingContext2D, camX: number, time: numb
     ctx.ellipse(cx - 18, cy + 2, 20, 9, 0, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+function drawCanyonSky(ctx: CanvasRenderingContext2D, camX: number, time: number) {
+  const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+  grad.addColorStop(0, "#6a3828");
+  grad.addColorStop(0.35, "#c87848");
+  grad.addColorStop(0.65, "#e8a868");
+  grad.addColorStop(1, "#8a5840");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+  // Canyon walls (parallax)
+  ctx.fillStyle = "#5a3428";
+  for (let i = -1; i < 6; i++) {
+    const base = i * 420 - (camX * 0.05) % 420;
+    ctx.beginPath();
+    ctx.moveTo(base - 60, VIEW_H);
+    ctx.lineTo(base + 40, VIEW_H * 0.35);
+    ctx.lineTo(base + 120, VIEW_H);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = "#4a2818";
+  for (let i = -1; i < 6; i++) {
+    const base = i * 380 - (camX * 0.12) % 380 + 200;
+    ctx.beginPath();
+    ctx.moveTo(base, VIEW_H);
+    ctx.lineTo(base + 80, VIEW_H * 0.42);
+    ctx.lineTo(base + 160, VIEW_H);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Distant mesas
+  ctx.fillStyle = "#7a4838";
+  for (let i = -1; i < 8; i++) {
+    const base = i * 260 - (camX * 0.08) % 260;
+    ctx.beginPath();
+    ctx.moveTo(base, VIEW_H * 0.58);
+    ctx.lineTo(base + 70, VIEW_H * 0.38);
+    ctx.lineTo(base + 150, VIEW_H * 0.58);
+    ctx.fill();
+  }
+}
+
+function drawCanyonGroundLayer(ctx: CanvasRenderingContext2D, config: LevelConfig, camX: number) {
+  const groundY = config.level.groundY;
+  const levelW = config.level.levelWidth;
+  const startCol = Math.floor(camX / GROUND_TILE) - 1;
+  const endCol = Math.ceil((camX + VIEW_W) / GROUND_TILE) + 1;
+
+  for (let col = startCol; col <= endCol; col++) {
+    for (let row = Math.floor(groundY / GROUND_TILE); row < Math.ceil(VIEW_H / GROUND_TILE); row++) {
+      const x = col * GROUND_TILE - camX;
+      const y = row * GROUND_TILE;
+      const v = tileVariant(col);
+      const bases = ["#8a5840", "#946040", "#7a5038"];
+      px(ctx, x, y, GROUND_TILE, GROUND_TILE, bases[v]);
+      px(ctx, x + 2, y + 2, GROUND_TILE - 4, GROUND_TILE - 4, "#a06848");
+    }
+  }
+
+  px(ctx, -camX, groundY, levelW, 8, "#6a4030");
+  px(ctx, -camX, groundY + 8, levelW, 6, "#4a2818");
+
+  // Scattered rocks
+  const startCol2 = Math.floor(camX / GROUND_TILE) - 2;
+  const endCol2 = Math.ceil((camX + VIEW_W) / GROUND_TILE) + 2;
+  for (let col = startCol2; col <= endCol2; col++) {
+    const wx = col * GROUND_TILE;
+    if (wx < 0 || wx > levelW) continue;
+    const h = worldHash(wx);
+    const sx = wx - camX;
+    if (h % 23 === 0) {
+      px(ctx, sx + 2, groundY - 8, 12, 8, "#5a4030");
+      px(ctx, sx + 4, groundY - 10, 8, 4, "#6a5040");
+    }
+    if (h % 31 === 0) {
+      px(ctx, sx + 8, groundY - 22, 3, 14, "#7a5030");
+      ctx.fillStyle = "#e04040";
+      ctx.font = "8px monospace";
+      ctx.fillText("!", sx + 7, groundY - 24);
+    }
+  }
+}
+
+function drawCanyonPlatform(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  camX: number,
+) {
+  const sx = x - camX;
+  px(ctx, sx, y, w, h, "#6a4838");
+  px(ctx, sx, y, w, 4, "#8a6048");
+  px(ctx, sx, y + h - 4, w, 4, "#4a3020");
+  for (let i = 0; i < w; i += 12) {
+    px(ctx, sx + i, y + 4, 8, h - 8, "#5a3828");
+  }
+}
+
+function drawCanyonWall(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  camX: number,
+) {
+  const sx = x - camX;
+  px(ctx, sx, y, w, h, "#5a3428");
+  for (let row = 0; row < h; row += 10) {
+    px(ctx, sx + 2, y + row, w - 4, 8, "#6a4438");
+    px(ctx, sx + 4, y + row + 2, w - 8, 4, "#7a5448");
+  }
+}
+
+function drawCanyonExtraction(
+  ctx: CanvasRenderingContext2D,
+  exX: number,
+  groundY: number,
+  camX: number,
+  time: number,
+) {
+  const sx = exX - camX;
+  px(ctx, sx - 48, groundY - 4, 96, 8, "#4a4038");
+
+  // Beacon pad
+  ctx.strokeStyle = "#f0e040";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(sx, groundY - 22, 30, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // Helicopter body
+  const hover = Math.sin(time / 300) * 3;
+  px(ctx, sx - 28, groundY - 90 + hover, 56, 16, "#4a6858");
+  px(ctx, sx - 12, groundY - 98 + hover, 24, 10, "#5a7868");
+  px(ctx, sx - 40, groundY - 86 + hover, 80, 4, "#3a4838");
+  px(ctx, sx + 30, groundY - 82 + hover, 16, 8, "#68c8f0");
+  const blink = Math.sin(time / 350) > 0;
+  if (blink) {
+    ctx.fillStyle = "#80ff80";
+    ctx.beginPath();
+    ctx.arc(sx + 34, groundY - 78 + hover, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 11px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("EXTRACTION", sx, groundY - 108 + hover);
+  ctx.textAlign = "left";
 }
 
 function drawGrassTile(
@@ -454,6 +612,117 @@ function drawHazard(
   }
 }
 
+function drawReconDrone(ctx: CanvasRenderingContext2D, sx: number, y: number, w: number, h: number, time: number) {
+  const spin = time / 70;
+  ctx.strokeStyle = "#444";
+  ctx.lineWidth = 1;
+  for (let i = 0; i < 4; i++) {
+    const a = spin + (i * Math.PI) / 2;
+    const rx = sx + w / 2 + Math.cos(a) * (w * 0.38);
+    const ry = y + h / 2 + Math.sin(a) * (h * 0.35);
+    ctx.beginPath();
+    ctx.moveTo(sx + w / 2, y + h / 2);
+    ctx.lineTo(rx, ry);
+    ctx.stroke();
+  }
+  px(ctx, sx + w / 2 - 6, y + h / 2 - 5, 12, 10, "#585858");
+  px(ctx, sx + w / 2 - 4, y + h / 2 - 3, 8, 6, "#707070");
+  px(ctx, sx + w / 2 - 1, y + h / 2 - 6, 2, 2, "#60c0ff");
+}
+
+function drawRedBaron(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  y: number,
+  w: number,
+  h: number,
+  time: number,
+  warning: boolean,
+) {
+  const spin = time / 55;
+  ctx.strokeStyle = "#600";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    const a = spin + (i * Math.PI) / 2;
+    const rx = sx + w / 2 + Math.cos(a) * (w * 0.44);
+    const ry = y + h / 2 + Math.sin(a) * (h * 0.38);
+    ctx.beginPath();
+    ctx.moveTo(sx + w / 2, y + h / 2);
+    ctx.lineTo(rx, ry);
+    ctx.stroke();
+  }
+  px(ctx, sx + w / 2 - 12, y + h / 2 - 10, 24, 18, "#c02020");
+  px(ctx, sx + w / 2 - 10, y + h / 2 - 8, 20, 14, "#e03030");
+  px(ctx, sx + w / 2 - 4, y + h / 2 - 12, 8, 6, "#1a1a1a");
+  const blink = warning || Math.sin(time / 120) > 0.3;
+  if (blink) {
+    px(ctx, sx + w / 2 + 8, y + h / 2 - 10, 6, 6, "#ffe040");
+    px(ctx, sx + w / 2 + 9, y + h / 2 - 9, 4, 4, "#ff8040");
+  }
+  if (warning) {
+    ctx.fillStyle = "rgba(255,80,40,0.35)";
+    ctx.beginPath();
+    ctx.arc(sx + w / 2, y + h / 2, w * 0.65, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawCargoDrone(ctx: CanvasRenderingContext2D, sx: number, y: number, w: number, h: number, time: number) {
+  const spin = time / 80;
+  ctx.strokeStyle = "#333";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    const a = spin + (i * Math.PI) / 2;
+    const rx = sx + w / 2 + Math.cos(a) * (w * 0.4);
+    const ry = y + h / 2 + Math.sin(a) * (h * 0.3);
+    ctx.beginPath();
+    ctx.moveTo(sx + w / 2, y + h / 2);
+    ctx.lineTo(rx, ry);
+    ctx.stroke();
+  }
+  px(ctx, sx + w / 2 - 14, y + h / 2 - 8, 28, 16, "#506878");
+  px(ctx, sx + w / 2 - 10, y + h / 2 - 4, 20, 10, "#688898");
+  px(ctx, sx + w / 2 - 8, y + h / 2 + 8, 16, 10, "#8a6848");
+  px(ctx, sx + w / 2 - 6, y + h / 2 + 10, 12, 6, "#a08058");
+}
+
+function drawDroneNest(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  camX: number,
+  time: number,
+  active: boolean,
+) {
+  const sx = x - camX;
+  const gy = y;
+  drawGroundShadow(ctx, sx, gy, 22);
+  px(ctx, sx - 20, gy - NEST_H, 40, NEST_H - 4, "#4a4038");
+  px(ctx, sx - 16, gy - NEST_H + 4, 32, NEST_H - 12, "#5a5048");
+  px(ctx, sx - 8, gy - NEST_H + 8, 16, 12, "#3a3830");
+  px(ctx, sx - 2, gy - NEST_H - 8, 4, 10, "#888");
+  if (active && Math.sin(time / 200) > 0) {
+    px(ctx, sx + 10, gy - NEST_H - 6, 4, 4, "#ff4040");
+  }
+  px(ctx, sx - 14, gy - 12, 8, 8, "#6a6058");
+  px(ctx, sx + 6, gy - 12, 8, 8, "#6a6058");
+}
+
+function drawBomb(ctx: CanvasRenderingContext2D, x: number, y: number, camX: number, fuseMs: number, grounded: boolean) {
+  const sx = x - camX;
+  px(ctx, sx - 5, y - 8, 10, 10, "#2a2a2a");
+  px(ctx, sx - 3, y - 6, 6, 6, "#404040");
+  if (grounded && fuseMs < 400) {
+    px(ctx, sx - 1, y - 10, 2, 3, "#ff8040");
+    ctx.fillStyle = `rgba(255,120,40,${0.4 + (400 - fuseMs) / 400})`;
+    ctx.beginPath();
+    ctx.arc(sx, y - 4, 8, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    px(ctx, sx - 1, y - 10, 2, 3, "#aaa");
+  }
+}
+
 function drawQuadDrone(ctx: CanvasRenderingContext2D, sx: number, y: number, w: number, h: number, time: number) {
   const spin = time / 60;
   const arm = w * 0.42;
@@ -504,10 +773,14 @@ function drawEnemy(
   h: number,
   camX: number,
   time: number,
+  bombWarning = false,
 ) {
   const sx = x - camX;
-  drawGroundShadow(ctx, sx + w / 2, y + h, 16);
+  drawGroundShadow(ctx, sx + w / 2, y + h, kind === "red_baron" ? 22 : 16);
   if (kind === "quad") drawQuadDrone(ctx, sx, y, w, h, time);
+  else if (kind === "recon") drawReconDrone(ctx, sx, y, w, h, time);
+  else if (kind === "red_baron") drawRedBaron(ctx, sx, y, w, h, time, bombWarning);
+  else if (kind === "cargo") drawCargoDrone(ctx, sx, y, w, h, time);
   else if (kind === "fpv") drawFpvDrone(ctx, sx, y, w, h);
   else drawFixedWing(ctx, sx, y, w, h, time);
 }
@@ -570,6 +843,214 @@ function drawLandmineExplosion(
   px(ctx, sx - 4, sy - 6, 8, 8, "#fff8c0");
 }
 
+function drawTongueAttack(
+  ctx: CanvasRenderingContext2D,
+  tongue: NonNullable<ReturnType<RainbowCowboyEngine["getTongueCurve"]>>,
+  camX: number,
+) {
+  const x1 = tongue.x1 - camX;
+  const cx = tongue.cx - camX;
+  const tipX = tongue.tipX - camX;
+  const stretch = tongue.progress;
+  ctx.strokeStyle = "#c04070";
+  ctx.lineWidth = 10 - stretch * 2;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x1, tongue.y1);
+  ctx.quadraticCurveTo(cx, tongue.cy, tipX, tongue.tipY);
+  ctx.stroke();
+  ctx.strokeStyle = "#ff88a8";
+  ctx.lineWidth = 6 - stretch;
+  ctx.beginPath();
+  ctx.moveTo(x1, tongue.y1);
+  ctx.quadraticCurveTo(cx, tongue.cy, tipX, tongue.tipY);
+  ctx.stroke();
+  ctx.fillStyle = "#ff6090";
+  ctx.beginPath();
+  ctx.arc(tipX, tongue.tipY, 9 + stretch * 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#ffb0c8";
+  ctx.beginPath();
+  ctx.arc(tipX - 2, tongue.tipY - 2, 4 + stretch, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawGripperArm(
+  ctx: CanvasRenderingContext2D,
+  tongue: NonNullable<ReturnType<RainbowCowboyEngine["getTongueCurve"]>>,
+  camX: number,
+) {
+  const x1 = tongue.x1 - camX;
+  const cx = tongue.cx - camX;
+  const tipX = tongue.tipX - camX;
+  const stretch = tongue.progress;
+  ctx.strokeStyle = "#3a3a38";
+  ctx.lineWidth = 8 - stretch * 1.5;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(x1, tongue.y1);
+  ctx.quadraticCurveTo(cx, tongue.cy, tipX, tongue.tipY);
+  ctx.stroke();
+  ctx.strokeStyle = "#6a6a60";
+  ctx.lineWidth = 5 - stretch;
+  ctx.beginPath();
+  ctx.moveTo(x1, tongue.y1);
+  ctx.quadraticCurveTo(cx, tongue.cy, tipX, tongue.tipY);
+  ctx.stroke();
+  ctx.fillStyle = "#505048";
+  ctx.beginPath();
+  ctx.arc(tipX, tongue.tipY, 7 + stretch * 2, 0, Math.PI * 2);
+  ctx.fill();
+  const jaw = 5 + stretch * 2;
+  ctx.fillStyle = "#787870";
+  ctx.fillRect(tipX - jaw - 2, tongue.tipY - 3, jaw, 4);
+  ctx.fillRect(tipX + 2, tongue.tipY - 3, jaw, 4);
+  ctx.fillStyle = "#989890";
+  ctx.fillRect(tipX - jaw, tongue.tipY + 1, jaw - 1, 3);
+  ctx.fillRect(tipX + 3, tongue.tipY + 1, jaw - 1, 3);
+}
+
+function drawAttackVisual(ctx: CanvasRenderingContext2D, engine: RainbowCowboyEngine, camX: number) {
+  const tongue = engine.getTongueCurve();
+  if (!tongue) return;
+  if (engine.rideType === "eod_robot") {
+    drawGripperArm(ctx, tongue, camX);
+  } else {
+    drawTongueAttack(ctx, tongue, camX);
+  }
+}
+
+function drawEodRobot(
+  ctx: CanvasRenderingContext2D,
+  engine: RainbowCowboyEngine,
+  camX: number,
+  time: number,
+) {
+  const feetY = engine.playerY;
+  const cx = engine.playerX - camX;
+  const ducking = engine.isDucking && engine.grounded;
+  const py = feetY - PLAYER_H + (ducking ? 10 : 0);
+  const moving = Math.abs(engine.playerVx) > 0.5;
+  const trackFrame = moving && engine.grounded ? Math.floor(time / 80) % 2 : 0;
+  const bob = engine.grounded && !ducking ? Math.sin(time / 180) * 0.8 : 0;
+  const flip = engine.facing === "left" ? -1 : 1;
+
+  ctx.save();
+  ctx.translate(cx, py + bob);
+  ctx.scale(flip, 1);
+  if (ducking) {
+    ctx.scale(1, 0.82);
+    ctx.translate(0, 8);
+  }
+
+  drawGroundShadow(ctx, 0, PLAYER_H - 2, ducking ? 44 : 38);
+
+  if (engine.isRampage) {
+    const hues = ["#f0f", "#ff0", "#0ff", "#f80", "#8f8", "#faf"];
+    for (let i = 0; i < 6; i++) {
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = hues[i];
+      ctx.fillRect(-28 - i * 5, 28, 5, 5);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  // Tracks
+  px(ctx, -28, ducking ? 44 : 48, 56, 8, "#2a2820");
+  px(ctx, -26, ducking ? 45 : 49, 52, 6, "#3a3830");
+  for (let i = -24; i <= 18; i += 8) {
+    const notch = trackFrame === 0 ? 0 : 4;
+    px(ctx, i + notch, ducking ? 46 : 50, 4, 3, "#1a1810");
+  }
+
+  // Lower, flatter robot chassis so the rider clearly sits on top.
+  px(ctx, -28, ducking ? 30 : 34, 56, 16, "#4a5840");
+  px(ctx, -26, ducking ? 32 : 36, 52, 12, "#5a6848");
+  px(ctx, -22, ducking ? 34 : 38, 44, 8, "#6a7858");
+
+  // Hazard stripe
+  px(ctx, -20, ducking ? 36 : 40, 40, 4, "#c8a820");
+  px(ctx, -18, ducking ? 37 : 41, 8, 2, "#1a1810");
+  px(ctx, -5, ducking ? 37 : 41, 8, 2, "#1a1810");
+  px(ctx, 8, ducking ? 37 : 41, 8, 2, "#1a1810");
+
+  // Low-profile top deck / saddle
+  px(ctx, -18, ducking ? 20 : 24, 36, 10, "#586850");
+  px(ctx, -16, ducking ? 22 : 26, 32, 6, "#687860");
+  px(ctx, -10, ducking ? 17 : 21, 20, 5, "#2a4818");
+
+  // Front sensor and gripper mount, kept low to leave room for the rider.
+  px(ctx, 10, ducking ? 22 : 26, 14, 10, "#485840");
+  px(ctx, 12, ducking ? 24 : 28, 10, 6, "#586850");
+  px(ctx, 14, ducking ? 25 : 29, 7, 4, "#1a2838");
+  px(ctx, 15, ducking ? 26 : 30, 5, 2, "#48b8e8");
+  px(ctx, 20, ducking ? 28 : 32, 8, 6, "#484840");
+  px(ctx, 22, ducking ? 30 : 34, 5, 4, "#686860");
+
+  // Antenna
+  px(ctx, -16, ducking ? 7 : 11, 3, 14, "#505048");
+  px(ctx, -17, ducking ? 5 : 9, 5, 3, "#c04040");
+
+  // --- Green bomb-suit rider on the robot ---
+  const riderY = ducking ? 10 : 6;
+  px(ctx, -13, 21 + riderY, 26, 5, "#2a2818");
+  px(ctx, -9, 18 + riderY, 18, 5, "#3a5828");
+  // Backpack
+  px(ctx, -13, -6 + riderY, 10, 14, "#2d5020");
+  px(ctx, -11, -4 + riderY, 6, 10, "#3a6828");
+  px(ctx, -10, -2 + riderY, 4, 3, "#4a7838");
+  // Torso (puffy suit)
+  px(ctx, -8, -10 + riderY, 24, 24, "#3a6828");
+  px(ctx, -6, -8 + riderY, 20, 20, "#4a8838");
+  px(ctx, -4, -6 + riderY, 16, 16, "#5a9850");
+  px(ctx, -2, -4 + riderY, 12, 10, "#6aaa58");
+  // Belt
+  px(ctx, -8, 6 + riderY, 24, 5, "#2a4818");
+  px(ctx, -6, 7 + riderY, 20, 3, "#3a5828");
+  // Helmet dome
+  px(ctx, -4, -22 + riderY, 18, 14, "#4a8838");
+  px(ctx, -2, -26 + riderY, 14, 10, "#5a9850");
+  px(ctx, 0, -28 + riderY, 10, 8, "#6aaa58");
+  px(ctx, 0, -24 + riderY, 10, 3, "#88c8ff");
+  // Visor
+  px(ctx, 0, -20 + riderY, 10, 6, "#1a2838");
+  px(ctx, 1, -19 + riderY, 8, 4, "#48b8e8");
+  px(ctx, 2, -18 + riderY, 4, 2, "#a8f0ff");
+  // Legs planted on the top deck
+  px(ctx, -8, 10 + riderY, 8, 12, "#2d5020");
+  px(ctx, 8, 10 + riderY, 8, 12, "#2d5020");
+  px(ctx, -9, 20 + riderY, 10, 4, "#1a1828");
+  px(ctx, 8, 20 + riderY, 10, 4, "#1a1828");
+  // Arms, gloves, and handlebar
+  px(ctx, -14, -4 + riderY, 8, 14, "#3a6828");
+  px(ctx, -13, -2 + riderY, 6, 10, "#4a8838");
+  px(ctx, -14, 8 + riderY, 8, 6, "#f0e0c8");
+  px(ctx, 12, -4 + riderY, 8, 14, "#3a6828");
+  px(ctx, 13, -2 + riderY, 6, 10, "#4a8838");
+  px(ctx, 12, 8 + riderY, 8, 6, "#f0e0c8");
+  ctx.strokeStyle = "#8a5840";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(12, 10 + riderY);
+  ctx.lineTo(20, ducking ? 22 : 26);
+  ctx.stroke();
+
+  if (engine.timeMs < engine.hitFlashUntil) {
+    ctx.globalAlpha = 0.45 + Math.sin(time / 35) * 0.25;
+    px(ctx, -32, -26, 64, 80, "#fff");
+    ctx.globalAlpha = 1;
+  }
+
+  if (engine.isGassed) {
+    ctx.fillStyle = "rgba(60,200,60,0.22)";
+    ctx.beginPath();
+    ctx.arc(0, 22, 38, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 function drawUnicornRider(
   ctx: CanvasRenderingContext2D,
   engine: RainbowCowboyEngine,
@@ -578,17 +1059,22 @@ function drawUnicornRider(
 ) {
   const feetY = engine.playerY;
   const cx = engine.playerX - camX;
-  const py = feetY - PLAYER_H;
+  const ducking = engine.isDucking && engine.grounded;
+  const py = feetY - PLAYER_H + (ducking ? 14 : 0);
   const moving = Math.abs(engine.playerVx) > 0.5;
-  const runFrame = moving && engine.grounded ? Math.floor(time / 90) % 2 : 0;
-  const bob = engine.grounded ? Math.sin(time / 160) * 1.5 : 0;
+  const runFrame = moving && engine.grounded && !ducking ? Math.floor(time / 90) % 2 : 0;
+  const bob = engine.grounded && !ducking ? Math.sin(time / 160) * 1.5 : 0;
   const flip = engine.facing === "left" ? -1 : 1;
 
   ctx.save();
   ctx.translate(cx, py + bob);
   ctx.scale(flip, 1);
+  if (ducking) {
+    ctx.scale(1, 0.78);
+    ctx.translate(0, 10);
+  }
 
-  drawGroundShadow(ctx, 0, PLAYER_H - 2, 34);
+  drawGroundShadow(ctx, 0, PLAYER_H - 2, ducking ? 42 : 34);
 
   if (engine.isRampage) {
     const hues = ["#f0f", "#ff0", "#0ff", "#f80", "#8f8", "#faf"];
@@ -608,8 +1094,8 @@ function drawUnicornRider(
   px(ctx, -44, 6, 4, 4, "#ffc0e0");
 
   // --- Back legs ---
-  const backL = runFrame === 0 ? 40 : 42;
-  const backR = runFrame === 0 ? 42 : 40;
+  const backL = ducking ? 46 : runFrame === 0 ? 40 : 42;
+  const backR = ducking ? 46 : runFrame === 0 ? 42 : 40;
   px(ctx, -10, backL, 10, 16, "#c85890");
   px(ctx, -8, backL + 2, 6, 12, "#e078a8");
   px(ctx, -10, backL + 14, 10, 5, "#f0e8d8");
@@ -627,8 +1113,8 @@ function drawUnicornRider(
   px(ctx, -8, 30, 10, 6, "#ffd0e8");
 
   // --- Front legs ---
-  const frontL = runFrame === 0 ? 42 : 40;
-  const frontR = runFrame === 0 ? 40 : 42;
+  const frontL = ducking ? 46 : runFrame === 0 ? 42 : 40;
+  const frontR = ducking ? 46 : runFrame === 0 ? 40 : 42;
   px(ctx, 12, frontL, 10, 16, "#c85890");
   px(ctx, 14, frontL + 2, 6, 12, "#e078a8");
   px(ctx, 12, frontL + 14, 10, 5, "#f0e8d8");
@@ -638,75 +1124,80 @@ function drawUnicornRider(
   px(ctx, -2, frontR + 14, 10, 5, "#f0e8d8");
   px(ctx, 0, frontR + 17, 6, 3, "#1a1828");
 
-  // --- Neck ---
-  px(ctx, 16, 10, 14, 20, "#e878a8");
-  px(ctx, 18, 8, 10, 16, "#f090b8");
-
-  // --- Mane (fluffy layers) ---
-  px(ctx, 10, 2, 10, 14, "#ff58a8");
-  px(ctx, 6, 6, 8, 12, "#ff70b8");
-  px(ctx, 2, 10, 6, 10, "#ff88c8");
-  px(ctx, 14, 0, 6, 10, "#ff4098");
-  px(ctx, 8, -2, 8, 6, "#ff68b0");
-
-  // --- Head ---
-  px(ctx, 22, -4, 20, 16, "#f8a0c8");
-  px(ctx, 24, -6, 16, 12, "#ffc0e0");
-  px(ctx, 26, -2, 12, 10, "#f090b8");
-  // Ear
-  px(ctx, 24, -12, 6, 8, "#f8a8d0");
-  px(ctx, 25, -11, 4, 5, "#ffd0e8");
-  // Snout
-  px(ctx, 36, 2, 10, 8, "#f8b8d0");
-  px(ctx, 38, 4, 6, 5, "#ffe0f0");
-  // Eye
-  px(ctx, 30, 0, 8, 8, "#fff");
-  px(ctx, 32, 2, 5, 5, "#1a1030");
-  px(ctx, 33, 3, 2, 2, "#fff");
-  // Nostril
-  px(ctx, 40, 6, 2, 2, "#d07090");
-
-  // --- Horn (striped) ---
-  px(ctx, 38, -16, 6, 14, "#ffd860");
-  px(ctx, 40, -20, 4, 8, "#fff0a0");
-  px(ctx, 39, -14, 4, 3, "#e8b840");
-  px(ctx, 41, -10, 2, 3, "#e8b840");
+  // --- Neck + head ---
+  if (ducking) {
+    px(ctx, 10, 18, 18, 14, "#e878a8");
+    px(ctx, 12, 20, 14, 10, "#f090b8");
+    px(ctx, 14, 12, 22, 14, "#f8a0c8");
+    px(ctx, 16, 14, 18, 10, "#ffc0e0");
+    px(ctx, 28, 18, 10, 8, "#f8b8d0");
+    px(ctx, 30, 20, 6, 5, "#ffe0f0");
+    px(ctx, 34, 19, 2, 2, "#d07090");
+    px(ctx, 20, 15, 2, 2, "#1a1828");
+    px(ctx, 26, 15, 2, 2, "#1a1828");
+    px(ctx, 36, 8, 4, 8, "#ffd860");
+    px(ctx, 37, 6, 3, 4, "#fff0a0");
+  } else {
+    px(ctx, 16, 10, 14, 20, "#e878a8");
+    px(ctx, 18, 8, 10, 16, "#f090b8");
+    px(ctx, 10, 2, 10, 14, "#ff58a8");
+    px(ctx, 6, 6, 8, 12, "#ff70b8");
+    px(ctx, 2, 10, 6, 10, "#ff88c8");
+    px(ctx, 14, 0, 6, 10, "#ff4098");
+    px(ctx, 8, -2, 8, 6, "#ff68b0");
+    px(ctx, 22, -4, 20, 16, "#f8a0c8");
+    px(ctx, 24, -6, 16, 12, "#ffc0e0");
+    px(ctx, 26, -2, 12, 10, "#f090b8");
+    px(ctx, 24, -12, 6, 8, "#f8a8d0");
+    px(ctx, 25, -11, 4, 5, "#ffd0e8");
+    px(ctx, 36, 2, 10, 8, "#f8b8d0");
+    px(ctx, 38, 4, 6, 5, "#ffe0f0");
+    px(ctx, 30, 0, 8, 8, "#fff");
+    px(ctx, 32, 2, 5, 5, "#1a1030");
+    px(ctx, 33, 3, 2, 2, "#fff");
+    px(ctx, 40, 6, 2, 2, "#d07090");
+    px(ctx, 38, -16, 6, 14, "#ffd860");
+    px(ctx, 40, -20, 4, 8, "#fff0a0");
+    px(ctx, 39, -14, 4, 3, "#e8b840");
+    px(ctx, 41, -10, 2, 3, "#e8b840");
+  }
 
   // --- Green bomb-suit rider ---
+  const riderY = ducking ? 4 : 0;
   // Backpack
-  px(ctx, -12, -6, 10, 14, "#2d5020");
-  px(ctx, -10, -4, 6, 10, "#3a6828");
-  px(ctx, -9, -2, 4, 3, "#4a7838");
+  px(ctx, -12, -6 + riderY, 10, 14, "#2d5020");
+  px(ctx, -10, -4 + riderY, 6, 10, "#3a6828");
+  px(ctx, -9, -2 + riderY, 4, 3, "#4a7838");
   // Torso (puffy suit)
-  px(ctx, -8, -10, 24, 24, "#3a6828");
-  px(ctx, -6, -8, 20, 20, "#4a8838");
-  px(ctx, -4, -6, 16, 16, "#5a9850");
-  px(ctx, -2, -4, 12, 10, "#6aaa58");
+  px(ctx, -8, -10 + riderY, 24, 24, "#3a6828");
+  px(ctx, -6, -8 + riderY, 20, 20, "#4a8838");
+  px(ctx, -4, -6 + riderY, 16, 16, "#5a9850");
+  px(ctx, -2, -4 + riderY, 12, 10, "#6aaa58");
   // Belt
-  px(ctx, -8, 6, 24, 5, "#2a4818");
-  px(ctx, -6, 7, 20, 3, "#3a5828");
+  px(ctx, -8, 6 + riderY, 24, 5, "#2a4818");
+  px(ctx, -6, 7 + riderY, 20, 3, "#3a5828");
   // Helmet dome
-  px(ctx, -4, -22, 18, 14, "#4a8838");
-  px(ctx, -2, -26, 14, 10, "#5a9850");
-  px(ctx, 0, -28, 10, 8, "#6aaa58");
-  px(ctx, 0, -24, 10, 3, "#88c8ff");
+  px(ctx, -4, -22 + riderY, 18, 14, "#4a8838");
+  px(ctx, -2, -26 + riderY, 14, 10, "#5a9850");
+  px(ctx, 0, -28 + riderY, 10, 8, "#6aaa58");
+  px(ctx, 0, -24 + riderY, 10, 3, "#88c8ff");
   // Visor
-  px(ctx, 0, -20, 10, 6, "#1a2838");
-  px(ctx, 1, -19, 8, 4, "#48b8e8");
-  px(ctx, 2, -18, 4, 2, "#a8f0ff");
+  px(ctx, 0, -20 + riderY, 10, 6, "#1a2838");
+  px(ctx, 1, -19 + riderY, 8, 4, "#48b8e8");
+  px(ctx, 2, -18 + riderY, 4, 2, "#a8f0ff");
   // Arms + gloves
-  px(ctx, -14, -4, 8, 14, "#3a6828");
-  px(ctx, -13, -2, 6, 10, "#4a8838");
-  px(ctx, -14, 8, 8, 6, "#f0e0c8");
-  px(ctx, 12, -4, 8, 14, "#3a6828");
-  px(ctx, 13, -2, 6, 10, "#4a8838");
-  px(ctx, 12, 8, 8, 6, "#f0e0c8");
+  px(ctx, -14, -4 + riderY, 8, 14, "#3a6828");
+  px(ctx, -13, -2 + riderY, 6, 10, "#4a8838");
+  px(ctx, -14, 8 + riderY, 8, 6, "#f0e0c8");
+  px(ctx, 12, -4 + riderY, 8, 14, "#3a6828");
+  px(ctx, 13, -2 + riderY, 6, 10, "#4a8838");
+  px(ctx, 12, 8 + riderY, 8, 6, "#f0e0c8");
   // Reins
   ctx.strokeStyle = "#8a5840";
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.moveTo(10, 4);
-  ctx.lineTo(20, 8);
+  ctx.moveTo(10, 4 + riderY);
+  ctx.lineTo(ducking ? 16 : 20, ducking ? 14 : 8);
   ctx.stroke();
 
   if (engine.timeMs < engine.hitFlashUntil) {
@@ -723,47 +1214,36 @@ function drawUnicornRider(
   }
 
   ctx.restore();
+}
 
-  const tongue = engine.getTongueSegment();
-  if (tongue) {
-    const t1x = tongue.x1 - camX;
-    const t2x = tongue.x2 - camX;
-    ctx.strokeStyle = "#c04070";
-    ctx.lineWidth = 10;
-    ctx.lineCap = "round";
-    ctx.beginPath();
-    ctx.moveTo(t1x, tongue.y1);
-    ctx.lineTo(t2x, tongue.y2);
-    ctx.stroke();
-    ctx.strokeStyle = "#ff88a8";
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.moveTo(t1x, tongue.y1);
-    ctx.lineTo(t2x, tongue.y2);
-    ctx.stroke();
-    ctx.fillStyle = "#ff6090";
-    ctx.beginPath();
-    ctx.arc(t2x, tongue.y2, 9, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#ffb0c8";
-    ctx.beginPath();
-    ctx.arc(t2x - 2, tongue.y2 - 2, 4, 0, Math.PI * 2);
-    ctx.fill();
+function drawPlayer(
+  ctx: CanvasRenderingContext2D,
+  engine: RainbowCowboyEngine,
+  camX: number,
+  time: number,
+) {
+  if (engine.rideType === "eod_robot") {
+    drawEodRobot(ctx, engine, camX, time);
+  } else {
+    drawUnicornRider(ctx, engine, camX, time);
   }
+  drawAttackVisual(ctx, engine, camX);
 }
 
 function drawRainbowBlast(ctx: CanvasRenderingContext2D, engine: RainbowCowboyEngine) {
   if (engine.timeMs >= engine.rainbowBlastUntil) return;
-  const t = 1 - (engine.rainbowBlastUntil - engine.timeMs) / 900;
+  const t = Math.max(0, Math.min(1, 1 - (engine.rainbowBlastUntil - engine.timeMs) / 900));
   const cx = engine.playerX - engine.cameraX;
   const cy = engine.playerY - 24;
   const colors = ["#e83838", "#e88820", "#e8e020", "#38b838", "#3868e8", "#a040c0"];
   for (let i = 0; i < colors.length; i++) {
+    const radius = 50 + t * 340 - i * 16;
+    if (radius <= 0) continue;
     ctx.strokeStyle = colors[i];
     ctx.globalAlpha = 0.55 * (1 - t * 0.85);
     ctx.lineWidth = 5;
     ctx.beginPath();
-    ctx.arc(cx, cy, 50 + t * 340 - i * 16, 0, Math.PI * 2);
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.stroke();
   }
   ctx.globalAlpha = 1;
@@ -798,6 +1278,7 @@ export function drawWorld(
 ) {
   const camX = engine.cameraX;
   const config = engine.config;
+  const theme = config.theme ?? "pasture";
 
   ctx.save();
   if (engine.isGassed) {
@@ -805,20 +1286,37 @@ export function drawWorld(
     ctx.translate(wobble, Math.sin(time / 85) * 1);
   }
 
-  drawParallaxSky(ctx, camX, time);
-  drawGroundLayer(ctx, config, camX);
+  if (theme === "canyon") {
+    drawCanyonSky(ctx, camX, time);
+    drawCanyonGroundLayer(ctx, config, camX);
+  } else {
+    drawParallaxSky(ctx, camX, time);
+    drawGroundLayer(ctx, config, camX);
+  }
 
   for (const plat of config.platforms) {
     if (plat.x + plat.w < camX - 20 || plat.x > camX + VIEW_W + 20) continue;
-    drawPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
+    if (theme === "canyon") drawCanyonPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
+    else drawPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
   }
 
   for (const wall of config.walls) {
     if (wall.x + wall.w < camX - 20 || wall.x > camX + VIEW_W + 20) continue;
-    drawWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
+    if (theme === "canyon") drawCanyonWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
+    else drawWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
   }
 
-  drawExtractionZone(ctx, config.extractionX, config.level.groundY, camX, time);
+  if (theme === "canyon") {
+    drawCanyonExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
+  } else {
+    drawExtractionZone(ctx, config.extractionX, config.level.groundY, camX, time);
+  }
+
+  for (const nest of engine.nests) {
+    if (!nest.active) continue;
+    if (nest.x < camX - 60 || nest.x > camX + VIEW_W + 60) continue;
+    drawDroneNest(ctx, nest.x, nest.y, camX, time, nest.active);
+  }
 
   for (const pickup of engine.pickups) {
     if (!pickup.active) continue;
@@ -854,13 +1352,29 @@ export function drawWorld(
     );
   }
 
+  for (const bomb of engine.bombs) {
+    if (!bomb.active) continue;
+    if (bomb.x < camX - 40 || bomb.x > camX + VIEW_W + 40) continue;
+    drawBomb(ctx, bomb.x, bomb.y, camX, bomb.fuseMs, bomb.grounded);
+  }
+
   for (const enemy of engine.enemies) {
     if (!enemy.active) continue;
     if (enemy.x < camX - 60 || enemy.x > camX + VIEW_W + 60) continue;
-    drawEnemy(ctx, enemy.kind, enemy.x, enemy.y, enemy.w, enemy.h, camX, time);
+    drawEnemy(
+      ctx,
+      enemy.kind,
+      enemy.x,
+      enemy.y,
+      enemy.w,
+      enemy.h,
+      camX,
+      time,
+      enemy.bombWarning,
+    );
   }
 
-  drawUnicornRider(ctx, engine, camX, time);
+  drawPlayer(ctx, engine, camX, time);
   drawRainbowBlast(ctx, engine);
   particles?.draw(ctx);
 
@@ -873,10 +1387,14 @@ export function drawWorld(
     ctx.fillStyle = "#ff60c0";
     ctx.font = "bold 26px monospace";
     ctx.textAlign = "center";
-    ctx.fillText("EXTRACTION REACHED", VIEW_W / 2, VIEW_H * 0.3);
+    ctx.fillText(
+      engine.config.completeBanner ?? "EXTRACTION REACHED",
+      VIEW_W / 2,
+      VIEW_H * 0.3,
+    );
     ctx.fillStyle = "#fff";
     ctx.font = "14px monospace";
-    ctx.fillText("The unicorn made it. Poor life choices rewarded.", VIEW_W / 2, VIEW_H * 0.38);
+    ctx.fillText(getRideExtractionLine(engine.rideType), VIEW_W / 2, VIEW_H * 0.38);
     ctx.textAlign = "left";
   }
 

@@ -8,7 +8,8 @@ export type RenderSafeActionId =
   | "cut_trip_line"
   | "trace_both_ends"
   | "hook_rope_pull"
-  | "cut_and_secure";
+  | "cut_and_secure"
+  | "call_avalanche";
 
 export type RenderSafeGameState =
   | "idle"
@@ -30,7 +31,8 @@ export type RenderSafeEncounterType =
   | "choke_point"
   | "bridge_crossing"
   | "trip_wire"
-  | "target_building";
+  | "target_building"
+  | "final_room";
 
 export interface RenderSafeAction {
   id: RenderSafeActionId;
@@ -70,6 +72,10 @@ export interface RenderSafeEncounter {
   initialOptions: RenderSafeActionId[];
   postInvestigationOptions: RenderSafeActionId[];
   points: number;
+  roomTitle?: string;
+  ordnanceCache?: boolean;
+  deferBypassMessage?: string;
+  randomizeThreat?: boolean;
 }
 
 export interface RenderSafeLevel {
@@ -86,6 +92,8 @@ export interface RenderSafeLevel {
   encounters: RenderSafeEncounter[];
   locked?: boolean;
   status?: string;
+  completionTitle?: string;
+  completionSubtitle?: string;
 }
 
 export interface RenderSafeRunResult {
@@ -99,6 +107,9 @@ export interface RenderSafeRunResult {
   playerKilled: boolean;
   durationSeconds: number;
   completedAt: string;
+  roomsCleared?: number;
+  threatsIdentified?: number;
+  correctDecisions?: number;
 }
 
 export interface RenderSafeEncounterRunState {
@@ -123,11 +134,11 @@ export interface RenderSafeRunState {
 }
 
 export type RenderSafeActionResult =
-  | { type: "continue"; message: string; scoreDelta: number; mistake?: boolean; chemlight?: boolean }
+  | { type: "continue"; message: string; scoreDelta: number; mistake?: boolean; chemlight?: boolean; correctDecision?: boolean }
   | { type: "mission_failed"; message: string }
   | { type: "player_killed"; message: string }
   | { type: "investigate" }
-  | { type: "level_complete" };
+  | { type: "level_complete"; message: string; scoreDelta: number };
 
 export interface RenderSafePersonalBest {
   score: number;
