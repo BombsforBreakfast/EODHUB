@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
-import MemberPaywallModal from "../components/MemberPaywallModal";
 import Link from "next/link";
 import { isPureAdminEmail, STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../lib/pureAdminAllowlist";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
@@ -57,7 +56,10 @@ export default function OnboardingPage() {
   // Employer fields
   const [companyName, setCompanyName] = useState("");
 
-  const [memberPaywallOpen, setMemberPaywallOpen] = useState(false);
+  const [agreedLegal, setAgreedLegal] = useState(false);
+  const [missingFieldId, setMissingFieldId] = useState<string | null>(null);
+  const [showRequiredHelper, setShowRequiredHelper] = useState(false);
+  const [employerConfirmOpen, setEmployerConfirmOpen] = useState(false);
 
   useOnboardingStepTracking("onboarding_viewed", !checking);
 
@@ -66,17 +68,6 @@ export default function OnboardingPage() {
       trackOnboardingStep("onboarding_account_type", "action", { accountType });
     }
   }, [accountType]);
-
-  useEffect(() => {
-    if (memberPaywallOpen) {
-      trackOnboardingStep("subscription_ack_viewed", "view");
-    }
-  }, [memberPaywallOpen]);
-  const [resumeSubscriptionAckOnly, setResumeSubscriptionAckOnly] = useState(false);
-  const [agreedLegal, setAgreedLegal] = useState(false);
-  const [missingFieldId, setMissingFieldId] = useState<string | null>(null);
-  const [showRequiredHelper, setShowRequiredHelper] = useState(false);
-  const [employerConfirmOpen, setEmployerConfirmOpen] = useState(false);
 
   useEffect(() => {
     const prevDocColorScheme = document.documentElement.style.colorScheme;
@@ -262,11 +253,10 @@ export default function OnboardingPage() {
         verification_status: string | null;
         email_verified: boolean | null;
         admin_verified: boolean | null;
-        subscription_terms_acknowledged_at: string | null;
         must_complete_onboarding: boolean | null;
       }>(supabase, user, {
         route: "app/onboarding/page.tsx:check",
-        select: "user_id, email, display_name, first_name, last_name, photo_url, service, company_name, account_type, verification_status, email_verified, admin_verified, subscription_terms_acknowledged_at, must_complete_onboarding, is_pure_admin",
+        select: "user_id, email, display_name, first_name, last_name, photo_url, service, company_name, account_type, verification_status, email_verified, admin_verified, must_complete_onboarding, is_pure_admin",
       });
 
       if (profile?.must_complete_onboarding) {
@@ -291,20 +281,6 @@ export default function OnboardingPage() {
 
       if (profile && needsEmailVerification(profile) && (profile.service || profile.company_name)) {
         window.location.href = "/verify-email";
-        return;
-      }
-
-      const memberNeedsSubscriptionAck =
-        profile?.account_type === "member" &&
-        !!profile?.service &&
-        !profile?.subscription_terms_acknowledged_at;
-
-      if (memberNeedsSubscriptionAck) {
-        setUserId(user.id);
-        setAccountType("member");
-        setResumeSubscriptionAckOnly(true);
-        setMemberPaywallOpen(true);
-        setChecking(false);
         return;
       }
 
@@ -474,32 +450,10 @@ export default function OnboardingPage() {
 
       clearStoredReferral();
 
-      if (accountType === "member") {
-        setMemberPaywallOpen(true);
-        // Member redirect happens in completeMemberSubscriptionAck
-      } else {
-        await redirectAfterOnboarding(!!saveJson.isGoogle);
-      }
+      await redirectAfterOnboarding(!!saveJson.isGoogle);
     } finally {
       setSubmitting(false);
     }
-  }
-
-  async function completeMemberSubscriptionAck() {
-    if (!userId) return;
-    const { error } = await supabase
-      .from("profiles")
-      .update({ subscription_terms_acknowledged_at: new Date().toISOString() })
-      .eq("user_id", userId);
-    if (error) {
-      alert("Could not save subscription acknowledgement: " + error.message);
-      return;
-    }
-    trackOnboardingStep("subscription_ack_done", "success");
-    setMemberPaywallOpen(false);
-    const { data: { user: authUser } } = await supabase.auth.getUser();
-    const isGoogle = authUser ? isOAuthOnlyGoogleUser(authUser) : false;
-    await redirectAfterOnboarding(isGoogle);
   }
 
   const inputStyle: React.CSSProperties = {
@@ -548,29 +502,6 @@ export default function OnboardingPage() {
       <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <div style={{ color: "#374151" }}>Loading...</div>
       </div>
-    );
-  }
-
-  if (resumeSubscriptionAckOnly) {
-    return (
-      <>
-        <div
-          className="onboarding-page-shell"
-          style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
-        >
-          <div className="onboarding-page-inner" style={{ textAlign: "center", maxWidth: 420 }}>
-            <div style={{ fontSize: 42, fontWeight: 900, letterSpacing: -1, lineHeight: 1 }}>EOD HUB</div>
-            <p style={{ margin: "18px 0 0", fontSize: 16, color: "#1f2937", lineHeight: 1.55 }}>
-              Finish member signup: review subscription details, then continue to verification.
-            </p>
-          </div>
-        </div>
-        <MemberPaywallModal
-          open={memberPaywallOpen}
-          onClose={() => {}}
-          onboardingAck={{ onContinue: () => completeMemberSubscriptionAck() }}
-        />
-      </>
     );
   }
 
@@ -889,12 +820,6 @@ export default function OnboardingPage() {
           )}
         </div>
       </div>
-
-      <MemberPaywallModal
-        open={memberPaywallOpen}
-        onClose={() => {}}
-        onboardingAck={{ onContinue: () => completeMemberSubscriptionAck() }}
-      />
 
       {employerConfirmOpen && (
         <div

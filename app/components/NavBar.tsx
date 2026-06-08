@@ -15,6 +15,7 @@ import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import NotificationCenter from "./NotificationCenter";
 import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
+import { canClickArcadeNav } from "../lib/arcadeAccess";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import {
@@ -96,6 +97,7 @@ export default function NavBar() {
     ? notifications.filter((n) => !n.read_at && !n.archived_at).length
     : notifications.length;
   const canAccessRabbithole = isVerifiedRabbitholeViewer(verificationStatus);
+  const canClickArcade = canClickArcadeNav(isAdmin, isFounder);
 
   const NOTIFICATION_SELECT =
     "id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key, type, actor_id, post_id, unit_id, unit_post_id, metadata";
@@ -963,6 +965,7 @@ export default function NavBar() {
                     { label: "Resources", href: "/resources", emoji: "📚", badge: 0, onNav: null },
                     { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
                     { label: "Lemon Lot", href: "/lemon-lot", emoji: "🍋", badge: 0, onNav: null },
+                    { label: "EOD Arcade", href: "/games", emoji: "🕹️", badge: 0, onNav: null, comingSoon: true, disabled: !canClickArcade },
                     { label: "Groups", href: "/units", emoji: "🪖", badge: groupPendingTotal, onNav: null },
                     { label: "Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
                     { label: "User Directory", href: "/user-directory", emoji: "👥", badge: 0, onNav: null },
@@ -976,23 +979,72 @@ export default function NavBar() {
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),
                     { label: "Sidebars", href: "/sidebar", emoji: "💬", badge: 0, onNav: null },
-                  ].map((item) => (
-                    <a
-                      key={item.label}
-                      href={item.href}
-                      onClick={async (e) => {
-                        e.preventDefault();
-                        setShowHub(false);
-                        if (item.onNav) await item.onNav();
-                        window.location.href = item.href;
-                      }}
-                      style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderRadius: 10, border: `1px solid ${t.border}`, textDecoration: "none", color: t.text, fontWeight: 700, fontSize: 14, background: t.bg }}
-                    >
-                      <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
-                      <span style={{ flex: 1 }}>{item.label}</span>
-                      {item.badge > 0 && badge(item.badge)}
-                    </a>
-                  ))}
+                  ].map((item) => {
+                    const comingSoonBadge = "comingSoon" in item && item.comingSoon ? (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 800,
+                          letterSpacing: "0.04em",
+                          textTransform: "uppercase",
+                          padding: "2px 7px",
+                          borderRadius: 999,
+                          background: "rgba(128,128,128,0.18)",
+                          color: t.textMuted,
+                          flexShrink: 0,
+                        }}
+                      >
+                        Coming Soon
+                      </span>
+                    ) : null;
+
+                    const rowStyle: React.CSSProperties = {
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      padding: "11px 14px",
+                      borderRadius: 10,
+                      border: `1px solid ${t.border}`,
+                      textDecoration: "none",
+                      color: t.text,
+                      fontWeight: 700,
+                      fontSize: 14,
+                      background: t.bg,
+                    };
+
+                    if ("disabled" in item && item.disabled) {
+                      return (
+                        <div
+                          key={item.label}
+                          aria-disabled="true"
+                          style={{ ...rowStyle, opacity: 0.42, cursor: "not-allowed" }}
+                        >
+                          <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
+                          <span style={{ flex: 1 }}>{item.label}</span>
+                          {comingSoonBadge}
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <a
+                        key={item.label}
+                        href={item.href}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          setShowHub(false);
+                          if (item.onNav) await item.onNav();
+                          window.location.href = item.href;
+                        }}
+                        style={rowStyle}
+                      >
+                        <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
+                        <span style={{ flex: 1 }}>{item.label}</span>
+                        {comingSoonBadge}
+                        {item.badge > 0 && badge(item.badge)}
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
             </div>,

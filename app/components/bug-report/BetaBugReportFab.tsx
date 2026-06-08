@@ -13,6 +13,7 @@ export default function BetaBugReportFab() {
   return (
     <>
       <div
+        className="beta-bug-report-fab"
         style={{
           position: "fixed",
           zIndex: 1050,
