@@ -2,22 +2,36 @@
 
 import { useTheme } from "@/app/lib/ThemeContext";
 import { formatRainbowCowboyDuration } from "./rainbowCowboyFormat";
+import {
+  getLevelLockMessage,
+  isLevelUnlocked,
+  type RainbowCowboyProgressMap,
+} from "./rainbowCowboyProgression";
 import type { RainbowCowboyLevel, RainbowCowboyPersonalBest } from "./rainbowCowboyTypes";
 
 interface Props {
   levels: RainbowCowboyLevel[];
   personalBests: Record<string, RainbowCowboyPersonalBest | null>;
+  progress: RainbowCowboyProgressMap;
   onSelectLevel: (levelId: string) => void;
 }
 
-export function RainbowCowboyLevelSelect({ levels, personalBests, onSelectLevel }: Props) {
+export function RainbowCowboyLevelSelect({
+  levels,
+  personalBests,
+  progress,
+  onSelectLevel,
+}: Props) {
   const { t } = useTheme();
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {levels.map((level) => {
-        const locked = level.locked || level.status === "coming_soon";
+        const comingSoon = level.locked || level.status === "coming_soon";
+        const progressionLocked = !comingSoon && !isLevelUnlocked(level.id, progress, levels);
+        const locked = comingSoon || progressionLocked;
         const best = personalBests[level.id];
+        const lockMessage = progressionLocked ? getLevelLockMessage(level.id, levels) : null;
 
         return (
           <button
@@ -38,11 +52,14 @@ export function RainbowCowboyLevelSelect({ levels, personalBests, onSelectLevel 
             }}
           >
             <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>
-              {locked ? "Coming Soon" : level.difficulty}
+              {comingSoon ? "Coming Soon" : progressionLocked ? "Locked" : level.difficulty}
             </div>
             <div style={{ fontWeight: 700, fontSize: 17 }}>{level.title}</div>
-            {!locked && (
+            {!comingSoon && !progressionLocked && (
               <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>{level.subtitle}</div>
+            )}
+            {lockMessage && (
+              <div style={{ fontSize: 12, color: t.textMuted, marginTop: 6 }}>{lockMessage}</div>
             )}
             {!locked && best != null && (
               <div style={{ fontSize: 12, color: "#ff60c0", marginTop: 8, lineHeight: 1.5 }}>

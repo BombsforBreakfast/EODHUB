@@ -10,6 +10,7 @@ import {
   ENEMY_SIZES,
   ENEMY_SPEEDS,
   LANDMINE_BODY_RADIUS,
+  LANDMINE_AIRBORNE_HALF_W,
   LANDMINE_CLEAR_HEIGHT,
   LANDMINE_EXPLODE_MS,
   LANDMINE_TRIGGER_RADIUS,
@@ -18,6 +19,30 @@ import {
   NEST_W,
   RED_BARON_BOMB_INTERVAL_MS,
   RED_BARON_BOMB_WARNING_MS,
+  ARMORED_BOOM_BOT_EXPLOSION_RADIUS,
+  ARMORED_BOOM_BOT_HP,
+  ARMORED_BOOM_BOT_SPEED,
+  BLASTER_DURATION_MS,
+  BLASTER_FIRE_COOLDOWN_MS,
+  BLASTER_PROJECTILE_H,
+  BLASTER_PROJECTILE_SPEED,
+  BLASTER_PROJECTILE_W,
+  MACHINE_GUN_FIRE_COOLDOWN_MS,
+  BAZOOKA_FIRE_COOLDOWN_MS,
+  BAZOOKA_PROJECTILE_H,
+  BAZOOKA_PROJECTILE_SPEED,
+  BAZOOKA_PROJECTILE_W,
+  BAZOOKA_ROCKETS_PER_PICKUP,
+  BOOM_BOT_EXPLOSION_RADIUS,
+  BOOM_BOT_HP,
+  BOOM_BOT_SPEED,
+  GOBLIN_BOT_HP,
+  GOBLIN_BOT_SPEED,
+  GOBLIN_THROW_INTERVAL_MS,
+  TURRET_TRUCK_SHOOT_INTERVAL_MS,
+  TURRET_TRUCK_TURN_SPEED,
+  TURRET_BULLET_SPEED,
+  ENEMY_BULLET_RADIUS,
   GASSED_DURATION_MS,
   GASSED_MOVE_MULT,
   DUCK_SPEED_MULT,
@@ -49,6 +74,7 @@ import {
   NEST_DESTROY_SCORE,
   PICKUP_SCORES,
   RAINBOW_BLAST_BONUS,
+  LEVEL_3_FINAL_WAVE_BONUS,
   buildRainbowCowboyRunResult,
 } from "./rainbowCowboyScoring";
 import type { LevelConfig } from "./rainbowCowboyTypes";
@@ -59,6 +85,7 @@ import type {
   RainbowCowboyHudSnapshot,
   RainbowCowboyPickupKind,
   RainbowCowboyRunResult,
+  WeaponKind,
 } from "./rainbowCowboyTypes";
 import type { UnicornHeroAudioEvent } from "../unicorn-hero/unicornHeroAudio";
 import type { UnicornHeroRideType } from "../unicorn-hero/unicornHeroRides";
@@ -69,7 +96,7 @@ import {
 } from "../unicorn-hero/unicornHeroRides";
 
 /** Bumped when engine internals change so HMR can replace stale instances. */
-export const RAINBOW_COWBOY_ENGINE_REVISION = 10;
+export const RAINBOW_COWBOY_ENGINE_REVISION = 14;
 
 export interface GameInput {
   left: boolean;
@@ -77,6 +104,8 @@ export interface GameInput {
   down: boolean;
   jumpPressed: boolean;
   tonguePressed: boolean;
+  gunPressed: boolean;
+  gunHeld: boolean;
   rainbowPressed: boolean;
   pausePressed: boolean;
 }
@@ -105,6 +134,23 @@ interface Enemy {
   homingSince: number;
   bombCooldownMs?: number;
   bombWarning?: boolean;
+  hp?: number;
+  maxHp?: number;
+  throwCooldownMs?: number;
+  beepPhase?: number;
+  turretAngle?: number;
+  shootCooldownMs?: number;
+  groundUnit?: boolean;
+  fromFinalWave?: boolean;
+}
+
+interface BlasterProjectile {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  active: boolean;
+  weapon: WeaponKind;
 }
 
 interface Bomb {
@@ -112,8 +158,20 @@ interface Bomb {
   x: number;
   y: number;
   vy: number;
+  vx?: number;
+  bounces?: number;
   grounded: boolean;
   fuseMs: number;
+  active: boolean;
+  cartoon?: boolean;
+}
+
+interface EnemyBullet {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
   active: boolean;
 }
 
@@ -166,6 +224,32 @@ interface SpawnDef {
   triggeredAt: number | null;
   spawned: boolean;
   popupOnSpawn?: string;
+  finalWave?: boolean;
+}
+
+function isGroundEnemy(kind: RainbowCowboyEnemyKind): boolean {
+  return kind === "boom_bot" || kind === "armored_boom_bot" || kind === "grenade_goblin_bot";
+}
+
+function isBoomBot(kind: RainbowCowboyEnemyKind): boolean {
+  return isGroundEnemy(kind);
+}
+
+function enemyMaxHp(kind: RainbowCowboyEnemyKind): number {
+  if (kind === "armored_boom_bot") return ARMORED_BOOM_BOT_HP;
+  if (kind === "grenade_goblin_bot") return GOBLIN_BOT_HP;
+  if (kind === "boom_bot") return BOOM_BOT_HP;
+  return 1;
+}
+
+function enemyExplosionRadius(kind: RainbowCowboyEnemyKind): number {
+  return kind === "armored_boom_bot" ? ARMORED_BOOM_BOT_EXPLOSION_RADIUS : BOOM_BOT_EXPLOSION_RADIUS;
+}
+
+function groundEnemySpeed(kind: RainbowCowboyEnemyKind): number {
+  if (kind === "armored_boom_bot") return ARMORED_BOOM_BOT_SPEED;
+  if (kind === "grenade_goblin_bot") return GOBLIN_BOT_SPEED;
+  return BOOM_BOT_SPEED;
 }
 
 let entityId = 0;
@@ -221,8 +305,10 @@ function playerOverlapsLandmine(
   const triggerR = LANDMINE_TRIGGER_RADIUS;
   if (playerY < groundY - LANDMINE_CLEAR_HEIGHT || playerY > groundY + 8) return false;
 
-  const sweepLeft = Math.min(playerX, prevPlayerX) - PLAYER_W / 2;
-  const sweepRight = Math.max(playerX, prevPlayerX) + PLAYER_W / 2;
+  const airborne = playerY < groundY - 4;
+  const halfW = airborne ? LANDMINE_AIRBORNE_HALF_W : PLAYER_W / 2;
+  const sweepLeft = Math.min(playerX, prevPlayerX) - halfW;
+  const sweepRight = Math.max(playerX, prevPlayerX) + halfW;
   const mineLeft = hazard.x - triggerR;
   const mineRight = hazard.x + triggerR;
   return sweepLeft < mineRight && sweepRight > mineLeft;
@@ -268,6 +354,19 @@ export class RainbowCowboyEngine {
 
   tongueUntil = 0;
   tongueCooldownUntil = 0;
+  hasPistol = false;
+  machineGunUntil = 0;
+  bazookaAmmo = 0;
+  gunCooldownUntil = 0;
+  lastGunFireMs = 0;
+  lastGunWeapon: WeaponKind | null = null;
+
+  blasterProjectiles: BlasterProjectile[] = [];
+  enemyBullets: EnemyBullet[] = [];
+  finalWaveSurvived = false;
+  finalWaveTriggered = false;
+  finalWaveSpawns: SpawnDef[] = [];
+  extractionBlockedPopupUntil = 0;
 
   popupText: string | null = null;
   popupUntil = 0;
@@ -364,6 +463,30 @@ export class RainbowCowboyEngine {
 
     this.enemies = [];
     this.bombs = [];
+    this.blasterProjectiles = [];
+    this.enemyBullets = [];
+    this.finalWaveSurvived = false;
+    this.finalWaveTriggered = false;
+    this.finalWaveSpawns = (this.config.finalWave?.enemies ?? []).map((e) => ({
+      kind: e.kind,
+      triggerX: 0,
+      y: e.y,
+      delayMs: e.delayMs ?? 0,
+      triggeredAt: null,
+      spawned: false,
+      popupOnSpawn: e.popupOnSpawn,
+      finalWave: true,
+    }));
+    this.extractionBlockedPopupUntil = 0;
+    this.hasPistol = false;
+    this.machineGunUntil = 0;
+    this.bazookaAmmo = 0;
+    if (this.weaponsEnabled()) {
+      this.hasPistol = true;
+    }
+    this.gunCooldownUntil = 0;
+    this.lastGunFireMs = 0;
+    this.lastGunWeapon = null;
     this.landmineExplosionEvents = [];
     this.prevPlayerX = this.playerX;
     this.startTimeMs = performance.now();
@@ -375,6 +498,27 @@ export class RainbowCowboyEngine {
 
   get isRampage(): boolean {
     return this.timeMs < this.rampageUntil;
+  }
+
+  get isBlasterActive(): boolean {
+    return this.hasPistol || this.isMachineGunActive || this.bazookaAmmo > 0;
+  }
+
+  get isMachineGunActive(): boolean {
+    return this.timeMs < this.machineGunUntil;
+  }
+
+  get activeTimedWeapon(): WeaponKind | null {
+    if (this.isMachineGunActive) return "machine_gun";
+    return null;
+  }
+
+  private weaponsEnabled(): boolean {
+    return this.config.level.id === "level-3";
+  }
+
+  private difficultySpeed(): number {
+    return this.config.difficultySpeedMult ?? 1;
   }
 
   get isGassed(): boolean {
@@ -456,6 +600,7 @@ export class RainbowCowboyEngine {
 
     for (const enemy of this.enemies) {
       if (!enemy.active) continue;
+      if (isBoomBot(enemy.kind)) continue;
       consider(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2);
     }
 
@@ -547,10 +692,13 @@ export class RainbowCowboyEngine {
     }
 
     this.processSpawns();
+    this.processFinalWave();
     this.processWarnings();
     this.handleInput(input, dt);
     this.updatePhysics(dt);
     this.updateEnemies(dt, dtMs);
+    this.updateBlasterProjectiles(dt);
+    this.updateEnemyBullets(dt);
     this.updateBombs(dt);
     this.updateNests(dtMs);
     this.updateHazards(dt);
@@ -568,6 +716,9 @@ export class RainbowCowboyEngine {
     else if (this.isGassed) this.status = "Gassed…";
     else if (this.ducking && this.grounded) this.status = "Ducking";
     else if (this.timeMs < this.tongueUntil) this.status = getRideStatusAttack(this.rideType);
+    else if (this.isMachineGunActive) this.status = "MG SPRAY";
+    else if (this.bazookaAmmo > 0) this.status = `BAZOOKA x${this.bazookaAmmo}`;
+    else if (this.hasPistol) this.status = "PISTOL READY";
     else if (this.grounded) this.status = getRideStatusRiding(this.rideType);
     else this.status = "Airborne";
   }
@@ -582,6 +733,51 @@ export class RainbowCowboyEngine {
     }
   }
 
+  private createEnemyFromSpawn(spawn: Pick<SpawnDef, "kind" | "y" | "popupOnSpawn">, spawnX: number): Enemy {
+    const groundY = this.config.level.groundY;
+    const size = ENEMY_SIZES[spawn.kind];
+    const ground = isGroundEnemy(spawn.kind);
+    const enemy: Enemy = {
+      id: nextId(),
+      kind: spawn.kind,
+      x: spawnX,
+      y: ground ? groundY - size.h : spawn.y,
+      baseY: ground ? groundY - size.h : spawn.y,
+      w: size.w,
+      h: size.h,
+      vx: ground ? 0 : ENEMY_SPEEDS[spawn.kind as keyof typeof ENEMY_SPEEDS],
+      active: true,
+      bobPhase: Math.random() * 6,
+      phase: "patrol",
+      homingSince: 0,
+      groundUnit: ground,
+    };
+
+    if (ground) {
+      const hp = enemyMaxHp(spawn.kind);
+      enemy.hp = hp;
+      enemy.maxHp = hp;
+      enemy.beepPhase = Math.random() * Math.PI * 2;
+      if (spawn.kind === "grenade_goblin_bot") {
+        enemy.throwCooldownMs = GOBLIN_THROW_INTERVAL_MS * 0.4;
+      }
+      if (spawn.kind === "armored_boom_bot") {
+        enemy.turretAngle = this.playerX >= spawnX ? 0 : Math.PI;
+        enemy.shootCooldownMs = TURRET_TRUCK_SHOOT_INTERVAL_MS * 0.6;
+      }
+    }
+
+    if (spawn.kind === "red_baron") {
+      enemy.bombCooldownMs = RED_BARON_BOMB_INTERVAL_MS;
+    }
+
+    if (spawn.popupOnSpawn) {
+      this.showPopup(spawn.popupOnSpawn, 1600);
+    }
+
+    return enemy;
+  }
+
   private processSpawns() {
     for (const spawn of this.spawns) {
       if (spawn.spawned) continue;
@@ -589,41 +785,76 @@ export class RainbowCowboyEngine {
       if (spawn.triggeredAt == null) spawn.triggeredAt = this.timeMs;
       if (this.timeMs - spawn.triggeredAt < spawn.delayMs) continue;
       spawn.spawned = true;
-      const spawnX = this.playerX + VIEW_W * 0.65;
-      const size = ENEMY_SIZES[spawn.kind];
-      const enemy: Enemy = {
-        id: nextId(),
-        kind: spawn.kind,
-        x: spawnX,
-        y: spawn.y,
-        baseY: spawn.y,
-        w: size.w,
-        h: size.h,
-        vx: ENEMY_SPEEDS[spawn.kind],
-        active: true,
-        bobPhase: Math.random() * 6,
-        phase: spawn.kind === "red_baron" || spawn.kind === "cargo" ? "patrol" : "patrol",
-        homingSince: 0,
-      };
-      if (spawn.kind === "red_baron") {
-        enemy.bombCooldownMs = RED_BARON_BOMB_INTERVAL_MS;
-      }
-      this.enemies.push(enemy);
-      if (spawn.popupOnSpawn) {
-        this.showPopup(spawn.popupOnSpawn, 1600);
-      }
+      const spawnX = isGroundEnemy(spawn.kind)
+        ? this.playerX + VIEW_W * 0.58
+        : this.playerX + VIEW_W * 0.65;
+      this.enemies.push(this.createEnemyFromSpawn(spawn, spawnX));
     }
   }
 
-  private enemyCollisionDamage(_kind: RainbowCowboyEnemyKind): number {
-    return 1;
+  private spawnFinalWaveEnemy(spawn: SpawnDef) {
+    const spawnX = isGroundEnemy(spawn.kind)
+      ? this.playerX + VIEW_W * 0.52 + spawn.delayMs * 0.02
+      : this.playerX + VIEW_W * 0.6;
+    const enemy = this.createEnemyFromSpawn(spawn, spawnX);
+    enemy.fromFinalWave = true;
+    this.enemies.push(enemy);
+  }
+
+  private processFinalWave() {
+    const wave = this.config.finalWave;
+    if (!wave || this.finalWaveSurvived) return;
+
+    if (!this.finalWaveTriggered && this.playerX >= wave.triggerX) {
+      this.finalWaveTriggered = true;
+      for (const spawn of this.finalWaveSpawns) {
+        spawn.triggeredAt = this.timeMs;
+      }
+      this.showPopup(wave.message ?? "FINAL WAVE INBOUND", 1800);
+    }
+
+    if (!this.finalWaveTriggered) return;
+
+    for (const spawn of this.finalWaveSpawns) {
+      if (spawn.spawned) continue;
+      if (spawn.triggeredAt == null) spawn.triggeredAt = this.timeMs;
+      if (this.timeMs - spawn.triggeredAt < spawn.delayMs) continue;
+      spawn.spawned = true;
+      this.spawnFinalWaveEnemy(spawn);
+    }
+
+    const allSpawned = this.finalWaveSpawns.every((s) => s.spawned);
+    const waveEnemiesDone = allSpawned && !this.enemies.some((e) => e.active && e.fromFinalWave);
+
+    if (allSpawned && waveEnemiesDone && !this.finalWaveSurvived) {
+      this.finalWaveSurvived = true;
+      this.addScore(wave.bonusScore ?? LEVEL_3_FINAL_WAVE_BONUS);
+      this.showPopup("FINAL WAVE SURVIVED!", 1600);
+    }
+  }
+
+  private isExtractionUnlocked(): boolean {
+    const gate = this.config.extractionGate;
+    if (!gate || gate.length === 0) return true;
+
+    const nestsCleared = this.nests.every((n) => !n.active);
+    if (gate.includes("nests_cleared") && nestsCleared) return true;
+    if (gate.includes("final_wave_survived") && this.finalWaveSurvived) return true;
+    return false;
+  }
+
+  private enemyCollisionDamage(kind: RainbowCowboyEnemyKind): number {
+    return isBoomBot(kind) ? 2 : 1;
   }
 
   private destroyEnemy(
     enemy: Enemy,
-    cause: "tongue" | "rainbow" | "rampage" | "collision",
+    cause: "tongue" | "rainbow" | "rampage" | "collision" | "blaster",
   ) {
     if (!enemy.active) return;
+    const wasTruck = isBoomBot(enemy.kind);
+    const cx = enemy.x + enemy.w / 2;
+    const cy = enemy.y + enemy.h / 2;
     enemy.active = false;
 
     if (enemy.kind === "red_baron") {
@@ -635,7 +866,11 @@ export class RainbowCowboyEngine {
     this.addScore(DRONE_SCORES[enemy.kind] + bonus);
 
     if (enemy.kind === "cargo") {
-      this.spawnCargoDrop(enemy.x + enemy.w / 2, enemy.y + enemy.h / 2);
+      this.spawnCargoDrop(cx, cy);
+    }
+
+    if (wasTruck && cause !== "collision") {
+      this.explodeMonsterTruckAt(cx, cy, enemy.kind);
     }
 
     if (cause === "tongue") {
@@ -643,14 +878,326 @@ export class RainbowCowboyEngine {
       this.emitAudio({ type: "drone_eat" });
     } else if (cause === "rampage") {
       this.emitAudio({ type: "drone_eat" });
+    } else if (cause === "blaster") {
+      this.showPopup("KABOOM!", 500);
+    }
+  }
+
+  private explodeMonsterTruckAt(x: number, y: number, kind: RainbowCowboyEnemyKind) {
+    const radius = enemyExplosionRadius(kind);
+    this.emitAudio({ type: "explosion" });
+    this.landmineExplosionEvents.push({
+      x,
+      groundY: this.config.level.groundY,
+    });
+    this.triggerExplosion(x, y, radius, 2, "RC truck detonation");
+  }
+
+  private damageEnemyWithGun(enemy: Enemy, weapon: WeaponKind): boolean {
+    if (!enemy.active) return false;
+    if (weapon === "bazooka") {
+      this.destroyEnemy(enemy, "blaster");
+      return true;
+    }
+    if (isBoomBot(enemy.kind)) {
+      enemy.hp = (enemy.hp ?? 1) - 1;
+      if (enemy.hp > 0) {
+        enemy.beepPhase = (enemy.beepPhase ?? 0) + 0.8;
+        return false;
+      }
+    }
+    this.destroyEnemy(enemy, "blaster");
+    return true;
+  }
+
+  private hazardGunRect(hazard: Hazard): Rect | null {
+    const groundY = this.config.level.groundY;
+    if (hazard.kind === "landmine") return landmineBodyRect(hazard, groundY);
+    if (hazard.kind === "dynamite") {
+      const s = DYNAMITE_SIZE;
+      return { x: hazard.x - s / 2, y: hazard.y - s, w: s, h: s };
+    }
+    if (hazard.kind === "trash_balloon") {
+      return {
+        x: hazard.x - BALLOON_SIZE.w / 2,
+        y: hazard.y - BALLOON_SIZE.h,
+        w: BALLOON_SIZE.w,
+        h: BALLOON_SIZE.h,
+      };
+    }
+    return null;
+  }
+
+  private hitHazardWithGun(hazard: Hazard, weapon: WeaponKind) {
+    if (!hazard.active) return;
+    const groundY = this.config.level.groundY;
+
+    if (hazard.kind === "landmine") {
+      const knock = this.playerX < hazard.x ? -4 : 4;
+      this.detonateLandmine(hazard, "Shot a landmine", knock);
+      return;
+    }
+
+    if (hazard.kind === "dynamite") {
+      hazard.exploded = true;
+      hazard.active = false;
+      this.emitAudio({ type: "explosion" });
+      this.landmineExplosionEvents.push({ x: hazard.x, groundY });
+      this.triggerExplosion(hazard.x, hazard.y, DYNAMITE_RADIUS, weapon === "bazooka" ? 2 : 1, "Shot dynamite");
+      this.showPopup("KABOOM!", 600);
+      return;
+    }
+
+    if (hazard.kind === "trash_balloon") {
+      hazard.active = false;
+      this.emitAudio({ type: "explosion" });
+      this.showPopup("POP!", 400);
+    }
+  }
+
+  private hitBombWithGun(bomb: Bomb, weapon: WeaponKind) {
+    if (!bomb.active) return;
+    bomb.active = false;
+    this.emitAudio({ type: "explosion" });
+    const groundY = this.config.level.groundY;
+    this.landmineExplosionEvents.push({ x: bomb.x, groundY });
+
+    if (bomb.grounded || weapon === "bazooka") {
+      const dist = Math.hypot(this.playerX - bomb.x, this.playerY - bomb.y);
+      if (dist < BOMB_RADIUS) {
+        const knock = this.playerX < bomb.x ? -6 : 6;
+        this.damagePlayer(1, "Shot a bomb", knock);
+      }
+    } else {
+      this.showPopup("POP!", 400);
+    }
+  }
+
+  private projectileHitRect(shot: BlasterProjectile): Rect {
+    const pw = shot.weapon === "bazooka" ? BAZOOKA_PROJECTILE_W : BLASTER_PROJECTILE_W;
+    const ph = shot.weapon === "bazooka" ? BAZOOKA_PROJECTILE_H : BLASTER_PROJECTILE_H;
+    const dir = shot.vx >= 0 ? 1 : -1;
+    if (shot.weapon === "bazooka") {
+      return {
+        x: dir > 0 ? shot.x - 4 : shot.x - pw + 4,
+        y: shot.y - ph / 2,
+        w: pw,
+        h: ph,
+      };
+    }
+    return {
+      x: shot.x - pw / 2,
+      y: shot.y - ph / 2,
+      w: pw,
+      h: ph,
+    };
+  }
+
+  private fireWeapon(weapon: WeaponKind) {
+    const mouth = this.mouthPos();
+    const dir = this.facing === "right" ? 1 : -1;
+    const isBazooka = weapon === "bazooka";
+    const speed = isBazooka ? BAZOOKA_PROJECTILE_SPEED : BLASTER_PROJECTILE_SPEED;
+    const yOffset = isBazooka ? 2 : 0;
+
+    this.blasterProjectiles.push({
+      id: nextId(),
+      x: mouth.x + dir * (isBazooka ? 12 : 8),
+      y: mouth.y + yOffset,
+      vx: dir * speed,
+      active: true,
+      weapon,
+    });
+
+    const cooldown =
+      weapon === "machine_gun"
+        ? MACHINE_GUN_FIRE_COOLDOWN_MS
+        : weapon === "bazooka"
+          ? BAZOOKA_FIRE_COOLDOWN_MS
+          : BLASTER_FIRE_COOLDOWN_MS;
+    this.gunCooldownUntil = this.timeMs + cooldown;
+    this.lastGunFireMs = this.timeMs;
+    this.lastGunWeapon = weapon;
+    this.emitAudio({ type: weapon === "bazooka" ? "explosion" : "tongue" });
+  }
+
+  private tryFireGun(fromEdge: boolean, held: boolean) {
+    if (!this.weaponsEnabled()) return;
+    if (this.timeMs < this.gunCooldownUntil) return;
+
+    let weapon: WeaponKind | null = null;
+
+    if (this.isMachineGunActive && (held || fromEdge)) {
+      weapon = "machine_gun";
+    } else if (!this.isMachineGunActive && this.bazookaAmmo > 0 && fromEdge) {
+      weapon = "bazooka";
+    } else if (!this.isMachineGunActive && this.bazookaAmmo <= 0 && this.hasPistol && fromEdge) {
+      weapon = "pistol";
+    } else if (fromEdge && !this.hasPistol && !this.isMachineGunActive && this.bazookaAmmo <= 0) {
+      this.showPopup("NO WEAPON — grab a pistol", 700);
+      return;
+    } else {
+      return;
+    }
+
+    if (weapon === "bazooka") {
+      this.bazookaAmmo -= 1;
+    }
+
+    this.fireWeapon(weapon);
+  }
+
+  private boomBotContactExplode(enemy: Enemy) {
+    if (!enemy.active) return;
+    const cx = enemy.x + enemy.w / 2;
+    const cy = enemy.y + enemy.h / 2;
+    enemy.active = false;
+    this.dronesEaten += 1;
+    this.addScore(DRONE_SCORES[enemy.kind]);
+    this.explodeMonsterTruckAt(cx, cy, enemy.kind);
+  }
+
+  private fireTruckTurret(enemy: Enemy) {
+    const ecx = enemy.x + enemy.w / 2;
+    const dir = this.playerX >= ecx ? 1 : -1;
+    const barrelLen = enemy.w * 0.38;
+    const muzzleX = ecx + Math.cos(enemy.turretAngle ?? 0) * barrelLen;
+    const muzzleY = enemy.y + 10 + Math.sin(enemy.turretAngle ?? 0) * barrelLen * 0.15;
+    this.enemyBullets.push({
+      id: nextId(),
+      x: muzzleX,
+      y: muzzleY,
+      vx: dir * TURRET_BULLET_SPEED,
+      vy: 0,
+      active: true,
+    });
+    this.emitAudio({ type: "tongue" });
+  }
+
+  private updateEnemyBullets(dt: number) {
+    const cam = this.cameraX;
+    const pr = playerRect(this.playerX, this.playerY, this.ducking);
+
+    for (const bullet of this.enemyBullets) {
+      if (!bullet.active) continue;
+      bullet.x += bullet.vx * dt;
+      bullet.y += bullet.vy * dt;
+
+      if (bullet.x < cam - 60 || bullet.x > cam + VIEW_W + 60) {
+        bullet.active = false;
+        continue;
+      }
+
+      const br: Rect = {
+        x: bullet.x - ENEMY_BULLET_RADIUS,
+        y: bullet.y - ENEMY_BULLET_RADIUS,
+        w: ENEMY_BULLET_RADIUS * 2,
+        h: ENEMY_BULLET_RADIUS * 2,
+      };
+      if (rectsOverlap(pr, br) && !this.isInvincible && this.timeMs >= this.hitFlashUntil) {
+        bullet.active = false;
+        const knock = bullet.vx > 0 ? 5 : -5;
+        this.damagePlayer(1, "Turret truck shot", knock);
+      }
+    }
+
+    this.enemyBullets = this.enemyBullets.filter((b) => b.active);
+  }
+
+  private updateBlasterProjectiles(dt: number) {
+    const cam = this.cameraX;
+    const viewLeft = cam - 40;
+    const viewRight = cam + VIEW_W + 40;
+
+    for (const shot of this.blasterProjectiles) {
+      if (!shot.active) continue;
+      shot.x += shot.vx * dt;
+      if (shot.x < viewLeft - 80 || shot.x > viewRight + 80) {
+        shot.active = false;
+        continue;
+      }
+
+      const sr = this.projectileHitRect(shot);
+
+      for (const enemy of this.enemies) {
+        if (!enemy.active) continue;
+        const er = { x: enemy.x, y: enemy.y, w: enemy.w, h: enemy.h };
+        if (rectsOverlap(sr, er)) {
+          this.damageEnemyWithGun(enemy, shot.weapon);
+          shot.active = false;
+          break;
+        }
+      }
+
+      if (!shot.active) continue;
+
+      for (const hazard of this.hazards) {
+        if (!hazard.active) continue;
+        const hr = this.hazardGunRect(hazard);
+        if (!hr) continue;
+        if (rectsOverlap(sr, hr)) {
+          this.hitHazardWithGun(hazard, shot.weapon);
+          shot.active = false;
+          break;
+        }
+      }
+
+      if (!shot.active) continue;
+
+      for (const bomb of this.bombs) {
+        if (!bomb.active) continue;
+        const br: Rect = { x: bomb.x - 14, y: bomb.y - 14, w: 28, h: 28 };
+        if (rectsOverlap(sr, br)) {
+          this.hitBombWithGun(bomb, shot.weapon);
+          shot.active = false;
+          break;
+        }
+      }
+
+      if (!shot.active) continue;
+
+      for (const nest of this.nests) {
+        if (!nest.active) continue;
+        if (rectsOverlap(sr, this.nestRect(nest))) {
+          this.destroyNest(nest);
+          shot.active = false;
+          break;
+        }
+      }
+    }
+
+    this.blasterProjectiles = this.blasterProjectiles.filter((s) => s.active);
+  }
+
+  private throwGoblinBomb(enemy: Enemy) {
+    const px = enemy.x + enemy.w / 2;
+    const dir = this.playerX >= px ? 1 : -1;
+    const burst = 1 + (Math.random() > 0.55 ? 1 : 0);
+
+    for (let i = 0; i < burst; i++) {
+      const spread = (Math.random() - 0.5) * 3.6;
+      const loft = 4 + Math.random() * 7 + i * 1.5;
+      const speed = 2 + Math.random() * 3.2;
+      this.bombs.push({
+        id: nextId(),
+        x: px + dir * (6 + i * 8) + spread * 4,
+        y: enemy.y + 4,
+        vy: -loft,
+        vx: dir * (speed + spread),
+        bounces: 1 + Math.floor(Math.random() * 3),
+        grounded: false,
+        fuseMs: BOMB_FUSE_MS + 150 + Math.random() * 700,
+        active: true,
+        cartoon: true,
+      });
     }
   }
 
   private spawnCargoDrop(x: number, y: number) {
     const kinds: RainbowCowboyPickupKind[] = [
       "range_beer",
-      "white_monster",
-      "zyn_tin",
+      "white_energy_drink",
+      "nicotine_pouch",
       "rainbow",
     ];
     const kind = kinds[Math.floor(Math.random() * kinds.length)];
@@ -696,23 +1243,12 @@ export class RainbowCowboyEngine {
   private spawnNestDrone(nest: Nest) {
     const kind = nest.spawnKinds[nest.spawnIndex % nest.spawnKinds.length];
     nest.spawnIndex += 1;
-    const size = ENEMY_SIZES[kind];
-    const enemy: Enemy = {
-      id: nextId(),
-      kind,
-      x: nest.x + 40,
-      y: nest.y - 80,
-      baseY: nest.y - 80,
-      w: size.w,
-      h: size.h,
-      vx: ENEMY_SPEEDS[kind],
-      active: true,
-      bobPhase: Math.random() * 6,
-      phase: "patrol",
-      homingSince: 0,
-    };
-    if (kind === "red_baron") {
-      enemy.bombCooldownMs = RED_BARON_BOMB_INTERVAL_MS;
+    const spawnX = isGroundEnemy(kind) ? nest.x + 36 : nest.x + 40;
+    const spawnY = isGroundEnemy(kind) ? this.config.level.groundY : nest.y - 80;
+    const enemy = this.createEnemyFromSpawn({ kind, y: spawnY }, spawnX);
+    if (!isGroundEnemy(kind)) {
+      enemy.y = nest.y - 80;
+      enemy.baseY = nest.y - 80;
     }
     this.enemies.push(enemy);
   }
@@ -752,6 +1288,10 @@ export class RainbowCowboyEngine {
       this.tongueCooldownUntil = this.timeMs + TONGUE_COOLDOWN_MS;
       this.tongueTarget = this.findTongueTarget();
       this.emitAudio({ type: "tongue" });
+    }
+
+    if (input.gunPressed || input.gunHeld) {
+      this.tryFireGun(input.gunPressed, input.gunHeld);
     }
 
     if (input.rainbowPressed) {
@@ -859,12 +1399,51 @@ export class RainbowCowboyEngine {
     const targetX = this.playerX;
     const targetY = this.playerY - PLAYER_H * 0.45;
     const groundY = this.config.level.groundY;
+    const sm = this.difficultySpeed();
 
     for (const e of this.enemies) {
       if (!e.active) continue;
 
+      if (e.groundUnit) {
+        e.beepPhase = (e.beepPhase ?? 0) + 0.06 * dt;
+        const ecx = e.x + e.w / 2;
+        const dir = this.playerX >= ecx ? 1 : -1;
+        const speed = groundEnemySpeed(e.kind);
+        e.x += dir * speed * dt * sm;
+        e.y = groundY - e.h;
+
+        if (e.kind === "grenade_goblin_bot") {
+          e.throwCooldownMs = (e.throwCooldownMs ?? GOBLIN_THROW_INTERVAL_MS) - dtMs;
+          if ((e.throwCooldownMs ?? 0) <= 0) {
+            this.throwGoblinBomb(e);
+            e.throwCooldownMs = GOBLIN_THROW_INTERVAL_MS + Math.random() * 800;
+          }
+        }
+
+        if (e.kind === "armored_boom_bot") {
+          const targetAngle = this.playerX >= ecx ? 0 : Math.PI;
+          let angle = e.turretAngle ?? targetAngle;
+          let diff = targetAngle - angle;
+          while (diff > Math.PI) diff -= Math.PI * 2;
+          while (diff < -Math.PI) diff += Math.PI * 2;
+          angle += diff * TURRET_TRUCK_TURN_SPEED * dt;
+          e.turretAngle = angle;
+
+          e.shootCooldownMs = (e.shootCooldownMs ?? TURRET_TRUCK_SHOOT_INTERVAL_MS) - dtMs;
+          if ((e.shootCooldownMs ?? 0) <= 0 && Math.abs(diff) < 0.45) {
+            this.fireTruckTurret(e);
+            e.shootCooldownMs = TURRET_TRUCK_SHOOT_INTERVAL_MS;
+          }
+        }
+
+        if (e.x + e.w < this.cameraX - 180) {
+          e.active = false;
+        }
+        continue;
+      }
+
       if (e.kind === "red_baron") {
-        e.x += e.vx * dt;
+        e.x += e.vx * dt * sm;
         e.bobPhase += 0.03 * dt;
         e.y = e.baseY + Math.sin(e.bobPhase) * 8;
 
@@ -888,7 +1467,7 @@ export class RainbowCowboyEngine {
         e.bobPhase += 0.04 * dt;
 
         if (e.phase === "patrol") {
-          e.x += e.vx * dt;
+          e.x += e.vx * dt * sm;
           e.y = e.baseY + Math.sin(e.bobPhase * 0.6) * 6;
 
           const wingCenterX = e.x + e.w / 2;
@@ -911,7 +1490,7 @@ export class RainbowCowboyEngine {
 
           const ramp = Math.min(1, (this.timeMs - e.homingSince) / 400);
           const steer = cfg.steer * (0.9 + ramp * 0.5);
-          const speed = cfg.speed * (1.1 + ramp * 0.6);
+          const speed = cfg.speed * (1.1 + ramp * 0.6) * sm;
 
           e.x += nx * speed * steer * dt * 16;
           e.y += ny * speed * steer * dt * 16;
@@ -931,7 +1510,7 @@ export class RainbowCowboyEngine {
       const skipHoming = e.kind === "cargo";
 
       if (e.phase === "patrol") {
-        e.x += e.vx * dt;
+        e.x += e.vx * dt * sm;
         e.bobPhase += 0.04 * dt;
 
         if (e.kind === "quad" || e.kind === "recon") {
@@ -953,7 +1532,7 @@ export class RainbowCowboyEngine {
         continue;
       }
 
-      const cfg = DRONE_HOMING[e.kind];
+      const cfg = DRONE_HOMING[e.kind as keyof typeof DRONE_HOMING];
       const ecx = e.x + e.w / 2;
       const ecy = e.y + e.h / 2;
       const dx = targetX - ecx;
@@ -964,7 +1543,7 @@ export class RainbowCowboyEngine {
 
       const ramp = Math.min(1, (this.timeMs - e.homingSince) / 600);
       const steer = cfg.steer * (0.55 + ramp * 0.45);
-      const speed = cfg.speed * (0.75 + ramp * 0.35);
+      const speed = cfg.speed * (0.75 + ramp * 0.35) * sm;
 
       e.x += nx * speed * steer * dt * 16;
       e.y += ny * speed * steer * dt * 16;
@@ -990,13 +1569,21 @@ export class RainbowCowboyEngine {
       if (!bomb.active) continue;
 
       if (!bomb.grounded) {
+        if (bomb.vx) bomb.x += bomb.vx * dt;
         bomb.vy += BOMB_GRAVITY * dt;
         bomb.y += bomb.vy * dt;
 
         let landed = false;
         if (bomb.y >= groundY - 4) {
-          bomb.y = groundY - 4;
-          landed = true;
+          if (bomb.cartoon && (bomb.bounces ?? 0) > 0) {
+            bomb.y = groundY - 4;
+            bomb.vy = -Math.abs(bomb.vy) * 0.55;
+            bomb.bounces = (bomb.bounces ?? 0) - 1;
+            if (bomb.vx) bomb.vx *= 0.92;
+          } else {
+            bomb.y = groundY - 4;
+            landed = true;
+          }
         }
 
         for (const plat of this.config.platforms) {
@@ -1128,6 +1715,7 @@ export class RainbowCowboyEngine {
 
     for (const enemy of this.enemies) {
       if (!enemy.active) continue;
+      if (isBoomBot(enemy.kind)) continue;
       const er = { x: enemy.x, y: enemy.y, w: enemy.w, h: enemy.h };
       if (rectsOverlap(tipRect, er)) {
         this.destroyEnemy(enemy, "tongue");
@@ -1199,18 +1787,18 @@ export class RainbowCowboyEngine {
         this.emitAudio({ type: "health_pickup", pickup: "range_beer" });
         this.showPopup("RANGE BEER +1");
         break;
-      case "white_monster":
+      case "white_energy_drink":
         this.hearts = Math.min(MAX_HEARTS, this.hearts + 1);
         this.gassedUntil = 0;
         this.speedBoostUntil = this.timeMs + SPEED_BOOST_MS;
-        this.emitAudio({ type: "health_pickup", pickup: "white_monster" });
-        this.showPopup("WHITE MONSTER");
+        this.emitAudio({ type: "health_pickup", pickup: "white_energy_drink" });
+        this.showPopup("WHITE ENERGY DRINK");
         break;
-      case "zyn_tin":
+      case "nicotine_pouch":
         this.hearts = Math.min(MAX_HEARTS, this.hearts + 2);
         this.speedBoostUntil = this.timeMs + SPEED_BOOST_MS;
-        this.emitAudio({ type: "health_pickup", pickup: "zyn_tin" });
-        this.showPopup("ZYN TIN +2");
+        this.emitAudio({ type: "health_pickup", pickup: "nicotine_pouch" });
+        this.showPopup("NICOTINE POUCH +2");
         break;
       case "rainbow":
         this.rainbowCharges = Math.min(MAX_RAINBOW_CHARGES, this.rainbowCharges + 1);
@@ -1224,7 +1812,30 @@ export class RainbowCowboyEngine {
         this.emitAudio({ type: "unicorn_treat" });
         this.showPopup("RAINBOW RAMPAGE", 2000);
         break;
+      case "weapon_pistol":
+        this.hasPistol = true;
+        this.showPopup("PISTOL — default weapon (T / C to fire)", 1200);
+        break;
+      case "weapon_machine_gun":
+        this.machineGunUntil = this.timeMs + BLASTER_DURATION_MS;
+        this.showPopup("MACHINE GUN — 20s spray, then back to pistol", 1400);
+        break;
+      case "weapon_bazooka":
+        this.bazookaAmmo += BAZOOKA_ROCKETS_PER_PICKUP;
+        this.showPopup(`BAZOOKA — ${this.bazookaAmmo} rockets, then back to pistol`, 1400);
+        break;
     }
+  }
+
+  private getWeaponHudLabel(): string | null {
+    if (!this.weaponsEnabled()) return null;
+    if (this.isMachineGunActive) {
+      const sec = Math.max(0, Math.ceil((this.machineGunUntil - this.timeMs) / 1000));
+      return `MG ${sec}s`;
+    }
+    if (this.bazookaAmmo > 0) return `BAZOOKA x${this.bazookaAmmo}`;
+    if (this.hasPistol) return "PISTOL";
+    return null;
   }
 
   private checkCollisions() {
@@ -1247,6 +1858,11 @@ export class RainbowCowboyEngine {
       if (rectsOverlap(pr, er)) {
         if (this.isRampage) {
           this.destroyEnemy(enemy, "rampage");
+        } else if (isBoomBot(enemy.kind)) {
+          if (!this.isInvincible && this.timeMs >= this.hitFlashUntil) {
+            this.emitAudio({ type: "explosion" });
+          }
+          this.boomBotContactExplode(enemy);
         } else {
           if (!this.isInvincible && this.timeMs >= this.hitFlashUntil) {
             this.emitAudio({ type: "explosion" });
@@ -1304,10 +1920,16 @@ export class RainbowCowboyEngine {
   }
 
   private checkExtraction() {
-    if (this.playerX >= this.config.extractionX) {
-      this.extractionReached = true;
-      this.playerVx = 0;
+    if (this.playerX < this.config.extractionX) return;
+    if (!this.isExtractionUnlocked()) {
+      if (this.timeMs >= this.extractionBlockedPopupUntil) {
+        this.showPopup("Hold the line — clear the nests or survive the final wave!", 1500);
+        this.extractionBlockedPopupUntil = this.timeMs + 3200;
+      }
+      return;
     }
+    this.extractionReached = true;
+    this.playerVx = 0;
   }
 
   private updateCamera() {
@@ -1327,6 +1949,13 @@ export class RainbowCowboyEngine {
       rampage: this.isRampage,
       popupText: this.timeMs < this.popupUntil ? this.popupText : null,
       popupUntil: this.popupUntil,
+      blasterActive: this.isMachineGunActive,
+      blasterSecondsLeft: Math.max(
+        0,
+        Math.ceil((this.machineGunUntil - this.timeMs) / 1000),
+      ),
+      weaponLabel: this.getWeaponHudLabel(),
+      bazookaAmmo: this.bazookaAmmo,
     };
   }
 
@@ -1350,6 +1979,7 @@ export class RainbowCowboyEngine {
       completed: this.phase === "complete",
       completeBanner: this.config.completeBanner,
       deathCause: this.deathCause,
+      difficulty: this.config.difficulty ?? "easy",
     });
   }
 

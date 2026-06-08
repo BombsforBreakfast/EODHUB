@@ -66,10 +66,10 @@ export const RENDER_SAFE_ACTIONS: Record<RenderSafeActionId, RenderSafeAction> =
   },
   cut_and_secure: {
     id: "cut_and_secure",
-    label: "Cut Line & Secure Device",
+    label: "Block / Secure & Cut",
     shortLabel: "Secure",
     hotkey: "1",
-    description: "Cut the trip line and secure the fictional grenade pin.",
+    description: "Secure the end condition first, then cut the trip line.",
   },
   call_avalanche: {
     id: "call_avalanche",
@@ -100,12 +100,22 @@ export const RENDER_SAFE_FEEDBACK = {
   investigationThreat: "Threat confirmed. Choose a follow-on action.",
   tripWireTraceResult:
     "One end is tied off to brush. The other runs loose to a fictional grenade pin.",
+  tripWireTraceGrenade:
+    "Trace complete: loose trip line tied to a fictional grenade pin. You can cut the line while securing the grenade.",
+  tripWireTraceMousetrap:
+    "Trace complete: tight line holding back a spring-loaded mousetrap-style initiator. You can positively block it, then cut the trip line.",
   tripWireCutAlone:
     "You cut the line without securing the pin. The device functioned. Mission failed.",
   tripWireHookPull:
     "You hooked the line and pulled. The assault was compromised. The target escaped.",
   tripWireSecureSuccess:
     "Good work. You traced the line, cut it, and secured the pin. The force keeps moving.",
+  tripWireMousetrapSecureSuccess:
+    "Good work. You positively blocked the mousetrap-style initiator, cut the trip line, and kept the force moving.",
+  tripWireMarkBypassFail:
+    "Detonation occurred. Another member of the assault force walked through the trip line. Mission failed.",
+  tripWireRemotePullFail:
+    "Remote pull caused a detonation and compromised the mission.",
   ordnanceBipFail:
     "The operation was interrupted before the structure was fully cleared. Mission compromised.",
   finalHandsOnFail:
@@ -115,20 +125,26 @@ export const RENDER_SAFE_FEEDBACK = {
 
 export function getActionLabel(
   actionId: RenderSafeActionId,
-  encounter?: { ordnanceCache?: boolean },
+  encounter?: { ordnanceCache?: boolean; type?: string },
 ): string {
   if (actionId === "bip" && encounter?.ordnanceCache) {
     return "Consolidate and BIP";
+  }
+  if (actionId === "remote_move" && encounter?.type === "trip_wire") {
+    return "Remote Pull";
   }
   return RENDER_SAFE_ACTIONS[actionId].label;
 }
 
 export function getActionDescription(
   actionId: RenderSafeActionId,
-  encounter?: { ordnanceCache?: boolean },
+  encounter?: { ordnanceCache?: boolean; type?: string },
 ): string {
   if (actionId === "bip" && encounter?.ordnanceCache) {
     return "Consolidate the cache and blow in place before the structure is fully cleared.";
+  }
+  if (actionId === "remote_move" && encounter?.type === "trip_wire") {
+    return "Pull or disturb the trip line from standoff.";
   }
   return RENDER_SAFE_ACTIONS[actionId].description;
 }

@@ -7,6 +7,11 @@ import { LikerAvatar } from "@/app/components/PostLikersStack";
 import { formatGameDuration } from "./formatGameDuration";
 import { fetchGameLeaderboard } from "./gameLeaderboardStorage";
 import type { ArcadeGameId, GameLeaderboardEntry } from "./gameLeaderboardTypes";
+import {
+  formatDifficultyLabel,
+  getDifficultyBadgeColor,
+} from "./rainbow-cowboy/rainbowCowboyDifficulty";
+import type { RainbowCowboyDifficulty } from "./rainbow-cowboy/rainbowCowboyTypes";
 
 interface Props {
   game: ArcadeGameId;
@@ -17,6 +22,30 @@ interface Props {
 }
 
 const MEDALS = ["🥇", "🥈", "🥉"];
+
+function DifficultyBadge({ difficulty }: { difficulty: string }) {
+  const label = formatDifficultyLabel(difficulty as RainbowCowboyDifficulty);
+  const color = getDifficultyBadgeColor(difficulty);
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        marginTop: 3,
+        padding: "1px 6px",
+        borderRadius: 4,
+        fontSize: 10,
+        fontWeight: 800,
+        letterSpacing: "0.03em",
+        textTransform: "uppercase",
+        color,
+        background: `${color}22`,
+        border: `1px solid ${color}55`,
+      }}
+    >
+      {label}
+    </span>
+  );
+}
 
 export function GameLeaderboard({
   game,
@@ -65,6 +94,12 @@ export function GameLeaderboard({
       >
         Leaderboard — {levelTitle}
       </div>
+
+      {game === "rainbow_cowboy" && (
+        <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 10, lineHeight: 1.45 }}>
+          Harder modes spawn more enemies — higher scores reflect the difficulty you cleared.
+        </div>
+      )}
 
       {loading && (
         <div style={{ fontSize: 13, color: t.textMuted, padding: "8px 0" }}>Loading scores…</div>
@@ -143,6 +178,11 @@ export function GameLeaderboard({
                 {entry.durationSeconds != null && (
                   <div style={{ fontSize: 11, color: t.textMuted }}>
                     {formatGameDuration(entry.durationSeconds)}
+                  </div>
+                )}
+                {entry.difficulty && (
+                  <div style={{ marginTop: 2 }}>
+                    <DifficultyBadge difficulty={entry.difficulty} />
                   </div>
                 )}
               </div>

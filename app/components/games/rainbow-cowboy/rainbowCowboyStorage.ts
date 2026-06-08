@@ -1,7 +1,18 @@
 import { supabase } from "@/app/lib/lib/supabaseClient";
 import { formatRainbowCowboyDuration } from "./rainbowCowboyFormat";
+import { formatDifficultyLabel } from "./rainbowCowboyDifficulty";
 import { getRainbowCowboyLevels } from "./rainbowCowboyLevels";
-import type { RainbowCowboyPersonalBest, RainbowCowboyRunResult } from "./rainbowCowboyTypes";
+import {
+  applyCompletion,
+  mergeProgressMaps,
+  progressFromPersonalBestDifficulty,
+  type RainbowCowboyProgressMap,
+} from "./rainbowCowboyProgression";
+import type {
+  RainbowCowboyDifficulty,
+  RainbowCowboyPersonalBest,
+  RainbowCowboyRunResult,
+} from "./rainbowCowboyTypes";
 
 export { getRainbowCowboyLevels };
 
@@ -13,7 +24,7 @@ export async function getRainbowCowboyPersonalBest(
 
   const { data, error } = await supabase
     .from("rainbow_cowboy_high_scores")
-    .select("score, rank, duration_seconds, drones_eaten")
+    .select("score, rank, duration_seconds, drones_eaten, difficulty")
     .eq("user_id", userId)
     .eq("level_id", levelId)
     .maybeSingle();
@@ -25,6 +36,7 @@ export async function getRainbowCowboyPersonalBest(
     rank: data.rank ?? "",
     durationSeconds: data.duration_seconds,
     dronesEaten: data.drones_eaten,
+    difficulty: (data.difficulty as RainbowCowboyPersonalBest["difficulty"]) ?? "easy",
   };
 }
 
@@ -53,6 +65,69 @@ function emptySaveResult(
   };
 }
 
+export async function getRainbowCowboyProgress(userId: string | null): Promise<RainbowCowboyProgressMap> {
+  if (!userId) return getLocalRainbowCowboyProgress();
+
+  const { data, error } = await supabase
+    .from("rainbow_cowboy_completions")
+    .select("level_id, difficulty")
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("Failed to load rainbow cowboy progress:", error);
+    return {};
+  }
+
+  const fromCompletions: RainbowCowboyProgressMap = {};
+  for (const row of data ?? []) {
+    const levelId = row.level_id as string;
+    const difficulty = row.difficulty as RainbowCowboyDifficulty;
+    fromCompletions[levelId] = {
+      ...fromCompletions[levelId],
+      [difficulty]: true,
+    };
+  }
+
+  const fromHighScores: RainbowCowboyProgressMap = {};
+  for (const level of getRainbowCowboyLevels()) {
+    if (level.locked) continue;
+    const best = await getRainbowCowboyPersonalBest(level.id, userId);
+    if (!best) continue;
+    fromHighScores[level.id] = progressFromPersonalBestDifficulty(best.difficulty);
+  }
+
+  return mergeProgressMaps(fromCompletions, fromHighScores);
+}
+
+export async function recordRainbowCowboyCompletion(
+  result: RainbowCowboyRunResult,
+  userId: string | null,
+): Promise<RainbowCowboyProgressMap> {
+  if (!result.completed) {
+    return userId ? await getRainbowCowboyProgress(userId) : getLocalRainbowCowboyProgress();
+  }
+
+  if (!userId) {
+    return recordLocalRainbowCowboyCompletion(result);
+  }
+
+  const { error } = await supabase.from("rainbow_cowboy_completions").upsert(
+    {
+      user_id: userId,
+      level_id: result.levelId,
+      difficulty: result.difficulty,
+      completed_at: result.completedAt,
+    },
+    { onConflict: "user_id,level_id,difficulty" },
+  );
+
+  if (error) {
+    console.error("Failed to record rainbow cowboy completion:", error);
+  }
+
+  return getRainbowCowboyProgress(userId);
+}
+
 export async function saveRainbowCowboyPersonalBest(
   result: RainbowCowboyRunResult,
   userId: string | null,
@@ -60,6 +135,8 @@ export async function saveRainbowCowboyPersonalBest(
   if (!userId || !result.completed) {
     return emptySaveResult(null, result);
   }
+
+  await recordRainbowCowboyCompletion(result, userId);
 
   const existing = await getRainbowCowboyPersonalBest(result.levelId, userId);
   const scoreImproved = !existing || result.score > existing.score;
@@ -73,6 +150,7 @@ export async function saveRainbowCowboyPersonalBest(
   const nextScore = scoreImproved ? result.score : existing!.score;
   const nextRank = scoreImproved ? result.rank : existing!.rank;
   const nextDuration = timeImproved ? result.durationSeconds : existing!.durationSeconds;
+  const nextDifficulty = scoreImproved ? result.difficulty : (existing?.difficulty ?? result.difficulty);
 
   const row = {
     user_id: userId,
@@ -82,6 +160,7 @@ export async function saveRainbowCowboyPersonalBest(
     rank: nextRank,
     completed: true,
     duration_seconds: nextDuration,
+    difficulty: nextDifficulty,
     drones_eaten: scoreImproved ? result.dronesEaten : existing!.dronesEaten,
     balloons_survived: result.balloonsSurvived,
     rainbow_blasts_used: result.rainbowBlastsUsed,
@@ -131,10 +210,12 @@ export async function saveRainbowCowboyPersonalBest(
 }
 
 const LOCAL_BEST_KEY = "rainbow-cowboy-local-best";
+const LOCAL_PROGRESS_KEY = "rainbow-cowboy-local-progress";
 
 type LocalBestRecord = {
   score: number;
   durationSeconds: number | null;
+  difficulty?: RainbowCowboyPersonalBest["difficulty"];
 };
 
 function parseLocalBests(raw: string | null): Record<string, LocalBestRecord> {
@@ -166,9 +247,52 @@ export function getLocalPersonalBest(levelId: string): RainbowCowboyPersonalBest
       rank: "",
       durationSeconds: best.durationSeconds,
       dronesEaten: 0,
+      difficulty: best.difficulty ?? "easy",
     };
   } catch {
     return null;
+  }
+}
+
+function parseLocalProgress(raw: string | null): RainbowCowboyProgressMap {
+  if (!raw) return {};
+  try {
+    return JSON.parse(raw) as RainbowCowboyProgressMap;
+  } catch {
+    return {};
+  }
+}
+
+export function getLocalRainbowCowboyProgress(): RainbowCowboyProgressMap {
+  if (typeof window === "undefined") return {};
+
+  try {
+    const fromCompletions = parseLocalProgress(localStorage.getItem(LOCAL_PROGRESS_KEY));
+    const parsed = parseLocalBests(localStorage.getItem(LOCAL_BEST_KEY));
+    const fromHighScores: RainbowCowboyProgressMap = {};
+    for (const [levelId, best] of Object.entries(parsed)) {
+      fromHighScores[levelId] = progressFromPersonalBestDifficulty(best.difficulty);
+    }
+    return mergeProgressMaps(fromCompletions, fromHighScores);
+  } catch {
+    return {};
+  }
+}
+
+export function recordLocalRainbowCowboyCompletion(
+  result: RainbowCowboyRunResult,
+): RainbowCowboyProgressMap {
+  if (typeof window === "undefined" || !result.completed) {
+    return getLocalRainbowCowboyProgress();
+  }
+
+  try {
+    const current = parseLocalProgress(localStorage.getItem(LOCAL_PROGRESS_KEY));
+    const next = applyCompletion(current, result.levelId, result.difficulty);
+    localStorage.setItem(LOCAL_PROGRESS_KEY, JSON.stringify(next));
+    return mergeProgressMaps(next, getLocalRainbowCowboyProgress());
+  } catch {
+    return getLocalRainbowCowboyProgress();
   }
 }
 
@@ -176,6 +300,8 @@ export function saveLocalPersonalBest(result: RainbowCowboyRunResult): SavePerso
   if (typeof window === "undefined" || !result.completed) {
     return emptySaveResult(null, result);
   }
+
+  recordLocalRainbowCowboyCompletion(result);
 
   try {
     const parsed = parseLocalBests(localStorage.getItem(LOCAL_BEST_KEY));
@@ -201,6 +327,7 @@ export function saveLocalPersonalBest(result: RainbowCowboyRunResult): SavePerso
     const next: LocalBestRecord = {
       score: scoreImproved ? result.score : existing!.score,
       durationSeconds: timeImproved ? result.durationSeconds : existing!.durationSeconds,
+      difficulty: scoreImproved ? result.difficulty : (existing?.difficulty ?? result.difficulty),
     };
     parsed[result.levelId] = next;
     localStorage.setItem(LOCAL_BEST_KEY, JSON.stringify(parsed));
@@ -230,8 +357,8 @@ export function buildPersonalBestMessage(
     if (saveResult.isNewScoreBest) {
       parts.push(
         saveResult.previousBest == null
-          ? `Personal Best Saved — ${saveResult.currentBest} pts`
-          : `New Score PB — ${saveResult.currentBest} pts`,
+          ? `Personal Best Saved — ${saveResult.currentBest} pts (${formatDifficultyLabel(result.difficulty)})`
+          : `New Score PB — ${saveResult.currentBest} pts (${formatDifficultyLabel(result.difficulty)})`,
       );
     }
     if (saveResult.isNewTimeBest) {

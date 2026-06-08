@@ -215,6 +215,73 @@ function drawEncounterCue(
   ctx.restore();
 }
 
+function drawMissionDoor(
+  ctx: CanvasRenderingContext2D,
+  encounter: RenderSafeEncounter,
+  state: RenderSafeEncounterRunState,
+  time: number,
+) {
+  if (encounter.doorMapCol == null || encounter.doorMapRow == null) return;
+
+  const x = encounter.doorMapCol * TILE_SIZE;
+  const y = encounter.doorMapRow * TILE_SIZE;
+  const cx = x + TILE_SIZE / 2;
+  const cy = y + TILE_SIZE / 2;
+  const open = state.entered || state.investigated || state.resolved;
+  const pulse = 0.4 + Math.sin(time / 360 + encounter.doorMapRow) * 0.16;
+
+  ctx.save();
+  drawGroundShadow(ctx, cx, cy + 5, 0.8);
+  ctx.fillStyle = open ? "rgba(20,83,45,0.45)" : "#1f1710";
+  ctx.fillRect(x + 2, y + 2, TILE_SIZE - 4, TILE_SIZE - 4);
+  ctx.strokeStyle = open ? "rgba(34,197,94,0.7)" : "rgba(249,115,22,0.75)";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 3, y + 3, TILE_SIZE - 6, TILE_SIZE - 6);
+  ctx.fillStyle = open ? "#86efac" : "#f97316";
+  ctx.fillRect(x + (open ? 12 : 15), y + 9, 2, 2);
+
+  if (!open) {
+    ctx.strokeStyle = `rgba(249,115,22,${0.35 + pulse})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 13, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawObscuredRoomCue(
+  ctx: CanvasRenderingContext2D,
+  encounter: RenderSafeEncounter,
+  col: number,
+  row: number,
+  state: RenderSafeEncounterRunState,
+  time: number,
+) {
+  const x = col * TILE_SIZE;
+  const y = row * TILE_SIZE;
+  const cx = x + TILE_SIZE / 2;
+  const cy = y + TILE_SIZE / 2;
+  const sweep = Math.sin(time / 420 + row) * 2;
+
+  ctx.save();
+  drawGroundShadow(ctx, cx, cy + 2, 0.95);
+  ctx.fillStyle = "rgba(3,7,18,0.72)";
+  ctx.fillRect(x - 3, y - 3, TILE_SIZE + 6, TILE_SIZE + 6);
+  ctx.strokeStyle = state.resolved ? "rgba(34,197,94,0.55)" : "rgba(148,163,184,0.38)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(x - 1, y - 1, TILE_SIZE + 2, TILE_SIZE + 2);
+  ctx.fillStyle = "rgba(148,163,184,0.28)";
+  ctx.fillRect(x + 4 + sweep, y + 6, TILE_SIZE - 8, 2);
+  ctx.fillRect(x + 6 - sweep, y + 12, TILE_SIZE - 12, 2);
+  ctx.fillStyle = "rgba(249,115,22,0.75)";
+  ctx.font = "bold 10px monospace";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("?", cx, cy + 1);
+  ctx.restore();
+}
+
 function drawTargetBanner(
   ctx: CanvasRenderingContext2D,
   cameraY: number,
@@ -341,10 +408,21 @@ export function RenderSafeMapCanvas({
       drawChemlightAmbient(ctx, chemlights, startRow, endRow, time);
 
       for (const enc of encounters) {
+        if (enc.doorMapRow != null && enc.doorMapRow >= startRow && enc.doorMapRow < endRow) {
+          drawMissionDoor(ctx, enc, getEncounterState(enc.id), time);
+        }
+      }
+
+      for (const enc of encounters) {
         if (enc.type === "target_building" || enc.type === "final_room") continue;
         const { col, row } = encounterToTile(enc);
         if (row >= startRow && row < endRow) {
-          drawEncounterCue(ctx, enc, col, row, getEncounterState(enc.id), time);
+          const state = getEncounterState(enc.id);
+          if (enc.concealThreatUntilInvestigated && !state.entered && !state.investigated && !state.resolved) {
+            drawObscuredRoomCue(ctx, enc, col, row, state, time);
+          } else {
+            drawEncounterCue(ctx, enc, col, row, state, time);
+          }
         }
       }
 

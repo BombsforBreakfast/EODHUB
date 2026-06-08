@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { RequireFullAccess } from "@/app/hooks/useRequireFullAccess";
+import { RequireArcadePreview } from "@/app/components/games/RequireArcadePreview";
 
 const RainbowCowboyPage = dynamic(
   () =>
@@ -21,7 +22,9 @@ const RainbowCowboyPage = dynamic(
 export default function RainbowCowboyRoutePage() {
   return (
     <RequireFullAccess route="app/games/rainbow-cowboy/page.tsx">
-      <RainbowCowboyPage />
+      <RequireArcadePreview>
+        <RainbowCowboyPage />
+      </RequireArcadePreview>
     </RequireFullAccess>
   );
 }

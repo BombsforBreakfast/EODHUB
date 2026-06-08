@@ -11,6 +11,7 @@ type LeaderboardRow = {
   rank: string | null;
   duration_seconds: number | null;
   completed_at: string;
+  difficulty?: string | null;
 };
 
 function mapRow(row: LeaderboardRow): GameLeaderboardEntry {
@@ -24,6 +25,7 @@ function mapRow(row: LeaderboardRow): GameLeaderboardEntry {
     rank: row.rank,
     durationSeconds: row.duration_seconds,
     completedAt: row.completed_at,
+    difficulty: row.difficulty ?? null,
   };
 }
 

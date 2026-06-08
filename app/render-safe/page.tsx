@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { RequireFullAccess } from "@/app/hooks/useRequireFullAccess";
+import { RequireArcadePreview } from "@/app/components/games/RequireArcadePreview";
 
 const RenderSafePage = dynamic(
   () =>
@@ -22,7 +23,9 @@ const RenderSafePage = dynamic(
 export default function RenderSafeRoutePage() {
   return (
     <RequireFullAccess route="app/render-safe/page.tsx">
-      <RenderSafePage />
+      <RequireArcadePreview>
+        <RenderSafePage />
+      </RequireArcadePreview>
     </RequireFullAccess>
   );
 }

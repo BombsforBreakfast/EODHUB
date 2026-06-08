@@ -2,7 +2,7 @@ import type { RainbowCowboyPickupKind } from "../rainbow-cowboy/rainbowCowboyTyp
 
 export type HealthPickupKind = Extract<
   RainbowCowboyPickupKind,
-  "range_beer" | "white_monster" | "zyn_tin"
+  "range_beer" | "white_energy_drink" | "nicotine_pouch"
 >;
 
 export type UnicornHeroAudioEvent =
@@ -510,7 +510,7 @@ export function createUnicornHeroAudio(initialPrefs = loadUnicornHeroAudioPrefs(
         if (type === "range_beer") {
           playOsc(180, 0.06, "triangle", 0.12, sfxGain, 0.005, 0.05);
           setTimeout(() => playOsc(220, 0.05, "triangle", 0.1, sfxGain!, 0.005, 0.04), 70);
-        } else if (type === "white_monster") {
+        } else if (type === "white_energy_drink") {
           playNoise(0.03, 0.06, 2000);
           playOsc(660, 0.08, "square", 0.1, sfxGain, 0.002, 0.05);
           playOsc(880, 0.06, "sine", 0.08, sfxGain, 0.003, 0.04);

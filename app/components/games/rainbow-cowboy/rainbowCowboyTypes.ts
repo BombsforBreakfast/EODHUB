@@ -10,18 +10,32 @@ export type RainbowCowboyEnemyKind =
   | "fixed_wing"
   | "recon"
   | "red_baron"
-  | "cargo";
+  | "cargo"
+  | "boom_bot"
+  | "armored_boom_bot"
+  | "grenade_goblin_bot";
 
 export type RainbowCowboyPickupKind =
   | "range_beer"
-  | "white_monster"
-  | "zyn_tin"
+  | "white_energy_drink"
+  | "nicotine_pouch"
   | "rainbow"
-  | "unicorn_treat";
+  | "unicorn_treat"
+  | "weapon_pistol"
+  | "weapon_machine_gun"
+  | "weapon_bazooka";
+
+export type WeaponKind = "pistol" | "machine_gun" | "bazooka";
 
 export type RainbowCowboyHazardKind = "landmine" | "dynamite" | "trash_balloon";
 
-export type RainbowCowboyLevelTheme = "pasture" | "canyon";
+export type RainbowCowboyLevelTheme = "pasture" | "canyon" | "alamo";
+
+export type RainbowCowboyExtractionGate =
+  | "nests_cleared"
+  | "final_wave_survived";
+
+export type RainbowCowboyDifficulty = "easy" | "novice" | "hard";
 
 export interface RainbowCowboyLevel {
   id: string;
@@ -57,6 +71,7 @@ export interface RainbowCowboyRunResult {
   completeBanner?: string;
   deathCause?: string;
   completedAt: string;
+  difficulty: RainbowCowboyDifficulty;
 }
 
 export interface RainbowCowboyPersonalBest {
@@ -64,6 +79,7 @@ export interface RainbowCowboyPersonalBest {
   rank: string;
   durationSeconds: number | null;
   dronesEaten: number;
+  difficulty?: RainbowCowboyDifficulty;
 }
 
 export interface RainbowCowboyHudSnapshot {
@@ -77,6 +93,10 @@ export interface RainbowCowboyHudSnapshot {
   rampage: boolean;
   popupText: string | null;
   popupUntil: number;
+  blasterActive: boolean;
+  blasterSecondsLeft: number;
+  weaponLabel: string | null;
+  bazookaAmmo: number;
 }
 
 export interface RainbowCowboyEngineSnapshot {
@@ -141,6 +161,8 @@ export interface LevelConfig {
   theme?: RainbowCowboyLevelTheme;
   storyIntro?: string;
   completeBanner?: string;
+  difficulty?: RainbowCowboyDifficulty;
+  difficultySpeedMult?: number;
   platforms: LevelPlatform[];
   walls: LevelWall[];
   pickups: LevelPickupSpawn[];
@@ -149,4 +171,12 @@ export interface LevelConfig {
   warnings?: LevelWarning[];
   nests?: LevelNestSpawn[];
   extractionX: number;
+  /** Extraction stays locked until any listed condition is met. */
+  extractionGate?: RainbowCowboyExtractionGate[];
+  finalWave?: {
+    triggerX: number;
+    message?: string;
+    bonusScore: number;
+    enemies: LevelEnemySpawn[];
+  };
 }

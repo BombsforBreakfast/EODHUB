@@ -10,4 +10,6 @@ export type GameLeaderboardEntry = {
   rank: string | null;
   durationSeconds: number | null;
   completedAt: string;
+  /** Rainbow Cowboy only — difficulty mode for the scored run */
+  difficulty?: string | null;
 };

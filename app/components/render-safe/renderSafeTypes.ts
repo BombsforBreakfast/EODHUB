@@ -76,6 +76,10 @@ export interface RenderSafeEncounter {
   ordnanceCache?: boolean;
   deferBypassMessage?: string;
   randomizeThreat?: boolean;
+  doorMapCol?: number;
+  doorMapRow?: number;
+  concealThreatUntilInvestigated?: boolean;
+  tripWireVariant?: "grenade_loose" | "mousetrap_tight";
 }
 
 export interface RenderSafeLevel {
@@ -117,6 +121,8 @@ export interface RenderSafeEncounterRunState {
   investigated: boolean;
   resolved: boolean;
   chemlightPlaced: boolean;
+  /** Player has entered the mission space (door opened / interior revealed). */
+  entered: boolean;
 }
 
 export interface RenderSafeRunState {

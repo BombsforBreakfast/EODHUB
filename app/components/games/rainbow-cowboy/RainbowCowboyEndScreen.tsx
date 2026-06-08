@@ -2,6 +2,7 @@
 
 import { useTheme } from "@/app/lib/ThemeContext";
 import { formatRainbowCowboyDuration } from "./rainbowCowboyFormat";
+import { formatDifficultyLabel } from "./rainbowCowboyDifficulty";
 import { getVictoryTitle } from "./rainbowCowboyScoring";
 import type { RainbowCowboyRunResult } from "./rainbowCowboyTypes";
 
@@ -38,6 +39,8 @@ export function RainbowCowboyEndScreen({
   const { t } = useTheme();
   const timeDisplay = formatRainbowCowboyDuration(result.durationSeconds);
   const isLevel2 = result.levelId === "level-2";
+  const isLevel3 = result.levelId === "level-3";
+  const isAdvancedLevel = isLevel2 || isLevel3;
   const victoryTitle = getVictoryTitle(result);
 
   return (
@@ -52,7 +55,7 @@ export function RainbowCowboyEndScreen({
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 40, marginBottom: 8 }}>{isVictory ? (isLevel2 ? "🏜️" : "🦄") : "💥"}</div>
+      <div style={{ fontSize: 40, marginBottom: 8 }}>{isVictory ? (isLevel3 ? "🤖" : isLevel2 ? "🏜️" : "🦄") : "💥"}</div>
       <h2 style={{ margin: "0 0 4px", color: isVictory ? "#ff60c0" : "#aaa" }}>{victoryTitle}</h2>
       {!isVictory && result.deathCause && (
         <p style={{ color: t.textMuted, fontSize: 13, marginBottom: 16 }}>{result.deathCause}</p>
@@ -69,11 +72,12 @@ export function RainbowCowboyEndScreen({
       >
         <Stat label="Score" value={String(result.score)} t={t} />
         <Stat label="Rank" value={result.rank} t={t} />
+        <Stat label="Difficulty" value={formatDifficultyLabel(result.difficulty)} t={t} />
         {isVictory && (
           <>
             <Stat label="Hearts Left" value={String(result.heartsRemaining)} t={t} />
             <Stat label="Drones Eaten" value={String(result.dronesEaten)} t={t} />
-            {isLevel2 && (
+            {isAdvancedLevel && (
               <>
                 <Stat label="Red Barons Down" value={String(result.redBaronsDestroyed)} t={t} />
                 <Stat label="Nests Destroyed" value={String(result.nestsDestroyed)} t={t} />

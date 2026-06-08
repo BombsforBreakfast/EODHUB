@@ -1,4 +1,4 @@
-import type { RainbowCowboyRunResult } from "./rainbowCowboyTypes";
+import type { RainbowCowboyDifficulty, RainbowCowboyRunResult } from "./rainbowCowboyTypes";
 
 export const DRONE_SCORES = {
   quad: 50,
@@ -7,14 +7,20 @@ export const DRONE_SCORES = {
   recon: 75,
   red_baron: 250,
   cargo: 200,
+  boom_bot: 100,
+  armored_boom_bot: 200,
+  grenade_goblin_bot: 250,
 } as const;
 
 export const PICKUP_SCORES = {
   range_beer: 25,
-  white_monster: 25,
-  zyn_tin: 50,
+  white_energy_drink: 25,
+  nicotine_pouch: 50,
   rainbow: 50,
   unicorn_treat: 100,
+  weapon_pistol: 50,
+  weapon_machine_gun: 75,
+  weapon_bazooka: 100,
 } as const;
 
 export const NEST_DESTROY_SCORE = 500;
@@ -27,6 +33,11 @@ export const LEVEL_1_FAST_TIME_BONUS = 250;
 export const LEVEL_2_COMPLETE_BONUS = 1500;
 export const LEVEL_2_NO_DAMAGE_BONUS = 750;
 export const LEVEL_2_FAST_TIME_BONUS = 500;
+
+export const LEVEL_3_COMPLETE_BONUS = 1500;
+export const LEVEL_3_NO_DAMAGE_BONUS = 750;
+export const LEVEL_3_FAST_TIME_BONUS = 500;
+export const LEVEL_3_FINAL_WAVE_BONUS = 1000;
 
 const LEVEL_1_RANKS: [number, string][] = [
   [3000, "Unicorn Legend"],
@@ -42,8 +53,16 @@ const LEVEL_2_RANKS: [number, string][] = [
   [2000, "Valley Survivor"],
 ];
 
+const LEVEL_3_RANKS: [number, string][] = [
+  [5500, "Alamo Legend"],
+  [4200, "Boom Bot Buster"],
+  [3200, "Line Holder"],
+  [2200, "Fort Survivor"],
+];
+
 export function getRainbowCowboyRank(levelId: string, score: number): string {
-  const table = levelId === "level-2" ? LEVEL_2_RANKS : LEVEL_1_RANKS;
+  const table =
+    levelId === "level-3" ? LEVEL_3_RANKS : levelId === "level-2" ? LEVEL_2_RANKS : LEVEL_1_RANKS;
   for (const [threshold, rank] of table) {
     if (score >= threshold) return rank;
   }
@@ -51,6 +70,13 @@ export function getRainbowCowboyRank(levelId: string, score: number): string {
 }
 
 function getLevelBonuses(levelId: string) {
+  if (levelId === "level-3") {
+    return {
+      complete: LEVEL_3_COMPLETE_BONUS,
+      noDamage: LEVEL_3_NO_DAMAGE_BONUS,
+      fastTime: LEVEL_3_FAST_TIME_BONUS,
+    };
+  }
   if (levelId === "level-2") {
     return {
       complete: LEVEL_2_COMPLETE_BONUS,
@@ -83,6 +109,7 @@ export function buildRainbowCowboyRunResult(params: {
   completed: boolean;
   completeBanner?: string;
   deathCause?: string;
+  difficulty?: RainbowCowboyDifficulty;
 }): RainbowCowboyRunResult {
   let score = params.baseScore;
   const bonuses = getLevelBonuses(params.levelId);
@@ -111,6 +138,7 @@ export function buildRainbowCowboyRunResult(params: {
     completeBanner: params.completeBanner,
     deathCause: params.deathCause,
     completedAt: new Date().toISOString(),
+    difficulty: params.difficulty ?? "easy",
   };
 }
 

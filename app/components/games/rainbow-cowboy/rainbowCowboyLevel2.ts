@@ -74,14 +74,14 @@ export const LEVEL_2_CONFIG: LevelConfig = {
   ],
   pickups: [
     { kind: "range_beer", x: 1100, y: GROUND_Y - 36 },
-    { kind: "white_monster", x: 3200, y: GROUND_Y - 36 },
+    { kind: "white_energy_drink", x: 3200, y: GROUND_Y - 36 },
     { kind: "range_beer", x: 4800, y: GROUND_Y - 36 },
-    { kind: "zyn_tin", x: 6500, y: 260 },
+    { kind: "nicotine_pouch", x: 6500, y: 260 },
     { kind: "rainbow", x: 6700, y: GROUND_Y - 36 },
     { kind: "range_beer", x: 7100, y: GROUND_Y - 36 },
     { kind: "range_beer", x: 8700, y: GROUND_Y - 36 },
     { kind: "unicorn_treat", x: 9400, y: GROUND_Y - 36 },
-    { kind: "white_monster", x: 10800, y: GROUND_Y - 36 },
+    { kind: "white_energy_drink", x: 10800, y: GROUND_Y - 36 },
     { kind: "range_beer", x: 11200, y: GROUND_Y - 36 },
     { kind: "rainbow", x: 11600, y: GROUND_Y - 36 },
     { kind: "unicorn_treat", x: 11800, y: GROUND_Y - 36 },
@@ -89,7 +89,7 @@ export const LEVEL_2_CONFIG: LevelConfig = {
     // After swarm corridor — reload before broken bridge
     { kind: "range_beer", x: 13350, y: GROUND_Y - 36 },
     { kind: "rainbow", x: 13550, y: GROUND_Y - 36 },
-    { kind: "zyn_tin", x: 14440, y: 284 },
+    { kind: "nicotine_pouch", x: 14440, y: 284 },
     { kind: "range_beer", x: 14200, y: 300 },
   ],
   hazards: [

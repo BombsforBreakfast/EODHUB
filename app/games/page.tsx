@@ -2,6 +2,7 @@
 
 import { useTheme } from "@/app/lib/ThemeContext";
 import { RequireFullAccess } from "@/app/hooks/useRequireFullAccess";
+import { RequireArcadePreview } from "@/app/components/games/RequireArcadePreview";
 
 const GAMES = [
   {
@@ -13,7 +14,7 @@ const GAMES = [
   },
   {
     title: "Unicorn Hero",
-    subtitle: "Ride a pink unicorn. Eat drones. Make poor life choices.",
+    subtitle: "Ride a pink unicorn or a robot. Eat drones. Make poor life choices.",
     href: "/games/rainbow-cowboy",
     emoji: "🦄",
     accent: "#ff60c0",
@@ -74,7 +75,9 @@ function GamesHubContent() {
 export default function GamesHubPage() {
   return (
     <RequireFullAccess route="app/games/page.tsx">
-      <GamesHubContent />
+      <RequireArcadePreview>
+        <GamesHubContent />
+      </RequireArcadePreview>
     </RequireFullAccess>
   );
 }

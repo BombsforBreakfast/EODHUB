@@ -2,6 +2,8 @@ import type { RenderSafeEncounter, RenderSafeLevel } from "./renderSafeTypes";
 
 const HALLWAY_OPTS = ["mark_bypass", "investigate", "ignore"] as const;
 const HALLWAY_POST = ["mark_bypass", "remote_move", "bip", "hands_on"] as const;
+const TRIPLINE_OPTS = ["mark_bypass", "trace_both_ends", "remote_move", "bip"] as const;
+const TRIPLINE_POST = ["cut_and_secure", "remote_move", "bip"] as const;
 const ORDNANCE_OPTS = ["mark_bypass", "bip", "ignore"] as const;
 const ORDNANCE_POST = ["mark_bypass", "remote_move", "bip", "hands_on"] as const;
 const EMPTY_OPTS = ["mark_bypass", "investigate", "ignore"] as const;
@@ -11,7 +13,7 @@ export const LEVEL_2_ENCOUNTERS: RenderSafeEncounter[] = [
   {
     id: "hallway-tripline-alpha",
     label: "Hallway Tripline",
-    type: "suspicious_wire",
+    type: "trip_wire",
     roomTitle: "Central Hallway",
     cue: "A thin wire stretches across the corridor at ankle height.",
     lanePosition: 12,
@@ -23,8 +25,9 @@ export const LEVEL_2_ENCOUNTERS: RenderSafeEncounter[] = [
     canBypassIfThreat: true,
     isCriticalRoute: true,
     blocksPassage: true,
-    initialOptions: [...HALLWAY_OPTS],
-    postInvestigationOptions: [...HALLWAY_POST],
+    initialOptions: [...TRIPLINE_OPTS],
+    postInvestigationOptions: [...TRIPLINE_POST],
+    tripWireVariant: "grenade_loose",
     points: 150,
   },
   {
@@ -60,6 +63,9 @@ export const LEVEL_2_ENCOUNTERS: RenderSafeEncounter[] = [
     isCriticalRoute: false,
     initialOptions: [...EMPTY_OPTS],
     postInvestigationOptions: [...EMPTY_POST],
+    doorMapCol: 10,
+    doorMapRow: 68,
+    concealThreatUntilInvestigated: true,
     points: 75,
   },
   {
@@ -81,6 +87,9 @@ export const LEVEL_2_ENCOUNTERS: RenderSafeEncounter[] = [
       "Not yet, cowboy. There is still more building to clear.",
     initialOptions: [...ORDNANCE_OPTS],
     postInvestigationOptions: [...ORDNANCE_POST],
+    doorMapCol: 15,
+    doorMapRow: 58,
+    concealThreatUntilInvestigated: true,
     points: 150,
   },
   {
@@ -102,6 +111,9 @@ export const LEVEL_2_ENCOUNTERS: RenderSafeEncounter[] = [
       "Not yet, cowboy. There is still more building to clear.",
     initialOptions: [...ORDNANCE_OPTS],
     postInvestigationOptions: [...ORDNANCE_POST],
+    doorMapCol: 10,
+    doorMapRow: 48,
+    concealThreatUntilInvestigated: true,
     points: 100,
   },
   {
@@ -120,6 +132,9 @@ export const LEVEL_2_ENCOUNTERS: RenderSafeEncounter[] = [
     isCriticalRoute: false,
     initialOptions: [...HALLWAY_OPTS],
     postInvestigationOptions: [...HALLWAY_POST],
+    doorMapCol: 15,
+    doorMapRow: 38,
+    concealThreatUntilInvestigated: true,
     points: 150,
   },
   {
@@ -140,12 +155,15 @@ export const LEVEL_2_ENCOUNTERS: RenderSafeEncounter[] = [
     deferBypassMessage: "Still not time. Keep moving.",
     initialOptions: [...ORDNANCE_OPTS],
     postInvestigationOptions: [...ORDNANCE_POST],
+    doorMapCol: 10,
+    doorMapRow: 28,
+    concealThreatUntilInvestigated: true,
     points: 150,
   },
   {
     id: "hallway-tripline-charlie",
     label: "Hallway Tripline",
-    type: "suspicious_wire",
+    type: "trip_wire",
     roomTitle: "Upper Hallway",
     cue: "Another wire spans the corridor ahead of the final room.",
     lanePosition: 68,
@@ -157,8 +175,9 @@ export const LEVEL_2_ENCOUNTERS: RenderSafeEncounter[] = [
     canBypassIfThreat: true,
     isCriticalRoute: true,
     blocksPassage: true,
-    initialOptions: [...HALLWAY_OPTS],
-    postInvestigationOptions: [...HALLWAY_POST],
+    initialOptions: [...TRIPLINE_OPTS],
+    postInvestigationOptions: [...TRIPLINE_POST],
+    tripWireVariant: "mousetrap_tight",
     points: 150,
   },
   {
@@ -238,6 +257,9 @@ export function prepareLevel2Encounters(
       initialOptions: isThreat ? [...ORDNANCE_OPTS] : [...EMPTY_OPTS],
       postInvestigationOptions: isThreat ? [...ORDNANCE_POST] : [...EMPTY_POST],
       points: isThreat ? 150 : 75,
+      doorMapCol: enc.doorMapCol,
+      doorMapRow: enc.doorMapRow,
+      concealThreatUntilInvestigated: enc.concealThreatUntilInvestigated,
     };
   });
 }

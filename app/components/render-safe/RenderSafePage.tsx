@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { useViewerGate } from "@/app/hooks/useRequireFullAccess";
 import { GameLeaderboard } from "@/app/components/games/GameLeaderboard";
+import { GameArcadeNav } from "@/app/components/games/GameArcadeNav";
 import { RenderSafeEndScreen } from "./RenderSafeEndScreen";
 import { RenderSafeGame } from "./RenderSafeGame";
 import { RenderSafeLevelSelect } from "./RenderSafeLevelSelect";
@@ -160,6 +161,8 @@ export function RenderSafePage() {
         width: "100%",
       }}
     >
+      {!isImmersive && <GameArcadeNav />}
+
       {!isImmersive && (
         <div
           style={{

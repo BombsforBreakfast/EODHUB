@@ -26,12 +26,14 @@ export const INVINCIBLE_FLASH_MS = 800;
 export const KNOCKBACK_DECAY = 0.88;
 
 export const DYNAMITE_RADIUS = 90;
-/** Tongue / body overlap — matches the visible plate (~38px wide). */
-export const LANDMINE_BODY_RADIUS = 20;
-/** Foot-level horizontal trigger — tighter than the old 54px half-width. */
-export const LANDMINE_TRIGGER_RADIUS = 24;
+/** Tongue / body overlap — matches the visible plate (~30px wide). */
+export const LANDMINE_BODY_RADIUS = 15;
+/** Foot-level horizontal trigger — narrow plate so jumps can clear more easily. */
+export const LANDMINE_TRIGGER_RADIUS = 16;
 /** Feet must be at least this far above ground to pass over without detonating. */
-export const LANDMINE_CLEAR_HEIGHT = 50;
+export const LANDMINE_CLEAR_HEIGHT = 38;
+/** Horizontal half-width when airborne but not fully cleared (feet-only). */
+export const LANDMINE_AIRBORNE_HALF_W = 9;
 /** @deprecated Use LANDMINE_BODY_RADIUS — kept for any external refs */
 export const LANDMINE_RADIUS = LANDMINE_BODY_RADIUS;
 export const LANDMINE_EXPLODE_MS = 1100;
@@ -44,6 +46,9 @@ export const ENEMY_SIZES = {
   recon: { w: 36, h: 32 },
   red_baron: { w: 56, h: 48 },
   cargo: { w: 60, h: 44 },
+  boom_bot: { w: 54, h: 38 },
+  armored_boom_bot: { w: 62, h: 44 },
+  grenade_goblin_bot: { w: 58, h: 40 },
 } as const;
 
 export const ENEMY_SPEEDS = {
@@ -73,6 +78,31 @@ export const BOMB_GRAVITY = 0.55;
 export const NEST_W = 48;
 export const NEST_H = 40;
 export const NEST_DEFAULT_SPAWN_MS = 1000;
+
+export const BOOM_BOT_HP = 3;
+export const ARMORED_BOOM_BOT_HP = 5;
+export const GOBLIN_BOT_HP = 3;
+export const BOOM_BOT_SPEED = 2.9;
+export const ARMORED_BOOM_BOT_SPEED = 1.55;
+export const GOBLIN_BOT_SPEED = 2.2;
+export const BOOM_BOT_EXPLOSION_RADIUS = 72;
+export const ARMORED_BOOM_BOT_EXPLOSION_RADIUS = 98;
+export const GOBLIN_THROW_INTERVAL_MS = 2100;
+export const TURRET_TRUCK_SHOOT_INTERVAL_MS = 2400;
+export const TURRET_TRUCK_TURN_SPEED = 0.045;
+export const TURRET_BULLET_SPEED = 5.5;
+export const ENEMY_BULLET_RADIUS = 5;
+export const BLASTER_DURATION_MS = 20000;
+export const BLASTER_FIRE_COOLDOWN_MS = 160;
+export const MACHINE_GUN_FIRE_COOLDOWN_MS = 68;
+export const BAZOOKA_FIRE_COOLDOWN_MS = 520;
+export const BAZOOKA_ROCKETS_PER_PICKUP = 3;
+export const BLASTER_PROJECTILE_SPEED = 15;
+export const BAZOOKA_PROJECTILE_SPEED = 11;
+export const BLASTER_PROJECTILE_W = 14;
+export const BLASTER_PROJECTILE_H = 6;
+export const BAZOOKA_PROJECTILE_W = 36;
+export const BAZOOKA_PROJECTILE_H = 8;
 
 export const BALLOON_SIZE = { w: 36, h: 52 };
 /** Trash balloons spawn between these offsets above ground (random per balloon). */

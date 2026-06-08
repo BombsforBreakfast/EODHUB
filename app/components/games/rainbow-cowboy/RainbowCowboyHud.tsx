@@ -24,18 +24,19 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
         justifyContent: "space-between",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
         <div
           style={{
             background: "rgba(0,0,0,0.55)",
             border: "2px solid rgba(255,120,200,0.5)",
             borderRadius: 8,
-            padding: "6px 10px",
+            padding: "5px 10px",
             fontFamily: "monospace",
             fontSize: 11,
             color: "#fff",
-            lineHeight: 1.4,
+            lineHeight: 1.25,
           }}
+          className="rc-level-panel"
         >
           <div style={{ color: "#ff80d0", fontWeight: 700 }}>{levelTitle}</div>
           <div style={{ opacity: 0.85 }}>
@@ -55,6 +56,7 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
             textAlign: "right",
             lineHeight: 1.5,
           }}
+          className="rc-score-panel"
         >
           <div>Score: {hud.score}</div>
           <div style={{ color: "#ffe080" }}>Time: {formatRainbowCowboyDuration(hud.elapsedSeconds)}</div>
@@ -91,6 +93,22 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
           >
             🌈 ({hud.rainbowCharges})
           </div>
+          {hud.weaponLabel && (
+            <div
+              style={{
+                background: "rgba(0,0,0,0.55)",
+                border: "2px solid rgba(128,240,255,0.75)",
+                borderRadius: 8,
+                padding: "4px 10px",
+                fontFamily: "monospace",
+                fontSize: 13,
+                fontWeight: 800,
+                color: "#80f0ff",
+              }}
+            >
+              🔫 {hud.weaponLabel}
+            </div>
+          )}
         </div>
 
         <div
@@ -129,6 +147,20 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
           {hud.popupText}
         </div>
       )}
+
+      <style>{`
+        @media (max-width: 900px) {
+          .rc-level-panel {
+            max-width: 320px;
+            padding: 4px 8px !important;
+            line-height: 1.2 !important;
+          }
+          .rc-score-panel {
+            margin-top: 54px;
+            min-width: 112px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

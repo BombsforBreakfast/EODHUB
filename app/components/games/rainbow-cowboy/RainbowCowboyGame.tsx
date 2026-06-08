@@ -39,6 +39,10 @@ const defaultHud: RainbowCowboyHudSnapshot = {
   rampage: false,
   popupText: null,
   popupUntil: 0,
+  blasterActive: false,
+  blasterSecondsLeft: 0,
+  weaponLabel: null,
+  bazookaAmmo: 0,
 };
 
 function isStaleEngine(engine: RainbowCowboyEngine | null): boolean {
@@ -70,6 +74,8 @@ export function RainbowCowboyGame({
     down: false,
     jumpPressed: false,
     tonguePressed: false,
+    gunPressed: false,
+    gunHeld: false,
     rainbowPressed: false,
     pausePressed: false,
   });
@@ -78,6 +84,8 @@ export function RainbowCowboyGame({
   const prevPosRef = useRef({ x: 0, y: 0 });
   const engineRevisionRef = useRef(RAINBOW_COWBOY_ENGINE_REVISION);
   const instructionsOpenRef = useRef(showInstructions);
+  const onCompleteRef = useRef(onComplete);
+  const onGameOverRef = useRef(onGameOver);
   const audioRef = useRef<ReturnType<typeof createUnicornHeroAudio> | null>(null);
   const audioStartedRef = useRef(false);
   const rampageRef = useRef(false);
@@ -91,9 +99,19 @@ export function RainbowCowboyGame({
   if (!particlesRef.current) particlesRef.current = new RainbowCowboyParticlePool();
 
   useEffect(() => {
-    instructionsOpenRef.current = showInstructions;
-    setInstructionsOpen(showInstructions);
-  }, [showInstructions, config]);
+    onCompleteRef.current = onComplete;
+    onGameOverRef.current = onGameOver;
+  }, [onComplete, onGameOver]);
+
+  useEffect(() => {
+    if (!showInstructions) {
+      instructionsOpenRef.current = false;
+      setInstructionsOpen(false);
+      return;
+    }
+    instructionsOpenRef.current = true;
+    setInstructionsOpen(true);
+  }, [showInstructions]);
 
   useEffect(() => {
     const engine = new RainbowCowboyEngine(config, ride);
@@ -133,9 +151,21 @@ export function RainbowCowboyGame({
     audioRef.current?.applyPrefs(next);
   }, []);
 
+  const requestPauseToggle = useCallback(() => {
+    if (instructionsOpenRef.current || endedRef.current) return;
+    inputRef.current.pausePressed = true;
+  }, []);
+
   useEffect(() => {
     if (!instructionsOpen) void beginGameplayAudio();
   }, [instructionsOpen, beginGameplayAudio]);
+
+  useEffect(() => {
+    document.body.classList.add("rainbow-cowboy-playing");
+    return () => {
+      document.body.classList.remove("rainbow-cowboy-playing");
+    };
+  }, []);
 
   const consumeEdgeInputs = useCallback(() => {
     const input = inputRef.current;
@@ -145,11 +175,14 @@ export function RainbowCowboyGame({
       down: input.down,
       jumpPressed: input.jumpPressed,
       tonguePressed: input.tonguePressed,
+      gunPressed: input.gunPressed,
+      gunHeld: input.gunHeld,
       rainbowPressed: input.rainbowPressed,
       pausePressed: input.pausePressed,
     };
     input.jumpPressed = false;
     input.tonguePressed = false;
+    input.gunPressed = false;
     input.rainbowPressed = false;
     input.pausePressed = false;
     return edge;
@@ -176,7 +209,7 @@ export function RainbowCowboyGame({
         isStaleEngine(engine) ||
         engineRevisionRef.current !== RAINBOW_COWBOY_ENGINE_REVISION
       ) {
-        engine = new RainbowCowboyEngine(config);
+        engine = new RainbowCowboyEngine(config, ride);
         engineRef.current = engine;
         engineRevisionRef.current = RAINBOW_COWBOY_ENGINE_REVISION;
         prevPosRef.current = { x: engine.playerX, y: engine.playerY };
@@ -230,7 +263,9 @@ export function RainbowCowboyGame({
         prev.status === nextHud.status &&
         prev.rainbowCharges === nextHud.rainbowCharges &&
         prev.elapsedSeconds === nextHud.elapsedSeconds &&
-        prev.popupText === nextHud.popupText
+        prev.popupText === nextHud.popupText &&
+        prev.weaponLabel === nextHud.weaponLabel &&
+        prev.blasterActive === nextHud.blasterActive
           ? prev
           : nextHud,
       );
@@ -251,10 +286,10 @@ export function RainbowCowboyGame({
       if (!endedRef.current) {
         if (engine.phase === "complete") {
           endedRef.current = true;
-          onComplete(engine.buildResult());
+          onCompleteRef.current(engine.buildResult());
         } else if (engine.phase === "game_over") {
           endedRef.current = true;
-          onGameOver(engine.buildResult());
+          onGameOverRef.current(engine.buildResult());
         }
       }
 
@@ -263,7 +298,7 @@ export function RainbowCowboyGame({
 
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [config, consumeEdgeInputs, onComplete, onGameOver]);
+  }, [config, consumeEdgeInputs, ride]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -278,6 +313,10 @@ export function RainbowCowboyGame({
         input.jumpPressed = true;
       }
       if (k === "r") input.tonguePressed = true;
+      if (k === "t") {
+        input.gunPressed = true;
+        input.gunHeld = true;
+      }
       if (k === "e") input.rainbowPressed = true;
       if (k === "escape") input.pausePressed = true;
     };
@@ -288,6 +327,7 @@ export function RainbowCowboyGame({
       if (k === "a" || k === "arrowleft") input.left = false;
       if (k === "d" || k === "arrowright") input.right = false;
       if (k === "s" || k === "arrowdown") input.down = false;
+      if (k === "t") input.gunHeld = false;
     };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -308,27 +348,76 @@ export function RainbowCowboyGame({
         overflow: "hidden",
       }}
     >
-      <button
-        type="button"
-        onClick={() => setShowAudioPanel((v) => !v)}
+      <div
+        className="rc-top-actions"
         style={{
           position: "absolute",
           top: 8,
-          right: 92,
+          right: 8,
           zIndex: 30,
-          padding: "6px 10px",
-          borderRadius: 8,
-          border: "2px solid rgba(255,96,192,0.5)",
-          background: "rgba(0,0,0,0.75)",
-          color: "#fff",
-          fontSize: 11,
-          fontWeight: 700,
-          cursor: "pointer",
-          fontFamily: "monospace",
+          display: "flex",
+          gap: 8,
+          alignItems: "flex-start",
         }}
       >
-        {audioPrefs.musicEnabled || audioPrefs.sfxEnabled ? "🔊" : "🔇"}
-      </button>
+        <button
+          type="button"
+          onClick={() => setShowAudioPanel((v) => !v)}
+          className="rc-top-action-button rc-audio-button"
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "2px solid rgba(255,96,192,0.5)",
+            background: "rgba(0,0,0,0.75)",
+            color: "#fff",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "monospace",
+          }}
+        >
+          {audioPrefs.musicEnabled || audioPrefs.sfxEnabled ? "🔊" : "🔇"}
+        </button>
+
+        <button
+          type="button"
+          onClick={requestPauseToggle}
+          disabled={instructionsOpen}
+          className="rc-top-action-button"
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "2px solid rgba(255,224,128,0.65)",
+            background: "rgba(0,0,0,0.75)",
+            color: "#fff",
+            fontSize: 11,
+            fontWeight: 800,
+            cursor: instructionsOpen ? "not-allowed" : "pointer",
+            fontFamily: "monospace",
+          }}
+        >
+          Pause
+        </button>
+
+        <button
+          type="button"
+          onClick={onExit}
+          className="rc-top-action-button"
+          style={{
+            padding: "6px 12px",
+            borderRadius: 8,
+            border: "2px solid rgba(255,96,192,0.6)",
+            background: "rgba(0,0,0,0.75)",
+            color: "#fff",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "monospace",
+          }}
+        >
+          Exit Game
+        </button>
+      </div>
 
       {showAudioPanel && (
         <div style={{ position: "absolute", top: 44, right: 8, zIndex: 35, width: 220 }}>
@@ -340,28 +429,6 @@ export function RainbowCowboyGame({
           />
         </div>
       )}
-
-      <button
-        type="button"
-        onClick={onExit}
-        style={{
-          position: "absolute",
-          top: 8,
-          right: 8,
-          zIndex: 30,
-          padding: "6px 12px",
-          borderRadius: 8,
-          border: "2px solid rgba(255,96,192,0.6)",
-          background: "rgba(0,0,0,0.75)",
-          color: "#fff",
-          fontSize: 11,
-          fontWeight: 700,
-          cursor: "pointer",
-          fontFamily: "monospace",
-        }}
-      >
-        Exit Game
-      </button>
 
       <canvas
         ref={canvasRef}
@@ -395,6 +462,8 @@ export function RainbowCowboyGame({
             down: false,
             jumpPressed: false,
             tonguePressed: false,
+            gunPressed: false,
+            gunHeld: false,
             rainbowPressed: false,
             pausePressed: false,
           };
@@ -403,8 +472,7 @@ export function RainbowCowboyGame({
 
       <RainbowCowboyControls
         disabled={paused || instructionsOpen}
-        attackLabel={rideConfig.attackLabel}
-        specialLabel={rideConfig.specialLabel}
+        showGunButton={config.level.id === "level-3"}
         onLeft={(active) => {
           inputRef.current.left = active;
         }}
@@ -419,6 +487,13 @@ export function RainbowCowboyGame({
         }}
         onTongue={() => {
           inputRef.current.tonguePressed = true;
+        }}
+        onGunDown={() => {
+          inputRef.current.gunPressed = true;
+          inputRef.current.gunHeld = true;
+        }}
+        onGunUp={() => {
+          inputRef.current.gunHeld = false;
         }}
         onRainbow={() => {
           inputRef.current.rainbowPressed = true;
@@ -443,7 +518,41 @@ export function RainbowCowboyGame({
             padding: 16,
           }}
         >
-          <div style={{ marginBottom: 16 }}>PAUSED — Esc to resume</div>
+          <div style={{ marginBottom: 16 }}>PAUSED</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center", marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={requestPauseToggle}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 10,
+                border: "none",
+                background: "linear-gradient(135deg, #ff80d0, #a855f7)",
+                color: "#fff",
+                fontWeight: 800,
+                cursor: "pointer",
+                fontFamily: "monospace",
+              }}
+            >
+              Resume
+            </button>
+            <button
+              type="button"
+              onClick={onExit}
+              style={{
+                padding: "10px 18px",
+                borderRadius: 10,
+                border: "2px solid rgba(255,255,255,0.45)",
+                background: "rgba(0,0,0,0.55)",
+                color: "#fff",
+                fontWeight: 800,
+                cursor: "pointer",
+                fontFamily: "monospace",
+              }}
+            >
+              Exit Game
+            </button>
+          </div>
           <div style={{ width: "min(280px, 90vw)" }}>
             <UnicornHeroAudioControls
               prefs={audioPrefs}
@@ -476,6 +585,9 @@ export function RainbowCowboyGame({
       </div>
 
       <style>{`
+        body.rainbow-cowboy-playing .beta-bug-report-fab {
+          display: none !important;
+        }
         @media (max-width: 900px) {
           .rainbow-cowboy-game-shell {
             position: fixed !important;
@@ -483,6 +595,23 @@ export function RainbowCowboyGame({
             width: 100vw !important;
             height: 100dvh !important;
             z-index: 200;
+          }
+          .rc-top-actions {
+            flex-direction: row-reverse !important;
+            align-items: flex-start !important;
+            justify-content: flex-start !important;
+            gap: 6px !important;
+            max-width: calc(100vw - 16px);
+          }
+          .rc-top-action-button {
+            min-width: auto;
+            padding: 5px 8px !important;
+            font-size: 10px !important;
+            white-space: nowrap;
+          }
+          .rc-audio-button {
+            min-width: 38px;
+            padding-inline: 8px !important;
           }
         }
         @media (max-width: 900px) and (orientation: portrait) {

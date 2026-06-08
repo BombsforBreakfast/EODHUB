@@ -195,10 +195,16 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
         investigated: false,
         resolved: false,
         chemlightPlaced: false,
+        entered: false,
       };
     }
     return encounterStatesRef.current[id];
   }, []);
+
+  const markEncounterEntered = useCallback((encounterId: string) => {
+    const state = getEncounterState(encounterId);
+    state.entered = true;
+  }, [getEncounterState]);
 
   const markResolved = useCallback((encounter: RenderSafeEncounter, chemlight?: boolean) => {
     const state = getEncounterState(encounter.id);
@@ -316,6 +322,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
       if (encounter.optionalDecoy) {
         if (dist < TILE_SIZE * 0.95) {
           triggeredRef.current.add(encounter.id);
+          markEncounterEntered(encounter.id);
           setActiveEncounter(encounter);
           setDecisionPhase("initial");
           setGameState("encounter");
@@ -330,6 +337,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
 
       if (reachedOnRoute || reachedByProgress) {
         triggeredRef.current.add(encounter.id);
+        markEncounterEntered(encounter.id);
         setActiveEncounter(encounter);
         setDecisionPhase("initial");
         setGameState("encounter");
@@ -344,7 +352,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
         }
       }
     },
-    [triggerTargetReached],
+    [triggerTargetReached, markEncounterEntered],
   );
 
   const handleMove = useCallback(
@@ -368,6 +376,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
           );
           if (blocker && !triggeredRef.current.has(blocker.id)) {
             triggeredRef.current.add(blocker.id);
+            markEncounterEntered(blocker.id);
             setActiveEncounter(blocker);
             setDecisionPhase("initial");
             setGameState("encounter");
@@ -386,7 +395,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
         return { ...r, playerX, playerY, missionStatus: "Moving" };
       });
     },
-    [gameState, targetReached, activeEncounters, getEncounterState],
+    [gameState, targetReached, activeEncounters, getEncounterState, markEncounterEntered],
   );
 
   useEffect(() => {
@@ -461,6 +470,13 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
 
           setTimeout(() => {
             if (activeEncounter.type === "trip_wire") {
+              if (encState.isThreat) {
+                setRun((r) => ({
+                  ...r,
+                  score: r.score + SCORE_VALUES.threatIdentified,
+                  threatsIdentified: r.threatsIdentified + 1,
+                }));
+              }
               setDecisionPhase("post_investigation");
               setGameState("post_investigation_decision");
               return;
@@ -576,28 +592,13 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
     const onKeyDown = (e: KeyboardEvent) => {
       keysRef.current.add(e.key.toLowerCase());
       if (gameState === "encounter" || gameState === "post_investigation_decision") {
-        const isTripWire = activeEncounter?.type === "trip_wire";
-        const isFinalRoom = activeEncounter?.type === "final_room";
-        const hotkeyMap: Record<string, RenderSafeActionId> = isFinalRoom
-          ? { "1": "hands_on", "2": "call_avalanche", "3": "call_avalanche" }
-          : isTripWire
-          ? {
-              "1":
-                decisionPhase === "post_investigation" ? "cut_and_secure" : "cut_trip_line",
-              "2": decisionPhase === "initial" ? "trace_both_ends" : "cut_and_secure",
-              "3": decisionPhase === "initial" ? "hook_rope_pull" : "cut_and_secure",
-            }
-          : {
-              "1":
-                activeEncounter?.type === "bridge_crossing" &&
-                decisionPhase === "post_investigation"
-                  ? "remote_move"
-                  : "mark_bypass",
-              "2": decisionPhase === "initial" ? "investigate" : "bip",
-              "3": decisionPhase === "initial" ? "ignore" : "hands_on",
-            };
-        const action = hotkeyMap[e.key];
-        if (action && activeEncounter) {
+        if (!activeEncounter) return;
+        const options =
+          decisionPhase === "initial"
+            ? activeEncounter.initialOptions
+            : activeEncounter.postInvestigationOptions;
+        const action = options[Number(e.key) - 1];
+        if (action) {
           handleAction(action);
         }
       }
@@ -652,6 +653,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
     if (distancePx(run.playerX, run.playerY, center.x, center.y) > TILE_SIZE * 2.5) return;
 
     triggeredRef.current.add(encounter.id);
+    markEncounterEntered(encounter.id);
     setActiveEncounter(encounter);
     setDecisionPhase("initial");
     setGameState("encounter");

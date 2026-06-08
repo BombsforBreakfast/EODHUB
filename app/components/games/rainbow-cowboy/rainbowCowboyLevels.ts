@@ -1,6 +1,8 @@
 import { LEVEL_2_CONFIG, LEVEL_2_META } from "./rainbowCowboyLevel2";
+import { LEVEL_3_CONFIG, LEVEL_3_META } from "./rainbowCowboyLevel3";
+import { applyDifficulty } from "./rainbowCowboyDifficulty";
+import type { RainbowCowboyDifficulty } from "./rainbowCowboyTypes";
 import type { LevelConfig, RainbowCowboyLevel } from "./rainbowCowboyTypes";
-
 const GROUND_Y = 460;
 const LEVEL_WIDTH = 9600;
 
@@ -21,21 +23,6 @@ export const LEVEL_1_META: RainbowCowboyLevel = {
 };
 
 const LOCKED_LEVELS: RainbowCowboyLevel[] = [
-  {
-    id: "level-3",
-    slug: "dynamite-fields",
-    title: "Dynamite Fields",
-    subtitle: "Coming Soon",
-    objective: "",
-    description: "",
-    difficulty: "—",
-    estimatedMinutes: "TBD",
-    levelWidth: 0,
-    groundY: 0,
-    targetTimeSeconds: 0,
-    locked: true,
-    status: "coming_soon",
-  },
   {
     id: "level-4",
     slug: "chemical-carnival",
@@ -96,10 +83,10 @@ export const LEVEL_1_CONFIG: LevelConfig = {
     { kind: "range_beer", x: 350, y: GROUND_Y - 36 },
     // Section 2 rainbow on ledge
     { kind: "rainbow", x: 1700, y: 330 },
-    // Section 3 white monster after mines
-    { kind: "white_monster", x: 3350, y: GROUND_Y - 36 },
-    // Section 4 zyn tin
-    { kind: "zyn_tin", x: 4300, y: GROUND_Y - 36 },
+    // Section 3 white energy drink after mines
+    { kind: "white_energy_drink", x: 3350, y: GROUND_Y - 36 },
+    // Section 4 nicotine pouch
+    { kind: "nicotine_pouch", x: 4300, y: GROUND_Y - 36 },
     // Section 5 rainbow
     { kind: "rainbow", x: 5500, y: 270 },
     // Section 6 unicorn treat before swarm
@@ -155,19 +142,24 @@ LEVEL_1_CONFIG.enemies = LEVEL_1_CONFIG.enemies.filter(
 );
 
 export function getRainbowCowboyLevels(): RainbowCowboyLevel[] {
-  return [LEVEL_1_META, LEVEL_2_META, ...LOCKED_LEVELS];
+  return [LEVEL_1_META, LEVEL_2_META, LEVEL_3_META, ...LOCKED_LEVELS];
 }
 
 export function getRainbowCowboyLevelById(levelId: string): RainbowCowboyLevel | undefined {
   return getRainbowCowboyLevels().find((l) => l.id === levelId);
 }
 
-export function getLevelConfig(levelId: string): LevelConfig | undefined {
-  if (levelId === "level-1") return LEVEL_1_CONFIG;
-  if (levelId === "level-2") return LEVEL_2_CONFIG;
-  return undefined;
+export function getLevelConfig(
+  levelId: string,
+  difficulty: RainbowCowboyDifficulty = "easy",
+): LevelConfig | undefined {
+  let base: LevelConfig | undefined;
+  if (levelId === "level-1") base = LEVEL_1_CONFIG;
+  else if (levelId === "level-2") base = LEVEL_2_CONFIG;
+  else if (levelId === "level-3") base = LEVEL_3_CONFIG;
+  if (!base) return undefined;
+  return applyDifficulty(base, difficulty);
 }
-
 export function getNextPlayableLevel(currentLevelId: string): RainbowCowboyLevel | undefined {
   const levels = getRainbowCowboyLevels();
   const idx = levels.findIndex((l) => l.id === currentLevelId);

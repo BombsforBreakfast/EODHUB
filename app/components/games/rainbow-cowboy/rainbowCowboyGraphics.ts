@@ -267,6 +267,310 @@ function drawCanyonExtraction(
   ctx.textAlign = "left";
 }
 
+function drawAlamoSky(ctx: CanvasRenderingContext2D, camX: number, time: number) {
+  const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+  grad.addColorStop(0, "#1a2030");
+  grad.addColorStop(0.45, "#3a2830");
+  grad.addColorStop(1, "#5a4038");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+  for (let i = 0; i < 5; i++) {
+    const sx = ((i * 220 - camX * 0.08) % (VIEW_W + 120)) - 60;
+    const sy = 40 + i * 18 + Math.sin(time / 900 + i) * 6;
+    ctx.fillStyle = "rgba(255,120,80,0.08)";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, 90, 24, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawAlamoGroundLayer(ctx: CanvasRenderingContext2D, config: LevelConfig, camX: number) {
+  const groundY = config.level.groundY;
+  const levelW = config.level.levelWidth;
+  const startCol = Math.floor(camX / GROUND_TILE) - 1;
+  const endCol = Math.ceil((camX + VIEW_W) / GROUND_TILE) + 1;
+  const startRow = Math.floor(groundY / GROUND_TILE);
+
+  for (let col = startCol; col <= endCol; col++) {
+    for (let row = startRow; row < Math.ceil(VIEW_H / GROUND_TILE); row++) {
+      const sx = col * GROUND_TILE - camX;
+      const sy = row * GROUND_TILE;
+      px(ctx, sx, sy, GROUND_TILE, GROUND_TILE, row === startRow ? "#6a5848" : "#4a4038");
+      px(ctx, sx + 2, sy + 2, GROUND_TILE - 4, GROUND_TILE - 4, row === startRow ? "#7a6858" : "#5a5040");
+    }
+  }
+
+  px(ctx, -camX, groundY, levelW, 6, "#4a3830");
+  px(ctx, -camX, groundY + 6, levelW, 4, "#2a2018");
+
+  for (let x = 200; x < levelW; x += 280) {
+    const sx = x - camX;
+    if (sx < -80 || sx > VIEW_W + 80) continue;
+    px(ctx, sx, groundY - 48, 8, 48, "#5a5048");
+    px(ctx, sx - 12, groundY - 56, 32, 8, "#6a6058");
+    px(ctx, sx - 8, groundY - 64, 24, 8, "#7a7068");
+  }
+}
+
+function drawAlamoPlatform(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  camX: number,
+) {
+  const sx = x - camX;
+  px(ctx, sx, y, w, h, "#5a5048");
+  px(ctx, sx + 2, y + 2, w - 4, h - 4, "#6a6058");
+  px(ctx, sx, y - 4, w, 4, "#4a4038");
+}
+
+function drawAlamoWall(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  camX: number,
+) {
+  const sx = x - camX;
+  px(ctx, sx, y, w, h, "#3a3028");
+  px(ctx, sx + 3, y + 3, w - 6, h - 6, "#4a4038");
+  px(ctx, sx + 6, y + 8, w - 12, 4, "#2a2018");
+  px(ctx, sx + 6, y + h - 14, w - 12, 4, "#2a2018");
+}
+
+function drawAlamoExtraction(
+  ctx: CanvasRenderingContext2D,
+  exX: number,
+  groundY: number,
+  camX: number,
+  time: number,
+) {
+  const sx = exX - camX;
+  px(ctx, sx - 56, groundY - 8, 112, 8, "#4a4038");
+  px(ctx, sx - 52, groundY - 72, 104, 64, "#5a4838");
+  px(ctx, sx - 48, groundY - 68, 96, 56, "#6a5848");
+  px(ctx, sx - 40, groundY - 64, 24, 48, "#3a3028");
+  px(ctx, sx + 16, groundY - 64, 24, 48, "#3a3028");
+  px(ctx, sx - 8, groundY - 40, 16, 32, "#2a2018");
+  px(ctx, sx - 60, groundY - 56, 8, 40, "#4a4038");
+  px(ctx, sx + 52, groundY - 56, 8, 40, "#4a4038");
+  px(ctx, sx - 64, groundY - 20, 128, 12, "#7a7068");
+
+  const blink = Math.sin(time / 350) > 0;
+  if (blink) {
+    ctx.fillStyle = "#80ff80";
+    ctx.beginPath();
+    ctx.arc(sx + 38, groundY - 78, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "#fff";
+  ctx.font = "bold 11px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("ALAMO EXTRACTION", sx, groundY - 88);
+  ctx.textAlign = "left";
+}
+
+function drawMonsterTruckWheel(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  r: number,
+  time: number,
+) {
+  px(ctx, cx - r, cy - r, r * 2, r * 2, "#1a1a1a");
+  px(ctx, cx - r + 2, cy - r + 2, r * 2 - 4, r * 2 - 4, "#2a2a2a");
+  const spoke = Math.floor(time / 90) % 2;
+  px(ctx, cx - 2, cy - r + 3, 4, r * 2 - 6, spoke ? "#444" : "#333");
+  px(ctx, cx - r + 3, cy - 2, r * 2 - 6, 4, spoke ? "#333" : "#444");
+  px(ctx, cx - 3, cy - 3, 6, 6, "#555");
+}
+
+function drawMonsterTruck(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  y: number,
+  w: number,
+  h: number,
+  time: number,
+  variant: "basic" | "turret" | "grenade",
+  hp?: number,
+  maxHp?: number,
+  beepPhase?: number,
+  turretAngle = 0,
+) {
+  const wheelR = variant === "turret" ? 11 : 10;
+  const leftWheelX = sx + 10 + wheelR;
+  const rightWheelX = sx + w - 10 - wheelR;
+  const wheelY = y + h - wheelR - 1;
+
+  drawMonsterTruckWheel(ctx, leftWheelX, wheelY, wheelR, time);
+  drawMonsterTruckWheel(ctx, rightWheelX, wheelY, wheelR, time);
+
+  const bodyColor = variant === "turret" ? "#3a4858" : "#4a5868";
+  const cabColor = variant === "turret" ? "#506070" : "#607080";
+  const trim = variant === "grenade" ? "#5a6840" : "#788898";
+
+  px(ctx, sx + 6, y + h - wheelR - 16, w - 12, 14, bodyColor);
+  px(ctx, sx + 8, y + h - wheelR - 14, w - 16, 10, trim);
+  px(ctx, sx + 10, y + 8, w - 20, 14, cabColor);
+  px(ctx, sx + 12, y + 10, w - 24, 10, bodyColor);
+
+  // Roll cage bars
+  px(ctx, sx + 14, y + 6, 2, 10, "#8898a8");
+  px(ctx, sx + w - 16, y + 6, 2, 10, "#8898a8");
+  px(ctx, sx + 16, y + 4, w - 32, 2, "#8898a8");
+
+  const blink = Math.sin(time / 130 + (beepPhase ?? 0)) > 0.25;
+  if (blink) {
+    ctx.fillStyle = "rgba(255,40,40,0.95)";
+    ctx.fillRect(sx + w / 2 - 3, y + 1, 6, 6);
+    ctx.fillStyle = "rgba(255,120,120,0.45)";
+    ctx.fillRect(sx + w / 2 - 6, y - 2, 12, 12);
+  } else {
+    px(ctx, sx + w / 2 - 2, y + 2, 4, 4, "#601818");
+  }
+
+  if (variant === "turret") {
+    const pivotX = sx + w / 2;
+    const pivotY = y + 12;
+    ctx.save();
+    ctx.translate(pivotX, pivotY);
+    ctx.rotate(turretAngle);
+    px(ctx, -4, -5, 8, 10, "#3a4048");
+    px(ctx, -2, -3, 4, 6, "#505860");
+    px(ctx, 2, -2, 14, 4, "#404850");
+    px(ctx, 14, -3, 6, 6, "#303840");
+    ctx.fillStyle = "#f04040";
+    ctx.fillRect(18, -1, 3, 2);
+    ctx.restore();
+  }
+
+  if (variant === "grenade") {
+    px(ctx, sx + w - 18, y + 6, 10, 12, "#3a4830");
+    px(ctx, sx + w - 16, y + 8, 6, 8, "#4a5840");
+    px(ctx, sx + 6, y + 14, 8, 6, "#505840");
+    px(ctx, sx + 8, y + 15, 4, 4, "#809060");
+    const arc = Math.sin(time / 200 + (beepPhase ?? 0));
+    if (arc > 0) {
+      px(ctx, sx + w - 14, y + 2, 4, 4, "#f0d040");
+    }
+  }
+
+  if (variant === "turret") {
+    px(ctx, sx + 4, y + h - wheelR - 18, w - 8, 4, "#2a3038");
+    px(ctx, sx + 6, y + h - wheelR - 20, 8, 6, "#3a4048");
+    px(ctx, sx + w - 14, y + h - wheelR - 20, 8, 6, "#3a4048");
+  }
+
+  if (hp != null && maxHp != null && maxHp > 1) {
+    px(ctx, sx + 4, y - 6, w - 8, 4, "#1a1818");
+    const fillW = Math.max(0, Math.round(((w - 8) * hp) / maxHp));
+    px(ctx, sx + 4, y - 6, fillW, 4, "#60c8ff");
+  }
+}
+
+function drawEnemyBullet(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  camX: number,
+) {
+  const sx = x - camX;
+  ctx.fillStyle = "#ff6040";
+  ctx.fillRect(sx - 4, y - 2, 8, 4);
+  ctx.fillStyle = "#ffe080";
+  ctx.fillRect(sx + 1, y - 1, 4, 2);
+}
+
+function drawRocketArrow(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  dir: 1 | -1,
+  scale = 1,
+) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(dir * scale, scale);
+  // Tail fins
+  px(ctx, -16, -5, 5, 4, "#3a3028");
+  px(ctx, -16, 1, 5, 4, "#3a3028");
+  px(ctx, -14, -7, 4, 3, "#4a4030");
+  px(ctx, -14, 4, 4, 3, "#4a4030");
+  // Exhaust glow
+  px(ctx, -18, -2, 4, 4, "#f08030");
+  px(ctx, -20, -1, 3, 2, "#ffc060");
+  // Body
+  px(ctx, -14, -3, 28, 6, "#5a5038");
+  px(ctx, -12, -2, 24, 4, "#7a6848");
+  // Warhead band
+  px(ctx, 2, -4, 8, 8, "#802828");
+  px(ctx, 4, -3, 6, 6, "#a03030");
+  // Arrow nose
+  px(ctx, 8, -4, 6, 8, "#908070");
+  px(ctx, 12, -3, 5, 6, "#c04830");
+  px(ctx, 15, -2, 4, 4, "#f06030");
+  px(ctx, 17, -1, 3, 2, "#ffe080");
+  ctx.restore();
+}
+
+function drawBlasterProjectile(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  camX: number,
+  weapon: "pistol" | "machine_gun" | "bazooka" = "pistol",
+  dir: 1 | -1 = 1,
+) {
+  const sx = x - camX;
+  if (weapon === "bazooka") {
+    drawRocketArrow(ctx, sx, y, dir, 1);
+    ctx.fillStyle = "rgba(255,120,40,0.35)";
+    ctx.beginPath();
+    ctx.arc(sx - dir * 18, y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  const w = weapon === "machine_gun" ? 12 : 16;
+  const h = weapon === "machine_gun" ? 4 : 6;
+  ctx.fillStyle = weapon === "machine_gun" ? "#ffe060" : "#80f0ff";
+  ctx.fillRect(sx - w / 2, y - h / 2, w, h);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(sx + 2, y - 1, weapon === "machine_gun" ? 4 : 6, 2);
+  ctx.fillStyle = weapon === "machine_gun" ? "rgba(255,220,80,0.35)" : "rgba(120,240,255,0.35)";
+  ctx.beginPath();
+  ctx.arc(sx - 6, y, weapon === "machine_gun" ? 6 : 8, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawBlasterMuzzle(
+  ctx: CanvasRenderingContext2D,
+  engine: RainbowCowboyEngine,
+  camX: number,
+  weapon?: "pistol" | "machine_gun" | "bazooka",
+) {
+  const dir = engine.facing === "right" ? 1 : -1;
+  const cx = engine.playerX - camX + dir * 28;
+  const cy = engine.playerY - (engine.isDucking ? 34 : 40);
+  if (weapon === "bazooka") {
+    px(ctx, cx + dir * 4, cy - 4, dir * 22, 8, "#5a4030");
+    px(ctx, cx + dir * 8, cy - 2, dir * 14, 4, "#806040");
+    ctx.fillStyle = "#ff8040";
+    ctx.fillRect(cx + dir * 20, cy - 3, dir * 10, 6);
+    return;
+  }
+  const color = weapon === "machine_gun" ? "#ffe060" : "#80f0ff";
+  ctx.fillStyle = color;
+  ctx.fillRect(cx, cy - 2, dir * 18, 4);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(cx + dir * 12, cy - 1, dir * 6, 2);
+}
+
 function drawGrassTile(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -456,14 +760,14 @@ function drawPickup(
       px(ctx, sx - 4, py - 5, 8, 5, "#888");
       px(ctx, sx - 2, py - 3, 4, 2, "#aaa");
       break;
-    case "white_monster":
+    case "white_energy_drink":
       px(ctx, sx - 8, py, 16, 20, "#e0e0e0");
       px(ctx, sx - 6, py + 2, 12, 16, "#fff");
       px(ctx, sx - 5, py + 8, 10, 5, "#00c8f0");
       px(ctx, sx - 3, py + 9, 6, 3, "#0088c0");
       px(ctx, sx - 6, py - 2, 4, 3, "#ccc");
       break;
-    case "zyn_tin":
+    case "nicotine_pouch":
       px(ctx, sx - 10, py + 4, 20, 14, "#f4f4f4");
       px(ctx, sx - 8, py + 6, 16, 10, "#e8e8e8");
       px(ctx, sx - 5, py + 8, 10, 5, "#2080f0");
@@ -487,6 +791,29 @@ function drawPickup(
         px(ctx, sx - 12 + i * 4, py + sp, 3, 3, ["#ff60ff", "#60ffff", "#ffff60", "#60ff60", "#ff9060", "#9060ff"][i]);
       }
       break;
+    case "weapon_pistol":
+      px(ctx, sx - 10, py + 2, 20, 14, "#284860");
+      px(ctx, sx - 8, py + 4, 16, 10, "#386878");
+      px(ctx, sx + 2, py + 6, 10, 4, "#80f0ff");
+      px(ctx, sx - 6, py + 8, 6, 6, "#f0d040");
+      ctx.fillStyle = `rgba(128,240,255,${0.35 + Math.sin(time / 180) * 0.2})`;
+      ctx.fillRect(sx - 12, py - 2, 24, 18);
+      break;
+    case "weapon_machine_gun":
+      px(ctx, sx - 12, py + 4, 24, 12, "#3a4048");
+      px(ctx, sx - 10, py + 6, 20, 8, "#505860");
+      px(ctx, sx - 4, py + 2, 8, 6, "#606870");
+      px(ctx, sx + 4, py + 7, 12, 5, "#ffe060");
+      ctx.fillStyle = `rgba(255,220,80,${0.35 + Math.sin(time / 120) * 0.2})`;
+      ctx.fillRect(sx - 14, py, 28, 18);
+      break;
+    case "weapon_bazooka": {
+      const bob = Math.sin(time / 220) * 2;
+      drawRocketArrow(ctx, sx, py + 14 + bob, 1, 0.85);
+      ctx.fillStyle = `rgba(255,100,40,${0.35 + Math.sin(time / 200) * 0.2})`;
+      ctx.fillRect(sx - 20, py + 4 + bob, 40, 22);
+      break;
+    }
   }
 }
 
@@ -513,7 +840,7 @@ function drawHazard(
     ctx.lineWidth = 2;
     ctx.setLineDash([5, 4]);
     ctx.beginPath();
-    ctx.ellipse(sx, gy - 2, 28, 10, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx, gy - 2, 20, 8, 0, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
 
@@ -708,17 +1035,31 @@ function drawDroneNest(
   px(ctx, sx + 6, gy - 12, 8, 8, "#6a6058");
 }
 
-function drawBomb(ctx: CanvasRenderingContext2D, x: number, y: number, camX: number, fuseMs: number, grounded: boolean) {
+function drawBomb(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  camX: number,
+  fuseMs: number,
+  grounded: boolean,
+  cartoon = false,
+) {
   const sx = x - camX;
-  px(ctx, sx - 5, y - 8, 10, 10, "#2a2a2a");
-  px(ctx, sx - 3, y - 6, 6, 6, "#404040");
+  if (cartoon) {
+    px(ctx, sx - 6, y - 10, 12, 12, "#3a4838");
+    px(ctx, sx - 4, y - 8, 8, 8, "#f0d040");
+    px(ctx, sx - 1, y - 12, 2, 4, "#ff8040");
+  } else {
+    px(ctx, sx - 5, y - 8, 10, 10, "#2a2a2a");
+    px(ctx, sx - 3, y - 6, 6, 6, "#404040");
+  }
   if (grounded && fuseMs < 400) {
-    px(ctx, sx - 1, y - 10, 2, 3, "#ff8040");
+    px(ctx, sx - 1, y - (cartoon ? 14 : 10), 2, 3, "#ff8040");
     ctx.fillStyle = `rgba(255,120,40,${0.4 + (400 - fuseMs) / 400})`;
     ctx.beginPath();
     ctx.arc(sx, y - 4, 8, 0, Math.PI * 2);
     ctx.fill();
-  } else {
+  } else if (!cartoon) {
     px(ctx, sx - 1, y - 10, 2, 3, "#aaa");
   }
 }
@@ -774,9 +1115,34 @@ function drawEnemy(
   camX: number,
   time: number,
   bombWarning = false,
+  opts?: { hp?: number; maxHp?: number; beepPhase?: number; turretAngle?: number },
 ) {
   const sx = x - camX;
-  drawGroundShadow(ctx, sx + w / 2, y + h, kind === "red_baron" ? 22 : 16);
+  drawGroundShadow(ctx, sx + w / 2, y + h, kind === "red_baron" || kind === "armored_boom_bot" ? 26 : 18);
+  if (kind === "boom_bot") {
+    drawMonsterTruck(ctx, sx, y, w, h, time, "basic", opts?.hp, opts?.maxHp, opts?.beepPhase);
+    return;
+  }
+  if (kind === "armored_boom_bot") {
+    drawMonsterTruck(
+      ctx,
+      sx,
+      y,
+      w,
+      h,
+      time,
+      "turret",
+      opts?.hp,
+      opts?.maxHp,
+      opts?.beepPhase,
+      opts?.turretAngle ?? 0,
+    );
+    return;
+  }
+  if (kind === "grenade_goblin_bot") {
+    drawMonsterTruck(ctx, sx, y, w, h, time, "grenade", opts?.hp, opts?.maxHp, opts?.beepPhase);
+    return;
+  }
   if (kind === "quad") drawQuadDrone(ctx, sx, y, w, h, time);
   else if (kind === "recon") drawReconDrone(ctx, sx, y, w, h, time);
   else if (kind === "red_baron") drawRedBaron(ctx, sx, y, w, h, time, bombWarning);
@@ -912,11 +1278,16 @@ function drawGripperArm(
 
 function drawAttackVisual(ctx: CanvasRenderingContext2D, engine: RainbowCowboyEngine, camX: number) {
   const tongue = engine.getTongueCurve();
-  if (!tongue) return;
-  if (engine.rideType === "eod_robot") {
-    drawGripperArm(ctx, tongue, camX);
-  } else {
-    drawTongueAttack(ctx, tongue, camX);
+  if (tongue) {
+    if (engine.rideType === "eod_robot") {
+      drawGripperArm(ctx, tongue, camX);
+    } else {
+      drawTongueAttack(ctx, tongue, camX);
+    }
+  }
+
+  if (engine.timeMs - engine.lastGunFireMs < 90 && engine.lastGunWeapon) {
+    drawBlasterMuzzle(ctx, engine, camX, engine.lastGunWeapon);
   }
 }
 
@@ -1289,6 +1660,9 @@ export function drawWorld(
   if (theme === "canyon") {
     drawCanyonSky(ctx, camX, time);
     drawCanyonGroundLayer(ctx, config, camX);
+  } else if (theme === "alamo") {
+    drawAlamoSky(ctx, camX, time);
+    drawAlamoGroundLayer(ctx, config, camX);
   } else {
     drawParallaxSky(ctx, camX, time);
     drawGroundLayer(ctx, config, camX);
@@ -1297,17 +1671,21 @@ export function drawWorld(
   for (const plat of config.platforms) {
     if (plat.x + plat.w < camX - 20 || plat.x > camX + VIEW_W + 20) continue;
     if (theme === "canyon") drawCanyonPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
+    else if (theme === "alamo") drawAlamoPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
     else drawPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
   }
 
   for (const wall of config.walls) {
     if (wall.x + wall.w < camX - 20 || wall.x > camX + VIEW_W + 20) continue;
     if (theme === "canyon") drawCanyonWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
+    else if (theme === "alamo") drawAlamoWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
     else drawWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
   }
 
   if (theme === "canyon") {
     drawCanyonExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
+  } else if (theme === "alamo") {
+    drawAlamoExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
   } else {
     drawExtractionZone(ctx, config.extractionX, config.level.groundY, camX, time);
   }
@@ -1355,7 +1733,19 @@ export function drawWorld(
   for (const bomb of engine.bombs) {
     if (!bomb.active) continue;
     if (bomb.x < camX - 40 || bomb.x > camX + VIEW_W + 40) continue;
-    drawBomb(ctx, bomb.x, bomb.y, camX, bomb.fuseMs, bomb.grounded);
+    drawBomb(ctx, bomb.x, bomb.y, camX, bomb.fuseMs, bomb.grounded, bomb.cartoon);
+  }
+
+  for (const shot of engine.blasterProjectiles) {
+    if (!shot.active) continue;
+    if (shot.x < camX - 40 || shot.x > camX + VIEW_W + 40) continue;
+    drawBlasterProjectile(ctx, shot.x, shot.y, camX, shot.weapon, shot.vx >= 0 ? 1 : -1);
+  }
+
+  for (const bullet of engine.enemyBullets) {
+    if (!bullet.active) continue;
+    if (bullet.x < camX - 40 || bullet.x > camX + VIEW_W + 40) continue;
+    drawEnemyBullet(ctx, bullet.x, bullet.y, camX);
   }
 
   for (const enemy of engine.enemies) {
@@ -1371,6 +1761,12 @@ export function drawWorld(
       camX,
       time,
       enemy.bombWarning,
+      {
+        hp: enemy.hp,
+        maxHp: enemy.maxHp,
+        beepPhase: enemy.beepPhase,
+        turretAngle: enemy.turretAngle,
+      },
     );
   }
 
