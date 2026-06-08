@@ -91,7 +91,8 @@ function createInitialRunState() {
 }
 
 export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive = true }: Props) {
-  useGamePlayingBodyClass(immersive);
+  const shellRef = useRef<HTMLDivElement>(null);
+  useGamePlayingBodyClass(immersive, shellRef);
   const [mapSeed, setMapSeed] = useState(1);
   const [startPos, setStartPos] = useState(() => findStartPosition());
   const [targetPos, setTargetPos] = useState(() => findTargetCenter());
@@ -702,6 +703,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
 
   return (
     <div
+      ref={shellRef}
       className={`render-safe-game-shell${immersive ? " render-safe-immersive arcade-game-shell" : ""}`}
       style={shellStyle}
     >

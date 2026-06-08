@@ -1306,6 +1306,16 @@ a.rabbithole-brand-link:focus-visible {
 
 /* ── Arcade games: NavBar on hub/select; fullscreen + rotate prompt while playing ── */
 @media (max-width: 900px) {
+  html.game-playing-active,
+  body.game-playing-active {
+    overflow: hidden !important;
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+  }
+
   body.game-playing-active footer {
     display: none !important;
   }
@@ -1316,18 +1326,34 @@ a.rabbithole-brand-link:focus-visible {
 
   .arcade-game-shell {
     position: fixed !important;
-    top: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    left: 0 !important;
-    /* Avoid 100vw — it overflows the visible viewport on several mobile browsers. */
-    width: auto !important;
-    height: 100dvh !important;
-    max-height: 100dvh !important;
+    top: var(--game-visible-top, 0px) !important;
+    left: var(--game-visible-left, 0px) !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: var(--game-visible-width, 100%) !important;
+    height: var(--game-visible-height, 100dvh) !important;
+    max-height: var(--game-visible-height, 100dvh) !important;
     margin: 0 !important;
     z-index: 200;
     overflow: hidden;
     box-sizing: border-box;
+  }
+
+  .arcade-game-play-surface {
+    position: fixed !important;
+    top: var(--game-visible-top, 0px) !important;
+    left: var(--game-visible-left, 0px) !important;
+    width: var(--game-visible-width, 100%) !important;
+    height: var(--game-visible-height, 100dvh) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    z-index: 199;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .arcade-game-play-surface > * {
+    pointer-events: auto;
   }
 }
 

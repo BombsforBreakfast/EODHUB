@@ -1,16 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import type { RefObject } from "react";
+import { useMobileGameImmersiveMode } from "./useMobileGameImmersiveMode";
 
-/** Applied to `document.body` while an arcade game session is active (mobile fullscreen + rotate prompt). */
+/** Applied to `html` + `body` while an arcade game session is active (mobile fullscreen + rotate prompt). */
 export const GAME_PLAYING_BODY_CLASS = "game-playing-active";
 
-export function useGamePlayingBodyClass(active = true) {
-  useEffect(() => {
-    if (!active) return;
-    document.body.classList.add(GAME_PLAYING_BODY_CLASS);
-    return () => {
-      document.body.classList.remove(GAME_PLAYING_BODY_CLASS);
-    };
-  }, [active]);
+/** @deprecated Prefer `useMobileGameImmersiveMode` for scroll lock + visual viewport sync. */
+export function useGamePlayingBodyClass(active = true, shellRef?: RefObject<HTMLElement | null>) {
+  useMobileGameImmersiveMode(active, shellRef);
 }

@@ -86,6 +86,8 @@ export function RainbowCowboyPage() {
   useEffect(() => {
     if (!isPlaying) return;
     const fit = () => {
+      const mobile = window.matchMedia("(max-width: 900px), (pointer: coarse)").matches;
+      if (mobile) return;
       const el = playAreaRef.current;
       if (!el) return;
       const top = el.getBoundingClientRect().top;
@@ -227,11 +229,12 @@ export function RainbowCowboyPage() {
       {screen === "playing" && levelConfig && (
         <div
           ref={playAreaRef}
+          className="arcade-game-play-surface"
           style={{
-            width: "min(1000px, 95vw)",
+            width: "100%",
             maxWidth: "100%",
-            height: "calc(100vh - 80px)",
-            margin: "0 auto",
+            height: "100%",
+            margin: 0,
             display: "flex",
           }}
         >

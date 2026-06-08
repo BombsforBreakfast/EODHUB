@@ -15,6 +15,7 @@ const GAMES = [
   {
     title: "Unicorn Hero",
     subtitle: "Ride a pink unicorn or a robot. Eat drones. Make poor life choices.",
+    footnote: "Game may or may not be inspired by an Army EOD senior leader.",
     href: "/games/rainbow-cowboy",
     emoji: "🦄",
     accent: "#ff60c0",
@@ -63,6 +64,11 @@ function GamesHubContent() {
               <div>
                 <div style={{ fontWeight: 800, fontSize: 18, color: game.accent }}>{game.title}</div>
                 <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>{game.subtitle}</div>
+                {"footnote" in game && game.footnote ? (
+                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4, opacity: 0.9 }}>
+                    {game.footnote}
+                  </div>
+                ) : null}
               </div>
             </div>
           </a>
