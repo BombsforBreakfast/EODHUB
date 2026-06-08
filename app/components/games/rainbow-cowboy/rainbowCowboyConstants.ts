@@ -8,6 +8,10 @@ export const MAX_RAINBOW_CHARGES = 3;
 
 export const GRAVITY = 0.72;
 export const JUMP_VEL = -14.8;
+/** Accept jump presses slightly before landing (ms). */
+export const JUMP_BUFFER_MS = 175;
+/** Allow jump shortly after walking off a ledge (ms). */
+export const COYOTE_TIME_MS = 125;
 export const MOVE_SPEED = 5;
 export const DUCK_SPEED_MULT = 0.5;
 export const GASSED_MOVE_MULT = 0.45;

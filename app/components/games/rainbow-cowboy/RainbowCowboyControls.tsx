@@ -1,88 +1,48 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RainbowCowboyInputActions } from "./rainbowCowboyGameInput";
 
 interface Props {
-  onLeft: (active: boolean) => void;
-  onRight: (active: boolean) => void;
-  onDuck: (active: boolean) => void;
-  onJump: () => void;
-  onTongue: () => void;
-  onGunDown?: () => void;
-  onGunUp?: () => void;
-  onRainbow: () => void;
-  showGunButton?: boolean;
+  actions: RainbowCowboyInputActions;
+  slurpLabel?: string;
+  showWeaponButton?: boolean;
   disabled?: boolean;
 }
 
-const opaqueBtn: React.CSSProperties = {
-  border: "2px solid rgba(255,255,255,0.45)",
-  borderRadius: 12,
-  background: "rgba(0,0,0,0.48)",
-  color: "#fff",
-  fontFamily: "monospace",
-  fontWeight: 800,
-  cursor: "pointer",
-  touchAction: "none",
-  userSelect: "none",
-  WebkitUserSelect: "none",
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  lineHeight: 1.15,
-  minWidth: 72,
-  minHeight: 64,
-  padding: "6px 10px",
-};
-
-function useTouchLayout(): { mobile: boolean | null; landscape: boolean } {
-  const [state, setState] = useState<{ mobile: boolean | null; landscape: boolean }>({
-    mobile: null,
-    landscape: false,
-  });
+function useMobileControls(): boolean {
+  const [mobile, setMobile] = useState(false);
 
   useEffect(() => {
     const refresh = () => {
       const coarse = window.matchMedia("(pointer: coarse)").matches;
       const narrow = window.matchMedia("(max-width: 900px), (max-height: 500px)").matches;
-      const landscape = window.matchMedia("(orientation: landscape)").matches;
-      setState({ mobile: coarse || narrow, landscape: narrow && landscape });
+      setMobile(coarse || narrow);
     };
     refresh();
     window.addEventListener("resize", refresh);
     return () => window.removeEventListener("resize", refresh);
   }, []);
 
-  return state;
+  return mobile;
 }
 
 function VirtualJoystick({
   disabled,
-  onLeft,
-  onRight,
-  onDuck,
-  onJump,
+  actions,
 }: {
   disabled?: boolean;
-  onLeft: (active: boolean) => void;
-  onRight: (active: boolean) => void;
-  onDuck: (active: boolean) => void;
-  onJump: () => void;
+  actions: RainbowCowboyInputActions;
 }) {
   const zoneRef = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState({ x: 0, y: 0 });
-  const jumpArmedRef = useRef(true);
   const activePointerRef = useRef<number | null>(null);
 
   const reset = useCallback(() => {
     setStick({ x: 0, y: 0 });
-    onLeft(false);
-    onRight(false);
-    onDuck(false);
-    jumpArmedRef.current = true;
+    actions.releaseMovement();
     activePointerRef.current = null;
-  }, [onLeft, onRight, onDuck]);
+  }, [actions]);
 
   const applyStick = useCallback(
     (dx: number, dy: number) => {
@@ -94,19 +54,11 @@ function VirtualJoystick({
       }
       setStick({ x: dx, y: dy });
       const thresh = 12;
-      onLeft(dx < -thresh);
-      onRight(dx > thresh);
-      onDuck(dy > thresh);
-      if (dy < -thresh) {
-        if (jumpArmedRef.current) {
-          onJump();
-          jumpArmedRef.current = false;
-        }
-      } else {
-        jumpArmedRef.current = true;
-      }
+      actions.setMoveLeft(dx < -thresh);
+      actions.setMoveRight(dx > thresh);
+      actions.setDuck(dy > thresh);
     },
-    [onLeft, onRight, onDuck, onJump],
+    [actions],
   );
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -125,18 +77,21 @@ function VirtualJoystick({
     applyStick(e.clientX - (rect.left + rect.width / 2), e.clientY - (rect.top + rect.height / 2));
   };
 
-  const onPointerUp = (e: React.PointerEvent) => {
+  const onPointerEnd = (e: React.PointerEvent) => {
     if (activePointerRef.current !== e.pointerId) return;
+    e.preventDefault();
     reset();
   };
 
   return (
     <div
       ref={zoneRef}
+      className="rc-joystick"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
+      onPointerUp={onPointerEnd}
+      onPointerCancel={onPointerEnd}
+      onLostPointerCapture={reset}
       style={{
         position: "relative",
         width: 112,
@@ -166,218 +121,286 @@ function VirtualJoystick({
   );
 }
 
-function ActionButton({
+function MobileActionButton({
   label,
   sub,
+  size,
   accent,
-  onClick,
-  onPointerDown,
-  onPointerUp,
   disabled,
+  onPress,
+  onPressStart,
+  onPressEnd,
 }: {
   label: string;
-  sub: string;
+  sub?: string;
+  size: number;
   accent?: string;
-  onClick?: () => void;
-  onPointerDown?: () => void;
-  onPointerUp?: () => void;
   disabled?: boolean;
+  onPress?: () => void;
+  onPressStart?: () => void;
+  onPressEnd?: () => void;
 }) {
+  const [pressed, setPressed] = useState(false);
+  const firedRef = useRef(false);
+
+  const handleDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (disabled) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setPressed(true);
+    firedRef.current = false;
+    onPressStart?.();
+    if (onPress && !firedRef.current) {
+      onPress();
+      firedRef.current = true;
+    }
+  };
+
+  const handleUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    setPressed(false);
+    onPressEnd?.();
+    firedRef.current = false;
+  };
+
   return (
     <button
       type="button"
       disabled={disabled}
+      className="rc-mobile-action-btn"
+      onPointerDown={handleDown}
+      onPointerUp={handleUp}
+      onPointerCancel={handleUp}
+      onPointerLeave={(e) => {
+        if (e.buttons === 0) {
+          setPressed(false);
+          onPressEnd?.();
+          firedRef.current = false;
+        }
+      }}
       style={{
-        ...opaqueBtn,
-        borderColor: accent ?? "rgba(255,255,255,0.45)",
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        border: `2px solid ${accent ?? "rgba(255,255,255,0.45)"}`,
+        background: pressed ? "rgba(255,255,255,0.28)" : "rgba(0,0,0,0.48)",
+        color: "#fff",
+        fontFamily: "monospace",
+        fontWeight: 800,
+        cursor: disabled ? "not-allowed" : "pointer",
+        touchAction: "none",
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        lineHeight: 1.1,
+        padding: 4,
+        opacity: disabled ? 0.5 : 1,
+        transform: pressed ? "scale(0.94)" : "scale(1)",
+        transition: "transform 80ms ease, background 80ms ease",
       }}
-      onClick={onClick}
-      onPointerDown={(e) => {
-        e.preventDefault();
-        onPointerDown?.();
-      }}
-      onPointerUp={() => onPointerUp?.()}
-      onPointerLeave={() => onPointerUp?.()}
     >
-      <span style={{ fontSize: 18 }}>{label}</span>
-      <span style={{ fontSize: 9, fontWeight: 600, opacity: 0.85, marginTop: 2 }}>{sub}</span>
+      <span style={{ fontSize: size >= 76 ? 13 : 11 }}>{label}</span>
+      {sub ? (
+        <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.82, marginTop: 2 }}>{sub}</span>
+      ) : null}
     </button>
   );
 }
 
+function MobileActionCluster({
+  actions,
+  slurpLabel,
+  showWeaponButton,
+  disabled,
+  compact,
+}: {
+  actions: RainbowCowboyInputActions;
+  slurpLabel: string;
+  showWeaponButton: boolean;
+  disabled?: boolean;
+  compact?: boolean;
+}) {
+  const jumpSize = compact ? 72 : 80;
+  const actionSize = compact ? 56 : 64;
+
+  return (
+    <div
+      className="rc-action-cluster"
+      style={{
+        display: "grid",
+        gridTemplateColumns: `${jumpSize}px ${actionSize}px`,
+        gridTemplateRows: `${actionSize}px ${jumpSize}px`,
+        gap: compact ? 8 : 10,
+        alignItems: "end",
+        justifyItems: "center",
+      }}
+    >
+      <div style={{ gridColumn: 1, gridRow: 1 }}>
+        <MobileActionButton
+          label={slurpLabel}
+          sub="ATK"
+          size={actionSize}
+          accent="rgba(255,220,120,0.7)"
+          disabled={disabled}
+          onPress={actions.pressSlurp}
+        />
+      </div>
+      <div style={{ gridColumn: 2, gridRow: 1 }}>
+        <MobileActionButton
+          label="SPEC"
+          sub="BLAST"
+          size={actionSize}
+          accent="rgba(255,120,220,0.75)"
+          disabled={disabled}
+          onPress={actions.pressSpecial}
+        />
+      </div>
+      <div style={{ gridColumn: 1, gridRow: 2 }}>
+        <MobileActionButton
+          label="JUMP"
+          size={jumpSize}
+          accent="rgba(180,255,180,0.75)"
+          disabled={disabled}
+          onPress={actions.pressJump}
+        />
+      </div>
+      <div style={{ gridColumn: 2, gridRow: 2 }}>
+        {showWeaponButton ? (
+          <MobileActionButton
+            label="GUN"
+            sub="FIRE"
+            size={actionSize}
+            accent="rgba(128,240,255,0.75)"
+            disabled={disabled}
+            onPressStart={() => {
+              actions.pressWeapon();
+              actions.setWeaponHeld(true);
+            }}
+            onPressEnd={() => actions.releaseWeapon()}
+          />
+        ) : (
+          <div style={{ width: actionSize, height: actionSize }} aria-hidden />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MobileControlPad({
+  actions,
+  slurpLabel,
+  showWeaponButton,
+  disabled,
+  compact,
+}: {
+  actions: RainbowCowboyInputActions;
+  slurpLabel: string;
+  showWeaponButton: boolean;
+  disabled?: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className="rc-mobile-controls"
+      style={{
+        position: "absolute",
+        inset: 0,
+        zIndex: 20,
+        pointerEvents: disabled ? "none" : "none",
+        opacity: disabled ? 0.5 : 1,
+      }}
+    >
+      <div
+        className="rc-joystick-anchor"
+        style={{
+          position: "absolute",
+          left: "max(12px, env(safe-area-inset-left))",
+          bottom: "max(12px, env(safe-area-inset-bottom))",
+          pointerEvents: disabled ? "none" : "auto",
+        }}
+      >
+        <VirtualJoystick disabled={disabled} actions={actions} />
+      </div>
+      <div
+        className="rc-action-cluster-anchor"
+        style={{
+          position: "absolute",
+          right: "max(12px, env(safe-area-inset-right))",
+          bottom: "max(12px, env(safe-area-inset-bottom))",
+          pointerEvents: disabled ? "none" : "auto",
+        }}
+      >
+        <MobileActionCluster
+          actions={actions}
+          slurpLabel={slurpLabel}
+          showWeaponButton={showWeaponButton}
+          disabled={disabled}
+          compact={compact}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function RainbowCowboyControls({
-  onLeft,
-  onRight,
-  onDuck,
-  onJump,
-  onTongue,
-  onGunDown,
-  onGunUp,
-  onRainbow,
-  showGunButton,
+  actions,
+  slurpLabel = "SLURP",
+  showWeaponButton = false,
   disabled,
 }: Props) {
+  const mobile = useMobileControls();
+  const [portrait, setPortrait] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(orientation: portrait)");
+    const sync = () => setPortrait(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    if (!mobile) return;
+
+    const releaseAll = () => {
+      actions.releaseMovement();
+      actions.releaseWeapon();
+    };
+
+    const onVis = () => {
+      if (document.visibilityState === "hidden") releaseAll();
+    };
+    const onBlur = () => releaseAll();
+
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("blur", onBlur);
+      releaseAll();
+    };
+  }, [actions, mobile]);
+
+  if (!mobile) return null;
+
   return (
     <>
-      <div
-        className="rc-landscape-controls"
-        style={{
-          position: "absolute",
-          inset: 0,
-          zIndex: 20,
-          display: "none",
-          pointerEvents: disabled ? "none" : "none",
-          opacity: disabled ? 0.5 : 1,
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            left: 14,
-            bottom: 14,
-            pointerEvents: disabled ? "none" : "auto",
-          }}
-        >
-          <VirtualJoystick
-            disabled={disabled}
-            onLeft={onLeft}
-            onRight={onRight}
-            onDuck={onDuck}
-            onJump={onJump}
-          />
-        </div>
-        <div
-          style={{
-            position: "absolute",
-            right: 14,
-            bottom: 14,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            pointerEvents: disabled ? "none" : "auto",
-          }}
-        >
-          <ActionButton
-            label="(A)"
-            sub="Explosion"
-            accent="rgba(255,120,220,0.75)"
-            disabled={disabled}
-            onClick={onRainbow}
-          />
-          <ActionButton
-            label="(B)"
-            sub="Slurp"
-            accent="rgba(255,220,120,0.65)"
-            disabled={disabled}
-            onClick={onTongue}
-          />
-          {showGunButton && onGunDown && onGunUp && (
-            <ActionButton
-              label="(C)"
-              sub="Fire"
-              accent="rgba(128,240,255,0.75)"
-              disabled={disabled}
-              onPointerDown={onGunDown}
-              onPointerUp={onGunUp}
-            />
-          )}
-        </div>
-      </div>
-
-      <div
-        className="rc-portrait-controls"
-        style={{
-          position: "absolute",
-          left: 0,
-          right: 0,
-          bottom: 0,
-          zIndex: 20,
-          display: "none",
-          padding: "10px 12px 16px",
-          gap: 10,
-          flexDirection: "column",
-          pointerEvents: disabled ? "none" : "auto",
-          opacity: disabled ? 0.5 : 1,
-        }}
-      >
-        <div style={{ display: "flex", gap: 10, flex: 1 }}>
-          <button
-            type="button"
-            style={{ ...opaqueBtn, flex: 1, minHeight: 56, fontSize: 22 }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              onLeft(true);
-            }}
-            onTouchEnd={() => onLeft(false)}
-          >
-            ◀
-          </button>
-          <button
-            type="button"
-            style={{ ...opaqueBtn, flex: 1, minHeight: 56, fontSize: 22 }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              onRight(true);
-            }}
-            onTouchEnd={() => onRight(false)}
-          >
-            ▶
-          </button>
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" style={{ ...opaqueBtn, minWidth: 64, minHeight: 56 }} onClick={onJump}>
-            JUMP
-          </button>
-          <button
-            type="button"
-            style={{ ...opaqueBtn, minWidth: 64, minHeight: 56 }}
-            onTouchStart={(e) => {
-              e.preventDefault();
-              onDuck(true);
-            }}
-            onTouchEnd={() => onDuck(false)}
-          >
-            DUCK
-          </button>
-          <ActionButton label="(B)" sub="Slurp" disabled={disabled} onClick={onTongue} />
-          {showGunButton && onGunDown && onGunUp && (
-            <ActionButton
-              label="(C)"
-              sub="Fire"
-              accent="rgba(128,240,255,0.75)"
-              disabled={disabled}
-              onPointerDown={onGunDown}
-              onPointerUp={onGunUp}
-            />
-          )}
-          <ActionButton
-            label="(A)"
-            sub="Explosion"
-            accent="rgba(255,120,220,0.75)"
-            disabled={disabled}
-            onClick={onRainbow}
-          />
-        </div>
-      </div>
-
+      <MobileControlPad
+        actions={actions}
+        slurpLabel={slurpLabel}
+        showWeaponButton={showWeaponButton}
+        disabled={disabled}
+        compact={portrait}
+      />
       <style>{`
-        @media (max-width: 900px) and (orientation: landscape) {
-          .rc-landscape-controls {
+        @media (max-width: 900px), (max-height: 500px), (pointer: coarse) {
+          .rc-mobile-controls {
             display: block !important;
             pointer-events: auto !important;
           }
-          .rc-portrait-controls { display: none !important; }
-        }
-        @media (max-width: 900px) and (orientation: portrait) {
-          .rc-portrait-controls { display: flex !important; }
-          .rc-landscape-controls { display: none !important; }
-        }
-        @media (max-height: 500px) and (orientation: landscape) {
-          .rc-landscape-controls {
-            display: block !important;
-            pointer-events: auto !important;
-          }
-          .rc-portrait-controls { display: none !important; }
         }
       `}</style>
     </>

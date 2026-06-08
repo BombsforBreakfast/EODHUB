@@ -48,6 +48,8 @@ import {
   DUCK_SPEED_MULT,
   GRAVITY,
   INVINCIBLE_FLASH_MS,
+  COYOTE_TIME_MS,
+  JUMP_BUFFER_MS,
   JUMP_VEL,
   KNOCKBACK_DECAY,
   MAX_HEARTS,
@@ -96,7 +98,7 @@ import {
 } from "../unicorn-hero/unicornHeroRides";
 
 /** Bumped when engine internals change so HMR can replace stale instances. */
-export const RAINBOW_COWBOY_ENGINE_REVISION = 14;
+export const RAINBOW_COWBOY_ENGINE_REVISION = 15;
 
 export interface GameInput {
   left: boolean;
@@ -327,6 +329,8 @@ export class RainbowCowboyEngine {
   playerVx = 0;
   playerVy = 0;
   grounded = false;
+  lastGroundedAtMs = 0;
+  jumpBufferUntil = 0;
   ducking = false;
   facing: "left" | "right" = "right";
 
@@ -1034,7 +1038,6 @@ export class RainbowCowboyEngine {
     } else if (!this.isMachineGunActive && this.bazookaAmmo <= 0 && this.hasPistol && fromEdge) {
       weapon = "pistol";
     } else if (fromEdge && !this.hasPistol && !this.isMachineGunActive && this.bazookaAmmo <= 0) {
-      this.showPopup("NO WEAPON — grab a pistol", 700);
       return;
     } else {
       return;
@@ -1276,9 +1279,17 @@ export class RainbowCowboyEngine {
     this.playerVx += this.knockbackVx;
     this.knockbackVx *= KNOCKBACK_DECAY;
 
-    if (input.jumpPressed && this.grounded && !this.ducking) {
+    if (input.jumpPressed) {
+      this.jumpBufferUntil = Math.max(this.jumpBufferUntil, this.timeMs + JUMP_BUFFER_MS);
+    }
+
+    const coyoteOk =
+      this.grounded || this.timeMs - this.lastGroundedAtMs <= COYOTE_TIME_MS;
+    const jumpBuffered = this.timeMs < this.jumpBufferUntil;
+    if (jumpBuffered && coyoteOk && !this.ducking) {
       this.playerVy = JUMP_VEL;
       this.grounded = false;
+      this.jumpBufferUntil = 0;
       this.emitAudio({ type: "jump" });
     }
 
@@ -1368,6 +1379,10 @@ export class RainbowCowboyEngine {
       this.grounded = true;
     }
 
+    if (this.grounded) {
+      this.lastGroundedAtMs = this.timeMs;
+    }
+
     for (const wall of this.config.walls) {
       const wr = { x: wall.x, y: wall.y, w: wall.w, h: wall.h };
       if (rectsOverlap(pr, wr)) {
@@ -1375,6 +1390,7 @@ export class RainbowCowboyEngine {
           this.playerY = wr.y;
           this.playerVy = 0;
           this.grounded = true;
+          this.lastGroundedAtMs = this.timeMs;
         } else if (this.playerVx > 0 && pr.x < wr.x) {
           this.playerX = wr.x - PLAYER_W / 2 - 1;
         } else if (this.playerVx < 0 && pr.x + pr.w > wr.x + wr.w) {
@@ -1390,6 +1406,7 @@ export class RainbowCowboyEngine {
           this.playerY = pl.y;
           this.playerVy = 0;
           this.grounded = true;
+          this.lastGroundedAtMs = this.timeMs;
         }
       }
     }

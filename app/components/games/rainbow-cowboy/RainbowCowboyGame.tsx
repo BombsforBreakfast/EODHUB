@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VIEW_H, VIEW_W } from "./rainbowCowboyConstants";
 import { RainbowCowboyEngine, RAINBOW_COWBOY_ENGINE_REVISION, type GameInput } from "./rainbowCowboyEngine";
 import { drawWorld, maybeSpawnDust } from "./rainbowCowboyGraphics";
@@ -19,6 +19,7 @@ import { UnicornHeroAudioControls } from "../unicorn-hero/UnicornHeroAudioContro
 import { getUnicornHeroRideConfig, type UnicornHeroRideType } from "../unicorn-hero/unicornHeroRides";
 import { GameRotatePrompt } from "@/app/components/games/GameRotatePrompt";
 import { useGamePlayingBodyClass } from "@/app/components/games/useGamePlayingBodyClass";
+import { createRainbowCowboyInputBridge } from "./rainbowCowboyGameInput";
 
 interface Props {
   config: LevelConfig;
@@ -195,6 +196,8 @@ export function RainbowCowboyGame({
   }, []);
 
   useGamePlayingBodyClass(true);
+
+  const inputActions = useMemo(() => createRainbowCowboyInputBridge(inputRef), []);
 
   const consumeEdgeInputs = useCallback(() => {
     const input = inputRef.current;
@@ -507,33 +510,10 @@ export function RainbowCowboyGame({
       />
 
       <RainbowCowboyControls
+        actions={inputActions}
         disabled={paused || instructionsOpen}
-        showGunButton={config.level.id === "level-3"}
-        onLeft={(active) => {
-          inputRef.current.left = active;
-        }}
-        onRight={(active) => {
-          inputRef.current.right = active;
-        }}
-        onDuck={(active) => {
-          inputRef.current.down = active;
-        }}
-        onJump={() => {
-          inputRef.current.jumpPressed = true;
-        }}
-        onTongue={() => {
-          inputRef.current.tonguePressed = true;
-        }}
-        onGunDown={() => {
-          inputRef.current.gunPressed = true;
-          inputRef.current.gunHeld = true;
-        }}
-        onGunUp={() => {
-          inputRef.current.gunHeld = false;
-        }}
-        onRainbow={() => {
-          inputRef.current.rainbowPressed = true;
-        }}
+        showWeaponButton={config.level.id === "level-3"}
+        slurpLabel={rideConfig.attackLabel.toUpperCase().includes("GRIP") ? "SLURP" : "ATK"}
       />
 
       {paused && (

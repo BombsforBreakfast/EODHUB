@@ -50,19 +50,21 @@ const DESKTOP_ROWS = (attackLabel: string, specialLabel: string, levelId?: strin
   return rows;
 };
 
-const MOBILE_LANDSCAPE_ROWS = (levelId?: string) => {
+const MOBILE_LANDSCAPE_ROWS = (attackLabel: string, specialLabel: string, levelId?: string) => {
   const rows = [
-    { keys: "Joystick", action: "Move left/right · push up to jump · push down to crouch" },
-    { keys: "(A)", action: "Explosion — rainbow blast" },
-    { keys: "(B)", action: "Slurp — eat drones & grab loot" },
+    { keys: "Joystick", action: "Move left/right · push down to crouch" },
+    { keys: "JUMP", action: "Jump" },
+    { keys: "SLURP / ATK", action: `${attackLabel} — eat drones & grab loot` },
+    { keys: "SPEC", action: `${specialLabel} — rainbow blast` },
   ] as { keys: string; action: string }[];
   if (levelId === "level-3") {
-    rows.push({ keys: "(C)", action: "Fire — shoot RC trucks (hold to spray machine gun)" });
+    rows.push({ keys: "GUN", action: "Fire weapon — pistol, bazooka, or machine gun (hold to spray)" });
   }
   return rows;
 };
 
-const MOBILE_PORTRAIT_ROWS = (levelId?: string) => MOBILE_LANDSCAPE_ROWS(levelId);
+const MOBILE_PORTRAIT_ROWS = (attackLabel: string, specialLabel: string, levelId?: string) =>
+  MOBILE_LANDSCAPE_ROWS(attackLabel, specialLabel, levelId);
 
 const MISSION_BY_LEVEL: Record<string, string> = {
   "level-1":
@@ -70,7 +72,7 @@ const MISSION_BY_LEVEL: Record<string, string> = {
   "level-2":
     "Fight through the canyon, survive the swarm, and reach extraction. Prioritize threats.",
   "level-3":
-    "Hold the Alamo against RC monster trucks. You start with a pistol — use (C) / T to fire.",
+    "Hold the Alamo against RC monster trucks. You start with a pistol — use GUN / T to fire.",
 };
 
 const DEFAULT_MISSION = MISSION_BY_LEVEL["level-1"];
@@ -91,7 +93,7 @@ const LEVEL_2_HAZARDS = [
 ] as const;
 
 const LEVEL_3_HAZARDS = [
-  "You start with a PISTOL — no waiting for a pickup. (T) or mobile (C) FIRE.",
+  "You start with a PISTOL — no waiting for a pickup. (T) or mobile GUN to fire.",
   "Machine gun & bazooka pickups upgrade you temporarily, then back to pistol.",
   "RC Monster Trucks — blinking red light, explode when destroyed.",
   "Turret Trucks — slow roof gun shoots left or right at you.",
@@ -126,8 +128,8 @@ export function RainbowCowboyInstructionsModal({
   const rows = !mobile
     ? DESKTOP_ROWS(attackLabel, specialLabel, levelId)
     : landscape
-      ? MOBILE_LANDSCAPE_ROWS(levelId)
-      : MOBILE_PORTRAIT_ROWS(levelId);
+      ? MOBILE_LANDSCAPE_ROWS(attackLabel, specialLabel, levelId)
+      : MOBILE_PORTRAIT_ROWS(attackLabel, specialLabel, levelId);
 
   const controlsHeading = !mobile
     ? "Controls"
