@@ -57,6 +57,8 @@ import type {
   RenderSafeLevel,
   RenderSafeRunResult,
 } from "./renderSafeTypes";
+import { GameRotatePrompt } from "@/app/components/games/GameRotatePrompt";
+import { useGamePlayingBodyClass } from "@/app/components/games/useGamePlayingBodyClass";
 
 const MOVE_SPEED = 2.2;
 const TRIGGER_THRESHOLD = 3;
@@ -89,6 +91,7 @@ function createInitialRunState() {
 }
 
 export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive = true }: Props) {
+  useGamePlayingBodyClass(immersive);
   const [mapSeed, setMapSeed] = useState(1);
   const [startPos, setStartPos] = useState(() => findStartPosition());
   const [targetPos, setTargetPos] = useState(() => findTargetCenter());
@@ -699,7 +702,7 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
 
   return (
     <div
-      className={`render-safe-game-shell${immersive ? " render-safe-immersive" : ""}`}
+      className={`render-safe-game-shell${immersive ? " render-safe-immersive arcade-game-shell" : ""}`}
       style={shellStyle}
     >
       <button
@@ -817,6 +820,14 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
         <RenderSafeFailureModal message={failureMessage} variant={failureVariant} onRestart={onRestart} />
       )}
 
+      {immersive ? (
+        <GameRotatePrompt
+          emoji="💣"
+          title="Turn your phone sideways"
+          subtitle="Landscape mode gives you the full mission map and touch controls."
+        />
+      ) : null}
+
       <style>{`
         .render-safe-immersive .render-safe-map-host {
           position: absolute;
@@ -827,16 +838,6 @@ export function RenderSafeGame({ level, onComplete, onRestart, onExit, immersive
         @media (max-width: 900px) {
           .render-safe-play-area {
             height: 100dvh !important;
-          }
-
-          .render-safe-game-shell.render-safe-immersive {
-            position: fixed !important;
-            inset: 0 !important;
-            width: 100vw !important;
-            height: 100dvh !important;
-            max-height: 100dvh !important;
-            margin: 0 !important;
-            z-index: 200;
           }
         }
       `}</style>

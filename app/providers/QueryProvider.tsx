@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { supabase } from "../lib/lib/supabaseClient";
 
 /**
  * Root React Query provider. Mounted high in the tree (inside ThemeProvider,
@@ -28,21 +27,6 @@ export default function QueryProvider({ children }: { children: React.ReactNode 
         },
       }),
   );
-
-  useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event) => {
-      // Drop all cached per-user data when the session ends or switches accounts
-      // so a new user never sees the previous user's cached profile/feed/etc.
-      if (event === "SIGNED_OUT") {
-        queryClient.clear();
-      }
-    });
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [queryClient]);
 
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }

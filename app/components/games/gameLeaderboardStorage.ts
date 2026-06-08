@@ -1,6 +1,9 @@
 import { supabase } from "@/app/lib/lib/supabaseClient";
 import type { ArcadeGameId, GameLeaderboardEntry } from "./gameLeaderboardTypes";
 
+const LEADERBOARD_CACHE_TTL_MS = 2 * 60 * 1000;
+const leaderboardCache = new Map<string, { entries: GameLeaderboardEntry[]; expiresAt: number }>();
+
 type LeaderboardRow = {
   user_id: string;
   display_name: string;
@@ -34,9 +37,16 @@ export async function fetchGameLeaderboard(
   levelId: string,
   limit = 10,
 ): Promise<GameLeaderboardEntry[]> {
+  const cacheKey = `${game}:${levelId}:${limit}`;
+  const cached = leaderboardCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.entries;
+  }
+
   const rpcName =
     game === "rainbow_cowboy" ? "get_rainbow_cowboy_leaderboard" : "get_render_safe_leaderboard";
 
+  // Leaderboards load on page open/return only; this RPC is never called from gameplay loops.
   const { data, error } = await supabase.rpc(rpcName, {
     p_level_id: levelId,
     p_limit: limit,
@@ -47,5 +57,20 @@ export async function fetchGameLeaderboard(
     return [];
   }
 
-  return ((data as LeaderboardRow[] | null) ?? []).map(mapRow);
+  const entries = ((data as LeaderboardRow[] | null) ?? []).map(mapRow);
+  leaderboardCache.set(cacheKey, {
+    entries,
+    expiresAt: Date.now() + LEADERBOARD_CACHE_TTL_MS,
+  });
+  return entries;
+}
+
+export function clearGameLeaderboardCache(game?: ArcadeGameId): void {
+  if (!game) {
+    leaderboardCache.clear();
+    return;
+  }
+  for (const key of leaderboardCache.keys()) {
+    if (key.startsWith(`${game}:`)) leaderboardCache.delete(key);
+  }
 }

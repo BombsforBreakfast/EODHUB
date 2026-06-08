@@ -15,6 +15,46 @@ interface Props {
   children: ReactNode;
 }
 
+const ARCADE_ACCESS_CACHE_TTL_MS = 2 * 60 * 1000;
+
+type ArcadeAccessResponse = {
+  canClick?: boolean;
+  unlocked?: boolean;
+  requiresPassword?: boolean;
+};
+
+function arcadeAccessCacheKey(userId: string): string {
+  return `arcade-access:${userId}`;
+}
+
+function readCachedArcadeAccess(userId: string): ArcadeAccessResponse | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(arcadeAccessCacheKey(userId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as ArcadeAccessResponse & { expiresAt?: number };
+    if (!parsed.expiresAt || parsed.expiresAt <= Date.now()) {
+      sessionStorage.removeItem(arcadeAccessCacheKey(userId));
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function cacheArcadeAccess(userId: string, access: ArcadeAccessResponse): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(
+      arcadeAccessCacheKey(userId),
+      JSON.stringify({ ...access, expiresAt: Date.now() + ARCADE_ACCESS_CACHE_TTL_MS }),
+    );
+  } catch {
+    // Ignore private mode / quota errors; server access checks still run without cache.
+  }
+}
+
 export function RequireArcadePreview({ children }: Props) {
   const { t } = useTheme();
   const [access, setAccess] = useState<AccessState>({ status: "loading" });
@@ -32,6 +72,17 @@ export function RequireArcadePreview({ children }: Props) {
         return;
       }
 
+      const userId = session.user.id;
+      const cached = readCachedArcadeAccess(userId);
+      if (cached?.canClick) {
+        if (cached.unlocked) {
+          if (mounted) setAccess({ status: "ready" });
+          return;
+        }
+        if (mounted) setAccess({ status: "unlock", requiresPassword: !!cached.requiresPassword });
+        return;
+      }
+
       const res = await fetch("/api/arcade/access", {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
@@ -43,11 +94,8 @@ export function RequireArcadePreview({ children }: Props) {
         return;
       }
 
-      const data = (await res.json()) as {
-        canClick?: boolean;
-        unlocked?: boolean;
-        requiresPassword?: boolean;
-      };
+      const data = (await res.json()) as ArcadeAccessResponse;
+      cacheArcadeAccess(userId, data);
 
       if (!data.canClick) {
         setAccess({ status: "blocked" });
@@ -95,6 +143,11 @@ export function RequireArcadePreview({ children }: Props) {
         return;
       }
 
+      cacheArcadeAccess(session.user.id, {
+        canClick: true,
+        unlocked: true,
+        requiresPassword: false,
+      });
       setAccess({ status: "ready" });
     } finally {
       setSubmitting(false);

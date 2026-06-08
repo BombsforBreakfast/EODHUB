@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
-import { supabase } from "../lib/lib/supabaseClient";
+import { useAuth } from "../lib/auth/AuthProvider";
 import BetaBugReportFab from "./bug-report/BetaBugReportFab";
 
 /**
@@ -10,7 +10,7 @@ import BetaBugReportFab from "./bug-report/BetaBugReportFab";
  */
 export default function BugReportGate() {
   const pathname = usePathname();
-  const [userId, setUserId] = useState<string | null | undefined>(undefined);
+  const { user, isLoading } = useAuth();
   const [hideOnMobileSidebar, setHideOnMobileSidebar] = useState(false);
 
   useEffect(() => {
@@ -22,20 +22,8 @@ export default function BugReportGate() {
     return () => window.removeEventListener("resize", check);
   }, [pathname]);
 
-  useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserId(session?.user?.id ?? null);
-    });
-    void supabase.auth.getUser().then(({ data }) => {
-      setUserId(data.user?.id ?? null);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
-
-  if (userId === undefined) return null;
-  if (!userId) return null;
+  if (isLoading) return null;
+  if (!user) return null;
   if (hideOnMobileSidebar) return null;
 
   return <BetaBugReportFab />;

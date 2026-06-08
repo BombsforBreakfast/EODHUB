@@ -34,19 +34,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("is_admin")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const isAdmin = profile?.is_admin === true;
-  if (!canUseArcadePreview(user.id, isAdmin)) {
+  if (!canUseArcadePreview(user.id)) {
     return NextResponse.json({ error: "Arcade preview is not available for this account." }, { status: 403 });
-  }
-
-  if (isAdmin) {
-    return NextResponse.json({ unlocked: true });
   }
 
   if (!getArcadeAccessPassword()) {

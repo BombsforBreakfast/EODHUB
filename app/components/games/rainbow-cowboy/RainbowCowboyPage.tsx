@@ -1,14 +1,14 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { useViewerGate } from "@/app/hooks/useRequireFullAccess";
+import { clearGameLeaderboardCache } from "@/app/components/games/gameLeaderboardStorage";
 import { getLevelConfig, getNextPlayableLevel, getRainbowCowboyLevels } from "./rainbowCowboyLevels";
 import {
   buildPersonalBestMessage,
-  getLocalPersonalBest,
-  getRainbowCowboyPersonalBest,
-  getRainbowCowboyProgress,
+  loadRainbowCowboyArcadeData,
   saveLocalPersonalBest,
   saveRainbowCowboyPersonalBest,
 } from "./rainbowCowboyStorage";
@@ -20,16 +20,20 @@ import {
   isLevelUnlocked,
   type RainbowCowboyProgressMap,
 } from "./rainbowCowboyProgression";
-import { GameLeaderboard } from "@/app/components/games/GameLeaderboard";
 import { GameArcadeNav } from "@/app/components/games/GameArcadeNav";
+import { RainbowCowboyLeaderboardStack } from "./RainbowCowboyLeaderboardStack";
 import { RainbowCowboyEndScreen } from "./RainbowCowboyEndScreen";
-import { RainbowCowboyGame } from "./RainbowCowboyGame";
 import { RainbowCowboyLevelSelect } from "./RainbowCowboyLevelSelect";
 import { RainbowCowboyStartScreen } from "./RainbowCowboyStartScreen";
 import {
   loadUnicornHeroSelectedRide,
   type UnicornHeroRideType,
 } from "../unicorn-hero/unicornHeroRides";
+
+const RainbowCowboyGame = dynamic(
+  () => import("./RainbowCowboyGame").then((m) => ({ default: m.RainbowCowboyGame })),
+  { ssr: false },
+);
 
 type Screen = "select" | "start" | "playing" | "complete" | "game_over";
 
@@ -49,6 +53,7 @@ export function RainbowCowboyPage() {
   const [personalBestMessage, setPersonalBestMessage] = useState("");
   const [showInstructions, setShowInstructions] = useState(true);
   const [selectedRide, setSelectedRide] = useState<UnicornHeroRideType>(() => loadUnicornHeroSelectedRide());
+  const remoteCompletionWritesThisRunRef = useRef(0);
 
   const isPlaying = screen === "playing";
   const playAreaRef = useRef<HTMLDivElement>(null);
@@ -57,28 +62,17 @@ export function RainbowCowboyPage() {
     [selectedLevelId, difficulty],
   );
 
-  const loadPersonalBests = useCallback(async () => {
-    const bests: Record<string, RainbowCowboyPersonalBest | null> = {};
-    for (const level of levels) {
-      if (level.locked) continue;
-      if (userId) {
-        bests[level.id] = await getRainbowCowboyPersonalBest(level.id, userId);
-      } else {
-        bests[level.id] = getLocalPersonalBest(level.id);
-      }
-    }
-    setPersonalBests(bests);
-  }, [levels, userId]);
-
-  const loadProgress = useCallback(async () => {
-    const next = await getRainbowCowboyProgress(userId);
-    setProgress(next);
-  }, [userId]);
-
   useEffect(() => {
-    void loadPersonalBests();
-    void loadProgress();
-  }, [loadPersonalBests, loadProgress]);
+    let cancelled = false;
+    void loadRainbowCowboyArcadeData(userId).then((data) => {
+      if (cancelled) return;
+      setPersonalBests(data.personalBests);
+      setProgress(data.progress);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -119,21 +113,34 @@ export function RainbowCowboyPage() {
       return;
     }
     setShowInstructions(true);
+    remoteCompletionWritesThisRunRef.current = 0;
     setGameKey((k) => k + 1);
     setScreen("playing");
   }, [difficulty, levels, progress, selectedLevelId]);
 
   const handleComplete = useCallback(async (result: RainbowCowboyRunResult) => {
     setRunResult(result);
+    if (userId) {
+      remoteCompletionWritesThisRunRef.current += 1;
+      if (
+        process.env.NODE_ENV !== "production" &&
+        remoteCompletionWritesThisRunRef.current > 1
+      ) {
+        console.warn("Rainbow Cowboy attempted more than one remote completion write for this play session.", {
+          levelId: result.levelId,
+          difficulty: result.difficulty,
+          writes: remoteCompletionWritesThisRunRef.current,
+        });
+      }
+    }
     const saveResult = userId
       ? await saveRainbowCowboyPersonalBest(result, userId)
       : saveLocalPersonalBest(result);
+    if (saveResult.saved) clearGameLeaderboardCache("rainbow_cowboy");
     setPersonalBestMessage(buildPersonalBestMessage(saveResult, result));
     setProgress((prev) => applyCompletion(prev, result.levelId, result.difficulty));
-    await loadPersonalBests();
-    await loadProgress();
     setScreen("complete");
-  }, [loadPersonalBests, loadProgress, userId]);
+  }, [userId]);
 
   const handleGameOver = useCallback((result: RainbowCowboyRunResult) => {
     setRunResult(result);
@@ -143,6 +150,7 @@ export function RainbowCowboyPage() {
 
   const handleRestart = useCallback(() => {
     setShowInstructions(false);
+    remoteCompletionWritesThisRunRef.current = 0;
     setGameKey((k) => k + 1);
     setRunResult(null);
     setScreen("playing");
@@ -197,17 +205,7 @@ export function RainbowCowboyPage() {
             progress={progress}
             onSelectLevel={handleSelectLevel}
           />
-          {levels
-            .filter((level) => !level.locked && level.status !== "coming_soon")
-            .map((level) => (
-              <GameLeaderboard
-                key={level.id}
-                game="rainbow_cowboy"
-                levelId={level.id}
-                levelTitle={level.title}
-                accentColor="#ff60c0"
-              />
-            ))}
+          <RainbowCowboyLeaderboardStack levels={levels} />
         </>
       )}
 

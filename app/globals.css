@@ -1303,3 +1303,116 @@ a.rabbithole-brand-link:focus-visible {
     padding-left: 0;
   }
 }
+
+/* ── Arcade games: NavBar on hub/select; fullscreen + rotate prompt while playing ── */
+@media (max-width: 900px) {
+  body.game-playing-active footer {
+    display: none !important;
+  }
+
+  body.game-playing-active .beta-bug-report-fab {
+    display: none !important;
+  }
+
+  .arcade-game-shell {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    margin: 0 !important;
+    z-index: 200;
+  }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+  body.game-playing-active .nav-root,
+  body.game-playing-active .nav-mobile-spacer {
+    display: none !important;
+  }
+}
+
+.game-rotate-prompt {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.88);
+  pointer-events: none;
+  text-align: center;
+  color: #fff;
+  font-family: var(--font-geist-mono, monospace);
+}
+
+.game-rotate-prompt-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 280px;
+}
+
+.game-rotate-prompt-phone {
+  font-size: 42px;
+  line-height: 1;
+  animation: game-rotate-phone-wiggle 2.2s ease-in-out infinite;
+}
+
+.game-rotate-prompt-arrow {
+  font-size: 28px;
+  opacity: 0.85;
+  animation: game-rotate-arrow-spin 2.2s ease-in-out infinite;
+}
+
+.game-rotate-prompt-emoji {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.game-rotate-prompt-title {
+  margin: 4px 0 0;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.game-rotate-prompt-subtitle {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  opacity: 0.82;
+}
+
+@keyframes game-rotate-phone-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  35% {
+    transform: rotate(-90deg);
+  }
+  65% {
+    transform: rotate(-90deg);
+  }
+}
+
+@keyframes game-rotate-arrow-spin {
+  0%,
+  30% {
+    transform: rotate(0deg);
+    opacity: 0.5;
+  }
+  55%,
+  100% {
+    transform: rotate(90deg);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 900px) and (orientation: portrait) {
+  body.game-playing-active .game-rotate-prompt {
+    display: flex;
+  }
+}

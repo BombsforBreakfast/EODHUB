@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { useViewerGate } from "@/app/hooks/useRequireFullAccess";
 import { GameLeaderboard } from "@/app/components/games/GameLeaderboard";
 import { GameArcadeNav } from "@/app/components/games/GameArcadeNav";
+import { clearGameLeaderboardCache, fetchGameLeaderboard } from "@/app/components/games/gameLeaderboardStorage";
+import type { GameLeaderboardEntry } from "@/app/components/games/gameLeaderboardTypes";
 import { RenderSafeEndScreen } from "./RenderSafeEndScreen";
 import { RenderSafeGame } from "./RenderSafeGame";
 import { RenderSafeLevelSelect } from "./RenderSafeLevelSelect";
@@ -12,7 +14,7 @@ import { RenderSafeMissionBrief } from "./RenderSafeMissionBrief";
 import { getRenderSafeLevelById, getNextPlayableLevel, getRenderSafeLevels } from "./renderSafeLevels";
 import {
   getLocalPersonalBest,
-  getRenderSafePersonalBest,
+  loadRenderSafePersonalBests,
   saveLocalPersonalBest,
   saveRenderSafePersonalBest,
 } from "./renderSafeStorage";
@@ -26,11 +28,13 @@ export function RenderSafePage() {
   const viewer = useViewerGate();
   const userId = viewer?.userId ?? null;
 
-  const levels = getRenderSafeLevels();
+  const levels = useMemo(() => getRenderSafeLevels(), []);
   const [screen, setScreen] = useState<"select" | "brief" | "playing" | "complete">("select");
   const [selectedLevelId, setSelectedLevelId] = useState<string | null>("level-1");
   const [gameKey, setGameKey] = useState(0);
   const [personalBests, setPersonalBests] = useState<Record<string, number | null>>({});
+  const [leaderboardEntries, setLeaderboardEntries] = useState<Record<string, GameLeaderboardEntry[]>>({});
+  const [leaderboardsLoading, setLeaderboardsLoading] = useState(true);
   const [runResult, setRunResult] = useState<RenderSafeRunResult | null>(null);
   const [personalBestMessage, setPersonalBestMessage] = useState("");
 
@@ -39,21 +43,43 @@ export function RenderSafePage() {
   const isImmersive = isPlaying;
 
   const loadPersonalBests = useCallback(async () => {
-    const bests: Record<string, number | null> = {};
+    const rows = await loadRenderSafePersonalBests(userId);
+    const next: Record<string, number | null> = {};
     for (const level of levels) {
-      if (userId) {
-        const best = await getRenderSafePersonalBest(level.id, userId);
-        bests[level.id] = best?.score ?? null;
-      } else {
-        bests[level.id] = getLocalPersonalBest(level.id);
-      }
+      next[level.id] = rows[level.id]?.score ?? null;
     }
-    setPersonalBests(bests);
+    setPersonalBests(next);
   }, [levels, userId]);
 
   useEffect(() => {
-    loadPersonalBests();
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) void loadPersonalBests();
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [loadPersonalBests]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const playableLevels = levels.filter((level) => !level.locked);
+    void Promise.all(
+      playableLevels.map(async (level) => {
+        const entries = await fetchGameLeaderboard("render_safe", level.id, 10);
+        return [level.id, entries] as const;
+      }),
+    ).then((rows) => {
+      if (cancelled) return;
+      const next: Record<string, GameLeaderboardEntry[]> = {};
+      for (const [levelId, entries] of rows) next[levelId] = entries;
+      setLeaderboardEntries(next);
+      setLeaderboardsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [levels]);
 
   useEffect(() => {
     if (!isPlaying) return;
@@ -103,6 +129,7 @@ export function RenderSafePage() {
 
     if (userId) {
       const saveResult = await saveRenderSafePersonalBest(result, userId);
+      if (saveResult.saved) clearGameLeaderboardCache("render_safe");
       if (saveResult.saved && saveResult.previousBest == null) {
         setPersonalBestMessage("Personal Best Saved");
       } else if (saveResult.saved && saveResult.isNewBest) {
@@ -198,6 +225,8 @@ export function RenderSafePage() {
               levelId={level.id}
               levelTitle={level.title}
               accentColor="#f97316"
+              entries={leaderboardEntries[level.id]}
+              loading={leaderboardsLoading && leaderboardEntries[level.id] == null}
             />
           ))}
         </>

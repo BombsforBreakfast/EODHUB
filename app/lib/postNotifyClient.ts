@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getAccessToken } from "./lib/supabaseClient";
+import { waitForAuthReady } from "./auth/authReady";
 
 export type PostNotifyResult = { ok: true } | { ok: false; reason: string };
 
@@ -19,16 +21,18 @@ function isLikelyNetworkError(e: unknown): boolean {
 }
 
 /**
- * Resolves a JWT for /api/notify. Polls briefly so slow initial loads still deliver.
+ * Resolves a JWT for /api/notify. Waits for AuthProvider bootstrap, then reads cached session.
  */
-export async function resolveAccessTokenForNotify(supabase: SupabaseClient): Promise<string | null> {
-  const { data: s0 } = await supabase.auth.getSession();
-  if (s0.session?.access_token) return s0.session.access_token;
+export async function resolveAccessTokenForNotify(_supabase: SupabaseClient): Promise<string | null> {
+  await waitForAuthReady();
+  const token = await getAccessToken({ source: "postNotify" });
+  if (token) return token;
+
   const deadline = Date.now() + SESSION_WAIT_MS;
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, SESSION_POLL_MS));
-    const { data } = await supabase.auth.getSession();
-    if (data.session?.access_token) return data.session.access_token;
+    const retry = await getAccessToken({ source: "postNotify.poll" });
+    if (retry) return retry;
   }
   return null;
 }

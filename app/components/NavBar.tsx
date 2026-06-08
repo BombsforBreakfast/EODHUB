@@ -4,7 +4,8 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
-import { getSupabaseSession, supabase } from "../lib/lib/supabaseClient";
+import { supabase } from "../lib/lib/supabaseClient";
+import { useAuth } from "../lib/auth/AuthProvider";
 import EodCrabLogo from "./EodCrabLogo";
 import OptimizedAvatarImg from "./OptimizedAvatarImg";
 import { useTheme } from "../lib/ThemeContext";
@@ -59,8 +60,9 @@ type SearchResult = {
 export default function NavBar() {
   const queryClient = useQueryClient();
   const { openMemorialById } = useMemorialNavModal();
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [authLoaded, setAuthLoaded] = useState(false);
+  const { user, accessToken, isLoading: authLoading } = useAuth();
+  const currentUserId = user?.id ?? null;
+  const authLoaded = !authLoading;
   const [userInitial, setUserInitial] = useState<string>("?");
   const [avatarPhotoUrl, setAvatarPhotoUrl] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -97,7 +99,7 @@ export default function NavBar() {
     ? notifications.filter((n) => !n.read_at && !n.archived_at).length
     : notifications.length;
   const canAccessRabbithole = isVerifiedRabbitholeViewer(verificationStatus);
-  const canClickArcade = canClickArcadeNav(isAdmin, isFounder);
+  const canClickArcade = canClickArcadeNav(isFounder);
 
   const NOTIFICATION_SELECT =
     "id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key, type, actor_id, post_id, unit_id, unit_post_id, metadata";
@@ -220,25 +222,19 @@ export default function NavBar() {
     }
 
     async function loadUser() {
-      const { data: { session }, error } = await getSupabaseSession();
       if (!mounted) return;
-      if (error) console.error("Nav auth load error:", error);
-
-      const uid = session?.user?.id ?? null;
-      setCurrentUserId(uid);
-      setAuthLoaded(true);
       resetNavProfileState();
 
-      if (uid && session?.user) {
-        await loadNavProfile(session.user);
+      const uid = user?.id ?? null;
+      if (uid && user) {
+        await loadNavProfile(user);
         await loadNotifications(uid);
-        if (session.access_token) {
-          void loadFounderStatus(session.access_token);
+        if (accessToken) {
+          void loadFounderStatus(accessToken);
         }
-        // Load group pending count for any logged-in user (not just site admins)
-        if (session.access_token) {
+        if (accessToken) {
           fetch("/api/units/pending-summary", {
-            headers: { Authorization: `Bearer ${session.access_token}` },
+            headers: { Authorization: `Bearer ${accessToken}` },
           })
             .then((r) => r.ok ? r.json() : { groups: [] })
             .then((j: { groups: { pending_count: number }[] }) => {
@@ -248,34 +244,19 @@ export default function NavBar() {
             })
             .catch(() => { /* non-fatal */ });
         }
-      }
-    }
-
-    loadUser();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") return;
-      if (!mounted) return;
-      const uid = session?.user?.id ?? null;
-      setCurrentUserId(uid);
-      setAuthLoaded(true);
-      resetNavProfileState();
-      if (uid && session?.user) {
-        void loadNavProfile(session.user);
-        void loadNotifications(uid);
-        if (session.access_token) {
-          void loadFounderStatus(session.access_token);
-        }
       } else {
         setUserInitial("?");
       }
-    });
+    }
+
+    if (!authLoading) {
+      void loadUser();
+    }
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
     };
-  }, [queryClient]);
+  }, [accessToken, authLoading, queryClient, user]);
 
   useEffect(() => {
     if (!currentUserId || !isAdmin) return;

@@ -19,6 +19,9 @@ interface Props {
   levelTitle: string;
   accentColor?: string;
   limit?: number;
+  /** When provided, skips the internal Supabase fetch. */
+  entries?: GameLeaderboardEntry[];
+  loading?: boolean;
 }
 
 const MEDALS = ["🥇", "🥈", "🥉"];
@@ -53,12 +56,17 @@ export function GameLeaderboard({
   levelTitle,
   accentColor = "#ff60c0",
   limit = 10,
+  entries: controlledEntries,
+  loading: controlledLoading,
 }: Props) {
   const { t } = useTheme();
   const [entries, setEntries] = useState<GameLeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const usesControlledData = controlledLoading !== undefined;
 
   useEffect(() => {
+    if (usesControlledData) return;
+
     let cancelled = false;
     setLoading(true);
     fetchGameLeaderboard(game, levelId, limit).then((rows) => {
@@ -70,7 +78,10 @@ export function GameLeaderboard({
     return () => {
       cancelled = true;
     };
-  }, [game, levelId, limit]);
+  }, [game, levelId, limit, usesControlledData]);
+
+  const displayEntries = usesControlledData ? (controlledEntries ?? []) : entries;
+  const displayLoading = usesControlledData ? !!controlledLoading : loading;
 
   return (
     <div
@@ -101,19 +112,19 @@ export function GameLeaderboard({
         </div>
       )}
 
-      {loading && (
+      {displayLoading && (
         <div style={{ fontSize: 13, color: t.textMuted, padding: "8px 0" }}>Loading scores…</div>
       )}
 
-      {!loading && entries.length === 0 && (
+      {!displayLoading && displayEntries.length === 0 && (
         <div style={{ fontSize: 13, color: t.textMuted, padding: "8px 0", lineHeight: 1.45 }}>
           No scores yet. Be the first to clear this level!
         </div>
       )}
 
-      {!loading && entries.length > 0 && (
+      {!displayLoading && displayEntries.length > 0 && (
         <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
-          {entries.map((entry, index) => (
+          {displayEntries.map((entry, index) => (
             <li
               key={entry.userId}
               style={{

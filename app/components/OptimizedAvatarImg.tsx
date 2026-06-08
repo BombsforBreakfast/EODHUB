@@ -13,7 +13,7 @@ type Props = {
   fetchPriority?: "high" | "low" | "auto";
 };
 
-/** Optimized profile photo for small display sizes (uses Supabase image transforms). */
+/** Profile photo for small display sizes. Uploads are pre-resized; avoid runtime Storage transforms. */
 export default function OptimizedAvatarImg({
   photoUrl,
   displayName,
@@ -29,7 +29,7 @@ export default function OptimizedAvatarImg({
   const src = avatarImageUrl(photoUrl, sizePx) ?? photoUrl;
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- Supabase transform URLs are dynamic
+    // eslint-disable-next-line @next/next/no-img-element -- Supabase public URLs are user-managed content
     <img
       src={src}
       alt={displayName}

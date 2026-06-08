@@ -33,18 +33,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ canClick: false, unlocked: false, requiresPassword: false }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("is_admin")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  const isAdmin = profile?.is_admin === true;
-  const canClick = canUseArcadePreview(user.id, isAdmin);
+  const canClick = canUseArcadePreview(user.id);
   const cookieStore = await cookies();
   const unlockCookie = cookieStore.get(ARCADE_UNLOCK_COOKIE)?.value;
-  const unlocked = hasArcadeRouteAccess(user.id, isAdmin, unlockCookie);
-  const requiresPassword = canClick && !isAdmin && !!getArcadeAccessPassword();
+  const unlocked = hasArcadeRouteAccess(user.id, unlockCookie);
+  const requiresPassword = canClick && !unlocked && !!getArcadeAccessPassword();
 
-  return NextResponse.json({ canClick, unlocked, requiresPassword, isAdmin });
+  return NextResponse.json({ canClick, unlocked, requiresPassword });
 }

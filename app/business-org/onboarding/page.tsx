@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
-import { prepareImageUploadFile } from "../../lib/prepareUploadFile";
+import { prepareLogoUploadFile } from "../../lib/prepareUploadFile";
 
 type Step = "login" | "profile";
 type CompletionState = {
@@ -175,7 +175,7 @@ export default function BusinessOrgOnboardingPage() {
     setUploadingLogo(true);
     setError(null);
     try {
-      const prepared = await prepareImageUploadFile(file);
+      const prepared = await prepareLogoUploadFile(file);
       if (!prepared.ok) {
         setError(prepared.error);
         return;

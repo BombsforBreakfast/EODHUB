@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
-import { prepareImageUploadFile } from "../../lib/prepareUploadFile";
+import { prepareLogoUploadFile } from "../../lib/prepareUploadFile";
 import type { BusinessOrgPageRow } from "../../lib/businessOrgPages";
 
 type FormState = {
@@ -128,7 +128,7 @@ export default function BusinessPagesAccountPage() {
     setUploadingLogo(true);
     setError(null);
     try {
-      const prepared = await prepareImageUploadFile(file);
+      const prepared = await prepareLogoUploadFile(file);
       if (!prepared.ok) {
         setError(prepared.error);
         return;

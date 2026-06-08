@@ -11,6 +11,8 @@ type StorageImageOptions = {
 
 const OBJECT_PUBLIC = "/storage/v1/object/public/";
 const RENDER_PUBLIC = "/storage/v1/render/image/public/";
+const ENABLE_SUPABASE_IMAGE_TRANSFORMS =
+  process.env.NEXT_PUBLIC_ENABLE_SUPABASE_IMAGE_TRANSFORMS === "true";
 
 function isGifUrl(url: string): boolean {
   return /\.gif(\?|$)/i.test(url);
@@ -23,12 +25,26 @@ function isTransformableStorageImage(url: string): boolean {
   return url.includes(OBJECT_PUBLIC);
 }
 
-/** Supabase Storage image transform URL (reduces cached egress for public buckets). */
+function warnIfSupabaseTransformUrl(url: string): void {
+  if (
+    process.env.NODE_ENV !== "production"
+    && typeof console !== "undefined"
+    && url.includes(RENDER_PUBLIC)
+  ) {
+    console.warn(
+      "Supabase image transform URL generated. Prefer a stored thumbnail/public object URL for frequently rendered images.",
+      url,
+    );
+  }
+}
+
+/** Supabase Storage image transform URL. Avoid on hot page-load paths; prefer stored resized objects. */
 export function supabaseStorageImageUrl(
   url: string | null | undefined,
   options: StorageImageOptions,
 ): string | null {
   if (!url) return null;
+  if (!ENABLE_SUPABASE_IMAGE_TRANSFORMS) return url;
   if (!isTransformableStorageImage(url)) return url;
 
   try {
@@ -44,42 +60,29 @@ export function supabaseStorageImageUrl(
     if (options.resize) params.set("resize", options.resize);
 
     const qs = params.toString();
-    return `${parsed.origin}${RENDER_PUBLIC}${objectPath}${qs ? `?${qs}` : ""}`;
+    const transformedUrl = `${parsed.origin}${RENDER_PUBLIC}${objectPath}${qs ? `?${qs}` : ""}`;
+    warnIfSupabaseTransformUrl(transformedUrl);
+    return transformedUrl;
   } catch {
     return url;
   }
 }
 
-/** Small avatars in nav, feed headers, liker stacks, etc. */
+/** Small avatars in nav, feed headers, liker stacks, etc. Use the stored public object URL. */
 export function avatarImageUrl(url: string | null | undefined, displaySizePx: number): string | null {
   if (!url) return null;
-  const px = Math.max(64, Math.min(512, Math.round(displaySizePx * 2)));
-  return supabaseStorageImageUrl(url, {
-    width: px,
-    height: px,
-    resize: "cover",
-    quality: 75,
-  });
+  void displaySizePx;
+  return url;
 }
 
-/** Feed / wall thumbnails (full image opens in gallery at original URL). */
+/** Feed / wall previews. Uploads are already client-resized, so avoid runtime transforms here. */
 export function feedImageDisplayUrl(url: string, maxWidth = 960): string {
-  return (
-    supabaseStorageImageUrl(url, {
-      width: maxWidth,
-      resize: "contain",
-      quality: 80,
-    }) ?? url
-  );
+  void maxWidth;
+  return url;
 }
 
-/** Profile gallery grid tiles. */
+/** Profile gallery grid tiles. Use stable object URLs to avoid per-view transformations. */
 export function galleryImageDisplayUrl(url: string, maxWidth = 720): string {
-  return (
-    supabaseStorageImageUrl(url, {
-      width: maxWidth,
-      resize: "contain",
-      quality: 80,
-    }) ?? url
-  );
+  void maxWidth;
+  return url;
 }

@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { getSupabaseUser, supabase } from "../lib/lib/supabaseClient";
+import { supabase } from "../lib/lib/supabaseClient";
+import { useAuth } from "../lib/auth/AuthProvider";
 import { onboardingRedirectUrl, shouldRedirectToOnboarding } from "../lib/onboardingGate";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 
@@ -11,14 +12,14 @@ import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
  */
 export function useOnboardingGate(route: string) {
   const queryClient = useQueryClient();
+  const { user, isLoading } = useAuth();
 
   useEffect(() => {
+    if (isLoading) return;
+
     let cancelled = false;
 
     async function check() {
-      const {
-        data: { user },
-      } = await getSupabaseUser();
       if (!user || cancelled) return;
 
       const profile = await fetchViewerProfileCached(queryClient, supabase, user);
@@ -33,5 +34,5 @@ export function useOnboardingGate(route: string) {
     return () => {
       cancelled = true;
     };
-  }, [route, queryClient]);
+  }, [isLoading, route, queryClient, user]);
 }

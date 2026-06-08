@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "./lib/ThemeContext";
 import QueryProvider from "./providers/QueryProvider";
+import { AuthProvider } from "./lib/auth/AuthProvider";
 import SessionGuard from "./components/SessionGuard";
 import AnalyticsTracker from "./components/AnalyticsTracker";
 import ReferralCaptureTracker from "./components/ReferralCaptureTracker";
@@ -48,6 +49,7 @@ export default function RootLayout({
       >
         <ThemeProvider>
           <QueryProvider>
+          <AuthProvider>
           <MemorialNavModalProvider>
             <OnlinePresenceProvider>
               <SessionGuard />
@@ -115,6 +117,7 @@ export default function RootLayout({
               ) : null}
             </OnlinePresenceProvider>
           </MemorialNavModalProvider>
+          </AuthProvider>
           </QueryProvider>
         </ThemeProvider>
       </body>

@@ -12,21 +12,18 @@ export function getArcadeAccessPassword(): string {
   return (process.env.ARCADE_ACCESS_PASSWORD ?? "").trim();
 }
 
-/** Nav + route eligibility: founder account or site admin. */
-export function canUseArcadePreview(userId: string | null | undefined, isAdmin: boolean): boolean {
+/** Nav + route eligibility: founder account only (private live preview). */
+export function canUseArcadePreview(userId: string | null | undefined): boolean {
   if (!userId) return false;
-  if (isAdmin) return true;
   return isFounderUserId(userId);
 }
 
-/** Admins enter without the preview password; founder must unlock once per cookie lifetime. */
+/** Founder must unlock with the preview password once per cookie lifetime. */
 export function hasArcadeRouteAccess(
   userId: string,
-  isAdmin: boolean,
   unlockCookie: string | undefined,
 ): boolean {
-  if (!canUseArcadePreview(userId, isAdmin)) return false;
-  if (isAdmin) return true;
+  if (!canUseArcadePreview(userId)) return false;
 
   const password = getArcadeAccessPassword();
   if (!password) return false;

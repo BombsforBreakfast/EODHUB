@@ -73,6 +73,54 @@ export async function prepareImageUploadFile(file: File): Promise<PrepareUploadR
   }
 }
 
+/** Business logos — stored once at a display-safe size without runtime transforms. */
+export async function prepareLogoUploadFile(file: File): Promise<PrepareUploadResult> {
+  if (!isImageFile(file)) {
+    return { ok: false, error: "Please choose an image file." };
+  }
+
+  if (file.size > UPLOAD_LIMITS.feedBucket) {
+    return {
+      ok: false,
+      error: uploadTooLargeMessage(file, UPLOAD_LIMITS.feedBucket, "image"),
+    };
+  }
+
+  try {
+    const compressed = await compressImageFile(file, UPLOAD_LIMITS.feedImage, 1200);
+    return { ok: true, file: compressed };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Could not resize image.",
+    };
+  }
+}
+
+/** Feed/list preview image — stored once at a display-safe size without runtime transforms. */
+export async function prepareFeedThumbnailUploadFile(file: File): Promise<PrepareUploadResult> {
+  if (!isImageFile(file)) {
+    return { ok: false, error: "Please choose an image file." };
+  }
+
+  if (file.size > UPLOAD_LIMITS.feedBucket) {
+    return {
+      ok: false,
+      error: uploadTooLargeMessage(file, UPLOAD_LIMITS.feedBucket, "image"),
+    };
+  }
+
+  try {
+    const compressed = await compressImageFile(file, UPLOAD_LIMITS.feedImage, 1200);
+    return { ok: true, file: compressed };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Could not resize image.",
+    };
+  }
+}
+
 /** RUMINT news manual photo override — smaller cap for link-preview cards. */
 export async function prepareNewsThumbnailUploadFile(file: File): Promise<PrepareUploadResult> {
   if (!isImageFile(file)) {

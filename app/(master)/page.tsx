@@ -6,7 +6,8 @@ import React, { ChangeEvent, useCallback, useEffect, useLayoutEffect, useMemo, u
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
-import { getSupabaseUser, supabase } from "../lib/lib/supabaseClient";
+import { getAccessToken, getSupabaseSession, supabase } from "../lib/lib/supabaseClient";
+import { useAuth } from "../lib/auth/AuthProvider";
 import { useTheme } from "../lib/ThemeContext";
 import MentionTextarea, { extractMentionIds } from "../components/MentionTextarea";
 import { PostLikersStack, type PostLikerBrief } from "../components/PostLikersStack";
@@ -919,6 +920,7 @@ export default function HomePage() {
   usePageTracking(PAGE_TRACKING.feed);
   const { t, isDark } = useTheme();
   const queryClient = useQueryClient();
+  const { user: authUser, isLoading: authLoading } = useAuth();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
   const [jobLeaderboard, setJobLeaderboard] = useState<{ user_id: string; name: string; photo_url: string | null; count: number }[]>([]);
@@ -1304,7 +1306,7 @@ export default function HomePage() {
     // current page session; non-admin members persist dismissals.
     if (!userId || isAdmin) return;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
       const res = await fetch("/api/profile-vouch/dismiss", {
         method: "POST",
         headers: {
@@ -1663,7 +1665,7 @@ export default function HomePage() {
       try {
         const {
           data: { session },
-        } = await supabase.auth.getSession();
+        } = await getSupabaseSession({ source: "HomePage" });
 
         const res = await fetch("/api/events/feed-actions", {
           method: "POST",
@@ -2117,7 +2119,7 @@ export default function HomePage() {
   }, [postsLoaded]);
 
   async function loadPendingMembers() {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
     const res = await fetch("/api/profile-vouch/candidates", {
       headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
     });
@@ -2147,7 +2149,7 @@ export default function HomePage() {
     if (blockMemberInteraction()) return;
     setVouchingFor(voucheeId);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
       const res = await fetch("/api/profile-vouch", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
@@ -2181,7 +2183,7 @@ export default function HomePage() {
     if (!userId || actingOnUser) return;
     setActingOnUser(targetUserId);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
       const res = await fetch("/api/admin/verify-user", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
@@ -2203,7 +2205,7 @@ export default function HomePage() {
     if (!userId || actingOnUser) return;
     setActingOnUser(targetUserId);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
       const res = await fetch("/api/admin/deny-user", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token ?? ""}` },
@@ -3516,7 +3518,7 @@ export default function HomePage() {
     // Resolve user id from the live session first. Google OAuth often hydrates the Supabase session
     // before React `userId` updates; realtime loadPosts() can also close over a stale null userId.
     // Kangaroo Court (and other RLS paths) need a consistent id that matches the JWT.
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
     const effectiveUserId =
       session?.user?.id ?? currentUserId ?? userId ?? null;
 
@@ -4143,7 +4145,7 @@ export default function HomePage() {
     // Phase B: myVoteOptionId only (viewer-specific); never gates whether bundles exist.
     const kcDebug =
       typeof window !== "undefined" && window.localStorage?.getItem("eod_debug_kc") === "1";
-    const { data: kcAuth } = await supabase.auth.getSession();
+    const { data: kcAuth } = await getSupabaseSession({ source: "HomePage" });
     const kcViewerId = kcAuth.session?.user?.id ?? null;
 
     if (postIds.length > 0) {
@@ -4489,7 +4491,7 @@ export default function HomePage() {
     ogDebounceRef.current = setTimeout(async () => {
       try {
         setFetchingOg(true);
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
         const res = await fetch("/api/preview-url", {
           method: "POST",
           headers: {
@@ -4822,7 +4824,7 @@ export default function HomePage() {
     bizOgDebounceRef.current = setTimeout(async () => {
       try {
         setFetchingBizOg(true);
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
         const res = await fetch("/api/preview-url", {
           method: "POST",
           headers: {
@@ -5370,7 +5372,7 @@ export default function HomePage() {
 
       let errorMessage: string | null = null;
       if (isAdmin && !isOwn) {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
         const res = await fetch(`/api/admin/feed-posts/${encodeURIComponent(postId)}`, {
           method: "DELETE",
           headers: {
@@ -5503,7 +5505,7 @@ export default function HomePage() {
     if (blockMemberInteraction()) return;
     setFlaggingId(flagModal.contentId);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
       const res = await fetch("/api/flag-content", {
         method: "POST",
         headers: {
@@ -5571,6 +5573,8 @@ export default function HomePage() {
   }, [postsLoaded, feedHasMore, feedPostLimit]);
 
   useEffect(() => {
+    if (authLoading) return;
+
     let isMounted = true;
     let feedRefreshTimer: number | null = null;
     let feedRefreshInFlight = false;
@@ -5657,13 +5661,6 @@ export default function HomePage() {
     async function init() {
       const loadSeq = ++activeProfileLoadSeqRef.current;
       try {
-        const { data, error } = await getSupabaseUser();
-
-        if (error) {
-          console.error("Auth load error:", error);
-        }
-
-        const authUser = data.user ?? null;
         const currentUserId = authUser?.id ?? null;
 
         if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
@@ -5811,25 +5808,20 @@ export default function HomePage() {
       }
     }
 
-    init();
+    if (!authUser) {
+      window.location.href = "/login";
+      return () => {
+        isMounted = false;
+      };
+    }
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") return;
-      const nextUserId = session?.user?.id ?? null;
-      setUserId(nextUserId);
-      resetActiveProfileState();
-      setPlankHolderCardHidden(readPlankHolderCardHidden(nextUserId));
-      setRecruiterNudgeHidden(readRecruiterNudgeHidden(nextUserId));
-      setHiddenPendingMemberIds(new Set());
-      setLoading(true);
-      if (nextUserId) {
-        void init();
-      } else {
-        window.location.href = "/login";
-      }
-    });
+    setUserId(authUser.id);
+    resetActiveProfileState();
+    setPlankHolderCardHidden(readPlankHolderCardHidden(authUser.id));
+    setRecruiterNudgeHidden(readRecruiterNudgeHidden(authUser.id));
+    setHiddenPendingMemberIds(new Set());
+    setLoading(true);
+    void init();
 
     const channel = supabase
       .channel("feed-updates")
@@ -5884,7 +5876,6 @@ export default function HomePage() {
         window.clearTimeout(feedRefreshTimer);
       }
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      subscription.unsubscribe();
       supabase.removeChannel(channel);
 
       selectedPostImagesRef.current.forEach((item) => {
@@ -5897,7 +5888,7 @@ export default function HomePage() {
         }
       });
     };
-  }, []);
+  }, [authLoading, authUser]);
 
   useEffect(() => {
     return () => {

@@ -11,6 +11,7 @@ import DesktopLayout from "../DesktopLayout";
 import MemberPaywallModal from "../MemberPaywallModal";
 import SidebarThreadDrawer from "../SidebarThreadDrawer";
 import { supabase } from "../../lib/lib/supabaseClient";
+import { useAuth } from "../../lib/auth/AuthProvider";
 import { isMemberPaywallExemptPath, isExemptFromMemberPaywall, shouldEnforceMemberPaywall } from "../../lib/paywallPaths";
 import { memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { MasterShellProvider } from "./masterShellContext";
@@ -38,6 +39,7 @@ function getSavedRailState(key: string): "expanded" | "collapsed" {
 export default function MasterShell({ children }: { children: React.ReactNode }) {
   const { t } = useTheme();
   const queryClient = useQueryClient();
+  const { user, isLoading: authLoading } = useAuth();
   // Must match server first paint: never read `window` / `localStorage` in useState initializers,
   // or wide viewports hydrate as desktop while SSR always emitted mobile shell → hydration mismatch.
   const [isDesktop, setIsDesktop] = useState(false);
@@ -71,10 +73,10 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   }, []);
 
   useEffect(() => {
+    if (authLoading) return;
+
     let cancelled = false;
     async function loadShellUser() {
-      const { data } = await supabase.auth.getUser();
-      const user = data.user ?? null;
       const uid = user?.id ?? null;
       if (cancelled) return;
       setUserId(uid);
@@ -126,18 +128,11 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       }
     }
 
-    void supabase.auth.getSession().then(() => {
-      void loadShellUser();
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION") return;
-      void loadShellUser();
-    });
+    void loadShellUser();
     return () => {
       cancelled = true;
-      subscription.unsubscribe();
     };
-  }, [queryClient]);
+  }, [authLoading, queryClient, user]);
 
   useEffect(() => {
     if (!isDesktop) {

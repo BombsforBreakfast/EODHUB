@@ -21,7 +21,7 @@ import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from ".
 import { loadBusinessListingProfileLinks, resolveBusinessListingLinkTarget } from "../lib/businessListingLinks";
 import { useTheme } from "../lib/ThemeContext";
 import { getSupabaseSession, supabase } from "../lib/lib/supabaseClient";
-import { prepareImageUploadFile } from "../lib/prepareUploadFile";
+import { prepareFeedThumbnailUploadFile } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
@@ -479,7 +479,7 @@ export default function BusinessesPage() {
   }
 
   async function uploadBizImage(file: File): Promise<string> {
-    const prepared = await prepareImageUploadFile(file);
+    const prepared = await prepareFeedThumbnailUploadFile(file);
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
     const safeFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name}`;

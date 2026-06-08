@@ -17,6 +17,8 @@ import {
 } from "../unicorn-hero/unicornHeroAudio";
 import { UnicornHeroAudioControls } from "../unicorn-hero/UnicornHeroAudioControls";
 import { getUnicornHeroRideConfig, type UnicornHeroRideType } from "../unicorn-hero/unicornHeroRides";
+import { GameRotatePrompt } from "@/app/components/games/GameRotatePrompt";
+import { useGamePlayingBodyClass } from "@/app/components/games/useGamePlayingBodyClass";
 
 interface Props {
   config: LevelConfig;
@@ -80,7 +82,7 @@ export function RainbowCowboyGame({
     pausePressed: false,
   });
   const endedRef = useRef(false);
-  const particlesRef = useRef<RainbowCowboyParticlePool | null>(null);
+  const particlesRef = useRef<RainbowCowboyParticlePool>(new RainbowCowboyParticlePool());
   const prevPosRef = useRef({ x: 0, y: 0 });
   const engineRevisionRef = useRef(RAINBOW_COWBOY_ENGINE_REVISION);
   const instructionsOpenRef = useRef(showInstructions);
@@ -90,13 +92,13 @@ export function RainbowCowboyGame({
   const audioStartedRef = useRef(false);
   const rampageRef = useRef(false);
   const musicPausedRef = useRef(false);
+  const pausedUiRef = useRef(false);
+  const hiddenRef = useRef(false);
   const [hud, setHud] = useState(defaultHud);
   const [paused, setPaused] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(showInstructions);
   const [audioPrefs, setAudioPrefs] = useState<UnicornHeroAudioPrefs>(() => loadUnicornHeroAudioPrefs());
   const [showAudioPanel, setShowAudioPanel] = useState(false);
-
-  if (!particlesRef.current) particlesRef.current = new RainbowCowboyParticlePool();
 
   useEffect(() => {
     onCompleteRef.current = onComplete;
@@ -104,13 +106,21 @@ export function RainbowCowboyGame({
   }, [onComplete, onGameOver]);
 
   useEffect(() => {
+    let cancelled = false;
+    const syncInstructions = () => {
+      if (cancelled) return;
+      setInstructionsOpen(showInstructions);
+    };
     if (!showInstructions) {
       instructionsOpenRef.current = false;
-      setInstructionsOpen(false);
+      queueMicrotask(syncInstructions);
       return;
     }
     instructionsOpenRef.current = true;
-    setInstructionsOpen(true);
+    queueMicrotask(syncInstructions);
+    return () => {
+      cancelled = true;
+    };
   }, [showInstructions]);
 
   useEffect(() => {
@@ -121,16 +131,23 @@ export function RainbowCowboyGame({
     audioStartedRef.current = false;
     rampageRef.current = false;
     musicPausedRef.current = false;
+    pausedUiRef.current = false;
     prevPosRef.current = { x: engine.playerX, y: engine.playerY };
-    particlesRef.current?.tick(9999);
-    setHud(defaultHud);
-    setPaused(false);
+    particlesRef.current.tick(9999);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setHud(defaultHud);
+      setPaused(false);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [config, ride]);
 
   useEffect(() => {
     const audio = createUnicornHeroAudio(loadUnicornHeroAudioPrefs());
     audioRef.current = audio;
-    setAudioPrefs(audio.getPrefs());
     return () => {
       audio.destroy();
       audioRef.current = null;
@@ -161,11 +178,23 @@ export function RainbowCowboyGame({
   }, [instructionsOpen, beginGameplayAudio]);
 
   useEffect(() => {
-    document.body.classList.add("rainbow-cowboy-playing");
-    return () => {
-      document.body.classList.remove("rainbow-cowboy-playing");
+    const syncVisibility = () => {
+      hiddenRef.current = document.hidden;
+      if (document.hidden) {
+        audioRef.current?.pauseMusic();
+      } else {
+        const engine = engineRef.current;
+        if (audioStartedRef.current && engine?.phase === "playing" && !musicPausedRef.current) {
+          audioRef.current?.resumeMusic();
+        }
+      }
     };
+    syncVisibility();
+    document.addEventListener("visibilitychange", syncVisibility);
+    return () => document.removeEventListener("visibilitychange", syncVisibility);
   }, []);
+
+  useGamePlayingBodyClass(true);
 
   const consumeEdgeInputs = useCallback(() => {
     const input = inputRef.current;
@@ -204,6 +233,12 @@ export function RainbowCowboyGame({
     let last = performance.now();
 
     const loop = (now: number) => {
+      if (hiddenRef.current) {
+        last = now;
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+
       let engine = engineRef.current;
       if (
         isStaleEngine(engine) ||
@@ -229,18 +264,19 @@ export function RainbowCowboyGame({
         last = now;
       }
 
-      if (engine.phase === "paused") {
-        setPaused(true);
+      const isPaused = engine.phase === "paused";
+      if (isPaused !== pausedUiRef.current) {
+        pausedUiRef.current = isPaused;
+        setPaused(isPaused);
+      }
+      if (isPaused) {
         if (!musicPausedRef.current) {
           audioRef.current?.pauseMusic();
           musicPausedRef.current = true;
         }
-      } else {
-        setPaused(false);
-        if (musicPausedRef.current && engine.phase === "playing") {
-          audioRef.current?.resumeMusic();
-          musicPausedRef.current = false;
-        }
+      } else if (musicPausedRef.current && engine.phase === "playing") {
+        audioRef.current?.resumeMusic();
+        musicPausedRef.current = false;
       }
 
       const nextHud = engine.getHud();
@@ -339,7 +375,7 @@ export function RainbowCowboyGame({
 
   return (
     <div
-      className="rainbow-cowboy-game-shell"
+      className="rainbow-cowboy-game-shell arcade-game-shell"
       style={{
         position: "relative",
         width: "100%",
@@ -563,39 +599,14 @@ export function RainbowCowboyGame({
         </div>
       )}
 
-      <div
-        className="rc-landscape-hint"
-        style={{
-          display: "none",
-          position: "absolute",
-          inset: 0,
-          zIndex: 40,
-          background: "rgba(0,0,0,0.85)",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24,
-          textAlign: "center",
-          color: "#fff",
-          fontFamily: "monospace",
-          fontSize: 16,
-          pointerEvents: "none",
-        }}
-      >
-        Rotate to landscape for the best ride 🦄
-      </div>
+      <GameRotatePrompt
+        emoji="🦄"
+        title="Turn your phone sideways"
+        subtitle="Landscape mode unlocks the full ride — controls work best on the wide screen."
+      />
 
       <style>{`
-        body.rainbow-cowboy-playing .beta-bug-report-fab {
-          display: none !important;
-        }
         @media (max-width: 900px) {
-          .rainbow-cowboy-game-shell {
-            position: fixed !important;
-            inset: 0 !important;
-            width: 100vw !important;
-            height: 100dvh !important;
-            z-index: 200;
-          }
           .rc-top-actions {
             flex-direction: row-reverse !important;
             align-items: flex-start !important;
@@ -613,9 +624,6 @@ export function RainbowCowboyGame({
             min-width: 38px;
             padding-inline: 8px !important;
           }
-        }
-        @media (max-width: 900px) and (orientation: portrait) {
-          .rc-landscape-hint { display: flex !important; }
         }
       `}</style>
     </div>

@@ -1,4 +1,6 @@
 import { createBrowserClient } from "@supabase/ssr";
+import type { Session, User } from "@supabase/supabase-js";
+import { trackAuthCall } from "../auth/authObservability";
 
 // Fallbacks prevent the client from throwing during Next.js build-time prerendering
 // when env vars aren't yet injected. At runtime in the browser the real values are used.
@@ -20,19 +22,71 @@ export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
 (supabase.auth as unknown as { lockAcquireTimeout?: number }).lockAcquireTimeout =
   AUTH_LOCK_ACQUIRE_TIMEOUT_MS;
 
-let sessionPromise: ReturnType<typeof supabase.auth.getSession> | null = null;
-let userPromise: ReturnType<typeof supabase.auth.getUser> | null = null;
+let cachedSession: Session | null | undefined;
+let cachedUser: User | null | undefined;
+let sessionInFlight: ReturnType<typeof supabase.auth.getSession> | null = null;
+let userInFlight: ReturnType<typeof supabase.auth.getUser> | null = null;
 
-export function getSupabaseSession() {
-  sessionPromise ??= supabase.auth.getSession().finally(() => {
-    sessionPromise = null;
-  });
-  return sessionPromise;
+export function setAuthCache(session: Session | null) {
+  cachedSession = session;
+  cachedUser = session?.user ?? null;
 }
 
-export function getSupabaseUser() {
-  userPromise ??= supabase.auth.getUser().finally(() => {
-    userPromise = null;
+export function invalidateAuthCache() {
+  cachedSession = undefined;
+  cachedUser = undefined;
+  sessionInFlight = null;
+  userInFlight = null;
+}
+
+type AuthFetchOptions = {
+  force?: boolean;
+  source?: string;
+};
+
+export function getSupabaseSession(options?: AuthFetchOptions) {
+  const source = options?.source ?? "getSupabaseSession";
+
+  if (!options?.force && cachedSession !== undefined) {
+    return Promise.resolve({ data: { session: cachedSession }, error: null });
+  }
+
+  sessionInFlight ??= supabase.auth.getSession().then((result) => {
+    trackAuthCall("getSession", source);
+    if (!result.error) {
+      cachedSession = result.data.session;
+      cachedUser = result.data.session?.user ?? null;
+    }
+    return result;
+  }).finally(() => {
+    sessionInFlight = null;
   });
-  return userPromise;
+
+  return sessionInFlight;
+}
+
+export function getSupabaseUser(options?: AuthFetchOptions) {
+  const source = options?.source ?? "getSupabaseUser";
+
+  if (!options?.force && cachedUser !== undefined) {
+    return Promise.resolve({ data: { user: cachedUser }, error: null });
+  }
+
+  userInFlight ??= supabase.auth.getUser().then((result) => {
+    trackAuthCall("getUser", source);
+    if (!result.error) {
+      cachedUser = result.data.user;
+    }
+    return result;
+  }).finally(() => {
+    userInFlight = null;
+  });
+
+  return userInFlight;
+}
+
+/** Cached access token for API calls. Avoids repeated getSession() in action handlers. */
+export async function getAccessToken(options?: AuthFetchOptions): Promise<string | null> {
+  const { data } = await getSupabaseSession(options);
+  return data.session?.access_token ?? null;
 }
