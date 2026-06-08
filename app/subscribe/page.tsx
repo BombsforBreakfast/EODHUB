@@ -11,6 +11,7 @@ import {
   type OnboardingGateProfile,
 } from "../lib/onboardingGate";
 import { hasFullPlatformAccess } from "../lib/verificationAccess";
+import { isNativeApp } from "../lib/native/isNativeApp";
 
 export default function SubscribePage() {
   useOnboardingGate("app/subscribe/page.tsx");
@@ -77,7 +78,12 @@ export default function SubscribePage() {
 
       const json = await res.json();
       if (json.url) {
-        window.location.href = json.url;
+        if (isNativeApp()) {
+          const { Browser } = await import("@capacitor/browser");
+          await Browser.open({ url: json.url });
+        } else {
+          window.location.href = json.url;
+        }
       } else {
         alert(json.error ?? "Something went wrong. Please try again.");
       }
@@ -157,7 +163,8 @@ export default function SubscribePage() {
           </button>
 
           <div style={{ marginTop: 14, fontSize: 12, color: t.textFaint }}>
-            Cancel anytime. Secure payment via Stripe.
+            Cancel anytime. Secure payment via Stripe
+            {isNativeApp() ? " in Safari" : ""}.
           </div>
         </div>
 

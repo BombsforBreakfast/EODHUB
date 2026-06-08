@@ -1,4 +1,6 @@
+import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { dispatchPushForNotification } from "./server/pushDispatch";
 
 export type CreateNotificationInput = {
   recipientUserId: string;
@@ -26,7 +28,7 @@ export async function createNotification(
   db: SupabaseClient,
   input: CreateNotificationInput,
 ): Promise<void> {
-  const { error } = await db.rpc("create_notification", {
+  const { data, error } = await db.rpc("create_notification", {
     p_recipient_user_id: input.recipientUserId,
     p_actor_user_id: input.actorUserId ?? null,
     p_actor_name: input.actorName ?? null,
@@ -48,4 +50,17 @@ export async function createNotification(
   });
 
   if (error) throw error;
+
+  const notificationId =
+    data && typeof data === "object" && "id" in data && typeof data.id === "string"
+      ? data.id
+      : null;
+
+  after(async () => {
+    try {
+      await dispatchPushForNotification(db, input, notificationId);
+    } catch (pushErr) {
+      console.error("[createNotification] push dispatch failed", pushErr);
+    }
+  });
 }

@@ -11,6 +11,7 @@ import {
   type EmployerTab,
   type PublicCandidate,
 } from "./lib/types";
+import NativeDesktopOnlyGate from "../../components/native/NativeDesktopOnlyGate";
 import {
   candidateAllTags,
   candidateDisplayName,
@@ -316,6 +317,7 @@ export default function EmployerDashboardClient() {
   ];
 
   return (
+    <NativeDesktopOnlyGate title="Employer Dashboard">
     <div style={{ width: "100%", maxWidth: "100%", margin: 0, padding: "12px 4px 40px", color: t.text }}>
       <header style={{ padding: "4px 4px 14px" }}>
         <h1 style={{ fontSize: 26, fontWeight: 900, margin: 0 }}>Employer Dashboard</h1>
@@ -583,6 +585,7 @@ export default function EmployerDashboardClient() {
         />
       )}
     </div>
+    </NativeDesktopOnlyGate>
   );
 }
 

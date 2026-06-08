@@ -11,6 +11,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { MemorialNavModalProvider } from "./components/memorial/MemorialNavModalProvider";
 import BugReportGate from "./components/BugReportGate";
+import NativeShellBridge from "./components/NativeShellBridge";
 import { OnlinePresenceProvider } from "./components/OnlinePresenceProvider";
 
 const geistSans = Geist({
@@ -55,6 +56,7 @@ export default function RootLayout({
           <MemorialNavModalProvider>
             <OnlinePresenceProvider>
               <SessionGuard />
+              <NativeShellBridge />
               <BugReportGate />
               <AnalyticsTracker />
               <ReferralCaptureTracker />

@@ -127,8 +127,6 @@ import { memorialTheme } from "../components/memorial/memorialModalShared";
 import { getServiceRingColor } from "../lib/serviceBranchVisual";
 import { ensureWelcomeSidebarOnce } from "../lib/welcomeSidebarClient";
 import {
-  onboardingRedirectUrl,
-  resolvePreAccessRedirectPath,
   shouldRedirectToOnboarding,
 } from "../lib/onboardingGate";
 import {
@@ -5665,10 +5663,7 @@ export default function HomePage() {
 
         if (!isMounted || activeProfileLoadSeqRef.current !== loadSeq) return;
 
-        if (!authUser || !currentUserId) {
-          window.location.href = "/login";
-          return;
-        }
+        if (!authUser || !currentUserId) return;
 
         // Check verification status ΓÇö unverified users go to /pending
         const profileCheck = await fetchViewerProfileCached(queryClient, supabase, authUser);
@@ -5687,18 +5682,8 @@ export default function HomePage() {
           invalidateViewerProfile(queryClient, currentUserId);
         }
 
-        if (!profileCheck) {
-          window.location.href = onboardingRedirectUrl(false);
-          return;
-        }
-
-        if (shouldRedirectToOnboarding(profileCheck)) {
-          window.location.href = onboardingRedirectUrl(true);
-          return;
-        }
-
-        if (!hasFullPlatformAccess(profileCheck)) {
-          window.location.href = resolvePreAccessRedirectPath(profileCheck);
+        if (!profileCheck || shouldRedirectToOnboarding(profileCheck) || !hasFullPlatformAccess(profileCheck)) {
+          setLoading(false);
           return;
         }
 
@@ -5809,7 +5794,8 @@ export default function HomePage() {
     }
 
     if (!authUser) {
-      window.location.href = "/login";
+      resetActiveProfileState();
+      setLoading(false);
       return () => {
         isMounted = false;
       };

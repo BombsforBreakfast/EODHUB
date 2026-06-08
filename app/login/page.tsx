@@ -131,6 +131,28 @@ export default function LoginPage() {
     window.location.href = resolveLoginRedirectPath(profile);
   }
 
+  async function loadRedirectableSessionUser(): Promise<User | null> {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (!session?.access_token || !session.refresh_token) return null;
+
+    const { data, error } = await supabase.auth.setSession({
+      access_token: session.access_token,
+      refresh_token: session.refresh_token,
+    });
+
+    if (error || !data.session?.user) {
+      devClientAuthLog("login", {
+        step: "stored_session_validation_failed",
+        error: error?.message ?? null,
+      });
+      return null;
+    }
+
+    return data.session.user;
+  }
+
   function clearEmailNotFoundGuidance() {
     setEmailNotFoundGuidance(false);
     setHighlightSignupCta(false);
@@ -249,12 +271,10 @@ export default function LoginPage() {
 
     let cancelled = false;
     void (async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (cancelled || !session?.user) return;
+      const user = await loadRedirectableSessionUser();
+      if (cancelled || !user) return;
       markAppSessionActive(rememberMe);
-      await redirectForSessionUser(session.user);
+      await redirectForSessionUser(user);
     })();
 
     return () => {

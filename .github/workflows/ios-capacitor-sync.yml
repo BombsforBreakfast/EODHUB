@@ -1,0 +1,20 @@
+# Validates Capacitor config on every push. Full IPA builds run on Codemagic (codemagic.yaml).
+name: iOS Capacitor sync check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  capacitor-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Verify Capacitor config
+        run: node -e "const fs=require('fs'); if(!fs.existsSync('capacitor.config.ts')) process.exit(1); console.log('capacitor.config.ts ok')"

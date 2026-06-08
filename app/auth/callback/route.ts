@@ -51,10 +51,21 @@ export async function GET(request: NextRequest) {
       if (adminClient) {
         const oauthEmail = sessionData.user?.email;
         if (sessionData.user?.id && oauthEmail) {
-          void ensureProfileStubForUser(adminClient, sessionData.user.id, oauthEmail);
+          const stub = await ensureProfileStubForUser(adminClient, sessionData.user.id, oauthEmail);
+          if (!stub.ok) {
+            void logFailedAuthAttempt({
+              emailAttempted: oauthEmail,
+              failureReason: "PROFILE_CREATION_FAILED",
+              errorCode: "ensure_profile_stub_failed",
+              rawErrorMessage: stub.error,
+              sourceRoute: "/auth/callback",
+              request,
+            });
+            return NextResponse.redirect(`${origin}/login?error=auth`);
+          }
           const nextUrl = new URL(next, origin);
           if (nextUrl.pathname === "/business-org/onboarding" && nextUrl.searchParams.get("business_oauth") === "google") {
-            void adminClient.auth.admin.updateUserById(sessionData.user.id, {
+            await adminClient.auth.admin.updateUserById(sessionData.user.id, {
               app_metadata: {
                 ...(sessionData.user.app_metadata ?? {}),
                 account_kind: "business_organization_page",

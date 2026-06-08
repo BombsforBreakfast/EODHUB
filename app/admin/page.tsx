@@ -6,6 +6,7 @@ import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "rea
 import Link from "next/link";
 import { supabase } from "../lib/lib/supabaseClient";
 import NavBar from "../components/NavBar";
+import NativeDesktopOnlyGate from "../components/native/NativeDesktopOnlyGate";
 import { useTheme } from "../lib/ThemeContext";
 import {
   fetchAdminPendingBreakdown,
@@ -3217,6 +3218,7 @@ export default function AdminPage() {
   const directoryPendingTotal = pendingCounts.dir + pendingCounts.locReq;
 
   return (
+    <NativeDesktopOnlyGate title="Admin">
     <div style={{ width: "100%", maxWidth: 1800, margin: "0 auto", padding: "24px 20px", boxSizing: "border-box", background: t.bg, minHeight: "100vh", color: t.text, overflowX: "clip" }}>
       <NavBar />
 
@@ -7741,5 +7743,6 @@ export default function AdminPage() {
 
       </div>
     </div>
+    </NativeDesktopOnlyGate>
   );
 }
