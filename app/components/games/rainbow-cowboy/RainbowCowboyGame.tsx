@@ -392,7 +392,7 @@ export function RainbowCowboyGame({
         style={{
           position: "absolute",
           top: 8,
-          right: 8,
+          right: "var(--rc-mobile-right-gutter, 8px)",
           zIndex: 30,
           display: "flex",
           gap: 8,
@@ -459,7 +459,15 @@ export function RainbowCowboyGame({
       </div>
 
       {showAudioPanel && (
-        <div style={{ position: "absolute", top: 44, right: 8, zIndex: 35, width: 220 }}>
+        <div
+          style={{
+            position: "absolute",
+            top: 44,
+            right: "var(--rc-mobile-right-gutter, 8px)",
+            zIndex: 35,
+            width: 220,
+          }}
+        >
           <UnicornHeroAudioControls
             compact
             prefs={audioPrefs}
@@ -586,13 +594,13 @@ export function RainbowCowboyGame({
       />
 
       <style>{`
-        @media (max-width: 900px) {
+        @media (max-width: 900px), (max-height: 500px), (pointer: coarse) {
           .rc-top-actions {
             flex-direction: row-reverse !important;
             align-items: flex-start !important;
             justify-content: flex-start !important;
             gap: 6px !important;
-            max-width: calc(100vw - 16px);
+            max-width: calc(100% - var(--rc-mobile-right-gutter, 16px) - 8px);
           }
           .rc-top-action-button {
             min-width: auto;

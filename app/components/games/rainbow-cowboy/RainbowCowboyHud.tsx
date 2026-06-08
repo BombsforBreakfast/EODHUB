@@ -18,13 +18,22 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
         inset: 0,
         pointerEvents: "none",
         zIndex: 10,
-        padding: "8px 12px",
+        padding: "8px var(--rc-mobile-right-gutter, 12px) 8px var(--rc-safe-left, 12px)",
         display: "flex",
         flexDirection: "column",
         justifyContent: "space-between",
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 12,
+          minWidth: 0,
+          width: "100%",
+        }}
+      >
         <div
           style={{
             background: "rgba(0,0,0,0.55)",
@@ -35,6 +44,8 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
             fontSize: 11,
             color: "#fff",
             lineHeight: 1.25,
+            flex: "1 1 auto",
+            minWidth: 0,
           }}
           className="rc-level-panel"
         >
@@ -55,6 +66,9 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
             color: "#fff",
             textAlign: "right",
             lineHeight: 1.5,
+            flex: "0 1 auto",
+            minWidth: 0,
+            maxWidth: "46vw",
           }}
           className="rc-score-panel"
         >
@@ -70,7 +84,16 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
         </div>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-end",
+          gap: 8,
+          minWidth: 0,
+          width: "100%",
+        }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ display: "flex", gap: 4 }}>
             {Array.from({ length: hud.maxHearts }).map((_, i) => (
@@ -120,6 +143,10 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
             fontSize: 11,
             color: hud.rampage ? "#ff80ff" : hud.gassed ? "#80ff80" : "#fff",
             fontWeight: 700,
+            flex: "0 1 auto",
+            minWidth: 0,
+            maxWidth: "42vw",
+            textAlign: "right",
           }}
         >
           {hud.status}
@@ -149,15 +176,16 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
       )}
 
       <style>{`
-        @media (max-width: 900px) {
+        @media (max-width: 900px), (max-height: 500px), (pointer: coarse) {
           .rc-level-panel {
-            max-width: 320px;
+            max-width: min(320px, 52vw);
             padding: 4px 8px !important;
             line-height: 1.2 !important;
           }
           .rc-score-panel {
             margin-top: 54px;
-            min-width: 112px;
+            min-width: 96px;
+            max-width: min(46vw, 168px) !important;
           }
         }
       `}</style>

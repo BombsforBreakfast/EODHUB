@@ -31,6 +31,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Required on notched iOS/Android devices so env(safe-area-inset-*) is non-zero.
+  viewportFit: "cover",
   // Shrink the layout viewport when the mobile keyboard opens so inputs stay visible.
   interactiveWidget: "resizes-content",
 };

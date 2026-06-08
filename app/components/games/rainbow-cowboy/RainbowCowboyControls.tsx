@@ -27,6 +27,12 @@ function useMobileControls(): boolean {
   return mobile;
 }
 
+const JOYSTICK_VISUAL_SIZE = 112;
+const JOYSTICK_PAD_SIZE = 168;
+const JOYSTICK_STICK_MAX = 44;
+const JOYSTICK_H_THRESH = 7;
+const JOYSTICK_V_THRESH = 11;
+
 function VirtualJoystick({
   disabled,
   actions,
@@ -34,47 +40,95 @@ function VirtualJoystick({
   disabled?: boolean;
   actions: RainbowCowboyInputActions;
 }) {
+  const padRef = useRef<HTMLDivElement>(null);
   const zoneRef = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState({ x: 0, y: 0 });
   const activePointerRef = useRef<number | null>(null);
+  const unbindWindowRef = useRef<(() => void) | null>(null);
+
+  const unbindWindowTracking = useCallback(() => {
+    unbindWindowRef.current?.();
+    unbindWindowRef.current = null;
+  }, []);
 
   const reset = useCallback(() => {
+    unbindWindowTracking();
     setStick({ x: 0, y: 0 });
     actions.releaseMovement();
     activePointerRef.current = null;
-  }, [actions]);
+  }, [actions, unbindWindowTracking]);
 
-  const applyStick = useCallback(
-    (dx: number, dy: number) => {
-      const max = 44;
+  const applyFromClient = useCallback(
+    (clientX: number, clientY: number) => {
+      const zone = zoneRef.current;
+      if (!zone) return;
+
+      const rect = zone.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = clientX - cx;
+      const dy = clientY - cy;
       const dist = Math.hypot(dx, dy);
-      if (dist > max) {
-        dx = (dx / dist) * max;
-        dy = (dy / dist) * max;
+
+      let vx = dx;
+      let vy = dy;
+      if (dist > JOYSTICK_STICK_MAX) {
+        vx = (dx / dist) * JOYSTICK_STICK_MAX;
+        vy = (dy / dist) * JOYSTICK_STICK_MAX;
       }
-      setStick({ x: dx, y: dy });
-      const thresh = 12;
-      actions.setMoveLeft(dx < -thresh);
-      actions.setMoveRight(dx > thresh);
-      actions.setDuck(dy > thresh);
+      setStick({ x: vx, y: vy });
+
+      const radius = rect.width / 2;
+      const horizDominant = Math.abs(dx) >= Math.abs(dy) * 0.55;
+      const pastEdge = Math.abs(dx) > radius - 6;
+      actions.setMoveLeft(dx < -JOYSTICK_H_THRESH && (horizDominant || pastEdge));
+      actions.setMoveRight(dx > JOYSTICK_H_THRESH && (horizDominant || pastEdge));
+      actions.setDuck(dy > JOYSTICK_V_THRESH && Math.abs(dy) > Math.abs(dx) * 0.65);
     },
     [actions],
   );
+
+  const bindWindowTracking = useCallback(
+    (pointerId: number) => {
+      unbindWindowTracking();
+
+      const onMove = (e: PointerEvent) => {
+        if (e.pointerId !== pointerId) return;
+        e.preventDefault();
+        applyFromClient(e.clientX, e.clientY);
+      };
+      const onEnd = (e: PointerEvent) => {
+        if (e.pointerId !== pointerId) return;
+        reset();
+      };
+
+      window.addEventListener("pointermove", onMove, { passive: false });
+      window.addEventListener("pointerup", onEnd);
+      window.addEventListener("pointercancel", onEnd);
+      unbindWindowRef.current = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onEnd);
+        window.removeEventListener("pointercancel", onEnd);
+      };
+    },
+    [applyFromClient, reset, unbindWindowTracking],
+  );
+
+  useEffect(() => () => reset(), [reset]);
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (disabled) return;
     e.preventDefault();
     activePointerRef.current = e.pointerId;
-    zoneRef.current?.setPointerCapture(e.pointerId);
-    const rect = zoneRef.current!.getBoundingClientRect();
-    applyStick(e.clientX - (rect.left + rect.width / 2), e.clientY - (rect.top + rect.height / 2));
+    padRef.current?.setPointerCapture(e.pointerId);
+    bindWindowTracking(e.pointerId);
+    applyFromClient(e.clientX, e.clientY);
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
     if (disabled || activePointerRef.current !== e.pointerId) return;
     e.preventDefault();
-    const rect = zoneRef.current!.getBoundingClientRect();
-    applyStick(e.clientX - (rect.left + rect.width / 2), e.clientY - (rect.top + rect.height / 2));
+    applyFromClient(e.clientX, e.clientY);
   };
 
   const onPointerEnd = (e: React.PointerEvent) => {
@@ -85,38 +139,50 @@ function VirtualJoystick({
 
   return (
     <div
-      ref={zoneRef}
-      className="rc-joystick"
+      ref={padRef}
+      className="rc-joystick-pad"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
-      onLostPointerCapture={reset}
       style={{
-        position: "relative",
-        width: 112,
-        height: 112,
-        borderRadius: "50%",
-        background: "rgba(0,0,0,0.42)",
-        border: "2px solid rgba(255,255,255,0.35)",
+        width: JOYSTICK_PAD_SIZE,
+        height: JOYSTICK_PAD_SIZE,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
         touchAction: "none",
       }}
     >
       <div
+        ref={zoneRef}
+        className="rc-joystick"
         style={{
-          position: "absolute",
-          left: "50%",
-          top: "50%",
-          width: 48,
-          height: 48,
-          marginLeft: -24 + stick.x,
-          marginTop: -24 + stick.y,
+          position: "relative",
+          width: JOYSTICK_VISUAL_SIZE,
+          height: JOYSTICK_VISUAL_SIZE,
           borderRadius: "50%",
-          background: "rgba(255,255,255,0.22)",
-          border: "2px solid rgba(255,255,255,0.5)",
+          background: "rgba(0,0,0,0.42)",
+          border: "2px solid rgba(255,255,255,0.35)",
           pointerEvents: "none",
         }}
-      />
+      >
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: "50%",
+            width: 48,
+            height: 48,
+            marginLeft: -24 + stick.x,
+            marginTop: -24 + stick.y,
+            borderRadius: "50%",
+            background: "rgba(255,255,255,0.22)",
+            border: "2px solid rgba(255,255,255,0.5)",
+            pointerEvents: "none",
+          }}
+        />
+      </div>
     </div>
   );
 }
@@ -317,8 +383,8 @@ function MobileControlPad({
         className="rc-joystick-anchor"
         style={{
           position: "absolute",
-          left: "max(12px, env(safe-area-inset-left))",
-          bottom: "max(12px, env(safe-area-inset-bottom))",
+          left: "var(--rc-safe-left, max(12px, env(safe-area-inset-left)))",
+          bottom: "var(--rc-safe-bottom, max(12px, env(safe-area-inset-bottom)))",
           pointerEvents: disabled ? "none" : "auto",
         }}
       >
@@ -328,8 +394,8 @@ function MobileControlPad({
         className="rc-action-cluster-anchor"
         style={{
           position: "absolute",
-          right: "max(12px, env(safe-area-inset-right))",
-          bottom: "max(12px, env(safe-area-inset-bottom))",
+          right: "var(--rc-mobile-right-gutter, max(12px, env(safe-area-inset-right)))",
+          bottom: "var(--rc-safe-bottom, max(12px, env(safe-area-inset-bottom)))",
           pointerEvents: disabled ? "none" : "auto",
         }}
       >
@@ -352,14 +418,17 @@ export function RainbowCowboyControls({
   disabled,
 }: Props) {
   const mobile = useMobileControls();
-  const [portrait, setPortrait] = useState(false);
+  const [compact, setCompact] = useState(false);
 
   useEffect(() => {
-    const mq = window.matchMedia("(orientation: portrait)");
-    const sync = () => setPortrait(mq.matches);
+    const sync = () => {
+      const portrait = window.matchMedia("(orientation: portrait)").matches;
+      const narrow = window.innerWidth < 740;
+      setCompact(portrait || narrow);
+    };
     sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
   }, []);
 
   useEffect(() => {
@@ -393,7 +462,7 @@ export function RainbowCowboyControls({
         slurpLabel={slurpLabel}
         showWeaponButton={showWeaponButton}
         disabled={disabled}
-        compact={portrait}
+        compact={compact}
       />
       <style>{`
         @media (max-width: 900px), (max-height: 500px), (pointer: coarse) {
