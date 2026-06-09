@@ -7,7 +7,13 @@ import { supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "../components/EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
-import { clearAppAuthState, markAppSessionActive, markOAuthRememberPending } from "../lib/auth/sessionState";
+import {
+  clearAppAuthState,
+  clearLoginRedirectAttempts,
+  markAppSessionActive,
+  markOAuthRememberPending,
+  recordLoginRedirectAttempt,
+} from "../lib/auth/sessionState";
 import {
   ONBOARDING_GATE_PROFILE_SELECT,
   resolveLoginRedirectPath,
@@ -35,6 +41,14 @@ import {
   type FailedAuthReason,
 } from "../lib/auth/failedAuthReasons";
 import { clearFailedAuthReportsAfterLogin } from "../lib/auth/clearFailedAuthReportsOnLogin";
+
+/**
+ * How many login → protected-route redirects may happen in quick succession
+ * before we treat it as a refresh loop. A healthy redirect only fires once; a
+ * client/server auth mismatch (e.g. blocked auth cookies in a mobile in-app
+ * browser) bounces every ~0.5s, so this trips within ~1.5s and recovers.
+ */
+const LOGIN_REDIRECT_LOOP_THRESHOLD = 3;
 
 function devClientAuthLog(tag: string, data: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
@@ -252,7 +266,29 @@ export default function LoginPage() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (cancelled || !session?.user) return;
+      if (cancelled || !session?.user) {
+        // Genuinely signed out on the client — clear any stale bounce counter.
+        if (!cancelled) clearLoginRedirectAttempts();
+        return;
+      }
+
+      // Break the mobile refresh loop: if we keep bouncing a client-side
+      // session to a protected route only to be sent right back to /login,
+      // the server is rejecting the session (commonly blocked/partitioned
+      // auth cookies in a mobile in-app browser). Drop the stale client
+      // session so the form is usable and the user can sign in fresh.
+      const attempts = recordLoginRedirectAttempt();
+      if (attempts > LOGIN_REDIRECT_LOOP_THRESHOLD) {
+        clearLoginRedirectAttempts();
+        clearAppAuthState();
+        await supabase.auth.signOut().catch(() => {});
+        if (cancelled) return;
+        setLoginMessage(
+          "We couldn't keep you signed in on this device. Please sign in again.",
+        );
+        return;
+      }
+
       markAppSessionActive(rememberMe);
       await redirectForSessionUser(session.user);
     })();

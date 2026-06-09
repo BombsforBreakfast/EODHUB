@@ -43,3 +43,36 @@ export function consumeOAuthRememberPending(): boolean | null {
   window.localStorage.removeItem(OAUTH_REMEMBER_PENDING_KEY);
   return value === "1";
 }
+
+// The login page redirects a client-side session to a protected route, while
+// proxy.ts independently validates auth via cookies. When those disagree — e.g.
+// a mobile in-app browser or Safari ITP keeps the session in localStorage but
+// drops/partitions the Supabase auth cookies — the two bounce the user back and
+// forth, refreshing every ~0.5s. These helpers detect that bounce so the login
+// page can break the loop and recover instead of refreshing forever.
+const LOGIN_REDIRECT_COUNT_KEY = "eod_login_redirects";
+const LOGIN_REDIRECT_TS_KEY = "eod_login_redirects_ts";
+const LOGIN_REDIRECT_WINDOW_MS = 6000;
+
+/**
+ * Record one login → protected-route redirect attempt and return how many have
+ * happened in quick succession. Attempts older than the window reset the count,
+ * so a single healthy redirect never trips the loop detector.
+ */
+export function recordLoginRedirectAttempt(): number {
+  if (typeof window === "undefined") return 0;
+  const now = Date.now();
+  const lastTs = Number(window.sessionStorage.getItem(LOGIN_REDIRECT_TS_KEY) ?? "0");
+  const prevCount = Number(window.sessionStorage.getItem(LOGIN_REDIRECT_COUNT_KEY) ?? "0");
+  const withinWindow = now - lastTs < LOGIN_REDIRECT_WINDOW_MS;
+  const count = withinWindow ? prevCount + 1 : 1;
+  window.sessionStorage.setItem(LOGIN_REDIRECT_COUNT_KEY, String(count));
+  window.sessionStorage.setItem(LOGIN_REDIRECT_TS_KEY, String(now));
+  return count;
+}
+
+export function clearLoginRedirectAttempts() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(LOGIN_REDIRECT_COUNT_KEY);
+  window.sessionStorage.removeItem(LOGIN_REDIRECT_TS_KEY);
+}
