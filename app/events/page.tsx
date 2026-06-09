@@ -1740,16 +1740,14 @@ function EventsPageInner() {
               display: "flex",
               flexDirection: "row",
               alignItems: "center",
-              justifyContent: "flex-start",
               gap: 8,
               padding: "10px 12px",
-              position: "relative",
             }}
           >
             <button
               type="button"
               aria-label={eventForm.date ? "Change date" : "Choose date"}
-              onClick={() => openEventDatePicker()}
+              onClick={openEventDatePicker}
               style={{
                 border: "none",
                 background: "transparent",
@@ -1767,10 +1765,7 @@ function EventsPageInner() {
             <button
               type="button"
               aria-label="Open calendar"
-              onClick={(e) => {
-                e.preventDefault();
-                openEventDatePicker();
-              }}
+              onClick={openEventDatePicker}
               style={{
                 border: "none",
                 background: "transparent",
@@ -1791,7 +1786,6 @@ function EventsPageInner() {
                 <line x1="3" y1="10" x2="21" y2="10" />
               </svg>
             </button>
-            <div style={{ flex: 1, minWidth: 0 }} aria-hidden />
             <input
               id="event-form-date"
               ref={eventDateInputRef}
@@ -1799,17 +1793,19 @@ function EventsPageInner() {
               value={eventForm.date}
               onChange={(e) => setEventForm((p) => ({ ...p, date: e.target.value }))}
               aria-label="Event date"
+              tabIndex={-1}
               style={{
                 position: "absolute",
-                inset: 0,
-                width: "100%",
-                height: "100%",
+                width: 1,
+                height: 1,
                 opacity: 0,
-                cursor: "pointer",
+                pointerEvents: "none",
+                overflow: "hidden",
+                clip: "rect(0, 0, 0, 0)",
+                whiteSpace: "nowrap",
                 border: 0,
                 padding: 0,
                 margin: 0,
-                zIndex: 1,
               }}
             />
           </div>
