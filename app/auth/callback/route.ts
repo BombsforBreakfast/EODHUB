@@ -2,6 +2,12 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup";
 import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
+import {
+  ONBOARDING_GATE_PROFILE_SELECT,
+  resolveLoginRedirectPath,
+  shouldRedirectToOnboarding,
+  type OnboardingGateProfile,
+} from "@/app/lib/onboardingGate";
 import { clearFailedAuthReportsOnSuccessfulLogin } from "@/app/lib/server/clearFailedAuthReportsOnLogin";
 import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
 
@@ -13,6 +19,13 @@ import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
  * set on the redirect response — the middleware sees a valid session on
  * the very next request and won't redirect back to /login.
  *
+ * The session is authoritative here, so we also resolve the user's final
+ * destination server-side (onboarding vs / vs /verify-email vs /pending)
+ * using the same routing logic as the login page. This avoids sending every
+ * OAuth user through /onboarding only to have the client re-route them — a
+ * client-side gate that can race cookie hydration and bounce the first login
+ * attempt back to /login.
+ *
  * Usage: set redirectTo to `${origin}/auth/callback?next=/onboarding`
  * (or any other destination).
  */
@@ -23,8 +36,10 @@ export async function GET(request: NextRequest) {
   const next = searchParams.get("next") ?? "/onboarding";
 
   if (code) {
-    // Pre-build the redirect response so we can attach cookies to it.
-    const redirectResponse = NextResponse.redirect(`${origin}${next}`);
+    // Collect the session cookies emitted during the code exchange so we can
+    // attach them to whichever redirect response we ultimately build (the
+    // destination isn't known until the profile is resolved below).
+    const cookiesToApply: { name: string; value: string; options: Record<string, unknown> }[] = [];
 
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -35,10 +50,8 @@ export async function GET(request: NextRequest) {
             return request.cookies.getAll();
           },
           setAll(cookiesToSet) {
-            // Write session cookies directly onto the redirect response so
-            // they arrive in the browser before the next page load.
-            cookiesToSet.forEach(({ name, value, options }) => {
-              redirectResponse.cookies.set(name, value, options);
+            cookiesToSet.forEach((cookie) => {
+              cookiesToApply.push(cookie as (typeof cookiesToApply)[number]);
             });
           },
         },
@@ -47,23 +60,48 @@ export async function GET(request: NextRequest) {
 
     const { data: sessionData, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      // Default to the requested `next` (preserves ?ref= and the business-org
+      // flow). Only fully-onboarded users get routed past /onboarding below.
+      let destination = next;
+
       const { client: adminClient } = createSupabaseServiceRoleClient();
       if (adminClient) {
         const oauthEmail = sessionData.user?.email;
-        if (sessionData.user?.id && oauthEmail) {
-          void ensureProfileStubForUser(adminClient, sessionData.user.id, oauthEmail);
+        const userId = sessionData.user?.id;
+        if (userId && oauthEmail) {
+          // Await the stub so the routing read below sees the profile row.
+          await ensureProfileStubForUser(adminClient, userId, oauthEmail);
+
           const nextUrl = new URL(next, origin);
           if (nextUrl.pathname === "/business-org/onboarding" && nextUrl.searchParams.get("business_oauth") === "google") {
-            void adminClient.auth.admin.updateUserById(sessionData.user.id, {
+            void adminClient.auth.admin.updateUserById(userId, {
               app_metadata: {
                 ...(sessionData.user.app_metadata ?? {}),
                 account_kind: "business_organization_page",
               },
             });
+          } else if (nextUrl.pathname === "/onboarding") {
+            // Standard login/signup path: resolve the real destination from the
+            // profile so already-onboarded users skip /onboarding entirely.
+            const { data: profile } = await adminClient
+              .from("profiles")
+              .select(ONBOARDING_GATE_PROFILE_SELECT)
+              .eq("user_id", userId)
+              .maybeSingle<OnboardingGateProfile>();
+            if (profile && !shouldRedirectToOnboarding(profile)) {
+              destination = resolveLoginRedirectPath(profile);
+            }
           }
         }
         void clearFailedAuthReportsOnSuccessfulLogin(adminClient, oauthEmail);
       }
+
+      // Build the redirect to the resolved destination and attach the session
+      // cookies so they arrive in the browser before the next page load.
+      const redirectResponse = NextResponse.redirect(`${origin}${destination}`);
+      cookiesToApply.forEach(({ name, value, options }) => {
+        redirectResponse.cookies.set(name, value, options);
+      });
       return redirectResponse;
     }
     void logFailedAuthAttempt({

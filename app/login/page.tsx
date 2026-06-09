@@ -7,7 +7,7 @@ import { supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "../components/EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
-import { clearAppAuthState, markAppSessionActive } from "../lib/auth/sessionState";
+import { clearAppAuthState, markAppSessionActive, markOAuthRememberPending } from "../lib/auth/sessionState";
 import {
   ONBOARDING_GATE_PROFILE_SELECT,
   resolveLoginRedirectPath,
@@ -356,6 +356,9 @@ export default function LoginPage() {
 
   function signInWithGoogleOAuth() {
     clearAppAuthState();
+    // Carry the "Remember me" choice across the OAuth redirect; SessionGuard
+    // applies it once the session returns to the app.
+    markOAuthRememberPending(rememberMe);
     const storedRef = readStoredReferral();
     const onboardingNext = storedRef
       ? `/onboarding?ref=${encodeURIComponent(storedRef)}`

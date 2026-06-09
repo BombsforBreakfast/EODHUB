@@ -1391,7 +1391,7 @@ export default function SidebarPage() {
   }
 
   const MessageBubbles = (
-    <div ref={messagesContainerRef} className={isMobile ? "sidebar-messages-scroll" : undefined} style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: isMobile ? "16px 12px" : "16px 20px", paddingBottom: isMobile && mobileComposerPinned ? composerBarHeight + mobileComposerBottom + 16 : undefined, display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
+    <div ref={messagesContainerRef} className={isMobile ? "sidebar-messages-scroll" : undefined} style={{ flex: 1, overflowY: "auto", minHeight: 0, paddingTop: 16, paddingRight: isMobile ? 12 : 20, paddingBottom: isMobile && mobileComposerPinned ? composerBarHeight + mobileComposerBottom + 16 : 16, paddingLeft: isMobile ? 12 : 20, display: "flex", flexDirection: "column", gap: 10, width: "100%", maxWidth: "100%", boxSizing: "border-box" }}>
       {messages.map((msg) => {
         const isMe = msg.sender_id === userId;
         const isHovered = hoveredMsgId === msg.id;
@@ -1640,7 +1640,7 @@ export default function SidebarPage() {
       style={{ padding: isMobile ? "12px 12px" : "12px 16px", borderTop: `1px solid ${t.border}`, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", background: t.surface, flexShrink: 0, ...mobileComposerPinnedStyle }}
     >
       {composerResizeHandle}
-      <div className="sidebar-composer-row">
+      <div className={isMobile ? "sidebar-composer-row" : "sidebar-composer-row sidebar-composer-row--desktop"}>
         <div className="sidebar-composer-input-stack">
           <textarea
             ref={requestInputRef}
@@ -1757,7 +1757,7 @@ export default function SidebarPage() {
           Drop photo to attach
         </div>
       )}
-      <div className="sidebar-composer-row">
+      <div className={isMobile ? "sidebar-composer-row" : "sidebar-composer-row sidebar-composer-row--desktop"}>
         <div className="sidebar-composer-input-stack">
           <textarea
             ref={messageInputRef}

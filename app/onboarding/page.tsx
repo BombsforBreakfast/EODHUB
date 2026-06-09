@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
+import { useAuth } from "../lib/auth/AuthProvider";
 import Link from "next/link";
 import { isPureAdminEmail, STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../lib/pureAdminAllowlist";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
@@ -60,6 +61,12 @@ export default function OnboardingPage() {
   const [missingFieldId, setMissingFieldId] = useState<string | null>(null);
   const [showRequiredHelper, setShowRequiredHelper] = useState(false);
   const [employerConfirmOpen, setEmployerConfirmOpen] = useState(false);
+
+  const { user: authUser, isLoading: authLoading } = useAuth();
+  // Ensures the heavy first-load check (profile fetch, name prefill, routing)
+  // runs once per session and isn't re-triggered by later auth updates such as
+  // token refreshes, which would otherwise clobber in-progress form input.
+  const didInitRef = useRef(false);
 
   useOnboardingStepTracking("onboarding_viewed", !checking);
 
@@ -161,10 +168,20 @@ export default function OnboardingPage() {
   }
 
   useEffect(() => {
-    async function check() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { window.location.href = "/login"; return; }
+    // Gate on the centralized auth state (AuthProvider) instead of issuing our
+    // own getUser() on mount. AuthProvider resolves the session from cookies
+    // before flipping isLoading off, so we never redirect during the post-OAuth
+    // hydration window — which is what bounced the first login attempt.
+    if (authLoading) return;
+    if (didInitRef.current) return;
+    if (!authUser) {
+      window.location.href = "/login";
+      return;
+    }
+    didInitRef.current = true;
+    const user = authUser;
 
+    async function check() {
       setUserId(user.id);
 
       // Pure-admin self-bootstrap: if this email is in the EOD HUB staff allowlist,
@@ -319,7 +336,7 @@ export default function OnboardingPage() {
       setChecking(false);
     }
     check();
-  }, []);
+  }, [authLoading, authUser]);
 
   async function redirectAfterOnboarding(isGoogle: boolean) {
     if (isGoogle) {

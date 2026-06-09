@@ -784,6 +784,36 @@ a.rabbithole-brand-link:focus-visible {
   .nav-mobile-spacer {
     display: none !important;
   }
+  /*
+   * Desktop composer: textarea grows to fill the row; action buttons stay grouped
+   * on the far right. Mobile (<=900px) column layout is unchanged.
+   */
+  .sidebar-composer-row--desktop {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-end;
+    gap: 10px;
+    width: 100%;
+  }
+  .sidebar-composer-row--desktop > .sidebar-composer-input-stack {
+    display: flex;
+    flex: 1 1 0%;
+    min-width: 0;
+  }
+  .sidebar-composer-row--desktop > .sidebar-composer-input-stack > .sidebar-composer-textarea {
+    flex: 1 1 auto;
+    width: 100%;
+    min-width: 0;
+  }
+  .sidebar-composer-row--desktop > .sidebar-composer-actions {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
 }
 
 /* Group (unit) page: vertical split — cover portrait column | details */
