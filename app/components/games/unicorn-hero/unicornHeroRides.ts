@@ -10,22 +10,22 @@ export interface UnicornHeroRideConfig {
 
 export const UNICORN_HERO_RIDES: UnicornHeroRideConfig[] = [
   {
-    id: "unicorn",
-    label: "Pink Unicorn",
-    description: "Classic chaos mode. Tongue attack, rainbow fart bomb, maximum nonsense.",
-    attackLabel: "Tongue",
-    specialLabel: "Rainbow Fart Bomb",
-  },
-  {
     id: "eod_robot",
     label: "EOD Robot",
-    description: "Remote tech mode. Gripper arm, tracked movement, same arcade mayhem.",
+    description: "Standard skin — bomb suit operator on the tracked robot. Gripper arm and rainbow discharge.",
     attackLabel: "Gripper Arm",
     specialLabel: "Rainbow Discharge",
   },
+  {
+    id: "unicorn",
+    label: "Pink Unicorn",
+    description: "Alternate skin — same operator, questionable mount. Tongue attack and rainbow fart bomb.",
+    attackLabel: "Tongue",
+    specialLabel: "Rainbow Fart Bomb",
+  },
 ];
 
-export const DEFAULT_UNICORN_HERO_RIDE: UnicornHeroRideType = "unicorn";
+export const DEFAULT_UNICORN_HERO_RIDE: UnicornHeroRideType = "eod_robot";
 
 const SELECTED_RIDE_KEY = "unicornHero_selectedRide";
 

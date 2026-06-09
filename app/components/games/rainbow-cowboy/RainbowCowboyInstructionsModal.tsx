@@ -1,6 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BombSuitManAvatar } from "../bomb-suit-man/BombSuitManAvatar";
+import {
+  BSM_ACCENT_LIGHT,
+  BSM_BUTTON_BORDER,
+  BSM_BUTTON_GRADIENT,
+} from "../bomb-suit-man/bombSuitManTheme";
 
 interface Props {
   open: boolean;
@@ -167,8 +173,8 @@ export function RainbowCowboyInstructionsModal({
           color: "#fff",
         }}
       >
-        <div style={{ fontSize: mobile ? 22 : 24, textAlign: "center", marginBottom: 0 }}>
-          {isLevel3 ? "🤖" : isLevel2 ? "🏜️" : "🦄"}
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
+          <BombSuitManAvatar size={mobile ? 40 : 44} />
         </div>
         <h2
           id="rc-instructions-title"
@@ -177,7 +183,7 @@ export function RainbowCowboyInstructionsModal({
             textAlign: "center",
             fontSize: mobile ? 16 : 17,
             fontWeight: 900,
-            color: "#ff80d0",
+            color: BSM_ACCENT_LIGHT,
           }}
         >
           Quick Guide
@@ -292,8 +298,8 @@ export function RainbowCowboyInstructionsModal({
             width: "100%",
             padding: mobile ? "9px 14px" : "10px 16px",
             borderRadius: 9,
-            border: "2px solid #ff60c0",
-            background: "linear-gradient(180deg,#ff80d0,#c040a0)",
+            border: `2px solid ${BSM_BUTTON_BORDER}`,
+            background: BSM_BUTTON_GRADIENT,
             color: "#fff",
             fontWeight: 800,
             fontSize: mobile ? 13 : 14,

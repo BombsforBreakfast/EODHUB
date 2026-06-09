@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
       groupKey: body.group_key ?? null,
       dedupeKey: body.dedupe_key ?? null,
       metadata: body.metadata ?? {},
+      postId: body.post_id ?? null,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create notification";

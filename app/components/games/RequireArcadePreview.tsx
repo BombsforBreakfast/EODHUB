@@ -74,12 +74,12 @@ export function RequireArcadePreview({ children }: Props) {
 
       const userId = session.user.id;
       const cached = readCachedArcadeAccess(userId);
-      if (cached?.canClick) {
-        if (cached.unlocked) {
-          if (mounted) setAccess({ status: "ready" });
-          return;
-        }
-        if (mounted) setAccess({ status: "unlock", requiresPassword: !!cached.requiresPassword });
+      if (cached?.canClick && cached.unlocked) {
+        if (mounted) setAccess({ status: "ready" });
+        return;
+      }
+      if (cached?.canClick && cached.requiresPassword) {
+        if (mounted) setAccess({ status: "unlock", requiresPassword: true });
         return;
       }
 

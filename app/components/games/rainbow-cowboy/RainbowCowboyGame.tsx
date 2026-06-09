@@ -18,10 +18,7 @@ import {
 import { UnicornHeroAudioControls } from "../unicorn-hero/UnicornHeroAudioControls";
 import { getUnicornHeroRideConfig, type UnicornHeroRideType } from "../unicorn-hero/unicornHeroRides";
 import { GameRotatePrompt } from "@/app/components/games/GameRotatePrompt";
-import {
-  tryGameFullscreen,
-  useMobileGameImmersiveMode,
-} from "@/app/components/games/useMobileGameImmersiveMode";
+import { useMobileGameImmersiveMode } from "@/app/components/games/useMobileGameImmersiveMode";
 import { createRainbowCowboyInputBridge } from "./rainbowCowboyGameInput";
 
 interface Props {
@@ -74,7 +71,6 @@ export function RainbowCowboyGame({
   const rideConfig = getUnicornHeroRideConfig(ride);
   const shellRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fullscreenTriedRef = useRef(false);
   const engineRef = useRef<RainbowCowboyEngine | null>(null);
   const inputRef = useRef<GameInput>({
     left: false,
@@ -381,18 +377,10 @@ export function RainbowCowboyGame({
     };
   }, []);
 
-  const handleShellPointerDown = () => {
-    if (fullscreenTriedRef.current) return;
-    if (!window.matchMedia("(orientation: landscape)").matches) return;
-    fullscreenTriedRef.current = true;
-    void tryGameFullscreen(shellRef.current);
-  };
-
   return (
     <div
       ref={shellRef}
       className="rainbow-cowboy-game-shell arcade-game-shell"
-      onPointerDown={handleShellPointerDown}
       style={{
         position: "relative",
         width: "100%",

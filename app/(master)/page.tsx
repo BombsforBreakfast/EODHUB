@@ -4893,10 +4893,17 @@ export default function HomePage() {
     recipientId: string,
     message: string,
     postOwnerId: string,
-    extra?: { type?: string; post_id?: string | null; parent_entity_id?: string | null },
+    extra?: {
+      type?: string;
+      post_id?: string | null;
+      comment_id?: string | null;
+      parent_entity_id?: string | null;
+    },
   ) {
     if (!userId || recipientId === userId) return;
     const actorName = currentUserName?.trim() || "Someone";
+    const commentId = extra?.comment_id ?? null;
+    const parentEntityId = extra?.parent_entity_id ?? commentId;
     return postNotifyJson(supabase, {
       user_id: recipientId,
       message,
@@ -4904,16 +4911,22 @@ export default function HomePage() {
       type: extra?.type ?? "feed_activity",
       category: "social",
       post_id: extra?.post_id ?? null,
-      link: extra?.post_id ? `/?postId=${encodeURIComponent(extra.post_id)}` : null,
+      link: extra?.post_id
+        ? `/?postId=${encodeURIComponent(extra.post_id)}${commentId ? `&commentId=${encodeURIComponent(commentId)}` : ""}`
+        : null,
       group_key: extra?.post_id
         ? `post:${extra.post_id}:${extra?.type ?? "feed_activity"}`
         : `feed:${extra?.type ?? "activity"}`,
       dedupe_key: extra?.post_id
-        ? `${extra?.type ?? "feed_activity"}:${extra.post_id}:${userId}`
+        ? `${extra?.type ?? "feed_activity"}:${extra.post_id}:${commentId ?? "post"}:${userId}`
         : `${extra?.type ?? "feed_activity"}:${recipientId}:${userId}`,
-      parent_entity_type: extra?.parent_entity_id ? "comment" : null,
-      parent_entity_id: extra?.parent_entity_id ?? null,
+      parent_entity_type: parentEntityId ? "comment" : null,
+      parent_entity_id: parentEntityId ?? null,
       actor_name: actorName,
+      metadata: {
+        feed: true,
+        ...(commentId ? { comment_id: commentId } : {}),
+      },
     });
   }
 
@@ -4977,8 +4990,10 @@ export default function HomePage() {
       setTogglingCommentLikeFor(commentId);
       cancelDelayedLikeNotify(`feed:comment:${commentId}:${userId}`);
 
-      const priorReaction =
-        postsRef.current.flatMap((p) => p.comments).find((c) => c.id === commentId)?.myReaction ?? null;
+      const allCurrentComments = postsRef.current.flatMap((p) =>
+        p.comments.flatMap((c) => [c, ...(c.replies ?? [])]),
+      );
+      const priorReaction = allCurrentComments.find((c) => c.id === commentId)?.myReaction ?? null;
 
       await applyContentReaction(supabase, {
         subjectKind: "post_comment",
@@ -4988,7 +5003,9 @@ export default function HomePage() {
       });
 
       if (picked === "like" && priorReaction !== "like") {
-        const comment = posts.flatMap((p) => p.comments).find((c) => c.id === commentId);
+        const comment = posts
+          .flatMap((p) => p.comments.flatMap((c) => [c, ...(c.replies ?? [])]))
+          .find((c) => c.id === commentId);
         if (comment && comment.user_id !== userId) {
           const ownerPost = posts.find((p) => p.id === comment.post_id);
           if (ownerPost) {
@@ -4998,11 +5015,14 @@ export default function HomePage() {
             const recipientCommentUserId = comment.user_id;
             scheduleDelayedLikeNotify(`feed:comment:${commentId}:${userId}`, () => {
               const p = postsRef.current.find((x) => x.id === postIdForComment);
-              const c = p?.comments.find((x) => x.id === commentId);
+              const c = p?.comments
+                .flatMap((x) => [x, ...(x.replies ?? [])])
+                .find((x) => x.id === commentId);
               if (c?.myReaction !== "like") return;
               return notify(recipientCommentUserId, `${actorName} liked your comment`, ownerId, {
                 type: "feed_comment_like",
                 post_id: postIdForComment,
+                comment_id: commentId,
               });
             });
           }
@@ -5152,14 +5172,22 @@ export default function HomePage() {
         const tasks: Promise<unknown>[] = [];
         if (post.user_id !== userId) {
           tasks.push(
-            notify(post.user_id, `${actorName} commented on your post`, post.user_id, { type: "feed_comment", post_id: postId }),
+            notify(post.user_id, `${actorName} commented on your post`, post.user_id, {
+              type: "feed_comment",
+              post_id: postId,
+              comment_id: insertedCommentId,
+            }),
           );
         }
         const { data: td } = await supabase.from("post_comments").select("user_id").eq("post_id", postId).neq("user_id", userId);
         const participants = [...new Set(((td ?? []) as { user_id: string }[]).map((c) => c.user_id))].filter((id) => id !== post.user_id);
         for (const pid of participants) {
           tasks.push(
-            notify(pid, `${actorName} also commented on a post you're following`, post.user_id, { type: "feed_comment_thread", post_id: postId }),
+            notify(pid, `${actorName} also commented on a post you're following`, post.user_id, {
+              type: "feed_comment_thread",
+              post_id: postId,
+              comment_id: insertedCommentId,
+            }),
           );
         }
         await Promise.all(tasks);
@@ -5306,6 +5334,7 @@ export default function HomePage() {
           notify(ownerId, `${actorName} commented on your post`, ownerId, {
             type: "feed_comment",
             post_id: postId,
+            comment_id: insertedReplyId,
           }),
         );
       }
@@ -5325,7 +5354,11 @@ export default function HomePage() {
             pid,
             `${actorName} also commented on a post you're following`,
             ownerId,
-            { type: "feed_comment_thread", post_id: postId },
+            {
+              type: "feed_comment_thread",
+              post_id: postId,
+              comment_id: insertedReplyId,
+            },
           ),
         );
       }
@@ -5971,7 +6004,7 @@ export default function HomePage() {
       // the target element renders, which would prevent any re-attempt.
     };
 
-    timeoutId = window.setTimeout(tryScroll, 120);
+    timeoutId = window.setTimeout(tryScroll, commentId ? 180 : 120);
 
     return () => {
       cancelled = true;

@@ -393,7 +393,7 @@ export class RainbowCowboyEngine {
   landmineExplosionEvents: { x: number; groundY: number }[] = [];
   audioEvents: UnicornHeroAudioEvent[] = [];
 
-  constructor(config: LevelConfig, rideType: UnicornHeroRideType = "unicorn") {
+  constructor(config: LevelConfig, rideType: UnicornHeroRideType = "eod_robot") {
     this.config = config;
     this.rideType = rideType;
     this.playerY = config.level.groundY;

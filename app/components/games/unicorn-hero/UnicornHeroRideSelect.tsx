@@ -1,6 +1,11 @@
 "use client";
 
 import { useTheme } from "@/app/lib/ThemeContext";
+import {
+  BSM_ACCENT_LIGHT,
+  BSM_BUTTON_BORDER,
+  BSM_RIDE_ACTIVE_GRADIENT,
+} from "../bomb-suit-man/bombSuitManTheme";
 import type { UnicornHeroRideConfig, UnicornHeroRideType } from "./unicornHeroRides";
 import { UNICORN_HERO_RIDES } from "./unicornHeroRides";
 
@@ -36,16 +41,14 @@ function RideOption({
         textAlign: "left",
         padding: "12px 14px",
         borderRadius: 12,
-        border: active ? "3px solid #ff60c0" : `2px solid ${t.borderLight}`,
-        background: active
-          ? "linear-gradient(180deg, rgba(255,96,192,0.18), rgba(96,48,128,0.25))"
-          : "rgba(0,0,0,0.25)",
+        border: active ? `3px solid ${BSM_BUTTON_BORDER}` : `2px solid ${t.borderLight}`,
+        background: active ? BSM_RIDE_ACTIVE_GRADIENT : "rgba(0,0,0,0.25)",
         cursor: "pointer",
         color: t.text,
       }}
     >
       <div style={{ fontSize: 28, marginBottom: 6 }}>{RIDE_EMOJI[ride.id]}</div>
-      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4, color: active ? "#ff80d0" : t.text }}>
+      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4, color: active ? BSM_ACCENT_LIGHT : t.text }}>
         {ride.label}
       </div>
       <div style={{ fontSize: 12, lineHeight: 1.45, color: t.textMuted }}>{ride.description}</div>
@@ -67,7 +70,7 @@ export function UnicornHeroRideSelect({ selected, onChange }: Props) {
           fontSize: 18,
           fontWeight: 900,
           textAlign: "center",
-          color: "#ff80d0",
+          color: BSM_ACCENT_LIGHT,
         }}
       >
         Choose Your Ride

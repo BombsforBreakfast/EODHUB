@@ -14,6 +14,15 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        source: "/games/rainbow-cowboy",
+        destination: "/games/bomb-suit-man",
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {

@@ -25,6 +25,9 @@ export function hasArcadeRouteAccess(
 ): boolean {
   if (!canUseArcadePreview(userId)) return false;
 
+  // Local dev: skip the preview password gate so founders can test arcade routes.
+  if (process.env.NODE_ENV === "development") return true;
+
   const password = getArcadeAccessPassword();
   if (!password) return false;
 

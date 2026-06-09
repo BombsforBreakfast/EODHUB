@@ -1,5 +1,6 @@
 "use client";
 
+import { BombSuitManAvatar } from "@/app/components/games/bomb-suit-man/BombSuitManAvatar";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { RequireFullAccess } from "@/app/hooks/useRequireFullAccess";
 import { RequireArcadePreview } from "@/app/components/games/RequireArcadePreview";
@@ -13,12 +14,12 @@ const GAMES = [
     accent: "#f97316",
   },
   {
-    title: "Unicorn Hero",
-    subtitle: "Ride a pink unicorn or a robot. Eat drones. Make poor life choices.",
+    title: "Bomb Suit Man",
+    subtitle: "Bomb suit operator on a robot — or a pink unicorn. Eat drones. Make poor life choices.",
     footnote: "Game may or may not be inspired by an Army EOD senior leader.",
-    href: "/games/rainbow-cowboy",
-    emoji: "🦄",
-    accent: "#ff60c0",
+    href: "/games/bomb-suit-man",
+    emoji: "🤖",
+    accent: "#c9a227",
   },
 ] as const;
 
@@ -60,7 +61,11 @@ function GamesHubContent() {
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              <span style={{ fontSize: 32 }}>{game.emoji}</span>
+              {game.title === "Bomb Suit Man" ? (
+                <BombSuitManAvatar size={44} />
+              ) : (
+                <span style={{ fontSize: 32 }}>{game.emoji}</span>
+              )}
               <div>
                 <div style={{ fontWeight: 800, fontSize: 18, color: game.accent }}>{game.title}</div>
                 <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>{game.subtitle}</div>

@@ -1,6 +1,8 @@
 "use client";
 
 import { useTheme } from "@/app/lib/ThemeContext";
+import { BombSuitManAvatar } from "../bomb-suit-man/BombSuitManAvatar";
+import { BSM_ACCENT, BSM_BUTTON_GRADIENT } from "../bomb-suit-man/bombSuitManTheme";
 import { formatRainbowCowboyDuration } from "./rainbowCowboyFormat";
 import { formatDifficultyLabel } from "./rainbowCowboyDifficulty";
 import { getVictoryTitle } from "./rainbowCowboyScoring";
@@ -46,7 +48,7 @@ export function RainbowCowboyEndScreen({
   return (
     <div
       style={{
-        border: `2px solid ${isVictory ? "#ff60c0" : "#666"}`,
+        border: `2px solid ${isVictory ? BSM_ACCENT : "#666"}`,
         borderRadius: 16,
         background: t.surface,
         padding: "28px 22px",
@@ -55,8 +57,18 @@ export function RainbowCowboyEndScreen({
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 40, marginBottom: 8 }}>{isVictory ? (isLevel3 ? "🤖" : isLevel2 ? "🏜️" : "🦄") : "💥"}</div>
-      <h2 style={{ margin: "0 0 4px", color: isVictory ? "#ff60c0" : "#aaa" }}>{victoryTitle}</h2>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+        {isVictory ? (
+          isLevel2 ? (
+            <span style={{ fontSize: 40 }}>🏜️</span>
+          ) : (
+            <BombSuitManAvatar size={48} />
+          )
+        ) : (
+          <span style={{ fontSize: 40 }}>💥</span>
+        )}
+      </div>
+      <h2 style={{ margin: "0 0 4px", color: isVictory ? BSM_ACCENT : "#aaa" }}>{victoryTitle}</h2>
       {!isVictory && result.deathCause && (
         <p style={{ color: t.textMuted, fontSize: 13, marginBottom: 16 }}>{result.deathCause}</p>
       )}
@@ -126,7 +138,7 @@ export function RainbowCowboyEndScreen({
               padding: "12px 22px",
               borderRadius: 10,
               border: "none",
-              background: "linear-gradient(135deg, #ff60c0, #a855f7)",
+              background: BSM_BUTTON_GRADIENT,
               color: "#fff",
               fontWeight: 700,
               cursor: "pointer",
@@ -142,7 +154,7 @@ export function RainbowCowboyEndScreen({
             padding: "12px 22px",
             borderRadius: 10,
             border: "none",
-            background: "#ff60c0",
+            background: BSM_ACCENT,
             color: "#fff",
             fontWeight: 700,
             cursor: "pointer",

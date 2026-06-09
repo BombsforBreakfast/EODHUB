@@ -206,7 +206,7 @@ export default function NotificationCenter({
           ) : (
             groupedItems.map((item) => {
               const n = item.lead;
-              const href = n.link || getNotificationHref(n, { currentUserId, isAdmin });
+              const href = getNotificationHref(n, { currentUserId, isAdmin });
               const icon = getNotificationIcon(n);
               const title = n.actor_name?.trim() ? n.actor_name : "EOD HUB";
               return (

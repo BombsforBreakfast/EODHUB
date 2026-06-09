@@ -1,6 +1,7 @@
 "use client";
 
 import { useTheme } from "@/app/lib/ThemeContext";
+import { BSM_ACCENT, BSM_SURFACE_TINT } from "../bomb-suit-man/bombSuitManTheme";
 import { formatRainbowCowboyDuration } from "./rainbowCowboyFormat";
 import {
   getLevelLockMessage,
@@ -44,8 +45,8 @@ export function RainbowCowboyLevelSelect({
               textAlign: "left",
               padding: 16,
               borderRadius: 12,
-              border: `2px solid ${locked ? t.borderLight : "#ff60c0"}`,
-              background: locked ? t.bg : "rgba(255,96,192,0.08)",
+              border: `2px solid ${locked ? t.borderLight : BSM_ACCENT}`,
+              background: locked ? t.bg : BSM_SURFACE_TINT,
               color: locked ? t.textFaint : t.text,
               cursor: locked ? "not-allowed" : "pointer",
               opacity: locked ? 0.65 : 1,
@@ -62,7 +63,7 @@ export function RainbowCowboyLevelSelect({
               <div style={{ fontSize: 12, color: t.textMuted, marginTop: 6 }}>{lockMessage}</div>
             )}
             {!locked && best != null && (
-              <div style={{ fontSize: 12, color: "#ff60c0", marginTop: 8, lineHeight: 1.5 }}>
+              <div style={{ fontSize: 12, color: BSM_ACCENT, marginTop: 8, lineHeight: 1.5 }}>
                 <div>Score PB: {best.score}</div>
                 {best.durationSeconds != null && (
                   <div>Time PB: {formatRainbowCowboyDuration(best.durationSeconds)}</div>

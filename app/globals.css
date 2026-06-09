@@ -1305,6 +1305,10 @@ a.rabbithole-brand-link:focus-visible {
 }
 
 /* ── Arcade games: NavBar on hub/select; fullscreen + rotate prompt while playing ── */
+body.game-playing-active .games-shell-nav {
+  display: none !important;
+}
+
 @media (max-width: 900px) {
   html.game-playing-active,
   body.game-playing-active {

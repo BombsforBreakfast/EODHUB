@@ -53,7 +53,7 @@ export function RainbowCowboyLeaderboardStack({ levels }: Props) {
           game="rainbow_cowboy"
           levelId={level.id}
           levelTitle={level.title}
-          accentColor="#ff60c0"
+          accentColor="#c9a227"
           entries={entriesByLevel[level.id]}
           loading={loading && entriesByLevel[level.id] == null}
         />

@@ -58,6 +58,17 @@ function metaCommentId(n: NotificationNavInput): string | null {
   return typeof c === "string" && c.length > 0 ? c : null;
 }
 
+function linkPostId(link?: string | null): string | null {
+  if (!link) return null;
+  try {
+    const url = new URL(link, "https://eod-hub.local");
+    const postId = url.searchParams.get("postId");
+    return postId && postId.length > 0 ? postId : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Home feed URL with optional deep link to a comment (soft-highlight on landing). */
 export function feedDeepLink(postId: string, commentId?: string | null): string {
   const q = new URLSearchParams();
@@ -84,6 +95,11 @@ export function getNotificationHref(
 ): string {
   const parsedMeta = normalizeMetadata(n.metadata);
   const nNorm: NotificationNavInput = { ...n, metadata: parsedMeta };
+  const structuredFeedCommentId = metaCommentId(nNorm);
+  const structuredFeedPostId = nNorm.post_id ?? linkPostId(nNorm.link);
+  if (structuredFeedPostId && nNorm.type?.startsWith("feed_") && structuredFeedCommentId) {
+    return feedDeepLink(structuredFeedPostId, structuredFeedCommentId);
+  }
   if (nNorm.link && nNorm.link.trim().length > 0) return nNorm.link;
   const m = (nNorm.message ?? "").trim();
   const lower = m.toLowerCase();
@@ -175,7 +191,7 @@ export function getNotificationHref(
   }
 
   if (nNorm.post_id && nNorm.type?.startsWith("feed_")) {
-    return feedDeepLink(nNorm.post_id);
+    return feedDeepLink(nNorm.post_id, metaCommentId(nNorm));
   }
 
   if (nNorm.post_owner_id == null) {

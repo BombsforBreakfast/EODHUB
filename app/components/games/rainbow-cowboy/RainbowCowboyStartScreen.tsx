@@ -11,6 +11,11 @@ import {
 } from "./rainbowCowboyProgression";
 import { loadUnicornHeroAudioPrefs, saveUnicornHeroAudioPrefs, type UnicornHeroAudioPrefs } from "../unicorn-hero/unicornHeroAudio";
 import { UnicornHeroAudioControls } from "../unicorn-hero/UnicornHeroAudioControls";
+import {
+  BSM_BUTTON_BORDER,
+  BSM_BUTTON_GRADIENT,
+  BSM_TITLE_GRADIENT,
+} from "../bomb-suit-man/bombSuitManTheme";
 import { UnicornHeroRideSelect } from "../unicorn-hero/UnicornHeroRideSelect";
 import {
   saveUnicornHeroSelectedRide,
@@ -36,7 +41,7 @@ interface Props {
 }
 
 const DISCLAIMER =
-  "Unicorn Hero is a fictional arcade game for community fun. It does not teach real EOD procedures. Intended for adult audiences; adult references are used as powerups.";
+  "Bomb Suit Man is a fictional arcade game for community fun. It does not teach real EOD procedures. Intended for adult audiences; adult references are used as powerups.";
 
 export function RainbowCowboyStartScreen({
   level,
@@ -70,7 +75,7 @@ export function RainbowCowboyStartScreen({
           margin: "0 0 6px",
           fontSize: 32,
           fontWeight: 900,
-          background: "linear-gradient(90deg,#ff60c0,#60d0ff,#ffe060)",
+          background: BSM_TITLE_GRADIENT,
           WebkitBackgroundClip: "text",
           WebkitTextFillColor: "transparent",
         }}
@@ -129,7 +134,7 @@ export function RainbowCowboyStartScreen({
                   textAlign: "left",
                   padding: "10px 12px",
                   borderRadius: 10,
-                  border: `2px solid ${active ? "#ff60c0" : t.borderLight}`,
+                  border: `2px solid ${active ? BSM_BUTTON_BORDER : t.borderLight}`,
                   background: active
                     ? "rgba(255,96,192,0.15)"
                     : unlocked
@@ -191,10 +196,10 @@ export function RainbowCowboyStartScreen({
         style={{
           padding: "14px 28px",
           borderRadius: 12,
-          border: "3px solid #ff60c0",
+          border: `3px solid ${BSM_BUTTON_BORDER}`,
           background: canStart
-            ? "linear-gradient(180deg,#ff80d0,#c040a0)"
-            : "rgba(100,60,90,0.6)",
+            ? BSM_BUTTON_GRADIENT
+            : "rgba(61, 79, 92, 0.55)",
           color: "#fff",
           fontWeight: 800,
           fontSize: 16,

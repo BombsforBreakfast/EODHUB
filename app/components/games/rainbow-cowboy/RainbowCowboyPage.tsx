@@ -20,11 +20,14 @@ import {
   isLevelUnlocked,
   type RainbowCowboyProgressMap,
 } from "./rainbowCowboyProgression";
+import { BombSuitManAvatar } from "@/app/components/games/bomb-suit-man/BombSuitManAvatar";
+import { BSM_TITLE_GRADIENT } from "@/app/components/games/bomb-suit-man/bombSuitManTheme";
 import { GameArcadeNav } from "@/app/components/games/GameArcadeNav";
 import { RainbowCowboyLeaderboardStack } from "./RainbowCowboyLeaderboardStack";
 import { RainbowCowboyEndScreen } from "./RainbowCowboyEndScreen";
 import { RainbowCowboyLevelSelect } from "./RainbowCowboyLevelSelect";
 import { RainbowCowboyStartScreen } from "./RainbowCowboyStartScreen";
+import { tryGameFullscreen } from "@/app/components/games/useMobileGameImmersiveMode";
 import {
   loadUnicornHeroSelectedRide,
   type UnicornHeroRideType,
@@ -56,6 +59,7 @@ export function RainbowCowboyPage() {
   const remoteCompletionWritesThisRunRef = useRef(0);
 
   const isPlaying = screen === "playing";
+  const routeShellRef = useRef<HTMLDivElement>(null);
   const playAreaRef = useRef<HTMLDivElement>(null);
   const levelConfig = useMemo(
     () => getLevelConfig(selectedLevelId, difficulty),
@@ -114,6 +118,7 @@ export function RainbowCowboyPage() {
       setDifficulty(getHighestUnlockedDifficulty(selectedLevelId, progress, levels));
       return;
     }
+    void tryGameFullscreen(routeShellRef.current ?? document.documentElement);
     setShowInstructions(true);
     remoteCompletionWritesThisRunRef.current = 0;
     setGameKey((k) => k + 1);
@@ -179,6 +184,7 @@ export function RainbowCowboyPage() {
 
   return (
     <div
+      ref={routeShellRef}
       style={{
         padding: isPlaying ? 0 : "16px 12px 48px",
         maxWidth: isPlaying ? "none" : 720,
@@ -190,10 +196,23 @@ export function RainbowCowboyPage() {
 
       {!isPlaying && screen !== "complete" && screen !== "game_over" && (
         <div style={{ textAlign: "center", marginBottom: 20 }}>
-          <div style={{ fontSize: 36 }}>🦄</div>
-          <h1 style={{ margin: "8px 0 4px", fontSize: 26, fontWeight: 800 }}>Unicorn Hero</h1>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
+            <BombSuitManAvatar size={56} />
+          </div>
+          <h1
+            style={{
+              margin: "8px 0 4px",
+              fontSize: 26,
+              fontWeight: 800,
+              background: BSM_TITLE_GRADIENT,
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
+            Bomb Suit Man
+          </h1>
           <p style={{ margin: 0, color: t.textMuted, fontSize: 14 }}>
-            Retro-style gaming absurdity on a pink unicorn or EOD robot.
+            Retro-style gaming absurdity — EOD operator on robot by default, pink unicorn optional.
           </p>
         </div>
       )}
