@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "check:image-transforms": "node scripts/check-supabase-image-transforms.mjs",
     "test:news": "tsx app/lib/news/goldenLasd.verify.ts",
     "refresh:disposable": "node scripts/fetch-disposable-domains.mjs"
   },

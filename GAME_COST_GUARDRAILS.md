@@ -49,7 +49,8 @@ Realtime is not used. Supabase Storage image transformations are not used for ga
 ## Developer Warnings
 
 - Rainbow Cowboy tracks remote completion writes per mounted play session in development and warns if more than one write is attempted for a single run.
-- Supabase image transformations remain disabled by default unless `NEXT_PUBLIC_ENABLE_SUPABASE_IMAGE_TRANSFORMS=true` is explicitly configured.
+- Routine Supabase image transformations are hard-disabled in `app/lib/storageImageUrl.ts`; display helpers warn in development if a transformed URL reaches avatars, feed media, or gallery media.
+- Run `npm run check:image-transforms` before deploys that touch media handling to catch new render/image URLs or transform helper calls in source.
 
 ## Remaining Risks
 

@@ -1,5 +1,3 @@
-import { isVideoUrl } from "./uploadLimits";
-
 type ResizeMode = "cover" | "contain" | "fill";
 
 type StorageImageOptions = {
@@ -9,80 +7,99 @@ type StorageImageOptions = {
   resize?: ResizeMode;
 };
 
-const OBJECT_PUBLIC = "/storage/v1/object/public/";
-const RENDER_PUBLIC = "/storage/v1/render/image/public/";
-const ENABLE_SUPABASE_IMAGE_TRANSFORMS =
-  process.env.NEXT_PUBLIC_ENABLE_SUPABASE_IMAGE_TRANSFORMS === "true";
+export type ImageUrlUsage = "thumb" | "feed" | "display" | "original";
 
-function isGifUrl(url: string): boolean {
-  return /\.gif(\?|$)/i.test(url);
+export type ImageUrlLike = string | {
+  url?: string | null;
+  original_url?: string | null;
+  thumb_url?: string | null;
+  feed_url?: string | null;
+  display_url?: string | null;
+};
+
+const RENDER_IMAGE_PATH = "/storage/v1/render/image/";
+const TRANSFORM_PARAM_KEYS = new Set(["width", "height", "quality", "resize", "format"]);
+const warnedUrls = new Set<string>();
+
+function isSupabaseTransformUrl(url: string): boolean {
+  if (url.includes(RENDER_IMAGE_PATH)) return true;
+  try {
+    const parsed = new URL(url);
+    return Array.from(parsed.searchParams.keys()).some((key) => TRANSFORM_PARAM_KEYS.has(key));
+  } catch {
+    return /[?&](width|height|quality|resize|format)=/i.test(url);
+  }
 }
 
-function isTransformableStorageImage(url: string): boolean {
-  if (!url || url.startsWith("/")) return false;
-  if (isVideoUrl(url) || isGifUrl(url)) return false;
-  if (url.includes(RENDER_PUBLIC)) return false;
-  return url.includes(OBJECT_PUBLIC);
-}
-
-function warnIfSupabaseTransformUrl(url: string): void {
+function warnIfSupabaseTransformUrl(url: string, usage: ImageUrlUsage | "legacy"): void {
   if (
     process.env.NODE_ENV !== "production"
     && typeof console !== "undefined"
-    && url.includes(RENDER_PUBLIC)
+    && isSupabaseTransformUrl(url)
+    && !warnedUrls.has(url)
   ) {
+    warnedUrls.add(url);
     console.warn(
-      "Supabase image transform URL generated. Prefer a stored thumbnail/public object URL for frequently rendered images.",
+      `Supabase image transform URL used for ${usage} image display. Prefer a stored original or generated variant URL.`,
       url,
     );
   }
 }
 
-/** Supabase Storage image transform URL. Avoid on hot page-load paths; prefer stored resized objects. */
+function firstPresent(...urls: Array<string | null | undefined>): string | null {
+  return urls.find((url) => !!url) ?? null;
+}
+
+/** Select a generated variant when available, otherwise fall back to the original stored URL. */
+export function getBestImageUrl(image: ImageUrlLike | null | undefined, usage: ImageUrlUsage): string | null {
+  if (!image) return null;
+
+  if (typeof image === "string") {
+    warnIfSupabaseTransformUrl(image, usage);
+    return image;
+  }
+
+  const url =
+    usage === "thumb"
+      ? firstPresent(image.thumb_url, image.feed_url, image.display_url, image.original_url, image.url)
+      : usage === "feed"
+        ? firstPresent(image.feed_url, image.display_url, image.thumb_url, image.original_url, image.url)
+        : usage === "display"
+          ? firstPresent(image.display_url, image.feed_url, image.original_url, image.url, image.thumb_url)
+          : firstPresent(image.original_url, image.url, image.display_url, image.feed_url, image.thumb_url);
+
+  if (url) warnIfSupabaseTransformUrl(url, usage);
+  return url;
+}
+
+/**
+ * Legacy compatibility no-op.
+ * Routine display paths must not generate Supabase render/image URLs; upload-time variants can be added later.
+ */
 export function supabaseStorageImageUrl(
   url: string | null | undefined,
   options: StorageImageOptions,
 ): string | null {
   if (!url) return null;
-  if (!ENABLE_SUPABASE_IMAGE_TRANSFORMS) return url;
-  if (!isTransformableStorageImage(url)) return url;
-
-  try {
-    const parsed = new URL(url);
-    const markerIndex = parsed.pathname.indexOf(OBJECT_PUBLIC);
-    if (markerIndex === -1) return url;
-
-    const objectPath = parsed.pathname.slice(markerIndex + OBJECT_PUBLIC.length);
-    const params = new URLSearchParams();
-    if (options.width != null) params.set("width", String(Math.round(options.width)));
-    if (options.height != null) params.set("height", String(Math.round(options.height)));
-    if (options.quality != null) params.set("quality", String(Math.round(options.quality)));
-    if (options.resize) params.set("resize", options.resize);
-
-    const qs = params.toString();
-    const transformedUrl = `${parsed.origin}${RENDER_PUBLIC}${objectPath}${qs ? `?${qs}` : ""}`;
-    warnIfSupabaseTransformUrl(transformedUrl);
-    return transformedUrl;
-  } catch {
-    return url;
-  }
+  void options;
+  warnIfSupabaseTransformUrl(url, "legacy");
+  return url;
 }
 
 /** Small avatars in nav, feed headers, liker stacks, etc. Use the stored public object URL. */
 export function avatarImageUrl(url: string | null | undefined, displaySizePx: number): string | null {
-  if (!url) return null;
   void displaySizePx;
-  return url;
+  return getBestImageUrl(url, "thumb");
 }
 
 /** Feed / wall previews. Uploads are already client-resized, so avoid runtime transforms here. */
 export function feedImageDisplayUrl(url: string, maxWidth = 960): string {
   void maxWidth;
-  return url;
+  return getBestImageUrl(url, "feed") ?? url;
 }
 
 /** Profile gallery grid tiles. Use stable object URLs to avoid per-view transformations. */
 export function galleryImageDisplayUrl(url: string, maxWidth = 720): string {
   void maxWidth;
-  return url;
+  return getBestImageUrl(url, "display") ?? url;
 }
