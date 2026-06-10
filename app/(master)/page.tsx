@@ -111,7 +111,12 @@ import {
   feedSingleMediaFrameStyle,
   feedSingleImageStyle,
 } from "../lib/feedLayout";
-import { compareFeedPosts } from "../lib/feedRanking";
+import {
+  compareFeedPosts,
+  diversifyFeedPosts,
+  KNOWN_AUTHOR_AFFINITY_MULTIPLIER,
+  WORKED_WITH_AUTHOR_AFFINITY_MULTIPLIER,
+} from "../lib/feedRanking";
 import { sanitizeRumintOgDescription } from "../lib/sanitizeRumintOgDescription";
 import { ReactionLeaderboard, ReactionPickerTrigger } from "../components/ReactionBar";
 import {
@@ -3486,16 +3491,22 @@ export default function HomePage() {
         const viewerWorkedWithAuthor = row.requester_user_id === effectiveUserId
           ? row.requester_worked_with_target === true
           : row.target_worked_with_requester === true;
-        authorAffinityBoost.set(otherId, viewerWorkedWithAuthor || row.worked_with === true ? 1.45 : 1.25);
+        authorAffinityBoost.set(
+          otherId,
+          viewerWorkedWithAuthor || row.worked_with === true
+            ? WORKED_WITH_AUTHOR_AFFINITY_MULTIPLIER
+            : KNOWN_AUTHOR_AFFINITY_MULTIPLIER,
+        );
       });
     }
 
     const feedSortOpts = { nowMs: Date.now(), authorAffinityBoost };
     mergedPosts.sort((a, b) => compareFeedPosts(a, b, feedSortOpts));
+    const diversifiedPosts = diversifyFeedPosts(mergedPosts);
 
-    setPosts(mergedPosts);
+    setPosts(diversifiedPosts);
     logPerf("home.loadPosts.interactionHydrate", perfStart, {
-      renderedCount: mergedPosts.length,
+      renderedCount: diversifiedPosts.length,
       postIdsCount: postIds.length,
     });
   }
@@ -4386,20 +4397,26 @@ export default function HomePage() {
         const viewerWorkedWithAuthor = row.requester_user_id === effectiveUserId
           ? row.requester_worked_with_target === true
           : row.target_worked_with_requester === true;
-        authorAffinityBoost.set(otherId, viewerWorkedWithAuthor || row.worked_with === true ? 1.45 : 1.25);
+        authorAffinityBoost.set(
+          otherId,
+          viewerWorkedWithAuthor || row.worked_with === true
+            ? WORKED_WITH_AUTHOR_AFFINITY_MULTIPLIER
+            : KNOWN_AUTHOR_AFFINITY_MULTIPLIER,
+        );
       });
     }
 
     // Rank: fresh posts float to top; staff posts soft-pin ~2h; RUMINT news ~3h.
     const feedSortOpts = { nowMs: Date.now(), authorAffinityBoost };
     mergedPosts.sort((a, b) => compareFeedPosts(a, b, feedSortOpts));
+    const diversifiedPosts = diversifyFeedPosts(mergedPosts);
 
-    setPosts(mergedPosts);
+    setPosts(diversifiedPosts);
     postsLoadedRef.current = true;
     setPostsLoaded(true);
     logPerf("home.loadPosts", perfStart, {
       rankedCount: rawPosts.length,
-      renderedCount: mergedPosts.length,
+      renderedCount: diversifiedPosts.length,
       postIdsCount: postIds.length,
       uniqueAuthors: uniqueUserIds.length,
       limit: requestedLimit,
