@@ -3,6 +3,9 @@
 import { useEffect, useState } from "react";
 import { OgCard } from "./master/masterShared";
 import { useTheme } from "../lib/ThemeContext";
+import { supabase } from "../lib/lib/supabaseClient";
+import PostAsSelector from "./PostAsSelector";
+import { usePostAsIdentity } from "../hooks/usePostAsIdentity";
 
 export type ShareListingPreview = {
   id: string;
@@ -15,17 +18,37 @@ export type ShareListingPreview = {
   og_site_name?: string | null;
 };
 
+export type SharePostAsContext = {
+  userEmail: string | null;
+  selfLabel: string;
+  selfPhotoUrl: string | null;
+};
+
 type Props = {
   listing: ShareListingPreview | null;
   label: string;
   submitting: boolean;
   onClose: () => void;
-  onSubmit: (content: string) => void;
+  onSubmit: (content: string, postAsUserId: string | null) => void;
+  postAsContext?: SharePostAsContext | null;
 };
 
-export default function ShareListingToFeedModal({ listing, label, submitting, onClose, onSubmit }: Props) {
+export default function ShareListingToFeedModal({
+  listing,
+  label,
+  submitting,
+  onClose,
+  onSubmit,
+  postAsContext = null,
+}: Props) {
   const { t } = useTheme();
   const [content, setContent] = useState("");
+  const postAs = usePostAsIdentity(supabase, {
+    userEmail: postAsContext?.userEmail ?? null,
+    selfLabel: postAsContext?.selfLabel ?? "You",
+    selfPhotoUrl: postAsContext?.selfPhotoUrl ?? null,
+    enabled: Boolean(postAsContext),
+  });
 
   useEffect(() => {
     if (!listing) return;
@@ -96,10 +119,23 @@ export default function ShareListingToFeedModal({ listing, label, submitting, on
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!submitting) onSubmit(content);
+            if (!submitting) {
+              onSubmit(content, postAsContext ? postAs.postAsUserIdForSubmit : null);
+            }
           }}
           style={{ padding: 16 }}
         >
+          {postAsContext && postAs.showPostAsSelector ? (
+            <PostAsSelector
+              mode={postAs.postAsMode}
+              onChange={postAs.setPostAsMode}
+              selfLabel={postAs.selfLabel}
+              selfPhotoUrl={postAs.selfPhotoUrl}
+              adminLabel="EOD HUB Admin"
+              adminPhotoUrl={postAs.postAsAdminProfile?.photoUrl ?? null}
+              disabled={submitting}
+            />
+          ) : null}
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value.slice(0, 4000))}

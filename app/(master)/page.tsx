@@ -27,6 +27,7 @@ import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib
 import type { JobModalData } from "../components/jobs/JobDetailsModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobFeedCard from "../components/jobs/JobFeedCard";
+import ShareListingToFeedModal from "../components/ShareListingToFeedModal";
 import EventFeedActions from "../components/EventFeedActions";
 import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
@@ -81,6 +82,7 @@ import {
   type PostAsAdminProfile,
   type PostAsMode,
 } from "../lib/postAsIdentity";
+import { jobSharePreview, shareJobToFeed } from "../lib/shareJobToFeed";
 import type {
   FeedKangarooBundle,
   KangarooCourtOptionRow,
@@ -1079,6 +1081,9 @@ export default function HomePage() {
 
   const [togglingJobSaveFor, setTogglingJobSaveFor] = useState<string | null>(null);
   const [jobDetailsModal, setJobDetailsModal] = useState<JobModalData | null>(null);
+  const [sharingJobId, setSharingJobId] = useState<string | null>(null);
+  const [shareComposerJob, setShareComposerJob] = useState<JobModalData | null>(null);
+  const [jobShareNotice, setJobShareNotice] = useState<string | null>(null);
   const [selectedFeedEvent, setSelectedFeedEvent] = useState<FeedSelectedEvent | null>(null);
   const [selectedFeedEventCounts, setSelectedFeedEventCounts] = useState<{ interested: number; going: number }>({ interested: 0, going: 0 });
   const [selectedFeedEventMyStatus, setSelectedFeedEventMyStatus] = useState<"interested" | "going" | null>(null);
@@ -6264,6 +6269,38 @@ export default function HomePage() {
     setShowJobsUpgradePrompt(true);
   }
 
+  const openShareComposer = useCallback((job: JobModalData) => {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    setShareComposerJob(job);
+  }, [userId]);
+
+  const handleShareJob = useCallback(async (job: JobModalData, content: string, postAsUserId: string | null) => {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    if (sharingJobId === job.id) return;
+    setSharingJobId(job.id);
+    setJobShareNotice(null);
+    try {
+      const result = await shareJobToFeed(supabase, job.id, content, postAsUserId);
+      if (!result.ok) {
+        setJobShareNotice(result.error ?? "Could not share this job to the feed.");
+        return;
+      }
+      setJobShareNotice("Job shared to the feed.");
+      setShareComposerJob(null);
+    } catch {
+      setJobShareNotice("Could not share this job to the feed.");
+    } finally {
+      setSharingJobId(null);
+      window.setTimeout(() => setJobShareNotice(null), 4500);
+    }
+  }, [sharingJobId, userId]);
+
   const skeletonStyle: React.CSSProperties = {
     background: "linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%)",
     backgroundSize: "200% 100%",
@@ -8895,6 +8932,24 @@ export default function HomePage() {
                 <div style={{ marginTop: 4 }}>
                   ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "—"}) new jobs today!
                 </div>
+                {jobShareNotice ? (
+                  <div
+                    role="status"
+                    style={{
+                      marginTop: 8,
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                      background: jobShareNotice.includes("Could not") ? "#fef2f2" : "#ecfdf5",
+                      color: jobShareNotice.includes("Could not") ? "#991b1b" : "#065f46",
+                      fontWeight: 700,
+                      fontSize: 12,
+                      lineHeight: 1.4,
+                      border: jobShareNotice.includes("Could not") ? "1px solid #fecaca" : "1px solid #6ee7b7",
+                    }}
+                  >
+                    {jobShareNotice}
+                  </div>
+                ) : null}
                 {!isMobile && (
                   <div style={{ marginTop: 6 }}>
                     <a
@@ -9021,6 +9076,9 @@ export default function HomePage() {
                 isTogglingSave={togglingJobSaveFor === job.id}
                 onToggleSave={(j) => toggleSaveJob(j.id)}
                 posterName={jobSubmitters.get(job.user_id ?? "") ?? null}
+                canShare={!!userId}
+                isSharing={sharingJobId === job.id}
+                onShare={openShareComposer}
               />
             ))}
           </div>
@@ -9588,8 +9646,32 @@ export default function HomePage() {
           canSave={!!userId}
           isTogglingSave={togglingJobSaveFor === jobDetailsModal.id}
           onToggleSave={(j) => toggleSaveJob(j.id)}
+          canShare={!!userId}
+          isSharing={sharingJobId === jobDetailsModal.id}
+          onShare={openShareComposer}
         />
       )}
+      <ShareListingToFeedModal
+        key={shareComposerJob?.id ?? "closed"}
+        listing={shareComposerJob ? jobSharePreview(shareComposerJob) : null}
+        label="Job"
+        submitting={Boolean(shareComposerJob && sharingJobId === shareComposerJob.id)}
+        postAsContext={
+          userId
+            ? {
+                userEmail: currentUserEmail,
+                selfLabel: currentUserName?.trim() || "You",
+                selfPhotoUrl: currentUserPhotoUrl,
+              }
+            : null
+        }
+        onClose={() => {
+          if (!sharingJobId) setShareComposerJob(null);
+        }}
+        onSubmit={(content, postAsUserId) => {
+          if (shareComposerJob) void handleShareJob(shareComposerJob, content, postAsUserId);
+        }}
+      />
 
       {mobileBizDetailListing && (
         <div

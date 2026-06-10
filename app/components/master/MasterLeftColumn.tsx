@@ -11,6 +11,7 @@ import { getFeatureAccess } from "../../lib/featureAccess";
 import { jobListingCutoffIso } from "../../lib/jobRetention";
 import { postNotifyJson } from "../../lib/postNotifyClient";
 import UpgradePromptModal from "../UpgradePromptModal";
+import ShareListingToFeedModal from "../ShareListingToFeedModal";
 import JobCardActions from "../jobs/JobCardActions";
 import JobFeedCard from "../jobs/JobFeedCard";
 import JobDetailsModal, { type JobModalData } from "../jobs/JobDetailsModal";
@@ -33,6 +34,7 @@ import {
   type SavedJobRow,
 } from "../../lib/queries/savedJobs";
 import { queryKeys } from "../../lib/queryKeys";
+import { jobSharePreview, shareJobToFeed } from "../../lib/shareJobToFeed";
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -158,6 +160,12 @@ export default function MasterLeftColumn({
   const [showJobsUpgradePrompt, setShowJobsUpgradePrompt] = useState(false);
   const [togglingJobSaveFor, setTogglingJobSaveFor] = useState<string | null>(null);
   const [jobDetailsModal, setJobDetailsModal] = useState<JobModalData | null>(null);
+  const [sharingJobId, setSharingJobId] = useState<string | null>(null);
+  const [shareComposerJob, setShareComposerJob] = useState<JobModalData | null>(null);
+  const [jobShareNotice, setJobShareNotice] = useState<string | null>(null);
+  const [viewerEmail, setViewerEmail] = useState<string | null>(null);
+  const [viewerName, setViewerName] = useState("You");
+  const [viewerPhotoUrl, setViewerPhotoUrl] = useState<string | null>(null);
 
   const [desktopSavedEvents, setDesktopSavedEvents] = useState<SavedEventRow[]>([]);
   const [unsavingWallEvent, setUnsavingWallEvent] = useState<string | null>(null);
@@ -636,6 +644,10 @@ export default function MasterLeftColumn({
         isAdmin: profileCheck?.is_admin,
       });
       setCanViewFullJobs(featureAccess.canViewFullJobs);
+      const composedName = [profileCheck?.first_name, profileCheck?.last_name].filter(Boolean).join(" ").trim();
+      setViewerEmail(profileCheck?.email ?? user.email ?? null);
+      setViewerName(profileCheck?.display_name?.trim() || composedName || "You");
+      setViewerPhotoUrl(profileCheck?.photo_url ?? null);
       await Promise.all([
         loadJobs(featureAccess.canViewFullJobs ? 500 : 5),
         loadDesktopSavedEvents(uid),
@@ -776,6 +788,38 @@ export default function MasterLeftColumn({
     }
     setShowJobsUpgradePrompt(true);
   }
+
+  const openShareComposer = useCallback((job: JobModalData) => {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    setShareComposerJob(job);
+  }, [userId]);
+
+  const handleShareJob = useCallback(async (job: JobModalData, content: string, postAsUserId: string | null) => {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    if (sharingJobId === job.id) return;
+    setSharingJobId(job.id);
+    setJobShareNotice(null);
+    try {
+      const result = await shareJobToFeed(supabase, job.id, content, postAsUserId);
+      if (!result.ok) {
+        setJobShareNotice(result.error ?? "Could not share this job to the feed.");
+        return;
+      }
+      setJobShareNotice("Job shared to the feed.");
+      setShareComposerJob(null);
+    } catch {
+      setJobShareNotice("Could not share this job to the feed.");
+    } finally {
+      setSharingJobId(null);
+      window.setTimeout(() => setJobShareNotice(null), 4500);
+    }
+  }, [sharingJobId, userId]);
 
   async function toggleSaveJob(jobId: string) {
     if (!userId) {
@@ -1467,9 +1511,27 @@ export default function MasterLeftColumn({
               ({jobsTotalApprovedCount !== null ? jobsTotalApprovedCount.toLocaleString() : "—"}) jobs as of{" "}
               {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
             </div>
-            <div style={{ marginTop: 4 }}>
+            <div style={{ marginTop: 10 }}>
               ({jobsNewTodayCount !== null ? jobsNewTodayCount.toLocaleString() : "—"}) new jobs today!
             </div>
+            {jobShareNotice ? (
+              <div
+                role="status"
+                style={{
+                  marginTop: 10,
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  background: jobShareNotice.includes("Could not") ? "#fef2f2" : "#ecfdf5",
+                  color: jobShareNotice.includes("Could not") ? "#991b1b" : "#065f46",
+                  fontWeight: 700,
+                  fontSize: 12,
+                  lineHeight: 1.4,
+                  border: jobShareNotice.includes("Could not") ? "1px solid #fecaca" : "1px solid #6ee7b7",
+                }}
+              >
+                {jobShareNotice}
+              </div>
+            ) : null}
             <div style={{ marginTop: 10 }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 8 }}>
                 <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Saved jobs</span>
@@ -1507,6 +1569,9 @@ export default function MasterLeftColumn({
                         canSave={!!userId}
                         isTogglingSave={unsavingDesktopJobId === job.id}
                         onToggleSave={() => unsaveDesktopSavedJob(job.id)}
+                        canShare={!!userId}
+                        isSharing={sharingJobId === job.id}
+                        onShare={openShareComposer}
                         size="compact"
                       />
                     </div>
@@ -1551,6 +1616,9 @@ export default function MasterLeftColumn({
                 isTogglingSave={togglingJobSaveFor === job.id}
                 onToggleSave={(j) => toggleSaveJob(j.id)}
                 posterName={jobSubmitters.get(job.user_id ?? "") ?? null}
+                canShare={!!userId}
+                isSharing={sharingJobId === job.id}
+                onShare={openShareComposer}
               />
             ))}
         </div>
@@ -1576,6 +1644,27 @@ export default function MasterLeftColumn({
       </div>
 
       <UpgradePromptModal open={showJobsUpgradePrompt} onClose={() => setShowJobsUpgradePrompt(false)} />
+      <ShareListingToFeedModal
+        key={shareComposerJob?.id ?? "closed"}
+        listing={shareComposerJob ? jobSharePreview(shareComposerJob) : null}
+        label="Job"
+        submitting={Boolean(shareComposerJob && sharingJobId === shareComposerJob.id)}
+        postAsContext={
+          userId
+            ? {
+                userEmail: viewerEmail,
+                selfLabel: viewerName,
+                selfPhotoUrl: viewerPhotoUrl,
+              }
+            : null
+        }
+        onClose={() => {
+          if (!sharingJobId) setShareComposerJob(null);
+        }}
+        onSubmit={(content, postAsUserId) => {
+          if (shareComposerJob) void handleShareJob(shareComposerJob, content, postAsUserId);
+        }}
+      />
       <JobDetailsModal
         job={jobDetailsModal}
         open={!!jobDetailsModal}
@@ -1584,6 +1673,9 @@ export default function MasterLeftColumn({
         canSave={!!userId}
         isTogglingSave={jobDetailsModal ? togglingJobSaveFor === jobDetailsModal.id : false}
         onToggleSave={(j) => toggleSaveJob(j.id)}
+        canShare={!!userId}
+        isSharing={jobDetailsModal ? sharingJobId === jobDetailsModal.id : false}
+        onShare={openShareComposer}
       />
 
       {eventInviteTarget && typeof document !== "undefined" && createPortal(

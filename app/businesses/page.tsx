@@ -173,6 +173,8 @@ export default function BusinessesPage() {
   const [listings, setListings] = useState<BusinessListing[]>([]);
   const [filters, setFilters] = useState<BizFilterState>({ listingType: "all", keyword: "" });
   const [userId, setUserId] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [currentUserPhotoUrl, setCurrentUserPhotoUrl] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserName, setCurrentUserName] = useState<string>("You");
 
@@ -243,7 +245,7 @@ export default function BusinessesPage() {
       if (!uid) return;
       const { data: profile } = await supabase
         .from("profiles")
-        .select("display_name, first_name, last_name, is_admin")
+        .select("display_name, first_name, last_name, is_admin, email, photo_url")
         .eq("user_id", uid)
         .maybeSingle();
       const p = profile as {
@@ -251,9 +253,13 @@ export default function BusinessesPage() {
         first_name?: string | null;
         last_name?: string | null;
         is_admin?: boolean | null;
+        email?: string | null;
+        photo_url?: string | null;
       } | null;
       const composed = [p?.first_name, p?.last_name].filter(Boolean).join(" ").trim();
       setCurrentUserName(p?.display_name?.trim() || composed || "You");
+      setCurrentUserEmail(p?.email ?? data.session?.user?.email ?? null);
+      setCurrentUserPhotoUrl(p?.photo_url ?? null);
       setIsAdmin(Boolean(p?.is_admin));
     }
     void loadUser();
@@ -969,7 +975,7 @@ export default function BusinessesPage() {
     setShareComposerListing(listing);
   }
 
-  async function handleShareListing(listing: BusinessListing, content: string) {
+  async function handleShareListing(listing: BusinessListing, content: string, postAsUserId: string | null) {
     if (!userId) {
       window.location.href = "/login";
       return;
@@ -978,7 +984,7 @@ export default function BusinessesPage() {
     setSharingListingId(listing.id);
     setBizNotice(null);
     try {
-      const result = await shareListingToFeed(supabase, listing.id, content);
+      const result = await shareListingToFeed(supabase, listing.id, content, postAsUserId);
       if (!result.ok) {
         setBizNotice(result.error ?? "Could not share to the feed.");
         return;
@@ -1011,11 +1017,20 @@ export default function BusinessesPage() {
         listing={shareComposerListing}
         label={shareComposerListing ? (normalizeBizListingTypeForListing(shareComposerListing) === "organization" ? "Organization" : "Business") : "Listing"}
         submitting={Boolean(shareComposerListing && sharingListingId === shareComposerListing.id)}
+        postAsContext={
+          userId
+            ? {
+                userEmail: currentUserEmail,
+                selfLabel: currentUserName,
+                selfPhotoUrl: currentUserPhotoUrl,
+              }
+            : null
+        }
         onClose={() => {
           if (!sharingListingId) setShareComposerListing(null);
         }}
-        onSubmit={(content) => {
-          if (shareComposerListing) void handleShareListing(shareComposerListing, content);
+        onSubmit={(content, postAsUserId) => {
+          if (shareComposerListing) void handleShareListing(shareComposerListing, content, postAsUserId);
         }}
       />
 
