@@ -54,8 +54,6 @@ export default function BusinessOrgOnboardingPage() {
   const [error, setError] = useState<string | null>(null);
   const [googleBusinessEmail, setGoogleBusinessEmail] = useState<string | null>(null);
   const [completion, setCompletion] = useState<CompletionState | null>(null);
-  const [billingDisclosureOpen, setBillingDisclosureOpen] = useState(false);
-  const [billingDisclosureAccepted, setBillingDisclosureAccepted] = useState(false);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -148,12 +146,6 @@ export default function BusinessOrgOnboardingPage() {
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function openBillingDisclosure() {
-    setError(null);
-    setBillingDisclosureAccepted(false);
-    setBillingDisclosureOpen(true);
   }
 
   function startGoogleBusinessAuth() {
@@ -338,7 +330,9 @@ export default function BusinessOrgOnboardingPage() {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          openBillingDisclosure();
+          if (step !== "profile" || saving || uploadingLogo) return;
+          if (googleBusinessEmail) void submitGoogleBusinessPage(e);
+          else void submitBusinessPage(e);
         }}
         style={{ marginTop: 24, border: `1px solid ${t.border}`, borderRadius: 20, padding: 20, background: t.surface, display: "grid", gap: 14 }}
       >
@@ -473,117 +467,6 @@ export default function BusinessOrgOnboardingPage() {
           </>
         )}
       </form>
-
-      {billingDisclosureOpen && (
-        <div
-          role="presentation"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 10060,
-            background: "rgba(0,0,0,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 16,
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="business-billing-title"
-            style={{
-              background: t.surface,
-              borderRadius: 14,
-              border: `1px solid ${t.border}`,
-              maxWidth: 500,
-              width: "100%",
-              padding: "24px 22px",
-              boxShadow: "0 16px 48px rgba(0,0,0,0.2)",
-            }}
-          >
-            <div id="business-billing-title" style={{ fontWeight: 900, fontSize: 18, color: t.text, marginBottom: 12 }}>
-              Business account billing
-            </div>
-            <p style={{ margin: 0, fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>
-              There will be a separate $0.99 per month charge to maintain a business account in addition to your personal account.
-              This will be billed separately in the event you cancel your business subscription. Business accounts are currently
-              free in beta, and you will be notified before billing starts.
-            </p>
-            <div style={{ marginTop: 14, display: "grid", gap: 8, color: t.textMuted, fontSize: 14, lineHeight: 1.5 }}>
-              <div style={{ color: t.text, fontWeight: 900 }}>Business account features include:</div>
-              <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 5 }}>
-                <li>Shopify linking to display products from your store.</li>
-                <li>Business Directory linking so directory visitors can click through to your full profile.</li>
-                <li>Manual products with links to your personal website, online store, or external marketplace.</li>
-                <li>Increased video upload size: standard accounts get 100 MB; business accounts get 200 MB.</li>
-              </ul>
-            </div>
-            <label
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                gap: 10,
-                marginTop: 16,
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: 600,
-                color: t.text,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={billingDisclosureAccepted}
-                onChange={(e) => setBillingDisclosureAccepted(e.target.checked)}
-                style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }}
-              />
-              <span>I have read and understand the business account billing information above.</span>
-            </label>
-            <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={() => setBillingDisclosureOpen(false)}
-                disabled={saving}
-                style={{
-                  padding: "10px 16px",
-                  borderRadius: 10,
-                  border: `1px solid ${t.border}`,
-                  background: t.bg,
-                  color: t.text,
-                  fontWeight: 700,
-                  fontSize: 14,
-                  cursor: saving ? "not-allowed" : "pointer",
-                }}
-              >
-                Back
-              </button>
-              <button
-                type="button"
-                disabled={!billingDisclosureAccepted || saving}
-                onClick={(e) => {
-                  if (!billingDisclosureAccepted || saving) return;
-                  setBillingDisclosureOpen(false);
-                  if (googleBusinessEmail) void submitGoogleBusinessPage(e);
-                  else void submitBusinessPage(e);
-                }}
-                style={{
-                  padding: "10px 18px",
-                  borderRadius: 10,
-                  border: "none",
-                  background: "#111",
-                  color: "#fff",
-                  fontWeight: 700,
-                  fontSize: 14,
-                  cursor: !billingDisclosureAccepted || saving ? "not-allowed" : "pointer",
-                  opacity: !billingDisclosureAccepted || saving ? 0.45 : 1,
-                }}
-              >
-                {saving ? "Creating..." : "Create Business Profile"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
