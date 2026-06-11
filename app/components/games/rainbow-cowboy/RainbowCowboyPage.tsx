@@ -27,6 +27,7 @@ import { RainbowCowboyLeaderboardStack } from "./RainbowCowboyLeaderboardStack";
 import { RainbowCowboyEndScreen } from "./RainbowCowboyEndScreen";
 import { RainbowCowboyLevelSelect } from "./RainbowCowboyLevelSelect";
 import { RainbowCowboyStartScreen } from "./RainbowCowboyStartScreen";
+import { awardLevel4FirstClearReward } from "./rainbowCowboyArcadeTokens";
 import { exitArcadeImmersiveMode } from "@/app/components/games/useMobileGameImmersiveMode";
 import { syncGameViewportCssVars } from "@/app/components/games/arcadeImmersiveMode";
 import {
@@ -123,7 +124,16 @@ export function RainbowCowboyPage() {
   }, [difficulty, levels, progress, selectedLevelId]);
 
   const handleComplete = useCallback(async (result: RainbowCowboyRunResult) => {
-    setRunResult(result);
+    let enriched = result;
+    if (result.completed && result.levelId === "level-4") {
+      const reward = awardLevel4FirstClearReward();
+      enriched = {
+        ...result,
+        arcadeTokensEarned: reward.tokensEarned,
+        gameAchievementUnlocked: reward.achievementUnlocked ?? undefined,
+      };
+    }
+    setRunResult(enriched);
     if (userId) {
       remoteCompletionWritesThisRunRef.current += 1;
       if (
@@ -138,11 +148,11 @@ export function RainbowCowboyPage() {
       }
     }
     const saveResult = userId
-      ? await saveRainbowCowboyPersonalBest(result, userId)
-      : saveLocalPersonalBest(result);
+      ? await saveRainbowCowboyPersonalBest(enriched, userId)
+      : saveLocalPersonalBest(enriched);
     if (saveResult.saved) clearGameLeaderboardCache("rainbow_cowboy");
-    setPersonalBestMessage(buildPersonalBestMessage(saveResult, result));
-    setProgress((prev) => applyCompletion(prev, result.levelId, result.difficulty));
+    setPersonalBestMessage(buildPersonalBestMessage(saveResult, enriched));
+    setProgress((prev) => applyCompletion(prev, enriched.levelId, enriched.difficulty));
     setScreen("complete");
   }, [userId]);
 

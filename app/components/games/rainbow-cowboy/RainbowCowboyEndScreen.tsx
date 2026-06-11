@@ -42,7 +42,8 @@ export function RainbowCowboyEndScreen({
   const timeDisplay = formatRainbowCowboyDuration(result.durationSeconds);
   const isLevel2 = result.levelId === "level-2";
   const isLevel3 = result.levelId === "level-3";
-  const isAdvancedLevel = isLevel2 || isLevel3;
+  const isLevel4 = result.levelId === "level-4";
+  const isAdvancedLevel = isLevel2 || isLevel3 || isLevel4;
   const victoryTitle = getVictoryTitle(result);
 
   return (
@@ -107,6 +108,29 @@ export function RainbowCowboyEndScreen({
           t={t}
         />
       </div>
+
+      {isVictory && (result.gameAchievementUnlocked || (result.arcadeTokensEarned ?? 0) > 0) && (
+        <div
+          style={{
+            padding: 12,
+            borderRadius: 10,
+            background: "rgba(255,200,80,0.12)",
+            border: "1px solid rgba(255,200,80,0.45)",
+            marginBottom: 12,
+            fontSize: 14,
+            color: t.text,
+          }}
+        >
+          {result.gameAchievementUnlocked && (
+            <div style={{ fontWeight: 800, color: "#ffe080", marginBottom: 4 }}>
+              {result.gameAchievementUnlocked}
+            </div>
+          )}
+          {(result.arcadeTokensEarned ?? 0) > 0 && (
+            <div>+{result.arcadeTokensEarned} Arcade Tokens (first clear)</div>
+          )}
+        </div>
+      )}
 
       {isVictory && (
         <div

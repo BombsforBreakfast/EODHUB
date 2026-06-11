@@ -104,6 +104,17 @@ function getLevelSupportPickups(
   base: LevelConfig,
   difficulty: RainbowCowboyDifficulty,
 ): LevelPickupSpawn[] {
+  if (base.level.id === "level-4") {
+    const ground = base.level.groundY;
+    return [
+      { kind: "rainbow", x: 3200, y: ground - 36 },
+      { kind: "range_beer", x: 3600, y: ground - 36 },
+      { kind: "weapon_machine_gun", x: 4200, y: ground - 36 },
+      { kind: "rainbow", x: 4800, y: ground - 36 },
+      { kind: "weapon_bazooka", x: 5400, y: ground - 36 },
+    ];
+  }
+
   if (base.level.id === "level-3") {
     const ground = base.level.groundY;
     return [

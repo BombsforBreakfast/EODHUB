@@ -57,7 +57,7 @@ const DESKTOP_ROWS = (attackLabel: string, specialLabel: string, levelId?: strin
     { keys: "R", action: `${attackLabel} (slurp)` },
     { keys: "E", action: `${specialLabel} (explosion)` },
   ] as { keys: string; action: string }[];
-  if (levelId === "level-3") {
+  if (levelId === "level-3" || levelId === "level-4") {
     rows.push({ keys: "T", action: "Fire gun — pistol from the start; upgrades on the field" });
   }
   return rows;
@@ -71,7 +71,7 @@ const MOBILE_LANDSCAPE_ROWS = (attackLabel: string, specialLabel: string, levelI
     { keys: "ATK", action: `${attackLabel}` },
     { keys: "SPEC", action: `${specialLabel} (charge count)` },
   ] as { keys: string; action: string }[];
-  if (levelId === "level-3") {
+  if (levelId === "level-3" || levelId === "level-4") {
     rows.push({ keys: "GUN", action: "Hold to fire" });
   }
   return rows;
@@ -83,7 +83,7 @@ const MOBILE_COMPACT_ROWS = (levelId?: string) => {
     { keys: "JUMP / ATK", action: "Jump & attack" },
     { keys: "SPEC", action: "Special blast" },
   ] as { keys: string; action: string }[];
-  if (levelId === "level-3") rows.push({ keys: "GUN", action: "Hold to fire" });
+  if (levelId === "level-3" || levelId === "level-4") rows.push({ keys: "GUN", action: "Hold to fire" });
   return rows;
 };
 
@@ -91,6 +91,7 @@ const MISSION_BY_LEVEL: Record<string, string> = {
   "level-1": "Ride right, reach extraction alive, and rack up points.",
   "level-2": "Fight through the canyon and reach extraction.",
   "level-3": "Hold the Alamo — pistol from the start, use GUN to fire.",
+  "level-4": "Assault the Drone Nest boss — jump to Obi planks when the ground sweep warns you.",
 };
 
 const DEFAULT_MISSION = MISSION_BY_LEVEL["level-1"];
@@ -115,7 +116,15 @@ const LEVEL_3_HAZARDS = [
   "Turret & Grenade Trucks — priority threats.",
 ] as const;
 
+const LEVEL_4_HAZARDS = [
+  "Moving Drone Nest boss — 35 HP, spawns drones in phases.",
+  "Ground sweep — telegraphed; jump to elevated planks.",
+  "Attack drones shoot · suicide drones chase and pop.",
+  "Rainbow blast clears drones but only chips the nest.",
+] as const;
+
 function getHazards(levelId: string | undefined, attackLabel: string): readonly string[] {
+  if (levelId === "level-4") return [...BASE_HAZARDS(attackLabel), ...LEVEL_4_HAZARDS];
   if (levelId === "level-3") return [...BASE_HAZARDS(attackLabel), ...LEVEL_3_HAZARDS];
   if (levelId === "level-2") return [...BASE_HAZARDS(attackLabel), ...LEVEL_2_HAZARDS];
   return BASE_HAZARDS(attackLabel);
@@ -132,7 +141,7 @@ export function RainbowCowboyInstructionsModal({
 
   if (!open) return null;
 
-  const isLevel3 = levelId === "level-3";
+  const isLevel3 = levelId === "level-3" || levelId === "level-4";
   const mission = (levelId && MISSION_BY_LEVEL[levelId]) || DEFAULT_MISSION;
   const hazards = getHazards(levelId, attackLabel);
 

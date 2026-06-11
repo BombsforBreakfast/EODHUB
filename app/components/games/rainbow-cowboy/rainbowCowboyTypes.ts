@@ -13,7 +13,9 @@ export type RainbowCowboyEnemyKind =
   | "cargo"
   | "boom_bot"
   | "armored_boom_bot"
-  | "grenade_goblin_bot";
+  | "grenade_goblin_bot"
+  | "attack_drone"
+  | "suicide_drone";
 
 export type RainbowCowboyPickupKind =
   | "range_beer"
@@ -27,13 +29,14 @@ export type RainbowCowboyPickupKind =
 
 export type WeaponKind = "pistol" | "machine_gun" | "bazooka";
 
-export type RainbowCowboyHazardKind = "landmine" | "dynamite" | "trash_balloon";
+export type RainbowCowboyHazardKind = "landmine" | "dynamite" | "trash_balloon" | "ground_sweep";
 
-export type RainbowCowboyLevelTheme = "pasture" | "canyon" | "alamo";
+export type RainbowCowboyLevelTheme = "pasture" | "canyon" | "alamo" | "nest";
 
 export type RainbowCowboyExtractionGate =
   | "nests_cleared"
-  | "final_wave_survived";
+  | "final_wave_survived"
+  | "boss_defeated";
 
 export type RainbowCowboyDifficulty = "easy" | "novice" | "hard";
 
@@ -72,6 +75,11 @@ export interface RainbowCowboyRunResult {
   deathCause?: string;
   completedAt: string;
   difficulty: RainbowCowboyDifficulty;
+  /** Game-layer arcade tokens earned on this run (first-clear rewards only). */
+  arcadeTokensEarned?: number;
+  /** In-game achievement unlocked this run (Bomb Suit Man layer only). */
+  gameAchievementUnlocked?: string;
+  bossDamageDealt?: number;
 }
 
 export interface RainbowCowboyPersonalBest {
@@ -97,6 +105,10 @@ export interface RainbowCowboyHudSnapshot {
   blasterSecondsLeft: number;
   weaponLabel: string | null;
   bazookaAmmo: number;
+  bossHp?: number;
+  bossMaxHp?: number;
+  bossActive?: boolean;
+  groundSweepWarning?: boolean;
 }
 
 export interface RainbowCowboyEngineSnapshot {
@@ -156,6 +168,17 @@ export interface LevelNestSpawn {
   spawnKinds?: RainbowCowboyEnemyKind[];
 }
 
+export interface LevelBossArenaConfig {
+  triggerX: number;
+  leftX: number;
+  rightX: number;
+  bossY: number;
+  bossHp?: number;
+  groundSweepIntervalMs?: number;
+  groundSweepWarningMs?: number;
+  groundSweepSpeed?: number;
+}
+
 export interface LevelConfig {
   level: RainbowCowboyLevel;
   theme?: RainbowCowboyLevelTheme;
@@ -179,4 +202,5 @@ export interface LevelConfig {
     bonusScore: number;
     enemies: LevelEnemySpawn[];
   };
+  bossArena?: LevelBossArenaConfig;
 }

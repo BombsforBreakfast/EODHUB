@@ -10,6 +10,8 @@ export const DRONE_SCORES = {
   boom_bot: 100,
   armored_boom_bot: 200,
   grenade_goblin_bot: 250,
+  attack_drone: 125,
+  suicide_drone: 100,
 } as const;
 
 export const PICKUP_SCORES = {
@@ -39,6 +41,11 @@ export const LEVEL_3_NO_DAMAGE_BONUS = 750;
 export const LEVEL_3_FAST_TIME_BONUS = 500;
 export const LEVEL_3_FINAL_WAVE_BONUS = 1000;
 
+export const LEVEL_4_COMPLETE_BONUS = 1200;
+export const LEVEL_4_NO_DAMAGE_BONUS = 600;
+export const LEVEL_4_FAST_TIME_BONUS = 400;
+export const LEVEL_4_BOSS_BONUS = 800;
+
 const LEVEL_1_RANKS: [number, string][] = [
   [3000, "Unicorn Legend"],
   [2200, "Rainbow Cowboy"],
@@ -60,9 +67,22 @@ const LEVEL_3_RANKS: [number, string][] = [
   [2200, "Fort Survivor"],
 ];
 
+const LEVEL_4_RANKS: [number, string][] = [
+  [4500, "Nest Annihilator"],
+  [3500, "Drone Slayer"],
+  [2600, "Arena Survivor"],
+  [1800, "Boss Brawler"],
+];
+
 export function getRainbowCowboyRank(levelId: string, score: number): string {
   const table =
-    levelId === "level-3" ? LEVEL_3_RANKS : levelId === "level-2" ? LEVEL_2_RANKS : LEVEL_1_RANKS;
+    levelId === "level-4"
+      ? LEVEL_4_RANKS
+      : levelId === "level-3"
+        ? LEVEL_3_RANKS
+        : levelId === "level-2"
+          ? LEVEL_2_RANKS
+          : LEVEL_1_RANKS;
   for (const [threshold, rank] of table) {
     if (score >= threshold) return rank;
   }
@@ -70,6 +90,13 @@ export function getRainbowCowboyRank(levelId: string, score: number): string {
 }
 
 function getLevelBonuses(levelId: string) {
+  if (levelId === "level-4") {
+    return {
+      complete: LEVEL_4_COMPLETE_BONUS,
+      noDamage: LEVEL_4_NO_DAMAGE_BONUS,
+      fastTime: LEVEL_4_FAST_TIME_BONUS,
+    };
+  }
   if (levelId === "level-3") {
     return {
       complete: LEVEL_3_COMPLETE_BONUS,
@@ -110,6 +137,10 @@ export function buildRainbowCowboyRunResult(params: {
   completeBanner?: string;
   deathCause?: string;
   difficulty?: RainbowCowboyDifficulty;
+  arcadeTokensEarned?: number;
+  gameAchievementUnlocked?: string;
+  bossDamageDealt?: number;
+  bossDefeated?: boolean;
 }): RainbowCowboyRunResult {
   let score = params.baseScore;
   const bonuses = getLevelBonuses(params.levelId);
@@ -118,6 +149,7 @@ export function buildRainbowCowboyRunResult(params: {
     score += bonuses.complete;
     if (params.damageTaken === 0) score += bonuses.noDamage;
     if (params.durationSeconds <= params.targetTimeSeconds) score += bonuses.fastTime;
+    if (params.bossDefeated) score += LEVEL_4_BOSS_BONUS;
   }
 
   return {
@@ -139,6 +171,9 @@ export function buildRainbowCowboyRunResult(params: {
     deathCause: params.deathCause,
     completedAt: new Date().toISOString(),
     difficulty: params.difficulty ?? "easy",
+    arcadeTokensEarned: params.arcadeTokensEarned,
+    gameAchievementUnlocked: params.gameAchievementUnlocked,
+    bossDamageDealt: params.bossDamageDealt,
   };
 }
 

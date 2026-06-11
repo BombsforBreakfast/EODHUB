@@ -4,6 +4,10 @@ import {
   DYNAMITE_SIZE,
   GROUND_TILE,
   LANDMINE_EXPLODE_MS,
+  BOSS_NEST_H,
+  BOSS_NEST_W,
+  GROUND_SWEEP_H,
+  GROUND_SWEEP_W,
   NEST_H,
   NEST_W,
   PICKUP_SIZE,
@@ -265,6 +269,74 @@ function drawCanyonExtraction(
   ctx.textAlign = "center";
   ctx.fillText("EXTRACTION", sx, groundY - 108 + hover);
   ctx.textAlign = "left";
+}
+
+function drawNestSky(ctx: CanvasRenderingContext2D, camX: number, time: number) {
+  const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+  grad.addColorStop(0, "#1a2838");
+  grad.addColorStop(0.5, "#3a4858");
+  grad.addColorStop(1, "#4a5848");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+  for (let i = 0; i < 6; i++) {
+    const sx = ((i * 180 - camX * 0.1) % (VIEW_W + 100)) - 50;
+    const sy = 30 + i * 22;
+    ctx.fillStyle = "rgba(255,80,60,0.06)";
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, 70, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawNestGroundLayer(ctx: CanvasRenderingContext2D, config: LevelConfig, camX: number) {
+  drawCanyonGroundLayer(ctx, config, camX);
+  const groundY = config.level.groundY;
+  for (let x = 120; x < config.level.levelWidth; x += 240) {
+    const sx = x - camX;
+    if (sx < -60 || sx > VIEW_W + 60) continue;
+    px(ctx, sx, groundY - 28, 6, 28, "#3a4048");
+    px(ctx, sx - 4, groundY - 32, 14, 4, "#505860");
+  }
+}
+
+function drawNestPlatform(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  camX: number,
+) {
+  const sx = x - camX;
+  px(ctx, sx, y, w, h, "#5a4838");
+  for (let i = 0; i < w; i += 14) {
+    px(ctx, sx + i, y, 12, h, i % 28 === 0 ? "#6a5848" : "#4a3828");
+    px(ctx, sx + i + 2, y, 2, h, "#2a2018");
+  }
+  px(ctx, sx, y, w, 3, "#8a7058");
+  px(ctx, sx, y + h - 3, w, 3, "#3a2818");
+}
+
+function drawNestWall(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  camX: number,
+) {
+  drawCanyonWall(ctx, x, y, w, h, camX);
+}
+
+function drawNestExtraction(
+  ctx: CanvasRenderingContext2D,
+  exX: number,
+  groundY: number,
+  camX: number,
+  time: number,
+) {
+  drawCanyonExtraction(ctx, exX, groundY, camX, time);
 }
 
 function drawAlamoSky(ctx: CanvasRenderingContext2D, camX: number, time: number) {
@@ -939,6 +1011,129 @@ function drawHazard(
   }
 }
 
+function drawAttackDrone(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  y: number,
+  w: number,
+  h: number,
+  time: number,
+) {
+  drawFpvDrone(ctx, sx, y, w, h);
+  px(ctx, sx + w / 2 - 3, y + h / 2 + 2, 6, 4, "#303030");
+  if (Math.sin(time / 180) > 0) {
+    px(ctx, sx + w - 6, y + h / 2 - 2, 4, 4, "#ff4040");
+  }
+}
+
+function drawSuicideDrone(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  y: number,
+  w: number,
+  h: number,
+  time: number,
+) {
+  const pulse = 0.5 + Math.sin(time / 90) * 0.5;
+  drawQuadDrone(ctx, sx, y, w, h, time * 1.4);
+  px(ctx, sx + w / 2 - 4, y + h / 2 - 8, 8, 6, `rgba(255,${40 + pulse * 80},30,0.9)`);
+  ctx.fillStyle = `rgba(255,80,40,${0.15 + pulse * 0.2})`;
+  ctx.beginPath();
+  ctx.arc(sx + w / 2, y + h / 2, w * 0.55, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawBossNest(
+  ctx: CanvasRenderingContext2D,
+  boss: NonNullable<RainbowCowboyEngine["boss"]>,
+  camX: number,
+  time: number,
+) {
+  if (!boss) return;
+  const sx = boss.x - camX;
+  const gy = boss.y;
+  const bob = Math.sin(boss.bobPhase) * 4;
+  const y = gy - BOSS_NEST_H + bob;
+  const destroyT = boss.defeated ? 1 - boss.destroyAnimMs / 1800 : 0;
+
+  drawGroundShadow(ctx, sx, gy, 48);
+  px(ctx, sx - BOSS_NEST_W / 2, y, BOSS_NEST_W, BOSS_NEST_H - 8, "#3a3830");
+  px(ctx, sx - BOSS_NEST_W / 2 + 8, y + 8, BOSS_NEST_W - 16, BOSS_NEST_H - 24, "#4a4840");
+  px(ctx, sx - 20, y + 16, 40, 24, "#2a2820");
+  for (let i = -2; i <= 2; i++) {
+    px(ctx, sx + i * 18 - 4, y - 12, 8, 14, "#5a5850");
+  }
+  px(ctx, sx - 4, y - 20, 8, 12, "#888");
+  if (boss.active && !boss.defeated && Math.sin(time / 160) > 0) {
+    px(ctx, sx + 24, y - 16, 6, 6, "#ff3030");
+    px(ctx, sx - 30, y - 14, 5, 5, "#ff5050");
+  }
+
+  const hpRatio = boss.maxHp > 0 ? boss.hp / boss.maxHp : 0;
+  const barW = BOSS_NEST_W + 20;
+  px(ctx, sx - barW / 2, y - 28, barW, 8, "#1a1a1a");
+  px(ctx, sx - barW / 2 + 2, y - 26, (barW - 4) * hpRatio, 4, hpRatio > 0.35 ? "#40c060" : "#e04040");
+
+  if (destroyT > 0) {
+    const shake = destroyT * 6;
+    for (let i = 0; i < 10; i++) {
+      const angle = (i / 10) * Math.PI * 2 + time / 40;
+      const dist = destroyT * (40 + i * 8);
+      px(
+        ctx,
+        sx + Math.cos(angle) * dist - 4 + shake,
+        y + BOSS_NEST_H / 2 + Math.sin(angle) * dist * 0.5 - 4,
+        8,
+        8,
+        i % 2 ? "#ff8040" : "#606060",
+      );
+    }
+    ctx.fillStyle = `rgba(255,120,40,${destroyT * 0.5})`;
+    ctx.beginPath();
+    ctx.arc(sx, y + BOSS_NEST_H / 2, 30 + destroyT * 80, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawGroundSweep(
+  ctx: CanvasRenderingContext2D,
+  sweep: NonNullable<RainbowCowboyEngine["groundSweep"]>,
+  groundY: number,
+  camX: number,
+  time: number,
+) {
+  if (!sweep) return;
+  const sx = sweep.x - camX;
+  const sy = groundY - GROUND_SWEEP_H;
+  const warning = sweep.warning;
+  const pulse = 0.5 + Math.sin(time / 80) * 0.5;
+
+  if (warning) {
+    ctx.fillStyle = `rgba(255,60,40,${0.12 + pulse * 0.15})`;
+    ctx.fillRect(0, groundY - 80, VIEW_W, 80);
+    ctx.fillStyle = "#ff6040";
+    ctx.font = "bold 14px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText("⚠ GROUND SWEEP ⚠", VIEW_W / 2, groundY - 90);
+    ctx.textAlign = "left";
+  }
+
+  if (!sweep.sweeping && !warning) return;
+
+  px(ctx, sx - GROUND_SWEEP_W / 2, sy, GROUND_SWEEP_W, GROUND_SWEEP_H, "#3a4048");
+  px(ctx, sx - GROUND_SWEEP_W / 2 + 8, sy + 8, GROUND_SWEEP_W - 16, GROUND_SWEEP_H - 16, "#505860");
+  px(ctx, sx - GROUND_SWEEP_W / 2 + 20, sy + 4, GROUND_SWEEP_W - 40, 12, "#606870");
+  for (let i = 0; i < 4; i++) {
+    px(ctx, sx - GROUND_SWEEP_W / 2 + 16 + i * 28, sy + 20, 20, 24, "#404850");
+    px(ctx, sx - GROUND_SWEEP_W / 2 + 20 + i * 28, sy + 36, 12, 8, "#ff4040");
+  }
+  if (warning) {
+    ctx.strokeStyle = `rgba(255,200,60,${0.5 + pulse * 0.5})`;
+    ctx.lineWidth = 3;
+    ctx.strokeRect(sx - GROUND_SWEEP_W / 2 - 4, sy - 4, GROUND_SWEEP_W + 8, GROUND_SWEEP_H + 8);
+  }
+}
+
 function drawReconDrone(ctx: CanvasRenderingContext2D, sx: number, y: number, w: number, h: number, time: number) {
   const spin = time / 70;
   ctx.strokeStyle = "#444";
@@ -1148,6 +1343,8 @@ function drawEnemy(
   else if (kind === "red_baron") drawRedBaron(ctx, sx, y, w, h, time, bombWarning);
   else if (kind === "cargo") drawCargoDrone(ctx, sx, y, w, h, time);
   else if (kind === "fpv") drawFpvDrone(ctx, sx, y, w, h);
+  else if (kind === "attack_drone") drawAttackDrone(ctx, sx, y, w, h, time);
+  else if (kind === "suicide_drone") drawSuicideDrone(ctx, sx, y, w, h, time);
   else drawFixedWing(ctx, sx, y, w, h, time);
 }
 
@@ -1660,6 +1857,9 @@ export function drawWorld(
   if (theme === "canyon") {
     drawCanyonSky(ctx, camX, time);
     drawCanyonGroundLayer(ctx, config, camX);
+  } else if (theme === "nest") {
+    drawNestSky(ctx, camX, time);
+    drawNestGroundLayer(ctx, config, camX);
   } else if (theme === "alamo") {
     drawAlamoSky(ctx, camX, time);
     drawAlamoGroundLayer(ctx, config, camX);
@@ -1671,6 +1871,7 @@ export function drawWorld(
   for (const plat of config.platforms) {
     if (plat.x + plat.w < camX - 20 || plat.x > camX + VIEW_W + 20) continue;
     if (theme === "canyon") drawCanyonPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
+    else if (theme === "nest") drawNestPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
     else if (theme === "alamo") drawAlamoPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
     else drawPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
   }
@@ -1678,12 +1879,15 @@ export function drawWorld(
   for (const wall of config.walls) {
     if (wall.x + wall.w < camX - 20 || wall.x > camX + VIEW_W + 20) continue;
     if (theme === "canyon") drawCanyonWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
+    else if (theme === "nest") drawNestWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
     else if (theme === "alamo") drawAlamoWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
     else drawWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
   }
 
   if (theme === "canyon") {
     drawCanyonExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
+  } else if (theme === "nest") {
+    drawNestExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
   } else if (theme === "alamo") {
     drawAlamoExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
   } else {
@@ -1694,6 +1898,14 @@ export function drawWorld(
     if (!nest.active) continue;
     if (nest.x < camX - 60 || nest.x > camX + VIEW_W + 60) continue;
     drawDroneNest(ctx, nest.x, nest.y, camX, time, nest.active);
+  }
+
+  if (engine.boss?.active) {
+    drawBossNest(ctx, engine.boss, camX, time);
+  }
+
+  if (engine.groundSweep?.enabled) {
+    drawGroundSweep(ctx, engine.groundSweep, config.level.groundY, camX, time);
   }
 
   for (const pickup of engine.pickups) {
