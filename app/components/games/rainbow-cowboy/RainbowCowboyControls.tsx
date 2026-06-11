@@ -520,20 +520,15 @@ function MobileControlPad({
 
   return (
     <div
-      className="rc-mobile-controls"
+      className={`rc-mobile-controls${disabled ? " rc-mobile-controls--disabled" : ""}`}
       style={{
         position: "absolute",
         inset: 0,
         zIndex: 20,
-        pointerEvents: disabled ? "none" : "none",
+        touchAction: "none",
       }}
     >
-      <div
-        className="rc-joystick-anchor"
-        style={{
-          pointerEvents: disabled ? "none" : "auto",
-        }}
-      >
+      <div className="rc-joystick-anchor">
         <VirtualJoystick
           disabled={disabled}
           actions={actions}
@@ -543,12 +538,7 @@ function MobileControlPad({
           onActivity={bumpActivity}
         />
       </div>
-      <div
-        className="rc-action-cluster-anchor"
-        style={{
-          pointerEvents: disabled ? "none" : "auto",
-        }}
-      >
+      <div className="rc-action-cluster-anchor">
         <MobileActionTriangle
           actions={actions}
           attackLabel={attackLabel}
@@ -626,7 +616,6 @@ export function RainbowCowboyControls({
         @media (max-width: 900px), (max-height: 500px), (pointer: coarse) {
           .rc-mobile-controls {
             display: block !important;
-            pointer-events: auto !important;
           }
         }
       `}</style>

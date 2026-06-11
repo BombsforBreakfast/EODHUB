@@ -1561,22 +1561,33 @@ body.game-playing-active .games-shell-nav {
     pointer-events: none;
   }
 
+  .rc-mobile-controls--disabled .rc-joystick-anchor,
+  .rc-mobile-controls--disabled .rc-action-slot {
+    pointer-events: none !important;
+  }
+
   .rc-joystick-anchor {
     position: absolute;
     left: max(12px, env(safe-area-inset-left, 0px));
     bottom: max(18px, env(safe-area-inset-bottom, 0px));
-    z-index: 21;
+    z-index: 22;
     display: flex;
     align-items: center;
     justify-content: center;
-    pointer-events: auto;
+    pointer-events: auto !important;
+    touch-action: none;
+  }
+
+  .rc-joystick-pad {
+    touch-action: none;
+    cursor: pointer;
   }
 
   .rc-action-cluster-anchor {
     position: absolute;
     inset: 0;
     z-index: 21;
-    pointer-events: none;
+    pointer-events: none !important;
   }
 
   .rc-action-cluster {
@@ -1587,7 +1598,8 @@ body.game-playing-active .games-shell-nav {
 
   .rc-action-slot {
     position: absolute;
-    pointer-events: auto;
+    pointer-events: auto !important;
+    touch-action: none;
   }
 
   .rc-action-slot--jump {
