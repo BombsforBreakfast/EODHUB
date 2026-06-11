@@ -6,6 +6,7 @@ export type RainbowCowboyInputActions = {
   setMoveLeft: (active: boolean) => void;
   setMoveRight: (active: boolean) => void;
   setDuck: (active: boolean) => void;
+  setAimUp: (active: boolean) => void;
   pressJump: () => void;
   pressSlurp: () => void;
   pressSpecial: () => void;
@@ -27,6 +28,9 @@ export function createRainbowCowboyInputBridge(
     },
     setDuck(active) {
       inputRef.current.down = active;
+    },
+    setAimUp(active) {
+      inputRef.current.up = active;
     },
     pressJump() {
       inputRef.current.jumpPressed = true;
@@ -50,6 +54,7 @@ export function createRainbowCowboyInputBridge(
       inputRef.current.left = false;
       inputRef.current.right = false;
       inputRef.current.down = false;
+      inputRef.current.up = false;
     },
   };
 }

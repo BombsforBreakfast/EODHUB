@@ -8,6 +8,11 @@ import { RainbowCowboyParticlePool } from "./rainbowCowboyParticles";
 import type { LevelConfig, RainbowCowboyPersonalBest } from "./rainbowCowboyTypes";
 import type { RainbowCowboyHudSnapshot, RainbowCowboyRunResult } from "./rainbowCowboyTypes";
 import { RainbowCowboyControls } from "./RainbowCowboyControls";
+import { RainbowCowboyControlSettings } from "./RainbowCowboyControlSettings";
+import {
+  loadRainbowCowboyControlPrefs,
+  type RainbowCowboyControlPrefs,
+} from "./rainbowCowboyControlPrefs";
 import { RainbowCowboyHud } from "./RainbowCowboyHud";
 import { RainbowCowboyInstructionsModal } from "./RainbowCowboyInstructionsModal";
 import {
@@ -76,6 +81,7 @@ export function RainbowCowboyGame({
     left: false,
     right: false,
     down: false,
+    up: false,
     jumpPressed: false,
     tonguePressed: false,
     gunPressed: false,
@@ -101,6 +107,9 @@ export function RainbowCowboyGame({
   const [instructionsOpen, setInstructionsOpen] = useState(showInstructions);
   const [audioPrefs, setAudioPrefs] = useState<UnicornHeroAudioPrefs>(() => loadUnicornHeroAudioPrefs());
   const [showAudioPanel, setShowAudioPanel] = useState(false);
+  const [controlPrefs, setControlPrefs] = useState<RainbowCowboyControlPrefs>(() =>
+    loadRainbowCowboyControlPrefs(),
+  );
 
   useEffect(() => {
     onCompleteRef.current = onComplete;
@@ -206,6 +215,7 @@ export function RainbowCowboyGame({
       left: input.left,
       right: input.right,
       down: input.down,
+      up: input.up,
       jumpPressed: input.jumpPressed,
       tonguePressed: input.tonguePressed,
       gunPressed: input.gunPressed,
@@ -509,6 +519,7 @@ export function RainbowCowboyGame({
             left: false,
             right: false,
             down: false,
+            up: false,
             jumpPressed: false,
             tonguePressed: false,
             gunPressed: false,
@@ -523,7 +534,10 @@ export function RainbowCowboyGame({
         actions={inputActions}
         disabled={paused || instructionsOpen}
         showWeaponButton={config.level.id === "level-3"}
-        slurpLabel={rideConfig.attackLabel.toUpperCase().includes("GRIP") ? "SLURP" : "ATK"}
+        attackLabel={rideConfig.attackLabel}
+        specialLabel={rideConfig.specialLabel}
+        specialCharges={hud.rainbowCharges}
+        controlPrefs={controlPrefs}
       />
 
       {paused && (
@@ -579,7 +593,12 @@ export function RainbowCowboyGame({
               Exit Game
             </button>
           </div>
-          <div style={{ width: "min(280px, 90vw)" }}>
+          <div style={{ width: "min(320px, 92vw)", display: "flex", flexDirection: "column", gap: 12 }}>
+            <RainbowCowboyControlSettings
+              compact
+              prefs={controlPrefs}
+              onChange={setControlPrefs}
+            />
             <UnicornHeroAudioControls
               prefs={audioPrefs}
               onChange={syncAudioPrefs}
@@ -592,7 +611,7 @@ export function RainbowCowboyGame({
       <GameRotatePrompt
         emoji="🦄"
         title="Turn your phone sideways"
-        subtitle="Landscape mode unlocks the full ride — controls work best on the wide screen."
+        subtitle="Landscape mode is required for gameplay — rotate to use the new touch controls."
       />
 
       <style>{`

@@ -2,12 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RainbowCowboyInputActions } from "./rainbowCowboyGameInput";
+import {
+  getControlMetrics,
+  loadRainbowCowboyControlPrefs,
+  triggerControlHaptic,
+  type RainbowCowboyControlPrefs,
+} from "./rainbowCowboyControlPrefs";
 
 interface Props {
   actions: RainbowCowboyInputActions;
-  slurpLabel?: string;
+  attackLabel?: string;
+  specialLabel?: string;
+  specialCharges?: number;
   showWeaponButton?: boolean;
   disabled?: boolean;
+  controlPrefs?: RainbowCowboyControlPrefs;
 }
 
 function useMobileControls(): boolean {
@@ -27,24 +36,51 @@ function useMobileControls(): boolean {
   return mobile;
 }
 
-const JOYSTICK_VISUAL_SIZE = 112;
-const JOYSTICK_PAD_SIZE = 168;
-const JOYSTICK_STICK_MAX = 44;
-const JOYSTICK_H_THRESH = 7;
-const JOYSTICK_V_THRESH = 11;
+function useControlActivityFade(disabled?: boolean) {
+  const [active, setActive] = useState(true);
+  const timerRef = useRef<number | null>(null);
+
+  const bump = useCallback(() => {
+    setActive(true);
+    if (timerRef.current) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => setActive(false), 2200);
+  }, []);
+
+  useEffect(() => {
+    if (disabled) setActive(true);
+    return () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+    };
+  }, [disabled]);
+
+  return { controlsActive: disabled || active, bumpActivity: bump };
+}
+
+const JOYSTICK_H_THRESH = 6;
+const JOYSTICK_V_THRESH = 9;
 
 function VirtualJoystick({
   disabled,
   actions,
+  metrics,
+  prefs,
+  opacity,
+  onActivity,
 }: {
   disabled?: boolean;
   actions: RainbowCowboyInputActions;
+  metrics: ReturnType<typeof getControlMetrics>;
+  prefs: RainbowCowboyControlPrefs;
+  opacity: number;
+  onActivity: () => void;
 }) {
   const padRef = useRef<HTMLDivElement>(null);
   const zoneRef = useRef<HTMLDivElement>(null);
   const [stick, setStick] = useState({ x: 0, y: 0 });
+  const [engaged, setEngaged] = useState(false);
   const activePointerRef = useRef<number | null>(null);
   const unbindWindowRef = useRef<(() => void) | null>(null);
+  const stickMax = metrics.joystickOuter * 0.38;
 
   const unbindWindowTracking = useCallback(() => {
     unbindWindowRef.current?.();
@@ -54,6 +90,7 @@ function VirtualJoystick({
   const reset = useCallback(() => {
     unbindWindowTracking();
     setStick({ x: 0, y: 0 });
+    setEngaged(false);
     actions.releaseMovement();
     activePointerRef.current = null;
   }, [actions, unbindWindowTracking]);
@@ -72,20 +109,23 @@ function VirtualJoystick({
 
       let vx = dx;
       let vy = dy;
-      if (dist > JOYSTICK_STICK_MAX) {
-        vx = (dx / dist) * JOYSTICK_STICK_MAX;
-        vy = (dy / dist) * JOYSTICK_STICK_MAX;
+      if (dist > stickMax) {
+        vx = (dx / dist) * stickMax;
+        vy = (dy / dist) * stickMax;
       }
       setStick({ x: vx, y: vy });
 
-      const radius = rect.width / 2;
-      const horizDominant = Math.abs(dx) >= Math.abs(dy) * 0.55;
-      const pastEdge = Math.abs(dx) > radius - 6;
-      actions.setMoveLeft(dx < -JOYSTICK_H_THRESH && (horizDominant || pastEdge));
-      actions.setMoveRight(dx > JOYSTICK_H_THRESH && (horizDominant || pastEdge));
-      actions.setDuck(dy > JOYSTICK_V_THRESH && Math.abs(dy) > Math.abs(dx) * 0.65);
+      const moveLeft = dx < -JOYSTICK_H_THRESH;
+      const moveRight = dx > JOYSTICK_H_THRESH;
+      const duck = dy > JOYSTICK_V_THRESH && dy > Math.abs(dx) * 0.45;
+      const aimUp = dy < -JOYSTICK_V_THRESH && Math.abs(dy) >= Math.abs(dx) * 0.45;
+
+      actions.setMoveLeft(moveLeft);
+      actions.setMoveRight(moveRight);
+      actions.setDuck(duck);
+      actions.setAimUp(aimUp);
     },
-    [actions],
+    [actions, stickMax],
   );
 
   const bindWindowTracking = useCallback(
@@ -95,6 +135,7 @@ function VirtualJoystick({
       const onMove = (e: PointerEvent) => {
         if (e.pointerId !== pointerId) return;
         e.preventDefault();
+        onActivity();
         applyFromClient(e.clientX, e.clientY);
       };
       const onEnd = (e: PointerEvent) => {
@@ -111,7 +152,7 @@ function VirtualJoystick({
         window.removeEventListener("pointercancel", onEnd);
       };
     },
-    [applyFromClient, reset, unbindWindowTracking],
+    [applyFromClient, onActivity, reset, unbindWindowTracking],
   );
 
   useEffect(() => () => reset(), [reset]);
@@ -119,6 +160,9 @@ function VirtualJoystick({
   const onPointerDown = (e: React.PointerEvent) => {
     if (disabled) return;
     e.preventDefault();
+    onActivity();
+    triggerControlHaptic(prefs);
+    setEngaged(true);
     activePointerRef.current = e.pointerId;
     padRef.current?.setPointerCapture(e.pointerId);
     bindWindowTracking(e.pointerId);
@@ -128,6 +172,7 @@ function VirtualJoystick({
   const onPointerMove = (e: React.PointerEvent) => {
     if (disabled || activePointerRef.current !== e.pointerId) return;
     e.preventDefault();
+    onActivity();
     applyFromClient(e.clientX, e.clientY);
   };
 
@@ -146,12 +191,14 @@ function VirtualJoystick({
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
       style={{
-        width: JOYSTICK_PAD_SIZE,
-        height: JOYSTICK_PAD_SIZE,
+        width: metrics.joystickPad,
+        height: metrics.joystickPad,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         touchAction: "none",
+        opacity,
+        transition: "opacity 280ms ease",
       }}
     >
       <div
@@ -159,11 +206,12 @@ function VirtualJoystick({
         className="rc-joystick"
         style={{
           position: "relative",
-          width: JOYSTICK_VISUAL_SIZE,
-          height: JOYSTICK_VISUAL_SIZE,
+          width: metrics.joystickOuter,
+          height: metrics.joystickOuter,
           borderRadius: "50%",
-          background: "rgba(0,0,0,0.42)",
-          border: "2px solid rgba(255,255,255,0.35)",
+          background: "rgba(42, 46, 52, 0.58)",
+          border: "2px solid rgba(255,255,255,0.22)",
+          boxShadow: "inset 0 2px 8px rgba(0,0,0,0.35), 0 0 0 1px rgba(0,0,0,0.2)",
           pointerEvents: "none",
         }}
       >
@@ -172,14 +220,16 @@ function VirtualJoystick({
             position: "absolute",
             left: "50%",
             top: "50%",
-            width: 48,
-            height: 48,
-            marginLeft: -24 + stick.x,
-            marginTop: -24 + stick.y,
+            width: metrics.joystickStick,
+            height: metrics.joystickStick,
+            marginLeft: -metrics.joystickStick / 2 + stick.x,
+            marginTop: -metrics.joystickStick / 2 + stick.y,
             borderRadius: "50%",
-            background: "rgba(255,255,255,0.22)",
-            border: "2px solid rgba(255,255,255,0.5)",
+            background: "rgba(220, 224, 230, 0.28)",
+            border: "2px solid rgba(255,255,255,0.42)",
+            boxShadow: engaged ? "0 0 12px rgba(255,255,255,0.25)" : "none",
             pointerEvents: "none",
+            transition: engaged ? "none" : "margin 120ms ease",
           }}
         />
       </div>
@@ -187,34 +237,71 @@ function VirtualJoystick({
   );
 }
 
-function MobileActionButton({
+function ArcadeActionButton({
   label,
   sub,
   size,
-  accent,
+  tone,
   disabled,
+  cooldownPct,
   onPress,
   onPressStart,
   onPressEnd,
+  prefs,
+  opacity,
+  onActivity,
 }: {
   label: string;
   sub?: string;
   size: number;
-  accent?: string;
+  tone: "jump" | "attack" | "special" | "gun";
   disabled?: boolean;
+  cooldownPct?: number;
   onPress?: () => void;
   onPressStart?: () => void;
   onPressEnd?: () => void;
+  prefs: RainbowCowboyControlPrefs;
+  opacity: number;
+  onActivity: () => void;
 }) {
   const [pressed, setPressed] = useState(false);
   const firedRef = useRef(false);
 
+  const tones = {
+    jump: {
+      border: "rgba(120, 220, 140, 0.75)",
+      fill: "rgba(34, 120, 58, 0.55)",
+      glow: "rgba(120, 255, 150, 0.45)",
+      pressed: "rgba(48, 160, 78, 0.72)",
+    },
+    attack: {
+      border: "rgba(255, 190, 90, 0.8)",
+      fill: "rgba(180, 110, 20, 0.52)",
+      glow: "rgba(255, 200, 100, 0.4)",
+      pressed: "rgba(210, 140, 30, 0.75)",
+    },
+    special: {
+      border: "rgba(255, 120, 220, 0.75)",
+      fill: "rgba(120, 40, 140, 0.5)",
+      glow: "rgba(255, 100, 200, 0.42)",
+      pressed: "rgba(160, 60, 180, 0.72)",
+    },
+    gun: {
+      border: "rgba(120, 220, 255, 0.7)",
+      fill: "rgba(20, 90, 120, 0.5)",
+      glow: "rgba(100, 220, 255, 0.35)",
+      pressed: "rgba(40, 130, 170, 0.72)",
+    },
+  }[tone];
+
   const handleDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (disabled) return;
+    if (disabled || (cooldownPct != null && cooldownPct > 0)) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     setPressed(true);
     firedRef.current = false;
+    onActivity();
+    triggerControlHaptic(prefs, tone === "special");
     onPressStart?.();
     if (onPress && !firedRef.current) {
       onPress();
@@ -228,6 +315,8 @@ function MobileActionButton({
     onPressEnd?.();
     firedRef.current = false;
   };
+
+  const onCooldown = cooldownPct != null && cooldownPct > 0;
 
   return (
     <button
@@ -245,15 +334,16 @@ function MobileActionButton({
         }
       }}
       style={{
+        position: "relative",
         width: size,
         height: size,
         borderRadius: "50%",
-        border: `2px solid ${accent ?? "rgba(255,255,255,0.45)"}`,
-        background: pressed ? "rgba(255,255,255,0.28)" : "rgba(0,0,0,0.48)",
+        border: `2px solid ${tones.border}`,
+        background: pressed ? tones.pressed : tones.fill,
         color: "#fff",
         fontFamily: "monospace",
         fontWeight: 800,
-        cursor: disabled ? "not-allowed" : "pointer",
+        cursor: disabled || onCooldown ? "not-allowed" : "pointer",
         touchAction: "none",
         userSelect: "none",
         WebkitUserSelect: "none",
@@ -261,113 +351,194 @@ function MobileActionButton({
         flexDirection: "column",
         alignItems: "center",
         justifyContent: "center",
-        lineHeight: 1.1,
+        lineHeight: 1.05,
         padding: 4,
-        opacity: disabled ? 0.5 : 1,
-        transform: pressed ? "scale(0.94)" : "scale(1)",
-        transition: "transform 80ms ease, background 80ms ease",
+        opacity: disabled ? 0.45 : onCooldown ? opacity * 0.55 : opacity,
+        transform: pressed ? "scale(0.92)" : "scale(1)",
+        boxShadow: pressed ? `0 0 18px ${tones.glow}` : `0 2px 10px rgba(0,0,0,0.28)`,
+        transition: "transform 70ms ease, box-shadow 70ms ease, opacity 280ms ease, background 70ms ease",
+        overflow: "hidden",
       }}
     >
-      <span style={{ fontSize: size >= 76 ? 13 : 11 }}>{label}</span>
+      <span style={{ fontSize: size >= 88 ? 12 : 10, letterSpacing: 0.3 }}>{label}</span>
       {sub ? (
-        <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.82, marginTop: 2 }}>{sub}</span>
+        <span style={{ fontSize: 8, fontWeight: 600, opacity: 0.88, marginTop: 2, textAlign: "center" }}>
+          {sub}
+        </span>
+      ) : null}
+      {onCooldown ? (
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "50%",
+            background: `conic-gradient(rgba(0,0,0,0.55) ${cooldownPct * 360}deg, transparent 0)`,
+            pointerEvents: "none",
+          }}
+        />
       ) : null}
     </button>
   );
 }
 
-function MobileActionCluster({
+function MobileActionTriangle({
   actions,
-  slurpLabel,
+  attackLabel,
+  specialLabel,
+  specialCharges,
   showWeaponButton,
   disabled,
-  compact,
+  metrics,
+  prefs,
+  opacity,
+  onActivity,
 }: {
   actions: RainbowCowboyInputActions;
-  slurpLabel: string;
+  attackLabel: string;
+  specialLabel: string;
+  specialCharges: number;
   showWeaponButton: boolean;
   disabled?: boolean;
-  compact?: boolean;
+  metrics: ReturnType<typeof getControlMetrics>;
+  prefs: RainbowCowboyControlPrefs;
+  opacity: number;
+  onActivity: () => void;
 }) {
-  const jumpSize = compact ? 72 : 80;
-  const actionSize = compact ? 56 : 64;
+  const gap = Math.round(metrics.jump * 0.12);
+  const clusterW = metrics.jump + metrics.attack + gap * 2;
+  const clusterH = metrics.jump + metrics.special + gap * 2.2;
+
+  const specialShort = specialLabel.split(" ")[0] ?? "Special";
+  const specialSub =
+    specialCharges > 0 ? `${specialShort} ×${specialCharges}` : "EMPTY";
 
   return (
     <div
-      className="rc-action-cluster"
+      className="rc-action-triangle"
       style={{
-        display: "grid",
-        gridTemplateColumns: `${jumpSize}px ${actionSize}px`,
-        gridTemplateRows: `${actionSize}px ${jumpSize}px`,
-        gap: compact ? 8 : 10,
-        alignItems: "end",
-        justifyItems: "center",
+        position: "relative",
+        width: clusterW,
+        height: clusterH,
+        opacity,
+        transition: "opacity 280ms ease",
       }}
     >
-      <div style={{ gridColumn: 1, gridRow: 1 }}>
-        <MobileActionButton
-          label={slurpLabel}
-          sub="ATK"
-          size={actionSize}
-          accent="rgba(255,220,120,0.7)"
-          disabled={disabled}
-          onPress={actions.pressSlurp}
-        />
-      </div>
-      <div style={{ gridColumn: 2, gridRow: 1 }}>
-        <MobileActionButton
-          label="SPEC"
-          sub="BLAST"
-          size={actionSize}
-          accent="rgba(255,120,220,0.75)"
-          disabled={disabled}
-          onPress={actions.pressSpecial}
-        />
-      </div>
-      <div style={{ gridColumn: 1, gridRow: 2 }}>
-        <MobileActionButton
+      <div style={{ position: "absolute", right: 0, bottom: 0 }}>
+        <ArcadeActionButton
           label="JUMP"
-          size={jumpSize}
-          accent="rgba(180,255,180,0.75)"
+          size={metrics.jump}
+          tone="jump"
           disabled={disabled}
+          prefs={prefs}
+          opacity={1}
+          onActivity={onActivity}
           onPress={actions.pressJump}
         />
       </div>
-      <div style={{ gridColumn: 2, gridRow: 2 }}>
-        {showWeaponButton ? (
-          <MobileActionButton
+
+      <div
+        style={{
+          position: "absolute",
+          right: metrics.jump + gap,
+          bottom: Math.round(metrics.jump * 0.28),
+        }}
+      >
+        <ArcadeActionButton
+          label="ATK"
+          sub={attackLabel.length > 10 ? attackLabel.slice(0, 9) + "…" : attackLabel}
+          size={metrics.attack}
+          tone="attack"
+          disabled={disabled}
+          prefs={prefs}
+          opacity={1}
+          onActivity={onActivity}
+          onPress={actions.pressSlurp}
+        />
+      </div>
+
+      <div
+        style={{
+          position: "absolute",
+          right: Math.round(metrics.jump * 0.42),
+          bottom: metrics.jump + gap,
+        }}
+      >
+        <ArcadeActionButton
+          label="SPEC"
+          sub={specialSub}
+          size={metrics.special}
+          tone="special"
+          disabled={disabled || specialCharges <= 0}
+          cooldownPct={specialCharges <= 0 ? 1 : 0}
+          prefs={prefs}
+          opacity={1}
+          onActivity={onActivity}
+          onPress={actions.pressSpecial}
+        />
+      </div>
+
+      {showWeaponButton ? (
+        <div
+          style={{
+            position: "absolute",
+            right: metrics.jump + metrics.attack + gap * 1.6,
+            bottom: Math.round(metrics.jump * 0.08),
+          }}
+        >
+          <ArcadeActionButton
             label="GUN"
-            sub="FIRE"
-            size={actionSize}
-            accent="rgba(128,240,255,0.75)"
+            sub="HOLD"
+            size={metrics.gun}
+            tone="gun"
             disabled={disabled}
+            prefs={prefs}
+            opacity={1}
+            onActivity={onActivity}
             onPressStart={() => {
               actions.pressWeapon();
               actions.setWeaponHeld(true);
             }}
             onPressEnd={() => actions.releaseWeapon()}
           />
-        ) : (
-          <div style={{ width: actionSize, height: actionSize }} aria-hidden />
-        )}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 function MobileControlPad({
   actions,
-  slurpLabel,
+  attackLabel,
+  specialLabel,
+  specialCharges,
   showWeaponButton,
   disabled,
-  compact,
+  prefs,
+  controlsActive,
+  bumpActivity,
 }: {
   actions: RainbowCowboyInputActions;
-  slurpLabel: string;
+  attackLabel: string;
+  specialLabel: string;
+  specialCharges: number;
   showWeaponButton: boolean;
   disabled?: boolean;
-  compact?: boolean;
+  prefs: RainbowCowboyControlPrefs;
+  controlsActive: boolean;
+  bumpActivity: () => void;
 }) {
+  const [metrics, setMetrics] = useState(() => getControlMetrics(prefs));
+
+  useEffect(() => {
+    const sync = () => setMetrics(getControlMetrics(prefs));
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, [prefs]);
+
+  const opacity = controlsActive ? metrics.opacityBase : metrics.opacityInactive;
+
   return (
     <div
       className="rc-mobile-controls"
@@ -376,35 +547,46 @@ function MobileControlPad({
         inset: 0,
         zIndex: 20,
         pointerEvents: disabled ? "none" : "none",
-        opacity: disabled ? 0.5 : 1,
       }}
     >
       <div
         className="rc-joystick-anchor"
         style={{
           position: "absolute",
-          left: "var(--rc-safe-left, max(12px, env(safe-area-inset-left)))",
-          bottom: "var(--rc-safe-bottom, max(12px, env(safe-area-inset-bottom)))",
+          left: "var(--rc-control-inset-left, 18vmin)",
+          bottom: "var(--rc-control-inset-bottom, 18vmin)",
           pointerEvents: disabled ? "none" : "auto",
         }}
       >
-        <VirtualJoystick disabled={disabled} actions={actions} />
+        <VirtualJoystick
+          disabled={disabled}
+          actions={actions}
+          metrics={metrics}
+          prefs={prefs}
+          opacity={opacity}
+          onActivity={bumpActivity}
+        />
       </div>
       <div
         className="rc-action-cluster-anchor"
         style={{
           position: "absolute",
-          right: "var(--rc-mobile-right-gutter, max(12px, env(safe-area-inset-right)))",
-          bottom: "var(--rc-safe-bottom, max(12px, env(safe-area-inset-bottom)))",
+          right: "var(--rc-control-inset-right, 18vmin)",
+          bottom: "var(--rc-control-inset-bottom, 18vmin)",
           pointerEvents: disabled ? "none" : "auto",
         }}
       >
-        <MobileActionCluster
+        <MobileActionTriangle
           actions={actions}
-          slurpLabel={slurpLabel}
+          attackLabel={attackLabel}
+          specialLabel={specialLabel}
+          specialCharges={specialCharges}
           showWeaponButton={showWeaponButton}
           disabled={disabled}
-          compact={compact}
+          metrics={metrics}
+          prefs={prefs}
+          opacity={opacity}
+          onActivity={bumpActivity}
         />
       </div>
     </div>
@@ -413,23 +595,22 @@ function MobileControlPad({
 
 export function RainbowCowboyControls({
   actions,
-  slurpLabel = "SLURP",
+  attackLabel = "Attack",
+  specialLabel = "Special",
+  specialCharges = 0,
   showWeaponButton = false,
   disabled,
+  controlPrefs: controlPrefsProp,
 }: Props) {
   const mobile = useMobileControls();
-  const [compact, setCompact] = useState(false);
+  const [controlPrefs, setControlPrefs] = useState<RainbowCowboyControlPrefs>(
+    () => controlPrefsProp ?? loadRainbowCowboyControlPrefs(),
+  );
+  const { controlsActive, bumpActivity } = useControlActivityFade(disabled);
 
   useEffect(() => {
-    const sync = () => {
-      const portrait = window.matchMedia("(orientation: portrait)").matches;
-      const narrow = window.innerWidth < 740;
-      setCompact(portrait || narrow);
-    };
-    sync();
-    window.addEventListener("resize", sync);
-    return () => window.removeEventListener("resize", sync);
-  }, []);
+    if (controlPrefsProp) setControlPrefs(controlPrefsProp);
+  }, [controlPrefsProp]);
 
   useEffect(() => {
     if (!mobile) return;
@@ -459,10 +640,14 @@ export function RainbowCowboyControls({
     <>
       <MobileControlPad
         actions={actions}
-        slurpLabel={slurpLabel}
+        attackLabel={attackLabel}
+        specialLabel={specialLabel}
+        specialCharges={specialCharges}
         showWeaponButton={showWeaponButton}
         disabled={disabled}
-        compact={compact}
+        prefs={controlPrefs}
+        controlsActive={controlsActive}
+        bumpActivity={bumpActivity}
       />
       <style>{`
         @media (max-width: 900px), (max-height: 500px), (pointer: coarse) {

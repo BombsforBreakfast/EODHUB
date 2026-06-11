@@ -98,12 +98,13 @@ import {
 } from "../unicorn-hero/unicornHeroRides";
 
 /** Bumped when engine internals change so HMR can replace stale instances. */
-export const RAINBOW_COWBOY_ENGINE_REVISION = 15;
+export const RAINBOW_COWBOY_ENGINE_REVISION = 16;
 
 export interface GameInput {
   left: boolean;
   right: boolean;
   down: boolean;
+  up: boolean;
   jumpPressed: boolean;
   tonguePressed: boolean;
   gunPressed: boolean;
@@ -332,6 +333,7 @@ export class RainbowCowboyEngine {
   lastGroundedAtMs = 0;
   jumpBufferUntil = 0;
   ducking = false;
+  aimingUp = false;
   facing: "left" | "right" = "right";
 
   tongueTarget: { x: number; y: number } | null = null;
@@ -594,8 +596,13 @@ export class RainbowCowboyEngine {
       if (dir < 0 && dx > 12) return;
       const dist = Math.hypot(dx, dy);
       if (dist > TONGUE_HOMING_RANGE) return;
-      if (dist < bestDist) {
-        bestDist = dist;
+      let score = dist;
+      if (this.aimingUp) {
+        if (dy < -10) score *= 0.7;
+        else if (dy > 12) score *= 1.35;
+      }
+      if (score < bestDist) {
+        bestDist = score;
         bestX = x;
         bestY = y;
         found = true;
@@ -1265,6 +1272,7 @@ export class RainbowCowboyEngine {
     if (this.timeMs < this.speedBoostUntil) speed *= BOOST_SPEED_MULT;
 
     this.ducking = input.down && this.grounded;
+    this.aimingUp = input.up;
 
     if (input.left) {
       this.playerVx = -speed * (this.ducking ? DUCK_SPEED_MULT : 1);

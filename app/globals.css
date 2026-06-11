@@ -1402,6 +1402,9 @@ body.game-playing-active .games-shell-nav {
     --rc-mobile-right-gutter: calc(var(--rc-safe-right) + var(--rc-ui-nudge));
     --rc-safe-left: max(12px, env(safe-area-inset-left, 0px));
     --rc-safe-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+    --rc-control-inset-left: max(16px, calc(18vmin + env(safe-area-inset-left, 0px)));
+    --rc-control-inset-right: max(16px, calc(18vmin + env(safe-area-inset-right, 0px)));
+    --rc-control-inset-bottom: max(12px, calc(16vmin + env(safe-area-inset-bottom, 0px)));
   }
 }
 

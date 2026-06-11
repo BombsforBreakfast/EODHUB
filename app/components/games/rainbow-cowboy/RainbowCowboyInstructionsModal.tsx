@@ -58,10 +58,12 @@ const DESKTOP_ROWS = (attackLabel: string, specialLabel: string, levelId?: strin
 
 const MOBILE_LANDSCAPE_ROWS = (attackLabel: string, specialLabel: string, levelId?: string) => {
   const rows = [
-    { keys: "Joystick", action: "Move left/right · push down to crouch" },
-    { keys: "JUMP", action: "Jump" },
-    { keys: "SLURP / ATK", action: `${attackLabel} — eat drones & grab loot` },
-    { keys: "SPEC", action: `${specialLabel} — rainbow blast` },
+    { keys: "Joystick ← →", action: "Move left and right" },
+    { keys: "Joystick ↑", action: "Aim upward for attacks" },
+    { keys: "Joystick ↓", action: "Duck / crouch" },
+    { keys: "JUMP", action: "Jump (largest button, lower-right)" },
+    { keys: "ATK", action: `${attackLabel} — primary attack` },
+    { keys: "SPEC", action: `${specialLabel} — shows charge count (×N)` },
   ] as { keys: string; action: string }[];
   if (levelId === "level-3") {
     rows.push({ keys: "GUN", action: "Fire weapon — pistol, bazooka, or machine gun (hold to spray)" });
@@ -213,9 +215,8 @@ export function RainbowCowboyInstructionsModal({
               color: "#dff8ff",
             }}
           >
-            <strong style={{ color: "#80f0ff" }}>NEW — GUN BUTTON:</strong> Level 3 adds{" "}
-            <strong>T</strong> on keyboard or <strong>(C) Fire</strong> on mobile (landscape). You
-            begin with a pistol already equipped — bomb suit or unicorn, same rules.
+            <strong style={{ color: "#80f0ff" }}>GUN (Level 3):</strong> Press <strong>T</strong> on
+            keyboard or hold the compact <strong>GUN</strong> button near attack on mobile.
           </div>
         )}
 
