@@ -55,7 +55,17 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
             🌈 ({hud.rainbowCharges})
           </div>
           {hud.weaponLabel && (
-            <div className="rc-weapon-badge">🔫 {hud.weaponLabel}</div>
+            <div
+              className="rc-weapon-badge"
+              style={{
+                color: hud.spearReloading ? "#8fd4ff" : hud.spearInfinite ? "#ff80ff" : undefined,
+              }}
+            >
+              {hud.weaponLabel.startsWith("SPEARS") || hud.weaponLabel.startsWith("RELOADING")
+                ? "🔱 "
+                : "🔫 "}
+              {hud.weaponLabel}
+            </div>
           )}
         </div>
 

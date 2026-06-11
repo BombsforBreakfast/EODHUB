@@ -70,6 +70,21 @@ import {
   TONGUE_TIP_RADIUS,
   VIEW_H,
   VIEW_W,
+  SPEAR_MAGAZINE_CAPACITY,
+  SPEAR_RELOAD_MS,
+  SPEAR_FIRE_COOLDOWN_MS,
+  SPEAR_PROJECTILE_SPEED,
+  SPEAR_PROJECTILE_W,
+  SPEAR_PROJECTILE_H,
+  LASER_SHARK_HP,
+  ELITE_LASER_SHARK_HP,
+  ROV_DRONE_HP,
+  LASER_JAWS_HP,
+  RAINBOW_BLAST_BOSS_DAMAGE,
+  TOXIC_JELLY_PENALTY,
+  SEA_MINE_SCORE,
+  UNDERWATER_ENEMY_SPEEDS,
+  UNDERWATER_HOMING,
 } from "./rainbowCowboyConstants";
 import {
   DRONE_SCORES,
@@ -98,7 +113,7 @@ import {
 } from "../unicorn-hero/unicornHeroRides";
 
 /** Bumped when engine internals change so HMR can replace stale instances. */
-export const RAINBOW_COWBOY_ENGINE_REVISION = 16;
+export const RAINBOW_COWBOY_ENGINE_REVISION = 17;
 
 export interface GameInput {
   left: boolean;
@@ -154,6 +169,16 @@ interface BlasterProjectile {
   vx: number;
   active: boolean;
   weapon: WeaponKind;
+}
+
+interface SpearProjectile {
+  id: string;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  active: boolean;
+  bubblePhase: number;
 }
 
 interface Bomb {
@@ -217,6 +242,7 @@ interface Hazard {
   baseY?: number;
   bobPhase?: number;
   bobAmp?: number;
+  expandUntil?: number;
 }
 
 interface SpawnDef {
@@ -234,6 +260,15 @@ function isGroundEnemy(kind: RainbowCowboyEnemyKind): boolean {
   return kind === "boom_bot" || kind === "armored_boom_bot" || kind === "grenade_goblin_bot";
 }
 
+function isUnderwaterEnemy(kind: RainbowCowboyEnemyKind): boolean {
+  return (
+    kind === "laser_shark" ||
+    kind === "elite_laser_shark" ||
+    kind === "rov_drone" ||
+    kind === "laser_jaws"
+  );
+}
+
 function isBoomBot(kind: RainbowCowboyEnemyKind): boolean {
   return isGroundEnemy(kind);
 }
@@ -242,6 +277,10 @@ function enemyMaxHp(kind: RainbowCowboyEnemyKind): number {
   if (kind === "armored_boom_bot") return ARMORED_BOOM_BOT_HP;
   if (kind === "grenade_goblin_bot") return GOBLIN_BOT_HP;
   if (kind === "boom_bot") return BOOM_BOT_HP;
+  if (kind === "laser_shark") return LASER_SHARK_HP;
+  if (kind === "elite_laser_shark") return ELITE_LASER_SHARK_HP;
+  if (kind === "rov_drone") return ROV_DRONE_HP;
+  if (kind === "laser_jaws") return LASER_JAWS_HP;
   return 1;
 }
 
@@ -369,6 +408,13 @@ export class RainbowCowboyEngine {
   lastGunWeapon: WeaponKind | null = null;
 
   blasterProjectiles: BlasterProjectile[] = [];
+  spearProjectiles: SpearProjectile[] = [];
+  spearAmmo = SPEAR_MAGAZINE_CAPACITY;
+  spearReloadingUntil = 0;
+  spearInfiniteUntil = 0;
+  spearFireCooldownUntil = 0;
+  lastSpearFireMs = 0;
+  bossDefeated = false;
   enemyBullets: EnemyBullet[] = [];
   finalWaveSurvived = false;
   finalWaveTriggered = false;
@@ -471,6 +517,13 @@ export class RainbowCowboyEngine {
     this.enemies = [];
     this.bombs = [];
     this.blasterProjectiles = [];
+    this.spearProjectiles = [];
+    this.spearAmmo = SPEAR_MAGAZINE_CAPACITY;
+    this.spearReloadingUntil = 0;
+    this.spearInfiniteUntil = 0;
+    this.spearFireCooldownUntil = 0;
+    this.lastSpearFireMs = 0;
+    this.bossDefeated = false;
     this.enemyBullets = [];
     this.finalWaveSurvived = false;
     this.finalWaveTriggered = false;
@@ -533,6 +586,28 @@ export class RainbowCowboyEngine {
 
   private weaponsEnabled(): boolean {
     return this.config.level.id === "level-3";
+  }
+
+  private spearEnabled(): boolean {
+    return this.config.level.id === "level-5";
+  }
+
+  get isSpearInfinite(): boolean {
+    return this.timeMs < this.spearInfiniteUntil;
+  }
+
+  get isSpearReloading(): boolean {
+    return !this.isSpearInfinite && this.spearAmmo <= 0 && this.timeMs < this.spearReloadingUntil;
+  }
+
+  private updateSpearReload() {
+    if (!this.spearEnabled()) return;
+    if (this.isSpearInfinite) return;
+    if (this.spearAmmo > 0) return;
+    if (this.timeMs >= this.spearReloadingUntil) {
+      this.spearAmmo = SPEAR_MAGAZINE_CAPACITY;
+      this.emitAudio({ type: "spear_reload" });
+    }
   }
 
   private difficultySpeed(): number {
@@ -719,13 +794,15 @@ export class RainbowCowboyEngine {
     this.processWarnings();
     this.handleInput(input, dt);
     this.updatePhysics(dt);
+    this.updateSpearReload();
     this.updateEnemies(dt, dtMs);
     this.updateBlasterProjectiles(dt);
+    this.updateSpearProjectiles(dt);
     this.updateEnemyBullets(dt);
     this.updateBombs(dt);
     this.updateNests(dtMs);
     this.updateHazards(dt);
-    this.updateTongue();
+    if (!this.spearEnabled()) this.updateTongue();
     this.checkCollisions();
     this.checkExtraction();
     this.updateCamera();
@@ -737,8 +814,10 @@ export class RainbowCowboyEngine {
     this.syncActiveWeapon();
     if (this.timeMs < this.popupUntil && this.popupText) return;
     if (this.isRampage) this.status = "RAINBOW RAMPAGE";
-    else if (this.isGassed) this.status = "Gassed…";
+    else if (this.isGassed) this.status = "SLIMED…";
     else if (this.ducking && this.grounded) this.status = "Ducking";
+    else if (this.spearEnabled() && this.isSpearReloading) this.status = "RELOADING…";
+    else if (this.spearEnabled() && this.isSpearInfinite) this.status = "SPEAR RAMPAGE";
     else if (this.timeMs < this.tongueUntil) this.status = getRideStatusAttack(this.rideType);
     else if (this.activeWeapon === "machine_gun" && this.isMachineGunActive) this.status = "MG SPRAY";
     else if (this.activeWeapon === "bazooka" && this.bazookaAmmo > 0)
@@ -762,6 +841,16 @@ export class RainbowCowboyEngine {
     const groundY = this.config.level.groundY;
     const size = ENEMY_SIZES[spawn.kind];
     const ground = isGroundEnemy(spawn.kind);
+    const underwater = isUnderwaterEnemy(spawn.kind);
+    let initialVx = 0;
+    if (!ground) {
+      if (underwater) {
+        initialVx =
+          UNDERWATER_ENEMY_SPEEDS[spawn.kind as keyof typeof UNDERWATER_ENEMY_SPEEDS] ?? -3;
+      } else {
+        initialVx = ENEMY_SPEEDS[spawn.kind as keyof typeof ENEMY_SPEEDS];
+      }
+    }
     const enemy: Enemy = {
       id: nextId(),
       kind: spawn.kind,
@@ -770,7 +859,7 @@ export class RainbowCowboyEngine {
       baseY: ground ? groundY - size.h : spawn.y,
       w: size.w,
       h: size.h,
-      vx: ground ? 0 : ENEMY_SPEEDS[spawn.kind as keyof typeof ENEMY_SPEEDS],
+      vx: initialVx,
       active: true,
       bobPhase: Math.random() * 6,
       phase: "patrol",
@@ -789,6 +878,16 @@ export class RainbowCowboyEngine {
       if (spawn.kind === "armored_boom_bot") {
         enemy.turretAngle = this.playerX >= spawnX ? 0 : Math.PI;
         enemy.shootCooldownMs = TURRET_TRUCK_SHOOT_INTERVAL_MS * 0.6;
+      }
+    }
+
+    if (isUnderwaterEnemy(spawn.kind)) {
+      const hp = enemyMaxHp(spawn.kind);
+      enemy.hp = hp;
+      enemy.maxHp = hp;
+      if (spawn.kind === "laser_jaws") {
+        enemy.shootCooldownMs = 1800;
+        enemy.bobPhase = Math.random() * Math.PI * 2;
       }
     }
 
@@ -865,6 +964,7 @@ export class RainbowCowboyEngine {
     const nestsCleared = this.nests.every((n) => !n.active);
     if (gate.includes("nests_cleared") && nestsCleared) return true;
     if (gate.includes("final_wave_survived") && this.finalWaveSurvived) return true;
+    if (gate.includes("boss_defeated") && this.bossDefeated) return true;
     return false;
   }
 
@@ -874,7 +974,7 @@ export class RainbowCowboyEngine {
 
   private destroyEnemy(
     enemy: Enemy,
-    cause: "tongue" | "rainbow" | "rampage" | "collision" | "blaster",
+    cause: "tongue" | "rainbow" | "rampage" | "collision" | "blaster" | "spear",
   ) {
     if (!enemy.active) return;
     const wasTruck = isBoomBot(enemy.kind);
@@ -884,6 +984,11 @@ export class RainbowCowboyEngine {
 
     if (enemy.kind === "red_baron") {
       this.redBaronsDestroyed += 1;
+    }
+
+    if (enemy.kind === "laser_jaws") {
+      this.bossDefeated = true;
+      this.showPopup("LASER JAWS DEFEATED! +1000", 2000);
     }
 
     this.dronesEaten += 1;
@@ -905,6 +1010,11 @@ export class RainbowCowboyEngine {
       this.emitAudio({ type: "drone_eat" });
     } else if (cause === "blaster") {
       this.showPopup("KABOOM!", 500);
+    } else if (cause === "spear") {
+      this.emitAudio({ type: "shark_defeat" });
+      if (enemy.kind !== "laser_jaws") {
+        this.showPopup("SPEARED!", 500);
+      }
     }
   }
 
@@ -1080,6 +1190,158 @@ export class RainbowCowboyEngine {
     }
 
     this.fireWeapon(weapon);
+  }
+
+  private getSpearFireDirection(): { vx: number; vy: number } {
+    const dir = this.facing === "right" ? 1 : -1;
+    let vx = dir;
+    let vy = 0;
+
+    if (Math.abs(this.playerVx) > 0.5) {
+      vx = Math.sign(this.playerVx);
+    }
+
+    if (this.aimingUp) {
+      vy = -0.35;
+    }
+
+    const len = Math.hypot(vx, vy) || 1;
+    return { vx: (vx / len) * SPEAR_PROJECTILE_SPEED, vy: (vy / len) * SPEAR_PROJECTILE_SPEED };
+  }
+
+  private tryFireSpear() {
+    if (!this.spearEnabled()) return;
+    if (this.timeMs < this.spearFireCooldownUntil) return;
+    if (this.isSpearReloading) return;
+
+    if (!this.isSpearInfinite) {
+      if (this.spearAmmo <= 0) {
+        this.spearReloadingUntil = this.timeMs + SPEAR_RELOAD_MS;
+        return;
+      }
+      this.spearAmmo -= 1;
+      if (this.spearAmmo <= 0) {
+        this.spearReloadingUntil = this.timeMs + SPEAR_RELOAD_MS;
+      }
+    }
+
+    const mouth = this.mouthPos();
+    const { vx, vy } = this.getSpearFireDirection();
+    const dir = vx >= 0 ? 1 : -1;
+
+    this.spearProjectiles.push({
+      id: nextId(),
+      x: mouth.x + dir * 10,
+      y: mouth.y,
+      vx,
+      vy,
+      active: true,
+      bubblePhase: Math.random() * Math.PI * 2,
+    });
+
+    this.spearFireCooldownUntil = this.timeMs + SPEAR_FIRE_COOLDOWN_MS;
+    this.lastSpearFireMs = this.timeMs;
+    this.emitAudio({ type: "spear_fire" });
+  }
+
+  private damageEnemyWithSpear(enemy: Enemy): boolean {
+    if (!enemy.active) return false;
+    enemy.hp = (enemy.hp ?? 1) - 1;
+    if (enemy.hp > 0) {
+      enemy.beepPhase = (enemy.beepPhase ?? 0) + 0.6;
+      return false;
+    }
+    this.destroyEnemy(enemy, "spear");
+    return true;
+  }
+
+  private destroySeaMine(hazard: Hazard) {
+    if (!hazard.active) return;
+    hazard.active = false;
+    hazard.exploded = true;
+    hazard.explodeUntil = this.timeMs + LANDMINE_EXPLODE_MS;
+    this.addScore(SEA_MINE_SCORE);
+    this.emitAudio({ type: "underwater_explosion" });
+    this.landmineExplosionEvents.push({
+      x: hazard.x,
+      groundY: this.config.level.groundY,
+    });
+    this.showPopup("MINE BURST! +75", 700);
+  }
+
+  private hitToxicJellyWithSpear(hazard: Hazard) {
+    if (!hazard.active) return;
+    hazard.expandUntil = this.timeMs + 600;
+    this.addScore(-TOXIC_JELLY_PENALTY);
+    this.applyGas("Shot toxic jelly");
+    this.showPopup("BAD SHOT", 1200);
+    this.emitAudio({ type: "trash_balloon_gas" });
+  }
+
+  private updateSpearProjectiles(dt: number) {
+    if (!this.spearEnabled()) return;
+    const cam = this.cameraX;
+    const viewLeft = cam - 40;
+    const viewRight = cam + VIEW_W + 40;
+
+    for (const shot of this.spearProjectiles) {
+      if (!shot.active) continue;
+      shot.x += shot.vx * dt;
+      shot.y += shot.vy * dt;
+      shot.bubblePhase += 0.15 * dt;
+
+      if (shot.x < viewLeft - 80 || shot.x > viewRight + 80 || shot.y < 20 || shot.y > VIEW_H + 40) {
+        shot.active = false;
+        continue;
+      }
+
+      const sr: Rect = {
+        x: shot.x - SPEAR_PROJECTILE_W / 2,
+        y: shot.y - SPEAR_PROJECTILE_H / 2,
+        w: SPEAR_PROJECTILE_W,
+        h: SPEAR_PROJECTILE_H,
+      };
+
+      for (const enemy of this.enemies) {
+        if (!enemy.active) continue;
+        const er = { x: enemy.x, y: enemy.y, w: enemy.w, h: enemy.h };
+        if (rectsOverlap(sr, er)) {
+          this.damageEnemyWithSpear(enemy);
+          shot.active = false;
+          break;
+        }
+      }
+
+      if (!shot.active) continue;
+
+      for (const hazard of this.hazards) {
+        if (!hazard.active) continue;
+        if (hazard.kind === "sea_mine") {
+          const groundY = this.config.level.groundY;
+          const hr = landmineBodyRect(hazard, groundY);
+          if (rectsOverlap(sr, hr)) {
+            this.destroySeaMine(hazard);
+            shot.active = false;
+            break;
+          }
+        }
+        if (hazard.kind === "toxic_jelly") {
+          const hr = {
+            x: hazard.x - 28,
+            y: hazard.y - 36,
+            w: 56,
+            h: 48,
+          };
+          if (rectsOverlap(sr, hr)) {
+            this.hitToxicJellyWithSpear(hazard);
+            shot.active = false;
+            break;
+          }
+        }
+      }
+    }
+
+    this.spearProjectiles = this.spearProjectiles.filter((s) => s.active);
   }
 
   private boomBotContactExplode(enemy: Enemy) {
@@ -1326,12 +1588,16 @@ export class RainbowCowboyEngine {
       this.emitAudio({ type: "jump" });
     }
 
-    if (input.tonguePressed && this.timeMs >= this.tongueCooldownUntil) {
-      this.tongueStartedMs = this.timeMs;
-      this.tongueUntil = this.timeMs + TONGUE_DURATION_MS;
-      this.tongueCooldownUntil = this.timeMs + TONGUE_COOLDOWN_MS;
-      this.tongueTarget = this.findTongueTarget();
-      this.emitAudio({ type: "tongue" });
+    if (input.tonguePressed) {
+      if (this.spearEnabled()) {
+        this.tryFireSpear();
+      } else if (this.timeMs >= this.tongueCooldownUntil) {
+        this.tongueStartedMs = this.timeMs;
+        this.tongueUntil = this.timeMs + TONGUE_DURATION_MS;
+        this.tongueCooldownUntil = this.timeMs + TONGUE_COOLDOWN_MS;
+        this.tongueTarget = this.findTongueTarget();
+        this.emitAudio({ type: "tongue" });
+      }
     }
 
     if (input.gunPressed || input.gunHeld) {
@@ -1351,10 +1617,13 @@ export class RainbowCowboyEngine {
     this.rainbowCharges -= 1;
     this.rainbowBlastsUsed += 1;
     this.rainbowBlastUntil = this.timeMs + 900;
-    this.emitAudio({ type: "rainbow_blast" });
+    this.emitAudio({
+      type: this.spearEnabled() ? "rainbow_blast_underwater" : "rainbow_blast",
+    });
     const remaining = this.rainbowCharges;
+    const blastLabel = this.spearEnabled() ? "RAINBOW BUBBLE SHOCKWAVE!" : "RAINBOW BLAST!";
     this.showPopup(
-      remaining > 0 ? `RAINBOW BLAST! (${remaining})` : "RAINBOW BLAST!",
+      remaining > 0 ? `${blastLabel} (${remaining})` : blastLabel,
       900,
     );
 
@@ -1365,6 +1634,15 @@ export class RainbowCowboyEngine {
     for (const enemy of this.enemies) {
       if (!enemy.active) continue;
       if (enemy.x + enemy.w < viewLeft || enemy.x > viewRight) continue;
+      if (enemy.kind === "laser_jaws") {
+        enemy.hp = (enemy.hp ?? LASER_JAWS_HP) - RAINBOW_BLAST_BOSS_DAMAGE;
+        if (enemy.hp <= 0) {
+          this.destroyEnemy(enemy, "rainbow");
+        } else {
+          enemy.beepPhase = (enemy.beepPhase ?? 0) + 1.2;
+        }
+        continue;
+      }
       this.destroyEnemy(enemy, "rainbow");
     }
 
@@ -1383,11 +1661,15 @@ export class RainbowCowboyEngine {
           this.addScore(25 + RAINBOW_BLAST_BONUS);
         }
       }
-      if (hazard.kind === "landmine" || hazard.kind === "dynamite") {
+      if (hazard.kind === "landmine" || hazard.kind === "dynamite" || hazard.kind === "sea_mine") {
         const dist = Math.hypot(hazard.x - this.playerX, hazard.y - this.playerY);
         if (dist < RAINBOW_BLAST_RADIUS) {
-          hazard.active = false;
-          if (hazard.kind === "dynamite") hazard.exploded = true;
+          if (hazard.kind === "sea_mine") {
+            this.destroySeaMine(hazard);
+          } else {
+            hazard.active = false;
+            if (hazard.kind === "dynamite") hazard.exploded = true;
+          }
         }
       }
     }
@@ -1453,6 +1735,80 @@ export class RainbowCowboyEngine {
 
     for (const e of this.enemies) {
       if (!e.active) continue;
+
+      if (e.kind === "laser_jaws") {
+        e.bobPhase = (e.bobPhase ?? 0) + 0.04 * dt;
+        const passDir = e.vx >= 0 ? 1 : -1;
+        e.x += passDir * 2.2 * dt * sm;
+        e.y = e.baseY + Math.sin(e.bobPhase) * 12;
+
+        if (e.x < this.cameraX - 200) {
+          e.vx = Math.abs(e.vx);
+          e.x = this.cameraX - 180;
+        } else if (e.x + e.w > this.cameraX + VIEW_W + 200) {
+          e.vx = -Math.abs(e.vx);
+          e.x = this.cameraX + VIEW_W + 180 - e.w;
+        }
+
+        e.shootCooldownMs = (e.shootCooldownMs ?? 1800) - dtMs;
+        if ((e.shootCooldownMs ?? 0) <= 0) {
+          const ecx = e.x + e.w / 2;
+          const dir = this.playerX >= ecx ? 1 : -1;
+          this.enemyBullets.push({
+            id: nextId(),
+            x: ecx,
+            y: e.y + e.h * 0.4,
+            vx: dir * (TURRET_BULLET_SPEED + 1.5),
+            vy: 0,
+            active: true,
+          });
+          e.shootCooldownMs = 1600 + Math.random() * 600;
+          this.emitAudio({ type: "tongue" });
+        }
+
+        if (Math.random() < 0.002 * dt && this.enemies.filter((x) => x.active && x.kind === "laser_shark").length < 3) {
+          const spawnX = this.playerX + VIEW_W * 0.55;
+          const mini = this.createEnemyFromSpawn({ kind: "laser_shark", y: e.y - 20 }, spawnX);
+          this.enemies.push(mini);
+        }
+        continue;
+      }
+
+      if (e.kind === "laser_shark" || e.kind === "elite_laser_shark" || e.kind === "rov_drone") {
+        e.bobPhase += 0.05 * dt;
+        const cfg = UNDERWATER_HOMING[e.kind as keyof typeof UNDERWATER_HOMING];
+        const ecx = e.x + e.w / 2;
+        const ecy = e.y + e.h / 2;
+        const dx = targetX - ecx;
+        const dy = targetY - ecy;
+        const dist = Math.hypot(dx, dy) || 1;
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        if (e.phase === "patrol") {
+          e.x += e.vx * dt * sm;
+          e.y = e.baseY + Math.sin(e.bobPhase) * cfg.bob;
+          if (e.x + e.w < targetX - 20) {
+            e.phase = "homing";
+            e.homingSince = this.timeMs;
+          } else if (e.x + e.w < this.cameraX - 120) {
+            e.active = false;
+          }
+        } else {
+          const ramp = Math.min(1, (this.timeMs - e.homingSince) / 500);
+          const steer = cfg.steer * (0.6 + ramp * 0.5);
+          const speed = cfg.speed * (0.8 + ramp * 0.4) * sm;
+          e.x += nx * speed * steer * dt * 16;
+          e.y += ny * speed * steer * dt * 16;
+          e.y += Math.sin(e.bobPhase) * cfg.bob * 0.06 * dt;
+          e.y = Math.max(48, Math.min(groundY - e.h - 8, e.y));
+        }
+
+        if (e.x + e.w < this.cameraX - 160) {
+          e.active = false;
+        }
+        continue;
+      }
 
       if (e.groundUnit) {
         e.beepPhase = (e.beepPhase ?? 0) + 0.06 * dt;
@@ -1859,8 +2215,16 @@ export class RainbowCowboyEngine {
         this.rampageUntil = this.timeMs + RAMPAGE_DURATION_MS;
         this.invincibleUntil = this.rampageUntil;
         this.speedBoostUntil = this.rampageUntil;
+        if (this.spearEnabled()) {
+          this.spearInfiniteUntil = this.rampageUntil;
+          this.spearAmmo = SPEAR_MAGAZINE_CAPACITY;
+          this.spearReloadingUntil = 0;
+        }
         this.emitAudio({ type: "unicorn_treat" });
-        this.showPopup("RAINBOW RAMPAGE", 2000);
+        this.showPopup(
+          this.spearEnabled() ? "RAINBOW UNICORN TREAT!" : "RAINBOW RAMPAGE",
+          2000,
+        );
         break;
       case "weapon_pistol":
         this.hasPistol = true;
@@ -1880,7 +2244,15 @@ export class RainbowCowboyEngine {
     }
   }
 
+  private getSpearHudLabel(): string | null {
+    if (!this.spearEnabled()) return null;
+    if (this.isSpearInfinite) return "SPEARS: ∞";
+    if (this.isSpearReloading) return "RELOADING...";
+    return `SPEARS: ${this.spearAmmo}`;
+  }
+
   private getWeaponHudLabel(): string | null {
+    if (this.spearEnabled()) return this.getSpearHudLabel();
     if (!this.weaponsEnabled()) return null;
     this.syncActiveWeapon();
     if (this.activeWeapon === "machine_gun" && this.isMachineGunActive) {
@@ -1941,7 +2313,7 @@ export class RainbowCowboyEngine {
     for (const hazard of this.hazards) {
       if (!hazard.active) continue;
 
-      if (hazard.kind === "landmine") {
+      if (hazard.kind === "landmine" || hazard.kind === "sea_mine") {
         const groundY = this.config.level.groundY;
         if (
           playerOverlapsLandmine(
@@ -1954,7 +2326,20 @@ export class RainbowCowboyEngine {
           )
         ) {
           const knock = this.playerX < hazard.x ? -8 : 8;
-          this.detonateLandmine(hazard, "Landmine", knock);
+          const label = hazard.kind === "sea_mine" ? "Sea mine" : "Landmine";
+          this.detonateLandmine(hazard, label, knock, hazard.kind === "sea_mine" ? "BOOM!" : "BOOM!");
+        }
+      }
+
+      if (hazard.kind === "toxic_jelly") {
+        const jr = {
+          x: hazard.x - 28,
+          y: hazard.y - 36,
+          w: 56,
+          h: 48,
+        };
+        if (rectsOverlap(pr, jr)) {
+          this.applyGas("Toxic jelly contact");
         }
       }
 
@@ -1977,7 +2362,10 @@ export class RainbowCowboyEngine {
     if (this.playerX < this.config.extractionX) return;
     if (!this.isExtractionUnlocked()) {
       if (this.timeMs >= this.extractionBlockedPopupUntil) {
-        this.showPopup("Hold the line — clear the nests or survive the final wave!", 1500);
+        const msg = this.config.extractionGate?.includes("boss_defeated")
+          ? "Defeat LASER JAWS before extraction!"
+          : "Hold the line — clear the nests or survive the final wave!";
+        this.showPopup(msg, 1500);
         this.extractionBlockedPopupUntil = this.timeMs + 3200;
       }
       return;
@@ -2010,6 +2398,8 @@ export class RainbowCowboyEngine {
       ),
       weaponLabel: this.getWeaponHudLabel(),
       bazookaAmmo: this.bazookaAmmo,
+      spearReloading: this.isSpearReloading,
+      spearInfinite: this.isSpearInfinite,
     };
   }
 

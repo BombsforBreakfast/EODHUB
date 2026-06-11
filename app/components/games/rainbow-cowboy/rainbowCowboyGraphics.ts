@@ -375,6 +375,326 @@ function drawAlamoExtraction(
   ctx.textAlign = "left";
 }
 
+function drawDeepSeaSky(ctx: CanvasRenderingContext2D, camX: number, time: number) {
+  const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+  grad.addColorStop(0, "#0a2848");
+  grad.addColorStop(0.4, "#104868");
+  grad.addColorStop(0.75, "#186888");
+  grad.addColorStop(1, "#1a7898");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+  for (let i = 0; i < 18; i++) {
+    const bx = ((i * 137 + camX * 0.15) % (VIEW_W + 80)) - 40;
+    const by = 40 + (i * 53) % (VIEW_H - 120);
+    const r = 3 + (i % 4);
+    ctx.fillStyle = `rgba(180,230,255,${0.08 + (i % 3) * 0.04})`;
+    ctx.beginPath();
+    ctx.arc(bx, by + Math.sin(time / 400 + i) * 6, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "rgba(0,40,80,0.15)";
+  for (let i = -1; i < 5; i++) {
+    const base = i * 500 - (camX * 0.06) % 500;
+    ctx.beginPath();
+    ctx.moveTo(base, VIEW_H);
+    ctx.lineTo(base + 200, VIEW_H * 0.55);
+    ctx.lineTo(base + 400, VIEW_H);
+    ctx.fill();
+  }
+}
+
+function drawDeepSeaGroundLayer(ctx: CanvasRenderingContext2D, config: LevelConfig, camX: number) {
+  const groundY = config.level.groundY;
+  const levelW = config.level.levelWidth;
+  const startCol = Math.floor(camX / GROUND_TILE) - 1;
+  const endCol = Math.ceil((camX + VIEW_W) / GROUND_TILE) + 1;
+
+  for (let col = startCol; col <= endCol; col++) {
+    for (let row = Math.floor(groundY / GROUND_TILE); row < Math.ceil(VIEW_H / GROUND_TILE); row++) {
+      const x = col * GROUND_TILE - camX;
+      const y = row * GROUND_TILE;
+      const v = tileVariant(col);
+      const bases = ["#3a5a48", "#426050", "#385848"];
+      px(ctx, x, y, GROUND_TILE, GROUND_TILE, bases[v]);
+      px(ctx, x + 2, y + 2, GROUND_TILE - 4, GROUND_TILE - 4, "#4a7060");
+    }
+  }
+
+  px(ctx, -camX, groundY, levelW, 8, "#2a4840");
+  px(ctx, -camX, groundY + 8, levelW, 6, "#1a3830");
+
+  const startCol2 = Math.floor(camX / GROUND_TILE) - 2;
+  const endCol2 = Math.ceil((camX + VIEW_W) / GROUND_TILE) + 2;
+  for (let col = startCol2; col <= endCol2; col++) {
+    const wx = col * GROUND_TILE;
+    if (wx < 0 || wx > levelW) continue;
+    const h = worldHash(wx);
+    const sx = wx - camX;
+    if (h % 19 === 0) {
+      px(ctx, sx + 4, groundY - 14, 6, 14, "#5a8878");
+      px(ctx, sx + 2, groundY - 18, 10, 6, "#68a088");
+    }
+    if (h % 27 === 0) {
+      ctx.fillStyle = "rgba(120,200,220,0.25)";
+      ctx.beginPath();
+      ctx.arc(sx + 8, groundY - 6, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+function drawDeepSeaPlatform(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  camX: number,
+) {
+  const sx = x - camX;
+  px(ctx, sx, y, w, h, "#4a7068");
+  px(ctx, sx + 2, y + 2, w - 4, h - 4, "#5a8878");
+  for (let i = 0; i < w; i += 16) {
+    px(ctx, sx + i, y + h, 4, 8, "#68a088");
+  }
+}
+
+function drawDeepSeaWall(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  camX: number,
+) {
+  const sx = x - camX;
+  px(ctx, sx, y, w, h, "#2a4840");
+  px(ctx, sx + 4, y + 4, w - 8, h - 8, "#3a5850");
+  px(ctx, sx + 8, y + 12, w - 16, 4, "#1a3028");
+}
+
+function drawDeepSeaExtraction(
+  ctx: CanvasRenderingContext2D,
+  exX: number,
+  groundY: number,
+  camX: number,
+  time: number,
+) {
+  const sx = exX - camX;
+  px(ctx, sx - 48, groundY - 8, 96, 8, "#3a5850");
+  px(ctx, sx - 44, groundY - 64, 88, 56, "#4a6860");
+  px(ctx, sx - 40, groundY - 60, 80, 48, "#5a7870");
+  px(ctx, sx - 20, groundY - 52, 40, 32, "#286878");
+  px(ctx, sx - 16, groundY - 48, 32, 24, "#38a0b0");
+
+  const blink = Math.sin(time / 300) > 0;
+  if (blink) {
+    ctx.fillStyle = "#60ffff";
+    ctx.beginPath();
+    ctx.arc(sx + 28, groundY - 70, 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = "#c0f0ff";
+  ctx.font = "bold 11px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("DEEP SEA EXTRACTION", sx, groundY - 78);
+  ctx.textAlign = "left";
+}
+
+function drawSeaMine(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  gy: number,
+  time: number,
+) {
+  const pulse = 0.65 + Math.sin(time / 140) * 0.35;
+  drawGroundShadow(ctx, sx, gy, 20);
+  ctx.strokeStyle = `rgba(255,100,60,${0.2 + pulse * 0.3})`;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.ellipse(sx, gy - 4, 18, 7, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  px(ctx, sx - 16, gy - 12, 32, 10, "#505860");
+  px(ctx, sx - 14, gy - 11, 28, 8, "#687880");
+  for (let i = -2; i <= 2; i++) {
+    px(ctx, sx + i * 6 - 2, gy - 22, 4, 8, "#888");
+  }
+  px(ctx, sx - 6, gy - 18, 12, 6, "#a0a8b0");
+  if (Math.sin(time / 160) > 0.1) {
+    ctx.fillStyle = `rgba(255,80,40,${0.8 + pulse * 0.2})`;
+    ctx.fillRect(sx - 2, gy - 17, 4, 4);
+  }
+}
+
+function drawToxicJelly(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  y: number,
+  time: number,
+  expandScale = 1,
+) {
+  const bob = Math.sin(time / 220) * 4;
+  const py = y - 24 + bob;
+  const w = 56 * expandScale;
+  const h = 40 * expandScale;
+  ctx.fillStyle = "rgba(60,200,80,0.35)";
+  ctx.beginPath();
+  ctx.ellipse(sx, py, w * 0.5, h * 0.45, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(40,160,60,0.5)";
+  ctx.beginPath();
+  ctx.ellipse(sx - 8, py + 4, w * 0.28, h * 0.3, -0.2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "rgba(120,255,100,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(sx + 6, py - 2, w * 0.22, h * 0.22, 0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#80ff60";
+  ctx.font = "bold 10px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("☠", sx, py + 4);
+  ctx.textAlign = "left";
+}
+
+function drawLaserShark(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  y: number,
+  w: number,
+  h: number,
+  time: number,
+  elite = false,
+  hp?: number,
+  maxHp?: number,
+) {
+  const bodyColor = elite ? "#486878" : "#587888";
+  const finColor = elite ? "#304858" : "#405868";
+  px(ctx, sx, y + h * 0.3, w, h * 0.5, bodyColor);
+  px(ctx, sx + w * 0.1, y + h * 0.15, w * 0.75, h * 0.35, bodyColor);
+  px(ctx, sx + w * 0.7, y, w * 0.25, h * 0.55, finColor);
+  px(ctx, sx + 4, y + h * 0.55, w * 0.2, h * 0.3, finColor);
+  px(ctx, sx + w * 0.15, y + h * 0.35, 8, 6, "#fff");
+  px(ctx, sx + w * 0.17, y + h * 0.37, 4, 4, "#102030");
+  const laserOn = Math.sin(time / 120) > 0;
+  if (laserOn) {
+    ctx.fillStyle = "rgba(255,40,60,0.7)";
+    ctx.fillRect(sx + w * 0.22, y + h * 0.38, w * 0.5, 3);
+  }
+  if (maxHp && maxHp > 1 && hp != null) {
+    const barW = w - 8;
+    px(ctx, sx + 4, y - 8, barW, 4, "#203040");
+    px(ctx, sx + 4, y - 8, barW * (hp / maxHp), 4, "#ff4060");
+  }
+}
+
+function drawRovDrone(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  y: number,
+  w: number,
+  h: number,
+  time: number,
+) {
+  const spin = time / 90;
+  px(ctx, sx + 4, y + 8, w - 8, h - 12, "#3a4858");
+  px(ctx, sx + 8, y + 12, w - 16, h - 20, "#506070");
+  px(ctx, sx + w * 0.35, y + 4, w * 0.3, 6, "#687888");
+  ctx.strokeStyle = "#80a0c0";
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 4; i++) {
+    const a = spin + (i * Math.PI) / 2;
+    const cx = sx + w / 2 + Math.cos(a) * (w * 0.38);
+    const cy = y + h / 2 + Math.sin(a) * (h * 0.3);
+    ctx.beginPath();
+    ctx.moveTo(sx + w / 2, y + h / 2);
+    ctx.lineTo(cx, cy);
+    ctx.stroke();
+    ctx.fillStyle = "#90b0d0";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const blink = Math.sin(time / 200) > 0;
+  if (blink) {
+    ctx.fillStyle = "#ff4040";
+    ctx.fillRect(sx + w * 0.4, y + h * 0.35, 4, 4);
+  }
+}
+
+function drawLaserJaws(
+  ctx: CanvasRenderingContext2D,
+  sx: number,
+  y: number,
+  w: number,
+  h: number,
+  time: number,
+  hp?: number,
+  maxHp?: number,
+) {
+  drawLaserShark(ctx, sx, y, w, h, time, true, hp, maxHp);
+  px(ctx, sx + w * 0.55, y + h * 0.5, w * 0.35, h * 0.2, "#304050");
+  ctx.fillStyle = "#ffe080";
+  ctx.font = "bold 9px monospace";
+  ctx.textAlign = "center";
+  ctx.fillText("JAWS", sx + w * 0.5, y + h * 0.62);
+  ctx.textAlign = "left";
+  if (maxHp && hp != null) {
+    const barW = w - 12;
+    px(ctx, sx + 6, y - 12, barW, 5, "#203040");
+    px(ctx, sx + 6, y - 12, barW * (hp / maxHp), 5, "#ff2060");
+  }
+}
+
+function drawSpearProjectile(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  camX: number,
+  dir: number,
+  bubblePhase: number,
+  time: number,
+) {
+  const sx = x - camX;
+  const sy = y;
+  ctx.save();
+  ctx.translate(sx, sy);
+  if (dir < 0) ctx.scale(-1, 1);
+  px(ctx, -4, -3, 24, 6, "#a0a8b0");
+  px(ctx, 18, -4, 10, 8, "#e8f0ff");
+  px(ctx, 24, -2, 6, 4, "#ffffff");
+  for (let i = 0; i < 4; i++) {
+    const bx = -8 - i * 7;
+    const by = Math.sin(bubblePhase + i * 1.2) * 3;
+    ctx.fillStyle = `rgba(180,230,255,${0.35 - i * 0.06})`;
+    ctx.beginPath();
+    ctx.arc(bx, by, 2 + (i % 2), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawSpearMuzzle(
+  ctx: CanvasRenderingContext2D,
+  engine: RainbowCowboyEngine,
+  camX: number,
+) {
+  if (engine.timeMs - engine.lastSpearFireMs > 120) return;
+  const dir = engine.facing === "right" ? 1 : -1;
+  const mouth = {
+    x: engine.playerX + dir * (PLAYER_W * 0.35) - camX,
+    y: engine.playerY - PLAYER_H * (engine.ducking ? 0.48 : 0.55),
+  };
+  ctx.fillStyle = "rgba(180,230,255,0.5)";
+  ctx.beginPath();
+  ctx.arc(mouth.x + dir * 14, mouth.y, 8, 0, Math.PI * 2);
+  ctx.fill();
+}
+
 function drawMonsterTruckWheel(
   ctx: CanvasRenderingContext2D,
   cx: number,
@@ -827,6 +1147,7 @@ function drawHazard(
   timerMs?: number,
   timerMaxMs?: number,
   exploded?: boolean,
+  expandScale = 1,
 ) {
   const sx = x - camX;
 
@@ -911,6 +1232,16 @@ function drawHazard(
       ctx.fill();
       px(ctx, sx - 4, y - 22, 8, 8, "#ffe080");
     }
+  }
+
+  if (kind === "sea_mine") {
+    drawSeaMine(ctx, sx, y, time);
+    return;
+  }
+
+  if (kind === "toxic_jelly") {
+    drawToxicJelly(ctx, sx, y, time, expandScale);
+    return;
   }
 
   if (kind === "trash_balloon") {
@@ -1143,6 +1474,22 @@ function drawEnemy(
     drawMonsterTruck(ctx, sx, y, w, h, time, "grenade", opts?.hp, opts?.maxHp, opts?.beepPhase);
     return;
   }
+  if (kind === "laser_shark") {
+    drawLaserShark(ctx, sx, y, w, h, time, false, opts?.hp, opts?.maxHp);
+    return;
+  }
+  if (kind === "elite_laser_shark") {
+    drawLaserShark(ctx, sx, y, w, h, time, true, opts?.hp, opts?.maxHp);
+    return;
+  }
+  if (kind === "rov_drone") {
+    drawRovDrone(ctx, sx, y, w, h, time);
+    return;
+  }
+  if (kind === "laser_jaws") {
+    drawLaserJaws(ctx, sx, y, w, h, time, opts?.hp, opts?.maxHp);
+    return;
+  }
   if (kind === "quad") drawQuadDrone(ctx, sx, y, w, h, time);
   else if (kind === "recon") drawReconDrone(ctx, sx, y, w, h, time);
   else if (kind === "red_baron") drawRedBaron(ctx, sx, y, w, h, time, bombWarning);
@@ -1277,13 +1624,19 @@ function drawGripperArm(
 }
 
 function drawAttackVisual(ctx: CanvasRenderingContext2D, engine: RainbowCowboyEngine, camX: number) {
-  const tongue = engine.getTongueCurve();
-  if (tongue) {
-    if (engine.rideType === "eod_robot") {
-      drawGripperArm(ctx, tongue, camX);
-    } else {
-      drawTongueAttack(ctx, tongue, camX);
+  const isSpearLevel = engine.config.level.id === "level-5";
+
+  if (!isSpearLevel) {
+    const tongue = engine.getTongueCurve();
+    if (tongue) {
+      if (engine.rideType === "eod_robot") {
+        drawGripperArm(ctx, tongue, camX);
+      } else {
+        drawTongueAttack(ctx, tongue, camX);
+      }
     }
+  } else {
+    drawSpearMuzzle(ctx, engine, camX);
   }
 
   if (engine.timeMs - engine.lastGunFireMs < 90 && engine.lastGunWeapon) {
@@ -1606,16 +1959,31 @@ function drawRainbowBlast(ctx: CanvasRenderingContext2D, engine: RainbowCowboyEn
   const t = Math.max(0, Math.min(1, 1 - (engine.rainbowBlastUntil - engine.timeMs) / 900));
   const cx = engine.playerX - engine.cameraX;
   const cy = engine.playerY - 24;
-  const colors = ["#e83838", "#e88820", "#e8e020", "#38b838", "#3868e8", "#a040c0"];
+  const underwater = engine.config.level.id === "level-5";
+  const colors = underwater
+    ? ["#60d0ff", "#80e8ff", "#e83838", "#e8e020", "#38b838", "#a040c0"]
+    : ["#e83838", "#e88820", "#e8e020", "#38b838", "#3868e8", "#a040c0"];
   for (let i = 0; i < colors.length; i++) {
     const radius = 50 + t * 340 - i * 16;
     if (radius <= 0) continue;
     ctx.strokeStyle = colors[i];
-    ctx.globalAlpha = 0.55 * (1 - t * 0.85);
-    ctx.lineWidth = 5;
+    ctx.globalAlpha = underwater ? 0.45 * (1 - t * 0.8) : 0.55 * (1 - t * 0.85);
+    ctx.lineWidth = underwater ? 6 : 5;
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.stroke();
+    if (underwater && i % 2 === 0) {
+      for (let b = 0; b < 6; b++) {
+        const a = (b / 6) * Math.PI * 2 + t * 4;
+        const bx = cx + Math.cos(a) * radius * 0.85;
+        const by = cy + Math.sin(a) * radius * 0.85;
+        ctx.fillStyle = colors[i];
+        ctx.globalAlpha = 0.3 * (1 - t);
+        ctx.beginPath();
+        ctx.arc(bx, by, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
   ctx.globalAlpha = 1;
 }
@@ -1663,6 +2031,9 @@ export function drawWorld(
   } else if (theme === "alamo") {
     drawAlamoSky(ctx, camX, time);
     drawAlamoGroundLayer(ctx, config, camX);
+  } else if (theme === "deep_sea") {
+    drawDeepSeaSky(ctx, camX, time);
+    drawDeepSeaGroundLayer(ctx, config, camX);
   } else {
     drawParallaxSky(ctx, camX, time);
     drawGroundLayer(ctx, config, camX);
@@ -1672,6 +2043,7 @@ export function drawWorld(
     if (plat.x + plat.w < camX - 20 || plat.x > camX + VIEW_W + 20) continue;
     if (theme === "canyon") drawCanyonPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
     else if (theme === "alamo") drawAlamoPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
+    else if (theme === "deep_sea") drawDeepSeaPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
     else drawPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
   }
 
@@ -1679,6 +2051,7 @@ export function drawWorld(
     if (wall.x + wall.w < camX - 20 || wall.x > camX + VIEW_W + 20) continue;
     if (theme === "canyon") drawCanyonWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
     else if (theme === "alamo") drawAlamoWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
+    else if (theme === "deep_sea") drawDeepSeaWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
     else drawWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
   }
 
@@ -1686,6 +2059,8 @@ export function drawWorld(
     drawCanyonExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
   } else if (theme === "alamo") {
     drawAlamoExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
+  } else if (theme === "deep_sea") {
+    drawDeepSeaExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
   } else {
     drawExtractionZone(ctx, config.extractionX, config.level.groundY, camX, time);
   }
@@ -1704,7 +2079,11 @@ export function drawWorld(
 
   for (const hazard of engine.hazards) {
     const fx = hazard as { explodeUntil?: number; kind: string; x: number; y: number };
-    if (fx.explodeUntil && engine.timeMs < fx.explodeUntil && fx.kind === "landmine") {
+    if (
+      fx.explodeUntil &&
+      engine.timeMs < fx.explodeUntil &&
+      (fx.kind === "landmine" || fx.kind === "sea_mine")
+    ) {
       drawLandmineExplosion(
         ctx,
         fx.x,
@@ -1717,6 +2096,12 @@ export function drawWorld(
     }
     if (!hazard.active) continue;
     if (hazard.x < camX - 80 || hazard.x > camX + VIEW_W + 80) continue;
+    const expandScale =
+      hazard.kind === "toxic_jelly" &&
+      hazard.expandUntil &&
+      engine.timeMs < hazard.expandUntil
+        ? 1.35
+        : 1;
     drawHazard(
       ctx,
       hazard.kind,
@@ -1727,6 +2112,7 @@ export function drawWorld(
       hazard.timerMs,
       hazard.timerMaxMs,
       hazard.exploded,
+      expandScale,
     );
   }
 
@@ -1740,6 +2126,12 @@ export function drawWorld(
     if (!shot.active) continue;
     if (shot.x < camX - 40 || shot.x > camX + VIEW_W + 40) continue;
     drawBlasterProjectile(ctx, shot.x, shot.y, camX, shot.weapon, shot.vx >= 0 ? 1 : -1);
+  }
+
+  for (const spear of engine.spearProjectiles) {
+    if (!spear.active) continue;
+    if (spear.x < camX - 40 || spear.x > camX + VIEW_W + 40) continue;
+    drawSpearProjectile(ctx, spear.x, spear.y, camX, spear.vx >= 0 ? 1 : -1, spear.bubblePhase, time);
   }
 
   for (const bullet of engine.enemyBullets) {

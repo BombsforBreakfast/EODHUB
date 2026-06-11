@@ -13,7 +13,11 @@ export type RainbowCowboyEnemyKind =
   | "cargo"
   | "boom_bot"
   | "armored_boom_bot"
-  | "grenade_goblin_bot";
+  | "grenade_goblin_bot"
+  | "laser_shark"
+  | "elite_laser_shark"
+  | "rov_drone"
+  | "laser_jaws";
 
 export type RainbowCowboyPickupKind =
   | "range_beer"
@@ -27,13 +31,19 @@ export type RainbowCowboyPickupKind =
 
 export type WeaponKind = "pistol" | "machine_gun" | "bazooka";
 
-export type RainbowCowboyHazardKind = "landmine" | "dynamite" | "trash_balloon";
+export type RainbowCowboyHazardKind =
+  | "landmine"
+  | "dynamite"
+  | "trash_balloon"
+  | "sea_mine"
+  | "toxic_jelly";
 
-export type RainbowCowboyLevelTheme = "pasture" | "canyon" | "alamo";
+export type RainbowCowboyLevelTheme = "pasture" | "canyon" | "alamo" | "deep_sea";
 
 export type RainbowCowboyExtractionGate =
   | "nests_cleared"
-  | "final_wave_survived";
+  | "final_wave_survived"
+  | "boss_defeated";
 
 export type RainbowCowboyDifficulty = "easy" | "novice" | "hard";
 
@@ -97,6 +107,8 @@ export interface RainbowCowboyHudSnapshot {
   blasterSecondsLeft: number;
   weaponLabel: string | null;
   bazookaAmmo: number;
+  spearReloading?: boolean;
+  spearInfinite?: boolean;
 }
 
 export interface RainbowCowboyEngineSnapshot {
