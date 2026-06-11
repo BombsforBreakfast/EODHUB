@@ -16,27 +16,34 @@ interface Props {
   onDismiss: () => void;
 }
 
-function useLayoutMode(): { mobile: boolean; landscape: boolean } {
-  const [state, setState] = useState(() => {
+function useLayoutMode(): { mobile: boolean; landscape: boolean; compact: boolean } {
+  const read = () => {
     if (typeof window === "undefined") {
-      return { mobile: false, landscape: false };
+      return { mobile: false, landscape: false, compact: false };
     }
     const coarse = window.matchMedia("(pointer: coarse)").matches;
     const narrow = window.matchMedia("(max-width: 900px), (max-height: 500px)").matches;
     const landscape = window.matchMedia("(orientation: landscape)").matches;
-    return { mobile: coarse || narrow, landscape: narrow && landscape };
-  });
+    const mobile = coarse || narrow;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    return {
+      mobile,
+      landscape: narrow && landscape,
+      compact: mobile && landscape && vh < 420,
+    };
+  };
+
+  const [state, setState] = useState(read);
 
   useEffect(() => {
-    const refresh = () => {
-      const coarse = window.matchMedia("(pointer: coarse)").matches;
-      const narrow = window.matchMedia("(max-width: 900px), (max-height: 500px)").matches;
-      const landscape = window.matchMedia("(orientation: landscape)").matches;
-      setState({ mobile: coarse || narrow, landscape: narrow && landscape });
-    };
+    const refresh = () => setState(read());
     refresh();
     window.addEventListener("resize", refresh);
-    return () => window.removeEventListener("resize", refresh);
+    window.visualViewport?.addEventListener("resize", refresh);
+    return () => {
+      window.removeEventListener("resize", refresh);
+      window.visualViewport?.removeEventListener("resize", refresh);
+    };
   }, []);
 
   return state;
@@ -58,29 +65,32 @@ const DESKTOP_ROWS = (attackLabel: string, specialLabel: string, levelId?: strin
 
 const MOBILE_LANDSCAPE_ROWS = (attackLabel: string, specialLabel: string, levelId?: string) => {
   const rows = [
-    { keys: "Joystick ← →", action: "Move left and right" },
-    { keys: "Joystick ↑", action: "Aim upward for attacks" },
-    { keys: "Joystick ↓", action: "Duck / crouch" },
-    { keys: "JUMP", action: "Jump (largest button, lower-right)" },
-    { keys: "ATK", action: `${attackLabel} — primary attack` },
-    { keys: "SPEC", action: `${specialLabel} — shows charge count (×N)` },
+    { keys: "Joystick ← →", action: "Move" },
+    { keys: "Joystick ↑ / ↓", action: "Aim up / Duck" },
+    { keys: "JUMP", action: "Jump (lower-right)" },
+    { keys: "ATK", action: `${attackLabel}` },
+    { keys: "SPEC", action: `${specialLabel} (charge count)` },
   ] as { keys: string; action: string }[];
   if (levelId === "level-3") {
-    rows.push({ keys: "GUN", action: "Fire weapon — pistol, bazooka, or machine gun (hold to spray)" });
+    rows.push({ keys: "GUN", action: "Hold to fire" });
   }
   return rows;
 };
 
-const MOBILE_PORTRAIT_ROWS = (attackLabel: string, specialLabel: string, levelId?: string) =>
-  MOBILE_LANDSCAPE_ROWS(attackLabel, specialLabel, levelId);
+const MOBILE_COMPACT_ROWS = (levelId?: string) => {
+  const rows = [
+    { keys: "Joystick", action: "Move · aim · duck" },
+    { keys: "JUMP / ATK", action: "Jump & attack" },
+    { keys: "SPEC", action: "Special blast" },
+  ] as { keys: string; action: string }[];
+  if (levelId === "level-3") rows.push({ keys: "GUN", action: "Hold to fire" });
+  return rows;
+};
 
 const MISSION_BY_LEVEL: Record<string, string> = {
-  "level-1":
-    "Ride right, reach extraction alive, and rack up points by eating drones and grabbing loot.",
-  "level-2":
-    "Fight through the canyon, survive the swarm, and reach extraction. Prioritize threats.",
-  "level-3":
-    "Hold the Alamo against RC monster trucks. You start with a pistol — use GUN / T to fire.",
+  "level-1": "Ride right, reach extraction alive, and rack up points.",
+  "level-2": "Fight through the canyon and reach extraction.",
+  "level-3": "Hold the Alamo — pistol from the start, use GUN to fire.",
 };
 
 const DEFAULT_MISSION = MISSION_BY_LEVEL["level-1"];
@@ -89,25 +99,20 @@ const BASE_HAZARDS = (attackLabel: string) =>
   [
     "Landmines — jump or crouch past.",
     `Trash balloons — ${attackLabel.toLowerCase()} at your peril.`,
-    `Drones — bump for damage; ${attackLabel.toLowerCase()} for points.`,
+    `Drones — ${attackLabel.toLowerCase()} for points.`,
     "Dynamite — clear out before it blows.",
   ] as const;
 
 const LEVEL_2_HAZARDS = [
-  "Red Baron — red bomber; bomb every second until slurped.",
-  "Dropped bombs — dodge the blast radius.",
-  "Drone nests — spawn every second until destroyed.",
-  "Swarm corridor — save a rainbow charge.",
+  "Red Baron — bomber until slurped.",
+  "Dropped bombs — dodge blast radius.",
+  "Drone nests — destroy to stop spawns.",
 ] as const;
 
 const LEVEL_3_HAZARDS = [
-  "You start with a PISTOL — no waiting for a pickup. (T) or mobile GUN to fire.",
-  "Machine gun & bazooka pickups upgrade you temporarily, then back to pistol.",
-  "RC Monster Trucks — blinking red light, explode when destroyed.",
-  "Turret Trucks — slow roof gun shoots left or right at you.",
-  "Grenade Trucks — lob bouncing grenades until you kill them.",
-  "Powerups — Range Beer, White Monster, Zyn, Unicorn Treat still apply.",
-  "The Alamo — clear both drone nests or survive the final wave to unlock extraction.",
+  "Pistol from start — GUN / T to fire.",
+  "RC Monster Trucks — explode when destroyed.",
+  "Turret & Grenade Trucks — priority threats.",
 ] as const;
 
 function getHazards(levelId: string | undefined, attackLabel: string): readonly string[] {
@@ -123,30 +128,25 @@ export function RainbowCowboyInstructionsModal({
   specialLabel,
   onDismiss,
 }: Props) {
-  const { mobile, landscape } = useLayoutMode();
+  const { mobile, compact } = useLayoutMode();
 
   if (!open) return null;
 
-  const isLevel2 = levelId === "level-2";
   const isLevel3 = levelId === "level-3";
-  const isWideLevel = isLevel2 || isLevel3;
   const mission = (levelId && MISSION_BY_LEVEL[levelId]) || DEFAULT_MISSION;
   const hazards = getHazards(levelId, attackLabel);
 
   const rows = !mobile
     ? DESKTOP_ROWS(attackLabel, specialLabel, levelId)
-    : landscape
-      ? MOBILE_LANDSCAPE_ROWS(attackLabel, specialLabel, levelId)
-      : MOBILE_PORTRAIT_ROWS(attackLabel, specialLabel, levelId);
+    : compact
+      ? MOBILE_COMPACT_ROWS(levelId)
+      : MOBILE_LANDSCAPE_ROWS(attackLabel, specialLabel, levelId);
 
-  const controlsHeading = !mobile
-    ? "Controls"
-    : landscape
-      ? "Landscape touch controls"
-      : "Touch controls";
+  const controlsHeading = !mobile ? "Controls" : "Touch controls";
 
   return (
     <div
+      className="rc-instructions-overlay"
       role="dialog"
       aria-modal="true"
       aria-labelledby="rc-instructions-title"
@@ -157,159 +157,165 @@ export function RainbowCowboyInstructionsModal({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: mobile ? 8 : 12,
-        background: "rgba(8, 4, 20, 0.82)",
+        background: "rgba(8, 4, 20, 0.86)",
         backdropFilter: "blur(4px)",
       }}
     >
       <div
+        className="rc-instructions-panel"
         style={{
           width: "100%",
-          maxWidth: isWideLevel ? 480 : 380,
+          maxWidth: compact ? 360 : 400,
           borderRadius: 14,
           border: "3px solid rgba(255,96,192,0.65)",
           background: "linear-gradient(180deg, rgba(30,18,48,0.98), rgba(16,10,32,0.98))",
           boxShadow: "0 12px 40px rgba(0,0,0,0.55)",
-          padding: mobile ? "12px 12px 10px" : "14px 14px 12px",
+          padding: compact ? "10px 10px 0" : "12px 12px 0",
           fontFamily: "monospace",
           color: "#fff",
         }}
       >
-        <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
-          <BombSuitManAvatar size={mobile ? 40 : 44} />
-        </div>
-        <h2
-          id="rc-instructions-title"
-          style={{
-            margin: "0 0 8px",
-            textAlign: "center",
-            fontSize: mobile ? 16 : 17,
-            fontWeight: 900,
-            color: BSM_ACCENT_LIGHT,
-          }}
-        >
-          Quick Guide
-        </h2>
-
-        <p
-          style={{
-            margin: "0 0 8px",
-            fontSize: mobile ? 10 : 11,
-            lineHeight: 1.35,
-            color: "#d8cce8",
-          }}
-        >
-          {mission}
-        </p>
-
-        {isLevel3 && (
-          <div
+        <div className="rc-instructions-scroll">
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: compact ? 2 : 4 }}>
+            <BombSuitManAvatar size={compact ? 32 : 40} />
+          </div>
+          <h2
+            id="rc-instructions-title"
             style={{
-              margin: "0 0 10px",
-              padding: "8px 10px",
-              borderRadius: 8,
-              border: "2px solid rgba(128,240,255,0.65)",
-              background: "rgba(128,240,255,0.12)",
-              fontSize: mobile ? 10 : 11,
-              lineHeight: 1.4,
-              color: "#dff8ff",
+              margin: "0 0 6px",
+              textAlign: "center",
+              fontSize: compact ? 14 : 16,
+              fontWeight: 900,
+              color: BSM_ACCENT_LIGHT,
             }}
           >
-            <strong style={{ color: "#80f0ff" }}>GUN (Level 3):</strong> Press <strong>T</strong> on
-            keyboard or hold the compact <strong>GUN</strong> button near attack on mobile.
-          </div>
-        )}
+            Quick Guide
+          </h2>
 
-        <p
-          style={{
-            margin: "0 0 4px",
-            fontSize: 10,
-            fontWeight: 800,
-            color: "#ffe080",
-            letterSpacing: "0.04em",
-            textTransform: "uppercase",
-          }}
-        >
-          {controlsHeading}
-        </p>
+          <p
+            className="rc-instructions-mission"
+            style={{
+              margin: "0 0 8px",
+              fontSize: compact ? 9.5 : 10,
+              lineHeight: 1.35,
+              color: "#d8cce8",
+            }}
+          >
+            {mission}
+          </p>
 
-        <ul
-          style={{
-            listStyle: "none",
-            margin: "0 0 8px",
-            padding: 0,
-            display: "flex",
-            flexDirection: "column",
-            gap: 3,
-          }}
-        >
-          {rows.map((row) => (
+          {isLevel3 && !compact && (
+            <div
+              style={{
+                margin: "0 0 8px",
+                padding: "6px 8px",
+                borderRadius: 8,
+                border: "2px solid rgba(128,240,255,0.65)",
+                background: "rgba(128,240,255,0.12)",
+                fontSize: 10,
+                lineHeight: 1.35,
+                color: "#dff8ff",
+              }}
+            >
+              <strong style={{ color: "#80f0ff" }}>GUN:</strong> Hold the compact GUN button or press{" "}
+              <strong>T</strong> on keyboard.
+            </div>
+          )}
+
+          <p
+            style={{
+              margin: "0 0 4px",
+              fontSize: 9,
+              fontWeight: 800,
+              color: "#ffe080",
+              letterSpacing: "0.04em",
+              textTransform: "uppercase",
+            }}
+          >
+            {controlsHeading}
+          </p>
+
+          <ul
+            style={{
+              listStyle: "none",
+              margin: "0 0 8px",
+              padding: 0,
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+            }}
+          >
+            {rows.map((row) => (
               <li
                 key={`${row.keys}-${row.action}`}
                 style={{
                   display: "flex",
                   justifyContent: "space-between",
                   gap: 8,
-                  padding: "4px 7px",
+                  padding: "3px 6px",
                   borderRadius: 5,
                   background: "rgba(255,255,255,0.05)",
-                  fontSize: mobile ? 10 : 11,
+                  fontSize: compact ? 9 : 10,
                 }}
               >
                 <span style={{ fontWeight: 800, color: "#ffe080", flexShrink: 0 }}>{row.keys}</span>
                 <span style={{ color: "#c8b8d8", textAlign: "right" }}>{row.action}</span>
               </li>
             ))}
-        </ul>
+          </ul>
 
-        <p
-          style={{
-            margin: "0 0 4px",
-            fontSize: 10,
-            fontWeight: 800,
-            color: "#ffe080",
-            letterSpacing: "0.04em",
-            textTransform: "uppercase",
-          }}
-        >
-          Hazards{isLevel2 ? " — Drone Valley" : isLevel3 ? " — Boom Bot Alamo" : ""}
-        </p>
-        <ul
-          style={{
-            margin: "0 0 10px",
-            paddingLeft: 14,
-            fontSize: mobile ? 9.5 : 10,
-            lineHeight: 1.35,
-            color: "#b8a8c8",
-            display: isWideLevel && !mobile ? "grid" : "block",
-            gridTemplateColumns: isWideLevel && !mobile ? "1fr 1fr" : undefined,
-            columnGap: isWideLevel && !mobile ? 12 : undefined,
-            rowGap: isWideLevel && !mobile ? 2 : undefined,
-          }}
-        >
-          {hazards.map((line) => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
+          {!compact && (
+            <>
+              <p
+                style={{
+                  margin: "0 0 4px",
+                  fontSize: 9,
+                  fontWeight: 800,
+                  color: "#ffe080",
+                  letterSpacing: "0.04em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Hazards
+              </p>
+              <ul
+                className="rc-instructions-hazards"
+                style={{
+                  margin: "0 0 4px",
+                  paddingLeft: 14,
+                  fontSize: 9.5,
+                  lineHeight: 1.3,
+                  color: "#b8a8c8",
+                }}
+              >
+                {hazards.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
 
-        <button
-          type="button"
-          onClick={onDismiss}
-          style={{
-            width: "100%",
-            padding: mobile ? "9px 14px" : "10px 16px",
-            borderRadius: 9,
-            border: `2px solid ${BSM_BUTTON_BORDER}`,
-            background: BSM_BUTTON_GRADIENT,
-            color: "#fff",
-            fontWeight: 800,
-            fontSize: mobile ? 13 : 14,
-            cursor: "pointer",
-            fontFamily: "monospace",
-          }}
-        >
-          Got it
-        </button>
+        <div className="rc-instructions-footer">
+          <button
+            type="button"
+            onClick={onDismiss}
+            style={{
+              width: "100%",
+              padding: compact ? "8px 12px" : "10px 14px",
+              borderRadius: 9,
+              border: `2px solid ${BSM_BUTTON_BORDER}`,
+              background: BSM_BUTTON_GRADIENT,
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: compact ? 12 : 13,
+              cursor: "pointer",
+              fontFamily: "monospace",
+            }}
+          >
+            Got it — Start
+          </button>
+        </div>
       </div>
     </div>
   );

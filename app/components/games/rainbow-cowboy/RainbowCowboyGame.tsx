@@ -23,6 +23,8 @@ import {
 import { UnicornHeroAudioControls } from "../unicorn-hero/UnicornHeroAudioControls";
 import { getUnicornHeroRideConfig, type UnicornHeroRideType } from "../unicorn-hero/unicornHeroRides";
 import { GameRotatePrompt } from "@/app/components/games/GameRotatePrompt";
+import { ArcadePwaInstallBanner } from "@/app/components/games/ArcadePwaInstallBanner";
+import { exitArcadeImmersiveMode } from "@/app/components/games/arcadeImmersiveMode";
 import { useMobileGameImmersiveMode } from "@/app/components/games/useMobileGameImmersiveMode";
 import { createRainbowCowboyInputBridge } from "./rainbowCowboyGameInput";
 
@@ -183,6 +185,11 @@ export function RainbowCowboyGame({
     if (instructionsOpenRef.current || endedRef.current) return;
     inputRef.current.pausePressed = true;
   }, []);
+
+  const handleExitArcade = useCallback(() => {
+    void exitArcadeImmersiveMode();
+    onExit();
+  }, [onExit]);
 
   useEffect(() => {
     if (!instructionsOpen) void beginGameplayAudio();
@@ -452,7 +459,7 @@ export function RainbowCowboyGame({
 
         <button
           type="button"
-          onClick={onExit}
+          onClick={handleExitArcade}
           className="rc-top-action-button"
           style={{
             padding: "6px 12px",
@@ -466,7 +473,7 @@ export function RainbowCowboyGame({
             fontFamily: "monospace",
           }}
         >
-          Exit Game
+          Exit Arcade
         </button>
       </div>
 
@@ -578,7 +585,7 @@ export function RainbowCowboyGame({
             </button>
             <button
               type="button"
-              onClick={onExit}
+              onClick={handleExitArcade}
               style={{
                 padding: "10px 18px",
                 borderRadius: 10,
@@ -590,7 +597,7 @@ export function RainbowCowboyGame({
                 fontFamily: "monospace",
               }}
             >
-              Exit Game
+              Exit Arcade
             </button>
           </div>
           <div style={{ width: "min(320px, 92vw)", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -608,10 +615,12 @@ export function RainbowCowboyGame({
         </div>
       )}
 
+      <ArcadePwaInstallBanner active={!instructionsOpen} />
+
       <GameRotatePrompt
         emoji="🦄"
-        title="Turn your phone sideways"
-        subtitle="Landscape mode is required for gameplay — rotate to use the new touch controls."
+        title="Rotate your phone sideways to play Unicorn Hero"
+        subtitle="Landscape unlocks the full arcade view and touch controls."
       />
 
       <style>{`

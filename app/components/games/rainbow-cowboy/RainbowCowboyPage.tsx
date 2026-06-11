@@ -27,7 +27,10 @@ import { RainbowCowboyLeaderboardStack } from "./RainbowCowboyLeaderboardStack";
 import { RainbowCowboyEndScreen } from "./RainbowCowboyEndScreen";
 import { RainbowCowboyLevelSelect } from "./RainbowCowboyLevelSelect";
 import { RainbowCowboyStartScreen } from "./RainbowCowboyStartScreen";
-import { tryGameFullscreen } from "@/app/components/games/useMobileGameImmersiveMode";
+import {
+  enterArcadeImmersiveMode,
+  exitArcadeImmersiveMode,
+} from "@/app/components/games/useMobileGameImmersiveMode";
 import {
   loadUnicornHeroSelectedRide,
   type UnicornHeroRideType,
@@ -79,12 +82,8 @@ export function RainbowCowboyPage() {
   }, [userId]);
 
   useEffect(() => {
-    if (!isPlaying) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = prev;
-    };
+    if (isPlaying) return;
+    void exitArcadeImmersiveMode();
   }, [isPlaying]);
 
   useEffect(() => {
@@ -118,7 +117,7 @@ export function RainbowCowboyPage() {
       setDifficulty(getHighestUnlockedDifficulty(selectedLevelId, progress, levels));
       return;
     }
-    void tryGameFullscreen(routeShellRef.current ?? document.documentElement);
+    void enterArcadeImmersiveMode(document.documentElement);
     setShowInstructions(true);
     remoteCompletionWritesThisRunRef.current = 0;
     setGameKey((k) => k + 1);
@@ -249,13 +248,6 @@ export function RainbowCowboyPage() {
         <div
           ref={playAreaRef}
           className="arcade-game-play-surface"
-          style={{
-            width: "100%",
-            maxWidth: "100%",
-            height: "100%",
-            margin: 0,
-            display: "flex",
-          }}
         >
           <RainbowCowboyGame
             key={gameKey}

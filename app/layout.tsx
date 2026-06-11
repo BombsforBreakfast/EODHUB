@@ -26,6 +26,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "EOD Hub",
   description: "The community platform for EOD professionals",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "EOD Hub",
+  },
+  other: {
+    "mobile-web-app-capable": "yes",
+  },
 };
 
 export const viewport: Viewport = {

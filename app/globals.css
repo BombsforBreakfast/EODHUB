@@ -1339,15 +1339,16 @@ body.game-playing-active .games-shell-nav {
   display: none !important;
 }
 
-@media (max-width: 900px) {
+@media (max-width: 900px), (max-height: 500px), (pointer: coarse) {
   html.game-playing-active,
   body.game-playing-active {
     overflow: hidden !important;
     position: fixed !important;
     inset: 0 !important;
     width: 100% !important;
+    height: 100% !important;
     overscroll-behavior: none;
-    touch-action: manipulation;
+    touch-action: none;
   }
 
   body.game-playing-active footer {
@@ -1358,36 +1359,64 @@ body.game-playing-active .games-shell-nav {
     display: none !important;
   }
 
-  .arcade-game-shell {
-    position: fixed !important;
-    top: var(--game-visible-top, 0px) !important;
-    left: var(--game-visible-left, 0px) !important;
-    right: auto !important;
-    bottom: auto !important;
-    width: var(--game-visible-width, 100%) !important;
-    height: var(--game-visible-height, 100dvh) !important;
-    max-height: var(--game-visible-height, 100dvh) !important;
-    margin: 0 !important;
-    z-index: 200;
-    overflow: hidden;
-    box-sizing: border-box;
+  body.game-playing-active .games-shell-nav {
+    display: none !important;
   }
 
   .arcade-game-play-surface {
     position: fixed !important;
     top: var(--game-visible-top, 0px) !important;
     left: var(--game-visible-left, 0px) !important;
-    width: var(--game-visible-width, 100%) !important;
+    width: var(--game-visible-width, 100vw) !important;
     height: var(--game-visible-height, 100dvh) !important;
+    max-width: 100vw !important;
+    max-height: 100dvh !important;
     margin: 0 !important;
     padding: 0 !important;
     z-index: 199;
     overflow: hidden;
+    box-sizing: border-box;
     pointer-events: none;
+    background: #0a0614;
   }
 
   .arcade-game-play-surface > * {
     pointer-events: auto;
+    width: 100%;
+    height: 100%;
+  }
+
+  .arcade-game-play-surface > .arcade-game-shell,
+  .arcade-game-play-surface > .rainbow-cowboy-game-shell {
+    position: absolute !important;
+    inset: 0 !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    max-height: 100% !important;
+    margin: 0 !important;
+    padding:
+      env(safe-area-inset-top, 0px)
+      env(safe-area-inset-right, 0px)
+      env(safe-area-inset-bottom, 0px)
+      env(safe-area-inset-left, 0px);
+    box-sizing: border-box;
+    overflow: hidden;
+    z-index: 200;
+  }
+
+  .arcade-game-shell:not(.arcade-game-play-surface *) {
+    position: fixed !important;
+    top: var(--game-visible-top, 0px) !important;
+    left: var(--game-visible-left, 0px) !important;
+    width: var(--game-visible-width, 100vw) !important;
+    height: var(--game-visible-height, 100dvh) !important;
+    max-height: var(--game-visible-height, 100dvh) !important;
+    margin: 0 !important;
+    z-index: 200;
+    overflow: hidden;
+    box-sizing: border-box;
   }
 }
 
@@ -1405,6 +1434,11 @@ body.game-playing-active .games-shell-nav {
     --rc-control-inset-left: max(16px, calc(18vmin + env(safe-area-inset-left, 0px)));
     --rc-control-inset-right: max(16px, calc(18vmin + env(safe-area-inset-right, 0px)));
     --rc-control-inset-bottom: max(12px, calc(16vmin + env(safe-area-inset-bottom, 0px)));
+  }
+
+  .rainbow-cowboy-game-shell .rc-top-actions {
+    top: max(6px, env(safe-area-inset-top, 0px)) !important;
+    right: max(6px, var(--rc-mobile-right-gutter, 8px)) !important;
   }
 }
 
@@ -1497,5 +1531,57 @@ body.game-playing-active .games-shell-nav {
 @media (max-width: 900px) and (orientation: portrait) {
   body.game-playing-active .game-rotate-prompt {
     display: flex;
+    pointer-events: auto;
+  }
+
+  body.game-playing-active .arcade-game-play-surface {
+    visibility: hidden;
+    pointer-events: none;
+  }
+}
+
+/* Instruction modal — scroll-safe body, sticky action footer */
+.rc-instructions-overlay {
+  box-sizing: border-box;
+  padding:
+    max(8px, env(safe-area-inset-top, 0px))
+    max(8px, env(safe-area-inset-right, 0px))
+    max(8px, env(safe-area-inset-bottom, 0px))
+    max(8px, env(safe-area-inset-left, 0px));
+}
+
+.rc-instructions-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(var(--game-visible-height, 100dvh) - 24px);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.rc-instructions-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+.rc-instructions-footer {
+  flex-shrink: 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 96, 192, 0.25);
+  background: linear-gradient(180deg, rgba(16, 10, 32, 0.92), rgba(16, 10, 32, 1));
+}
+
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 420px) {
+  .rc-instructions-hazards {
+    display: none !important;
+  }
+
+  .rc-instructions-mission {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 }

@@ -1,0 +1,25 @@
+{
+  "name": "EOD Hub",
+  "short_name": "EOD Hub",
+  "description": "The community platform for EOD professionals",
+  "start_url": "/games",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "theme_color": "#0f0f0f",
+  "background_color": "#0f0f0f",
+  "icons": [
+    {
+      "src": "/rabbithole-mascot.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/rabbithole-mascot.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
