@@ -25,10 +25,26 @@ export const DIFFICULTY_OPTIONS: {
   },
 ];
 
+/** Boom Bot Alamo tuning — 20% easier across easy / novice / hard. */
+const LEVEL_3_DIFFICULTY_SCALE = 0.8;
+
 export function getDifficultySpeedMult(difficulty: RainbowCowboyDifficulty): number {
   if (difficulty === "novice") return 1.25;
   if (difficulty === "hard") return 1.5;
   return 1;
+}
+
+function thinEnemySpawns(spawns: LevelEnemySpawn[], keepRatio: number): LevelEnemySpawn[] {
+  if (keepRatio >= 1 || spawns.length === 0) return spawns;
+  const target = Math.max(1, Math.round(spawns.length * keepRatio));
+  if (target >= spawns.length) return spawns;
+  const sorted = [...spawns].sort((a, b) => a.triggerX - b.triggerX);
+  const stride = sorted.length / target;
+  const picked: LevelEnemySpawn[] = [];
+  for (let i = 0; i < target; i++) {
+    picked.push(sorted[Math.min(sorted.length - 1, Math.floor(i * stride))]);
+  }
+  return picked;
 }
 
 export function formatDifficultyLabel(difficulty: RainbowCowboyDifficulty): string {
@@ -132,10 +148,25 @@ export function applyDifficulty(
   base: LevelConfig,
   difficulty: RainbowCowboyDifficulty,
 ): LevelConfig {
-  const speedMult = getDifficultySpeedMult(difficulty);
-  const extraEnemyFrac = difficulty === "hard" ? 1 : difficulty === "novice" ? 0.5 : 0;
+  const isLevel3 = base.level.id === "level-3";
+  let speedMult = getDifficultySpeedMult(difficulty);
+  let extraEnemyFrac = difficulty === "hard" ? 1 : difficulty === "novice" ? 0.5 : 0;
   const extraPickupFrac = difficulty === "hard" ? 0.25 : difficulty === "novice" ? 0.12 : 0;
   const supportPickups = getLevelSupportPickups(base, difficulty);
+
+  const baseEnemies = isLevel3
+    ? thinEnemySpawns(base.enemies, LEVEL_3_DIFFICULTY_SCALE)
+    : base.enemies;
+  const baseFinalWaveEnemies = base.finalWave
+    ? isLevel3
+      ? thinEnemySpawns(base.finalWave.enemies, LEVEL_3_DIFFICULTY_SCALE)
+      : base.finalWave.enemies
+    : [];
+
+  if (isLevel3) {
+    speedMult *= LEVEL_3_DIFFICULTY_SCALE;
+    extraEnemyFrac *= LEVEL_3_DIFFICULTY_SCALE;
+  }
 
   const nests = base.nests?.map((n) => ({
     ...n,
@@ -146,8 +177,8 @@ export function applyDifficulty(
     ? {
         ...base.finalWave,
         enemies: [
-          ...base.finalWave.enemies,
-          ...cloneExtraSpawns(base.finalWave.enemies, extraEnemyFrac),
+          ...baseFinalWaveEnemies,
+          ...cloneExtraSpawns(baseFinalWaveEnemies, extraEnemyFrac),
         ],
       }
     : undefined;
@@ -156,7 +187,7 @@ export function applyDifficulty(
     ...base,
     difficulty,
     difficultySpeedMult: speedMult,
-    enemies: [...base.enemies, ...cloneExtraSpawns(base.enemies, extraEnemyFrac)],
+    enemies: [...baseEnemies, ...cloneExtraSpawns(baseEnemies, extraEnemyFrac)],
     pickups: [
       ...base.pickups,
       ...cloneExtraPickups(base.pickups, extraPickupFrac, base.level.groundY),
