@@ -1552,6 +1552,9 @@ body.game-playing-active .games-shell-nav {
     --rc-safe-left: max(8px, env(safe-area-inset-left, 0px));
     --rc-safe-bottom: max(8px, env(safe-area-inset-bottom, 0px));
     background: #090612 !important;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   .rc-mobile-controls {
@@ -1568,19 +1571,25 @@ body.game-playing-active .games-shell-nav {
 
   .rc-joystick-anchor {
     position: absolute;
-    left: max(12px, env(safe-area-inset-left, 0px));
-    bottom: max(18px, env(safe-area-inset-bottom, 0px));
+    left: max(26px, env(safe-area-inset-left, 0px));
+    bottom: max(32px, env(safe-area-inset-bottom, 0px));
     z-index: 22;
     display: flex;
     align-items: center;
     justify-content: center;
     pointer-events: auto !important;
     touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
-  .rc-joystick-pad {
+  .rc-joystick-hit {
     touch-action: none;
     cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
   }
 
   .rc-action-cluster-anchor {

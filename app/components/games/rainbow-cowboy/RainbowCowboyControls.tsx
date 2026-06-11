@@ -56,8 +56,11 @@ function useControlActivityFade(disabled?: boolean) {
   return { controlsActive: disabled || active, bumpActivity: bump };
 }
 
-const JOYSTICK_H_THRESH = 6;
-const JOYSTICK_V_THRESH = 9;
+const JOYSTICK_H_THRESH = 5;
+const JOYSTICK_V_THRESH = 7;
+
+/** Extra touch slop beyond the visible ring (left / up / right / down). */
+const JOYSTICK_HIT_SLOP = { left: 26, top: 26, right: 26, bottom: 10 } as const;
 
 function VirtualJoystick({
   disabled,
@@ -182,20 +185,21 @@ function VirtualJoystick({
     reset();
   };
 
+  const hitWidth = metrics.joystickOuter + JOYSTICK_HIT_SLOP.left + JOYSTICK_HIT_SLOP.right;
+  const hitHeight = metrics.joystickOuter + JOYSTICK_HIT_SLOP.top + JOYSTICK_HIT_SLOP.bottom;
+
   return (
     <div
       ref={padRef}
-      className="rc-joystick-pad"
+      className="rc-joystick-hit"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
       style={{
-        width: metrics.joystickPad,
-        height: metrics.joystickPad,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
+        position: "relative",
+        width: hitWidth,
+        height: hitHeight,
         touchAction: "none",
         opacity,
         transition: "opacity 280ms ease",
@@ -205,7 +209,9 @@ function VirtualJoystick({
         ref={zoneRef}
         className="rc-joystick"
         style={{
-          position: "relative",
+          position: "absolute",
+          left: JOYSTICK_HIT_SLOP.left,
+          bottom: JOYSTICK_HIT_SLOP.bottom,
           width: metrics.joystickOuter,
           height: metrics.joystickOuter,
           borderRadius: "50%",
