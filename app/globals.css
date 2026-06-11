@@ -1571,8 +1571,8 @@ body.game-playing-active .games-shell-nav {
 
   .rc-joystick-anchor {
     position: absolute;
-    left: max(26px, env(safe-area-inset-left, 0px));
-    bottom: max(32px, env(safe-area-inset-bottom, 0px));
+    left: max(40px, env(safe-area-inset-left, 0px));
+    bottom: max(46px, env(safe-area-inset-bottom, 0px));
     z-index: 22;
     display: flex;
     align-items: center;

@@ -361,6 +361,7 @@ export class RainbowCowboyEngine {
   tongueUntil = 0;
   tongueCooldownUntil = 0;
   hasPistol = false;
+  activeWeapon: WeaponKind = "pistol";
   machineGunUntil = 0;
   bazookaAmmo = 0;
   gunCooldownUntil = 0;
@@ -485,6 +486,7 @@ export class RainbowCowboyEngine {
     }));
     this.extractionBlockedPopupUntil = 0;
     this.hasPistol = false;
+    this.activeWeapon = "pistol";
     this.machineGunUntil = 0;
     this.bazookaAmmo = 0;
     if (this.weaponsEnabled()) {
@@ -515,8 +517,18 @@ export class RainbowCowboyEngine {
   }
 
   get activeTimedWeapon(): WeaponKind | null {
-    if (this.isMachineGunActive) return "machine_gun";
+    if (this.activeWeapon === "machine_gun" && this.isMachineGunActive) return "machine_gun";
     return null;
+  }
+
+  private syncActiveWeapon() {
+    if (!this.weaponsEnabled()) return;
+    if (this.activeWeapon === "machine_gun" && !this.isMachineGunActive) {
+      this.activeWeapon = "pistol";
+    }
+    if (this.activeWeapon === "bazooka" && this.bazookaAmmo <= 0) {
+      this.activeWeapon = "pistol";
+    }
   }
 
   private weaponsEnabled(): boolean {
@@ -722,13 +734,15 @@ export class RainbowCowboyEngine {
   }
 
   private updateStatus() {
+    this.syncActiveWeapon();
     if (this.timeMs < this.popupUntil && this.popupText) return;
     if (this.isRampage) this.status = "RAINBOW RAMPAGE";
     else if (this.isGassed) this.status = "Gassed…";
     else if (this.ducking && this.grounded) this.status = "Ducking";
     else if (this.timeMs < this.tongueUntil) this.status = getRideStatusAttack(this.rideType);
-    else if (this.isMachineGunActive) this.status = "MG SPRAY";
-    else if (this.bazookaAmmo > 0) this.status = `BAZOOKA x${this.bazookaAmmo}`;
+    else if (this.activeWeapon === "machine_gun" && this.isMachineGunActive) this.status = "MG SPRAY";
+    else if (this.activeWeapon === "bazooka" && this.bazookaAmmo > 0)
+      this.status = `BAZOOKA x${this.bazookaAmmo}`;
     else if (this.hasPistol) this.status = "PISTOL READY";
     else if (this.grounded) this.status = getRideStatusRiding(this.rideType);
     else this.status = "Airborne";
@@ -1036,22 +1050,33 @@ export class RainbowCowboyEngine {
     if (!this.weaponsEnabled()) return;
     if (this.timeMs < this.gunCooldownUntil) return;
 
-    let weapon: WeaponKind | null = null;
+    this.syncActiveWeapon();
 
-    if (this.isMachineGunActive && (held || fromEdge)) {
-      weapon = "machine_gun";
-    } else if (!this.isMachineGunActive && this.bazookaAmmo > 0 && fromEdge) {
-      weapon = "bazooka";
-    } else if (!this.isMachineGunActive && this.bazookaAmmo <= 0 && this.hasPistol && fromEdge) {
-      weapon = "pistol";
-    } else if (fromEdge && !this.hasPistol && !this.isMachineGunActive && this.bazookaAmmo <= 0) {
-      return;
-    } else {
+    let weapon = this.activeWeapon;
+
+    if (weapon === "machine_gun") {
+      if (!this.isMachineGunActive) {
+        this.activeWeapon = "pistol";
+        weapon = "pistol";
+      } else if (!held && !fromEdge) {
+        return;
+      }
+    } else if (weapon === "bazooka") {
+      if (this.bazookaAmmo <= 0) {
+        this.activeWeapon = "pistol";
+        weapon = "pistol";
+      } else if (!fromEdge) {
+        return;
+      }
+    } else if (!fromEdge || !this.hasPistol) {
       return;
     }
 
     if (weapon === "bazooka") {
       this.bazookaAmmo -= 1;
+      if (this.bazookaAmmo <= 0) {
+        this.activeWeapon = "pistol";
+      }
     }
 
     this.fireWeapon(weapon);
@@ -1839,26 +1864,30 @@ export class RainbowCowboyEngine {
         break;
       case "weapon_pistol":
         this.hasPistol = true;
-        this.showPopup("PISTOL — default weapon (T / C to fire)", 1200);
+        this.activeWeapon = "pistol";
+        this.showPopup("PISTOL — active weapon (T / GUN to fire)", 1200);
         break;
       case "weapon_machine_gun":
         this.machineGunUntil = this.timeMs + BLASTER_DURATION_MS;
-        this.showPopup("MACHINE GUN — 20s spray, then back to pistol", 1400);
+        this.activeWeapon = "machine_gun";
+        this.showPopup("MACHINE GUN — active until you pick up another", 1400);
         break;
       case "weapon_bazooka":
         this.bazookaAmmo += BAZOOKA_ROCKETS_PER_PICKUP;
-        this.showPopup(`BAZOOKA — ${this.bazookaAmmo} rockets, then back to pistol`, 1400);
+        this.activeWeapon = "bazooka";
+        this.showPopup(`BAZOOKA — ${this.bazookaAmmo} rockets, active until another pickup`, 1400);
         break;
     }
   }
 
   private getWeaponHudLabel(): string | null {
     if (!this.weaponsEnabled()) return null;
-    if (this.isMachineGunActive) {
+    this.syncActiveWeapon();
+    if (this.activeWeapon === "machine_gun" && this.isMachineGunActive) {
       const sec = Math.max(0, Math.ceil((this.machineGunUntil - this.timeMs) / 1000));
       return `MG ${sec}s`;
     }
-    if (this.bazookaAmmo > 0) return `BAZOOKA x${this.bazookaAmmo}`;
+    if (this.activeWeapon === "bazooka" && this.bazookaAmmo > 0) return `BAZOOKA x${this.bazookaAmmo}`;
     if (this.hasPistol) return "PISTOL";
     return null;
   }
@@ -1974,7 +2003,7 @@ export class RainbowCowboyEngine {
       rampage: this.isRampage,
       popupText: this.timeMs < this.popupUntil ? this.popupText : null,
       popupUntil: this.popupUntil,
-      blasterActive: this.isMachineGunActive,
+      blasterActive: this.activeWeapon === "machine_gun" && this.isMachineGunActive,
       blasterSecondsLeft: Math.max(
         0,
         Math.ceil((this.machineGunUntil - this.timeMs) / 1000),
