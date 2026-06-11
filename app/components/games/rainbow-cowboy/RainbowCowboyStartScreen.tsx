@@ -21,7 +21,6 @@ import {
   saveUnicornHeroSelectedRide,
   type UnicornHeroRideType,
 } from "../unicorn-hero/unicornHeroRides";
-import { shouldShowPwaInstallHint } from "@/app/components/games/arcadeImmersiveMode";
 
 const RIDE_EMOJI: Record<UnicornHeroRideType, string> = {
   unicorn: "🦄",
@@ -60,7 +59,6 @@ export function RainbowCowboyStartScreen({
   const [audioPrefs, setAudioPrefs] = useState<UnicornHeroAudioPrefs>(() => loadUnicornHeroAudioPrefs());
 
   const canStart = isDifficultyUnlocked(level.id, difficulty, progress, levels);
-  const showPwaHint = shouldShowPwaInstallHint();
 
   const handleRideChange = (ride: UnicornHeroRideType) => {
     onRideChange(ride);
@@ -186,25 +184,6 @@ export function RainbowCowboyStartScreen({
           saveUnicornHeroAudioPrefs(next);
         }}
       />
-
-      {showPwaHint && (
-        <p
-          style={{
-            margin: "0 0 12px",
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "1px solid rgba(255, 200, 120, 0.4)",
-            background: "rgba(255, 200, 120, 0.08)",
-            fontSize: 11,
-            lineHeight: 1.45,
-            color: t.text,
-            textAlign: "left",
-          }}
-        >
-          <strong>Fullscreen tip:</strong> Add EOD Hub to your Home Screen for the best immersive
-          arcade mode on iPhone.
-        </p>
-      )}
 
       <button
         type="button"

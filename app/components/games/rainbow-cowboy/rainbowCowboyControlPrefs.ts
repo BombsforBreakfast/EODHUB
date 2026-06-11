@@ -52,30 +52,39 @@ const SIZE_MULT: Record<ArcadeControlSize, number> = {
   large: 1.14,
 };
 
-const OPACITY_BASE: Record<ArcadeControlOpacity, number> = {
-  low: 0.5,
-  medium: 0.62,
-  high: 0.72,
+const OPACITY_ACTIVE: Record<ArcadeControlOpacity, number> = {
+  low: 0.65,
+  medium: 0.7,
+  high: 0.75,
 };
+
+const OPACITY_IDLE: Record<ArcadeControlOpacity, number> = {
+  low: 0.35,
+  medium: 0.4,
+  high: 0.45,
+};
+
+function clampPx(min: number, vwPct: number, max: number, vw: number, mult: number): number {
+  return Math.round(Math.min(max, Math.max(min, (vw * vwPct) / 100)) * mult);
+}
 
 export function getControlMetrics(prefs: RainbowCowboyControlPrefs) {
   const mult = SIZE_MULT[prefs.controlSize];
-  const shortEdge =
+  const vw =
     typeof window !== "undefined"
-      ? Math.min(window.innerWidth, window.innerHeight)
-      : 390;
-  const vmin = shortEdge / 100;
+      ? window.visualViewport?.width ?? window.innerWidth
+      : 800;
 
   return {
-    opacityBase: OPACITY_BASE[prefs.buttonOpacity],
-    opacityInactive: OPACITY_BASE[prefs.buttonOpacity] * 0.72,
-    jump: Math.round(Math.min(110, Math.max(90, 10.5 * vmin * mult))),
-    attack: Math.round(Math.min(95, Math.max(80, 9 * vmin * mult))),
-    special: Math.round(Math.min(85, Math.max(70, 8 * vmin * mult))),
-    gun: Math.round(Math.min(72, Math.max(58, 7 * vmin * mult))),
-    joystickOuter: Math.round(Math.min(130, Math.max(110, 12.5 * vmin * mult))),
-    joystickStick: Math.round(Math.min(52, Math.max(42, 5 * vmin * mult))),
-    joystickPad: Math.round(Math.min(190, Math.max(160, 18 * vmin * mult))),
+    opacityBase: OPACITY_ACTIVE[prefs.buttonOpacity],
+    opacityInactive: OPACITY_IDLE[prefs.buttonOpacity],
+    jump: clampPx(76, 11, 104, vw, mult),
+    attack: clampPx(68, 10, 96, vw, mult),
+    special: clampPx(60, 9, 86, vw, mult),
+    gun: clampPx(52, 8, 72, vw, mult),
+    joystickOuter: clampPx(72, 10, 96, vw, mult),
+    joystickStick: clampPx(28, 4, 38, vw, mult),
+    joystickPad: clampPx(92, 13, 120, vw, mult),
   };
 }
 

@@ -405,26 +405,19 @@ function MobileActionTriangle({
   opacity: number;
   onActivity: () => void;
 }) {
-  const gap = Math.round(metrics.jump * 0.12);
-  const clusterW = metrics.jump + metrics.attack + gap * 2;
-  const clusterH = metrics.jump + metrics.special + gap * 2.2;
-
   const specialShort = specialLabel.split(" ")[0] ?? "Special";
   const specialSub =
     specialCharges > 0 ? `${specialShort} ×${specialCharges}` : "EMPTY";
 
   return (
     <div
-      className="rc-action-triangle"
+      className="rc-action-cluster"
       style={{
-        position: "relative",
-        width: clusterW,
-        height: clusterH,
         opacity,
         transition: "opacity 280ms ease",
       }}
     >
-      <div style={{ position: "absolute", right: 0, bottom: 0 }}>
+      <div className="rc-action-slot rc-action-slot--jump">
         <ArcadeActionButton
           label="JUMP"
           size={metrics.jump}
@@ -437,13 +430,7 @@ function MobileActionTriangle({
         />
       </div>
 
-      <div
-        style={{
-          position: "absolute",
-          right: metrics.jump + gap,
-          bottom: Math.round(metrics.jump * 0.28),
-        }}
-      >
+      <div className="rc-action-slot rc-action-slot--attack">
         <ArcadeActionButton
           label="ATK"
           sub={attackLabel.length > 10 ? attackLabel.slice(0, 9) + "…" : attackLabel}
@@ -457,13 +444,7 @@ function MobileActionTriangle({
         />
       </div>
 
-      <div
-        style={{
-          position: "absolute",
-          right: Math.round(metrics.jump * 0.42),
-          bottom: metrics.jump + gap,
-        }}
-      >
+      <div className="rc-action-slot rc-action-slot--special">
         <ArcadeActionButton
           label="SPEC"
           sub={specialSub}
@@ -479,13 +460,7 @@ function MobileActionTriangle({
       </div>
 
       {showWeaponButton ? (
-        <div
-          style={{
-            position: "absolute",
-            right: metrics.jump + metrics.attack + gap * 1.6,
-            bottom: Math.round(metrics.jump * 0.08),
-          }}
-        >
+        <div className="rc-action-slot rc-action-slot--gun">
           <ArcadeActionButton
             label="GUN"
             sub="HOLD"
@@ -534,7 +509,11 @@ function MobileControlPad({
     const sync = () => setMetrics(getControlMetrics(prefs));
     sync();
     window.addEventListener("resize", sync);
-    return () => window.removeEventListener("resize", sync);
+    window.visualViewport?.addEventListener("resize", sync);
+    return () => {
+      window.removeEventListener("resize", sync);
+      window.visualViewport?.removeEventListener("resize", sync);
+    };
   }, [prefs]);
 
   const opacity = controlsActive ? metrics.opacityBase : metrics.opacityInactive;
@@ -552,9 +531,6 @@ function MobileControlPad({
       <div
         className="rc-joystick-anchor"
         style={{
-          position: "absolute",
-          left: "var(--rc-control-inset-left, 18vmin)",
-          bottom: "var(--rc-control-inset-bottom, 18vmin)",
           pointerEvents: disabled ? "none" : "auto",
         }}
       >
@@ -570,9 +546,6 @@ function MobileControlPad({
       <div
         className="rc-action-cluster-anchor"
         style={{
-          position: "absolute",
-          right: "var(--rc-control-inset-right, 18vmin)",
-          bottom: "var(--rc-control-inset-bottom, 18vmin)",
           pointerEvents: disabled ? "none" : "auto",
         }}
       >

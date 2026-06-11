@@ -23,7 +23,6 @@ import {
 import { UnicornHeroAudioControls } from "../unicorn-hero/UnicornHeroAudioControls";
 import { getUnicornHeroRideConfig, type UnicornHeroRideType } from "../unicorn-hero/unicornHeroRides";
 import { GameRotatePrompt } from "@/app/components/games/GameRotatePrompt";
-import { ArcadePwaInstallBanner } from "@/app/components/games/ArcadePwaInstallBanner";
 import { exitArcadeImmersiveMode } from "@/app/components/games/arcadeImmersiveMode";
 import { useMobileGameImmersiveMode } from "@/app/components/games/useMobileGameImmersiveMode";
 import { createRainbowCowboyInputBridge } from "./rainbowCowboyGameInput";
@@ -402,22 +401,11 @@ export function RainbowCowboyGame({
         position: "relative",
         width: "100%",
         height: "100%",
-        background: "#1a1030",
+        background: "#090612",
         overflow: "hidden",
       }}
     >
-      <div
-        className="rc-top-actions"
-        style={{
-          position: "absolute",
-          top: 8,
-          right: "var(--rc-mobile-right-gutter, 8px)",
-          zIndex: 30,
-          display: "flex",
-          gap: 8,
-          alignItems: "flex-start",
-        }}
-      >
+      <div className="rc-top-actions">
         <button
           type="button"
           onClick={() => setShowAudioPanel((v) => !v)}
@@ -482,7 +470,7 @@ export function RainbowCowboyGame({
           style={{
             position: "absolute",
             top: 44,
-            right: "var(--rc-mobile-right-gutter, 8px)",
+            right: "max(8px, env(safe-area-inset-right, 0px))",
             zIndex: 35,
             width: 220,
           }}
@@ -615,35 +603,12 @@ export function RainbowCowboyGame({
         </div>
       )}
 
-      <ArcadePwaInstallBanner active={!instructionsOpen} />
-
       <GameRotatePrompt
         emoji="🦄"
         title="Rotate your phone sideways to play Unicorn Hero"
         subtitle="Landscape unlocks the full arcade view and touch controls."
       />
 
-      <style>{`
-        @media (max-width: 900px), (max-height: 500px), (pointer: coarse) {
-          .rc-top-actions {
-            flex-direction: row-reverse !important;
-            align-items: flex-start !important;
-            justify-content: flex-start !important;
-            gap: 6px !important;
-            max-width: calc(100% - var(--rc-mobile-right-gutter, 16px) - 8px);
-          }
-          .rc-top-action-button {
-            min-width: auto;
-            padding: 5px 8px !important;
-            font-size: 10px !important;
-            white-space: nowrap;
-          }
-          .rc-audio-button {
-            min-width: 38px;
-            padding-inline: 8px !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }

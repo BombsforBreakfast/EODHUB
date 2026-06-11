@@ -27,10 +27,8 @@ import { RainbowCowboyLeaderboardStack } from "./RainbowCowboyLeaderboardStack";
 import { RainbowCowboyEndScreen } from "./RainbowCowboyEndScreen";
 import { RainbowCowboyLevelSelect } from "./RainbowCowboyLevelSelect";
 import { RainbowCowboyStartScreen } from "./RainbowCowboyStartScreen";
-import {
-  enterArcadeImmersiveMode,
-  exitArcadeImmersiveMode,
-} from "@/app/components/games/useMobileGameImmersiveMode";
+import { exitArcadeImmersiveMode } from "@/app/components/games/useMobileGameImmersiveMode";
+import { syncGameViewportCssVars } from "@/app/components/games/arcadeImmersiveMode";
 import {
   loadUnicornHeroSelectedRide,
   type UnicornHeroRideType,
@@ -117,7 +115,7 @@ export function RainbowCowboyPage() {
       setDifficulty(getHighestUnlockedDifficulty(selectedLevelId, progress, levels));
       return;
     }
-    void enterArcadeImmersiveMode(document.documentElement);
+    syncGameViewportCssVars();
     setShowInstructions(true);
     remoteCompletionWritesThisRunRef.current = 0;
     setGameKey((k) => k + 1);
