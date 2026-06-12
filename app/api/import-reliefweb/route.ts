@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import {
   buildImportMetadata,
   detectCategory,
@@ -247,7 +247,7 @@ export async function GET(req: NextRequest) {
 type IngestResult = "imported" | "refreshed" | "skipped" | "suppressed";
 
 async function ingestReliefWebRawJob(
-  supabase: ReturnType<typeof createClient>,
+  supabase: SupabaseClient,
   raw: Parameters<typeof normalizeReliefWebJob>[0],
   matchedQuery: string,
   seenReliefWebIds: Set<string>,
