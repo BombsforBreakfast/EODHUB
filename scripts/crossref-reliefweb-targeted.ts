@@ -121,6 +121,7 @@ async function main() {
       title: normalized.title,
       description: normalized.description,
       metadataText: normalized.metadataText,
+      themes: normalized.themes,
     });
 
     const duplicate = findReliefWebDuplicate(existingJobs, {

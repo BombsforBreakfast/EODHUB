@@ -15,6 +15,8 @@ export type ReliefWebJobScoreInput = {
   description: string;
   /** Organization, countries, ReliefWeb themes/categories combined. */
   metadataText: string;
+  /** ReliefWeb theme tags — used to rescue generic titles tagged Mine Action. */
+  themes?: string[];
 };
 
 export type ReliefWebJobScore = {
@@ -101,10 +103,15 @@ export function shouldExcludeReliefWebJob(title: string, body: string, metadataT
   return HARD_EXCLUSION_TERMS.some((term) => termMatches(text, term));
 }
 
+function hasMineActionTheme(themes: string[] | undefined): boolean {
+  return (themes ?? []).some((t) => t.toLowerCase().includes("mine action"));
+}
+
 export function scoreReliefWebJob(input: ReliefWebJobScoreInput): ReliefWebJobScore {
   const title = input.title.trim();
   const description = input.description.trim();
   const metadataText = input.metadataText.trim();
+  const mineActionTheme = hasMineActionTheme(input.themes);
 
   if (shouldExcludeReliefWebJob(title, description, metadataText)) {
     return {
@@ -138,6 +145,8 @@ export function scoreReliefWebJob(input: ReliefWebJobScoreInput): ReliefWebJobSc
 
   if (strongTitle) {
     score = Math.max(score, CONFIDENCE_THRESHOLDS.high);
+  } else if (mineActionTheme) {
+    score = Math.max(score, CONFIDENCE_THRESHOLDS.possible);
   }
 
   let confidence: ReliefWebConfidence = "low";
@@ -145,6 +154,7 @@ export function scoreReliefWebJob(input: ReliefWebJobScoreInput): ReliefWebJobSc
   else if (score >= CONFIDENCE_THRESHOLDS.possible) confidence = "possible";
 
   const reasons = [
+    ...(mineActionTheme ? ["+ Mine Action theme tag"] : []),
     ...titleResult.reasons,
     ...metadataResult.reasons,
     ...bodyResult.reasons,

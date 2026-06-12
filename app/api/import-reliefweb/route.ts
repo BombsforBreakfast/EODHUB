@@ -5,11 +5,15 @@ import {
   detectCategory,
   fetchReliefWebJobsBatch,
   fetchReliefWebJobsByIds,
+  fetchReliefWebJobsBySourceQuery,
+  fetchReliefWebJobsByTheme,
   formatReliefWebFilterDate,
   LOOKBACK_DAYS,
   MAX_PAGES_PER_BATCH,
   normalizeReliefWebJob,
   RELIEFWEB_KEYWORD_BATCHES,
+  RELIEFWEB_SOURCE_INTAKE_CHANNELS,
+  RELIEFWEB_THEME_INTAKE_CHANNELS,
   RESULTS_PER_PAGE,
   scoreReliefWebJob,
   shouldIngestReliefWebJob,
@@ -110,6 +114,94 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  for (const channel of RELIEFWEB_THEME_INTAKE_CHANNELS) {
+    const channelAfter = formatReliefWebFilterDate(
+      new Date(Date.now() - channel.lookbackDays * 24 * 60 * 60 * 1000)
+    );
+    try {
+      for (let page = 0; page < channel.maxPages; page++) {
+        const offset = page * RESULTS_PER_PAGE;
+        const { jobs: items, error } = await fetchReliefWebJobsByTheme(
+          channel.themeId,
+          offset,
+          appName,
+          channelAfter
+        );
+        apiCalls++;
+
+        if (error) {
+          errors.push(`[${channel.id} offset ${offset}] ${error}`);
+          break;
+        }
+        if (items.length === 0) break;
+
+        for (const raw of items) {
+          const result = await ingestReliefWebRawJob(
+            supabase,
+            raw,
+            channel.id,
+            seenReliefWebIds,
+            importedTitles,
+            errors
+          );
+          if (result === "imported") imported++;
+          else if (result === "refreshed") refreshed++;
+          else if (result === "suppressed") suppressed++;
+          else skipped++;
+        }
+
+        if (items.length < RESULTS_PER_PAGE) break;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`[${channel.id}] ${msg}`);
+    }
+  }
+
+  for (const channel of RELIEFWEB_SOURCE_INTAKE_CHANNELS) {
+    const channelAfter = formatReliefWebFilterDate(
+      new Date(Date.now() - channel.lookbackDays * 24 * 60 * 60 * 1000)
+    );
+    try {
+      for (let page = 0; page < channel.maxPages; page++) {
+        const offset = page * RESULTS_PER_PAGE;
+        const { jobs: items, error } = await fetchReliefWebJobsBySourceQuery(
+          channel.query,
+          offset,
+          appName,
+          channelAfter
+        );
+        apiCalls++;
+
+        if (error) {
+          errors.push(`[${channel.id} offset ${offset}] ${error}`);
+          break;
+        }
+        if (items.length === 0) break;
+
+        for (const raw of items) {
+          const result = await ingestReliefWebRawJob(
+            supabase,
+            raw,
+            channel.id,
+            seenReliefWebIds,
+            importedTitles,
+            errors
+          );
+          if (result === "imported") imported++;
+          else if (result === "refreshed") refreshed++;
+          else if (result === "suppressed") suppressed++;
+          else skipped++;
+        }
+
+        if (items.length < RESULTS_PER_PAGE) break;
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      errors.push(`[${channel.id}] ${msg}`);
+    }
+  }
+
   const missingTargetIds = TARGET_RELIEFWEB_JOB_IDS.filter((id) => !seenReliefWebIds.has(id));
   if (missingTargetIds.length > 0) {
     const { jobs: targetItems, error: targetErr } = await fetchReliefWebJobsByIds(
@@ -145,6 +237,8 @@ export async function GET(req: NextRequest) {
     suppressed,
     apiCalls,
     keywordBatches: RELIEFWEB_KEYWORD_BATCHES.length,
+    themeChannels: RELIEFWEB_THEME_INTAKE_CHANNELS.length,
+    sourceChannels: RELIEFWEB_SOURCE_INTAKE_CHANNELS.length,
     sample: importedTitles.slice(0, 10),
     errors: errors.length > 0 ? errors : undefined,
   });
@@ -171,6 +265,7 @@ async function ingestReliefWebRawJob(
     title: normalized.title,
     description: normalized.description,
     metadataText: normalized.metadataText,
+    themes: normalized.themes,
   });
 
   if (

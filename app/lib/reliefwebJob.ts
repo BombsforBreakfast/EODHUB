@@ -9,6 +9,12 @@ export {
   HARD_EXCLUSION_TERMS,
 } from "./reliefweb/relevanceConfig";
 
+export {
+  RELIEFWEB_MINE_ACTION_THEME_ID,
+  RELIEFWEB_THEME_INTAKE_CHANNELS,
+  RELIEFWEB_SOURCE_INTAKE_CHANNELS,
+} from "./reliefweb/filterIntake";
+
 import type { ReliefWebJobScore } from "./reliefweb/scoreReliefWebJob";
 
 export {
@@ -24,7 +30,7 @@ export const RELIEFWEB_API_BASE = "https://api.reliefweb.int/v2/jobs";
 export const RESULTS_PER_PAGE = 50;
 export const MAX_PAGES_PER_BATCH = 2;
 export const STALE_DAYS = 30;
-export const LOOKBACK_DAYS = 60;
+export const LOOKBACK_DAYS = 90;
 
 export type ReliefWebImportMetadata = {
   matched_queries: string[];
@@ -226,27 +232,56 @@ export function buildReliefWebPostBody(
   };
 }
 
-export async function fetchReliefWebJobsByIds(
-  jobIds: string[],
-  appName: string
-): Promise<{ jobs: ReliefWebApiJob[]; error?: string }> {
-  const ids = [...new Set(jobIds.map((id) => id.trim()).filter(Boolean))];
-  if (ids.length === 0) return { jobs: [] };
-
-  const url = `${RELIEFWEB_API_BASE}?appname=${encodeURIComponent(appName)}`;
-  const body = {
-    limit: ids.length,
+export function buildReliefWebThemeFilterBody(
+  themeId: number,
+  offset: number,
+  createdAfterIso: string
+): Record<string, unknown> {
+  return {
+    limit: RESULTS_PER_PAGE,
+    offset,
+    preset: "latest",
     filter: {
-      operator: "OR",
-      conditions: ids.map((id) => ({
-        field: "id",
-        value: Number.isFinite(Number(id)) ? Number(id) : id,
-      })),
+      operator: "AND",
+      conditions: [
+        { field: "theme", value: themeId },
+        { field: "date.created", value: { from: createdAfterIso } },
+      ],
     },
     fields: {
       include: [...RELIEFWEB_JOB_FIELD_INCLUDES],
     },
   };
+}
+
+export function buildReliefWebSourceQueryBody(
+  queryValue: string,
+  offset: number,
+  createdAfterIso: string
+): Record<string, unknown> {
+  return {
+    limit: RESULTS_PER_PAGE,
+    offset,
+    preset: "latest",
+    query: {
+      value: queryValue,
+      fields: ["source"],
+    },
+    filter: {
+      field: "date.created",
+      value: { from: createdAfterIso },
+    },
+    fields: {
+      include: [...RELIEFWEB_JOB_FIELD_INCLUDES],
+    },
+  };
+}
+
+async function postReliefWebJobs(
+  body: Record<string, unknown>,
+  appName: string
+): Promise<{ jobs: ReliefWebApiJob[]; error?: string }> {
+  const url = `${RELIEFWEB_API_BASE}?appname=${encodeURIComponent(appName)}`;
 
   try {
     const res = await fetch(url, {
@@ -271,36 +306,55 @@ export async function fetchReliefWebJobsByIds(
   }
 }
 
+export async function fetchReliefWebJobsByTheme(
+  themeId: number,
+  offset: number,
+  appName: string,
+  createdAfterIso: string
+): Promise<{ jobs: ReliefWebApiJob[]; error?: string }> {
+  return postReliefWebJobs(buildReliefWebThemeFilterBody(themeId, offset, createdAfterIso), appName);
+}
+
+export async function fetchReliefWebJobsBySourceQuery(
+  queryValue: string,
+  offset: number,
+  appName: string,
+  createdAfterIso: string
+): Promise<{ jobs: ReliefWebApiJob[]; error?: string }> {
+  return postReliefWebJobs(buildReliefWebSourceQueryBody(queryValue, offset, createdAfterIso), appName);
+}
+
+export async function fetchReliefWebJobsByIds(
+  jobIds: string[],
+  appName: string
+): Promise<{ jobs: ReliefWebApiJob[]; error?: string }> {
+  const ids = [...new Set(jobIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0) return { jobs: [] };
+
+  const body = {
+    limit: ids.length,
+    filter: {
+      operator: "OR",
+      conditions: ids.map((id) => ({
+        field: "id",
+        value: Number.isFinite(Number(id)) ? Number(id) : id,
+      })),
+    },
+    fields: {
+      include: [...RELIEFWEB_JOB_FIELD_INCLUDES],
+    },
+  };
+
+  return postReliefWebJobs(body, appName);
+}
+
 export async function fetchReliefWebJobsBatch(
   queryValue: string,
   offset: number,
   appName: string,
   createdAfterIso: string
 ): Promise<{ jobs: ReliefWebApiJob[]; error?: string }> {
-  const url = `${RELIEFWEB_API_BASE}?appname=${encodeURIComponent(appName)}`;
-  const body = buildReliefWebPostBody(queryValue, offset, createdAfterIso);
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      return { jobs: [], error: `${res.status}: ${text.slice(0, 500)}` };
-    }
-
-    const data = (await res.json()) as ReliefWebApiResponse;
-    return { jobs: data.data ?? [] };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { jobs: [], error: msg };
-  }
+  return postReliefWebJobs(buildReliefWebPostBody(queryValue, offset, createdAfterIso), appName);
 }
 
 export function buildImportMetadata(

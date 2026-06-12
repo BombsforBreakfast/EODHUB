@@ -5,11 +5,15 @@ import {
   buildImportMetadata,
   detectCategory,
   fetchReliefWebJobsBatch,
+  fetchReliefWebJobsBySourceQuery,
+  fetchReliefWebJobsByTheme,
   formatReliefWebFilterDate,
   LOOKBACK_DAYS,
   MAX_PAGES_PER_BATCH,
   normalizeReliefWebJob,
   RELIEFWEB_KEYWORD_BATCHES,
+  RELIEFWEB_SOURCE_INTAKE_CHANNELS,
+  RELIEFWEB_THEME_INTAKE_CHANNELS,
   RESULTS_PER_PAGE,
   scoreReliefWebJob,
   shouldIngestReliefWebJob,
@@ -138,6 +142,7 @@ for (const queryBatch of RELIEFWEB_KEYWORD_BATCHES) {
           title: normalized.title,
           description: normalized.description,
           metadataText: normalized.metadataText,
+          themes: normalized.themes,
         });
 
         if (
@@ -227,6 +232,168 @@ for (const queryBatch of RELIEFWEB_KEYWORD_BATCHES) {
     }
   } catch (e) {
     errors.push(`[batch] ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+async function ingestReliefWebItems(
+  items: Awaited<ReturnType<typeof fetchReliefWebJobsBatch>>["jobs"],
+  matchedQuery: string
+) {
+  for (const raw of items) {
+    const normalized = normalizeReliefWebJob(raw);
+    if (!normalized) {
+      skipped++;
+      continue;
+    }
+    const rwId = normalized.reliefwebJobId;
+    if (seenReliefWebIds.has(rwId)) {
+      skipped++;
+      continue;
+    }
+    seenReliefWebIds.add(rwId);
+
+    const relevance = scoreReliefWebJob({
+      title: normalized.title,
+      description: normalized.description,
+      metadataText: normalized.metadataText,
+      themes: normalized.themes,
+    });
+
+    if (
+      relevance.excluded ||
+      !shouldIngestReliefWebJob(
+        relevance.score,
+        normalized.title,
+        normalized.description,
+        normalized.metadataText
+      )
+    ) {
+      skipped++;
+      continue;
+    }
+
+    const { data: existing, error: selectErr } = await supabase
+      .from("jobs")
+      .select("id, is_rejected, import_metadata")
+      .eq("source_type", "reliefweb")
+      .eq("reliefweb_job_id", rwId)
+      .maybeSingle();
+
+    if (selectErr) {
+      errors.push(`[select ${rwId}] ${selectErr.message}`);
+      continue;
+    }
+
+    if (relevance.confidence === "high") high++;
+    else if (relevance.confidence === "possible") possible++;
+    else low++;
+    if (relevance.suppressed) suppressed++;
+
+    if (relevance.suppressed && !existing) {
+      skipped++;
+      continue;
+    }
+
+    const importMetadata = buildImportMetadata(normalized, relevance, matchedQuery);
+    const now = new Date().toISOString();
+    const category = detectCategory(normalized.title);
+
+    const rowPayload = {
+      title: normalized.title,
+      company_name: normalized.companyName,
+      location: normalized.location,
+      apply_url: normalized.applyUrl,
+      description: normalized.description,
+      og_description: normalized.description.slice(0, 500) || null,
+      og_site_name: "ReliefWeb",
+      category,
+      relevance_score: relevance.score,
+      import_metadata: existing?.import_metadata
+        ? mergeImportMetadata(existing.import_metadata as Record<string, unknown>, importMetadata)
+        : importMetadata,
+      last_seen_at: now,
+    };
+
+    if (existing) {
+      if (existing.is_rejected) {
+        skipped++;
+        continue;
+      }
+      const { error: upErr } = await supabase.from("jobs").update(rowPayload).eq("id", existing.id);
+      if (upErr) {
+        errors.push(`[update ${rwId}] ${upErr.message}`);
+        continue;
+      }
+      refreshed++;
+      continue;
+    }
+
+    const { error: insErr } = await supabase.from("jobs").insert({
+      ...rowPayload,
+      reliefweb_job_id: rwId,
+      is_approved: false,
+      source_type: "reliefweb",
+    });
+    if (insErr) {
+      errors.push(`[insert ${rwId}] ${insErr.message}`);
+      continue;
+    }
+    imported++;
+    importedTitles.push(normalized.title);
+  }
+}
+
+for (const channel of RELIEFWEB_THEME_INTAKE_CHANNELS) {
+  const channelAfter = formatReliefWebFilterDate(
+    new Date(Date.now() - channel.lookbackDays * 24 * 60 * 60 * 1000)
+  );
+  try {
+    for (let page = 0; page < channel.maxPages; page++) {
+      const offset = page * RESULTS_PER_PAGE;
+      const { jobs: items, error } = await fetchReliefWebJobsByTheme(
+        channel.themeId,
+        offset,
+        appName,
+        channelAfter
+      );
+      apiCalls++;
+      if (error) {
+        errors.push(`[${channel.id} offset ${offset}] ${error}`);
+        break;
+      }
+      if (items.length === 0) break;
+      await ingestReliefWebItems(items, channel.id);
+      if (items.length < RESULTS_PER_PAGE) break;
+    }
+  } catch (e) {
+    errors.push(`[${channel.id}] ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+for (const channel of RELIEFWEB_SOURCE_INTAKE_CHANNELS) {
+  const channelAfter = formatReliefWebFilterDate(
+    new Date(Date.now() - channel.lookbackDays * 24 * 60 * 60 * 1000)
+  );
+  try {
+    for (let page = 0; page < channel.maxPages; page++) {
+      const offset = page * RESULTS_PER_PAGE;
+      const { jobs: items, error } = await fetchReliefWebJobsBySourceQuery(
+        channel.query,
+        offset,
+        appName,
+        channelAfter
+      );
+      apiCalls++;
+      if (error) {
+        errors.push(`[${channel.id} offset ${offset}] ${error}`);
+        break;
+      }
+      if (items.length === 0) break;
+      await ingestReliefWebItems(items, channel.id);
+      if (items.length < RESULTS_PER_PAGE) break;
+    }
+  } catch (e) {
+    errors.push(`[${channel.id}] ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 

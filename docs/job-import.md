@@ -28,12 +28,17 @@ If `RELIEFWEB_APP_NAME` is missing, the import route returns HTTP 200 with `{ sk
 
 ### Two-stage filtering
 
-1. **Broad API intake** — keyword batches in [`app/lib/reliefweb/relevanceConfig.ts`](app/lib/reliefweb/relevanceConfig.ts) cast a wide ReliefWeb search net (~12 batches × 2 pages).
+1. **Broad API intake** — three parallel strategies in [`app/lib/reliefweb/`](app/lib/reliefweb/):
+   - **Keyword batches** in [`relevanceConfig.ts`](app/lib/reliefweb/relevanceConfig.ts) search `title` + `body` (~12 batches × 2 pages, 90-day lookback).
+   - **Theme filter** in [`filterIntake.ts`](app/lib/reliefweb/filterIntake.ts) fetches all jobs tagged **Mine Action** (theme id `12033`) regardless of title wording — 120-day lookback, 4 pages. This catches generic titles like “Field Coordinator” that keyword search misses.
+   - **Source query** matches the posting **organization** field (HALO, MAG, NPA, etc.) — not title/body — 90-day lookback, 3 pages.
+   - **Target job IDs** in [`targetJobIds.ts`](app/lib/reliefweb/targetJobIds.ts) backfill known listings by ReliefWeb id.
 2. **Weighted relevance scoring** — [`app/lib/reliefweb/scoreReliefWebJob.ts`](app/lib/reliefweb/scoreReliefWebJob.ts) scores each result 0–100 using:
    - Title matches: up to 60 points
    - Metadata (org, countries, ReliefWeb themes/categories): up to 25 points
    - Description/body: up to 15 points
    - Negative humanitarian-sector terms downrank (but do not block strong EOD/HMA title matches)
+   - Jobs tagged **Mine Action** are floored to “possible” confidence (score ≥ 50) so they are not suppressed solely because of a generic title
 
 Hard exclusions (never imported): mixed migration, human trafficking, trafficking in persons.
 
