@@ -12,6 +12,37 @@ External job listings are ingested via cron-backed API routes. All imported jobs
 
 Shared: `CRON_SECRET` (Vercel cron Bearer auth or manual `?secret=`).
 
+## USAJobs
+
+USAJobs uses the federal search API (`https://data.usajobs.gov/api/Search`). Credentials: `USAJOBS_API_KEY`, `USAJOBS_EMAIL` (registered email for the `User-Agent` header).
+
+### Intake channels (parallel strategies)
+
+Configured in [`app/lib/usajobs/intakeConfig.ts`](app/lib/usajobs/intakeConfig.ts):
+
+1. **Keyword channels** — EOD, UXO, C-IED, CBRN, explosive safety, UAS, TSS-E, emergency management, nuclear materials courier. All use `DatePosted=60`.
+2. **Series channels** — `JobCategoryCode` filters for occupational series **0017** (Explosives Safety) and **0089** (Emergency Management Specialist), with optional keyword narrowing.
+3. **Organization channels** — agency filters (`AR` Army, `HS` DHS, `NV` Navy, `TR` Treasury, `IN` Interior) crossed with ordnance/EM keywords.
+4. **Title channels** — `PositionTitle` searches for common federal role titles when keyword matching is too broad.
+
+### Relevance (title + description, not title-only)
+
+[`app/lib/usajobs/relevance.ts`](app/lib/usajobs/relevance.ts) scores **title, announcement body** (`JobSummary` / `QualificationSummary`), and organization. The legacy importer dropped anything without EOD terms in the **title** even when USAJobs matched on the announcement body — that gate is removed.
+
+- Strong match in title → high confidence floor
+- Strong/medium match in description only → still imported (score ≥ 55)
+- Series/org/title-channel listings get a slightly lower threshold when ordnance or EM terms appear anywhere in the posting
+
+### Dedupe
+
+[`app/lib/usajobsJob.ts`](app/lib/usajobsJob.ts) canonicalizes apply URLs to `https://www.usajobs.gov/job/{id}` and matches existing rows across URL variants (`:443`, `ViewDetails` paths). Position id is also stored in `import_metadata.usajobs_position_id`.
+
+### Manual test
+
+```bash
+curl "https://www.eod-hub.com/api/import-usajobs?secret=$CRON_SECRET"
+```
+
 ## Adzuna
 
 Adzuna uses the US jobs API (`/v1/api/jobs/us/search/{page}`). Credentials: `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`.
