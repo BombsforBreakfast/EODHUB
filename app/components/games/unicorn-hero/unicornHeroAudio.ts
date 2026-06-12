@@ -17,7 +17,12 @@ export type UnicornHeroAudioEvent =
   | { type: "health_pickup"; pickup: HealthPickupKind }
   | { type: "damage" }
   | { type: "death" }
-  | { type: "level_complete" };
+  | { type: "level_complete" }
+  | { type: "spear_fire" }
+  | { type: "spear_reload" }
+  | { type: "underwater_explosion" }
+  | { type: "shark_defeat" }
+  | { type: "rainbow_blast_underwater" };
 
 export interface UnicornHeroAudioPrefs {
   musicEnabled: boolean;
@@ -572,6 +577,47 @@ export function createUnicornHeroAudio(initialPrefs = loadUnicornHeroAudioPrefs(
           break;
         case "rainbow_blast":
           api.playRainbowBlast();
+          break;
+        case "rainbow_blast_underwater":
+          playSfx(() => {
+            if (!canPlay("rainbowBlastUw", 400) || !sfxGain) return;
+            playNoise(0.1, 0.1, 500, "bandpass");
+            [330, 440, 554, 659].forEach((f, i) => {
+              setTimeout(() => playOsc(f, 0.07, "sine", 0.09, sfxGain!, 0.004, 0.05), i * 50);
+            });
+            setTimeout(() => playNoise(0.12, 0.08, 900), 180);
+          });
+          break;
+        case "spear_fire":
+          playSfx(() => {
+            if (!canPlay("spearFire", 180) || !sfxGain) return;
+            playOsc(680, 0.03, "square", 0.1, sfxGain, 0.001, 0.02);
+            playNoise(0.04, 0.08, 1400, "lowpass");
+            playOsc(220, 0.05, "triangle", 0.07, sfxGain, 0.003, 0.04, -80);
+          });
+          break;
+        case "spear_reload":
+          playSfx(() => {
+            if (!canPlay("spearReload", 400) || !sfxGain) return;
+            playOsc(180, 0.04, "square", 0.08, sfxGain, 0.002, 0.03);
+            setTimeout(() => playNoise(0.06, 0.1, 600), 60);
+            setTimeout(() => playOsc(140, 0.05, "triangle", 0.09, sfxGain!, 0.003, 0.04), 120);
+          });
+          break;
+        case "underwater_explosion":
+          playSfx(() => {
+            if (!canPlay("uwExplosion", 120) || !sfxGain) return;
+            playNoise(0.2, 0.14, 280, "lowpass");
+            playOsc(55, 0.22, "sine", 0.12, sfxGain, 0.01, 0.1);
+          });
+          break;
+        case "shark_defeat":
+          playSfx(() => {
+            if (!canPlay("sharkDefeat", 150) || !sfxGain) return;
+            playOsc(180, 0.06, "square", 0.1, sfxGain, 0.003, 0.04);
+            playOsc(120, 0.08, "triangle", 0.12, sfxGain, 0.004, 0.05);
+            setTimeout(() => playOsc(440, 0.05, "sine", 0.08, sfxGain!, 0.003, 0.04), 40);
+          });
           break;
         case "unicorn_treat":
           api.playUnicornTreat();

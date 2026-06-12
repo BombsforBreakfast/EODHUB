@@ -1,5 +1,6 @@
 import { LEVEL_2_CONFIG, LEVEL_2_META } from "./rainbowCowboyLevel2";
 import { LEVEL_3_CONFIG, LEVEL_3_META } from "./rainbowCowboyLevel3";
+import { LEVEL_5_CONFIG, LEVEL_5_META } from "./rainbowCowboyLevel5";
 import { applyDifficulty } from "./rainbowCowboyDifficulty";
 import type { RainbowCowboyDifficulty } from "./rainbowCowboyTypes";
 import type { LevelConfig, RainbowCowboyLevel } from "./rainbowCowboyTypes";
@@ -27,21 +28,6 @@ const LOCKED_LEVELS: RainbowCowboyLevel[] = [
     id: "level-4",
     slug: "chemical-carnival",
     title: "Chemical Carnival",
-    subtitle: "Coming Soon",
-    objective: "",
-    description: "",
-    difficulty: "—",
-    estimatedMinutes: "TBD",
-    levelWidth: 0,
-    groundY: 0,
-    targetTimeSeconds: 0,
-    locked: true,
-    status: "coming_soon",
-  },
-  {
-    id: "level-5",
-    slug: "great-fpv-swarm",
-    title: "The Great FPV Swarm",
     subtitle: "Coming Soon",
     objective: "",
     description: "",
@@ -142,7 +128,7 @@ LEVEL_1_CONFIG.enemies = LEVEL_1_CONFIG.enemies.filter(
 );
 
 export function getRainbowCowboyLevels(): RainbowCowboyLevel[] {
-  return [LEVEL_1_META, LEVEL_2_META, LEVEL_3_META, ...LOCKED_LEVELS];
+  return [LEVEL_1_META, LEVEL_2_META, LEVEL_3_META, ...LOCKED_LEVELS, LEVEL_5_META];
 }
 
 export function getRainbowCowboyLevelById(levelId: string): RainbowCowboyLevel | undefined {
@@ -157,6 +143,7 @@ export function getLevelConfig(
   if (levelId === "level-1") base = LEVEL_1_CONFIG;
   else if (levelId === "level-2") base = LEVEL_2_CONFIG;
   else if (levelId === "level-3") base = LEVEL_3_CONFIG;
+  else if (levelId === "level-5") base = LEVEL_5_CONFIG;
   if (!base) return undefined;
   return applyDifficulty(base, difficulty);
 }

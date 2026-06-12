@@ -22,6 +22,7 @@ import {
 } from "../unicorn-hero/unicornHeroAudio";
 import { UnicornHeroAudioControls } from "../unicorn-hero/UnicornHeroAudioControls";
 import { getUnicornHeroRideConfig, type UnicornHeroRideType } from "../unicorn-hero/unicornHeroRides";
+import { getLevelAttackLabel, getLevelSpecialLabel } from "./rainbowCowboyLevel5";
 import { GameRotatePrompt } from "@/app/components/games/GameRotatePrompt";
 import { exitArcadeImmersiveMode } from "@/app/components/games/arcadeImmersiveMode";
 import { useMobileGameImmersiveMode } from "@/app/components/games/useMobileGameImmersiveMode";
@@ -60,6 +61,7 @@ function isStaleEngine(engine: RainbowCowboyEngine | null): boolean {
     typeof engine.tick !== "function" ||
     !Array.isArray(engine.landmineExplosionEvents) ||
     !Array.isArray(engine.audioEvents) ||
+    !Array.isArray(engine.spearProjectiles) ||
     typeof engine.prevPlayerX !== "number" ||
     typeof engine.rideType !== "string"
   );
@@ -75,6 +77,8 @@ export function RainbowCowboyGame({
   onExit,
 }: Props) {
   const rideConfig = getUnicornHeroRideConfig(ride);
+  const attackLabel = getLevelAttackLabel(config.level.id, rideConfig.attackLabel);
+  const specialLabel = getLevelSpecialLabel(config.level.id, rideConfig.specialLabel);
   const shellRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<RainbowCowboyEngine | null>(null);
@@ -505,8 +509,8 @@ export function RainbowCowboyGame({
       <RainbowCowboyInstructionsModal
         open={instructionsOpen}
         levelId={config.level.id}
-        attackLabel={rideConfig.attackLabel}
-        specialLabel={rideConfig.specialLabel}
+        attackLabel={attackLabel}
+        specialLabel={specialLabel}
         onDismiss={() => {
           instructionsOpenRef.current = false;
           setInstructionsOpen(false);
@@ -529,8 +533,8 @@ export function RainbowCowboyGame({
         actions={inputActions}
         disabled={paused || instructionsOpen}
         showWeaponButton={config.level.id === "level-3"}
-        attackLabel={rideConfig.attackLabel}
-        specialLabel={rideConfig.specialLabel}
+        attackLabel={attackLabel}
+        specialLabel={specialLabel}
         specialCharges={hud.rainbowCharges}
         controlPrefs={controlPrefs}
       />

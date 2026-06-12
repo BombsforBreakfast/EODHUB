@@ -53,6 +53,10 @@ export const ENEMY_SIZES = {
   boom_bot: { w: 54, h: 38 },
   armored_boom_bot: { w: 62, h: 44 },
   grenade_goblin_bot: { w: 58, h: 40 },
+  laser_shark: { w: 72, h: 36 },
+  elite_laser_shark: { w: 88, h: 44 },
+  rov_drone: { w: 44, h: 36 },
+  laser_jaws: { w: 120, h: 56 },
 } as const;
 
 export const ENEMY_SPEEDS = {
@@ -114,3 +118,30 @@ export const BALLOON_ALTITUDE = { minAboveGround: 58, maxAboveGround: 168 };
 export const PICKUP_SIZE = 28;
 export const MINE_SIZE = 38;
 export const DYNAMITE_SIZE = 32;
+
+/** Deep Sea Rodeo — Spear Gun */
+export const SPEAR_MAGAZINE_CAPACITY = 3;
+export const SPEAR_RELOAD_MS = 1750;
+export const SPEAR_FIRE_COOLDOWN_MS = 220;
+export const SPEAR_PROJECTILE_SPEED = 11;
+export const SPEAR_PROJECTILE_W = 28;
+export const SPEAR_PROJECTILE_H = 6;
+export const LASER_SHARK_HP = 2;
+export const ELITE_LASER_SHARK_HP = 3;
+export const ROV_DRONE_HP = 1;
+export const LASER_JAWS_HP = 10;
+export const RAINBOW_BLAST_BOSS_DAMAGE = 3;
+export const TOXIC_JELLY_PENALTY = 100;
+export const SEA_MINE_SCORE = 75;
+
+export const UNDERWATER_ENEMY_SPEEDS = {
+  laser_shark: -3.2,
+  elite_laser_shark: -2.4,
+  rov_drone: -2.8,
+} as const;
+
+export const UNDERWATER_HOMING = {
+  laser_shark: { steer: 0.09, speed: 3.4, bob: 10 },
+  elite_laser_shark: { steer: 0.07, speed: 2.8, bob: 8 },
+  rov_drone: { steer: 0.1, speed: 3.0, bob: 6 },
+} as const;

@@ -42,7 +42,8 @@ export function RainbowCowboyEndScreen({
   const timeDisplay = formatRainbowCowboyDuration(result.durationSeconds);
   const isLevel2 = result.levelId === "level-2";
   const isLevel3 = result.levelId === "level-3";
-  const isAdvancedLevel = isLevel2 || isLevel3;
+  const isLevel5 = result.levelId === "level-5";
+  const isAdvancedLevel = isLevel2 || isLevel3 || isLevel5;
   const victoryTitle = getVictoryTitle(result);
 
   return (
@@ -59,7 +60,9 @@ export function RainbowCowboyEndScreen({
     >
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
         {isVictory ? (
-          isLevel2 ? (
+          isLevel5 ? (
+            <span style={{ fontSize: 40 }}>🌊</span>
+          ) : isLevel2 ? (
             <span style={{ fontSize: 40 }}>🏜️</span>
           ) : (
             <BombSuitManAvatar size={48} />

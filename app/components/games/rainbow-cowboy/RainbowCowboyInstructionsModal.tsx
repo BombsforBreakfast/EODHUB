@@ -54,8 +54,14 @@ const DESKTOP_ROWS = (attackLabel: string, specialLabel: string, levelId?: strin
     { keys: "← / →", action: "Move" },
     { keys: "↑ / Space", action: "Jump" },
     { keys: "↓", action: "Crouch" },
-    { keys: "R", action: `${attackLabel} (slurp)` },
-    { keys: "E", action: `${specialLabel} (explosion)` },
+    { keys: "R", action: levelId === "level-5" ? "Fire Spear Gun" : `${attackLabel} (slurp)` },
+    {
+      keys: "E",
+      action:
+        levelId === "level-5"
+          ? "Rainbow Blast — underwater shockwave (charge count)"
+          : `${specialLabel} (explosion)`,
+    },
   ] as { keys: string; action: string }[];
   if (levelId === "level-3") {
     rows.push({ keys: "T", action: "Fire gun — pistol from the start; upgrades on the field" });
@@ -91,6 +97,7 @@ const MISSION_BY_LEVEL: Record<string, string> = {
   "level-1": "Ride right, reach extraction alive, and rack up points.",
   "level-2": "Fight through the canyon and reach extraction.",
   "level-3": "Hold the Alamo — pistol from the start, use GUN to fire.",
+  "level-5": "Deep Sea Rodeo — spear gun with 3-shot magazine, rainbow blast clears threats. Don't shoot toxic jelly.",
 };
 
 const DEFAULT_MISSION = MISSION_BY_LEVEL["level-1"];
@@ -115,7 +122,17 @@ const LEVEL_3_HAZARDS = [
   "Turret & Grenade Trucks — priority threats.",
 ] as const;
 
+const LEVEL_5_HAZARDS = [
+  "Spear Gun — 3 shots, auto-reload. Lead moving targets.",
+  "Sea Mines — spear to destroy (+75) or swim past.",
+  "Laser Sharks — 2 spear hits. Elite sharks need 3.",
+  "ROV Drones — 1 spear hit.",
+  "Toxic Jelly — DO NOT shoot. Slimes you (−100).",
+  "LASER JAWS boss — defeat before extraction.",
+] as const;
+
 function getHazards(levelId: string | undefined, attackLabel: string): readonly string[] {
+  if (levelId === "level-5") return LEVEL_5_HAZARDS;
   if (levelId === "level-3") return [...BASE_HAZARDS(attackLabel), ...LEVEL_3_HAZARDS];
   if (levelId === "level-2") return [...BASE_HAZARDS(attackLabel), ...LEVEL_2_HAZARDS];
   return BASE_HAZARDS(attackLabel);
