@@ -1,109 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { jobListingCutoffIso } from "../../lib/jobRetention";
 import {
-  canonicalAdzunaDetailsUrl,
-  parseAdzunaAdIdFromUrl,
-} from "../../lib/adzunaJob";
+  fetchAdzunaCategoryPage,
+  fetchAdzunaCompanyPage,
+  fetchAdzunaKeywordPage,
+  roundAdzunaSalary,
+  type AdzunaApiJob,
+} from "../../lib/adzuna/api";
+import {
+  ADZUNA_CATEGORY_CHANNELS,
+  ADZUNA_COMPANY_CHANNELS,
+  ADZUNA_KEYWORD_CHANNELS,
+  ADZUNA_RESULTS_PER_PAGE,
+} from "../../lib/adzuna/intakeConfig";
+import { detectAdzunaCategory, scoreAdzunaJob } from "../../lib/adzuna/relevance";
+import { canonicalAdzunaDetailsUrl, parseAdzunaAdIdFromUrl } from "../../lib/adzunaJob";
+import { jobListingCutoffIso } from "../../lib/jobRetention";
 import {
   chunkArray,
   JOB_IMPORT_LOOKUP_CHUNK,
   JOB_IMPORT_WRITE_CHUNK,
 } from "../../lib/jobImportBatch";
-
-const EOD_KEYWORDS = [
-  "explosive ordnance disposal",
-  "UXO technician",
-  "unexploded ordnance",
-  "bomb technician",
-  "CBRN specialist",
-  "C-IED",
-  "explosive safety",
-  "demining",
-  "ordnance disposal",
-];
-
-const MAX_PAGES_PER_KEYWORD = 3;
-const RESULTS_PER_PAGE = 50;
-
-const TITLE_RELEVANT_TERMS = [
-  "eod",
-  "explosive ordnance",
-  "explosives specialist",
-  "explosives handler",
-  "explosive safety",
-  "uxo",
-  "unexploded",
-  "ordnance",
-  "bomb tech",
-  "bomb squad",
-  "demining",
-  "cied",
-  "c-ied",
-  "disposal",
-  "ammunition",
-  "tss-e",
-  "nuclear",
-  "chemical",
-  "radiological",
-  "cbrn",
-  "cbrne",
-  "uas",
-  "unmanned aerial",
-  "cuas",
-  "counter-uas",
-  "counter uas",
-];
-
-const MILITARY_RECRUITMENT_FILTERS = [
-  "recruiter",
-  "rotc",
-  "basic training",
-  "officer candidate",
-  "officer training",
-  "enlistment",
-  "enlisting",
-  "national guard",
-  "reserve",
-  "mechanic",
-  "medicine",
-  "medical",
-];
-
-function isRelevantTitle(title: string): boolean {
-  const lower = title.toLowerCase();
-  return TITLE_RELEVANT_TERMS.some((kw) => lower.includes(kw));
-}
-
-function isMilitaryRecruitment(title: string): boolean {
-  const lower = title.toLowerCase();
-  return MILITARY_RECRUITMENT_FILTERS.some((kw) => lower.includes(kw));
-}
-
-function detectCategory(title: string): string {
-  const t = title.toLowerCase();
-  if (t.includes("uxo") || t.includes("unexploded ordnance")) return "UXO";
-  if (t.includes("bomb squad") || t.includes("bomb tech")) return "Bomb Squad";
-  return "EOD";
-}
-
-/** jobs.pay_min / pay_max are integer columns; Adzuna often returns fractional USD amounts. */
-function roundSalary(value: number | undefined): number | null {
-  if (value == null || !Number.isFinite(value)) return null;
-  return Math.round(value);
-}
-
-interface AdzunaJob {
-  id: string;
-  title: string;
-  company: { display_name: string };
-  location: { display_name: string };
-  description: string;
-  redirect_url: string;
-  salary_min?: number;
-  salary_max?: number;
-  created: string;
-}
 
 type AdzunaCandidate = {
   adId: string;
@@ -114,30 +31,56 @@ type AdzunaCandidate = {
   applyUrl: string;
   payMin: number | null;
   payMax: number | null;
+  intakeChannel: string;
+  relevanceScore: number;
 };
 
-async function fetchAdzunaPage(
-  keyword: string,
-  page: number
-): Promise<{ jobs: AdzunaJob[]; error?: string }> {
-  const params = new URLSearchParams({
-    app_id: process.env.ADZUNA_APP_ID ?? "",
-    app_key: process.env.ADZUNA_APP_KEY ?? "",
-    what: keyword,
-    results_per_page: String(RESULTS_PER_PAGE),
-  });
+function toCandidate(job: AdzunaApiJob, intakeChannel: string, relevanceScore: number): AdzunaCandidate | null {
+  const adId = parseAdzunaAdIdFromUrl(job.redirect_url) ?? String(job.id);
+  if (!/^\d+$/.test(adId)) return null;
 
-  const res = await fetch(
-    `https://api.adzuna.com/v1/api/jobs/us/search/${page}?${params.toString()}`
+  return {
+    adId,
+    title: job.title,
+    companyName: job.company.display_name,
+    location: job.location.display_name,
+    description: job.description,
+    applyUrl: canonicalAdzunaDetailsUrl(adId),
+    payMin: roundAdzunaSalary(job.salary_min),
+    payMax: roundAdzunaSalary(job.salary_max),
+    intakeChannel,
+    relevanceScore,
+  };
+}
+
+function considerJob(
+  job: AdzunaApiJob,
+  intakeChannel: string,
+  seenAdzunaIds: Set<string>,
+  candidates: AdzunaCandidate[]
+): "added" | "duplicate" | "skipped" {
+  const adId = parseAdzunaAdIdFromUrl(job.redirect_url) ?? String(job.id);
+  if (!/^\d+$/.test(adId)) return "skipped";
+
+  if (seenAdzunaIds.has(adId)) return "duplicate";
+  seenAdzunaIds.add(adId);
+
+  const relevance = scoreAdzunaJob(
+    {
+      title: job.title,
+      description: job.description,
+      companyName: job.company.display_name,
+    },
+    { intakeChannel }
   );
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    return { jobs: [], error: `${res.status}: ${text}` };
-  }
+  if (!relevance.relevant) return "skipped";
 
-  const data = await res.json();
-  return { jobs: (data?.results as AdzunaJob[]) ?? [] };
+  const candidate = toCandidate(job, intakeChannel, relevance.score);
+  if (!candidate) return "skipped";
+
+  candidates.push(candidate);
+  return "added";
 }
 
 export async function GET(req: NextRequest) {
@@ -177,47 +120,79 @@ export async function GET(req: NextRequest) {
   const candidates: AdzunaCandidate[] = [];
   const errors: string[] = [];
   let skipped = 0;
+  let apiCalls = 0;
 
-  for (const keyword of EOD_KEYWORDS) {
-    for (let page = 1; page <= MAX_PAGES_PER_KEYWORD; page++) {
-      const { jobs: items, error } = await fetchAdzunaPage(keyword, page);
+  for (const channel of ADZUNA_KEYWORD_CHANNELS) {
+    for (let page = 1; page <= channel.maxPages; page++) {
+      const { jobs: items, error } = await fetchAdzunaKeywordPage(
+        channel.what,
+        page,
+        channel.maxDaysOld
+      );
+      apiCalls++;
       if (error) {
-        errors.push(`[${keyword} p${page}] ${error}`);
+        errors.push(`[${channel.id} p${page}] ${error}`);
         break;
       }
       if (items.length === 0) break;
 
       for (const job of items) {
-        const adId = parseAdzunaAdIdFromUrl(job.redirect_url) ?? String(job.id);
-        if (!/^\d+$/.test(adId)) {
-          skipped++;
-          continue;
-        }
-
-        if (seenAdzunaIds.has(adId)) {
-          skipped++;
-          continue;
-        }
-        seenAdzunaIds.add(adId);
-
-        if (!isRelevantTitle(job.title) || isMilitaryRecruitment(job.title)) {
-          skipped++;
-          continue;
-        }
-
-        candidates.push({
-          adId,
-          title: job.title,
-          companyName: job.company.display_name,
-          location: job.location.display_name,
-          description: job.description,
-          applyUrl: canonicalAdzunaDetailsUrl(adId),
-          payMin: roundSalary(job.salary_min),
-          payMax: roundSalary(job.salary_max),
-        });
+        const result = considerJob(job, channel.id, seenAdzunaIds, candidates);
+        if (result === "skipped") skipped++;
+        else if (result === "duplicate") skipped++;
       }
 
-      if (items.length < RESULTS_PER_PAGE) break;
+      if (items.length < ADZUNA_RESULTS_PER_PAGE) break;
+    }
+  }
+
+  for (const channel of ADZUNA_COMPANY_CHANNELS) {
+    for (let page = 1; page <= channel.maxPages; page++) {
+      const { jobs: items, error } = await fetchAdzunaCompanyPage(
+        channel.company,
+        channel.what,
+        page,
+        channel.maxDaysOld
+      );
+      apiCalls++;
+      if (error) {
+        errors.push(`[${channel.id} p${page}] ${error}`);
+        break;
+      }
+      if (items.length === 0) break;
+
+      for (const job of items) {
+        const result = considerJob(job, channel.id, seenAdzunaIds, candidates);
+        if (result === "skipped") skipped++;
+        else if (result === "duplicate") skipped++;
+      }
+
+      if (items.length < ADZUNA_RESULTS_PER_PAGE) break;
+    }
+  }
+
+  for (const channel of ADZUNA_CATEGORY_CHANNELS) {
+    for (let page = 1; page <= channel.maxPages; page++) {
+      const { jobs: items, error } = await fetchAdzunaCategoryPage(
+        channel.category,
+        channel.what,
+        page,
+        channel.maxDaysOld
+      );
+      apiCalls++;
+      if (error) {
+        errors.push(`[${channel.id} p${page}] ${error}`);
+        break;
+      }
+      if (items.length === 0) break;
+
+      for (const job of items) {
+        const result = considerJob(job, channel.id, seenAdzunaIds, candidates);
+        if (result === "skipped") skipped++;
+        else if (result === "duplicate") skipped++;
+      }
+
+      if (items.length < ADZUNA_RESULTS_PER_PAGE) break;
     }
   }
 
@@ -278,7 +253,12 @@ export async function GET(req: NextRequest) {
       og_site_name: "Adzuna",
       pay_min: candidate.payMin,
       pay_max: candidate.payMax,
-      category: detectCategory(candidate.title),
+      category: detectAdzunaCategory(candidate.title),
+      relevance_score: candidate.relevanceScore,
+      import_metadata: {
+        intake_channel: candidate.intakeChannel,
+        relevance_score: candidate.relevanceScore,
+      },
       is_approved: existing?.is_approved ?? false,
       source_type: "adzuna",
       last_seen_at: now,
@@ -300,6 +280,10 @@ export async function GET(req: NextRequest) {
     purged: purged ?? 0,
     skipped,
     candidates: candidates.length,
+    apiCalls,
+    keywordChannels: ADZUNA_KEYWORD_CHANNELS.length,
+    companyChannels: ADZUNA_COMPANY_CHANNELS.length,
+    categoryChannels: ADZUNA_CATEGORY_CHANNELS.length,
     sample: importedTitles.slice(0, 10),
     errors: errors.length > 0 ? errors : undefined,
   });

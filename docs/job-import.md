@@ -12,6 +12,63 @@ External job listings are ingested via cron-backed API routes. All imported jobs
 
 Shared: `CRON_SECRET` (Vercel cron Bearer auth or manual `?secret=`).
 
+## USAJobs
+
+USAJobs uses the federal search API (`https://data.usajobs.gov/api/Search`). Credentials: `USAJOBS_API_KEY`, `USAJOBS_EMAIL` (registered email for the `User-Agent` header).
+
+### Intake channels (parallel strategies)
+
+Configured in [`app/lib/usajobs/intakeConfig.ts`](app/lib/usajobs/intakeConfig.ts):
+
+1. **Keyword channels** — EOD, UXO, C-IED, CBRN, explosive safety, UAS, TSS-E, emergency management, nuclear materials courier. All use `DatePosted=60`.
+2. **Series channels** — `JobCategoryCode` filters for occupational series **0017** (Explosives Safety) and **0089** (Emergency Management Specialist), with optional keyword narrowing.
+3. **Organization channels** — agency filters (`AR` Army, `HS` DHS, `NV` Navy, `TR` Treasury, `IN` Interior) crossed with ordnance/EM keywords.
+4. **Title channels** — `PositionTitle` searches for common federal role titles when keyword matching is too broad.
+
+### Relevance (title + description, not title-only)
+
+[`app/lib/usajobs/relevance.ts`](app/lib/usajobs/relevance.ts) scores **title, announcement body** (`JobSummary` / `QualificationSummary`), and organization. The legacy importer dropped anything without EOD terms in the **title** even when USAJobs matched on the announcement body — that gate is removed.
+
+- Strong match in title → high confidence floor
+- Strong/medium match in description only → still imported (score ≥ 55)
+- Series/org/title-channel listings get a slightly lower threshold when ordnance or EM terms appear anywhere in the posting
+
+### Dedupe
+
+[`app/lib/usajobsJob.ts`](app/lib/usajobsJob.ts) canonicalizes apply URLs to `https://www.usajobs.gov/job/{id}` and matches existing rows across URL variants (`:443`, `ViewDetails` paths). Position id is also stored in `import_metadata.usajobs_position_id`.
+
+### Manual test
+
+```bash
+curl "https://www.eod-hub.com/api/import-usajobs?secret=$CRON_SECRET"
+```
+
+## Adzuna
+
+Adzuna uses the US jobs API (`/v1/api/jobs/us/search/{page}`). Credentials: `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`.
+
+### Intake channels (parallel strategies)
+
+Configured in [`app/lib/adzuna/intakeConfig.ts`](app/lib/adzuna/intakeConfig.ts):
+
+1. **Keyword channels** — expanded `what` queries (EOD, UXO, C-IED, demining, UAS, etc.) with `max_days_old=90` and enlistment terms excluded at the API layer.
+2. **Company channels** — `company=` filter for PAE, Amentum, Leidos, Parsons, Tetra Tech, KBR, Constellis, Valiant, Cape Fox. Catches generic titles from known ordnance employers.
+3. **Category channels** — `engineering-jobs` and `trade-construction-jobs` crossed with ordnance keywords.
+
+### Relevance (title + description, not title-only)
+
+[`app/lib/adzuna/relevance.ts`](app/lib/adzuna/relevance.ts) scores **title, description, and company**. The legacy importer dropped anything without EOD terms in the **title** even when Adzuna matched on description — that gate is removed.
+
+- Strong match in title → high confidence floor
+- Strong/medium match in description only → still imported (score ≥ 55)
+- Company-channel listings get a slightly lower threshold when ordnance terms appear anywhere in the posting
+
+### Manual test
+
+```bash
+curl "https://www.eod-hub.com/api/import-adzuna?secret=$CRON_SECRET"
+```
+
 ## ReliefWeb
 
 ReliefWeb uses the official read-only API ([documentation](https://apidoc.reliefweb.int/)). As of November 2025, API users need a **pre-approved** `appname`.
@@ -28,12 +85,17 @@ If `RELIEFWEB_APP_NAME` is missing, the import route returns HTTP 200 with `{ sk
 
 ### Two-stage filtering
 
-1. **Broad API intake** — keyword batches in [`app/lib/reliefweb/relevanceConfig.ts`](app/lib/reliefweb/relevanceConfig.ts) cast a wide ReliefWeb search net (~12 batches × 2 pages).
+1. **Broad API intake** — three parallel strategies in [`app/lib/reliefweb/`](app/lib/reliefweb/):
+   - **Keyword batches** in [`relevanceConfig.ts`](app/lib/reliefweb/relevanceConfig.ts) search `title` + `body` (~12 batches × 2 pages, 90-day lookback).
+   - **Theme filter** in [`filterIntake.ts`](app/lib/reliefweb/filterIntake.ts) fetches all jobs tagged **Mine Action** (theme id `12033`) regardless of title wording — 120-day lookback, 4 pages. This catches generic titles like “Field Coordinator” that keyword search misses.
+   - **Source query** matches the posting **organization** field (HALO, MAG, NPA, etc.) — not title/body — 90-day lookback, 3 pages.
+   - **Target job IDs** in [`targetJobIds.ts`](app/lib/reliefweb/targetJobIds.ts) backfill known listings by ReliefWeb id.
 2. **Weighted relevance scoring** — [`app/lib/reliefweb/scoreReliefWebJob.ts`](app/lib/reliefweb/scoreReliefWebJob.ts) scores each result 0–100 using:
    - Title matches: up to 60 points
    - Metadata (org, countries, ReliefWeb themes/categories): up to 25 points
    - Description/body: up to 15 points
    - Negative humanitarian-sector terms downrank (but do not block strong EOD/HMA title matches)
+   - Jobs tagged **Mine Action** are floored to “possible” confidence (score ≥ 50) so they are not suppressed solely because of a generic title
 
 Hard exclusions (never imported): mixed migration, human trafficking, trafficking in persons.
 
@@ -66,6 +128,16 @@ npx tsx scripts/run-reliefweb-import.ts purge-pending
 npx tsx scripts/run-reliefweb-import.ts
 npx tsx scripts/run-reliefweb-import.ts score-samples
 ```
+
+Targeted cross-reference (focused EOD/HMA/CIED/UAS ReliefWeb IDs vs Supabase duplicates):
+
+```bash
+npx tsx scripts/crossref-reliefweb-targeted.ts --dry-run   # report only
+npx tsx scripts/crossref-reliefweb-targeted.ts             # insert new rows
+npx tsx scripts/crossref-reliefweb-targeted.ts --refresh   # also refresh existing matches
+```
+
+The daily cron import also fetches [`TARGET_RELIEFWEB_JOB_IDS`](app/lib/reliefweb/targetJobIds.ts) by ID after keyword batches so focused listings are not missed by date filters.
 
 Expected JSON fields: `imported`, `refreshed`, `skipped`, `suppressed`, `confidence`, `apiCalls`, `keywordBatches`, `sample`, optional `errors`.
 

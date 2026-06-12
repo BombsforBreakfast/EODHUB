@@ -1,5 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  extractUSAJobsSummary,
+  fetchUSAJobsKeywordPage,
+  fetchUSAJobsOrganizationPage,
+  fetchUSAJobsSeriesPage,
+  fetchUSAJobsTitlePage,
+  type USAJobsApiItem,
+} from "../../lib/usajobs/api";
+import {
+  USAJOBS_KEYWORD_CHANNELS,
+  USAJOBS_ORGANIZATION_CHANNELS,
+  USAJOBS_RESULTS_PER_PAGE,
+  USAJOBS_SERIES_CHANNELS,
+  USAJOBS_TITLE_CHANNELS,
+} from "../../lib/usajobs/intakeConfig";
+import { detectUSAJobsCategory, scoreUSAJobsJob } from "../../lib/usajobs/relevance";
+import { canonicalUSAJobsUrl, usajobsUrlVariants } from "../../lib/usajobsJob";
 import { jobListingCutoffIso } from "../../lib/jobRetention";
 import {
   chunkArray,
@@ -7,152 +24,70 @@ import {
   JOB_IMPORT_WRITE_CHUNK,
 } from "../../lib/jobImportBatch";
 
-const EOD_KEYWORDS = [
-  "Explosive Ordnance Disposal",
-  "UXO Technician",
-  "unexploded ordnance",
-  "bomb technician",
-  "CIED",
-  "C-IED",
-  "explosive safety",
-  "TSS-E",
-  "Transportation Security Specialist Explosives",
-  "explosives specialist",
-  "UAS",
-  "unmanned aerial systems",
-  "CUAS",
-  "C-UAS",
-  "nuclear",
-  "chemical",
-  "radiological",
-  "Emergency Management Specialist",
-  "Nuclear Materials Courier",
-];
-
-const MAX_PAGES_PER_KEYWORD = 5;
-
-const TITLE_RELEVANT_TERMS = [
-  "eod",
-  "explosive ordnance",
-  "explosives specialist",
-  "explosives handler",
-  "explosive safety",
-  "uxo",
-  "unexploded",
-  "ordnance",
-  "bomb tech",
-  "bomb squad",
-  "demining",
-  "cied",
-  "c-ied",
-  "disposal",
-  "ammunition",
-  "tss-e",
-  "transportation security specialist",
-  "nuclear",
-  "chemical",
-  "radiological",
-  "cbrn",
-  "cbrne",
-  "emergency management specialist",
-  "nuclear materials courier",
-  "uas",
-  "unmanned aerial",
-  "cuas",
-  "counter-uas",
-  "counter uas",
-];
-
-const MILITARY_RECRUITMENT_FILTERS = [
-  "recruiter",
-  "rotc",
-  "basic training",
-  "officer candidate",
-  "officer training",
-  "enlistment",
-  "enlisting",
-  "national guard",
-  "reserve",
-  "inspector",
-  "title 32",
-  "mechanic",
-  "medicine",
-  "medical",
-];
-
-function isRelevantTitle(title: string): boolean {
-  const lower = title.toLowerCase();
-  return TITLE_RELEVANT_TERMS.some((kw) => lower.includes(kw));
-}
-
-function isMilitaryRecruitment(title: string): boolean {
-  const lower = title.toLowerCase();
-  return MILITARY_RECRUITMENT_FILTERS.some((kw) => lower.includes(kw));
-}
-
-function detectCategory(title: string): string {
-  const t = title.toLowerCase();
-  if (t.includes("uxo") || t.includes("unexploded ordnance")) return "UXO";
-  if (t.includes("bomb squad") || t.includes("bomb tech")) return "Bomb Squad";
-  return "EOD";
-}
-
-interface USAJobsItem {
-  MatchedObjectDescriptor: {
-    PositionID: string;
-    PositionTitle: string;
-    PositionURI: string;
-    ApplyURI?: string[];
-    PositionLocationDisplay: string;
-    OrganizationName: string;
-    DepartmentName?: string;
-    QualificationSummary?: string;
-    UserArea?: {
-      Details?: {
-        JobSummary?: string;
-      };
-    };
-  };
-}
-
 type USAJobCandidate = {
-  positionURI: string;
+  positionId: string;
   title: string;
   location: string;
   orgName: string;
+  departmentName: string;
   summary: string;
+  applyUrl: string;
+  intakeChannel: string;
+  relevanceScore: number;
 };
 
-async function fetchUSAJobsPage(
-  keyword: string,
-  page: number
-): Promise<{ items: USAJobsItem[]; error?: string }> {
-  const params = new URLSearchParams({
-    Keyword: keyword,
-    ResultsPerPage: "25",
-    Page: String(page),
-  });
+function toCandidate(
+  item: USAJobsApiItem,
+  intakeChannel: string,
+  relevanceScore: number
+): USAJobCandidate | null {
+  const pos = item.MatchedObjectDescriptor;
+  const positionId = pos.PositionID?.trim();
+  if (!positionId || !/^\d+$/.test(positionId)) return null;
 
-  const res = await fetch(
-    `https://data.usajobs.gov/api/Search?${params.toString()}`,
+  return {
+    positionId,
+    title: pos.PositionTitle,
+    location: pos.PositionLocationDisplay,
+    orgName: pos.OrganizationName,
+    departmentName: pos.DepartmentName ?? "",
+    summary: extractUSAJobsSummary(item),
+    applyUrl: canonicalUSAJobsUrl(positionId),
+    intakeChannel,
+    relevanceScore,
+  };
+}
+
+function considerJob(
+  item: USAJobsApiItem,
+  intakeChannel: string,
+  seenPositionIds: Set<string>,
+  candidates: USAJobCandidate[]
+): "added" | "duplicate" | "skipped" {
+  const positionId = item.MatchedObjectDescriptor.PositionID?.trim();
+  if (!positionId || !/^\d+$/.test(positionId)) return "skipped";
+
+  if (seenPositionIds.has(positionId)) return "duplicate";
+  seenPositionIds.add(positionId);
+
+  const pos = item.MatchedObjectDescriptor;
+  const relevance = scoreUSAJobsJob(
     {
-      headers: {
-        "Authorization-Key": process.env.USAJOBS_API_KEY ?? "",
-        "User-Agent": process.env.USAJOBS_EMAIL ?? "",
-        Host: "data.usajobs.gov",
-      },
-    }
+      title: pos.PositionTitle,
+      description: extractUSAJobsSummary(item),
+      organizationName: pos.OrganizationName,
+      departmentName: pos.DepartmentName,
+    },
+    { intakeChannel }
   );
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    return { items: [], error: `${res.status}: ${text}` };
-  }
+  if (!relevance.relevant) return "skipped";
 
-  const data = await res.json();
-  return {
-    items: (data?.SearchResult?.SearchResultItems as USAJobsItem[]) ?? [],
-  };
+  const candidate = toCandidate(item, intakeChannel, relevance.score);
+  if (!candidate) return "skipped";
+
+  candidates.push(candidate);
+  return "added";
 }
 
 export async function GET(req: NextRequest) {
@@ -188,46 +123,114 @@ export async function GET(req: NextRequest) {
     .neq("is_rejected", true)
     .lt("created_at", cutoff);
 
-  const seenPositionURIs = new Set<string>();
+  const seenPositionIds = new Set<string>();
   const candidates: USAJobCandidate[] = [];
   const errors: string[] = [];
+  let skipped = 0;
+  let apiCalls = 0;
 
-  for (const keyword of EOD_KEYWORDS) {
-    for (let page = 1; page <= MAX_PAGES_PER_KEYWORD; page++) {
-      const { items, error: fetchErr } = await fetchUSAJobsPage(keyword, page);
-      if (fetchErr) {
-        errors.push(`[${keyword} p${page}] ${fetchErr}`);
+  for (const channel of USAJOBS_KEYWORD_CHANNELS) {
+    for (let page = 1; page <= channel.maxPages; page++) {
+      const { items, error } = await fetchUSAJobsKeywordPage(
+        channel.keyword,
+        page,
+        channel.datePosted
+      );
+      apiCalls++;
+      if (error) {
+        errors.push(`[${channel.id} p${page}] ${error}`);
         break;
       }
       if (items.length === 0) break;
 
       for (const item of items) {
-        const pos = item.MatchedObjectDescriptor;
-        const positionURI = pos.PositionURI;
-        const title = pos.PositionTitle;
-
-        if (seenPositionURIs.has(positionURI)) continue;
-        seenPositionURIs.add(positionURI);
-
-        if (!isRelevantTitle(title) || isMilitaryRecruitment(title)) continue;
-
-        candidates.push({
-          positionURI,
-          title,
-          location: pos.PositionLocationDisplay,
-          orgName: pos.OrganizationName,
-          summary: pos.UserArea?.Details?.JobSummary ?? pos.QualificationSummary ?? "",
-        });
+        const result = considerJob(item, channel.id, seenPositionIds, candidates);
+        if (result === "skipped") skipped++;
+        else if (result === "duplicate") skipped++;
       }
 
-      if (items.length < 25) break;
+      if (items.length < USAJOBS_RESULTS_PER_PAGE) break;
     }
   }
 
-  const applyUrls = candidates.map((c) => c.positionURI);
-  const existingByUrl = new Map<string, { id: string; is_rejected: boolean }>();
+  for (const channel of USAJOBS_SERIES_CHANNELS) {
+    for (let page = 1; page <= channel.maxPages; page++) {
+      const { items, error } = await fetchUSAJobsSeriesPage(
+        channel.jobCategoryCode,
+        channel.keyword,
+        page,
+        channel.datePosted
+      );
+      apiCalls++;
+      if (error) {
+        errors.push(`[${channel.id} p${page}] ${error}`);
+        break;
+      }
+      if (items.length === 0) break;
 
-  for (const urlChunk of chunkArray(applyUrls, JOB_IMPORT_LOOKUP_CHUNK)) {
+      for (const item of items) {
+        const result = considerJob(item, channel.id, seenPositionIds, candidates);
+        if (result === "skipped") skipped++;
+        else if (result === "duplicate") skipped++;
+      }
+
+      if (items.length < USAJOBS_RESULTS_PER_PAGE) break;
+    }
+  }
+
+  for (const channel of USAJOBS_ORGANIZATION_CHANNELS) {
+    for (let page = 1; page <= channel.maxPages; page++) {
+      const { items, error } = await fetchUSAJobsOrganizationPage(
+        channel.organization,
+        channel.keyword,
+        page,
+        channel.datePosted
+      );
+      apiCalls++;
+      if (error) {
+        errors.push(`[${channel.id} p${page}] ${error}`);
+        break;
+      }
+      if (items.length === 0) break;
+
+      for (const item of items) {
+        const result = considerJob(item, channel.id, seenPositionIds, candidates);
+        if (result === "skipped") skipped++;
+        else if (result === "duplicate") skipped++;
+      }
+
+      if (items.length < USAJOBS_RESULTS_PER_PAGE) break;
+    }
+  }
+
+  for (const channel of USAJOBS_TITLE_CHANNELS) {
+    for (let page = 1; page <= channel.maxPages; page++) {
+      const { items, error } = await fetchUSAJobsTitlePage(
+        channel.positionTitle,
+        page,
+        channel.datePosted
+      );
+      apiCalls++;
+      if (error) {
+        errors.push(`[${channel.id} p${page}] ${error}`);
+        break;
+      }
+      if (items.length === 0) break;
+
+      for (const item of items) {
+        const result = considerJob(item, channel.id, seenPositionIds, candidates);
+        if (result === "skipped") skipped++;
+        else if (result === "duplicate") skipped++;
+      }
+
+      if (items.length < USAJOBS_RESULTS_PER_PAGE) break;
+    }
+  }
+
+  const lookupUrls = [...new Set(candidates.flatMap((c) => usajobsUrlVariants(c.positionId)))];
+  const existingByPositionId = new Map<string, { id: string; is_rejected: boolean }>();
+
+  for (const urlChunk of chunkArray(lookupUrls, JOB_IMPORT_LOOKUP_CHUNK)) {
     const { data, error: lookupErr } = await supabase
       .from("jobs")
       .select("id, apply_url, is_rejected")
@@ -238,22 +241,28 @@ export async function GET(req: NextRequest) {
       continue;
     }
     for (const row of data ?? []) {
-      if (row.apply_url) {
-        existingByUrl.set(row.apply_url, { id: row.id, is_rejected: row.is_rejected === true });
+      if (!row.apply_url) continue;
+      const positionId =
+        row.apply_url.match(/usajobs\.gov(?::\d+)?\/job\/(\d+)/i)?.[1] ??
+        row.apply_url.match(/ViewDetails\/(\d+)/i)?.[1];
+      if (positionId) {
+        existingByPositionId.set(positionId, {
+          id: row.id,
+          is_rejected: row.is_rejected === true,
+        });
       }
     }
   }
 
   let imported = 0;
   let refreshed = 0;
-  let skipped = 0;
   const importedTitles: string[] = [];
   const refreshIds: string[] = [];
   const inserts: Record<string, unknown>[] = [];
   const now = new Date().toISOString();
 
   for (const candidate of candidates) {
-    const existing = existingByUrl.get(candidate.positionURI);
+    const existing = existingByPositionId.get(candidate.positionId);
     if (existing) {
       if (existing.is_rejected) {
         skipped++;
@@ -268,11 +277,17 @@ export async function GET(req: NextRequest) {
       title: candidate.title,
       company_name: candidate.orgName,
       location: candidate.location,
-      apply_url: candidate.positionURI,
+      apply_url: candidate.applyUrl,
       description: candidate.summary,
       og_description: candidate.summary,
       og_site_name: "USAJobs.gov",
-      category: detectCategory(candidate.title),
+      category: detectUSAJobsCategory(candidate.title),
+      relevance_score: candidate.relevanceScore,
+      import_metadata: {
+        intake_channel: candidate.intakeChannel,
+        relevance_score: candidate.relevanceScore,
+        usajobs_position_id: candidate.positionId,
+      },
       is_approved: false,
       source_type: "usajobs",
       last_seen_at: now,
@@ -305,6 +320,11 @@ export async function GET(req: NextRequest) {
     purged: purged ?? 0,
     skipped,
     candidates: candidates.length,
+    apiCalls,
+    keywordChannels: USAJOBS_KEYWORD_CHANNELS.length,
+    seriesChannels: USAJOBS_SERIES_CHANNELS.length,
+    organizationChannels: USAJOBS_ORGANIZATION_CHANNELS.length,
+    titleChannels: USAJOBS_TITLE_CHANNELS.length,
     sample: importedTitles.slice(0, 10),
     errors: errors.length > 0 ? errors : undefined,
   });
