@@ -4,11 +4,12 @@ import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup"
 import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
 import { clearFailedAuthReportsOnSuccessfulLogin } from "@/app/lib/server/clearFailedAuthReportsOnLogin";
 import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
+import { resolveAuthUserEmail } from "@/app/lib/auth/oauthProviders";
 
 /**
  * Server-side OAuth callback handler (Supabase PKCE flow).
  *
- * Supabase redirects here with ?code=... after Google auth completes.
+ * Supabase redirects here with ?code=... after OAuth (Google, Apple, etc.) completes.
  * We exchange the code for a session server-side so the auth cookies are
  * set on the redirect response — the middleware sees a valid session on
  * the very next request and won't redirect back to /login.
@@ -49,7 +50,7 @@ export async function GET(request: NextRequest) {
     if (!error) {
       const { client: adminClient } = createSupabaseServiceRoleClient();
       if (adminClient) {
-        const oauthEmail = sessionData.user?.email;
+        const oauthEmail = resolveAuthUserEmail(sessionData.user);
         if (sessionData.user?.id && oauthEmail) {
           const stub = await ensureProfileStubForUser(adminClient, sessionData.user.id, oauthEmail);
           if (!stub.ok) {

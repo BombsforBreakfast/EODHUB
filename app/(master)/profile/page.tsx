@@ -109,7 +109,8 @@ export default function MyAccountPage() {
   const [adminPendingCount, setAdminPendingCount] = useState(0);
   const [authProviders, setAuthProviders] = useState<string[]>([]);
   const [linkingGoogle, setLinkingGoogle] = useState(false);
-  const [linkedSuccess, setLinkedSuccess] = useState(false);
+  const [linkingApple, setLinkingApple] = useState(false);
+  const [linkedSuccess, setLinkedSuccess] = useState<string | null>(null);
 
   const [employerJobs, setEmployerJobs] = useState<{ id: string; title: string | null; company_name: string | null; is_approved: boolean | null; created_at: string | null; saveCount: number }[]>([]);
 
@@ -176,9 +177,9 @@ export default function MyAccountPage() {
       setAuthProviders((data.user?.identities ?? []).map((i: { provider: string }) => i.provider));
       const p = await loadProfile(userId);
       if (p?.is_admin) loadAdminPendingCount();
-      // Show success toast if returning from a Google link
       const params = new URLSearchParams(window.location.search);
-      if (params.get("linked") === "google") setLinkedSuccess(true);
+      const linked = params.get("linked");
+      if (linked === "google" || linked === "apple") setLinkedSuccess(linked);
       setLoading(false);
     }
 
@@ -275,11 +276,11 @@ export default function MyAccountPage() {
           <div style={{ ...card, padding: "18px 24px" }}>
             <div style={{ fontWeight: 800, fontSize: 15, color: t.text, marginBottom: 8 }}>Sign-In Methods</div>
             <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5, marginBottom: 12 }}>
-              Link Google and email on one account when you can. If the same address was used for separate logins (for example member vs employer), use the <strong>avatar menu</strong> at the top of the site to switch between them.
+              Keep Email/Password, Google Auth, and Apple Auth on one account when you can. If the same address was used for separate logins (for example member vs employer), use the <strong>avatar menu</strong> at the top of the site to switch between them.
             </div>
             {linkedSuccess && (
               <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: "10px 14px", fontSize: 13, color: "#166534", fontWeight: 700, marginBottom: 12 }}>
-                ✓ Google account linked successfully!
+                ✓ {linkedSuccess === "apple" ? "Apple Auth" : "Google Auth"} linked successfully!
               </div>
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -305,12 +306,12 @@ export default function MyAccountPage() {
                   setProfile((prev) => (prev ? { ...prev, must_change_password: false } : prev));
                 }}
               />
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0", borderBottom: `1px solid ${t.border}` }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{ fontSize: 16 }}>G</span>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>Google</div>
-                    <div style={{ fontSize: 12, color: t.textMuted }}>Sign in with your Google account</div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>Google Auth</div>
+                    <div style={{ fontSize: 12, color: t.textMuted }}>Use Google Auth to sign in</div>
                   </div>
                 </div>
                 {authProviders.includes("google") ? (
@@ -328,7 +329,34 @@ export default function MyAccountPage() {
                     disabled={linkingGoogle}
                     style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 12, cursor: "pointer", opacity: linkingGoogle ? 0.6 : 1 }}
                   >
-                    {linkingGoogle ? "Redirecting..." : "Link Google"}
+                    {linkingGoogle ? "Redirecting..." : "Link"}
+                  </button>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 16 }}></span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>Apple Auth</div>
+                    <div style={{ fontSize: 12, color: t.textMuted }}>Use Apple Auth to sign in</div>
+                  </div>
+                </div>
+                {authProviders.includes("apple") ? (
+                  <span style={{ background: "#dcfce7", color: "#166534", fontSize: 11, fontWeight: 800, padding: "2px 10px", borderRadius: 20 }}>Linked</span>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      setLinkingApple(true);
+                      await supabase.auth.linkIdentity({
+                        provider: "apple",
+                        options: { redirectTo: `${window.location.origin}/profile?linked=apple` },
+                      });
+                      setLinkingApple(false);
+                    }}
+                    disabled={linkingApple}
+                    style={{ padding: "6px 14px", borderRadius: 8, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontWeight: 700, fontSize: 12, cursor: "pointer", opacity: linkingApple ? 0.6 : 1 }}
+                  >
+                    {linkingApple ? "Redirecting..." : "Link"}
                   </button>
                 )}
               </div>

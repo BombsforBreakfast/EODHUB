@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { isOAuthOnlyGoogleUser } from "@/app/lib/verificationAccess";
+import { isOAuthOnlyTrustedProvider } from "@/app/lib/verificationAccess";
 import { ensureProfileStubForUser } from "@/app/lib/auth/ensureProfileStub";
 import { VERIFICATION } from "@/app/lib/verificationStatus";
 import {
@@ -102,7 +102,7 @@ export async function POST(req: NextRequest) {
   }
 
   const userId = authData.user.id;
-  const isGoogle = isOAuthOnlyGoogleUser(authData.user);
+  const isTrustedOAuth = isOAuthOnlyTrustedProvider(authData.user);
   const authEmail = authData.user.email?.trim().toLowerCase() ?? "";
 
   const adminClient = createClient(
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
         admin_verified: true,
         is_approved: true,
       }
-    : isGoogle
+    : isTrustedOAuth
       ? {
           verification_status: VERIFICATION.AWAITING_ADMIN,
           email_verified: true,
@@ -203,7 +203,7 @@ export async function POST(req: NextRequest) {
 
   void insertOnboardingEvent(adminClient, userId, "onboarding_saved", "success", {
     accountType,
-    isGoogle,
+    isTrustedOAuth,
     wasProvisioned,
   });
 
@@ -222,7 +222,8 @@ export async function POST(req: NextRequest) {
     success: true,
     verification_status: verificationFields.verification_status,
     wasProvisioned,
-    isGoogle,
+    isTrustedOAuth,
+    isGoogle: isTrustedOAuth,
     autoVouched,
   });
 }

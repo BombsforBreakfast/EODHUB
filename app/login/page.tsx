@@ -35,6 +35,9 @@ import {
   type FailedAuthReason,
 } from "../lib/auth/failedAuthReasons";
 import { clearFailedAuthReportsAfterLogin } from "../lib/auth/clearFailedAuthReportsOnLogin";
+import { formatOAuthProviderLabel } from "../lib/auth/oauthProviders";
+import { signInWithOAuthProvider } from "../lib/auth/oauthSignIn";
+import type { OAuthRedirectProvider } from "../lib/auth/oauthProviders";
 
 function devClientAuthLog(tag: string, data: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
@@ -107,6 +110,7 @@ export default function LoginPage() {
   const [emailNotFoundGuidance, setEmailNotFoundGuidance] = useState(false);
   const [highlightSignupCta, setHighlightSignupCta] = useState(false);
   const [signupCtaReducedMotion, setSignupCtaReducedMotion] = useState(false);
+  const [appleHelperOpen, setAppleHelperOpen] = useState(false);
   const [businessOrgPromptOpen, setBusinessOrgPromptOpen] = useState(false);
   const [businessOrgEmailGateOpen, setBusinessOrgEmailGateOpen] = useState(false);
   const [businessOrgEmail, setBusinessOrgEmail] = useState("");
@@ -374,19 +378,41 @@ export default function LoginPage() {
     };
   }, [emailNotFoundGuidance, mode]);
 
-  function signInWithGoogleOAuth() {
-    clearAppAuthState();
+  function onboardingOAuthNextPath() {
     const storedRef = readStoredReferral();
-    const onboardingNext = storedRef
+    return storedRef
       ? `/onboarding?ref=${encodeURIComponent(storedRef)}`
       : "/onboarding";
-    const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(onboardingNext)}`;
-    const hint = email.trim();
-    const options =
-      hint.includes("@")
-        ? { redirectTo, queryParams: { login_hint: hint } }
-        : { redirectTo };
-    return supabase.auth.signInWithOAuth({ provider: "google", options });
+  }
+
+  function signInWithOAuth(provider: OAuthRedirectProvider) {
+    clearAppAuthState();
+    return signInWithOAuthProvider(supabase, provider, {
+      nextPath: onboardingOAuthNextPath(),
+      loginHint: email.trim(),
+    });
+  }
+
+  function signInWithGoogleOAuth() {
+    return signInWithOAuth("google");
+  }
+
+  function signInWithAppleOAuth() {
+    return signInWithOAuth("apple");
+  }
+
+  /**
+   * Apple Auth helper: rather than firing OAuth immediately, surface a short
+   * explainer so users with an existing EOD-HUB account on a different email
+   * don't accidentally create a duplicate via Apple Private Relay.
+   */
+  function openAppleAuthHelper() {
+    setAppleHelperOpen(true);
+  }
+
+  function confirmAppleAuthFromHelper() {
+    setAppleHelperOpen(false);
+    void signInWithAppleOAuth();
   }
 
   async function shouldGuideToSignupAfterLoginFailure(
@@ -996,15 +1022,14 @@ export default function LoginPage() {
                 <span style={{ fontSize: 13, color: t.textMuted }}>or</span>
                 <div style={{ flex: 1, height: 1, background: t.border }} />
               </div>
-              <button
-                type="button"
-                onClick={() => signInWithGoogleOAuth()}
+              <OAuthProviderButtons
                 disabled={submitting}
-                style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
-              >
-                <GoogleIcon />
-                Sign in with Google
-              </button>
+                buttonSecondary={buttonSecondary}
+                onGoogle={() => signInWithGoogleOAuth()}
+                onApple={() => openAppleAuthHelper()}
+                googleLabel="Sign in with Google"
+                appleLabel="Sign in with Apple"
+              />
               <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("signup"); }} disabled={submitting} style={buttonSecondary}>
                 Need an account? Sign Up
               </button>
@@ -1043,15 +1068,40 @@ export default function LoginPage() {
                       </div>
                     ) : (
                       <div style={{ display: "grid", gap: 8, marginTop: 6 }}>
-                        <button
-                          type="button"
-                          onClick={() => signInWithGoogleOAuth()}
-                          disabled={submitting || oauthSetupSubmitting}
-                          style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
-                        >
-                          <GoogleIcon />
-                          Sign in with Google
-                        </button>
+                        {oauthExistsProviders?.includes("google") ? (
+                          <button
+                            type="button"
+                            onClick={() => signInWithGoogleOAuth()}
+                            disabled={submitting || oauthSetupSubmitting}
+                            style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+                          >
+                            <GoogleIcon />
+                            Sign in with Google
+                          </button>
+                        ) : null}
+                        {oauthExistsProviders?.includes("apple") ? (
+                          <button
+                            type="button"
+                            onClick={() => signInWithAppleOAuth()}
+                            disabled={submitting || oauthSetupSubmitting}
+                            style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+                          >
+                            <AppleIcon />
+                            Sign in with Apple
+                          </button>
+                        ) : null}
+                        {oauthExistsProviders &&
+                        !oauthExistsProviders.includes("google") &&
+                        !oauthExistsProviders.includes("apple") ? (
+                          <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.45 }}>
+                            Sign in with{" "}
+                            {oauthExistsProviders
+                              .filter((p) => p !== "email")
+                              .map((p) => formatOAuthProviderLabel(p))
+                              .join(" or ")}
+                            .
+                          </div>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => requestAddPasswordLink()}
@@ -1123,15 +1173,14 @@ export default function LoginPage() {
                 <span style={{ fontSize: 13, color: t.textMuted }}>or</span>
                 <div style={{ flex: 1, height: 1, background: t.border }} />
               </div>
-              <button
-                type="button"
-                onClick={() => signInWithGoogleOAuth()}
+              <OAuthProviderButtons
                 disabled={submitting}
-                style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
-              >
-                <GoogleIcon />
-                Sign up with Google
-              </button>
+                buttonSecondary={buttonSecondary}
+                onGoogle={() => signInWithGoogleOAuth()}
+                onApple={() => openAppleAuthHelper()}
+                googleLabel="Sign up with Google"
+                appleLabel="Sign up with Apple"
+              />
               <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("login"); }} disabled={submitting} style={buttonSecondary}>
                 Back to Login
               </button>
@@ -1140,6 +1189,85 @@ export default function LoginPage() {
 
         </form>
         </>
+      )}
+
+      {appleHelperOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="apple-auth-helper-title"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 80,
+            display: "grid",
+            placeItems: "center",
+            padding: 18,
+            background: "rgba(15, 23, 42, 0.55)",
+          }}
+          onClick={() => setAppleHelperOpen(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: "min(100%, 460px)",
+              borderRadius: 18,
+              border: `1px solid ${t.border}`,
+              background: t.surface,
+              color: t.text,
+              padding: 22,
+              boxShadow: "0 24px 70px rgba(0,0,0,.24)",
+            }}
+          >
+            <h2 id="apple-auth-helper-title" style={{ margin: 0, fontSize: 22, fontWeight: 900 }}>
+              Continue with Apple
+            </h2>
+            <div style={{ display: "grid", gap: 14, marginTop: 14 }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>New to EOD-HUB?</div>
+                <p style={{ margin: "4px 0 0", color: t.textMuted, lineHeight: 1.55, fontSize: 14 }}>
+                  Continue with Apple and we&apos;ll walk you through account setup.
+                </p>
+              </div>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>Already have an account?</div>
+                <p style={{ margin: "4px 0 0", color: t.textMuted, lineHeight: 1.55, fontSize: 14 }}>
+                  If your EOD-HUB account uses the same email as your Apple ID, you can continue.
+                </p>
+                <p style={{ margin: "8px 0 0", color: t.textMuted, lineHeight: 1.55, fontSize: 14 }}>
+                  If your EOD-HUB account uses a different email, log in with your existing account
+                  method first. Then go to <strong>Settings → Sign-In Methods → Apple Auth</strong> to
+                  link Apple to your account for future sign-ins.
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
+              <button
+                type="button"
+                style={{ ...buttonPrimary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+                onClick={() => confirmAppleAuthFromHelper()}
+              >
+                <AppleIcon />
+                I&apos;m new — Continue with Apple
+              </button>
+              <button
+                type="button"
+                style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+                onClick={() => confirmAppleAuthFromHelper()}
+              >
+                <AppleIcon />
+                I already use this Apple email — Continue
+              </button>
+              <button
+                type="button"
+                style={buttonSecondary}
+                onClick={() => setAppleHelperOpen(false)}
+              >
+                Use another sign-in method
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {(businessOrgPromptOpen || businessOrgEmailGateOpen) && (
@@ -1344,6 +1472,45 @@ export default function LoginPage() {
   );
 }
 
+function OAuthProviderButtons({
+  disabled,
+  buttonSecondary,
+  onGoogle,
+  onApple,
+  googleLabel,
+  appleLabel,
+}: {
+  disabled?: boolean;
+  buttonSecondary: React.CSSProperties;
+  onGoogle: () => void;
+  onApple: () => void;
+  googleLabel: string;
+  appleLabel: string;
+}) {
+  return (
+    <div style={{ display: "grid", gap: 8 }}>
+      <button
+        type="button"
+        onClick={onGoogle}
+        disabled={disabled}
+        style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+      >
+        <GoogleIcon />
+        {googleLabel}
+      </button>
+      <button
+        type="button"
+        onClick={onApple}
+        disabled={disabled}
+        style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
+      >
+        <AppleIcon />
+        {appleLabel}
+      </button>
+    </div>
+  );
+}
+
 function GoogleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 48 48">
@@ -1351,6 +1518,17 @@ function GoogleIcon() {
       <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.5 15.1 18.9 12 24 12c3 0 5.7 1.1 7.8 2.9l5.7-5.7C34.1 6.5 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/>
       <path fill="#4CAF50" d="M24 44c5.2 0 9.9-1.9 13.5-5l-6.2-5.2C29.4 35.6 26.8 36 24 36c-5.2 0-9.6-2.9-11.3-7l-6.5 5C9.8 40 16.4 44 24 44z"/>
       <path fill="#1976D2" d="M43.6 20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.6l6.2 5.2C41 35.5 44 30.2 44 24c0-1.3-.1-2.7-.4-4z"/>
+    </svg>
+  );
+}
+
+function AppleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden>
+      <path
+        fill="currentColor"
+        d="M17.05 20.28c-.96.95-2.1.85-3.2.36-1.14-.5-2.18-.48-3.38 0-1.54.62-2.35.44-3.2-.36C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"
+      />
     </svg>
   );
 }
