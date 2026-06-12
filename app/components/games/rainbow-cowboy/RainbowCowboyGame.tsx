@@ -528,7 +528,7 @@ export function RainbowCowboyGame({
       <RainbowCowboyControls
         actions={inputActions}
         disabled={paused || instructionsOpen}
-        showWeaponButton={config.level.id === "level-3"}
+        showWeaponButton={config.level.id === "level-3" || config.level.id === "level-4"}
         attackLabel={rideConfig.attackLabel}
         specialLabel={rideConfig.specialLabel}
         specialCharges={hud.rainbowCharges}

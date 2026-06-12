@@ -43,6 +43,27 @@ import {
   TURRET_TRUCK_TURN_SPEED,
   TURRET_BULLET_SPEED,
   ENEMY_BULLET_RADIUS,
+  BOSS_DESTROY_ANIM_MS,
+  BOSS_HP_DEFAULT,
+  BOSS_NEST_H,
+  BOSS_NEST_W,
+  BOSS_PAUSE_MS,
+  BOSS_PHASE_2_HP,
+  BOSS_PHASE_3_HP,
+  BOSS_SPAWN_INTERVAL_PHASE_1,
+  BOSS_SPAWN_INTERVAL_PHASE_2,
+  BOSS_SPAWN_INTERVAL_PHASE_3,
+  BOSS_SPEED_PHASE_1,
+  BOSS_SPEED_PHASE_2,
+  BOSS_SPEED_PHASE_3,
+  ATTACK_DRONE_HP,
+  ATTACK_DRONE_SHOOT_INTERVAL_MS,
+  SUICIDE_DRONE_EXPLOSION_RADIUS,
+  GROUND_SWEEP_H,
+  GROUND_SWEEP_INTERVAL_MS,
+  GROUND_SWEEP_SPEED,
+  GROUND_SWEEP_WARNING_MS,
+  GROUND_SWEEP_W,
   GASSED_DURATION_MS,
   GASSED_MOVE_MULT,
   DUCK_SPEED_MULT,
@@ -98,7 +119,7 @@ import {
 } from "../unicorn-hero/unicornHeroRides";
 
 /** Bumped when engine internals change so HMR can replace stale instances. */
-export const RAINBOW_COWBOY_ENGINE_REVISION = 16;
+export const RAINBOW_COWBOY_ENGINE_REVISION = 17;
 
 export interface GameInput {
   left: boolean;
@@ -189,6 +210,31 @@ interface Nest {
   spawnIndex: number;
 }
 
+interface BossState {
+  active: boolean;
+  defeated: boolean;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  vx: number;
+  pauseMs: number;
+  spawnTimerMs: number;
+  spawnIndex: number;
+  destroyAnimMs: number;
+  bobPhase: number;
+}
+
+interface GroundSweepState {
+  enabled: boolean;
+  warning: boolean;
+  warningMs: number;
+  sweeping: boolean;
+  x: number;
+  direction: 1 | -1;
+  intervalMs: number;
+}
+
 interface WarningDef {
   triggerX: number;
   message: string;
@@ -242,7 +288,16 @@ function enemyMaxHp(kind: RainbowCowboyEnemyKind): number {
   if (kind === "armored_boom_bot") return ARMORED_BOOM_BOT_HP;
   if (kind === "grenade_goblin_bot") return GOBLIN_BOT_HP;
   if (kind === "boom_bot") return BOOM_BOT_HP;
+  if (kind === "attack_drone") return ATTACK_DRONE_HP;
   return 1;
+}
+
+function isSuicideDrone(kind: RainbowCowboyEnemyKind): boolean {
+  return kind === "suicide_drone";
+}
+
+function isAttackDrone(kind: RainbowCowboyEnemyKind): boolean {
+  return kind === "attack_drone";
 }
 
 function enemyExplosionRadius(kind: RainbowCowboyEnemyKind): number {
@@ -390,6 +445,13 @@ export class RainbowCowboyEngine {
   bombs: Bomb[] = [];
   nests: Nest[] = [];
   warnings: WarningDef[] = [];
+  boss: BossState | null = null;
+  groundSweep: GroundSweepState | null = null;
+  bossFightActive = false;
+  bossDamageDealt = 0;
+  arcadeTokensEarned = 0;
+  gameAchievementUnlocked: string | undefined;
+  bossDefeated = false;
 
   extractionReached = false;
   levelCompleteHold = 0;
@@ -498,6 +560,24 @@ export class RainbowCowboyEngine {
     this.landmineExplosionEvents = [];
     this.prevPlayerX = this.playerX;
     this.startTimeMs = performance.now();
+    this.boss = null;
+    this.groundSweep = null;
+    this.bossFightActive = false;
+    this.bossDamageDealt = 0;
+    this.bossDefeated = false;
+
+    const arena = this.config.bossArena;
+    if (arena) {
+      this.groundSweep = {
+        enabled: false,
+        warning: false,
+        warningMs: 0,
+        sweeping: false,
+        x: arena.leftX,
+        direction: 1,
+        intervalMs: arena.groundSweepIntervalMs ?? GROUND_SWEEP_INTERVAL_MS,
+      };
+    }
   }
 
   get scoreMultiplier(): number {
@@ -532,7 +612,8 @@ export class RainbowCowboyEngine {
   }
 
   private weaponsEnabled(): boolean {
-    return this.config.level.id === "level-3";
+    const id = this.config.level.id;
+    return id === "level-3" || id === "level-4";
   }
 
   private difficultySpeed(): number {
@@ -724,6 +805,7 @@ export class RainbowCowboyEngine {
     this.updateEnemyBullets(dt);
     this.updateBombs(dt);
     this.updateNests(dtMs);
+    this.updateBossArena(dtMs);
     this.updateHazards(dt);
     this.updateTongue();
     this.checkCollisions();
@@ -796,6 +878,18 @@ export class RainbowCowboyEngine {
       enemy.bombCooldownMs = RED_BARON_BOMB_INTERVAL_MS;
     }
 
+    if (isAttackDrone(spawn.kind)) {
+      const hp = ATTACK_DRONE_HP;
+      enemy.hp = hp;
+      enemy.maxHp = hp;
+      enemy.shootCooldownMs = ATTACK_DRONE_SHOOT_INTERVAL_MS * 0.7;
+    }
+
+    if (isSuicideDrone(spawn.kind)) {
+      enemy.phase = "homing";
+      enemy.homingSince = this.timeMs;
+    }
+
     if (spawn.popupOnSpawn) {
       this.showPopup(spawn.popupOnSpawn, 1600);
     }
@@ -865,6 +959,7 @@ export class RainbowCowboyEngine {
     const nestsCleared = this.nests.every((n) => !n.active);
     if (gate.includes("nests_cleared") && nestsCleared) return true;
     if (gate.includes("final_wave_survived") && this.finalWaveSurvived) return true;
+    if (gate.includes("boss_defeated") && this.bossDefeated) return true;
     return false;
   }
 
@@ -924,7 +1019,7 @@ export class RainbowCowboyEngine {
       this.destroyEnemy(enemy, "blaster");
       return true;
     }
-    if (isBoomBot(enemy.kind)) {
+    if (isBoomBot(enemy.kind) || isAttackDrone(enemy.kind)) {
       enemy.hp = (enemy.hp ?? 1) - 1;
       if (enemy.hp > 0) {
         enemy.beepPhase = (enemy.beepPhase ?? 0) + 0.8;
@@ -1199,6 +1294,15 @@ export class RainbowCowboyEngine {
           break;
         }
       }
+
+      if (!shot.active) continue;
+
+      const boss = this.boss;
+      if (boss?.active && !boss.defeated && rectsOverlap(sr, this.bossRect())) {
+        const damage = shot.weapon === "bazooka" ? 3 : 1;
+        this.damageBoss(damage, shot.weapon);
+        shot.active = false;
+      }
     }
 
     this.blasterProjectiles = this.blasterProjectiles.filter((s) => s.active);
@@ -1375,6 +1479,14 @@ export class RainbowCowboyEngine {
       }
     }
 
+    if (this.boss?.active && !this.boss.defeated) {
+      const br = this.bossRect();
+      const bossCx = br.x + br.w / 2;
+      if (bossCx >= viewLeft && bossCx <= viewRight) {
+        this.damageBoss(1, "rainbow");
+      }
+    }
+
     for (const hazard of this.hazards) {
       if (!hazard.active) continue;
       if (hazard.kind === "trash_balloon") {
@@ -1401,7 +1513,14 @@ export class RainbowCowboyEngine {
     this.playerX += this.playerVx * dt;
     this.playerY += this.playerVy * dt;
 
-    this.playerX = Math.max(PLAYER_W / 2, Math.min(levelW - PLAYER_W / 2, this.playerX));
+    let minX = PLAYER_W / 2;
+    let maxX = levelW - PLAYER_W / 2;
+    const arena = this.config.bossArena;
+    if (this.bossFightActive && arena) {
+      minX = Math.max(minX, arena.leftX + PLAYER_W / 2);
+      maxX = Math.min(maxX, arena.rightX - PLAYER_W / 2);
+    }
+    this.playerX = Math.max(minX, Math.min(maxX, this.playerX));
 
     const pr = playerRect(this.playerX, this.playerY, this.ducking);
     this.grounded = false;
@@ -1557,6 +1676,55 @@ export class RainbowCowboyEngine {
         continue;
       }
 
+      if (isAttackDrone(e.kind)) {
+        e.bobPhase += 0.04 * dt;
+        e.y = e.baseY + Math.sin(e.bobPhase) * 6;
+        e.x += e.vx * dt * sm * 0.35;
+
+        e.shootCooldownMs = (e.shootCooldownMs ?? ATTACK_DRONE_SHOOT_INTERVAL_MS) - dtMs;
+        if ((e.shootCooldownMs ?? 0) <= 0) {
+          const ecx = e.x + e.w / 2;
+          const ecy = e.y + e.h / 2;
+          const dx = targetX - ecx;
+          const dy = targetY - ecy;
+          const dist = Math.hypot(dx, dy) || 1;
+          this.enemyBullets.push({
+            id: nextId(),
+            x: ecx,
+            y: ecy,
+            vx: (dx / dist) * TURRET_BULLET_SPEED * 0.85,
+            vy: (dy / dist) * TURRET_BULLET_SPEED * 0.85,
+            active: true,
+          });
+          e.shootCooldownMs = ATTACK_DRONE_SHOOT_INTERVAL_MS;
+          this.emitAudio({ type: "tongue" });
+        }
+
+        if (e.x + e.w < this.cameraX - 120 || e.x > this.cameraX + VIEW_W + 120) {
+          e.active = false;
+        }
+        continue;
+      }
+
+      if (isSuicideDrone(e.kind)) {
+        const cfg = DRONE_HOMING.suicide_drone;
+        const ecx = e.x + e.w / 2;
+        const ecy = e.y + e.h / 2;
+        const dx = targetX - ecx;
+        const dy = targetY - ecy;
+        const dist = Math.hypot(dx, dy) || 1;
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const ramp = Math.min(1, (this.timeMs - e.homingSince) / 400);
+        const speed = cfg.speed * (0.9 + ramp * 0.5) * sm;
+        e.x += nx * speed * dt * 16;
+        e.y += ny * speed * dt * 16;
+        e.bobPhase += 0.08 * dt;
+        e.y = Math.max(48, Math.min(groundY - e.h - 8, e.y));
+        if (e.x + e.w < this.cameraX - 160) e.active = false;
+        continue;
+      }
+
       const skipHoming = e.kind === "cargo";
 
       if (e.phase === "patrol") {
@@ -1688,6 +1856,228 @@ export class RainbowCowboyEngine {
         nest.spawnTimerMs = nest.spawnIntervalMs;
       }
     }
+  }
+
+  private bossPhaseSpawnKinds(): RainbowCowboyEnemyKind[] {
+    const hp = this.boss?.hp ?? 0;
+    if (hp <= BOSS_PHASE_3_HP) return ["recon", "attack_drone", "suicide_drone"];
+    if (hp <= BOSS_PHASE_2_HP) return ["recon", "attack_drone", "recon"];
+    return ["recon", "recon", "recon"];
+  }
+
+  private bossPhaseSpeed(): number {
+    const hp = this.boss?.hp ?? 0;
+    if (hp <= BOSS_PHASE_3_HP) return BOSS_SPEED_PHASE_3;
+    if (hp <= BOSS_PHASE_2_HP) return BOSS_SPEED_PHASE_2;
+    return BOSS_SPEED_PHASE_1;
+  }
+
+  private bossPhaseSpawnInterval(): number {
+    const hp = this.boss?.hp ?? 0;
+    if (hp <= BOSS_PHASE_3_HP) return BOSS_SPAWN_INTERVAL_PHASE_3;
+    if (hp <= BOSS_PHASE_2_HP) return BOSS_SPAWN_INTERVAL_PHASE_2;
+    return BOSS_SPAWN_INTERVAL_PHASE_1;
+  }
+
+  private bossRect(): Rect {
+    const boss = this.boss;
+    if (!boss) return { x: 0, y: 0, w: 0, h: 0 };
+    return {
+      x: boss.x - BOSS_NEST_W / 2,
+      y: boss.y - BOSS_NEST_H,
+      w: BOSS_NEST_W,
+      h: BOSS_NEST_H,
+    };
+  }
+
+  private activateBossArena() {
+    const arena = this.config.bossArena;
+    if (!arena || this.bossFightActive) return;
+    this.bossFightActive = true;
+    const centerX = (arena.leftX + arena.rightX) / 2;
+    const maxHp = arena.bossHp ?? BOSS_HP_DEFAULT;
+    this.boss = {
+      active: true,
+      defeated: false,
+      x: centerX,
+      y: arena.bossY,
+      hp: maxHp,
+      maxHp,
+      vx: BOSS_SPEED_PHASE_1,
+      pauseMs: 0,
+      spawnTimerMs: BOSS_SPAWN_INTERVAL_PHASE_1 * 0.6,
+      spawnIndex: 0,
+      destroyAnimMs: 0,
+      bobPhase: 0,
+    };
+    if (this.groundSweep) {
+      this.groundSweep.enabled = true;
+      this.groundSweep.intervalMs = arena.groundSweepIntervalMs ?? GROUND_SWEEP_INTERVAL_MS;
+    }
+    this.showPopup("DRONE NEST ENGAGED", 1600);
+    this.emitAudio({ type: "explosion" });
+  }
+
+  private spawnBossDrone() {
+    const boss = this.boss;
+    const arena = this.config.bossArena;
+    if (!boss?.active || boss.defeated || !arena) return;
+
+    const kinds = this.bossPhaseSpawnKinds();
+    const kind = kinds[boss.spawnIndex % kinds.length];
+    boss.spawnIndex += 1;
+    const spawnX = boss.x + (boss.spawnIndex % 2 === 0 ? -60 : 60);
+    const enemy = this.createEnemyFromSpawn({ kind, y: boss.y - 70 }, spawnX);
+    enemy.y = boss.y - 70;
+    enemy.baseY = boss.y - 70;
+    if (isSuicideDrone(kind)) {
+      enemy.phase = "homing";
+      enemy.homingSince = this.timeMs;
+    }
+    if (isAttackDrone(kind)) {
+      const hp = ATTACK_DRONE_HP;
+      enemy.hp = hp;
+      enemy.maxHp = hp;
+      enemy.shootCooldownMs = ATTACK_DRONE_SHOOT_INTERVAL_MS * 0.5;
+    }
+    this.enemies.push(enemy);
+  }
+
+  private damageBoss(amount: number, source: string) {
+    const boss = this.boss;
+    if (!boss?.active || boss.defeated) return;
+    boss.hp = Math.max(0, boss.hp - amount);
+    this.bossDamageDealt += amount;
+    if (boss.hp > 0) return;
+
+    boss.defeated = true;
+    boss.destroyAnimMs = BOSS_DESTROY_ANIM_MS;
+    this.bossDefeated = true;
+    this.nestsDestroyed += 1;
+    this.addScore(NEST_DESTROY_SCORE);
+    this.showPopup("DRONE NEST DESTROYED!", 1800);
+    this.emitAudio({ type: "explosion" });
+
+    for (const enemy of this.enemies) {
+      enemy.active = false;
+    }
+    if (this.groundSweep) {
+      this.groundSweep.sweeping = false;
+      this.groundSweep.warning = false;
+    }
+  }
+
+  private updateBoss(dtMs: number) {
+    const boss = this.boss;
+    const arena = this.config.bossArena;
+    if (!boss?.active || !arena) return;
+
+    boss.bobPhase += 0.02 * (dtMs / 16.67);
+
+    if (boss.defeated) {
+      boss.destroyAnimMs -= dtMs;
+      if (boss.destroyAnimMs <= 0) {
+        boss.active = false;
+        this.extractionReached = true;
+        this.status = this.config.completeBanner ?? "Victory!";
+      }
+      return;
+    }
+
+    if (boss.pauseMs > 0) {
+      boss.pauseMs -= dtMs;
+      return;
+    }
+
+    const margin = BOSS_NEST_W * 0.6;
+    const minX = arena.leftX + margin;
+    const maxX = arena.rightX - margin;
+    boss.x += boss.vx * (dtMs / 16.67) * this.difficultySpeed();
+
+    if (boss.x <= minX) {
+      boss.x = minX;
+      boss.vx = Math.abs(this.bossPhaseSpeed());
+      boss.pauseMs = BOSS_PAUSE_MS;
+    } else if (boss.x >= maxX) {
+      boss.x = maxX;
+      boss.vx = -Math.abs(this.bossPhaseSpeed());
+      boss.pauseMs = BOSS_PAUSE_MS;
+    }
+
+    boss.spawnTimerMs -= dtMs;
+    if (boss.spawnTimerMs <= 0) {
+      this.spawnBossDrone();
+      boss.spawnTimerMs = this.bossPhaseSpawnInterval() / this.difficultySpeed();
+    }
+  }
+
+  private updateGroundSweep(dtMs: number) {
+    const sweep = this.groundSweep;
+    const arena = this.config.bossArena;
+    const boss = this.boss;
+    if (!sweep?.enabled || !arena || !boss?.active || boss.defeated) return;
+
+    const warningMs = arena.groundSweepWarningMs ?? GROUND_SWEEP_WARNING_MS;
+    const speed = (arena.groundSweepSpeed ?? GROUND_SWEEP_SPEED) * this.difficultySpeed();
+    const groundY = this.config.level.groundY;
+
+    if (!sweep.sweeping && !sweep.warning) {
+      sweep.intervalMs -= dtMs;
+      if (sweep.intervalMs <= 0) {
+        sweep.warning = true;
+        sweep.warningMs = warningMs;
+        sweep.direction = sweep.direction === 1 ? -1 : 1;
+        sweep.x = sweep.direction > 0 ? arena.leftX - GROUND_SWEEP_W : arena.rightX + GROUND_SWEEP_W;
+        this.showPopup("GROUND SWEEP INCOMING — JUMP TO PLANKS!", 2000);
+        this.emitAudio({ type: "damage" });
+      }
+      return;
+    }
+
+    if (sweep.warning) {
+      sweep.warningMs -= dtMs;
+      if (sweep.warningMs <= 0) {
+        sweep.warning = false;
+        sweep.sweeping = true;
+        this.emitAudio({ type: "explosion" });
+      }
+      return;
+    }
+
+    if (sweep.sweeping) {
+      sweep.x += sweep.direction * speed * (dtMs / 16.67);
+      const pr = playerRect(this.playerX, this.playerY, this.ducking);
+      const onGroundLevel = Math.abs(this.playerY - groundY) < 4 && this.grounded;
+      const sweepRect: Rect = {
+        x: sweep.x - GROUND_SWEEP_W / 2,
+        y: groundY - GROUND_SWEEP_H,
+        w: GROUND_SWEEP_W,
+        h: GROUND_SWEEP_H,
+      };
+      if (onGroundLevel && rectsOverlap(pr, sweepRect) && !this.isInvincible) {
+        this.damagePlayer(MAX_HEARTS, "Ground sweep", sweep.direction > 0 ? -10 : 10);
+      }
+
+      const pastArena =
+        (sweep.direction > 0 && sweep.x > arena.rightX + GROUND_SWEEP_W) ||
+        (sweep.direction < 0 && sweep.x < arena.leftX - GROUND_SWEEP_W);
+      if (pastArena) {
+        sweep.sweeping = false;
+        sweep.intervalMs = arena.groundSweepIntervalMs ?? GROUND_SWEEP_INTERVAL_MS;
+      }
+    }
+  }
+
+  private updateBossArena(dtMs: number) {
+    const arena = this.config.bossArena;
+    if (!arena) return;
+
+    if (!this.bossFightActive && this.playerX >= arena.triggerX) {
+      this.activateBossArena();
+    }
+
+    this.updateBoss(dtMs);
+    this.updateGroundSweep(dtMs);
   }
 
   private updateHazards(dt: number) {
@@ -1917,6 +2307,17 @@ export class RainbowCowboyEngine {
             this.emitAudio({ type: "explosion" });
           }
           this.boomBotContactExplode(enemy);
+        } else if (isSuicideDrone(enemy.kind)) {
+          if (!this.isInvincible && this.timeMs >= this.hitFlashUntil) {
+            this.emitAudio({ type: "explosion" });
+          }
+          const cx = enemy.x + enemy.w / 2;
+          const cy = enemy.y + enemy.h / 2;
+          enemy.active = false;
+          this.dronesEaten += 1;
+          this.addScore(DRONE_SCORES[enemy.kind]);
+          this.landmineExplosionEvents.push({ x: cx, groundY: this.config.level.groundY });
+          this.triggerExplosion(cx, cy, SUICIDE_DRONE_EXPLOSION_RADIUS, 1, "Suicide drone");
         } else {
           if (!this.isInvincible && this.timeMs >= this.hitFlashUntil) {
             this.emitAudio({ type: "explosion" });
@@ -1977,7 +2378,10 @@ export class RainbowCowboyEngine {
     if (this.playerX < this.config.extractionX) return;
     if (!this.isExtractionUnlocked()) {
       if (this.timeMs >= this.extractionBlockedPopupUntil) {
-        this.showPopup("Hold the line — clear the nests or survive the final wave!", 1500);
+        const msg = this.config.bossArena
+          ? "Destroy the Drone Nest to secure the arena!"
+          : "Hold the line — clear the nests or survive the final wave!";
+        this.showPopup(msg, 1500);
         this.extractionBlockedPopupUntil = this.timeMs + 3200;
       }
       return;
@@ -1988,7 +2392,20 @@ export class RainbowCowboyEngine {
 
   private updateCamera() {
     const target = this.playerX - VIEW_W * 0.35;
-    this.cameraX = Math.max(0, Math.min(this.config.level.levelWidth - VIEW_W, target));
+    let minCam = 0;
+    let maxCam = this.config.level.levelWidth - VIEW_W;
+    const arena = this.config.bossArena;
+    if (this.bossFightActive && arena) {
+      const arenaWidth = arena.rightX - arena.leftX;
+      if (arenaWidth <= VIEW_W) {
+        minCam = arena.leftX;
+        maxCam = arena.leftX;
+      } else {
+        minCam = arena.leftX;
+        maxCam = arena.rightX - VIEW_W;
+      }
+    }
+    this.cameraX = Math.max(minCam, Math.min(maxCam, target));
   }
 
   getHud(): RainbowCowboyHudSnapshot {
@@ -2010,6 +2427,10 @@ export class RainbowCowboyEngine {
       ),
       weaponLabel: this.getWeaponHudLabel(),
       bazookaAmmo: this.bazookaAmmo,
+      bossHp: this.boss?.active && !this.boss.defeated ? this.boss.hp : undefined,
+      bossMaxHp: this.boss?.active && !this.boss.defeated ? this.boss.maxHp : undefined,
+      bossActive: this.boss?.active && !this.boss.defeated,
+      groundSweepWarning: this.groundSweep?.warning ?? false,
     };
   }
 
@@ -2034,6 +2455,10 @@ export class RainbowCowboyEngine {
       completeBanner: this.config.completeBanner,
       deathCause: this.deathCause,
       difficulty: this.config.difficulty ?? "easy",
+      arcadeTokensEarned: this.arcadeTokensEarned,
+      gameAchievementUnlocked: this.gameAchievementUnlocked,
+      bossDamageDealt: this.bossDamageDealt,
+      bossDefeated: this.bossDefeated,
     });
   }
 

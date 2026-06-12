@@ -53,6 +53,8 @@ export const ENEMY_SIZES = {
   boom_bot: { w: 54, h: 38 },
   armored_boom_bot: { w: 62, h: 44 },
   grenade_goblin_bot: { w: 58, h: 40 },
+  attack_drone: { w: 42, h: 36 },
+  suicide_drone: { w: 40, h: 38 },
 } as const;
 
 export const ENEMY_SPEEDS = {
@@ -62,6 +64,8 @@ export const ENEMY_SPEEDS = {
   recon: -2.8,
   red_baron: -1.6,
   cargo: -1.4,
+  attack_drone: -2.4,
+  suicide_drone: -3.6,
 } as const;
 
 /** After the first fly-by, drones steer toward the player. */
@@ -72,6 +76,8 @@ export const DRONE_HOMING = {
   recon: { steer: 0.04, speed: 2.0, bob: 6 },
   red_baron: { steer: 0.03, speed: 1.4, bob: 5 },
   cargo: { steer: 0.02, speed: 1.2, bob: 3 },
+  attack_drone: { steer: 0.05, speed: 2.2, bob: 5 },
+  suicide_drone: { steer: 0.14, speed: 3.8, bob: 3 },
 } as const;
 
 export const RED_BARON_BOMB_INTERVAL_MS = 1000;
@@ -114,3 +120,26 @@ export const BALLOON_ALTITUDE = { minAboveGround: 58, maxAboveGround: 168 };
 export const PICKUP_SIZE = 28;
 export const MINE_SIZE = 38;
 export const DYNAMITE_SIZE = 32;
+
+export const BOSS_NEST_W = 120;
+export const BOSS_NEST_H = 72;
+export const BOSS_HP_DEFAULT = 35;
+export const BOSS_PHASE_2_HP = 25;
+export const BOSS_PHASE_3_HP = 13;
+export const BOSS_SPEED_PHASE_1 = 1.2;
+export const BOSS_SPEED_PHASE_2 = 1.8;
+export const BOSS_SPEED_PHASE_3 = 2.6;
+export const BOSS_PAUSE_MS = 420;
+export const BOSS_SPAWN_INTERVAL_PHASE_1 = 2800;
+export const BOSS_SPAWN_INTERVAL_PHASE_2 = 2200;
+export const BOSS_SPAWN_INTERVAL_PHASE_3 = 1600;
+export const BOSS_DESTROY_ANIM_MS = 1800;
+export const ATTACK_DRONE_HP = 2;
+export const ATTACK_DRONE_SHOOT_INTERVAL_MS = 2200;
+export const SUICIDE_DRONE_EXPLOSION_RADIUS = 52;
+export const GROUND_SWEEP_INTERVAL_MS = 11000;
+export const GROUND_SWEEP_WARNING_MS = 2600;
+export const GROUND_SWEEP_SPEED = 5.2;
+export const GROUND_SWEEP_W = 140;
+export const GROUND_SWEEP_H = 56;
+export const LEVEL_4_FIRST_CLEAR_TOKENS = 5;

@@ -57,6 +57,23 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
           {hud.weaponLabel && (
             <div className="rc-weapon-badge">🔫 {hud.weaponLabel}</div>
           )}
+          {hud.bossActive && hud.bossMaxHp != null && hud.bossHp != null && (
+            <div
+              className="rc-boss-hp-badge"
+              style={{
+                marginTop: 4,
+                padding: "2px 8px",
+                borderRadius: 6,
+                border: "1px solid rgba(255,80,80,0.6)",
+                background: "rgba(0,0,0,0.35)",
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#ff8080",
+              }}
+            >
+              NEST {hud.bossHp}/{hud.bossMaxHp}
+            </div>
+          )}
         </div>
 
         <div

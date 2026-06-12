@@ -158,7 +158,7 @@ export function RainbowCowboyStartScreen({
         </div>
       </div>
 
-      {level.id === "level-3" && (
+      {(level.id === "level-3" || level.id === "level-4") && (
         <p
           style={{
             margin: "0 0 16px",
@@ -172,8 +172,18 @@ export function RainbowCowboyStartScreen({
             textAlign: "left",
           }}
         >
-          Level 3 adds a <strong>gun</strong>: desktop <strong>T</strong> or mobile landscape{" "}
-          <strong>(C) Fire</strong>. You start with a pistol — essential for RC monster trucks.
+          {level.id === "level-4" ? (
+            <>
+              Boss level: destroy the moving <strong>Drone Nest</strong> (35 HP). Guns enabled — desktop{" "}
+              <strong>T</strong> or mobile <strong>GUN</strong>. Jump to Obi planks when the ground sweep
+              warns you. First clear awards <strong>+5 Arcade Tokens</strong>.
+            </>
+          ) : (
+            <>
+              Level 3 adds a <strong>gun</strong>: desktop <strong>T</strong> or mobile landscape{" "}
+              <strong>(C) Fire</strong>. You start with a pistol — essential for RC monster trucks.
+            </>
+          )}
         </p>
       )}
 
