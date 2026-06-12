@@ -12,6 +12,32 @@ External job listings are ingested via cron-backed API routes. All imported jobs
 
 Shared: `CRON_SECRET` (Vercel cron Bearer auth or manual `?secret=`).
 
+## Adzuna
+
+Adzuna uses the US jobs API (`/v1/api/jobs/us/search/{page}`). Credentials: `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`.
+
+### Intake channels (parallel strategies)
+
+Configured in [`app/lib/adzuna/intakeConfig.ts`](app/lib/adzuna/intakeConfig.ts):
+
+1. **Keyword channels** — expanded `what` queries (EOD, UXO, C-IED, demining, UAS, etc.) with `max_days_old=90` and enlistment terms excluded at the API layer.
+2. **Company channels** — `company=` filter for PAE, Amentum, Leidos, Parsons, Tetra Tech, KBR, Constellis, Valiant, Cape Fox. Catches generic titles from known ordnance employers.
+3. **Category channels** — `engineering-jobs` and `trade-construction-jobs` crossed with ordnance keywords.
+
+### Relevance (title + description, not title-only)
+
+[`app/lib/adzuna/relevance.ts`](app/lib/adzuna/relevance.ts) scores **title, description, and company**. The legacy importer dropped anything without EOD terms in the **title** even when Adzuna matched on description — that gate is removed.
+
+- Strong match in title → high confidence floor
+- Strong/medium match in description only → still imported (score ≥ 55)
+- Company-channel listings get a slightly lower threshold when ordnance terms appear anywhere in the posting
+
+### Manual test
+
+```bash
+curl "https://www.eod-hub.com/api/import-adzuna?secret=$CRON_SECRET"
+```
+
 ## ReliefWeb
 
 ReliefWeb uses the official read-only API ([documentation](https://apidoc.reliefweb.int/)). As of November 2025, API users need a **pre-approved** `appname`.
