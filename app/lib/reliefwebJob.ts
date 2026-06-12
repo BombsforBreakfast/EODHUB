@@ -189,6 +189,21 @@ export function formatReliefWebFilterDate(date: Date): string {
   return `${date.toISOString().slice(0, 10)}T00:00:00+00:00`;
 }
 
+export const RELIEFWEB_JOB_FIELD_INCLUDES = [
+  "id",
+  "title",
+  "body",
+  "url",
+  "source.name",
+  "source.shortname",
+  "country.name",
+  "city.name",
+  "theme.name",
+  "career_category.name",
+  "date.created",
+  "date.closing",
+] as const;
+
 export function buildReliefWebPostBody(
   queryValue: string,
   offset: number,
@@ -206,21 +221,54 @@ export function buildReliefWebPostBody(
       value: { from: createdAfterIso },
     },
     fields: {
-      include: [
-        "id",
-        "title",
-        "body",
-        "url",
-        "source.name",
-        "source.shortname",
-        "country.name",
-        "city.name",
-        "theme.name",
-        "date.created",
-        "date.closing",
-      ],
+      include: [...RELIEFWEB_JOB_FIELD_INCLUDES],
     },
   };
+}
+
+export async function fetchReliefWebJobsByIds(
+  jobIds: string[],
+  appName: string
+): Promise<{ jobs: ReliefWebApiJob[]; error?: string }> {
+  const ids = [...new Set(jobIds.map((id) => id.trim()).filter(Boolean))];
+  if (ids.length === 0) return { jobs: [] };
+
+  const url = `${RELIEFWEB_API_BASE}?appname=${encodeURIComponent(appName)}`;
+  const body = {
+    limit: ids.length,
+    filter: {
+      operator: "OR",
+      conditions: ids.map((id) => ({
+        field: "id",
+        value: Number.isFinite(Number(id)) ? Number(id) : id,
+      })),
+    },
+    fields: {
+      include: [...RELIEFWEB_JOB_FIELD_INCLUDES],
+    },
+  };
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      return { jobs: [], error: `${res.status}: ${text.slice(0, 500)}` };
+    }
+
+    const data = (await res.json()) as ReliefWebApiResponse;
+    return { jobs: data.data ?? [] };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { jobs: [], error: msg };
+  }
 }
 
 export async function fetchReliefWebJobsBatch(

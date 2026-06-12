@@ -4,6 +4,7 @@ import {
   buildImportMetadata,
   detectCategory,
   fetchReliefWebJobsBatch,
+  fetchReliefWebJobsByIds,
   formatReliefWebFilterDate,
   LOOKBACK_DAYS,
   MAX_PAGES_PER_BATCH,
@@ -13,6 +14,7 @@ import {
   scoreReliefWebJob,
   shouldIngestReliefWebJob,
 } from "../../lib/reliefwebJob";
+import { TARGET_RELIEFWEB_JOB_IDS } from "../../lib/reliefweb/targetJobIds";
 import { jobListingCutoffIso } from "../../lib/jobRetention";
 
 export async function GET(req: NextRequest) {
@@ -86,107 +88,18 @@ export async function GET(req: NextRequest) {
         if (items.length === 0) break;
 
         for (const raw of items) {
-          const normalized = normalizeReliefWebJob(raw);
-          if (!normalized) {
-            skipped++;
-            continue;
-          }
-
-          const rwId = normalized.reliefwebJobId;
-          if (seenReliefWebIds.has(rwId)) {
-            skipped++;
-            continue;
-          }
-          seenReliefWebIds.add(rwId);
-
-          const relevance = scoreReliefWebJob({
-            title: normalized.title,
-            description: normalized.description,
-            metadataText: normalized.metadataText,
-          });
-
-          if (
-            relevance.excluded ||
-            !shouldIngestReliefWebJob(
-              relevance.score,
-              normalized.title,
-              normalized.description,
-              normalized.metadataText
-            )
-          ) {
-            skipped++;
-            continue;
-          }
-
-          const { data: existing, error: selectErr } = await supabase
-            .from("jobs")
-            .select("id, is_rejected, import_metadata")
-            .eq("source_type", "reliefweb")
-            .eq("reliefweb_job_id", rwId)
-            .maybeSingle();
-
-          if (selectErr) {
-            errors.push(`[select reliefweb ${rwId}] ${selectErr.message}`);
-            continue;
-          }
-
-          if (relevance.suppressed) suppressed++;
-
-          if (relevance.suppressed && !existing) {
-            skipped++;
-            continue;
-          }
-
-          const importMetadata = buildImportMetadata(normalized, relevance, queryBatch);
-          const now = new Date().toISOString();
-          const category = detectCategory(normalized.title);
-
-          const rowPayload = {
-            title: normalized.title,
-            company_name: normalized.companyName,
-            location: normalized.location,
-            apply_url: normalized.applyUrl,
-            description: normalized.description,
-            og_description: normalized.description.slice(0, 500) || null,
-            og_site_name: "ReliefWeb",
-            category,
-            relevance_score: relevance.score,
-            import_metadata: existing?.import_metadata
-              ? mergeImportMetadata(existing.import_metadata as Record<string, unknown>, importMetadata)
-              : importMetadata,
-            last_seen_at: now,
-          };
-
-          if (existing) {
-            if (existing.is_rejected) {
-              skipped++;
-              continue;
-            }
-            const { error: upErr } = await supabase
-              .from("jobs")
-              .update(rowPayload)
-              .eq("id", existing.id);
-            if (upErr) {
-              errors.push(`[update reliefweb ${rwId}] ${upErr.message}`);
-              continue;
-            }
-            refreshed++;
-            continue;
-          }
-
-          const { error: insErr } = await supabase.from("jobs").insert({
-            ...rowPayload,
-            reliefweb_job_id: rwId,
-            is_approved: false,
-            source_type: "reliefweb",
-          });
-
-          if (insErr) {
-            errors.push(`[insert reliefweb ${rwId}] ${insErr.message}`);
-            continue;
-          }
-          imported++;
-          importedTitles.push(normalized.title);
+          const result = await ingestReliefWebRawJob(
+            supabase,
+            raw,
+            queryBatch,
+            seenReliefWebIds,
+            importedTitles,
+            errors
+          );
+          if (result === "imported") imported++;
+          else if (result === "refreshed") refreshed++;
+          else if (result === "suppressed") suppressed++;
+          else skipped++;
         }
 
         if (items.length < RESULTS_PER_PAGE) break;
@@ -194,6 +107,33 @@ export async function GET(req: NextRequest) {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       errors.push(`[batch ${queryBatch.slice(0, 30)}…] ${msg}`);
+    }
+  }
+
+  const missingTargetIds = TARGET_RELIEFWEB_JOB_IDS.filter((id) => !seenReliefWebIds.has(id));
+  if (missingTargetIds.length > 0) {
+    const { jobs: targetItems, error: targetErr } = await fetchReliefWebJobsByIds(
+      missingTargetIds,
+      appName
+    );
+    apiCalls++;
+    if (targetErr) {
+      errors.push(`[target job ids] ${targetErr}`);
+    } else {
+      for (const raw of targetItems) {
+        const result = await ingestReliefWebRawJob(
+          supabase,
+          raw,
+          "targeted:eod-hma-cied-uas",
+          seenReliefWebIds,
+          importedTitles,
+          errors
+        );
+        if (result === "imported") imported++;
+        else if (result === "refreshed") refreshed++;
+        else if (result === "suppressed") suppressed++;
+        else skipped++;
+      }
     }
   }
 
@@ -208,6 +148,100 @@ export async function GET(req: NextRequest) {
     sample: importedTitles.slice(0, 10),
     errors: errors.length > 0 ? errors : undefined,
   });
+}
+
+type IngestResult = "imported" | "refreshed" | "skipped" | "suppressed";
+
+async function ingestReliefWebRawJob(
+  supabase: ReturnType<typeof createClient>,
+  raw: Parameters<typeof normalizeReliefWebJob>[0],
+  matchedQuery: string,
+  seenReliefWebIds: Set<string>,
+  importedTitles: string[],
+  errors: string[]
+): Promise<IngestResult> {
+  const normalized = normalizeReliefWebJob(raw);
+  if (!normalized) return "skipped";
+
+  const rwId = normalized.reliefwebJobId;
+  if (seenReliefWebIds.has(rwId)) return "skipped";
+  seenReliefWebIds.add(rwId);
+
+  const relevance = scoreReliefWebJob({
+    title: normalized.title,
+    description: normalized.description,
+    metadataText: normalized.metadataText,
+  });
+
+  if (
+    relevance.excluded ||
+    !shouldIngestReliefWebJob(
+      relevance.score,
+      normalized.title,
+      normalized.description,
+      normalized.metadataText
+    )
+  ) {
+    return "skipped";
+  }
+
+  const { data: existing, error: selectErr } = await supabase
+    .from("jobs")
+    .select("id, is_rejected, import_metadata")
+    .eq("source_type", "reliefweb")
+    .eq("reliefweb_job_id", rwId)
+    .maybeSingle();
+
+  if (selectErr) {
+    errors.push(`[select reliefweb ${rwId}] ${selectErr.message}`);
+    return "skipped";
+  }
+
+  if (relevance.suppressed && !existing) return "suppressed";
+
+  const importMetadata = buildImportMetadata(normalized, relevance, matchedQuery);
+  const now = new Date().toISOString();
+  const category = detectCategory(normalized.title);
+
+  const rowPayload = {
+    title: normalized.title,
+    company_name: normalized.companyName,
+    location: normalized.location,
+    apply_url: normalized.applyUrl,
+    description: normalized.description,
+    og_description: normalized.description.slice(0, 500) || null,
+    og_site_name: "ReliefWeb",
+    category,
+    relevance_score: relevance.score,
+    import_metadata: existing?.import_metadata
+      ? mergeImportMetadata(existing.import_metadata as Record<string, unknown>, importMetadata)
+      : importMetadata,
+    last_seen_at: now,
+  };
+
+  if (existing) {
+    if (existing.is_rejected) return "skipped";
+    const { error: upErr } = await supabase.from("jobs").update(rowPayload).eq("id", existing.id);
+    if (upErr) {
+      errors.push(`[update reliefweb ${rwId}] ${upErr.message}`);
+      return "skipped";
+    }
+    return "refreshed";
+  }
+
+  const { error: insErr } = await supabase.from("jobs").insert({
+    ...rowPayload,
+    reliefweb_job_id: rwId,
+    is_approved: false,
+    source_type: "reliefweb",
+  });
+
+  if (insErr) {
+    errors.push(`[insert reliefweb ${rwId}] ${insErr.message}`);
+    return "skipped";
+  }
+  importedTitles.push(normalized.title);
+  return "imported";
 }
 
 function mergeImportMetadata(

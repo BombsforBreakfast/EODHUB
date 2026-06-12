@@ -67,6 +67,16 @@ npx tsx scripts/run-reliefweb-import.ts
 npx tsx scripts/run-reliefweb-import.ts score-samples
 ```
 
+Targeted cross-reference (focused EOD/HMA/CIED/UAS ReliefWeb IDs vs Supabase duplicates):
+
+```bash
+npx tsx scripts/crossref-reliefweb-targeted.ts --dry-run   # report only
+npx tsx scripts/crossref-reliefweb-targeted.ts             # insert new rows
+npx tsx scripts/crossref-reliefweb-targeted.ts --refresh   # also refresh existing matches
+```
+
+The daily cron import also fetches [`TARGET_RELIEFWEB_JOB_IDS`](app/lib/reliefweb/targetJobIds.ts) by ID after keyword batches so focused listings are not missed by date filters.
+
 Expected JSON fields: `imported`, `refreshed`, `skipped`, `suppressed`, `confidence`, `apiCalls`, `keywordBatches`, `sample`, optional `errors`.
 
 ### Tuning
