@@ -13,7 +13,21 @@ const securityHeaders = [
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 ];
 
+/** Vercel default deployment hostname → canonical production domain. */
+const VERCEL_DEPLOYMENT_HOST = "eodhub.vercel.app";
+const CANONICAL_SITE = "https://eod-hub.com";
+
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: VERCEL_DEPLOYMENT_HOST }],
+        destination: `${CANONICAL_SITE}/:path*`,
+        permanent: true,
+      },
+    ];
+  },
   async headers() {
     return [
       {
