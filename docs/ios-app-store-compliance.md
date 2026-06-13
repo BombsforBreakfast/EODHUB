@@ -2,23 +2,28 @@
 
 Use this checklist before submitting for App Review.
 
+## Privacy Manifest (native app bundle)
+
+The iOS target ships [`ios/App/App/PrivacyInfo.xcprivacy`](../ios/App/App/PrivacyInfo.xcprivacy) in the app bundle:
+
+- **Tracking:** `NSPrivacyTracking` = false (no IDFA / cross-app tracking in the native shell)
+- **Required Reason APIs:** `UserDefaults` with reason `CA92.1` (Capacitor plugin / app preferences)
+
+Capacitor CocoaPods merge their own SDK manifests at archive time. After a Codemagic or Xcode archive, use **Organizer → Generate Privacy Report** and add any additional required-reason API categories Apple flags (e.g. file timestamps `C617.1`).
+
+[`Info.plist`](../ios/App/App/Info.plist) declares `ITSAppUsesNonExemptEncryption` = false (HTTPS only; exempt mass-market encryption).
+
 ## Payments (Guideline 3.1.1)
 
-EOD-Hub sells a **$2/month community membership** (digital access). Apple may require In-App Purchase for upgrades initiated inside the app.
+Membership pricing is **TBD**; paywall is suspended during beta. The app is free for TestFlight / initial listing.
 
-**v1 strategy implemented in code:**
+When paid features ship in-app, Apple may require In-App Purchase for digital goods initiated inside the app. Future arcade consumables will use StoreKit / RevenueCat; business advertising billing remains web-first.
 
-- The native iOS app opens Stripe checkout in **Safari** (external browser), not an in-app WebView checkout.
-- Copy on `/subscribe` states payment is completed on the web.
-- Do **not** embed Stripe Checkout inside the Capacitor WebView for new subscriptions.
-
-**App Review notes to include:**
-
-> EOD-Hub is a professional community and job board. The iOS app provides access to the same member account as the website. New subscriptions are completed on our website in Safari; the app does not sell digital goods through an in-app purchase flow.
-
-If Apple rejects for IAP, options are: (a) add StoreKit subscription, (b) remove subscribe CTA from the native app and make it account-management-only, or (c) appeal as a multiplatform service with web account management.
+**Do not** embed Stripe Checkout inside the Capacitor WebView.
 
 ## Privacy Nutrition Labels (App Store Connect)
+
+**Manual step:** In App Store Connect → App Privacy, enter the table below. It must match the privacy manifest (no tracking) and your live privacy policy.
 
 Declare data collected by the app (loaded from `https://www.eod-hub.com`):
 
@@ -33,6 +38,13 @@ Declare data collected by the app (loaded from `https://www.eod-hub.com`):
 | Device ID | Yes (push token) | Yes | Push notifications |
 
 **Not used:** cross-app tracking, advertising, precise location.
+
+**Connect checklist:**
+
+- [ ] Data types above entered in App Privacy questionnaire
+- [ ] Tracking = No
+- [ ] Privacy Policy URL = `https://www.eod-hub.com/privacy`
+- [ ] Matches `PrivacyInfo.xcprivacy` (no tracking declared natively)
 
 ## Privacy policy and support
 
@@ -67,4 +79,16 @@ The system permission dialog is standard iOS text. In-app, users can disable pus
 
 ## Export compliance
 
-In App Store Connect, for standard HTTPS-only app with no custom encryption beyond Apple's OS: answer **No** to proprietary encryption (uses exempt mass-market encryption).
+[`Info.plist`](../ios/App/App/Info.plist) sets `ITSAppUsesNonExemptEncryption` = false.
+
+In App Store Connect export compliance questions: answer **No** to proprietary encryption (standard HTTPS only; exempt mass-market encryption).
+
+## Codemagic / TestFlight verification
+
+After pushing to `main`, Codemagic runs [`codemagic.yaml`](../codemagic.yaml) and uploads to TestFlight.
+
+Post-build (Xcode Organizer on archive, or App Store Connect upload logs):
+
+1. Confirm build succeeds with `PrivacyInfo.xcprivacy` in the app bundle
+2. **Generate Privacy Report** on the archive — verify merged Capacitor SDK + app manifests
+3. Add any missing required-reason API declarations to `PrivacyInfo.xcprivacy` if Apple flags them
