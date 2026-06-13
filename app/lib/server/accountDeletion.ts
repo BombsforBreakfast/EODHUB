@@ -29,6 +29,9 @@ export async function purgePersonalAccountData(
     { table: "saved_jobs", column: "user_id" },
     { table: "saved_events", column: "user_id" },
     { table: "profile_photos", column: "user_id" },
+    { table: "push_device_tokens", column: "user_id" },
+    { table: "user_blocks", column: "blocker_id" },
+    { table: "user_blocks", column: "blocked_id" },
   ];
 
   for (const { table, column } of tablesByUserId) {

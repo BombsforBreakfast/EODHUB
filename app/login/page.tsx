@@ -283,7 +283,7 @@ export default function LoginPage() {
     if (params.get("error") === "auth") {
       setLoginMessage("Sign-in could not be completed. Please try again, or use the password reset link if you need to set a password.");
     } else if (params.get("deleted") === "1") {
-      setLoginMessage("Your account has been deleted.");
+      setLoginMessage("Your account has been closed. You can sign up again anytime with the same email.");
     } else if (params.get("business_page_created") === "1") {
       setLoginMessage("Business page created. Sign in with the business login email to continue.");
     }

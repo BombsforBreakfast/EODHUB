@@ -9,6 +9,7 @@ import BlockedUsersCard from "../../components/account/BlockedUsersCard";
 import MemorialFeedPreferencesCard from "../../components/account/MemorialFeedPreferencesCard";
 import NotificationPreferencesCard from "../../components/account/NotificationPreferencesCard";
 import ChangePasswordSection from "../../components/account/ChangePasswordSection";
+import DeleteAccountSection from "../../components/account/DeleteAccountSection";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
 import { isPaywallEnforced, memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { hasPublicMemberProfile } from "../../lib/pureAdminAllowlist";
@@ -369,6 +370,9 @@ export default function MyAccountPage() {
           {/* Privacy */}
           {currentUserId && <PrivacySettingsCard userId={currentUserId} />}
           {currentUserId && <BlockedUsersCard userId={currentUserId} />}
+
+          {/* Close account */}
+          <DeleteAccountSection isPureAdmin={profile?.is_pure_admin} />
 
           {/* Email notifications */}
           {currentUserId && <NotificationPreferencesCard userId={currentUserId} />}
