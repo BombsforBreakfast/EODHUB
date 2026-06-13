@@ -34,6 +34,7 @@ import ExpandableText from "../components/ExpandableText";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
 import { FeedMediaAttachment } from "../components/FeedMediaAttachment";
 import FeedPostHeader from "../components/FeedPostHeader";
+import HideBlockUserButton from "../components/HideBlockUserButton";
 import OptimizedAvatarImg from "../components/OptimizedAvatarImg";
 import { useFeedImageGallery } from "../hooks/useFeedImageGallery";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../components/YouTubeEmbed";
@@ -70,6 +71,7 @@ import {
   runDiscoverKnowAction,
 } from "../lib/queries/discoverProfiles";
 import { queryKeys } from "../lib/queryKeys";
+import { fetchBlockedUserIds, filterBlockedRows } from "../lib/userBlocks";
 import { hasPublicMemberProfile } from "../lib/pureAdminAllowlist";
 import PostAsSelector from "../components/PostAsSelector";
 import {
@@ -967,6 +969,7 @@ export default function HomePage() {
   const [showJobsUpgradePrompt, setShowJobsUpgradePrompt] = useState(false);
   const [bizLoaded, setBizLoaded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const savedJobsQuery = useQuery({
     queryKey: userId ? queryKeys.savedJobs(userId) : queryKeys.savedJobs("pending"),
     queryFn: () => fetchSavedJobs(supabase, userId as string),
@@ -994,6 +997,10 @@ export default function HomePage() {
     staleTime: DISCOVER_PROFILES_STALE_MS,
   });
   const discoverProfiles = discoverProfilesQuery.data ?? [];
+  const visibleDiscoverProfiles = useMemo(
+    () => filterBlockedRows(discoverProfiles, blockedUserIds, (profile) => profile.user_id),
+    [blockedUserIds, discoverProfiles],
+  );
   const [isMobile, setIsMobile] = useState(false);
   const { isDesktopShell, openSidebarPeer, showMemorialFeedCards, setShowMemorialFeedCards } = useMasterShell();
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
@@ -2220,10 +2227,31 @@ export default function HomePage() {
     }
   }
 
+  function handleUserBlocked(blockedUserId: string) {
+    setBlockedUserIds((prev) => new Set([...prev, blockedUserId]));
+    setPosts((prev) =>
+      prev
+        .filter((post) => post.authorUserId !== blockedUserId && post.user_id !== blockedUserId)
+        .map((post) => {
+          const visibleComments = post.comments.filter((comment) => comment.user_id !== blockedUserId);
+          return {
+            ...post,
+            comments: visibleComments,
+            commentCount: visibleComments.length,
+          };
+        }),
+    );
+    queryClient.setQueryData(queryKeys.discoverProfiles(userId ?? "pending"), (rows: unknown) =>
+      Array.isArray(rows)
+        ? rows.filter((profile: { user_id?: string }) => profile.user_id !== blockedUserId)
+        : rows,
+    );
+  }
+
   async function toggleDiscoverConnection(targetUserId: string) {
     if (!userId) return;
     if (blockMemberInteraction()) return;
-    const profile = discoverProfiles.find((p) => p.user_id === targetUserId);
+    const profile = visibleDiscoverProfiles.find((p) => p.user_id === targetUserId);
     if (!profile) return;
     if (profile.knowStatus === "pending_outgoing" || profile.knowStatus === "accepted") return;
 
@@ -2310,7 +2338,7 @@ export default function HomePage() {
     }
   }
 
-  async function loadCommentsForPosts(postIds: string[]) {
+  async function loadCommentsForPosts(postIds: string[], blockedIds: Set<string> = blockedUserIds) {
     /** Only non-hidden comments; if column missing (older DB), load without this filter. */
     let commentsWithImageQuery = await supabase
       .from("post_comments")
@@ -2358,14 +2386,14 @@ export default function HomePage() {
           ...(comment as Omit<Comment, "parent_comment_id">),
           parent_comment_id: null,
         }));
-        return { comments: normalized };
+        return { comments: filterBlockedRows(normalized, blockedIds, (comment) => comment.user_id) };
       }
       commentsWithImageQuery = legacyQuery;
     }
 
     if (!commentsWithImageQuery.error) {
       return {
-        comments: (commentsWithImageQuery.data ?? []) as Comment[],
+        comments: filterBlockedRows((commentsWithImageQuery.data ?? []) as Comment[], blockedIds, (comment) => comment.user_id),
       };
     }
 
@@ -2442,7 +2470,7 @@ export default function HomePage() {
             parent_comment_id: null,
           }) as Comment,
       );
-      return { comments: legacyComments };
+      return { comments: filterBlockedRows(legacyComments, blockedIds, (comment) => comment.user_id) };
     }
 
     if (commentsWithoutImageQuery.error) {
@@ -2472,7 +2500,7 @@ export default function HomePage() {
     );
 
     return {
-      comments: normalizedComments,
+      comments: filterBlockedRows(normalizedComments, blockedIds, (comment) => comment.user_id),
     };
   }
 
@@ -2692,6 +2720,7 @@ export default function HomePage() {
     rawPosts: RankedPostRow[],
     effectiveUserId: string | null,
     perfStart: number,
+    effectiveBlockedUserIds: Set<string>,
   ): Promise<InitialFeedBatchCache> {
     const initialPosts = rawPosts.slice(0, INITIAL_FEED_POST_LIMIT);
     const postIds = initialPosts.map((post) => post.id);
@@ -2944,6 +2973,7 @@ export default function HomePage() {
   async function hydrateFromInitialCache(
     cache: InitialFeedBatchCache,
     effectiveUserId: string | null,
+    effectiveBlockedUserIds: Set<string>,
   ): Promise<void> {
     const perfStart = perfNowMs();
     const rawPosts = cache.initialPosts;
@@ -3080,9 +3110,11 @@ export default function HomePage() {
       }
     }
 
-    const rawComments: Comment[] = enrichment
-      ? (enrichment.comments as Comment[])
-      : (await loadCommentsForPosts(postIds)).comments;
+    const rawComments: Comment[] = filterBlockedRows(
+      enrichment ? (enrichment.comments as Comment[]) : (await loadCommentsForPosts(postIds, effectiveBlockedUserIds)).comments,
+      effectiveBlockedUserIds,
+      (comment) => comment.user_id,
+    );
 
     const commentIds = rawComments.map((comment) => comment.id);
 
@@ -3511,7 +3543,7 @@ export default function HomePage() {
 
   async function loadPosts(
     currentUserId?: string | null,
-    options: { forceFullHydration?: boolean; limit?: number } = {},
+    options: { forceFullHydration?: boolean; limit?: number; blockedUserIds?: Set<string> } = {},
   ) {
     const perfStart = perfNowMs();
     const isInitialProgressiveLoad = !postsLoadedRef.current && !options.forceFullHydration;
@@ -3530,6 +3562,7 @@ export default function HomePage() {
     const { data: { session } } = await getSupabaseSession({ source: "HomePage" });
     const effectiveUserId =
       session?.user?.id ?? currentUserId ?? userId ?? null;
+    const effectiveBlockedUserIds = options.blockedUserIds ?? blockedUserIds;
 
     // Feed readiness should not wait on sidebar/highlight enrichment.
     void loadUnitFeedHighlightsForUser(effectiveUserId).catch((err) => {
@@ -3640,6 +3673,8 @@ export default function HomePage() {
       }
     }
 
+    rawPosts = filterBlockedRows(rawPosts, effectiveBlockedUserIds, (post) => post.user_id);
+
     const hasMoreRankedPosts =
       rawPosts.length > requestedLimit || fetchedRankedPostCount >= (isInitialProgressiveLoad ? INITIAL_RANKED_POSTS_LIMIT : queryLimit);
 
@@ -3654,14 +3689,14 @@ export default function HomePage() {
         return;
       }
 
-      const initialCache = await loadInitialFeedBatch(rawPosts, effectiveUserId, perfStart);
+      const initialCache = await loadInitialFeedBatch(rawPosts, effectiveUserId, perfStart, effectiveBlockedUserIds);
 
       if (feedHydrationTimerRef.current) {
         window.clearTimeout(feedHydrationTimerRef.current);
       }
       feedHydrationTimerRef.current = window.setTimeout(() => {
         feedHydrationTimerRef.current = null;
-        void hydrateFromInitialCache(initialCache, effectiveUserId).catch((err) =>
+        void hydrateFromInitialCache(initialCache, effectiveUserId, effectiveBlockedUserIds).catch((err) =>
           console.error("Feed interaction hydration failed:", err),
         );
       }, FULL_FEED_HYDRATION_DELAY_MS);
@@ -3885,9 +3920,11 @@ export default function HomePage() {
 
     const aggregatesMap = aggregatesBySubjectId(reactionRows, effectiveUserId);
 
-    const rawComments: Comment[] = enrichment
-      ? enrichment.comments
-      : (await loadCommentsForPosts(postIds)).comments;
+    const rawComments: Comment[] = filterBlockedRows(
+      enrichment ? enrichment.comments : (await loadCommentsForPosts(postIds, effectiveBlockedUserIds)).comments,
+      effectiveBlockedUserIds,
+      (comment) => comment.user_id,
+    );
 
     const commentIds = rawComments.map((comment) => comment.id);
 
@@ -5677,6 +5714,7 @@ export default function HomePage() {
       setPostAsAdminProfile(null);
       setPostAsMode(loadStoredPostAsMode());
       setCurrentUserReferralCode(null);
+      setBlockedUserIds(new Set());
       setRecruiterCount(0);
       setPlankHolderChallenge(null);
       plankHolderChallengeRef.current = null;
@@ -5814,7 +5852,12 @@ export default function HomePage() {
 
         void refreshPlankHolderChallenge().catch((err) => console.error("refreshPlankHolderChallenge failed:", err));
 
-        const feedReady = loadPosts(currentUserId).catch((err) => console.error("loadPosts failed:", err));
+        const loadedBlockedUserIds = await fetchBlockedUserIds(supabase, currentUserId);
+        if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
+          setBlockedUserIds(loadedBlockedUserIds);
+        }
+
+        const feedReady = loadPosts(currentUserId, { blockedUserIds: loadedBlockedUserIds }).catch((err) => console.error("loadPosts failed:", err));
         await feedReady;
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setLoading(false);
@@ -6016,16 +6059,16 @@ export default function HomePage() {
   }, [postsLoaded, posts, deepLinkPostUnavailable]);
 
   const discoverMaxPageIndex = useMemo(
-    () => Math.max(0, Math.ceil(discoverProfiles.length / DISCOVER_PAGE_SIZE) - 1),
-    [discoverProfiles.length],
+    () => Math.max(0, Math.ceil(visibleDiscoverProfiles.length / DISCOVER_PAGE_SIZE) - 1),
+    [visibleDiscoverProfiles.length],
   );
 
   /** Desktop: one page of avatars. Mobile: full pool in a horizontal scroll strip. */
   const discoverVisible = useMemo(() => {
-    if (isMobile) return discoverProfiles;
+    if (isMobile) return visibleDiscoverProfiles;
     const start = discoverPageIndex * DISCOVER_PAGE_SIZE;
-    return discoverProfiles.slice(start, start + DISCOVER_PAGE_SIZE);
-  }, [discoverProfiles, discoverPageIndex, isMobile]);
+    return visibleDiscoverProfiles.slice(start, start + DISCOVER_PAGE_SIZE);
+  }, [visibleDiscoverProfiles, discoverPageIndex, isMobile]);
 
   useEffect(() => {
     setDiscoverPageIndex((i) => Math.min(i, discoverMaxPageIndex));
@@ -6391,9 +6434,18 @@ export default function HomePage() {
             }}
           >
             {!isOwnComment && (
-              <button type="button" onClick={() => openFlagModal("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 13, lineHeight: 1 }}>
-                ...
-              </button>
+              <>
+                <HideBlockUserButton
+                  targetUserId={comment.user_id}
+                  currentUserId={userId}
+                  t={t}
+                  compact
+                  onBlocked={handleUserBlocked}
+                />
+                <button type="button" onClick={() => openFlagModal("comment", comment.id)} disabled={flaggingId === comment.id} title="Flag for review" style={{ background: "transparent", border: "none", padding: "0 2px", cursor: flaggingId === comment.id ? "not-allowed" : "pointer", color: t.textFaint, fontSize: 13, lineHeight: 1 }}>
+                  Report Comment
+                </button>
+              </>
             )}
             {isOwnComment && (
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -7443,7 +7495,7 @@ export default function HomePage() {
           </div>
 
           {/* People You May Know ΓÇö verified members only; below composer so vouch cards stay above */}
-          {feedAboveFoldExtrasReady && discoverProfiles.length > 0 && (
+          {feedAboveFoldExtrasReady && visibleDiscoverProfiles.length > 0 && (
             <div style={{ marginTop: 16, marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, minHeight: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
@@ -7975,9 +8027,12 @@ export default function HomePage() {
                     isMobile={isMobile}
                     isDeleting={deletingPostId === post.id}
                     isFlagging={flaggingId === post.id}
+                    authorUserId={post.authorUserId}
+                    currentUserId={userId}
                     onEdit={() => startEditPost(post.id, post.content)}
                     onDelete={() => deletePost(post.id)}
                     onFlag={() => openFlagModal("post", post.id)}
+                    onBlockedUser={handleUserBlocked}
                   />
 
                   {isEditingPost ? (

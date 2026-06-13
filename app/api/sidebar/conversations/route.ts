@@ -103,6 +103,15 @@ async function loadPreviewRows(
   return rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 }
 
+async function loadBlockedUserIds(adminClient: SupabaseClient, userId: string): Promise<Set<string>> {
+  const { data, error } = await adminClient
+    .from("user_blocks")
+    .select("blocked_id")
+    .eq("blocker_id", userId);
+  if (error) throw new Error(error.message);
+  return new Set(((data ?? []) as { blocked_id: string }[]).map((row) => row.blocked_id));
+}
+
 function parsePagination(req: NextRequest) {
   const rawLimit = Number(req.nextUrl.searchParams.get("limit") ?? DEFAULT_PAGE_SIZE);
   const rawOffset = Number(req.nextUrl.searchParams.get("offset") ?? 0);
@@ -179,6 +188,15 @@ export async function GET(req: NextRequest) {
 
   const { limit, offset } = parsePagination(req);
   const search = normalizeSearch(req.nextUrl.searchParams.get("q"));
+  let blockedUserIds: Set<string>;
+  try {
+    blockedUserIds = await loadBlockedUserIds(adminClient, user.id);
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to load blocked users" },
+      { status: 500 },
+    );
+  }
 
   let conversations: ConversationRow[];
   let totalCount = 0;
@@ -196,7 +214,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: allConvError.message }, { status: 500 });
     }
 
-    const allConversations = (allConvData ?? []) as ConversationRow[];
+    const allConversations = ((allConvData ?? []) as ConversationRow[]).filter((conversation) => {
+      const otherId = conversation.participant_1 === user.id ? conversation.participant_2 : conversation.participant_1;
+      return !blockedUserIds.has(otherId);
+    });
     const allOtherIds = allConversations.map((c) =>
       c.participant_1 === user.id ? c.participant_2 : c.participant_1,
     );
@@ -246,7 +267,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: convError.message }, { status: 500 });
     }
 
-    conversations = (convData ?? []) as ConversationRow[];
+    conversations = ((convData ?? []) as ConversationRow[]).filter((conversation) => {
+      const otherId = conversation.participant_1 === user.id ? conversation.participant_2 : conversation.participant_1;
+      return !blockedUserIds.has(otherId);
+    });
     totalCount = count ?? conversations.length;
   }
 

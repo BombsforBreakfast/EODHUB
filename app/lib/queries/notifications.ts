@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchBlockedUserIds, filterBlockedRows } from "../userBlocks";
 
 export const NOTIFICATIONS_STALE_MS = 20_000;
 
@@ -35,7 +36,15 @@ export async function fetchNotifications<T>(
       .is("archived_at", null)
       .order("created_at", { ascending: false })
       .limit(100);
-    return (fallback ?? []) as T[];
+    const rows = (fallback ?? []) as T[];
+    const blockedUserIds = await fetchBlockedUserIds(supabase, userId);
+    return filterBlockedRows(rows, blockedUserIds, (notification) =>
+      (notification as { actor_id?: string | null }).actor_id,
+    );
   }
-  return (data ?? []) as T[];
+  const rows = (data ?? []) as T[];
+  const blockedUserIds = await fetchBlockedUserIds(supabase, userId);
+  return filterBlockedRows(rows, blockedUserIds, (notification) =>
+    (notification as { actor_id?: string | null }).actor_id,
+  );
 }

@@ -16,6 +16,7 @@ import { useMasterShell } from "../../../components/master/masterShellContext";
 import EventFeedActions from "../../../components/EventFeedActions";
 import { ExternalSiteLink } from "../../../components/ExternalSiteEmbedModal";
 import FeedPostHeader from "../../../components/FeedPostHeader";
+import HideBlockUserButton from "../../../components/HideBlockUserButton";
 import PostAsSelector from "../../../components/PostAsSelector";
 import {
   adminPostDisplayName,
@@ -28,6 +29,7 @@ import {
 } from "../../../lib/postAsIdentity";
 import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
+import { fetchBlockedUserIds, filterBlockedRows } from "../../../lib/userBlocks";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
 import { FeedMediaAttachment } from "../../../components/FeedMediaAttachment";
 import OptimizedAvatarImg from "../../../components/OptimizedAvatarImg";
@@ -614,6 +616,7 @@ export default function PublicProfilePage() {
 
   const [postContent, setPostContent] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const [submittingPost, setSubmittingPost] = useState(false);
   const [ogPreview, setOgPreview] = useState<OgPreview | null>(null);
   const [fetchingOg, setFetchingOg] = useState(false);
@@ -1299,9 +1302,10 @@ export default function PublicProfilePage() {
 
   async function loadPosts(
     targetUserId: string,
-    options: { limit?: number; viewerUserId?: string | null } = {},
+    options: { limit?: number; viewerUserId?: string | null; blockedUserIds?: Set<string> } = {},
   ) {
     const effectiveViewerId = options.viewerUserId ?? currentUserId ?? null;
+    const effectiveBlockedUserIds = options.blockedUserIds ?? blockedUserIds;
     const visibleLimit = Math.max(
       PROFILE_INITIAL_POST_LIMIT,
       options.limit ?? profilePostLimitRef.current,
@@ -1326,7 +1330,7 @@ export default function PublicProfilePage() {
       return;
     }
 
-    const allMatchedPosts = (rawData ?? []) as {
+    const allMatchedPosts = filterBlockedRows((rawData ?? []) as {
       id: string;
       user_id: string;
       wall_user_id?: string | null;
@@ -1339,7 +1343,7 @@ export default function PublicProfilePage() {
       og_image?: string | null;
       og_site_name?: string | null;
       rabbithole_contribution_id?: string | null;
-    }[];
+    }[], effectiveBlockedUserIds, (post) => post.post_as_user_id ?? post.user_id);
     const hasMorePosts = allMatchedPosts.length > visibleLimit;
     const visibleRawPosts = allMatchedPosts.slice(0, visibleLimit);
     setProfileWallHasMorePosts(hasMorePosts);
@@ -3091,6 +3095,9 @@ export default function PublicProfilePage() {
 
       const signedInUserId = data.user?.id ?? null;
       setCurrentUserId(signedInUserId);
+      const loadedBlockedUserIds = await fetchBlockedUserIds(supabase, signedInUserId);
+      if (cancelled) return;
+      setBlockedUserIds(loadedBlockedUserIds);
       plankHolderChallengeRef.current = null;
       plankHolderInitializedRef.current = false;
       setPlankHolderChallenge(null);
@@ -3104,7 +3111,7 @@ export default function PublicProfilePage() {
 
       await Promise.all([
         loadProfile(targetUserId),
-        loadPosts(targetUserId, { viewerUserId: signedInUserId }),
+        loadPosts(targetUserId, { viewerUserId: signedInUserId, blockedUserIds: loadedBlockedUserIds }),
       ]);
       if (cancelled) return;
       setLoading(false);
@@ -4505,9 +4512,22 @@ export default function PublicProfilePage() {
                         {currentUserWorkedWith ? "Worked With" : "Mark Worked With"}
                       </button>
                     )}
-                    <a href={`/sidebar?with=${userId}`} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      Message
-                    </a>
+                    {userId && !blockedUserIds.has(userId) && (
+                      <a href={`/sidebar?with=${userId}`} style={{ flex: 1, background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 10px", fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "center", textDecoration: "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        Message
+                      </a>
+                    )}
+                    <HideBlockUserButton
+                      targetUserId={userId}
+                      currentUserId={currentUserId}
+                      t={t}
+                      onBlocked={(blockedUserId) => {
+                        setBlockedUserIds((prev) => new Set([...prev, blockedUserId]));
+                        setPosts((prev) =>
+                          prev.filter((post) => (post.post_as_user_id ?? post.user_id) !== blockedUserId),
+                        );
+                      }}
+                    />
                   </div>
                 )}
 
@@ -6138,9 +6158,17 @@ export default function PublicProfilePage() {
                           isMobile={isMobile}
                           isDeleting={deletingPostId === post.id}
                           isFlagging={flaggingId === post.id}
+                          authorUserId={postAuthorProfileId}
+                          currentUserId={currentUserId}
                           onEdit={() => startEditPost(post.id, post.content)}
                           onDelete={() => deleteWallPost(post.id)}
                           onFlag={() => openFlagModal(post.id)}
+                          onBlockedUser={(blockedUserId) => {
+                            setBlockedUserIds((prev) => new Set([...prev, blockedUserId]));
+                            setPosts((prev) =>
+                              prev.filter((row) => (row.post_as_user_id ?? row.user_id) !== blockedUserId),
+                            );
+                          }}
                         />
                       );
                     })()}

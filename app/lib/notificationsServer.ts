@@ -28,6 +28,18 @@ export async function createNotification(
   db: SupabaseClient,
   input: CreateNotificationInput,
 ): Promise<void> {
+  if (input.actorUserId && input.actorUserId !== input.recipientUserId) {
+    const { data: blockRows, error: blockError } = await db
+      .from("user_blocks")
+      .select("id")
+      .eq("blocker_id", input.recipientUserId)
+      .eq("blocked_id", input.actorUserId)
+      .limit(1);
+    if (!blockError && (blockRows?.length ?? 0) > 0) {
+      return;
+    }
+  }
+
   const { data, error } = await db.rpc("create_notification", {
     p_recipient_user_id: input.recipientUserId,
     p_actor_user_id: input.actorUserId ?? null,

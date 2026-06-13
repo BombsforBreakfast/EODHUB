@@ -35,6 +35,20 @@ export async function POST(req: NextRequest) {
   const p1 = user.id < otherId ? user.id : otherId;
   const p2 = user.id < otherId ? otherId : user.id;
 
+  const { data: blockRows, error: blockError } = await adminClient
+    .from("user_blocks")
+    .select("id")
+    .or(
+      `and(blocker_id.eq.${user.id},blocked_id.eq.${otherId}),and(blocker_id.eq.${otherId},blocked_id.eq.${user.id})`,
+    )
+    .limit(1);
+  if (blockError) {
+    return NextResponse.json({ error: blockError.message }, { status: 500 });
+  }
+  if ((blockRows?.length ?? 0) > 0) {
+    return NextResponse.json({ error: "Messaging is not available for this user." }, { status: 403 });
+  }
+
   const { data: existing, error: findErr } = await adminClient
     .from("conversations")
     .select("id, status")

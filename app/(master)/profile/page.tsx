@@ -5,6 +5,7 @@ import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import ReportProblemButton from "../../components/ReportProblemButton";
 import PrivacySettingsCard from "../../components/account/PrivacySettingsCard";
+import BlockedUsersCard from "../../components/account/BlockedUsersCard";
 import MemorialFeedPreferencesCard from "../../components/account/MemorialFeedPreferencesCard";
 import NotificationPreferencesCard from "../../components/account/NotificationPreferencesCard";
 import ChangePasswordSection from "../../components/account/ChangePasswordSection";
@@ -367,6 +368,7 @@ export default function MyAccountPage() {
 
           {/* Privacy */}
           {currentUserId && <PrivacySettingsCard userId={currentUserId} />}
+          {currentUserId && <BlockedUsersCard userId={currentUserId} />}
 
           {/* Email notifications */}
           {currentUserId && <NotificationPreferencesCard userId={currentUserId} />}

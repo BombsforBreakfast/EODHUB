@@ -7,6 +7,7 @@ import { useTheme } from "../lib/ThemeContext";
 import { LikerAvatar } from "./PostLikersStack";
 import { useOnlinePresence } from "./OnlinePresenceProvider";
 import { hasFullPlatformAccess, type VerificationProfile } from "../lib/verificationAccess";
+import { fetchBlockedUserIds } from "../lib/userBlocks";
 
 const AVATAR = 28; // 25% larger than the previous 22px strip avatars
 const AVATAR_OVERLAP = 6;
@@ -45,6 +46,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
   const { t } = useTheme();
   const { onlineUserIds } = useOnlinePresence();
   const [profiles, setProfiles] = useState<Map<string, ProfileRow>>(new Map());
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const [visibleCount, setVisibleCount] = useState(12);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [prefersHover, setPrefersHover] = useState(false);
@@ -54,7 +56,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
 
   const previewRows = useMemo(() => {
     if (!currentUserId) return [];
-    const others = onlineUserIds.filter((id) => id !== currentUserId);
+    const others = onlineUserIds.filter((id) => id !== currentUserId && !blockedUserIds.has(id));
     if (others.length === 0) return [];
     const ordered = others
       .map((id) => profiles.get(id))
@@ -67,7 +69,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
       )
       .sort((a, b) => displayName(a).localeCompare(displayName(b)));
     return ordered;
-  }, [currentUserId, onlineUserIds, profiles]);
+  }, [blockedUserIds, currentUserId, onlineUserIds, profiles]);
 
   const syncProfiles = useCallback(async (ids: string[]) => {
     if (ids.length === 0) {
@@ -90,6 +92,17 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     if (onlineUserIds.length === 0) return;
     void syncProfiles(onlineUserIds);
   }, [onlineUserIds, syncProfiles]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const ids = await fetchBlockedUserIds(supabase, currentUserId);
+      if (!cancelled) setBlockedUserIds(ids);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId]);
 
   useEffect(() => {
     const mq = window.matchMedia("(hover: hover) and (pointer: fine)");

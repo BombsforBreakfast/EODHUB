@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import HideBlockUserButton from "./HideBlockUserButton";
 
 type ThemeLike = {
   text: string;
@@ -26,10 +27,13 @@ type FeedPostHeaderProps = {
 
   isDeleting: boolean;
   isFlagging: boolean;
+  authorUserId?: string | null;
+  currentUserId?: string | null;
 
   onEdit: () => void;
   onDelete: () => void;
   onFlag: () => void;
+  onBlockedUser?: (blockedUserId: string) => void;
 };
 
 export default function FeedPostHeader({
@@ -47,24 +51,32 @@ export default function FeedPostHeader({
   isMobile,
   isDeleting,
   isFlagging,
+  authorUserId,
+  currentUserId,
   onEdit,
   onDelete,
   onFlag,
+  onBlockedUser,
 }: FeedPostHeaderProps) {
   const [mobileOwnerMenuOpen, setMobileOwnerMenuOpen] = useState(false);
+  const [viewerMenuOpen, setViewerMenuOpen] = useState(false);
   const hasOwnerActions = canEdit || canDelete;
   const showCollapsedOwnerMenu = isMobile && hasOwnerActions;
   const ownerMenuRef = useRef<HTMLDivElement | null>(null);
+  const showViewerActions = !isOwnPost && !canDelete;
 
   useEffect(() => {
-    if (!mobileOwnerMenuOpen) return;
+    if (!mobileOwnerMenuOpen && !viewerMenuOpen) return;
     const onDocPointer = (e: PointerEvent) => {
       const el = ownerMenuRef.current;
-      if (!el?.contains(e.target as Node)) setMobileOwnerMenuOpen(false);
+      if (!el?.contains(e.target as Node)) {
+        setMobileOwnerMenuOpen(false);
+        setViewerMenuOpen(false);
+      }
     };
     document.addEventListener("pointerdown", onDocPointer, true);
     return () => document.removeEventListener("pointerdown", onDocPointer, true);
-  }, [mobileOwnerMenuOpen]);
+  }, [mobileOwnerMenuOpen, viewerMenuOpen]);
 
   return (
     <div
@@ -282,24 +294,79 @@ export default function FeedPostHeader({
           </>
         )}
 
-        {!isOwnPost && !canDelete && (
-          <button
-            type="button"
-            onClick={onFlag}
-            disabled={isFlagging}
-            title="Flag for review"
-            style={{
-              background: "transparent",
-              border: "none",
-              padding: "0 2px",
-              cursor: isFlagging ? "not-allowed" : "pointer",
-              color: t.textFaint,
-              fontSize: 15,
-              lineHeight: 1,
-            }}
-          >
-            ...
-          </button>
+        {showViewerActions && (
+          <>
+            <button
+              type="button"
+              onClick={() => setViewerMenuOpen((open) => !open)}
+              disabled={isFlagging}
+              title="Post actions"
+              aria-expanded={viewerMenuOpen}
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: "0 2px",
+                cursor: isFlagging ? "not-allowed" : "pointer",
+                color: t.textFaint,
+                fontSize: 15,
+                lineHeight: 1,
+              }}
+            >
+              ...
+            </button>
+            {viewerMenuOpen && (
+              <div
+                role="menu"
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  right: 0,
+                  marginTop: 6,
+                  display: "grid",
+                  gap: 6,
+                  minWidth: 150,
+                  border: `1px solid ${t.border}`,
+                  borderRadius: 10,
+                  padding: 8,
+                  background: t.surface,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                  zIndex: 5,
+                  maxWidth: "min(240px, 85vw)",
+                }}
+              >
+                <HideBlockUserButton
+                  targetUserId={authorUserId}
+                  currentUserId={currentUserId}
+                  t={t}
+                  compact
+                  onBlocked={(blockedUserId) => {
+                    setViewerMenuOpen(false);
+                    onBlockedUser?.(blockedUserId);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewerMenuOpen(false);
+                    onFlag();
+                  }}
+                  disabled={isFlagging}
+                  style={{
+                    background: "transparent",
+                    border: "none",
+                    padding: "4px 0",
+                    textAlign: "left",
+                    cursor: isFlagging ? "not-allowed" : "pointer",
+                    color: t.textMuted,
+                    fontWeight: 700,
+                    opacity: isFlagging ? 0.6 : 1,
+                  }}
+                >
+                  {isFlagging ? "Reporting…" : "Report Post"}
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

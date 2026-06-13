@@ -11,6 +11,7 @@ import {
   type UserDirectoryProfileRow,
 } from "../userDirectory";
 import { queryKeys } from "../queryKeys";
+import { fetchBlockedUserIds, filterBlockedRows } from "../userBlocks";
 
 export const USER_DIRECTORY_STALE_MS = 5 * 60_000;
 
@@ -57,7 +58,12 @@ export async function fetchUserDirectoryMembers(
   const { data: profileRows, error: profileError } = await profileQuery;
   if (profileError) throw profileError;
 
-  const profiles = (profileRows ?? []) as UserDirectoryProfileRow[];
+  const blockedUserIds = await fetchBlockedUserIds(supabase, viewerId);
+  const profiles = filterBlockedRows(
+    (profileRows ?? []) as UserDirectoryProfileRow[],
+    blockedUserIds,
+    (profile) => profile.user_id,
+  );
   if (!viewerId) return attachKnowStatus(profiles, new Map());
 
   const { data: connRows, error: connError } = await supabase
