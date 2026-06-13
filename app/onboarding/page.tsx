@@ -233,10 +233,10 @@ export default function OnboardingPage() {
         return;
       }
 
-      // Pre-fill name from Google OAuth metadata
-      const googleName = user.user_metadata?.full_name || user.user_metadata?.name;
-      if (googleName) {
-        setNameFieldsFromFullName(String(googleName).trim());
+      // Pre-fill name from OAuth metadata (Google, Apple, etc.)
+      const oauthName = user.user_metadata?.full_name || user.user_metadata?.name;
+      if (oauthName) {
+        setNameFieldsFromFullName(String(oauthName).trim());
       }
 
       // Check for duplicate accounts sharing this email (e.g. Google + email/password)
@@ -338,8 +338,8 @@ export default function OnboardingPage() {
     check();
   }, [authLoading, authUser]);
 
-  async function redirectAfterOnboarding(isGoogle: boolean) {
-    if (isGoogle) {
+  async function redirectAfterOnboarding(skipsEmailVerification: boolean) {
+    if (skipsEmailVerification) {
       devAuthLog("onboarding", { step: "redirect_pending_oauth", userId });
       window.location.href = "/pending";
       return;
@@ -428,6 +428,7 @@ export default function OnboardingPage() {
         error?: string;
         verification_status?: string;
         wasProvisioned?: boolean;
+        isTrustedOAuth?: boolean;
         isGoogle?: boolean;
       };
 
@@ -441,7 +442,7 @@ export default function OnboardingPage() {
         step: "profile_updated",
         userId,
         verification_status: saveJson.verification_status,
-        isGoogle: saveJson.isGoogle,
+        isTrustedOAuth: saveJson.isTrustedOAuth ?? saveJson.isGoogle,
       });
 
       if (saveJson.wasProvisioned) {
@@ -467,7 +468,7 @@ export default function OnboardingPage() {
 
       clearStoredReferral();
 
-      await redirectAfterOnboarding(!!saveJson.isGoogle);
+      await redirectAfterOnboarding(!!(saveJson.isTrustedOAuth ?? saveJson.isGoogle));
     } finally {
       setSubmitting(false);
     }
@@ -485,14 +486,16 @@ export default function OnboardingPage() {
 
   if (duplicateProviders) {
     const hasEmail = duplicateProviders.includes("email");
-    const hasGoogle = duplicateProviders.includes("google");
+    const oauthMethods = duplicateProviders
+      .filter((p) => p !== "email")
+      .map((p) => (p === "google" ? "Google" : p === "apple" ? "Apple" : p));
     const existingMethod =
-      hasEmail && hasGoogle
-        ? "email & password and Google (on a separate login record)"
+      hasEmail && oauthMethods.length > 0
+        ? `email & password and ${oauthMethods.join(" / ")} (on a separate login record)`
         : hasEmail
           ? "email & password"
-          : hasGoogle
-            ? "Google"
+          : oauthMethods.length > 0
+            ? oauthMethods.join(" / ")
             : duplicateProviders.join(", ");
     return (
       <div className="onboarding-page-shell" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>

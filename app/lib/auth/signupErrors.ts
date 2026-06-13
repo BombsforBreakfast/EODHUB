@@ -3,6 +3,8 @@
  * Never expose raw Supabase or internal error strings in the UI.
  */
 
+import { formatOAuthProviderLabel } from "./oauthProviders";
+
 export type SignupErrorCode =
   | "invalid_syntax"
   | "disposable_domain"
@@ -26,23 +28,23 @@ export const SIGNUP_USER_MESSAGES: Record<
   account_exists_login:
     "An account with this email already exists. Please log in to continue setting up your account.",
   oauth_account_exists:
-    "This email is already linked to a Google account. Use \"Sign in with Google\" to continue, or tap \"Email me a setup link\" below to add a password — both methods sign you into the same account.",
+    "This email is already linked to a social sign-in account. Use the matching sign-in button to continue, or tap \"Email me a setup link\" below to add a password — both methods sign you into the same account.",
   pending_verification:
     "Your account is currently pending verification and approval.",
   security_check_failed:
-    "Security check failed. Please try again or use Sign up with Google.",
+    "Security check failed. Please try again or use Google or Apple sign-in.",
   rate_limited: "Too many attempts. Please wait a few minutes and try again.",
   generic: "Unable to create account. Please try again.",
 };
 
 /**
  * Build the provider-specific message for an existing OAuth account.
- * Falls back to the generic Google copy when providers is empty/unknown.
+ * Falls back to generic copy when providers is empty/unknown.
  */
 export function oauthAccountExistsMessage(providers: string[] | null | undefined): string {
   const labels = (providers ?? [])
     .filter((p): p is string => typeof p === "string" && p.length > 0 && p !== "email")
-    .map((p) => (p === "google" ? "Google" : p.charAt(0).toUpperCase() + p.slice(1)));
+    .map((p) => formatOAuthProviderLabel(p));
   if (labels.length === 0) return SIGNUP_USER_MESSAGES.oauth_account_exists;
   const list = labels.length === 1 ? labels[0] : labels.slice(0, -1).join(", ") + " or " + labels[labels.length - 1];
   return (

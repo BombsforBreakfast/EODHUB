@@ -1,0 +1,62 @@
+# EOD-Hub iOS — cloud Mac builds (no local Mac required).
+# Setup: docs/ios-app-store-setup.md
+
+workflows:
+  eod-hub-ios:
+    name: EOD-Hub iOS TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.eodhub.app
+      vars:
+        XCODE_WORKSPACE: ios/App/App.xcworkspace
+        XCODE_SCHEME: App
+        CAPACITOR_SERVER_URL: https://www.eod-hub.com
+      node: 20
+      xcode: latest
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    scripts:
+      - name: Install npm dependencies
+        script: npm ci
+      - name: Ensure iOS platform exists
+        script: |
+          if [ ! -d ios/App ]; then
+            npx cap add ios
+          fi
+      - name: Sync Capacitor iOS
+        script: npx cap sync ios
+      - name: Set production server URL in Capacitor config
+        script: |
+          node -e "
+          const fs = require('fs');
+          const url = process.env.CAPACITOR_SERVER_URL || 'https://www.eod-hub.com';
+          let cfg = fs.readFileSync('capacitor.config.ts', 'utf8');
+          cfg = cfg.replace(/server:\\s*\\{[^}]*\\}/, \"server: { url: '\" + url + \"', cleartext: false }\");
+          fs.writeFileSync('capacitor.config.ts', cfg);
+          "
+          npx cap sync ios
+      - name: Increment build number
+        script: |
+          cd ios/App
+          agvtool new-version -all $(($BUILD_NUMBER))
+      - name: Build ipa for App Store
+        script: |
+          xcode-project build-ipa \
+            --workspace "$XCODE_WORKSPACE" \
+            --scheme "$XCODE_SCHEME"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - Internal Testers

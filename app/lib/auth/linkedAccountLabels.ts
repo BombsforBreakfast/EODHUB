@@ -22,9 +22,10 @@ export type LinkedAccountSummary = {
   photoUrl: string | null;
 };
 
+import { formatOAuthProviderLabel } from "./oauthProviders";
+
 function formatProviders(providers: string[]): string {
-  const pretty = providers.map((p) => (p === "email" ? "Email & password" : p === "google" ? "Google" : p));
-  return pretty.join(" · ");
+  return providers.map((p) => formatOAuthProviderLabel(p)).join(" · ");
 }
 
 export function buildLinkedAccountSummary(

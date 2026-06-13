@@ -11,9 +11,17 @@
     "check:image-transforms": "node scripts/check-supabase-image-transforms.mjs",
     "test:feed-ranking": "tsx scripts/verify-feed-ranking.ts",
     "test:news": "tsx app/lib/news/goldenLasd.verify.ts",
-    "refresh:disposable": "node scripts/fetch-disposable-domains.mjs"
+    "refresh:disposable": "node scripts/fetch-disposable-domains.mjs",
+    "cap:sync": "npx cap sync",
+    "cap:sync:ios": "npx cap sync ios",
+    "cap:open:ios": "npx cap open ios"
   },
   "dependencies": {
+    "@capacitor/app": "^7.0.1",
+    "@capacitor/browser": "^7.0.1",
+    "@capacitor/core": "^7.0.1",
+    "@capacitor/push-notifications": "^7.0.1",
+    "@capacitor/splash-screen": "^7.0.1",
     "@emoji-mart/data": "^1.2.1",
     "@emoji-mart/react": "^1.1.1",
     "@marsidev/react-turnstile": "^1.5.0",
@@ -34,6 +42,8 @@
     "stripe": "^21.0.1"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.0.1",
+    "@capacitor/ios": "^7.0.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

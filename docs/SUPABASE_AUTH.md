@@ -14,6 +14,10 @@ With auto-confirm enabled, password signups receive a session immediately and pr
 
 Google signups skip the Resend verification step; their profile is set to `email_verified = true` at onboarding completion and enter `pending_admin_review` directly.
 
+## Apple Sign In
+
+See **[APPLE_AUTH.md](./APPLE_AUTH.md)** for Apple Developer + Supabase provider setup. Apple signups follow the same trusted-OAuth path as Google (skip Resend, go to `/pending` after onboarding).
+
 ## Migration
 
 Apply `supabase/migrations/20260519120000_email_verification.sql` to add `email_verified`, `admin_verified`, `email_verified_at`, and `email_verification_tokens`.

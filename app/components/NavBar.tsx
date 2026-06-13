@@ -19,6 +19,7 @@ import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 import { canClickArcadeNav } from "../lib/arcadeAccess";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
+import { isNativeApp } from "../lib/native/isNativeApp";
 import {
   businessListingSearchBadge,
   loadBusinessListingProfileLinks,
@@ -90,6 +91,9 @@ export default function NavBar() {
 
   /** Mobile breakpoint — fixed nav + layout. */
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
+
+  /** Native iOS shell: hide admin/employer tools tuned for desktop workflows. */
+  const hideDesktopOnlyHubLinks = isNativeApp();
 
   const [showNotifPanel, setShowNotifPanel] = useState(false);
 
@@ -953,10 +957,10 @@ export default function NavBar() {
                     ...(canAccessRabbithole
                       ? [{ label: "Rabbithole", href: "/rabbithole", emoji: "🐇", badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
-                    ...(isEmployer || isAdmin
+                    ...(!hideDesktopOnlyHubLinks && (isEmployer || isAdmin)
                       ? [{ label: "Employer Dashboard", href: "/employer", emoji: "🎯", badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
-                    ...(isAdmin
+                    ...(!hideDesktopOnlyHubLinks && isAdmin
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),
                     { label: "Sidebars", href: "/sidebar", emoji: "💬", badge: 0, onNav: null },

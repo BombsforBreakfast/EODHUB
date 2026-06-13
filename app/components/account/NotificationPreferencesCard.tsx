@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
+import { isNativeApp } from "../../lib/native/isNativeApp";
 
 type DigestFrequency = "twice_daily" | "daily" | "off";
 
 type NotificationPreferenceState = {
   email_notifications: boolean;
+  push_notifications: boolean;
   morning_digest: boolean;
   evening_digest: boolean;
   timezone: string;
@@ -16,6 +18,7 @@ type NotificationPreferenceState = {
 
 const DEFAULTS: NotificationPreferenceState = {
   email_notifications: true,
+  push_notifications: true,
   morning_digest: true,
   evening_digest: true,
   timezone: "America/New_York",
@@ -38,7 +41,7 @@ export default function NotificationPreferencesCard({ userId }: { userId: string
 
       const { data, error: err } = await supabase
         .from("notification_preferences")
-        .select("email_notifications, morning_digest, evening_digest, timezone, digest_frequency")
+        .select("email_notifications, push_notifications, morning_digest, evening_digest, timezone, digest_frequency")
         .eq("user_id", userId)
         .maybeSingle();
 
@@ -49,6 +52,7 @@ export default function NotificationPreferencesCard({ userId }: { userId: string
       } else if (data) {
         setState({
           email_notifications: data.email_notifications ?? DEFAULTS.email_notifications,
+          push_notifications: data.push_notifications ?? DEFAULTS.push_notifications,
           morning_digest: data.morning_digest ?? DEFAULTS.morning_digest,
           evening_digest: data.evening_digest ?? DEFAULTS.evening_digest,
           timezone: data.timezone ?? DEFAULTS.timezone,
@@ -132,6 +136,19 @@ export default function NotificationPreferencesCard({ userId }: { userId: string
         value={state.email_notifications}
         onChange={(value) => update("email_notifications", value)}
         saving={saving === "email_notifications"}
+      />
+
+      <ToggleRow
+        t={t}
+        label="Push notifications"
+        description={
+          isNativeApp()
+            ? "Alerts on this device for messages, mentions, and replies."
+            : "Applies to the EOD-Hub iOS app when signed in on your phone."
+        }
+        value={state.push_notifications}
+        onChange={(value) => update("push_notifications", value)}
+        saving={saving === "push_notifications"}
       />
 
       <ChoiceRow

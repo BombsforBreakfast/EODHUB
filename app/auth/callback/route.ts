@@ -10,11 +10,12 @@ import {
 } from "@/app/lib/onboardingGate";
 import { clearFailedAuthReportsOnSuccessfulLogin } from "@/app/lib/server/clearFailedAuthReportsOnLogin";
 import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
+import { resolveAuthUserEmail } from "@/app/lib/auth/oauthProviders";
 
 /**
  * Server-side OAuth callback handler (Supabase PKCE flow).
  *
- * Supabase redirects here with ?code=... after Google auth completes.
+ * Supabase redirects here with ?code=... after OAuth (Google, Apple, etc.) completes.
  * We exchange the code for a session server-side so the auth cookies are
  * set on the redirect response — the middleware sees a valid session on
  * the very next request and won't redirect back to /login.
@@ -66,15 +67,25 @@ export async function GET(request: NextRequest) {
 
       const { client: adminClient } = createSupabaseServiceRoleClient();
       if (adminClient) {
-        const oauthEmail = sessionData.user?.email;
+        const oauthEmail = resolveAuthUserEmail(sessionData.user);
         const userId = sessionData.user?.id;
         if (userId && oauthEmail) {
-          // Await the stub so the routing read below sees the profile row.
-          await ensureProfileStubForUser(adminClient, userId, oauthEmail);
+          const stub = await ensureProfileStubForUser(adminClient, userId, oauthEmail);
+          if (!stub.ok) {
+            void logFailedAuthAttempt({
+              emailAttempted: oauthEmail,
+              failureReason: "PROFILE_CREATION_FAILED",
+              errorCode: "ensure_profile_stub_failed",
+              rawErrorMessage: stub.error,
+              sourceRoute: "/auth/callback",
+              request,
+            });
+            return NextResponse.redirect(`${origin}/login?error=auth`);
+          }
 
           const nextUrl = new URL(next, origin);
           if (nextUrl.pathname === "/business-org/onboarding" && nextUrl.searchParams.get("business_oauth") === "google") {
-            void adminClient.auth.admin.updateUserById(userId, {
+            await adminClient.auth.admin.updateUserById(userId, {
               app_metadata: {
                 ...(sessionData.user.app_metadata ?? {}),
                 account_kind: "business_organization_page",
