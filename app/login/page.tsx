@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff } from "lucide-react";
+import { ChevronDown, Eye, EyeOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { User } from "@supabase/supabase-js";
 import { supabase } from "../lib/lib/supabaseClient";
@@ -111,6 +111,7 @@ export default function LoginPage() {
   const [highlightSignupCta, setHighlightSignupCta] = useState(false);
   const [signupCtaReducedMotion, setSignupCtaReducedMotion] = useState(false);
   const [appleHelperOpen, setAppleHelperOpen] = useState(false);
+  const [appleHideEmailInfoOpen, setAppleHideEmailInfoOpen] = useState(false);
   const [businessOrgPromptOpen, setBusinessOrgPromptOpen] = useState(false);
   const [businessOrgEmailGateOpen, setBusinessOrgEmailGateOpen] = useState(false);
   const [businessOrgEmail, setBusinessOrgEmail] = useState("");
@@ -407,6 +408,7 @@ export default function LoginPage() {
    * don't accidentally create a duplicate via Apple Private Relay.
    */
   function openAppleAuthHelper() {
+    setAppleHideEmailInfoOpen(false);
     setAppleHelperOpen(true);
   }
 
@@ -1241,6 +1243,84 @@ export default function LoginPage() {
                 </p>
               </div>
             </div>
+
+            {/* Secondary, collapsed-by-default disclosure: educate without adding friction */}
+            <div
+              style={{
+                marginTop: 14,
+                borderTop: `1px solid ${t.border}`,
+                paddingTop: 12,
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setAppleHideEmailInfoOpen((prev) => !prev)}
+                aria-expanded={appleHideEmailInfoOpen}
+                aria-controls="apple-hide-email-info"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  width: "100%",
+                  background: "none",
+                  border: "none",
+                  padding: "4px 0",
+                  cursor: "pointer",
+                  color: t.textMuted,
+                  fontSize: 13,
+                  fontWeight: 700,
+                  textAlign: "left",
+                }}
+              >
+                <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>ℹ️</span>
+                <span style={{ flex: 1 }}>About Apple&apos;s Hide My Email option</span>
+                <ChevronDown
+                  size={16}
+                  strokeWidth={2.5}
+                  aria-hidden
+                  style={{
+                    flexShrink: 0,
+                    transition: "transform 0.2s ease",
+                    transform: appleHideEmailInfoOpen ? "rotate(180deg)" : "rotate(0deg)",
+                  }}
+                />
+              </button>
+              {appleHideEmailInfoOpen && (
+                <div
+                  id="apple-hide-email-info"
+                  role="region"
+                  aria-label="About Apple's Hide My Email option"
+                  style={{
+                    marginTop: 10,
+                    display: "grid",
+                    gap: 10,
+                    fontSize: 13,
+                    lineHeight: 1.55,
+                    color: t.textMuted,
+                  }}
+                >
+                  <p style={{ margin: 0 }}>
+                    Apple gives you the option to share your email address or use a private relay
+                    email when signing in.
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    If you already have an EOD-HUB account and choose &quot;Hide My Email&quot; before
+                    linking Apple Auth under <strong>Settings → Sign-In Methods → Apple Auth</strong>,
+                    Apple may provide a different email address than the one associated with your
+                    existing account. This could result in an unintended duplicate account.
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    If you already use EOD-HUB, we recommend logging in with your current method first
+                    and linking Apple Auth from Settings before using Apple sign-in.
+                  </p>
+                  <p style={{ margin: 0 }}>
+                    For new users creating an account for the first time, either option will work
+                    normally.
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
               <button
                 type="button"
