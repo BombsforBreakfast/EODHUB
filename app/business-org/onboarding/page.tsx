@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import { prepareLogoUploadFile } from "../../lib/prepareUploadFile";
+import { signInWithOAuthProvider } from "../../lib/auth/oauthSignIn";
 
 type Step = "login" | "profile";
 type CompletionState = {
@@ -153,14 +154,8 @@ export default function BusinessOrgOnboardingPage() {
       setError("Validate and carry forward the linked EOD-HUB user email first.");
       return;
     }
-    const origin = window.location.origin;
     const next = `/business-org/onboarding?linked_email=${encodeURIComponent(form.linked_account_email.trim().toLowerCase())}&business_oauth=google`;
-    void supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
-      },
-    });
+    void signInWithOAuthProvider(supabase, "google", { nextPath: next });
   }
 
   async function uploadLogo(file: File) {

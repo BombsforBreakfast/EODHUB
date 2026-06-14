@@ -262,14 +262,10 @@ export default function LoginPage() {
       return;
     }
     clearAppAuthState();
-    const origin = window.location.origin;
     const next = `/business-org/onboarding?linked_email=${encodeURIComponent(ownerEmail)}`;
-    void supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}`,
-        queryParams: { login_hint: ownerEmail },
-      },
+    void signInWithOAuthProvider(supabase, "google", {
+      nextPath: next,
+      loginHint: ownerEmail,
     });
   }
 

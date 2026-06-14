@@ -3,10 +3,24 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { isNativeApp } from "../lib/native/isNativeApp";
+import { resolveNativeAppUrlOpenTarget } from "../lib/native/nativeOAuthRedirect";
 import { getNotificationHref } from "../lib/notificationNavigation";
 import { supabase } from "../lib/lib/supabaseClient";
 
 let pushListenersRegistered = false;
+
+const PRODUCTION_ORIGIN = "https://www.eod-hub.com";
+
+function recoverBlankWebView() {
+  if (window.location.href === "about:blank") {
+    window.location.replace(PRODUCTION_ORIGIN);
+    return;
+  }
+  const root = document.getElementById("__next");
+  if (root && root.childElementCount === 0) {
+    window.location.replace(window.location.origin + "/");
+  }
+}
 
 /**
  * Boots Capacitor-only behavior: push registration, notification taps, OAuth deep links.
@@ -41,22 +55,47 @@ export default function NativeShellBridge() {
 
       if (cancelled) return;
 
-      App.addListener("appUrlOpen", (event) => {
+      async function closeInAppBrowser() {
         try {
-          const opened = new URL(event.url);
-          if (opened.host.includes("eod-hub.com") || opened.pathname.startsWith("/auth/")) {
-            const target = `${opened.pathname}${opened.search}${opened.hash}`;
-            router.push(target || "/");
-          }
+          await Browser.close();
         } catch {
-          /* ignore malformed URLs */
+          /* already closed */
         }
+      }
+
+      App.addListener("appUrlOpen", (event) => {
+        const target = resolveNativeAppUrlOpenTarget(event.url);
+        if (!target) return;
+        void closeInAppBrowser().then(() => {
+          router.push(target);
+        });
       });
 
+      App.addListener("appStateChange", ({ isActive }) => {
+        if (!isActive) return;
+        void closeInAppBrowser();
+        window.setTimeout(recoverBlankWebView, 150);
+      });
+
+      Browser.addListener("browserFinished", () => {
+        window.setTimeout(recoverBlankWebView, 150);
+      });
+
+      const openExternalUrl = async (url: string) => {
+        await Browser.open({ url });
+      };
+
       (window as Window & { openExternalUrl?: (url: string) => Promise<void> }).openExternalUrl =
-        async (url: string) => {
-          await Browser.open({ url });
-        };
+        openExternalUrl;
+
+      const originalWindowOpen = window.open.bind(window);
+      window.open = (url?: string | URL, target?: string, features?: string) => {
+        if (url && (!target || target === "_blank")) {
+          void openExternalUrl(String(url));
+          return null;
+        }
+        return originalWindowOpen(url, target, features);
+      };
 
       if (!Capacitor.isPluginAvailable("PushNotifications")) return;
 

@@ -1,12 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OAuthRedirectProvider } from "./oauthProviders";
+import { isNativeApp } from "../native/isNativeApp";
+import { buildNativeOAuthCallbackRedirect } from "../native/nativeOAuthRedirect";
 
 export function buildOAuthCallbackRedirect(nextPath: string): string {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   return `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
 }
 
-export function signInWithOAuthProvider(
+export async function signInWithOAuthProvider(
   supabase: SupabaseClient,
   provider: OAuthRedirectProvider,
   options?: {
@@ -16,12 +18,29 @@ export function signInWithOAuthProvider(
   },
 ) {
   const nextPath = options?.nextPath ?? "/onboarding";
-  const redirectTo = buildOAuthCallbackRedirect(nextPath);
   const queryParams = { ...(options?.queryParams ?? {}) };
   if (options?.loginHint?.includes("@") && provider === "google") {
     queryParams.login_hint = options.loginHint;
   }
 
+  if (typeof window !== "undefined" && isNativeApp()) {
+    const redirectTo = buildNativeOAuthCallbackRedirect(nextPath);
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo,
+        skipBrowserRedirect: true,
+        ...(Object.keys(queryParams).length > 0 ? { queryParams } : {}),
+      },
+    });
+    if (!error && data?.url) {
+      const { Browser } = await import("@capacitor/browser");
+      await Browser.open({ url: data.url });
+    }
+    return { data, error };
+  }
+
+  const redirectTo = buildOAuthCallbackRedirect(nextPath);
   return supabase.auth.signInWithOAuth({
     provider,
     options: {

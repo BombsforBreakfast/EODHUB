@@ -106,6 +106,32 @@ Codemagic will:
 
 Install via TestFlight on a physical iPhone (push does not work in Simulator).
 
+## 5a. Native app vs Safari home-screen icon
+
+The TestFlight app and a Safari **Add to Home Screen** shortcut can look similar but behave differently:
+
+| | TestFlight / App Store app | Safari home-screen shortcut |
+|--|--|--|
+| Opens in | In-app WebView (no address bar) | Safari (or standalone Safari tab) |
+| Sign-in session | Separate from Safari cookies | Same as Safari |
+| OAuth return | `com.eodhub.app://` deep link back to the app | Stays in Safari |
+
+If tapping the icon opens Safari with a URL bar, you are likely using the **web shortcut**, not the TestFlight build. Install from the **TestFlight** app → **EOD-Hub** → **Install**, then open **EOD-Hub** from the home screen (not a bookmark).
+
+### OAuth / black screen after sign-in
+
+Google and Apple sign-in open a **system browser sheet** briefly (looks like Safari). The app must receive the callback via custom URL scheme `com.eodhub.app://auth/callback`.
+
+**Supabase Dashboard** → **Authentication** → **URL Configuration** → **Redirect URLs** — add:
+
+```
+com.eodhub.app://auth/callback
+```
+
+Keep the existing `https://eod-hub.com/auth/callback` (and `https://www.eod-hub.com/auth/callback`) entries for web.
+
+After changing native OAuth wiring or `Info.plist` URL schemes, ship a **new TestFlight build** (Codemagic on `main`). Web-side auth fixes deploy with the normal Vercel production deploy.
+
 ## 6. Demo account for App Review
 
 Create a reviewer-safe account and add credentials in App Store Connect → **App Review Information**:
