@@ -4,7 +4,7 @@ import {
   resolveLoginRedirectPath,
   shouldRedirectToOnboarding,
   type OnboardingGateProfile,
-} from "../auth/onboardingGate";
+} from "../onboardingGate";
 import {
   clearLoginRedirectAttempts,
   consumeOAuthRememberPending,
