@@ -58,3 +58,46 @@ export async function signInWithOAuthProvider(
     },
   });
 }
+
+/**
+ * Link an OAuth provider to the currently signed-in account.
+ *
+ * On native (Capacitor): opens the in-app auth sheet and routes the callback
+ * back through the same HTTPS bridge → custom scheme → in-WebView PKCE exchange
+ * used by login, so linking never hands off to Safari.
+ *
+ * On web: standard in-page redirect to the provider.
+ */
+export async function linkOAuthIdentity(
+  supabase: SupabaseClient,
+  provider: OAuthRedirectProvider,
+  nextPath: string,
+) {
+  if (typeof window !== "undefined" && isNativeApp()) {
+    const redirectTo = buildNativeOAuthRedirectTo(nextPath);
+    console.info("[oauthSignIn] native link start", { provider, redirectTo, nextPath });
+
+    const { data, error } = await supabase.auth.linkIdentity({
+      provider,
+      options: { redirectTo, skipBrowserRedirect: true },
+    });
+
+    if (error) {
+      console.warn("[oauthSignIn] native link error", error.message);
+      return { data, error };
+    }
+
+    if (data?.url) {
+      const { Browser } = await import("@capacitor/browser");
+      await Browser.open({ url: data.url });
+    }
+    return { data, error };
+  }
+
+  const redirectTo = `${window.location.origin}${nextPath}`;
+  console.info("[oauthSignIn] web link start", { provider, redirectTo, nextPath });
+  return supabase.auth.linkIdentity({
+    provider,
+    options: { redirectTo },
+  });
+}

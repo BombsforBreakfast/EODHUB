@@ -14,6 +14,7 @@ import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from
 import { isPaywallEnforced, memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { hasPublicMemberProfile } from "../../lib/pureAdminAllowlist";
 import EmployerAccountCardDetails from "../../components/profile/EmployerAccountCardDetails";
+import { linkOAuthIdentity } from "../../lib/auth/oauthSignIn";
 
 function BillingCard({ hasActiveMembership }: { hasActiveMembership: boolean }) {
   const { t } = useTheme();
@@ -322,10 +323,7 @@ export default function MyAccountPage() {
                   <button
                     onClick={async () => {
                       setLinkingGoogle(true);
-                      await supabase.auth.linkIdentity({
-                        provider: "google",
-                        options: { redirectTo: `${window.location.origin}/profile?linked=google` },
-                      });
+                      await linkOAuthIdentity(supabase, "google", "/profile?linked=google");
                       setLinkingGoogle(false);
                     }}
                     disabled={linkingGoogle}
@@ -351,10 +349,7 @@ export default function MyAccountPage() {
                   <button
                     onClick={async () => {
                       setLinkingApple(true);
-                      await supabase.auth.linkIdentity({
-                        provider: "apple",
-                        options: { redirectTo: `${window.location.origin}/profile?linked=apple` },
-                      });
+                      await linkOAuthIdentity(supabase, "apple", "/profile?linked=apple");
                       setLinkingApple(false);
                     }}
                     disabled={linkingApple}
