@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OAuthRedirectProvider } from "./oauthProviders";
 import { isNativeApp } from "../native/isNativeApp";
-import { buildNativeOAuthCallbackRedirect } from "../native/nativeOAuthRedirect";
+import { buildNativeOAuthRedirectTo } from "../native/nativeOAuthRedirect";
 
 export function buildOAuthCallbackRedirect(nextPath: string): string {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
@@ -24,7 +24,9 @@ export async function signInWithOAuthProvider(
   }
 
   if (typeof window !== "undefined" && isNativeApp()) {
-    const redirectTo = buildNativeOAuthCallbackRedirect(nextPath);
+    const redirectTo = buildNativeOAuthRedirectTo(nextPath);
+    console.info("[oauthSignIn] native OAuth start", { provider, redirectTo, nextPath });
+
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
@@ -33,7 +35,13 @@ export async function signInWithOAuthProvider(
         ...(Object.keys(queryParams).length > 0 ? { queryParams } : {}),
       },
     });
-    if (!error && data?.url) {
+
+    if (error) {
+      console.warn("[oauthSignIn] native OAuth error", error.message);
+      return { data, error };
+    }
+
+    if (data?.url) {
       const { Browser } = await import("@capacitor/browser");
       await Browser.open({ url: data.url });
     }
@@ -41,6 +49,7 @@ export async function signInWithOAuthProvider(
   }
 
   const redirectTo = buildOAuthCallbackRedirect(nextPath);
+  console.info("[oauthSignIn] web OAuth start", { provider, redirectTo, nextPath });
   return supabase.auth.signInWithOAuth({
     provider,
     options: {

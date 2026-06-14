@@ -132,9 +132,11 @@ Google and Apple sign-in open a **system browser sheet** briefly (looks like Saf
 
 ```
 com.eodhub.app://auth/callback
+https://eod-hub.com/auth/app-callback
+https://eod-hub.com/auth/callback
 ```
 
-Keep the existing `https://eod-hub.com/auth/callback` (and `https://www.eod-hub.com/auth/callback`) entries for web.
+Native Google/Apple OAuth uses the HTTPS bridge (`/auth/app-callback`) inside the auth sheet, which hands off to `com.eodhub.app://auth/callback` so the main WebView can complete PKCE at `/auth/callback`.
 
 After changing native OAuth wiring or `Info.plist` URL schemes, ship a **new TestFlight build** (Codemagic on `main`). Web-side auth fixes deploy with the normal Vercel production deploy.
 

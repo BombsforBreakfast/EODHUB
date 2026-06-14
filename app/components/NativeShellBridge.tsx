@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { isNativeApp } from "../lib/native/isNativeApp";
-import { resolveNativeAppUrlOpenTarget } from "../lib/native/nativeOAuthRedirect";
+import { handleNativeOAuthReturn } from "../lib/native/completeNativeOAuthCallback";
 import { getNotificationHref } from "../lib/notificationNavigation";
 import { supabase } from "../lib/lib/supabaseClient";
 
@@ -77,12 +77,24 @@ export default function NativeShellBridge() {
         }
       }
 
-      App.addListener("appUrlOpen", (event) => {
-        const target = resolveNativeAppUrlOpenTarget(event.url);
-        if (!target) return;
-        void closeInAppBrowser().then(() => {
-          router.push(target);
+      async function onNativeDeepLink(rawUrl: string) {
+        await handleNativeOAuthReturn(rawUrl, {
+          closeBrowser: closeInAppBrowser,
+          navigate: (absoluteUrl) => {
+            window.location.assign(absoluteUrl);
+          },
+          clientRoute: (path) => {
+            router.push(path);
+          },
         });
+      }
+
+      App.addListener("appUrlOpen", (event) => {
+        void onNativeDeepLink(event.url);
+      });
+
+      void App.getLaunchUrl().then((launch) => {
+        if (launch?.url) void onNativeDeepLink(launch.url);
       });
 
       App.addListener("appStateChange", ({ isActive }) => {
