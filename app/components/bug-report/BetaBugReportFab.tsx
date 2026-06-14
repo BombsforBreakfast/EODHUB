@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useState } from "react";
 import BugReportDialog from "./BugReportDialog";
 
-const FAB_SIZE = 60;
+const FAB_SIZE = 30;
 
 export default function BetaBugReportFab() {
   const [open, setOpen] = useState(false);
