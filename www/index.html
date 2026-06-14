@@ -19,5 +19,13 @@
   </head>
   <body>
     <p>Loading EOD-Hub…</p>
+    <script>
+      // Bundled fallback only — remote server.url is primary. Recover if config is missing.
+      (function () {
+        var origin = "https://eod-hub.com";
+        console.info("[EOD-Hub shell] local fallback loading", origin);
+        window.location.replace(origin + "/");
+      })();
+    </script>
   </body>
 </html>

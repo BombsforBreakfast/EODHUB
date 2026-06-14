@@ -9,7 +9,12 @@ import { supabase } from "../lib/lib/supabaseClient";
 
 let pushListenersRegistered = false;
 
-const PRODUCTION_ORIGIN = "https://www.eod-hub.com";
+const PRODUCTION_ORIGIN = "https://eod-hub.com";
+
+function isEodHubHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return host === "eod-hub.com" || host.endsWith(".eod-hub.com");
+}
 
 function recoverBlankWebView() {
   if (window.location.href === "about:blank") {
@@ -18,7 +23,7 @@ function recoverBlankWebView() {
   }
   const root = document.getElementById("__next");
   if (root && root.childElementCount === 0) {
-    window.location.replace(window.location.origin + "/");
+    window.location.replace(PRODUCTION_ORIGIN);
   }
 }
 
@@ -41,19 +46,28 @@ export default function NativeShellBridge() {
     let cancelled = false;
 
     async function bootNativeShell() {
+      console.info("[NativeShellBridge] boot", {
+        href: window.location.href,
+        origin: window.location.origin,
+      });
+
       const [
         { Capacitor },
         { App },
         { PushNotifications },
         { Browser },
+        { SplashScreen },
       ] = await Promise.all([
         import("@capacitor/core"),
         import("@capacitor/app"),
         import("@capacitor/push-notifications"),
         import("@capacitor/browser"),
+        import("@capacitor/splash-screen"),
       ]);
 
       if (cancelled) return;
+
+      void SplashScreen.hide().catch(() => {});
 
       async function closeInAppBrowser() {
         try {
@@ -90,12 +104,41 @@ export default function NativeShellBridge() {
 
       const originalWindowOpen = window.open.bind(window);
       window.open = (url?: string | URL, target?: string, features?: string) => {
-        if (url && (!target || target === "_blank")) {
-          void openExternalUrl(String(url));
-          return null;
+        if (url) {
+          try {
+            const parsed = new URL(String(url), window.location.origin);
+            if (isEodHubHost(parsed.hostname)) {
+              window.location.assign(parsed.href);
+              return null;
+            }
+          } catch {
+            /* fall through */
+          }
+          if (!target || target === "_blank") {
+            void openExternalUrl(String(url));
+            return null;
+          }
         }
         return originalWindowOpen(url, target, features);
       };
+
+      document.addEventListener(
+        "click",
+        (event) => {
+          const anchor = (event.target as Element | null)?.closest("a[target='_blank']");
+          if (!(anchor instanceof HTMLAnchorElement) || !anchor.href) return;
+          try {
+            const parsed = new URL(anchor.href);
+            if (isEodHubHost(parsed.hostname)) {
+              event.preventDefault();
+              window.location.assign(parsed.href);
+            }
+          } catch {
+            /* ignore */
+          }
+        },
+        true,
+      );
 
       if (!Capacitor.isPluginAvailable("PushNotifications")) return;
 

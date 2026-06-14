@@ -15,7 +15,7 @@ workflows:
       vars:
         XCODE_WORKSPACE: ios/App/App.xcworkspace
         XCODE_SCHEME: App
-        CAPACITOR_SERVER_URL: https://www.eod-hub.com
+        CAPACITOR_SERVER_URL: https://eod-hub.com
       node: 20
       xcode: latest
     triggering:
@@ -36,14 +36,9 @@ workflows:
         script: npx cap sync ios
       - name: Set production server URL in Capacitor config
         script: |
-          node -e "
-          const fs = require('fs');
-          const url = process.env.CAPACITOR_SERVER_URL || 'https://www.eod-hub.com';
-          let cfg = fs.readFileSync('capacitor.config.ts', 'utf8');
-          cfg = cfg.replace(/server:\\s*\\{[^}]*\\}/, \"server: { url: '\" + url + \"', cleartext: false }\");
-          fs.writeFileSync('capacitor.config.ts', cfg);
-          "
+          node scripts/patch-capacitor-server-url.mjs
           npx cap sync ios
+          node scripts/verify-capacitor-ios-config.mjs
       - name: Increment build number
         script: |
           cd ios/App

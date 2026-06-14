@@ -118,6 +118,12 @@ The TestFlight app and a Safari **Add to Home Screen** shortcut can look similar
 
 If tapping the icon opens Safari with a URL bar, you are likely using the **web shortcut**, not the TestFlight build. Install from the **TestFlight** app → **EOD-Hub** → **Install**, then open **EOD-Hub** from the home screen (not a bookmark).
 
+### Why the native shell uses a remote URL (not a bundled static export)
+
+EOD-HUB is a full Next.js App Router app on Vercel (SSR, API routes, Supabase cookie auth). It cannot be statically exported into Capacitor's `webDir` without a major rewrite. The intentional architecture is a **thin Capacitor shell** whose WebView loads the live production site.
+
+**Critical:** `server.url` must be the **canonical** origin (`https://eod-hub.com`). If it points at `https://www.eod-hub.com`, Vercel 307-redirects to the apex domain. Capacitor iOS treats that redirect as an external navigation and opens **Safari**, leaving a blank WebView (black screen).
+
 ### OAuth / black screen after sign-in
 
 Google and Apple sign-in open a **system browser sheet** briefly (looks like Safari). The app must receive the callback via custom URL scheme `com.eodhub.app://auth/callback`.
@@ -137,4 +143,4 @@ After changing native OAuth wiring or `Info.plist` URL schemes, ship a **new Tes
 Create a reviewer-safe account and add credentials in App Store Connect → **App Review Information**:
 
 - Email / password for a member account with feed, messaging, and notifications enabled
-- Note that the app loads `https://www.eod-hub.com` and requires internet
+- Note that the app loads `https://eod-hub.com` and requires internet
