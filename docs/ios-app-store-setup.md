@@ -45,19 +45,60 @@ APNS_ENV=production
 
 For TestFlight/sandbox testing, set `APNS_ENV=sandbox` on preview deployments.
 
-## 4. Codemagic signing
+## 4. Codemagic signing and App Store Connect integration
 
 1. Create a [Codemagic](https://codemagic.io/) account and connect this GitHub repo.
-2. In Codemagic → **Teams** → **Code signing identities**:
-   - Upload or auto-generate **iOS Distribution Certificate**
-   - Create **App Store provisioning profile** for `com.eodhub.app` with Push Notifications enabled
-3. Add App Store Connect API key for upload:
-   - App Store Connect → **Users and Access** → **Integrations** → **App Store Connect API** → generate key
-   - Add to Codemagic as `APP_STORE_CONNECT_*` variables (see `codemagic.yaml` comments)
+2. Enable **codemagic.yaml** as the project configuration (not the UI workflow editor).
+
+### 4a. App Store Connect API key (Apple)
+
+1. [App Store Connect](https://appstoreconnect.apple.com) → **Users and Access** → **Integrations** → **App Store Connect API**
+2. **+** to generate a key (role **App Manager** or **Admin** is fine for TestFlight upload)
+3. Download the `.p8` file once (cannot re-download)
+4. Note the **Issuer ID** (top of Keys page) and **Key ID** (on the key row)
+
+### 4b. Apple Developer Portal integration (Codemagic)
+
+1. Codemagic → **Teams** → **Team integrations** (or **Personal account** → **Integrations**)
+2. **Apple Developer Portal** → add integration
+3. Paste Issuer ID, Key ID, and `.p8` contents
+4. Name the integration **`eodhub-asc`** — must match [`codemagic.yaml`](../codemagic.yaml):
+
+```yaml
+integrations:
+  app_store_connect: eodhub-asc
+```
+
+If you use a different name in the UI, update `codemagic.yaml` to match exactly.
+
+### 4c. iOS code signing (Codemagic)
+
+In **Teams** → **Code signing identities**:
+
+- Upload or auto-generate an **iOS Distribution Certificate**
+- Create an **App Store provisioning profile** for `com.eodhub.app` with **Push Notifications** enabled
+
+The workflow uses:
+
+```yaml
+environment:
+  ios_signing:
+    distribution_type: app_store
+    bundle_identifier: com.eodhub.app
+```
+
+### 4d. Validate yaml
+
+After pushing to `main`, open the app in Codemagic → **codemagic.yaml** tab. The red **Invalid yaml configuration** error should clear once `eodhub-asc` exists in Team integrations.
+
+**TestFlight beta group:** [`codemagic.yaml`](../codemagic.yaml) uses `Internal Testers`. That string must match a group name in App Store Connect → TestFlight → Internal Testing exactly (including capitalization).
 
 ## 5. First build
 
-Push to the branch configured in `codemagic.yaml`. Codemagic will:
+1. Complete sections 4a–4c above (API key, `eodhub-asc` integration, signing cert + profile)
+2. Push to `main` or click **Start new build** → workflow **EOD-Hub iOS TestFlight**
+
+Codemagic will:
 
 1. `npm ci`
 2. `npx cap sync ios`

@@ -4,6 +4,8 @@
 workflows:
   eod-hub-ios:
     name: EOD-Hub iOS TestFlight
+    integrations:
+      app_store_connect: eodhub-asc
     max_build_duration: 60
     instance_type: mac_mini_m2
     environment:
