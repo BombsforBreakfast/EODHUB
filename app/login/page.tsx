@@ -286,6 +286,12 @@ export default function LoginPage() {
 
     let cancelled = false;
     void (async () => {
+      if (params.get("error") === "auth") {
+        clearLoginRedirectAttempts();
+        await supabase.auth.signOut().catch(() => {});
+        return;
+      }
+
       const user = await loadRedirectableSessionUser();
       if (cancelled || !user) {
         // Genuinely signed out on the client — clear any stale bounce counter.

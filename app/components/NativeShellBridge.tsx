@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { isNativeApp } from "../lib/native/isNativeApp";
-import { handleNativeOAuthReturn } from "../lib/native/completeNativeOAuthCallback";
+import { handleNativeDeepLink } from "../lib/native/completeNativeOAuthCallback";
 import { getNotificationHref } from "../lib/notificationNavigation";
 import { supabase } from "../lib/lib/supabaseClient";
 
@@ -78,11 +78,8 @@ export default function NativeShellBridge() {
       }
 
       async function onNativeDeepLink(rawUrl: string) {
-        await handleNativeOAuthReturn(rawUrl, {
+        await handleNativeDeepLink(rawUrl, {
           closeBrowser: closeInAppBrowser,
-          navigate: (absoluteUrl) => {
-            window.location.assign(absoluteUrl);
-          },
           clientRoute: (path) => {
             router.push(path);
           },

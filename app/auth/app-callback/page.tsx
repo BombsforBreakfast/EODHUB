@@ -23,9 +23,11 @@ export default function NativeOAuthAppCallbackPage() {
       nativeShell: isNativeApp(),
     });
 
-    // Already in the main WebView (shouldn't happen during OAuth, but safe).
+    // Already in the main WebView — exchange here (bridge sheet uses custom scheme).
     if (isNativeApp()) {
-      window.location.replace(`/auth/callback${search}${hash}`);
+      void import("../../lib/native/completeNativeOAuthCallback").then(({ completeNativeOAuthFromDeepLink }) =>
+        completeNativeOAuthFromDeepLink(window.location.href, async () => {}),
+      );
       return;
     }
 
