@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { POST_AS_ADMIN_EMAIL } from "@/app/lib/postAsIdentity";
 
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
@@ -42,6 +43,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, inserted: 0, scanned: 0 });
   }
 
+  const { data: adminProfile, error: adminProfileErr } = await supabase
+    .from("profiles")
+    .select("user_id")
+    .ilike("email", POST_AS_ADMIN_EMAIL)
+    .maybeSingle();
+  if (adminProfileErr) {
+    return NextResponse.json({ error: adminProfileErr.message }, { status: 500 });
+  }
+  const adminUserId = (adminProfile as { user_id?: string | null } | null)?.user_id;
+  if (!adminUserId) {
+    return NextResponse.json({ error: "EOD-HUB admin profile not found." }, { status: 500 });
+  }
+
   const eventIds = eventRows.map((e) => e.id);
   const { data: existing, error: existingErr } = await supabase
     .from("posts")
@@ -60,7 +74,7 @@ export async function GET(req: NextRequest) {
   const inserts = eventRows
     .filter((e) => !existingSet.has(e.id))
     .map((e) => ({
-      user_id: e.user_id,
+      user_id: adminUserId,
       event_id: e.id,
       content_type: "event_scrapbook",
       content: `Share memories from ${e.title ?? "this event"}`,
