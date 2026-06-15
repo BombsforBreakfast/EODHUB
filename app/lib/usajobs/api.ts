@@ -1,6 +1,8 @@
 import { USAJOBS_DEFAULT_DATE_POSTED, USAJOBS_RESULTS_PER_PAGE } from "./intakeConfig";
 
 export type USAJobsApiItem = {
+  /** Numeric control number used in usajobs.gov/job/<id> links. */
+  MatchedObjectId?: string;
   MatchedObjectDescriptor: {
     PositionID: string;
     PositionTitle: string;

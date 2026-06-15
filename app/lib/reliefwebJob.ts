@@ -77,7 +77,7 @@ type ReliefWebJobFields = {
   country?: ReliefWebNamedRef[];
   city?: ReliefWebNamedRef[];
   theme?: ReliefWebNamedRef[];
-  career_category?: ReliefWebNamedRef[];
+  career_categories?: ReliefWebNamedRef[];
   date?: {
     created?: string;
     closing?: string;
@@ -158,7 +158,7 @@ export function normalizeReliefWebJob(raw: ReliefWebApiJob): NormalizedReliefWeb
   const countries = pickNames(f.country);
   const cities = pickNames(f.city);
   const themes = pickNames(f.theme);
-  const careerCategories = pickNames(f.career_category);
+  const careerCategories = pickNames(f.career_categories);
   const organization = sources[0] ?? "";
   const locationParts = [...cities, ...countries].filter(Boolean);
   const location = locationParts.length > 0 ? locationParts.join(", ") : "International";
@@ -205,7 +205,7 @@ export const RELIEFWEB_JOB_FIELD_INCLUDES = [
   "country.name",
   "city.name",
   "theme.name",
-  "career_category.name",
+  "career_categories.name",
   "date.created",
   "date.closing",
 ] as const;
@@ -289,6 +289,9 @@ async function postReliefWebJobs(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        // ReliefWeb/HDX blocks unidentified clients with HTTP 406. Identify the
+        // app explicitly (alongside the appname query param) to avoid bot blocks.
+        "User-Agent": `${appName} (+https://www.eod-hub.com; hello@eod-hub.com)`,
       },
       body: JSON.stringify(body),
     });

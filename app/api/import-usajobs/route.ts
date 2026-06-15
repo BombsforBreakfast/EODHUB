@@ -24,6 +24,12 @@ import {
   JOB_IMPORT_WRITE_CHUNK,
 } from "../../lib/jobImportBatch";
 
+// Multi-channel intake issues many sequential USAJobs API calls; give the cron
+// room to finish so DB writes/last_seen refresh aren't dropped to a timeout.
+// 800s is the Pro + Fluid Compute ceiling (default without this is 300s).
+export const runtime = "nodejs";
+export const maxDuration = 800;
+
 type USAJobCandidate = {
   positionId: string;
   title: string;
@@ -42,7 +48,9 @@ function toCandidate(
   relevanceScore: number
 ): USAJobCandidate | null {
   const pos = item.MatchedObjectDescriptor;
-  const positionId = pos.PositionID?.trim();
+  // MatchedObjectId is the numeric control number used in job URLs; PositionID
+  // is the agency announcement number (alphanumeric) and must not be used here.
+  const positionId = item.MatchedObjectId?.trim();
   if (!positionId || !/^\d+$/.test(positionId)) return null;
 
   return {
@@ -64,7 +72,7 @@ function considerJob(
   seenPositionIds: Set<string>,
   candidates: USAJobCandidate[]
 ): "added" | "duplicate" | "skipped" {
-  const positionId = item.MatchedObjectDescriptor.PositionID?.trim();
+  const positionId = item.MatchedObjectId?.trim();
   if (!positionId || !/^\d+$/.test(positionId)) return "skipped";
 
   if (seenPositionIds.has(positionId)) return "duplicate";

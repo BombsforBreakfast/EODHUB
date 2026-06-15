@@ -21,6 +21,12 @@ import {
 import { TARGET_RELIEFWEB_JOB_IDS } from "../../lib/reliefweb/targetJobIds";
 import { jobListingCutoffIso } from "../../lib/jobRetention";
 
+// Multi-channel intake issues many sequential ReliefWeb API calls; give the cron
+// room to finish so DB writes/last_seen refresh aren't dropped to a timeout.
+// 800s is the Pro + Fluid Compute ceiling (default without this is 300s).
+export const runtime = "nodejs";
+export const maxDuration = 800;
+
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const querySecret = req.nextUrl.searchParams.get("secret");

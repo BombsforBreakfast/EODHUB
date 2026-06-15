@@ -22,6 +22,12 @@ import {
   JOB_IMPORT_WRITE_CHUNK,
 } from "../../lib/jobImportBatch";
 
+// Multi-channel intake issues many sequential Adzuna API calls; give the cron
+// room to finish so DB writes/last_seen refresh aren't dropped to a timeout.
+// 800s is the Pro + Fluid Compute ceiling (default without this is 300s).
+export const runtime = "nodejs";
+export const maxDuration = 800;
+
 type AdzunaCandidate = {
   adId: string;
   title: string;
@@ -243,6 +249,9 @@ export async function GET(req: NextRequest) {
     }
 
     upsertRows.push({
+      // Conflict on the real primary key; the adzuna_ad_id unique index is
+      // partial, so Postgres cannot infer it for ON CONFLICT.
+      ...(existing ? { id: existing.id } : {}),
       title: candidate.title,
       company_name: candidate.companyName,
       location: candidate.location,
@@ -268,7 +277,7 @@ export async function GET(req: NextRequest) {
   for (const upsertChunk of chunkArray(upsertRows, JOB_IMPORT_WRITE_CHUNK)) {
     const { error: upsertErr } = await supabase
       .from("jobs")
-      .upsert(upsertChunk, { onConflict: "adzuna_ad_id" });
+      .upsert(upsertChunk, { onConflict: "id" });
     if (upsertErr) {
       errors.push(`[upsert adzuna batch] ${upsertErr.message}`);
     }
