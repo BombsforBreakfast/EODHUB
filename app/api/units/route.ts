@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../lib/memberSubscriptionServer";
+import { normalizeUnitVisibility } from "../../lib/unitAccessServer";
 
 function getAdminClient() {
   return createClient(
@@ -54,11 +55,29 @@ export async function GET(req: NextRequest) {
 
   const q = req.nextUrl.searchParams.get("q") ?? "";
 
+  const { data: myMemberRows, error: myMemberError } = await userClient
+    .from("unit_members")
+    .select("unit_id")
+    .eq("user_id", user.id)
+    .eq("status", "approved");
+
+  if (myMemberError) {
+    return NextResponse.json({ error: myMemberError.message }, { status: 500 });
+  }
+
+  const myUnitIds = (myMemberRows ?? []).map((row: { unit_id: string }) => row.unit_id);
+
   let dbQuery = userClient
     .from("units")
-    .select("id, name, slug, description, cover_photo_url, type, created_at")
+    .select("id, name, slug, description, cover_photo_url, type, created_at, visibility")
     .order("created_at", { ascending: false })
     .limit(50);
+
+  if (myUnitIds.length > 0) {
+    dbQuery = dbQuery.or(`visibility.eq.public,id.in.(${myUnitIds.join(",")})`);
+  } else {
+    dbQuery = dbQuery.eq("visibility", "public");
+  }
 
   if (q.trim()) {
     dbQuery = dbQuery.ilike("name", `%${q.trim()}%`);
@@ -193,12 +212,15 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { name, description, type, cover_photo_url } = body as {
+  const { name, description, type, cover_photo_url, visibility: rawVisibility } = body as {
     name: string;
     description?: string;
     type?: string;
     cover_photo_url?: string;
+    visibility?: string;
   };
+
+  const visibility = normalizeUnitVisibility(rawVisibility === "public" ? "public" : "private");
 
   if (!name?.trim()) {
     return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -225,8 +247,9 @@ export async function POST(req: NextRequest) {
       cover_photo_url: cover_photo_url ?? null,
       slug,
       created_by: user.id,
+      visibility,
     })
-    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at")
+    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at, visibility")
     .single();
 
   if (insertError || !unit) {

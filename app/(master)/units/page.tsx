@@ -31,6 +31,7 @@ type Unit = {
   type: string;
   member_count: number;
   created_at: string;
+  visibility?: "public" | "private";
   my_role?: string;
   member_preview?: UnitMemberPreview[];
 };
@@ -81,6 +82,7 @@ function UnitsPageContent() {
   const [createName, setCreateName] = useState("");
   const [createType, setCreateType] = useState("general");
   const [createDesc, setCreateDesc] = useState("");
+  const [createVisibility, setCreateVisibility] = useState<"public" | "private">("private");
   const [createCover, setCreateCover] = useState("");
   const [createCoverPreview, setCreateCoverPreview] = useState<string | null>(null);
   const [uploadingCover, setUploadingCover] = useState(false);
@@ -292,6 +294,7 @@ function UnitsPageContent() {
           description: createDesc.trim() || null,
           type: createType,
           cover_photo_url: createCover.trim() || null,
+          visibility: createVisibility,
         }),
       });
       const json = await res.json();
@@ -300,6 +303,7 @@ function UnitsPageContent() {
       setCreateName("");
       setCreateType("general");
       setCreateDesc("");
+      setCreateVisibility("private");
       setCreateCover("");
       setCreateCoverPreview(null);
       router.push(`/units/${json.unit.slug}`);
@@ -374,7 +378,7 @@ function UnitsPageContent() {
               <div style={{ fontSize: 14, color: t.textMuted, marginTop: 4, lineHeight: 1.5, maxWidth: 560 }}>
                 <div style={{ fontWeight: 700, color: t.text, marginBottom: 3 }}>Your network, organized.</div>
                 <div>
-                  Create private units for current teams, alumni groups, organizations, or shared interests. Share updates, coordinate, and stay connected in a more focused space.
+                  Create groups for current teams, alumni, organizations, or shared interests. Private groups are invite-only; public groups appear here and anyone can browse the wall.
                 </div>
                 <div style={{ marginTop: 3 }}>
                   Relevant activity from your units will also surface in your feed.
@@ -629,7 +633,7 @@ function UnitsPageContent() {
         {/* Empty directory (no units in system) */}
         {emptyDirectory && (
           <div style={{ color: t.textMuted, textAlign: "center", padding: 36, fontSize: 15 }}>
-            No units yet. Be the first to create one.
+            No public groups yet. Create one, or browse groups you belong to above.
           </div>
         )}
 
@@ -826,6 +830,37 @@ function UnitsPageContent() {
                   <select value={createType} onChange={(e) => setCreateType(e.target.value)} style={{ ...inputStyle }}>
                     {UNIT_TYPES.map((ut) => <option key={ut.value} value={ut.value}>{ut.label}</option>)}
                   </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, display: "block", marginBottom: 8 }}>Visibility</label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                    {([
+                      { value: "private" as const, label: "Private", hint: "Invite-only. Hidden from the directory." },
+                      { value: "public" as const, label: "Public", hint: "Listed here. Anyone can browse the wall." },
+                    ]).map((opt) => {
+                      const selected = createVisibility === opt.value;
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setCreateVisibility(opt.value)}
+                          style={{
+                            textAlign: "left",
+                            border: `2px solid ${selected ? "#111" : t.border}`,
+                            borderRadius: 12,
+                            padding: "12px 14px",
+                            background: selected ? (isDark ? "rgba(255,255,255,0.06)" : "#f8fafc") : t.surface,
+                            cursor: "pointer",
+                            color: t.text,
+                          }}
+                        >
+                          <div style={{ fontSize: 14, fontWeight: 800 }}>{opt.label}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4, lineHeight: 1.45 }}>{opt.hint}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div>

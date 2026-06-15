@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../../../lib/memberSubscriptionServer";
 import { fetchActorName, maybeNotifyUnitHotEngagement } from "../../../../../../lib/unitNotificationsServer";
 import { createNotification } from "../../../../../../lib/notificationsServer";
+import { canUserViewUnitWall } from "../../../../../../lib/unitAccessServer";
 
 function getAdminClient() {
   return createClient(
@@ -56,14 +57,18 @@ export async function GET(
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
   }
 
-  const { data: membership } = await adminClient
-    .from("unit_members")
-    .select("status")
-    .eq("unit_id", post.unit_id)
-    .eq("user_id", user.id)
-    .maybeSingle();
+  const { data: unit, error: unitError } = await adminClient
+    .from("units")
+    .select("id, visibility")
+    .eq("id", post.unit_id)
+    .single();
 
-  if (!membership || membership.status !== "approved") {
+  if (unitError || !unit) {
+    return NextResponse.json({ error: "Unit not found" }, { status: 404 });
+  }
+
+  const { allowed } = await canUserViewUnitWall(adminClient, unit, user.id);
+  if (!allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

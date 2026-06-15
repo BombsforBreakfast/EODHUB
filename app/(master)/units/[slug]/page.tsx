@@ -56,6 +56,7 @@ type Unit = {
   type: string;
   created_by: string;
   member_count: number;
+  visibility?: "public" | "private";
 };
 
 type Membership = {
@@ -492,7 +493,9 @@ export default function UnitPage() {
           .maybeSingle();
         setMembership(mem as Membership | null);
 
-        if (mem?.status === "approved") {
+        const canBrowseWall =
+          mem?.status === "approved" || json.unit.visibility === "public";
+        if (canBrowseWall) {
           await loadPosts(token);
         }
       }
@@ -1221,8 +1224,17 @@ export default function UnitPage() {
 
   // ── Styles ───────────────────────────────────────────────────────────────
 
-  const isGod = membership?.status === "approved" && (membership.role === "owner" || membership.role === "admin");
-  const wallPosts = posts.filter((p) => p.post_type !== "photo_album");
+  const isApprovedMember = membership?.status === "approved";
+  const isPendingMember = membership?.status === "pending";
+  const isPublicGroup = unit?.visibility === "public";
+  const canViewWall = isApprovedMember || isPublicGroup;
+
+  const isGod = isApprovedMember && (membership!.role === "owner" || membership!.role === "admin");
+  const wallPosts = posts.filter((p) => {
+    if (p.post_type === "photo_album") return false;
+    if (!isApprovedMember && p.post_type === "join_request") return false;
+    return true;
+  });
   const photos = posts.filter((p) => p.photo_url && p.post_type === "photo_album");
   const activeGalleryPhoto = galleryPhotoIndex !== null ? photos[galleryPhotoIndex] : null;
 
@@ -1338,6 +1350,9 @@ export default function UnitPage() {
                   <span style={{ background: isDark ? "#1a1a2e" : "#dbeafe", color: isDark ? "#93c5fd" : "#1d4ed8", fontSize: 11, fontWeight: 800, padding: "3px 9px", borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5 }}>
                     {unit.type.replace(/_/g, " ")}
                   </span>
+                  <span style={{ background: isPublicGroup ? (isDark ? "#052e16" : "#dcfce7") : (isDark ? "#2a2a2a" : "#f3f4f6"), color: isPublicGroup ? (isDark ? "#86efac" : "#166534") : t.textMuted, fontSize: 11, fontWeight: 800, padding: "3px 9px", borderRadius: 20, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    {isPublicGroup ? "Public" : "Private"}
+                  </span>
                   <span style={{ fontSize: 13, color: t.textMuted, fontWeight: 600 }}>
                     {unit.member_count} {unit.member_count === 1 ? "member" : "members"}
                   </span>
@@ -1405,26 +1420,36 @@ export default function UnitPage() {
           </div>
         </div>
 
-        {/* Non-member gate */}
-        {(!membership || membership.status === "pending") && (
+        {/* Non-member gate (private groups only) */}
+        {isPendingMember && (
           <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 28, background: t.surface, textAlign: "center" }}>
-            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>
-              {membership?.status === "pending" ? "Your request is pending" : "Members Only"}
-            </div>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Your request is pending</div>
             <div style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.6 }}>
-              {membership?.status === "pending"
-                ? "Once 3 members vouch for you, you'll be automatically approved. An admin can also approve you directly."
-                : "Request to join to see the wall, members, and photos."}
+              Once 3 members vouch for you, you&apos;ll be automatically approved. An admin can also approve you directly.
             </div>
           </div>
         )}
 
-        {/* Member view: tabs */}
-        {membership?.status === "approved" && (
+        {!isApprovedMember && !isPublicGroup && !isPendingMember && (
+          <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 28, background: t.surface, textAlign: "center" }}>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Members Only</div>
+            <div style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.6 }}>
+              This is a private group. Request to join or accept an invite to see the wall, members, and photos.
+            </div>
+          </div>
+        )}
+
+        {canViewWall && (
           <>
+            {isPublicGroup && !isApprovedMember && (
+              <div style={{ border: `1px solid ${isDark ? "#14532d" : "#bbf7d0"}`, borderRadius: 12, padding: "12px 16px", background: isDark ? "rgba(22,101,52,0.15)" : "#f0fdf4", marginBottom: 16, fontSize: 13, color: t.textMuted, lineHeight: 1.55 }}>
+                You&apos;re browsing a public group. Request to join to post, comment, and see members and events.
+              </div>
+            )}
+
             {/* Tab bar */}
             <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${t.border}`, paddingBottom: 0 }}>
-              {(["wall", "events", "members", "photos"] as const).map((tab) => (
+              {(isApprovedMember ? (["wall", "events", "members", "photos"] as const) : (["wall"] as const)).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -1448,7 +1473,7 @@ export default function UnitPage() {
             {/* WALL TAB */}
             {activeTab === "wall" && (
               <div style={{ display: "grid", gap: 16 }}>
-                {/* Post composer */}
+                {isApprovedMember && (
                 <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                   <textarea
                     value={postInput}
@@ -1563,6 +1588,7 @@ export default function UnitPage() {
                     </button>
                   </div>
                 </div>
+                )}
 
                 {/* Posts */}
                 {posts.length === 0 && (
@@ -1636,6 +1662,7 @@ export default function UnitPage() {
                             : [];
                         openPostGallery(urls, startIndex);
                       }}
+                      canInteract={isApprovedMember}
                     />
                   );
                 })}
@@ -2448,6 +2475,7 @@ function PostCard({
   onAddToRabbithole,
   rabbitholeThreadId,
   onOpenGallery,
+  canInteract = true,
 }: {
   post: UnitPost; t: ThemeTokens; isDark: boolean;
   comments: Comment[] | undefined;
@@ -2477,6 +2505,7 @@ function PostCard({
   onAddToRabbithole?: (() => void) | undefined;
   rabbitholeThreadId?: string | null;
   onOpenGallery: (startIndex: number) => void;
+  canInteract?: boolean;
 }) {
   const [submittingComment, setSubmittingComment] = useState(false);
   const [commentGif, setCommentGif] = useState<string | null>(null);
@@ -2667,6 +2696,7 @@ function PostCard({
 
       {/* Like / Comment / Rabbithole toolbar */}
       <div style={{ display: "flex", gap: FEED_ACTION_ROW_GAP, alignItems: "center", marginTop: FEED_SECTION_GAP, padding: FEED_ACTION_ROW_PADDING, borderTop: `1px solid ${t.borderLight}`, flexWrap: "wrap" }}>
+        {canInteract ? (
         <ReactionPickerTrigger
           t={t as Theme}
           disabled={!currentUserId}
@@ -2676,12 +2706,13 @@ function PostCard({
           showTriggerCount={false}
           onPick={onPostReaction}
         />
+        ) : null}
         <button
           type="button"
           onClick={onToggleComments}
           style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: t.textMuted, fontSize: 14 }}
         >
-          {expanded ? "Hide Comments" : "Comment"}
+          {expanded ? "Hide Comments" : canInteract ? "Comment" : "View Comments"}
         </button>
         <ReactionLeaderboard
           t={t as Theme}
@@ -2812,6 +2843,7 @@ function PostCard({
                     flexWrap: "wrap",
                   }}
                 >
+                  {canInteract ? (
                   <ReactionPickerTrigger
                     t={t as Theme}
                     disabled={!currentUserId}
@@ -2821,6 +2853,7 @@ function PostCard({
                     showTriggerCount={false}
                     onPick={(type) => onCommentReaction(c.id, type)}
                   />
+                  ) : null}
                   <div style={{ flex: "1 1 12px", minWidth: 0 }} />
                   <ReactionLeaderboard
                     t={t as Theme}
@@ -2832,7 +2865,7 @@ function PostCard({
             </div>
           ))}
 
-          {/* Comment input */}
+          {canInteract && (
           <div style={{ marginTop: 8 }}>
             <textarea
               value={commentInput}
@@ -2906,6 +2939,7 @@ function PostCard({
               </button>
             </div>
           </div>
+          )}
         </div>
       )}
       {expandedCommentImageUrl && (

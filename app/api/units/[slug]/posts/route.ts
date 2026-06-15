@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../lib/memberSubscriptionServer";
+import { canUserViewUnitWall } from "../../../../lib/unitAccessServer";
 
 function getAdminClient() {
   return createClient(
@@ -67,7 +68,7 @@ export async function GET(
 
   const { data: unit, error: unitError } = await adminClient
     .from("units")
-    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at")
+    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at, visibility")
     .eq("slug", slug)
     .single();
 
@@ -75,14 +76,8 @@ export async function GET(
     return NextResponse.json({ error: "Unit not found" }, { status: 404 });
   }
 
-  const { data: membership } = await adminClient
-    .from("unit_members")
-    .select("role, status")
-    .eq("unit_id", unit.id)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (!membership || membership.status !== "approved") {
+  const { allowed } = await canUserViewUnitWall(adminClient, unit, user.id);
+  if (!allowed) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

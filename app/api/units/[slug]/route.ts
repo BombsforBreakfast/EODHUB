@@ -36,7 +36,7 @@ export async function GET(
 
   const { data: unit, error } = await adminClient
     .from("units")
-    .select("id, name, slug, description, cover_photo_url, type, created_by")
+    .select("id, name, slug, description, cover_photo_url, type, created_by, visibility")
     .eq("slug", slug)
     .single();
 
