@@ -27,6 +27,7 @@ import {
   type PostAsAdminProfile,
   type PostAsMode,
 } from "../../../lib/postAsIdentity";
+import { extractFirstUrl, isEmailDomainMatch, URL_PATTERN_G } from "../../../lib/urlPreview";
 import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { fetchBlockedUserIds, filterBlockedRows } from "../../../lib/userBlocks";
@@ -415,16 +416,7 @@ function normalizeEventTitle(value: string): string {
     .trim();
 }
 
-const BARE_DOMAIN_RE = /\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/;
-const URL_PATTERN_SRC = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/.source;
-
-function extractFirstUrl(text: string): string | null {
-  const explicit = text.match(/https?:\/\/[^\s]+/);
-  if (explicit) return explicit[0].replace(/[.,)>]+$/, "");
-  const bare = text.match(BARE_DOMAIN_RE);
-  if (bare) return `https://${bare[0].replace(/[.,)>]+$/, "")}`;
-  return null;
-}
+const MENTION_RE_SRC = /@\[([^\]]+)\]\(([^)]+)\)/;
 
 function normalizePreviewUrl(value: string | null | undefined): string {
   if (!value?.trim()) return "";
@@ -443,11 +435,9 @@ function isOnlyPreviewUrl(content: string | null | undefined, previewUrl: string
   return normalizePreviewUrl(content.trim()) === normalizePreviewUrl(previewUrl);
 }
 
-const MENTION_RE_SRC = /@\[([^\]]+)\]\(([^)]+)\)/;
-
 function renderContent(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = [];
-  const combined = new RegExp(`(${MENTION_RE_SRC.source})|${URL_PATTERN_SRC}`, "g");
+  const combined = new RegExp(`(${MENTION_RE_SRC.source})|${URL_PATTERN_G.source}`, "g");
   let lastIndex = 0;
   let match;
   while ((match = combined.exec(text)) !== null) {
@@ -460,6 +450,8 @@ function renderContent(text: string): React.ReactNode[] {
           @{name}
         </Link>
       );
+    } else if (isEmailDomainMatch(text, match.index)) {
+      parts.push(match[0]);
     } else {
       const raw = match[0].replace(/[.,)>]+$/, "");
       const href = raw.startsWith("http") ? raw : `https://${raw}`;

@@ -48,6 +48,7 @@ import { roundToNearestHalf, StarRatingDisplay } from "../components/StarRating"
 import { coerceTagsFromDb, normalizeBizTagsInput, rememberCustomBizTag } from "../lib/bizListingTags";
 import { Award, Medal } from "lucide-react";
 import { getFeatureAccess } from "../lib/featureAccess";
+import { extractFirstUrl, isEmailDomainMatch, URL_PATTERN_G } from "../lib/urlPreview";
 import { applyJobFilters, uniqueJobRegionOptions, type JobFilterState } from "../lib/jobFilters";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
@@ -679,16 +680,7 @@ function isBizListingTagsMissingColumnError(error: unknown): boolean {
   return msg.includes("column") && msg.includes("tags");
 }
 
-const BARE_DOMAIN_RE = /\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/;
-const URL_PATTERN_G = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
-
-function extractFirstUrl(text: string): string | null {
-  const explicit = text.match(/https?:\/\/[^\s]+/);
-  if (explicit) return explicit[0].replace(/[.,)>]+$/, "");
-  const bare = text.match(BARE_DOMAIN_RE);
-  if (bare) return `https://${bare[0].replace(/[.,)>]+$/, "")}`;
-  return null;
-}
+const MENTION_RE = /@\[([^\]]+)\]\(([^)]+)\)/g;
 
 function normalizePreviewUrl(value: string | null | undefined): string {
   if (!value?.trim()) return "";
@@ -707,7 +699,6 @@ function isOnlyPreviewUrl(content: string | null | undefined, previewUrl: string
   return normalizePreviewUrl(content.trim()) === normalizePreviewUrl(previewUrl);
 }
 
-const MENTION_RE = /@\[([^\]]+)\]\(([^)]+)\)/g;
 const FEED_COMMENT_TEXT_SIZE = 14;
 const FEED_COMMENT_META_SIZE = 13;
 
@@ -728,6 +719,8 @@ function renderContent(text: string): React.ReactNode[] {
           @{name}
         </Link>
       );
+    } else if (isEmailDomainMatch(text, match.index)) {
+      parts.push(match[0]);
     } else {
       // It's a URL
       const raw = match[0].replace(/[.,)>]+$/, "");
