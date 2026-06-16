@@ -4,8 +4,12 @@ const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 export function makeReferralCode(length = 8): string {
   let code = "";
+  // 🛡️ Security enhancement: Use cryptographically secure random number generation
+  // instead of Math.random() to prevent predictability of referral codes.
+  const array = new Uint32Array(length);
+  crypto.getRandomValues(array);
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    code += CHARS[array[i] % CHARS.length];
   }
   return code;
 }
