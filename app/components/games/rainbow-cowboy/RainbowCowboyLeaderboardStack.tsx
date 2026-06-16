@@ -8,9 +8,10 @@ import type { RainbowCowboyLevel } from "./rainbowCowboyTypes";
 
 interface Props {
   levels: RainbowCowboyLevel[];
+  refreshKey?: number;
 }
 
-export function RainbowCowboyLeaderboardStack({ levels }: Props) {
+export function RainbowCowboyLeaderboardStack({ levels, refreshKey = 0 }: Props) {
   const playableLevels = useMemo(
     () => levels.filter((level) => !level.locked && level.status !== "coming_soon"),
     [levels],
@@ -41,7 +42,7 @@ export function RainbowCowboyLeaderboardStack({ levels }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [levelKey, playableLevels.length]);
+  }, [levelKey, playableLevels.length, refreshKey]);
 
   const loading = loadedKey !== levelKey;
 

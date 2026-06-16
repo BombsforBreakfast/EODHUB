@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "@/app/lib/ThemeContext";
-import { useViewerGate } from "@/app/hooks/useRequireFullAccess";
 import { GameLeaderboard } from "@/app/components/games/GameLeaderboard";
 import { GameArcadeNav } from "@/app/components/games/GameArcadeNav";
+import { ArcadeOutOfCoinsNotice } from "@/app/components/games/ArcadeOutOfCoinsNotice";
+import { ArcadeSessionBar } from "@/app/components/games/ArcadeSessionBar";
+import { useArcadeSession } from "@/app/components/games/useArcadeSession";
 import { clearGameLeaderboardCache, fetchGameLeaderboard } from "@/app/components/games/gameLeaderboardStorage";
 import type { GameLeaderboardEntry } from "@/app/components/games/gameLeaderboardTypes";
 import { RenderSafeEndScreen } from "./RenderSafeEndScreen";
@@ -25,8 +27,16 @@ const DISCLAIMER =
 
 export function RenderSafePage() {
   const { t } = useTheme();
-  const viewer = useViewerGate();
-  const userId = viewer?.userId ?? null;
+  const {
+    userId,
+    profile,
+    wallet,
+    walletLoading,
+    coinError,
+    setCoinError,
+    refreshWallet,
+    payToPlay,
+  } = useArcadeSession();
 
   const levels = useMemo(() => getRenderSafeLevels(), []);
   const [screen, setScreen] = useState<"select" | "brief" | "playing" | "complete">("select");
@@ -119,7 +129,10 @@ export function RenderSafePage() {
     setScreen("brief");
   };
 
-  const handleStartMission = () => {
+  const handleStartMission = async () => {
+    if (!selectedLevelId) return;
+    const paid = await payToPlay("render_safe", selectedLevelId);
+    if (!paid) return;
     setGameKey((k) => k + 1);
     setScreen("playing");
   };
@@ -130,10 +143,21 @@ export function RenderSafePage() {
     if (userId) {
       const saveResult = await saveRenderSafePersonalBest(result, userId);
       if (saveResult.saved) clearGameLeaderboardCache("render_safe");
+      if (saveResult.coinGranted) {
+        await refreshWallet(true);
+      }
       if (saveResult.saved && saveResult.previousBest == null) {
-        setPersonalBestMessage("Personal Best Saved");
+        setPersonalBestMessage(
+          saveResult.coinGranted
+            ? "Personal Best Saved · +1 Challenge Coin — global high score!"
+            : "Personal Best Saved",
+        );
       } else if (saveResult.saved && saveResult.isNewBest) {
-        setPersonalBestMessage("New Personal Best!");
+        setPersonalBestMessage(
+          saveResult.coinGranted
+            ? "New Personal Best! · +1 Challenge Coin — global high score!"
+            : "New Personal Best!",
+        );
       } else if (saveResult.previousBest != null) {
         setPersonalBestMessage(`Personal Best: ${saveResult.currentBest}`);
       } else {
@@ -153,7 +177,10 @@ export function RenderSafePage() {
     loadPersonalBests();
   };
 
-  const handleRestart = () => {
+  const handleRestart = async () => {
+    if (!runResult) return;
+    const paid = await payToPlay("render_safe", runResult.levelId);
+    if (!paid) return;
     setGameKey((k) => k + 1);
     setScreen("playing");
     setRunResult(null);
@@ -189,6 +216,15 @@ export function RenderSafePage() {
       }}
     >
       {!isImmersive && <GameArcadeNav />}
+
+      {!isImmersive && (
+        <>
+          <ArcadeSessionBar profile={profile} wallet={wallet} walletLoading={walletLoading} />
+          {coinError ? (
+            <ArcadeOutOfCoinsNotice message={coinError} onDismiss={() => setCoinError(null)} />
+          ) : null}
+        </>
+      )}
 
       {!isImmersive && (
         <div

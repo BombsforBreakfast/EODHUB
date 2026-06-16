@@ -128,6 +128,7 @@ export type SavePersonalBestResult = {
   isNewBest: boolean;
   previousBest: number | null;
   currentBest: number;
+  coinGranted?: boolean;
 };
 
 export async function saveRenderSafePersonalBest(
@@ -145,59 +146,35 @@ export async function saveRenderSafePersonalBest(
 
   clearRenderSafePersonalBestsCache(userId);
 
-  const existing = await getRenderSafePersonalBest(result.levelId, userId);
+  const { data, error } = await supabase.rpc("record_render_safe_run", {
+    p_level_id: result.levelId,
+    p_level_slug: result.levelSlug,
+    p_score: result.score,
+    p_rank: result.rank,
+    p_mistakes: result.mistakes,
+    p_duration_seconds: result.durationSeconds,
+    p_completed_at: result.completedAt,
+  });
 
-  if (existing && result.score <= existing.score) {
+  if (error) {
+    console.error("Failed to record render safe run:", error);
     return {
       saved: false,
       isNewBest: false,
-      previousBest: existing.score,
-      currentBest: existing.score,
-    };
-  }
-
-  const row = {
-    user_id: userId,
-    level_id: result.levelId,
-    level_slug: result.levelSlug,
-    score: result.score,
-    rank: result.rank,
-    mistakes: result.mistakes,
-    completed: true,
-    duration_seconds: result.durationSeconds,
-    completed_at: result.completedAt,
-    updated_at: new Date().toISOString(),
-  };
-
-  if (existing) {
-    const { error } = await supabase
-      .from("render_safe_high_scores")
-      .update(row)
-      .eq("user_id", userId)
-      .eq("level_id", result.levelId);
-
-    if (error) {
-      console.error("Failed to update render safe high score:", error);
-      return {
-        saved: false,
-        isNewBest: false,
-        previousBest: existing.score,
-        currentBest: existing.score,
-      };
-    }
-
-    return {
-      saved: true,
-      isNewBest: true,
-      previousBest: existing.score,
+      previousBest: null,
       currentBest: result.score,
     };
   }
 
-  const { error } = await supabase.from("render_safe_high_scores").insert(row);
+  const row = ((data as {
+    saved: boolean;
+    is_new_score_best: boolean;
+    previous_best: number | null;
+    current_best: number;
+    coin_granted: boolean;
+  }[] | null) ?? [])[0];
 
-  if (error) {
-    console.error("Failed to insert render safe high score:", error);
+  if (!row) {
     return {
       saved: false,
       isNewBest: false,
@@ -207,10 +184,11 @@ export async function saveRenderSafePersonalBest(
   }
 
   return {
-    saved: true,
-    isNewBest: true,
-    previousBest: null,
-    currentBest: result.score,
+    saved: row.saved,
+    isNewBest: row.is_new_score_best,
+    previousBest: row.previous_best,
+    currentBest: row.current_best,
+    coinGranted: row.coin_granted,
   };
 }
 

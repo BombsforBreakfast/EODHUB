@@ -3,7 +3,6 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "@/app/lib/ThemeContext";
-import { useViewerGate } from "@/app/hooks/useRequireFullAccess";
 import { clearGameLeaderboardCache } from "@/app/components/games/gameLeaderboardStorage";
 import { getLevelConfig, getNextPlayableLevel, getRainbowCowboyLevels } from "./rainbowCowboyLevels";
 import {
@@ -23,6 +22,9 @@ import {
 import { BombSuitManAvatar } from "@/app/components/games/bomb-suit-man/BombSuitManAvatar";
 import { BSM_TITLE_GRADIENT } from "@/app/components/games/bomb-suit-man/bombSuitManTheme";
 import { GameArcadeNav } from "@/app/components/games/GameArcadeNav";
+import { ArcadeOutOfCoinsNotice } from "@/app/components/games/ArcadeOutOfCoinsNotice";
+import { ArcadeSessionBar } from "@/app/components/games/ArcadeSessionBar";
+import { useArcadeSession } from "@/app/components/games/useArcadeSession";
 import { RainbowCowboyLeaderboardStack } from "./RainbowCowboyLeaderboardStack";
 import { RainbowCowboyEndScreen } from "./RainbowCowboyEndScreen";
 import { RainbowCowboyLevelSelect } from "./RainbowCowboyLevelSelect";
@@ -43,8 +45,16 @@ type Screen = "select" | "start" | "playing" | "complete" | "game_over";
 
 export function RainbowCowboyPage() {
   const { t } = useTheme();
-  const viewer = useViewerGate();
-  const userId = viewer?.userId ?? null;
+  const {
+    userId,
+    profile,
+    wallet,
+    walletLoading,
+    coinError,
+    setCoinError,
+    refreshWallet,
+    payToPlay,
+  } = useArcadeSession();
 
   const levels = useMemo(() => getRainbowCowboyLevels(), []);
   const [screen, setScreen] = useState<Screen>("select");
@@ -58,6 +68,7 @@ export function RainbowCowboyPage() {
   const [showInstructions, setShowInstructions] = useState(true);
   const [selectedRide, setSelectedRide] = useState<UnicornHeroRideType>(() => loadUnicornHeroSelectedRide());
   const remoteCompletionWritesThisRunRef = useRef(0);
+  const [leaderboardRefreshKey, setLeaderboardRefreshKey] = useState(0);
 
   const isPlaying = screen === "playing";
   const routeShellRef = useRef<HTMLDivElement>(null);
@@ -109,18 +120,20 @@ export function RainbowCowboyPage() {
     [levels, progress],
   );
 
-  const handleStart = useCallback(() => {
+  const handleStart = useCallback(async () => {
     if (!isLevelUnlocked(selectedLevelId, progress, levels)) return;
     if (!isDifficultyUnlocked(selectedLevelId, difficulty, progress, levels)) {
       setDifficulty(getHighestUnlockedDifficulty(selectedLevelId, progress, levels));
       return;
     }
+    const paid = await payToPlay("rainbow_cowboy", selectedLevelId);
+    if (!paid) return;
     syncGameViewportCssVars();
     setShowInstructions(true);
     remoteCompletionWritesThisRunRef.current = 0;
     setGameKey((k) => k + 1);
     setScreen("playing");
-  }, [difficulty, levels, progress, selectedLevelId]);
+  }, [difficulty, levels, payToPlay, progress, selectedLevelId]);
 
   const handleComplete = useCallback(async (result: RainbowCowboyRunResult) => {
     setRunResult(result);
@@ -140,11 +153,17 @@ export function RainbowCowboyPage() {
     const saveResult = userId
       ? await saveRainbowCowboyPersonalBest(result, userId)
       : saveLocalPersonalBest(result);
-    if (saveResult.saved) clearGameLeaderboardCache("rainbow_cowboy");
+    if (saveResult.saved) {
+      clearGameLeaderboardCache("rainbow_cowboy");
+      setLeaderboardRefreshKey((key) => key + 1);
+    }
     setPersonalBestMessage(buildPersonalBestMessage(saveResult, result));
+    if (saveResult.coinGranted) {
+      await refreshWallet(true);
+    }
     setProgress((prev) => applyCompletion(prev, result.levelId, result.difficulty));
     setScreen("complete");
-  }, [userId]);
+  }, [refreshWallet, userId]);
 
   const handleGameOver = useCallback((result: RainbowCowboyRunResult) => {
     setRunResult(result);
@@ -152,13 +171,16 @@ export function RainbowCowboyPage() {
     setScreen("game_over");
   }, []);
 
-  const handleRestart = useCallback(() => {
+  const handleRestart = useCallback(async () => {
+    if (!runResult) return;
+    const paid = await payToPlay("rainbow_cowboy", runResult.levelId);
+    if (!paid) return;
     setShowInstructions(false);
     remoteCompletionWritesThisRunRef.current = 0;
     setGameKey((k) => k + 1);
     setRunResult(null);
     setScreen("playing");
-  }, []);
+  }, [payToPlay, runResult]);
 
   const handleNextLevel = useCallback(() => {
     if (!runResult) return;
@@ -190,6 +212,15 @@ export function RainbowCowboyPage() {
       }}
     >
       {!isPlaying && <GameArcadeNav />}
+
+      {!isPlaying && (
+        <>
+          <ArcadeSessionBar profile={profile} wallet={wallet} walletLoading={walletLoading} />
+          {coinError ? (
+            <ArcadeOutOfCoinsNotice message={coinError} onDismiss={() => setCoinError(null)} />
+          ) : null}
+        </>
+      )}
 
       {!isPlaying && screen !== "complete" && screen !== "game_over" && (
         <div style={{ textAlign: "center", marginBottom: 20 }}>
@@ -223,7 +254,7 @@ export function RainbowCowboyPage() {
             progress={progress}
             onSelectLevel={handleSelectLevel}
           />
-          <RainbowCowboyLeaderboardStack levels={levels} />
+          <RainbowCowboyLeaderboardStack levels={levels} refreshKey={leaderboardRefreshKey} />
         </>
       )}
 

@@ -93,12 +93,14 @@ export async function getRainbowCowboyPersonalBest(
 
 export type SavePersonalBestResult = {
   saved: boolean;
+  saveFailed?: boolean;
   isNewScoreBest: boolean;
   isNewTimeBest: boolean;
   previousBest: number | null;
   currentBest: number;
   previousBestTime: number | null;
   currentBestTime: number | null;
+  coinGranted?: boolean;
 };
 
 type RecordRainbowCowboyRunRpcRow = {
@@ -115,6 +117,7 @@ type RecordRainbowCowboyRunRpcRow = {
   duration_seconds: number | null;
   drones_eaten: number;
   difficulty: string | null;
+  coin_granted?: boolean;
 };
 
 function emptySaveResult(
@@ -266,6 +269,76 @@ export async function recordRainbowCowboyCompletion(
   return getRainbowCowboyProgress(userId);
 }
 
+async function saveRainbowCowboyPersonalBestDirect(
+  result: RainbowCowboyRunResult,
+  userId: string,
+): Promise<SavePersonalBestResult> {
+  const { error: completionError } = await supabase.from("rainbow_cowboy_completions").upsert(
+    {
+      user_id: userId,
+      level_id: result.levelId,
+      difficulty: result.difficulty,
+      completed_at: result.completedAt,
+    },
+    { onConflict: "user_id,level_id,difficulty" },
+  );
+
+  if (completionError) {
+    console.error("Failed to record rainbow cowboy completion (fallback):", completionError);
+    return { ...emptySaveResult(null, result), saveFailed: true };
+  }
+
+  const existing = await getRainbowCowboyPersonalBest(result.levelId, userId);
+  const scoreImproved = !existing || result.score > existing.score;
+  const timeImproved =
+    existing?.durationSeconds == null || result.durationSeconds < existing.durationSeconds;
+
+  if (!scoreImproved && !timeImproved) {
+    return emptySaveResult(existing, result);
+  }
+
+  const nextScore = scoreImproved ? result.score : existing!.score;
+  const nextRank = scoreImproved ? result.rank : existing!.rank;
+  const nextDuration = timeImproved ? result.durationSeconds : existing!.durationSeconds;
+  const nextDifficulty = scoreImproved ? result.difficulty : (existing?.difficulty ?? result.difficulty);
+  const nextDronesEaten = scoreImproved ? result.dronesEaten : (existing?.dronesEaten ?? 0);
+
+  const { error: highScoreError } = await supabase.from("rainbow_cowboy_high_scores").upsert(
+    {
+      user_id: userId,
+      level_id: result.levelId,
+      level_slug: result.levelSlug,
+      score: nextScore,
+      rank: nextRank,
+      completed: true,
+      duration_seconds: nextDuration,
+      difficulty: nextDifficulty,
+      drones_eaten: nextDronesEaten,
+      balloons_survived: result.balloonsSurvived,
+      rainbow_blasts_used: result.rainbowBlastsUsed,
+      damage_taken: result.damageTaken,
+      completed_at: result.completedAt,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,level_id" },
+  );
+
+  if (highScoreError) {
+    console.error("Failed to record rainbow cowboy high score (fallback):", highScoreError);
+    return { ...emptySaveResult(existing, result), saveFailed: true };
+  }
+
+  return {
+    saved: true,
+    isNewScoreBest: scoreImproved,
+    isNewTimeBest: timeImproved,
+    previousBest: existing?.score ?? null,
+    currentBest: nextScore,
+    previousBestTime: existing?.durationSeconds ?? null,
+    currentBestTime: nextDuration,
+  };
+}
+
 export async function saveRainbowCowboyPersonalBest(
   result: RainbowCowboyRunResult,
   userId: string | null,
@@ -293,11 +366,14 @@ export async function saveRainbowCowboyPersonalBest(
 
   if (error) {
     console.error("Failed to record rainbow cowboy run:", error);
-    return emptySaveResult(null, result);
+    return saveRainbowCowboyPersonalBestDirect(result, userId);
   }
 
   const row = ((data as RecordRainbowCowboyRunRpcRow[] | null) ?? [])[0];
-  if (!row) return emptySaveResult(null, result);
+  if (!row) {
+    console.warn("record_rainbow_cowboy_run returned no row; using direct save fallback.");
+    return saveRainbowCowboyPersonalBestDirect(result, userId);
+  }
 
   return {
     saved: row.saved,
@@ -307,6 +383,7 @@ export async function saveRainbowCowboyPersonalBest(
     currentBest: row.current_best,
     previousBestTime: row.previous_best_time,
     currentBestTime: row.current_best_time,
+    coinGranted: row.coin_granted === true,
   };
 }
 
@@ -469,7 +546,14 @@ export function buildPersonalBestMessage(
           : `New Best Time — ${formatRainbowCowboyDuration(saveResult.currentBestTime ?? result.durationSeconds)}`,
       );
     }
+    if (saveResult.coinGranted) {
+      parts.push("+1 Challenge Coin — global high score!");
+    }
     return parts.join(" · ");
+  }
+
+  if (saveResult.saveFailed) {
+    return `Run Score: ${result.score} · Could not save to leaderboard — try again.`;
   }
 
   const scoreLine =

@@ -1,6 +1,15 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import { BombSuitManAvatar } from "@/app/components/games/bomb-suit-man/BombSuitManAvatar";
+import { ArcadeHighScoresSummary, buildArcadeHighScoreRows } from "@/app/components/games/ArcadeHighScoresSummary";
+import { ArcadeSessionBar } from "@/app/components/games/ArcadeSessionBar";
+import { useArcadeSession } from "@/app/components/games/useArcadeSession";
+import { loadRainbowCowboyArcadeData } from "@/app/components/games/rainbow-cowboy/rainbowCowboyStorage";
+import { getRainbowCowboyLevels } from "@/app/components/games/rainbow-cowboy/rainbowCowboyLevels";
+import type { RainbowCowboyPersonalBest } from "@/app/components/games/rainbow-cowboy/rainbowCowboyTypes";
+import { loadRenderSafePersonalBests } from "@/app/components/render-safe/renderSafeStorage";
+import { getRenderSafeLevels } from "@/app/components/render-safe/renderSafeLevels";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { RequireFullAccess } from "@/app/hooks/useRequireFullAccess";
 import { RequireArcadePreview } from "@/app/components/games/RequireArcadePreview";
@@ -25,9 +34,48 @@ const GAMES = [
 
 function GamesHubContent() {
   const { t } = useTheme();
+  const { userId, profile, wallet, walletLoading } = useArcadeSession();
+  const [renderSafeBests, setRenderSafeBests] = useState<Record<string, number | null>>({});
+  const [rainbowBests, setRainbowBests] = useState<Record<string, RainbowCowboyPersonalBest | null>>({});
+
+  const renderSafeLevels = useMemo(() => getRenderSafeLevels(), []);
+  const rainbowLevels = useMemo(() => getRainbowCowboyLevels(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([
+      loadRenderSafePersonalBests(userId),
+      loadRainbowCowboyArcadeData(userId),
+    ]).then(([renderSafeRows, rainbowData]) => {
+      if (cancelled) return;
+      const renderSafeScores: Record<string, number | null> = {};
+      for (const level of renderSafeLevels) {
+        renderSafeScores[level.id] = renderSafeRows[level.id]?.score ?? null;
+      }
+      setRenderSafeBests(renderSafeScores);
+      setRainbowBests(rainbowData.personalBests);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [renderSafeLevels, userId]);
+
+  const highScoreRows = useMemo(
+    () =>
+      buildArcadeHighScoreRows({
+        renderSafe: renderSafeBests,
+        renderSafeLevelTitles: Object.fromEntries(renderSafeLevels.map((level) => [level.id, level.title])),
+        rainbowCowboy: rainbowBests,
+        rainbowCowboyLevelTitles: Object.fromEntries(rainbowLevels.map((level) => [level.id, level.title])),
+      }),
+    [rainbowBests, rainbowLevels, renderSafeBests, renderSafeLevels],
+  );
 
   return (
     <div style={{ padding: "16px 12px 48px", maxWidth: 720, margin: "0 auto" }}>
+      <ArcadeSessionBar profile={profile} wallet={wallet} walletLoading={walletLoading} />
+      <ArcadeHighScoresSummary rows={highScoreRows} />
+
       <div
         style={{
           textAlign: "center",
@@ -41,7 +89,7 @@ function GamesHubContent() {
         <div style={{ fontSize: 40, marginBottom: 8 }}>🕹️</div>
         <h1 style={{ margin: "0 0 6px", fontSize: 28, fontWeight: 800 }}>EOD-HUB Arcade</h1>
         <p style={{ margin: 0, color: t.textMuted, fontSize: 14 }}>
-          Fictional community games — not real EOD training.
+          Fictional community games — not real EOD training. You get 10 challenge coins each day; each play costs 1. Beat the global high score on a level to earn one back.
         </p>
       </div>
 
