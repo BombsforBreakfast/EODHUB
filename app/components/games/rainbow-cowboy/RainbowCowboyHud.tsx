@@ -11,6 +11,8 @@ interface Props {
 }
 
 export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: Props) {
+  const hasBossHealth = hud.bossHp != null && hud.bossMaxHp != null;
+
   return (
     <div className="rc-hud-root">
       <div className="rc-hud-top">
@@ -21,7 +23,7 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
           </div>
         </div>
 
-        <div className="rc-score-panel">
+        <div className="rc-score-panel" style={hasBossHealth ? { marginTop: 70 } : undefined}>
           <div>Score: {hud.score}</div>
           <div style={{ color: "#ffe080" }}>Time: {formatRainbowCowboyDuration(hud.elapsedSeconds)}</div>
           {personalBest != null && (
@@ -71,6 +73,37 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
 
       {hud.popupText && (
         <div className="rc-hud-popup">{hud.popupText}</div>
+      )}
+
+      {hasBossHealth && (
+        <div
+          className="rc-boss-health-panel"
+          style={{
+            borderColor: hud.bossHatchOpen ? "rgba(255,220,80,0.85)" : "rgba(255,80,160,0.65)",
+          }}
+        >
+          <div style={{ fontSize: 11, color: "#ff80d0", marginBottom: 4, fontWeight: 700 }}>
+            THE HIVE {hud.bossPhase != null ? `- Phase ${hud.bossPhase}` : ""}
+            {hud.bossHatchOpen ? " · VULNERABLE" : " · ARMORED"}
+          </div>
+          <div className="rc-boss-health-track">
+            <div
+              className="rc-boss-health-fill"
+              style={{
+                width: `${Math.max(0, Math.min(1, hud.bossHp! / hud.bossMaxHp!)) * 100}%`,
+                background: hud.bossHatchOpen
+                  ? "linear-gradient(90deg, #ffe060, #ff8040)"
+                  : "linear-gradient(90deg, #ff4080, #cc2060)",
+              }}
+            />
+            {Array.from({ length: hud.bossSegments ?? 10 }).map((_, i) => (
+              <div key={i} className="rc-boss-health-notch" />
+            ))}
+          </div>
+          <div style={{ fontSize: 10, color: "#ccc" }}>
+            {hud.bossHp}/{hud.bossMaxHp} HP
+          </div>
+        </div>
       )}
     </div>
   );

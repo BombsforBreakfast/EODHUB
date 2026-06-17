@@ -53,6 +53,7 @@ export const ENEMY_SIZES = {
   boom_bot: { w: 54, h: 38 },
   armored_boom_bot: { w: 62, h: 44 },
   grenade_goblin_bot: { w: 58, h: 40 },
+  hive_turret: { w: 48, h: 44 },
 } as const;
 
 export const ENEMY_SPEEDS = {

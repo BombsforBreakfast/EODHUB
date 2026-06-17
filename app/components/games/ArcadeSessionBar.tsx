@@ -2,7 +2,7 @@
 
 import { LikerAvatar } from "@/app/components/PostLikersStack";
 import { useTheme } from "@/app/lib/ThemeContext";
-import type { ArcadeWallet } from "./arcadeWalletStorage";
+import { isArcadeWalletUnlimited, type ArcadeWallet } from "./arcadeWalletStorage";
 
 type ViewerProfileMini = {
   displayName: string;
@@ -23,6 +23,7 @@ export function ArcadeSessionBar({
   const { t, isDark } = useTheme();
   const dailyMax = wallet?.dailyMax ?? 10;
   const balance = wallet?.balance ?? (walletLoading ? null : 0);
+  const unlimited = isArcadeWalletUnlimited(wallet);
 
   return (
     <div
@@ -86,7 +87,7 @@ export function ArcadeSessionBar({
           Challenge Coins
         </div>
         <div style={{ fontSize: 18, fontWeight: 900, color: "#92400e", lineHeight: 1.2, marginTop: 2 }}>
-          {balance == null ? "…" : `${balance}/${dailyMax}`}
+          {unlimited ? "Unlimited" : balance == null ? "..." : `${balance}/${dailyMax}`}
         </div>
       </div>
     </div>

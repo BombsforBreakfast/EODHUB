@@ -1,5 +1,6 @@
 import { LEVEL_2_CONFIG, LEVEL_2_META } from "./rainbowCowboyLevel2";
 import { LEVEL_3_CONFIG, LEVEL_3_META } from "./rainbowCowboyLevel3";
+import { LEVEL_4_CONFIG, LEVEL_4_META } from "./rainbowCowboyLevel4";
 import { applyDifficulty } from "./rainbowCowboyDifficulty";
 import type { RainbowCowboyDifficulty } from "./rainbowCowboyTypes";
 import type { LevelConfig, RainbowCowboyLevel } from "./rainbowCowboyTypes";
@@ -22,26 +23,11 @@ export const LEVEL_1_META: RainbowCowboyLevel = {
   status: "playable",
 };
 
-const LOCKED_LEVELS: RainbowCowboyLevel[] = [
-  {
-    id: "level-4",
-    slug: "chemical-carnival",
-    title: "Chemical Carnival",
-    subtitle: "Coming Soon",
-    objective: "",
-    description: "",
-    difficulty: "—",
-    estimatedMinutes: "TBD",
-    levelWidth: 0,
-    groundY: 0,
-    targetTimeSeconds: 0,
-    locked: true,
-    status: "coming_soon",
-  },
+const BRANCH_LEVELS: RainbowCowboyLevel[] = [
   {
     id: "level-5",
-    slug: "great-fpv-swarm",
-    title: "The Great FPV Swarm",
+    slug: "camp-poseidon",
+    title: "Camp Poseidon",
     subtitle: "Coming Soon",
     objective: "",
     description: "",
@@ -52,6 +38,23 @@ const LOCKED_LEVELS: RainbowCowboyLevel[] = [
     targetTimeSeconds: 0,
     locked: true,
     status: "coming_soon",
+    campaignBase: "camp_poseidon",
+  },
+  {
+    id: "level-6",
+    slug: "skywatch",
+    title: "Skywatch",
+    subtitle: "Coming Soon",
+    objective: "",
+    description: "",
+    difficulty: "—",
+    estimatedMinutes: "TBD",
+    levelWidth: 0,
+    groundY: 0,
+    targetTimeSeconds: 0,
+    locked: true,
+    status: "coming_soon",
+    campaignBase: "skywatch",
   },
 ];
 
@@ -142,7 +145,7 @@ LEVEL_1_CONFIG.enemies = LEVEL_1_CONFIG.enemies.filter(
 );
 
 export function getRainbowCowboyLevels(): RainbowCowboyLevel[] {
-  return [LEVEL_1_META, LEVEL_2_META, LEVEL_3_META, ...LOCKED_LEVELS];
+  return [LEVEL_1_META, LEVEL_2_META, LEVEL_3_META, LEVEL_4_META, ...BRANCH_LEVELS];
 }
 
 export function getRainbowCowboyLevelById(levelId: string): RainbowCowboyLevel | undefined {
@@ -157,6 +160,7 @@ export function getLevelConfig(
   if (levelId === "level-1") base = LEVEL_1_CONFIG;
   else if (levelId === "level-2") base = LEVEL_2_CONFIG;
   else if (levelId === "level-3") base = LEVEL_3_CONFIG;
+  else if (levelId === "level-4") base = LEVEL_4_CONFIG;
   if (!base) return undefined;
   return applyDifficulty(base, difficulty);
 }

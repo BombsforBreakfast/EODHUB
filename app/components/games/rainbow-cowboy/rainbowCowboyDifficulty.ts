@@ -12,7 +12,7 @@ export const DIFFICULTY_OPTIONS: {
   label: string;
   description: string;
 }[] = [
-  { id: "easy", label: "Easy", description: "Standard enemy speed and count." },
+  { id: "easy", label: "Easy", description: "Enemies 10% slower · slightly fewer spawns." },
   {
     id: "novice",
     label: "Novice",
@@ -28,10 +28,21 @@ export const DIFFICULTY_OPTIONS: {
 /** Boom Bot Alamo tuning — 20% easier across easy / novice / hard. */
 const LEVEL_3_DIFFICULTY_SCALE = 0.8;
 
+/** Easy is 10% gentler than the baseline; novice/hard stay unchanged. */
+export const EASY_PRESSURE_MULT = 0.9;
+
 export function getDifficultySpeedMult(difficulty: RainbowCowboyDifficulty): number {
   if (difficulty === "novice") return 1.25;
   if (difficulty === "hard") return 1.5;
-  return 1;
+  return EASY_PRESSURE_MULT;
+}
+
+/** Hive boss only — stacked easing on top of the selected difficulty tier (currently ~14.5% below baseline). */
+export const HIVE_BOSS_PRESSURE_MULT = 0.855;
+
+export function getBossPressureMult(difficulty: RainbowCowboyDifficulty): number {
+  const tierMult = difficulty === "easy" ? EASY_PRESSURE_MULT : 1;
+  return tierMult * HIVE_BOSS_PRESSURE_MULT;
 }
 
 function thinEnemySpawns(spawns: LevelEnemySpawn[], keepRatio: number): LevelEnemySpawn[] {
@@ -151,16 +162,22 @@ export function applyDifficulty(
   const isLevel3 = base.level.id === "level-3";
   let speedMult = getDifficultySpeedMult(difficulty);
   let extraEnemyFrac = difficulty === "hard" ? 1 : difficulty === "novice" ? 0.5 : 0;
-  const extraPickupFrac = difficulty === "hard" ? 0.25 : difficulty === "novice" ? 0.12 : 0;
+  const extraPickupFrac =
+    difficulty === "hard" ? 0.25 : difficulty === "novice" ? 0.12 : 0;
   const supportPickups = getLevelSupportPickups(base, difficulty);
+  const easyEnemyKeep = difficulty === "easy" ? EASY_PRESSURE_MULT : 1;
 
-  const baseEnemies = isLevel3
-    ? thinEnemySpawns(base.enemies, LEVEL_3_DIFFICULTY_SCALE)
-    : base.enemies;
+  const baseEnemies = thinEnemySpawns(
+    isLevel3 ? thinEnemySpawns(base.enemies, LEVEL_3_DIFFICULTY_SCALE) : base.enemies,
+    easyEnemyKeep,
+  );
   const baseFinalWaveEnemies = base.finalWave
-    ? isLevel3
-      ? thinEnemySpawns(base.finalWave.enemies, LEVEL_3_DIFFICULTY_SCALE)
-      : base.finalWave.enemies
+    ? thinEnemySpawns(
+        isLevel3
+          ? thinEnemySpawns(base.finalWave.enemies, LEVEL_3_DIFFICULTY_SCALE)
+          : base.finalWave.enemies,
+        easyEnemyKeep,
+      )
     : [];
 
   if (isLevel3) {

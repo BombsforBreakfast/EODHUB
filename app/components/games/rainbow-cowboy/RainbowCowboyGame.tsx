@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { VIEW_H, VIEW_W } from "./rainbowCowboyConstants";
 import { RainbowCowboyEngine, RAINBOW_COWBOY_ENGINE_REVISION, type GameInput } from "./rainbowCowboyEngine";
 import { drawWorld, maybeSpawnDust } from "./rainbowCowboyGraphics";
+import { drawHiveArenaSilhouette } from "./rainbowCowboyHiveBoss";
 import { RainbowCowboyParticlePool } from "./rainbowCowboyParticles";
 import type { LevelConfig, RainbowCowboyPersonalBest } from "./rainbowCowboyTypes";
 import type { RainbowCowboyHudSnapshot, RainbowCowboyRunResult } from "./rainbowCowboyTypes";
@@ -52,6 +53,7 @@ const defaultHud: RainbowCowboyHudSnapshot = {
   blasterSecondsLeft: 0,
   weaponLabel: null,
   bazookaAmmo: 0,
+  machineGunAmmo: null,
 };
 
 function isStaleEngine(engine: RainbowCowboyEngine | null): boolean {
@@ -61,7 +63,9 @@ function isStaleEngine(engine: RainbowCowboyEngine | null): boolean {
     !Array.isArray(engine.landmineExplosionEvents) ||
     !Array.isArray(engine.audioEvents) ||
     typeof engine.prevPlayerX !== "number" ||
-    typeof engine.rideType !== "string"
+    typeof engine.rideType !== "string" ||
+    !("hiveBoss" in engine) ||
+    !Array.isArray(engine.fallingCrates)
   );
 }
 
@@ -88,6 +92,7 @@ export function RainbowCowboyGame({
     gunPressed: false,
     gunHeld: false,
     rainbowPressed: false,
+    weaponSwapPressed: false,
     pausePressed: false,
   });
   const endedRef = useRef(false);
@@ -103,6 +108,8 @@ export function RainbowCowboyGame({
   const musicPausedRef = useRef(false);
   const pausedUiRef = useRef(false);
   const hiddenRef = useRef(false);
+  const bossIntroUntilRef = useRef(0);
+  const isBossLevel = config.level.isBossLevel === true;
   const [hud, setHud] = useState(defaultHud);
   const [paused, setPaused] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(showInstructions);
@@ -156,6 +163,12 @@ export function RainbowCowboyGame({
       cancelled = true;
     };
   }, [config, ride]);
+
+  useEffect(() => {
+    if (!instructionsOpen && isBossLevel) {
+      bossIntroUntilRef.current = performance.now() + 3400;
+    }
+  }, [instructionsOpen, isBossLevel]);
 
   useEffect(() => {
     const audio = createUnicornHeroAudio(loadUnicornHeroAudioPrefs());
@@ -227,12 +240,14 @@ export function RainbowCowboyGame({
       gunPressed: input.gunPressed,
       gunHeld: input.gunHeld,
       rainbowPressed: input.rainbowPressed,
+      weaponSwapPressed: input.weaponSwapPressed,
       pausePressed: input.pausePressed,
     };
     input.jumpPressed = false;
     input.tonguePressed = false;
     input.gunPressed = false;
     input.rainbowPressed = false;
+    input.weaponSwapPressed = false;
     input.pausePressed = false;
     return edge;
   }, []);
@@ -276,7 +291,9 @@ export function RainbowCowboyGame({
       }
 
       const dt = Math.min(32, now - last);
-      if (!instructionsOpenRef.current) {
+      const bossIntroActive =
+        isBossLevel && !instructionsOpenRef.current && now < bossIntroUntilRef.current;
+      if (!instructionsOpenRef.current && !bossIntroActive) {
         last = now;
         const input = consumeEdgeInputs();
         engine.tick(dt, input);
@@ -339,6 +356,10 @@ export function RainbowCowboyGame({
 
       drawWorld(ctx, engine, now, particles);
 
+      if (bossIntroActive) {
+        drawHiveArenaSilhouette(ctx, now);
+      }
+
       if (!endedRef.current) {
         if (engine.phase === "complete") {
           endedRef.current = true;
@@ -354,7 +375,7 @@ export function RainbowCowboyGame({
 
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [config, consumeEdgeInputs, ride]);
+  }, [config, consumeEdgeInputs, isBossLevel, ride]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -374,6 +395,7 @@ export function RainbowCowboyGame({
         input.gunHeld = true;
       }
       if (k === "e") input.rainbowPressed = true;
+      if (k === "q") input.weaponSwapPressed = true;
       if (k === "escape") input.pausePressed = true;
     };
     const onKeyUp = (e: KeyboardEvent) => {
@@ -520,6 +542,7 @@ export function RainbowCowboyGame({
             gunPressed: false,
             gunHeld: false,
             rainbowPressed: false,
+            weaponSwapPressed: false,
             pausePressed: false,
           };
         }}

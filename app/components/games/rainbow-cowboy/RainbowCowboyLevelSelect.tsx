@@ -8,6 +8,7 @@ import {
   isLevelUnlocked,
   type RainbowCowboyProgressMap,
 } from "./rainbowCowboyProgression";
+import { isFobThunderSecured } from "./rainbowCowboyCampaign";
 import type { RainbowCowboyLevel, RainbowCowboyPersonalBest } from "./rainbowCowboyTypes";
 
 interface Props {
@@ -28,11 +29,20 @@ export function RainbowCowboyLevelSelect({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {levels.map((level) => {
+        const isBranchBase =
+          level.campaignBase === "camp_poseidon" || level.campaignBase === "skywatch";
+        const branchAwaitingHive = isBranchBase && !isFobThunderSecured(progress);
         const comingSoon = level.locked || level.status === "coming_soon";
         const progressionLocked = !comingSoon && !isLevelUnlocked(level.id, progress, levels);
-        const locked = comingSoon || progressionLocked;
+        const locked = comingSoon ? true : progressionLocked || branchAwaitingHive;
         const best = personalBests[level.id];
-        const lockMessage = progressionLocked ? getLevelLockMessage(level.id, levels) : null;
+        const lockMessage = branchAwaitingHive
+          ? "Secure FOB Thunder (beat The Hive) to unlock"
+          : progressionLocked
+            ? getLevelLockMessage(level.id, levels)
+            : comingSoon && isBranchBase && isFobThunderSecured(progress)
+              ? "Unlocked · Coming Soon"
+              : null;
 
         return (
           <button
@@ -53,7 +63,19 @@ export function RainbowCowboyLevelSelect({
             }}
           >
             <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>
-              {comingSoon ? "Coming Soon" : progressionLocked ? "Locked" : level.difficulty}
+              {branchAwaitingHive
+                ? "Branch Base · Locked"
+                : comingSoon
+                  ? isBranchBase && isFobThunderSecured(progress)
+                    ? "Branch Base · Unlocked"
+                    : "Coming Soon"
+                  : progressionLocked
+                    ? "Locked"
+                    : level.isBossLevel
+                      ? "Boss · FOB Thunder"
+                      : level.campaignBase === "camp_poseidon" || level.campaignBase === "skywatch"
+                        ? "Branch Base"
+                        : level.difficulty}
             </div>
             <div style={{ fontWeight: 700, fontSize: 17 }}>{level.title}</div>
             {!comingSoon && !progressionLocked && (
@@ -61,6 +83,9 @@ export function RainbowCowboyLevelSelect({
             )}
             {lockMessage && (
               <div style={{ fontSize: 12, color: t.textMuted, marginTop: 6 }}>{lockMessage}</div>
+            )}
+            {level.id === "level-4" && !locked && isFobThunderSecured(progress) && (
+              <div style={{ fontSize: 12, color: "#80ffc8", marginTop: 6 }}>FOB Thunder secured</div>
             )}
             {!locked && best != null && (
               <div style={{ fontSize: 12, color: BSM_ACCENT, marginTop: 8, lineHeight: 1.5 }}>

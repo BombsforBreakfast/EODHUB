@@ -1,3 +1,8 @@
+import {
+  HIVE_COMPLETE_BONUS,
+  HIVE_NO_DAMAGE_BONUS,
+  HIVE_FAST_TIME_BONUS,
+} from "./rainbowCowboyHiveConstants";
 import type { RainbowCowboyDifficulty, RainbowCowboyRunResult } from "./rainbowCowboyTypes";
 
 export const DRONE_SCORES = {
@@ -10,6 +15,7 @@ export const DRONE_SCORES = {
   boom_bot: 100,
   armored_boom_bot: 200,
   grenade_goblin_bot: 250,
+  hive_turret: 250,
 } as const;
 
 export const PICKUP_SCORES = {
@@ -60,16 +66,37 @@ const LEVEL_3_RANKS: [number, string][] = [
   [2200, "Fort Survivor"],
 ];
 
+const LEVEL_4_RANKS: [number, string][] = [
+  [12000, "Hive Breaker"],
+  [10000, "Thunder Chief"],
+  [8000, "Swarm Killer"],
+  [6000, "Drone Wrangler"],
+];
+
 export function getRainbowCowboyRank(levelId: string, score: number): string {
   const table =
-    levelId === "level-3" ? LEVEL_3_RANKS : levelId === "level-2" ? LEVEL_2_RANKS : LEVEL_1_RANKS;
+    levelId === "level-4"
+      ? LEVEL_4_RANKS
+      : levelId === "level-3"
+        ? LEVEL_3_RANKS
+        : levelId === "level-2"
+          ? LEVEL_2_RANKS
+          : LEVEL_1_RANKS;
   for (const [threshold, rank] of table) {
     if (score >= threshold) return rank;
   }
+  if (levelId === "level-4") return "Rookie Exterminator";
   return "Pony Recruit";
 }
 
 function getLevelBonuses(levelId: string) {
+  if (levelId === "level-4") {
+    return {
+      complete: HIVE_COMPLETE_BONUS,
+      noDamage: HIVE_NO_DAMAGE_BONUS,
+      fastTime: HIVE_FAST_TIME_BONUS,
+    };
+  }
   if (levelId === "level-3") {
     return {
       complete: LEVEL_3_COMPLETE_BONUS,
@@ -110,6 +137,8 @@ export function buildRainbowCowboyRunResult(params: {
   completeBanner?: string;
   deathCause?: string;
   difficulty?: RainbowCowboyDifficulty;
+  hiveBossDamage?: number;
+  turretsDestroyed?: number;
 }): RainbowCowboyRunResult {
   let score = params.baseScore;
   const bonuses = getLevelBonuses(params.levelId);
@@ -139,6 +168,8 @@ export function buildRainbowCowboyRunResult(params: {
     deathCause: params.deathCause,
     completedAt: new Date().toISOString(),
     difficulty: params.difficulty ?? "easy",
+    hiveBossDamage: params.hiveBossDamage,
+    turretsDestroyed: params.turretsDestroyed,
   };
 }
 

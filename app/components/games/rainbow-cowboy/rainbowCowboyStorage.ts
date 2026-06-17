@@ -103,6 +103,17 @@ export type SavePersonalBestResult = {
   coinGranted?: boolean;
 };
 
+function formatSupabaseError(error: unknown): string {
+  if (!error || typeof error !== "object") return String(error);
+  const e = error as {
+    message?: string;
+    code?: string;
+    details?: string;
+    hint?: string;
+  };
+  return [e.message, e.code ? `(${e.code})` : null, e.details, e.hint].filter(Boolean).join(" — ");
+}
+
 type RecordRainbowCowboyRunRpcRow = {
   saved: boolean;
   is_new_score_best: boolean;
@@ -284,7 +295,11 @@ async function saveRainbowCowboyPersonalBestDirect(
   );
 
   if (completionError) {
-    console.error("Failed to record rainbow cowboy completion (fallback):", completionError);
+    console.error(
+      "Failed to record rainbow cowboy completion (fallback):",
+      formatSupabaseError(completionError),
+      completionError,
+    );
     return { ...emptySaveResult(null, result), saveFailed: true };
   }
 
@@ -324,7 +339,11 @@ async function saveRainbowCowboyPersonalBestDirect(
   );
 
   if (highScoreError) {
-    console.error("Failed to record rainbow cowboy high score (fallback):", highScoreError);
+    console.error(
+      "Failed to record rainbow cowboy high score (fallback):",
+      formatSupabaseError(highScoreError),
+      highScoreError,
+    );
     return { ...emptySaveResult(existing, result), saveFailed: true };
   }
 
@@ -349,27 +368,35 @@ export async function saveRainbowCowboyPersonalBest(
 
   clearRainbowCowboyArcadeDataCache(userId);
 
-  // One bounded RPC records completion + personal best so victory never fans out into repeated writes/reads.
-  const { data, error } = await supabase.rpc("record_rainbow_cowboy_run", {
-    p_level_id: result.levelId,
-    p_level_slug: result.levelSlug,
-    p_score: result.score,
-    p_rank: result.rank,
-    p_duration_seconds: result.durationSeconds,
-    p_difficulty: result.difficulty,
-    p_drones_eaten: result.dronesEaten,
-    p_balloons_survived: result.balloonsSurvived,
-    p_rainbow_blasts_used: result.rainbowBlastsUsed,
-    p_damage_taken: result.damageTaken,
-    p_completed_at: result.completedAt,
-  });
+  let rpcError: unknown = null;
+  let rpcData: RecordRainbowCowboyRunRpcRow[] | null = null;
 
-  if (error) {
-    console.error("Failed to record rainbow cowboy run:", error);
+  try {
+    const { data, error } = await supabase.rpc("record_rainbow_cowboy_run", {
+      p_level_id: result.levelId,
+      p_level_slug: result.levelSlug,
+      p_score: result.score,
+      p_rank: result.rank,
+      p_duration_seconds: result.durationSeconds,
+      p_difficulty: result.difficulty,
+      p_drones_eaten: result.dronesEaten,
+      p_balloons_survived: result.balloonsSurvived,
+      p_rainbow_blasts_used: result.rainbowBlastsUsed,
+      p_damage_taken: result.damageTaken,
+      p_completed_at: result.completedAt,
+    });
+    if (error) rpcError = error;
+    else rpcData = (data as RecordRainbowCowboyRunRpcRow[] | null) ?? null;
+  } catch (error) {
+    rpcError = error;
+  }
+
+  if (rpcError) {
+    console.error("Failed to record rainbow cowboy run:", formatSupabaseError(rpcError), rpcError);
     return saveRainbowCowboyPersonalBestDirect(result, userId);
   }
 
-  const row = ((data as RecordRainbowCowboyRunRpcRow[] | null) ?? [])[0];
+  const row = (rpcData ?? [])[0];
   if (!row) {
     console.warn("record_rainbow_cowboy_run returned no row; using direct save fallback.");
     return saveRainbowCowboyPersonalBestDirect(result, userId);

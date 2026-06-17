@@ -13,7 +13,8 @@ export type RainbowCowboyEnemyKind =
   | "cargo"
   | "boom_bot"
   | "armored_boom_bot"
-  | "grenade_goblin_bot";
+  | "grenade_goblin_bot"
+  | "hive_turret";
 
 export type RainbowCowboyPickupKind =
   | "range_beer"
@@ -29,7 +30,9 @@ export type WeaponKind = "pistol" | "machine_gun" | "bazooka";
 
 export type RainbowCowboyHazardKind = "landmine" | "dynamite" | "trash_balloon";
 
-export type RainbowCowboyLevelTheme = "pasture" | "canyon" | "alamo";
+export type RainbowCowboyLevelTheme = "pasture" | "canyon" | "alamo" | "hive";
+
+export type RainbowCowboyVictoryCondition = "extraction" | "boss_defeated";
 
 export type RainbowCowboyExtractionGate =
   | "nests_cleared"
@@ -51,6 +54,8 @@ export interface RainbowCowboyLevel {
   targetTimeSeconds: number;
   locked?: boolean;
   status?: "playable" | "coming_soon";
+  campaignBase?: "fob_thunder" | "camp_poseidon" | "skywatch";
+  isBossLevel?: boolean;
 }
 
 export interface RainbowCowboyRunResult {
@@ -68,6 +73,8 @@ export interface RainbowCowboyRunResult {
   redBaronsDestroyed: number;
   nestsDestroyed: number;
   bombsDodged: number;
+  hiveBossDamage?: number;
+  turretsDestroyed?: number;
   completeBanner?: string;
   deathCause?: string;
   completedAt: string;
@@ -97,6 +104,12 @@ export interface RainbowCowboyHudSnapshot {
   blasterSecondsLeft: number;
   weaponLabel: string | null;
   bazookaAmmo: number;
+  bossHp?: number | null;
+  bossMaxHp?: number | null;
+  bossPhase?: number | null;
+  bossHatchOpen?: boolean | null;
+  bossSegments?: number | null;
+  machineGunAmmo?: number | null;
 }
 
 export interface RainbowCowboyEngineSnapshot {
@@ -156,6 +169,18 @@ export interface LevelNestSpawn {
   spawnKinds?: RainbowCowboyEnemyKind[];
 }
 
+export interface LevelHiveTurretSpawn {
+  x: number;
+  y: number;
+}
+
+export interface BossArenaConfig {
+  triggerX: number;
+  width: number;
+  hiveMaxHp: number;
+  immediate?: boolean;
+}
+
 export interface LevelConfig {
   level: RainbowCowboyLevel;
   theme?: RainbowCowboyLevelTheme;
@@ -163,6 +188,8 @@ export interface LevelConfig {
   completeBanner?: string;
   difficulty?: RainbowCowboyDifficulty;
   difficultySpeedMult?: number;
+  victoryCondition?: RainbowCowboyVictoryCondition;
+  bossArena?: BossArenaConfig;
   platforms: LevelPlatform[];
   walls: LevelWall[];
   pickups: LevelPickupSpawn[];
@@ -170,6 +197,7 @@ export interface LevelConfig {
   enemies: LevelEnemySpawn[];
   warnings?: LevelWarning[];
   nests?: LevelNestSpawn[];
+  hiveTurrets?: LevelHiveTurretSpawn[];
   extractionX: number;
   /** Extraction stays locked until any listed condition is met. */
   extractionGate?: RainbowCowboyExtractionGate[];

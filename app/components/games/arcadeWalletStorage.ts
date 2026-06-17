@@ -6,6 +6,24 @@ export type ArcadeWallet = {
   grantDate: string;
 };
 
+export const ARCADE_UNLIMITED_COIN_BALANCE = 999999;
+
+export function createUnlimitedArcadeWallet(): ArcadeWallet {
+  return {
+    balance: ARCADE_UNLIMITED_COIN_BALANCE,
+    dailyMax: ARCADE_UNLIMITED_COIN_BALANCE,
+    grantDate: new Date().toISOString().slice(0, 10),
+  };
+}
+
+export function isArcadeWalletUnlimited(wallet: ArcadeWallet | null): boolean {
+  return (
+    wallet != null &&
+    wallet.balance >= ARCADE_UNLIMITED_COIN_BALANCE &&
+    wallet.dailyMax >= ARCADE_UNLIMITED_COIN_BALANCE
+  );
+}
+
 export type SpendChallengeCoinResult =
   | { ok: true; wallet: ArcadeWallet }
   | { ok: false; wallet: ArcadeWallet | null; error: string };

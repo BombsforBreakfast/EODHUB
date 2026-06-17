@@ -1,4 +1,10 @@
 import type { RainbowCowboyDifficulty, RainbowCowboyLevel } from "./rainbowCowboyTypes";
+import {
+  HIVE_LEVEL_ID,
+  getHiveLockMessage,
+  isFobThunderSecured,
+  isHiveLevelUnlocked,
+} from "./rainbowCowboyCampaign";
 
 export type LevelProgress = Partial<Record<RainbowCowboyDifficulty, true>>;
 
@@ -37,8 +43,20 @@ export function isLevelUnlocked(
   const level = levels.find((l) => l.id === levelId);
   if (!level || !isPlayableLevelMeta(level)) return false;
 
+  if (levelId === HIVE_LEVEL_ID) {
+    return isHiveLevelUnlocked(progress);
+  }
+
+  if (levelId === "level-5" || levelId === "level-6") {
+    return isFobThunderSecured(progress);
+  }
+
   const previous = getPreviousPlayableLevel(levelId, levels);
   if (!previous) return true;
+
+  if (previous.id === HIVE_LEVEL_ID) {
+    return isFobThunderSecured(progress);
+  }
 
   return hasAnyCompletion(progress[previous.id]);
 }
@@ -59,8 +77,17 @@ export function getLevelLockMessage(
   levelId: string,
   levels: RainbowCowboyLevel[],
 ): string | null {
+  if (levelId === HIVE_LEVEL_ID) {
+    return getHiveLockMessage();
+  }
+  if (levelId === "level-5" || levelId === "level-6") {
+    return "Secure FOB Thunder (beat The Hive) to unlock";
+  }
   const previous = getPreviousPlayableLevel(levelId, levels);
   if (!previous) return null;
+  if (previous.id === HIVE_LEVEL_ID) {
+    return "Beat The Hive to unlock";
+  }
   return `Beat ${previous.title} to unlock`;
 }
 

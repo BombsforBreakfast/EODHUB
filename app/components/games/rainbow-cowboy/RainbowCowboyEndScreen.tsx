@@ -42,7 +42,8 @@ export function RainbowCowboyEndScreen({
   const timeDisplay = formatRainbowCowboyDuration(result.durationSeconds);
   const isLevel2 = result.levelId === "level-2";
   const isLevel3 = result.levelId === "level-3";
-  const isAdvancedLevel = isLevel2 || isLevel3;
+  const isLevel4 = result.levelId === "level-4";
+  const isAdvancedLevel = isLevel2 || isLevel3 || isLevel4;
   const victoryTitle = getVictoryTitle(result);
 
   return (
@@ -59,7 +60,9 @@ export function RainbowCowboyEndScreen({
     >
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
         {isVictory ? (
-          isLevel2 ? (
+          isLevel4 ? (
+            <span style={{ fontSize: 40 }}>🏴</span>
+          ) : isLevel2 ? (
             <span style={{ fontSize: 40 }}>🏜️</span>
           ) : (
             <BombSuitManAvatar size={48} />
@@ -92,8 +95,14 @@ export function RainbowCowboyEndScreen({
             {isAdvancedLevel && (
               <>
                 <Stat label="Red Barons Down" value={String(result.redBaronsDestroyed)} t={t} />
-                <Stat label="Nests Destroyed" value={String(result.nestsDestroyed)} t={t} />
-                <Stat label="Bombs Dodged" value={String(result.bombsDodged)} t={t} />
+                {isLevel4 ? (
+                  <Stat label="Hive Damage" value={String(result.hiveBossDamage ?? 0)} t={t} />
+                ) : (
+                  <>
+                    <Stat label="Nests Destroyed" value={String(result.nestsDestroyed)} t={t} />
+                    <Stat label="Bombs Dodged" value={String(result.bombsDodged)} t={t} />
+                  </>
+                )}
               </>
             )}
             <Stat label="Balloons Avoided" value={String(result.balloonsSurvived)} t={t} />
@@ -107,6 +116,24 @@ export function RainbowCowboyEndScreen({
           t={t}
         />
       </div>
+
+      {isVictory && isLevel4 && (
+        <div
+          style={{
+            padding: 14,
+            borderRadius: 10,
+            background: "rgba(128,255,200,0.08)",
+            border: "1px solid rgba(128,255,200,0.35)",
+            marginBottom: 16,
+            fontSize: 14,
+            color: t.text,
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>NEW BASE UNLOCKED</strong>
+          <div style={{ marginTop: 6 }}>Camp Poseidon · Skywatch</div>
+        </div>
+      )}
 
       {isVictory && (
         <div

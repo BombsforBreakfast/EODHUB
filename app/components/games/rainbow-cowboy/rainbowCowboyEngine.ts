@@ -68,7 +68,6 @@ import {
   TONGUE_HOMING_RANGE,
   TONGUE_LENGTH,
   TONGUE_TIP_RADIUS,
-  VIEW_H,
   VIEW_W,
 } from "./rainbowCowboyConstants";
 import {
@@ -96,9 +95,20 @@ import {
   getRideStatusAttack,
   getRideStatusRiding,
 } from "../unicorn-hero/unicornHeroRides";
+import { getBossPressureMult, HIVE_BOSS_PRESSURE_MULT } from "./rainbowCowboyDifficulty";
+import { HiveBossController, PHASE_3_PLUS_EASE_MULT } from "./rainbowCowboyHiveBoss";
+import {
+  HIVE_BAZOOKA_AMMO,
+  HIVE_BAZOOKA_DAMAGE,
+  HIVE_CLOSED_DAMAGE_MULT,
+  HIVE_MG_AMMO,
+  HIVE_MG_DAMAGE,
+  HIVE_PISTOL_DAMAGE,
+  HIVE_RAINBOW_DAMAGE,
+} from "./rainbowCowboyHiveConstants";
 
 /** Bumped when engine internals change so HMR can replace stale instances. */
-export const RAINBOW_COWBOY_ENGINE_REVISION = 16;
+export const RAINBOW_COWBOY_ENGINE_REVISION = 32;
 
 export interface GameInput {
   left: boolean;
@@ -110,6 +120,7 @@ export interface GameInput {
   gunPressed: boolean;
   gunHeld: boolean;
   rainbowPressed: boolean;
+  weaponSwapPressed: boolean;
   pausePressed: boolean;
 }
 
@@ -145,6 +156,9 @@ interface Enemy {
   shootCooldownMs?: number;
   groundUnit?: boolean;
   fromFinalWave?: boolean;
+  cosmetic?: boolean;
+  cosmeticFuseMs?: number;
+  vy?: number;
 }
 
 interface BlasterProjectile {
@@ -167,6 +181,7 @@ interface Bomb {
   fuseMs: number;
   active: boolean;
   cartoon?: boolean;
+  harmless?: boolean;
 }
 
 interface EnemyBullet {
@@ -200,6 +215,15 @@ interface Pickup {
   kind: RainbowCowboyPickupKind;
   x: number;
   y: number;
+  active: boolean;
+}
+
+interface FallingCrate {
+  id: string;
+  kind: RainbowCowboyPickupKind;
+  x: number;
+  y: number;
+  vy: number;
   active: boolean;
 }
 
@@ -363,6 +387,7 @@ export class RainbowCowboyEngine {
   hasPistol = false;
   activeWeapon: WeaponKind = "pistol";
   machineGunUntil = 0;
+  machineGunAmmo = 0;
   bazookaAmmo = 0;
   gunCooldownUntil = 0;
   lastGunFireMs = 0;
@@ -393,8 +418,18 @@ export class RainbowCowboyEngine {
 
   extractionReached = false;
   levelCompleteHold = 0;
+  finaleShakeMag = 0;
+  finaleRedFlash = 0;
+  cameraShakeX = 0;
+  cameraShakeY = 0;
+  bossVictoryEpilogueComplete = false;
   landmineExplosionEvents: { x: number; groundY: number }[] = [];
   audioEvents: UnicornHeroAudioEvent[] = [];
+
+  hiveBoss: HiveBossController | null = null;
+  arenaLocked = false;
+  hiveBossHitCooldownUntil = 0;
+  fallingCrates: FallingCrate[] = [];
 
   constructor(config: LevelConfig, rideType: UnicornHeroRideType = "eod_robot") {
     this.config = config;
@@ -488,16 +523,51 @@ export class RainbowCowboyEngine {
     this.hasPistol = false;
     this.activeWeapon = "pistol";
     this.machineGunUntil = 0;
+    this.machineGunAmmo = 0;
     this.bazookaAmmo = 0;
-    if (this.weaponsEnabled()) {
-      this.hasPistol = true;
-    }
+    this.hasPistol = this.weaponsEnabled();
+    this.activeWeapon = "pistol";
     this.gunCooldownUntil = 0;
     this.lastGunFireMs = 0;
     this.lastGunWeapon = null;
     this.landmineExplosionEvents = [];
     this.prevPlayerX = this.playerX;
     this.startTimeMs = performance.now();
+    this.arenaLocked = false;
+    this.hiveBossHitCooldownUntil = 0;
+    this.fallingCrates = [];
+
+    if (this.config.bossArena) {
+      this.hiveBoss = new HiveBossController(
+        this.config.bossArena,
+        {
+          spawnEnemy: (kind, x, y) => this.spawnBossEnemy(kind, x, y),
+          addScore: (points) => this.addScore(points),
+          showPopup: (text, ms) => this.showPopup(text, ms),
+          onDefeated: () => this.onHiveBossDefeated(),
+          spawnCrate: (x, y, kind) => this.spawnBossCrate(x, y, kind),
+          fireBullet: (x, y, vx, vy) => this.spawnBossBullet(x, y, vx, vy),
+          spewGrenade: (x, y, vx, vy, bounces) => this.spawnBossGrenade(x, y, vx, vy, bounces),
+          spawnFinaleGrenade: (x, y, vx, vy) => this.spawnFinaleGrenade(x, y, vx, vy),
+          spawnFinaleDrone: (kind, x, y, vx, vy) => this.spawnFinaleDrone(kind, x, y, vx, vy),
+          pulseFinaleFx: (shakeMag, redAlpha) => this.pulseFinaleFx(shakeMag, redAlpha),
+          clearFinaleChaos: () => this.clearFinaleChaos(),
+          getCompleteBanner: () => this.config.completeBanner ?? "FOB THUNDER SECURED",
+          getPlayerX: () => this.playerX,
+          getPlayerY: () => this.playerY,
+          getTimeMs: () => this.timeMs,
+          damagePlayer: (amount, cause, knockback) => this.damagePlayer(amount, cause, knockback),
+        },
+        getBossPressureMult(this.config.difficulty ?? "easy"),
+      );
+      if (this.config.bossArena.immediate) {
+        this.arenaLocked = true;
+        this.playerX = 140;
+        this.hiveBoss.enterArena(this.config.level.groundY);
+      }
+    } else {
+      this.hiveBoss = null;
+    }
   }
 
   get scoreMultiplier(): number {
@@ -513,6 +583,7 @@ export class RainbowCowboyEngine {
   }
 
   get isMachineGunActive(): boolean {
+    if (this.isBossLevel()) return this.machineGunAmmo > 0;
     return this.timeMs < this.machineGunUntil;
   }
 
@@ -523,7 +594,11 @@ export class RainbowCowboyEngine {
 
   private syncActiveWeapon() {
     if (!this.weaponsEnabled()) return;
-    if (this.activeWeapon === "machine_gun" && !this.isMachineGunActive) {
+    if (this.isBossLevel()) {
+      if (this.activeWeapon === "machine_gun" && this.machineGunAmmo <= 0) {
+        this.activeWeapon = "pistol";
+      }
+    } else if (this.activeWeapon === "machine_gun" && !this.isMachineGunActive) {
       this.activeWeapon = "pistol";
     }
     if (this.activeWeapon === "bazooka" && this.bazookaAmmo <= 0) {
@@ -532,11 +607,23 @@ export class RainbowCowboyEngine {
   }
 
   private weaponsEnabled(): boolean {
-    return this.config.level.id === "level-3";
+    return this.config.level.id === "level-3" || this.config.level.id === "level-4";
+  }
+
+  private isBossLevel(): boolean {
+    return this.config.level.id === "level-4";
   }
 
   private difficultySpeed(): number {
-    return this.config.difficultySpeedMult ?? 1;
+    const sm = this.config.difficultySpeedMult ?? 1;
+    if (this.isBossLevel() && this.hiveBoss?.active && !this.hiveBoss.defeated) {
+      let bossSm = sm * HIVE_BOSS_PRESSURE_MULT;
+      if (this.hiveBoss.phase >= 3) {
+        bossSm *= PHASE_3_PLUS_EASE_MULT;
+      }
+      return bossSm;
+    }
+    return sm;
   }
 
   get isGassed(): boolean {
@@ -709,17 +796,25 @@ export class RainbowCowboyEngine {
         this.phase = "complete";
         this.emitAudio({ type: "level_complete" });
       }
+      this.decayFinaleFx();
       this.updatePhysics(dt);
       this.updateCamera();
       return;
     }
 
+    this.decayFinaleFx();
+
     this.processSpawns();
     this.processFinalWave();
     this.processWarnings();
-    this.handleInput(input, dt);
+    this.checkBossArenaEntry();
+    this.handleInput(input);
     this.updatePhysics(dt);
     this.updateEnemies(dt, dtMs);
+    if (this.hiveBoss?.active) {
+      this.hiveBoss.tick(dtMs);
+    }
+    this.tickFallingCrates(dt);
     this.updateBlasterProjectiles(dt);
     this.updateEnemyBullets(dt);
     this.updateBombs(dt);
@@ -736,6 +831,12 @@ export class RainbowCowboyEngine {
   private updateStatus() {
     this.syncActiveWeapon();
     if (this.timeMs < this.popupUntil && this.popupText) return;
+    if (this.hiveBoss?.active && !this.hiveBoss.defeated) {
+      this.status = `THE HIVE · Phase ${this.hiveBoss.getState().phase}${
+        this.hiveBoss.getState().vulnerable ? " · HATCH OPEN" : ""
+      }`;
+      return;
+    }
     if (this.isRampage) this.status = "RAINBOW RAMPAGE";
     else if (this.isGassed) this.status = "Gassed…";
     else if (this.ducking && this.grounded) this.status = "Ducking";
@@ -746,6 +847,158 @@ export class RainbowCowboyEngine {
     else if (this.hasPistol) this.status = "PISTOL READY";
     else if (this.grounded) this.status = getRideStatusRiding(this.rideType);
     else this.status = "Airborne";
+  }
+
+  private spawnBossEnemy(kind: RainbowCowboyEnemyKind, x: number, y: number) {
+    const enemy = this.createEnemyFromSpawn({ kind, y }, x);
+    this.enemies.push(enemy);
+  }
+
+  private spawnHiveTurretBullet(x: number, y: number, vx: number, vy: number) {
+    this.enemyBullets.push({
+      id: nextId(),
+      x,
+      y,
+      vx,
+      vy,
+      active: true,
+    });
+  }
+
+  private spawnBossCrate(x: number, y: number, forcedKind?: RainbowCowboyPickupKind) {
+    const kind = forcedKind ?? "range_beer";
+    this.fallingCrates.push({
+      id: nextId(),
+      kind,
+      x,
+      y,
+      vy: 1.55,
+      active: true,
+    });
+  }
+
+  private tickFallingCrates(dt: number) {
+    const groundY = this.config.level.groundY;
+    const pr = playerRect(this.playerX, this.playerY, this.ducking);
+    for (const crate of this.fallingCrates) {
+      if (!crate.active) continue;
+      crate.y += crate.vy * dt;
+      const cr = {
+        x: crate.x - PICKUP_SIZE / 2,
+        y: crate.y - PICKUP_SIZE,
+        w: PICKUP_SIZE,
+        h: PICKUP_SIZE,
+      };
+      if (rectsOverlap(pr, cr)) {
+        crate.active = false;
+        this.collectPickup({ id: crate.id, kind: crate.kind, x: crate.x, y: crate.y, active: true });
+        continue;
+      }
+      if (crate.y >= groundY - 10) crate.active = false;
+    }
+    this.fallingCrates = this.fallingCrates.filter((c) => c.active);
+  }
+
+  private checkBossArenaEntry() {
+    if (!this.hiveBoss || this.arenaLocked) return;
+    const triggerX = this.config.bossArena?.triggerX;
+    if (triggerX == null || this.playerX < triggerX) return;
+    this.arenaLocked = true;
+    this.hiveBoss.enterArena(this.config.level.groundY);
+  }
+
+  private onHiveBossDefeated() {
+    for (const enemy of this.enemies) {
+      if (enemy.active && !enemy.cosmetic) enemy.active = false;
+    }
+    this.clearFinaleChaos();
+    this.bossVictoryEpilogueComplete = true;
+    this.extractionReached = true;
+    this.levelCompleteHold = 0;
+    this.playerVx = 0;
+  }
+
+  private clearFinaleChaos() {
+    for (const bomb of this.bombs) {
+      if (bomb.harmless) bomb.active = false;
+    }
+    for (const enemy of this.enemies) {
+      if (enemy.cosmetic) enemy.active = false;
+    }
+    this.finaleShakeMag = 0;
+    this.finaleRedFlash = 0;
+  }
+
+  private pulseFinaleFx(shakeMag: number, redAlpha: number) {
+    this.finaleShakeMag = Math.max(this.finaleShakeMag, shakeMag);
+    this.finaleRedFlash = Math.max(this.finaleRedFlash, redAlpha);
+  }
+
+  private decayFinaleFx() {
+    this.finaleShakeMag *= 0.9;
+    if (this.finaleShakeMag < 0.25) this.finaleShakeMag = 0;
+    this.finaleRedFlash *= 0.92;
+    if (this.finaleRedFlash < 0.03) this.finaleRedFlash = 0;
+  }
+
+  private spawnFinaleGrenade(x: number, y: number, vx: number, vy: number) {
+    this.bombs.push({
+      id: nextId(),
+      x,
+      y,
+      vy,
+      vx,
+      bounces: Math.random() > 0.45 ? 1 : 0,
+      grounded: false,
+      fuseMs: 350 + Math.random() * 900,
+      active: true,
+      cartoon: true,
+      harmless: true,
+    });
+    this.emitAudio({ type: "tongue" });
+  }
+
+  private spawnFinaleDrone(
+    kind: RainbowCowboyEnemyKind,
+    x: number,
+    y: number,
+    vx: number,
+    vy: number,
+  ) {
+    const enemy = this.createEnemyFromSpawn({ kind, y }, x);
+    enemy.cosmetic = true;
+    enemy.groundUnit = false;
+    enemy.phase = "patrol";
+    enemy.vx = vx;
+    enemy.vy = vy;
+    enemy.y = y;
+    enemy.baseY = y;
+    enemy.cosmeticFuseMs = 550 + Math.random() * 1500;
+    this.enemies.push(enemy);
+  }
+
+  private damageHiveBoss(baseAmount: number, bypassCooldown = false) {
+    if (!this.hiveBoss?.active || this.hiveBoss.defeated || this.hiveBoss.collapsing) return;
+    if (!bypassCooldown && this.timeMs < this.hiveBossHitCooldownUntil) return;
+    this.hiveBossHitCooldownUntil = this.timeMs + 75;
+    const mult = this.hiveBoss.isVulnerable() ? 1 : HIVE_CLOSED_DAMAGE_MULT;
+    this.hiveBoss.damage(baseAmount * mult);
+  }
+
+  private hiveGunDamage(weapon: WeaponKind): number {
+    if (weapon === "bazooka") return HIVE_BAZOOKA_DAMAGE;
+    if (weapon === "machine_gun") return HIVE_MG_DAMAGE;
+    return HIVE_PISTOL_DAMAGE;
+  }
+
+  private cycleBossWeapon() {
+    const options: WeaponKind[] = ["pistol"];
+    if (this.machineGunAmmo > 0) options.push("machine_gun");
+    if (this.bazookaAmmo > 0) options.push("bazooka");
+    if (options.length <= 1) return;
+    const idx = options.indexOf(this.activeWeapon);
+    this.activeWeapon = options[(idx + 1) % options.length];
+    this.showPopup(`WEAPON: ${this.activeWeapon.replace("_", " ").toUpperCase()}`, 700);
   }
 
   private processWarnings() {
@@ -1055,7 +1308,14 @@ export class RainbowCowboyEngine {
     let weapon = this.activeWeapon;
 
     if (weapon === "machine_gun") {
-      if (!this.isMachineGunActive) {
+      if (this.isBossLevel()) {
+        if (this.machineGunAmmo <= 0) {
+          this.activeWeapon = "pistol";
+          weapon = "pistol";
+        } else if (!held && !fromEdge) {
+          return;
+        }
+      } else if (!this.isMachineGunActive) {
         this.activeWeapon = "pistol";
         weapon = "pistol";
       } else if (!held && !fromEdge) {
@@ -1075,6 +1335,11 @@ export class RainbowCowboyEngine {
     if (weapon === "bazooka") {
       this.bazookaAmmo -= 1;
       if (this.bazookaAmmo <= 0) {
+        this.activeWeapon = "pistol";
+      }
+    } else if (weapon === "machine_gun" && this.isBossLevel()) {
+      this.machineGunAmmo -= 1;
+      if (this.machineGunAmmo <= 0) {
         this.activeWeapon = "pistol";
       }
     }
@@ -1105,6 +1370,34 @@ export class RainbowCowboyEngine {
       vx: dir * TURRET_BULLET_SPEED,
       vy: 0,
       active: true,
+    });
+    this.emitAudio({ type: "tongue" });
+  }
+
+  private spawnBossBullet(x: number, y: number, vx: number, vy: number) {
+    this.enemyBullets.push({
+      id: nextId(),
+      x,
+      y,
+      vx,
+      vy,
+      active: true,
+    });
+    this.emitAudio({ type: "tongue" });
+  }
+
+  private spawnBossGrenade(x: number, y: number, vx: number, vy: number, bounces = 1) {
+    this.bombs.push({
+      id: nextId(),
+      x,
+      y,
+      vy,
+      vx,
+      bounces,
+      grounded: false,
+      fuseMs: BOMB_FUSE_MS + 350 + Math.random() * 450,
+      active: true,
+      cartoon: true,
     });
     this.emitAudio({ type: "tongue" });
   }
@@ -1199,6 +1492,19 @@ export class RainbowCowboyEngine {
           break;
         }
       }
+
+      if (!shot.active) continue;
+
+      if (this.hiveBoss?.active && !this.hiveBoss.defeated) {
+        const hiveRect = this.hiveBoss.hiveHitRect();
+        if (rectsOverlap(sr, hiveRect)) {
+          this.damageHiveBoss(this.hiveGunDamage(shot.weapon));
+          if (shot.weapon === "bazooka") {
+            this.damageNearbyBossDrones(shot.x, shot.y, 120);
+          }
+          shot.active = false;
+        }
+      }
     }
 
     this.blasterProjectiles = this.blasterProjectiles.filter((s) => s.active);
@@ -1288,7 +1594,7 @@ export class RainbowCowboyEngine {
     this.enemies.push(enemy);
   }
 
-  private handleInput(input: GameInput, dt: number) {
+  private handleInput(input: GameInput) {
     if (this.phase !== "playing") return;
 
     let speed = MOVE_SPEED;
@@ -1341,6 +1647,10 @@ export class RainbowCowboyEngine {
     if (input.rainbowPressed) {
       this.tryRainbowBlast();
     }
+
+    if (input.weaponSwapPressed && this.isBossLevel()) {
+      this.cycleBossWeapon();
+    }
   }
 
   private tryRainbowBlast() {
@@ -1391,6 +1701,25 @@ export class RainbowCowboyEngine {
         }
       }
     }
+
+    if (this.hiveBoss?.active && !this.hiveBoss.defeated) {
+      const hiveRect = this.hiveBoss.hiveHitRect();
+      if (hiveRect.x + hiveRect.w >= viewLeft && hiveRect.x <= viewRight) {
+        this.hiveBossHitCooldownUntil = 0;
+        this.damageHiveBoss(HIVE_RAINBOW_DAMAGE, true);
+      }
+    }
+  }
+
+  private damageNearbyBossDrones(x: number, y: number, radius: number) {
+    for (const enemy of this.enemies) {
+      if (!enemy.active) continue;
+      const cx = enemy.x + enemy.w / 2;
+      const cy = enemy.y + enemy.h / 2;
+      if (Math.hypot(cx - x, cy - y) < radius) {
+        this.destroyEnemy(enemy, "blaster");
+      }
+    }
   }
 
   private updatePhysics(dt: number) {
@@ -1402,6 +1731,13 @@ export class RainbowCowboyEngine {
     this.playerY += this.playerVy * dt;
 
     this.playerX = Math.max(PLAYER_W / 2, Math.min(levelW - PLAYER_W / 2, this.playerX));
+
+    if (this.arenaLocked && this.hiveBoss?.active) {
+      const bounds = this.hiveBoss.getArenaBounds();
+      const minX = bounds.startX + PLAYER_W / 2 + 24;
+      const maxX = bounds.endX - PLAYER_W / 2 - 24;
+      this.playerX = Math.max(minX, Math.min(maxX, this.playerX));
+    }
 
     const pr = playerRect(this.playerX, this.playerY, this.ducking);
     this.grounded = false;
@@ -1432,7 +1768,7 @@ export class RainbowCowboyEngine {
       }
     }
 
-    for (const plat of this.config.platforms) {
+    for (const plat of this.getActivePlatforms()) {
       const pl = { x: plat.x, y: plat.y, w: plat.w, h: plat.h };
       if (rectsOverlap(pr, pl)) {
         if (this.playerVy > 0 && pr.y + pr.h - this.playerVy * dt <= pl.y + 6) {
@@ -1445,6 +1781,13 @@ export class RainbowCowboyEngine {
     }
   }
 
+  private getActivePlatforms() {
+    if (this.hiveBoss?.active) {
+      return this.hiveBoss.getPlankPlatforms();
+    }
+    return this.config.platforms;
+  }
+
   private updateEnemies(dt: number, dtMs: number) {
     const targetX = this.playerX;
     const targetY = this.playerY - PLAYER_H * 0.45;
@@ -1453,6 +1796,21 @@ export class RainbowCowboyEngine {
 
     for (const e of this.enemies) {
       if (!e.active) continue;
+
+      if (e.cosmetic) {
+        e.x += e.vx * dt;
+        e.y += (e.vy ?? 0) * dt;
+        e.vy = (e.vy ?? 0) + 0.18 * dt;
+        e.bobPhase += 0.08 * dt;
+        e.y += Math.sin(e.bobPhase) * 0.35 * dt;
+        e.cosmeticFuseMs = (e.cosmeticFuseMs ?? 0) - dtMs;
+        if ((e.cosmeticFuseMs ?? 0) <= 0) {
+          e.active = false;
+          this.emitAudio({ type: "explosion" });
+          this.landmineExplosionEvents.push({ x: e.x + e.w / 2, groundY });
+        }
+        continue;
+      }
 
       if (e.groundUnit) {
         e.beepPhase = (e.beepPhase ?? 0) + 0.06 * dt;
@@ -1636,7 +1994,7 @@ export class RainbowCowboyEngine {
           }
         }
 
-        for (const plat of this.config.platforms) {
+        for (const plat of this.getActivePlatforms()) {
           if (
             bomb.x >= plat.x &&
             bomb.x <= plat.x + plat.w &&
@@ -1658,12 +2016,14 @@ export class RainbowCowboyEngine {
         bomb.fuseMs -= dt * 16.67;
         if (bomb.fuseMs <= 0) {
           bomb.active = false;
-          const dist = Math.hypot(this.playerX - bomb.x, this.playerY - bomb.y);
-          if (dist < BOMB_RADIUS) {
-            const knock = this.playerX < bomb.x ? -6 : 6;
-            this.damagePlayer(1, "Red Baron bomb", knock);
-          } else {
-            this.bombsDodged += 1;
+          if (!bomb.harmless) {
+            const dist = Math.hypot(this.playerX - bomb.x, this.playerY - bomb.y);
+            if (dist < BOMB_RADIUS) {
+              const knock = this.playerX < bomb.x ? -6 : 6;
+              this.damagePlayer(1, "Red Baron bomb", knock);
+            } else {
+              this.bombsDodged += 1;
+            }
           }
           this.emitAudio({ type: "explosion" });
           this.landmineExplosionEvents.push({
@@ -1838,6 +2198,7 @@ export class RainbowCowboyEngine {
         this.showPopup("RANGE BEER +1");
         break;
       case "white_energy_drink":
+        if (this.isGassed) this.gassedUntil = 0;
         this.hearts = Math.min(MAX_HEARTS, this.hearts + 1);
         this.gassedUntil = 0;
         this.speedBoostUntil = this.timeMs + SPEED_BOOST_MS;
@@ -1856,6 +2217,12 @@ export class RainbowCowboyEngine {
         this.showPopup(`RAINBOW (${this.rainbowCharges})`);
         break;
       case "unicorn_treat":
+        if (this.isBossLevel()) {
+          this.rainbowCharges = Math.min(MAX_RAINBOW_CHARGES, this.rainbowCharges + 1);
+          this.emitAudio({ type: "rainbow_pickup" });
+          this.showPopup(`RAINBOW (${this.rainbowCharges})`);
+          break;
+        }
         this.rampageUntil = this.timeMs + RAMPAGE_DURATION_MS;
         this.invincibleUntil = this.rampageUntil;
         this.speedBoostUntil = this.rampageUntil;
@@ -1868,14 +2235,24 @@ export class RainbowCowboyEngine {
         this.showPopup("PISTOL — active weapon (T / GUN to fire)", 1200);
         break;
       case "weapon_machine_gun":
-        this.machineGunUntil = this.timeMs + BLASTER_DURATION_MS;
+        if (this.isBossLevel()) {
+          this.machineGunAmmo = HIVE_MG_AMMO;
+          this.showPopup(`MACHINE GUN — ${HIVE_MG_AMMO} rounds`, 1400);
+        } else {
+          this.machineGunUntil = this.timeMs + BLASTER_DURATION_MS;
+          this.showPopup("MACHINE GUN — active until you pick up another", 1400);
+        }
         this.activeWeapon = "machine_gun";
-        this.showPopup("MACHINE GUN — active until you pick up another", 1400);
         break;
       case "weapon_bazooka":
-        this.bazookaAmmo += BAZOOKA_ROCKETS_PER_PICKUP;
+        if (this.isBossLevel()) {
+          this.bazookaAmmo = HIVE_BAZOOKA_AMMO;
+          this.showPopup(`BAZOOKA — ${HIVE_BAZOOKA_AMMO} rockets`, 1400);
+        } else {
+          this.bazookaAmmo += BAZOOKA_ROCKETS_PER_PICKUP;
+          this.showPopup(`BAZOOKA — ${this.bazookaAmmo} rockets, active until another pickup`, 1400);
+        }
         this.activeWeapon = "bazooka";
-        this.showPopup(`BAZOOKA — ${this.bazookaAmmo} rockets, active until another pickup`, 1400);
         break;
     }
   }
@@ -1883,6 +2260,14 @@ export class RainbowCowboyEngine {
   private getWeaponHudLabel(): string | null {
     if (!this.weaponsEnabled()) return null;
     this.syncActiveWeapon();
+    if (this.isBossLevel()) {
+      if (this.activeWeapon === "machine_gun" && this.machineGunAmmo > 0) {
+        return `MG x${this.machineGunAmmo}`;
+      }
+      if (this.activeWeapon === "bazooka" && this.bazookaAmmo > 0) return `BAZOOKA x${this.bazookaAmmo}`;
+      if (this.hasPistol) return "PISTOL ∞";
+      return null;
+    }
     if (this.activeWeapon === "machine_gun" && this.isMachineGunActive) {
       const sec = Math.max(0, Math.ceil((this.machineGunUntil - this.timeMs) / 1000));
       return `MG ${sec}s`;
@@ -1907,7 +2292,7 @@ export class RainbowCowboyEngine {
     }
 
     for (const enemy of this.enemies) {
-      if (!enemy.active) continue;
+      if (!enemy.active || enemy.cosmetic) continue;
       const er = { x: enemy.x, y: enemy.y, w: enemy.w, h: enemy.h };
       if (rectsOverlap(pr, er)) {
         if (this.isRampage) {
@@ -1974,6 +2359,7 @@ export class RainbowCowboyEngine {
   }
 
   private checkExtraction() {
+    if (this.config.victoryCondition === "boss_defeated") return;
     if (this.playerX < this.config.extractionX) return;
     if (!this.isExtractionUnlocked()) {
       if (this.timeMs >= this.extractionBlockedPopupUntil) {
@@ -1987,11 +2373,24 @@ export class RainbowCowboyEngine {
   }
 
   private updateCamera() {
+    if (this.finaleShakeMag > 0) {
+      this.cameraShakeX = (Math.random() - 0.5) * this.finaleShakeMag * 2.4;
+      this.cameraShakeY = (Math.random() - 0.5) * this.finaleShakeMag * 1.6;
+    } else {
+      this.cameraShakeX = 0;
+      this.cameraShakeY = 0;
+    }
+
+    if (this.arenaLocked && this.hiveBoss?.active) {
+      this.cameraX = this.hiveBoss.getArenaBounds().cameraX;
+      return;
+    }
     const target = this.playerX - VIEW_W * 0.35;
     this.cameraX = Math.max(0, Math.min(this.config.level.levelWidth - VIEW_W, target));
   }
 
   getHud(): RainbowCowboyHudSnapshot {
+    const bossState = this.hiveBoss?.getState();
     return {
       hearts: this.hearts,
       maxHearts: MAX_HEARTS,
@@ -2010,6 +2409,12 @@ export class RainbowCowboyEngine {
       ),
       weaponLabel: this.getWeaponHudLabel(),
       bazookaAmmo: this.bazookaAmmo,
+      bossHp: bossState?.active && !bossState.defeated ? bossState.hp : null,
+      bossMaxHp: bossState?.active && !bossState.defeated ? bossState.maxHp : null,
+      bossPhase: bossState?.active && !bossState.defeated ? bossState.phase : null,
+      bossHatchOpen: bossState?.active && !bossState.defeated ? bossState.vulnerable : null,
+      bossSegments: bossState?.active && !bossState.defeated ? bossState.segments : null,
+      machineGunAmmo: this.isBossLevel() ? this.machineGunAmmo : null,
     };
   }
 
@@ -2034,6 +2439,7 @@ export class RainbowCowboyEngine {
       completeBanner: this.config.completeBanner,
       deathCause: this.deathCause,
       difficulty: this.config.difficulty ?? "easy",
+      hiveBossDamage: this.hiveBoss?.bossDamageDealt,
     });
   }
 

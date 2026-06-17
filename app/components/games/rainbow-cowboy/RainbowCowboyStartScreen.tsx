@@ -68,7 +68,7 @@ export function RainbowCowboyStartScreen({
   return (
     <div style={{ textAlign: "center", padding: "8px 0 24px" }}>
       <div style={{ fontSize: 48, marginBottom: 8 }}>
-        {level.id === "level-2" ? "🏜️" : RIDE_EMOJI[selectedRide]}
+        {level.id === "level-4" ? "🐝" : level.id === "level-2" ? "🏜️" : RIDE_EMOJI[selectedRide]}
       </div>
       <h1
         style={{
@@ -157,6 +157,27 @@ export function RainbowCowboyStartScreen({
           })}
         </div>
       </div>
+
+      {level.id === "level-4" && (
+        <p
+          style={{
+            margin: "0 0 16px",
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "2px solid rgba(255,80,160,0.5)",
+            background: "rgba(255,80,160,0.1)",
+            fontSize: 12,
+            lineHeight: 1.45,
+            color: t.text,
+            textAlign: "left",
+          }}
+        >
+          Final mission of <strong>FOB Thunder</strong>. You start with an infinite{" "}
+          <strong>pistol</strong> — watch for descending supply crates (MG, bazooka, hearts,
+          rainbow). Time your shots when the <strong>hatch opens</strong> for full damage. Ride the
+          moving planks. Press <strong>Q</strong> to swap weapons.
+        </p>
+      )}
 
       {level.id === "level-3" && (
         <p

@@ -7,6 +7,7 @@ import { queryKeys } from "@/app/lib/queryKeys";
 import { VIEWER_PROFILE_SELECT, type ViewerProfile } from "@/app/lib/queries/viewerProfile";
 import { useViewerGate } from "@/app/hooks/useRequireFullAccess";
 import {
+  createUnlimitedArcadeWallet,
   loadArcadeWallet,
   spendArcadeChallengeCoin,
   type ArcadeWallet,
@@ -34,6 +35,7 @@ export function useArcadeSession() {
       return (data ?? null) as ViewerProfile | null;
     },
   });
+  const hasUnlimitedArcadeCoins = profileQuery.data?.is_pure_admin === true;
 
   const refreshWallet = useCallback(async (bypassCache = false) => {
     if (!userId) {
@@ -41,12 +43,18 @@ export function useArcadeSession() {
       setWalletLoading(false);
       return null;
     }
+    if (hasUnlimitedArcadeCoins) {
+      const unlimitedWallet = createUnlimitedArcadeWallet();
+      setWallet(unlimitedWallet);
+      setWalletLoading(false);
+      return unlimitedWallet;
+    }
     setWalletLoading(true);
     const next = await loadArcadeWallet(userId, { bypassCache });
     setWallet(next);
     setWalletLoading(false);
     return next;
-  }, [userId]);
+  }, [hasUnlimitedArcadeCoins, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,6 +86,10 @@ export function useArcadeSession() {
     async (gameId: "rainbow_cowboy" | "render_safe", levelId: string) => {
       setCoinError(null);
       if (!userId) return true;
+      if (hasUnlimitedArcadeCoins) {
+        setWallet(createUnlimitedArcadeWallet());
+        return true;
+      }
 
       const result = await spendArcadeChallengeCoin(userId, gameId, levelId);
       if (result.wallet) setWallet(result.wallet);
@@ -87,7 +99,7 @@ export function useArcadeSession() {
       }
       return true;
     },
-    [userId],
+    [hasUnlimitedArcadeCoins, userId],
   );
 
   return {

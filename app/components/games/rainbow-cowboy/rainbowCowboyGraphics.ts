@@ -16,6 +16,11 @@ import type { RainbowCowboyEngine } from "./rainbowCowboyEngine";
 import { getRideExtractionLine } from "../unicorn-hero/unicornHeroRides";
 import type { LevelConfig } from "./rainbowCowboyTypes";
 import type { RainbowCowboyParticlePool } from "./rainbowCowboyParticles";
+import {
+  drawHiveArenaSilhouette,
+  drawHiveBoss,
+  drawHivePlanks,
+} from "./rainbowCowboyHiveBoss";
 
 let cachedNoise: CanvasPattern | null = null;
 
@@ -1636,9 +1641,115 @@ function drawAtmosphere(ctx: CanvasRenderingContext2D) {
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 }
 
+function drawHiveSky(ctx: CanvasRenderingContext2D, camX: number, time: number) {
+  const grad = ctx.createLinearGradient(0, 0, 0, VIEW_H);
+  grad.addColorStop(0, "#120818");
+  grad.addColorStop(0.5, "#281838");
+  grad.addColorStop(1, "#402848");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+
+  for (let i = 0; i < 4; i++) {
+    const sx = ((i * 240 - camX * 0.06) % (VIEW_W + 100)) - 50;
+    ctx.fillStyle = "rgba(255,80,120,0.12)";
+    ctx.beginPath();
+    ctx.ellipse(sx, 50 + i * 22, 70, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.fillStyle = Math.sin(time / 160) > 0 ? "#ff3030" : "#662244";
+  ctx.fillRect(VIEW_W - 80, 24, 12, 8);
+  ctx.fillRect(40, 36, 12, 8);
+}
+
+function drawHiveGroundLayer(ctx: CanvasRenderingContext2D, config: LevelConfig, camX: number) {
+  const groundY = config.level.groundY;
+  const startCol = Math.floor(camX / GROUND_TILE) - 1;
+  const endCol = Math.ceil((camX + VIEW_W) / GROUND_TILE) + 1;
+  const startRow = Math.floor(groundY / GROUND_TILE);
+
+  for (let col = startCol; col <= endCol; col++) {
+    for (let row = startRow; row < Math.ceil(VIEW_H / GROUND_TILE); row++) {
+      const sx = col * GROUND_TILE - camX;
+      const sy = row * GROUND_TILE;
+      px(ctx, sx, sy, GROUND_TILE, GROUND_TILE, row === startRow ? "#4a3848" : "#2a2030");
+      px(ctx, sx + 2, sy + 2, GROUND_TILE - 4, GROUND_TILE - 4, row === startRow ? "#5a4858" : "#3a3040");
+    }
+  }
+
+  for (let i = 0; i < 5; i++) {
+    const rx = ((i * 320 - camX * 0.2) % (config.level.levelWidth + 200)) - 100;
+    if (rx + 120 < camX - 40 || rx > camX + VIEW_W + 40) continue;
+    px(ctx, rx - camX, groundY - 160, 90, 160, "#3a2848");
+    px(ctx, rx - camX + 20, groundY - 190, 50, 30, "#554066");
+  }
+}
+
+function drawHivePlatform(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  camX: number,
+) {
+  px(ctx, x - camX, y, w, h, "#6a5878");
+  px(ctx, x - camX + 2, y + 2, w - 4, h - 4, "#7a6888");
+}
+
+function drawHiveWall(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  camX: number,
+) {
+  px(ctx, x - camX, y, w, h, "#554866");
+  px(ctx, x - camX + 4, y + 4, w - 8, h - 8, "#665878");
+}
+
 function drawGassedOverlay(ctx: CanvasRenderingContext2D, time: number) {
   ctx.fillStyle = `rgba(50,160,50,${0.1 + Math.sin(time / 280) * 0.04})`;
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+}
+
+function drawHiveVictoryEpilogue(
+  ctx: CanvasRenderingContext2D,
+  holdMs: number,
+  missionBanner: string,
+) {
+  const line1At = 500;
+  const line2At = 1650;
+  const line3At = 2450;
+  const a1 = holdMs < line1At ? 0 : Math.min(1, (holdMs - line1At) / 550);
+  const a2 = holdMs < line2At ? 0 : Math.min(1, (holdMs - line2At) / 650);
+  const a3 = holdMs < line3At ? 0 : Math.min(1, (holdMs - line3At) / 550);
+  const backdrop = Math.max(a1, a2 * 0.85, a3 * 0.7);
+
+  if (backdrop <= 0) return;
+
+  ctx.fillStyle = `rgba(0,0,0,${0.62 * backdrop})`;
+  ctx.fillRect(0, VIEW_H * 0.16, VIEW_W, 150);
+  ctx.textAlign = "center";
+
+  if (a1 > 0) {
+    ctx.fillStyle = `rgba(255,96,192,${a1})`;
+    ctx.font = "bold 28px monospace";
+    ctx.fillText("THE HIVE DESTROYED", VIEW_W / 2, VIEW_H * 0.28);
+  }
+  if (a2 > 0) {
+    ctx.fillStyle = `rgba(255,255,255,${a2})`;
+    ctx.font = "bold 22px monospace";
+    ctx.fillText(missionBanner, VIEW_W / 2, VIEW_H * 0.37);
+  }
+  if (a3 > 0) {
+    ctx.fillStyle = `rgba(210,210,220,${a3 * 0.92})`;
+    ctx.font = "14px monospace";
+    ctx.fillText("NEW BASE UNLOCKED · Camp Poseidon · Skywatch", VIEW_W / 2, VIEW_H * 0.45);
+  }
+
+  ctx.textAlign = "left";
 }
 
 export function drawWorld(
@@ -1656,6 +1767,9 @@ export function drawWorld(
     const wobble = Math.sin(time / 110) * 1.5;
     ctx.translate(wobble, Math.sin(time / 85) * 1);
   }
+  if (engine.cameraShakeX || engine.cameraShakeY) {
+    ctx.translate(engine.cameraShakeX, engine.cameraShakeY);
+  }
 
   if (theme === "canyon") {
     drawCanyonSky(ctx, camX, time);
@@ -1663,6 +1777,9 @@ export function drawWorld(
   } else if (theme === "alamo") {
     drawAlamoSky(ctx, camX, time);
     drawAlamoGroundLayer(ctx, config, camX);
+  } else if (theme === "hive") {
+    drawHiveSky(ctx, camX, time);
+    drawHiveGroundLayer(ctx, config, camX);
   } else {
     drawParallaxSky(ctx, camX, time);
     drawGroundLayer(ctx, config, camX);
@@ -1672,6 +1789,7 @@ export function drawWorld(
     if (plat.x + plat.w < camX - 20 || plat.x > camX + VIEW_W + 20) continue;
     if (theme === "canyon") drawCanyonPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
     else if (theme === "alamo") drawAlamoPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
+    else if (theme === "hive") drawHivePlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
     else drawPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
   }
 
@@ -1679,15 +1797,22 @@ export function drawWorld(
     if (wall.x + wall.w < camX - 20 || wall.x > camX + VIEW_W + 20) continue;
     if (theme === "canyon") drawCanyonWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
     else if (theme === "alamo") drawAlamoWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
+    else if (theme === "hive") drawHiveWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
     else drawWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
   }
 
-  if (theme === "canyon") {
-    drawCanyonExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
-  } else if (theme === "alamo") {
-    drawAlamoExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
-  } else {
-    drawExtractionZone(ctx, config.extractionX, config.level.groundY, camX, time);
+  if (theme !== "hive") {
+    if (theme === "canyon") {
+      drawCanyonExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
+    } else if (theme === "alamo") {
+      drawAlamoExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
+    } else {
+      drawExtractionZone(ctx, config.extractionX, config.level.groundY, camX, time);
+    }
+  }
+
+  if (engine.hiveBoss) {
+    drawHivePlanks(ctx, engine.hiveBoss.planks, camX, time);
   }
 
   for (const nest of engine.nests) {
@@ -1770,28 +1895,72 @@ export function drawWorld(
     );
   }
 
+  if (engine.hiveBoss?.active) {
+    const bossState = engine.hiveBoss.getState();
+    drawHiveBoss(ctx, bossState, camX, time, config.level.groundY);
+    if (bossState.collapseEpilogue) {
+      drawHiveVictoryEpilogue(
+        ctx,
+        bossState.collapseEpilogueHold,
+        bossState.victoryMissionBanner ?? config.completeBanner ?? "FOB THUNDER SECURED",
+      );
+    } else if (bossState.collapseBlackout > 0.2) {
+      ctx.fillStyle = `rgba(0,0,0,${Math.min(0.42, bossState.collapseBlackout * 0.38)})`;
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
+  }
+
+  if (
+    engine.extractionReached &&
+    engine.bossVictoryEpilogueComplete &&
+    engine.hiveBoss?.active
+  ) {
+    drawHiveVictoryEpilogue(
+      ctx,
+      3200,
+      engine.config.completeBanner ?? "FOB THUNDER SECURED",
+    );
+  }
+
+  for (const crate of engine.fallingCrates) {
+    if (!crate.active) continue;
+    if (crate.x < camX - 40 || crate.x > camX + VIEW_W + 40) continue;
+    drawPickup(ctx, crate.kind, crate.x, crate.y, camX, time);
+  }
+
   drawPlayer(ctx, engine, camX, time);
   drawRainbowBlast(ctx, engine);
   particles?.draw(ctx);
 
   if (engine.isGassed) drawGassedOverlay(ctx, time);
 
-  if (engine.extractionReached) {
+  if (engine.extractionReached && !engine.bossVictoryEpilogueComplete) {
     const a = Math.min(1, engine.levelCompleteHold / 600);
     ctx.fillStyle = `rgba(0,0,0,${0.5 * a})`;
     ctx.fillRect(0, VIEW_H * 0.22, VIEW_W, 110);
     ctx.fillStyle = "#ff60c0";
     ctx.font = "bold 26px monospace";
     ctx.textAlign = "center";
-    ctx.fillText(
-      engine.config.completeBanner ?? "EXTRACTION REACHED",
-      VIEW_W / 2,
-      VIEW_H * 0.3,
-    );
+    const banner =
+      engine.hiveBoss?.getState().collapseLabel ??
+      engine.config.completeBanner ??
+      (engine.config.victoryCondition === "boss_defeated"
+        ? "FOB THUNDER SECURED"
+        : "EXTRACTION REACHED");
+    ctx.fillText(banner, VIEW_W / 2, VIEW_H * 0.3);
     ctx.fillStyle = "#fff";
     ctx.font = "14px monospace";
-    ctx.fillText(getRideExtractionLine(engine.rideType), VIEW_W / 2, VIEW_H * 0.38);
+    if (engine.config.victoryCondition === "boss_defeated") {
+      ctx.fillText("NEW BASE UNLOCKED · Camp Poseidon · Skywatch", VIEW_W / 2, VIEW_H * 0.38);
+    } else {
+      ctx.fillText(getRideExtractionLine(engine.rideType), VIEW_W / 2, VIEW_H * 0.38);
+    }
     ctx.textAlign = "left";
+  }
+
+  if (engine.finaleRedFlash > 0 && !engine.hiveBoss?.getState().collapseEpilogue) {
+    ctx.fillStyle = `rgba(210,0,0,${Math.min(0.92, engine.finaleRedFlash)})`;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   }
 
   ctx.restore();
