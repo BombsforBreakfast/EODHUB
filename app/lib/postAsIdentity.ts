@@ -55,3 +55,36 @@ export function adminPostDisplayName(profile: {
     "EOD HUB Admin"
   );
 }
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Parse optional post_as_user_id from a share/create POST body. */
+export function parsePostAsUserIdFromBody(body: unknown): string | null | "invalid" {
+  if (body === null || typeof body !== "object") return null;
+  const raw = (body as { post_as_user_id?: unknown }).post_as_user_id;
+  if (raw === undefined || raw === null || raw === "") return null;
+  if (typeof raw !== "string" || !UUID_RE.test(raw.trim())) return "invalid";
+  return raw.trim();
+}
+
+export function validatePostAsUserIdForShare(params: {
+  callerEmail: string | null;
+  callerUserId: string;
+  requestedPostAsUserId: string | null;
+  adminUserId: string | null;
+}): { ok: true; postAsUserId: string | null } | { ok: false; error: string; status: number } {
+  const { callerEmail, callerUserId, requestedPostAsUserId, adminUserId } = params;
+  if (!requestedPostAsUserId) return { ok: true, postAsUserId: null };
+
+  if (!canUsePostAsSelector(callerEmail)) {
+    return { ok: false, error: "Post-as identity is not allowed for this account.", status: 403 };
+  }
+
+  const allowed = new Set([callerUserId, adminUserId].filter(Boolean));
+  if (!allowed.has(requestedPostAsUserId)) {
+    return { ok: false, error: "Invalid post-as identity.", status: 403 };
+  }
+
+  return { ok: true, postAsUserId: requestedPostAsUserId };
+}

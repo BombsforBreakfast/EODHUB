@@ -597,7 +597,7 @@ export default function ResourcesPage() {
     setShareComposerResource(resource);
   }
 
-  async function handleShareResource(resource: BusinessListing, content: string) {
+  async function handleShareResource(resource: BusinessListing, content: string, postAsUserId: string | null) {
     if (!userId) {
       window.location.href = "/login";
       return;
@@ -606,7 +606,7 @@ export default function ResourcesPage() {
     setSharingResourceId(resource.id);
     setResourceNotice(null);
     try {
-      const result = await shareListingToFeed(supabase, resource.id, content);
+      const result = await shareListingToFeed(supabase, resource.id, content, postAsUserId);
       if (!result.ok) {
         setResourceNotice(result.error ?? "Could not share to the feed.");
         return;
@@ -656,8 +656,8 @@ export default function ResourcesPage() {
         onClose={() => {
           if (!sharingResourceId) setShareComposerResource(null);
         }}
-        onSubmit={(content) => {
-          if (shareComposerResource) void handleShareResource(shareComposerResource, content);
+        onSubmit={(content, postAsUserId) => {
+          if (shareComposerResource) void handleShareResource(shareComposerResource, content, postAsUserId);
         }}
       />
       <div style={{ marginBottom: 16 }}>

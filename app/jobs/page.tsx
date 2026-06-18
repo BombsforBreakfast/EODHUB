@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import ShareListingToFeedModal, { type ShareListingPreview } from "../components/ShareListingToFeedModal";
+import ShareListingToFeedModal from "../components/ShareListingToFeedModal";
 import UpgradePromptModal from "../components/UpgradePromptModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobDetailsModal, { type JobModalData } from "../components/jobs/JobDetailsModal";
@@ -27,7 +27,7 @@ import {
 import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { jobListingCutoffIso } from "../lib/jobRetention";
-import { shareJobToFeed } from "../lib/shareJobToFeed";
+import { jobSharePreview, shareJobToFeed } from "../lib/shareJobToFeed";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
 import { fetchApprovedJobs, JOBS_LIST_STALE_MS } from "../lib/queries/jobs";
 import {
@@ -47,6 +47,11 @@ type ProfileRow = {
   verification_status: string | null;
   email_verified: boolean | null;
   admin_verified: boolean | null;
+  email?: string | null;
+  display_name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+  photo_url?: string | null;
 };
 
 const SALARY_OPTIONS: Array<{ label: string; value: SalaryMin | "" }> = [
@@ -96,19 +101,6 @@ function formatSource(sourceType: string | null): string {
   }
 }
 
-function jobSharePreview(job: JobModalData): ShareListingPreview {
-  return {
-    id: job.id,
-    website_url: job.apply_url,
-    business_name: job.title || job.og_title || "Job listing",
-    custom_blurb: job.description || job.og_description,
-    og_title: job.og_title || job.title,
-    og_description: job.og_description || job.description,
-    og_image: job.og_image,
-    og_site_name: job.og_site_name || job.company_name || "Jobs",
-  };
-}
-
 export default function JobsPage() {
   useOnboardingGate("app/jobs/page.tsx");
   usePageTracking(PAGE_TRACKING.jobs);
@@ -121,6 +113,9 @@ export default function JobsPage() {
   const [canUseJobFilters, setCanUseJobFilters] = useState(true);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [currentUserName, setCurrentUserName] = useState<string>("You");
+  const [currentUserPhotoUrl, setCurrentUserPhotoUrl] = useState<string | null>(null);
   const [togglingJobId, setTogglingJobId] = useState<string | null>(null);
   const [sharingJobId, setSharingJobId] = useState<string | null>(null);
   const [shareComposerJob, setShareComposerJob] = useState<JobModalData | null>(null);
@@ -189,7 +184,7 @@ export default function JobsPage() {
     setShareComposerJob(job);
   }, [userId]);
 
-  const handleShareJob = useCallback(async (job: JobModalData, content: string) => {
+  const handleShareJob = useCallback(async (job: JobModalData, content: string, postAsUserId: string | null) => {
     if (!userId) {
       window.location.href = "/login";
       return;
@@ -198,7 +193,7 @@ export default function JobsPage() {
     setSharingJobId(job.id);
     setJobNotice(null);
     try {
-      const result = await shareJobToFeed(supabase, job.id, content);
+      const result = await shareJobToFeed(supabase, job.id, content, postAsUserId);
       if (!result.ok) {
         setJobNotice(result.error ?? "Could not share this job to the feed.");
         return;
@@ -250,6 +245,10 @@ export default function JobsPage() {
       }
       if (!mounted) return;
       setUserId(uid);
+      setCurrentUserEmail(p.email ?? authUser.email ?? null);
+      const composedName = [p.first_name, p.last_name].filter(Boolean).join(" ").trim();
+      setCurrentUserName(p.display_name?.trim() || composedName || "You");
+      setCurrentUserPhotoUrl(p.photo_url ?? null);
       setCanViewFullJobs(true);
       setCanUseJobFilters(true);
     }
@@ -303,11 +302,20 @@ export default function JobsPage() {
         listing={shareComposerJob ? jobSharePreview(shareComposerJob) : null}
         label="Job"
         submitting={Boolean(shareComposerJob && sharingJobId === shareComposerJob.id)}
+        postAsContext={
+          userId
+            ? {
+                userEmail: currentUserEmail,
+                selfLabel: currentUserName,
+                selfPhotoUrl: currentUserPhotoUrl,
+              }
+            : null
+        }
         onClose={() => {
           if (!sharingJobId) setShareComposerJob(null);
         }}
-        onSubmit={(content) => {
-          if (shareComposerJob) void handleShareJob(shareComposerJob, content);
+        onSubmit={(content, postAsUserId) => {
+          if (shareComposerJob) void handleShareJob(shareComposerJob, content, postAsUserId);
         }}
       />
 

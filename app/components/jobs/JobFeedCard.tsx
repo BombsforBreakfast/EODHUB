@@ -16,6 +16,9 @@ type Props = {
   isTogglingSave: boolean;
   onToggleSave: (job: JobModalData) => void | Promise<void>;
   posterName?: string | null;
+  canShare?: boolean;
+  isSharing?: boolean;
+  onShare?: (job: JobModalData) => void;
 };
 
 export default function JobFeedCard({
@@ -26,6 +29,9 @@ export default function JobFeedCard({
   isTogglingSave,
   onToggleSave,
   posterName,
+  canShare = false,
+  isSharing = false,
+  onShare,
 }: Props) {
   const { t } = useTheme();
   const modalJob = job as JobModalData;
@@ -99,6 +105,9 @@ export default function JobFeedCard({
             canSave={canSave}
             isTogglingSave={isTogglingSave}
             onToggleSave={onToggleSave}
+            canShare={canShare}
+            isSharing={isSharing}
+            onShare={onShare}
           />
         </div>
 

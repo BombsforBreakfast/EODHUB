@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import {
+  parsePostAsUserIdFromBody,
+  POST_AS_ADMIN_EMAIL,
+  validatePostAsUserIdForShare,
+} from "@/app/lib/postAsIdentity";
 
 function getAdminClient() {
   return createClient(
@@ -38,9 +43,29 @@ export async function POST(
 
   const body = await req.json().catch(() => null);
   const shareText = typeof body?.content === "string" ? body.content.trim().slice(0, 4000) : "";
+  const parsedPostAsUserId = parsePostAsUserIdFromBody(body);
+  if (parsedPostAsUserId === "invalid") {
+    return NextResponse.json({ error: "Invalid post-as identity." }, { status: 400 });
+  }
+
+  const adminClient = getAdminClient();
+  const { data: adminProfile } = await adminClient
+    .from("profiles")
+    .select("user_id")
+    .eq("email", POST_AS_ADMIN_EMAIL)
+    .maybeSingle();
+
+  const postAsValidation = validatePostAsUserIdForShare({
+    callerEmail: user.email ?? null,
+    callerUserId: user.id,
+    requestedPostAsUserId: parsedPostAsUserId,
+    adminUserId: adminProfile?.user_id ?? null,
+  });
+  if (!postAsValidation.ok) {
+    return NextResponse.json({ error: postAsValidation.error }, { status: postAsValidation.status });
+  }
 
   const { id: listingId } = await params;
-  const adminClient = getAdminClient();
   const { data: listing, error: listingErr } = await adminClient
     .from("business_listings")
     .select("id, business_name, website_url, custom_blurb, og_title, og_description, og_image, og_site_name, is_approved, listing_type")
@@ -57,10 +82,11 @@ export async function POST(
   const description = listing.custom_blurb || listing.og_description || null;
   const content = shareText || `Shared a ${kind}: ${title}`;
 
-  const { data: inserted, error: insertErr } = await adminClient
+  const { data: inserted, error: insertErr } = await userClient
     .from("posts")
     .insert({
       user_id: user.id,
+      post_as_user_id: postAsValidation.postAsUserId,
       wall_user_id: null,
       content,
       image_url: null,
