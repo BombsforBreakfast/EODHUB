@@ -9,8 +9,8 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   // Force HTTPS for 1 year
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
-  // Restrict browser features (camera, mic, etc.)
-  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+  // Allow camera/mic for same-origin uploads (native Capacitor WebView); block geolocation.
+  { key: "Permissions-Policy", value: "camera=(self), microphone=(self), geolocation=()" },
 ];
 
 /** Vercel default deployment hostname → canonical production domain. */

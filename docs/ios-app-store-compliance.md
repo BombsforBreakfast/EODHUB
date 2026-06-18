@@ -13,6 +13,8 @@ Capacitor CocoaPods merge their own SDK manifests at archive time. After a Codem
 
 [`Info.plist`](../ios/App/App/Info.plist) declares `ITSAppUsesNonExemptEncryption` = false (HTTPS only; exempt mass-market encryption).
 
+**Camera / photo library:** `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, and `NSMicrophoneUsageDescription` are required for feed and profile photo/video uploads via the system picker (“Take Photo” crashes without them). Changes require a **new TestFlight build** — they are not applied by a Vercel deploy alone.
+
 ## Payments (Guideline 3.1.1)
 
 Membership pricing is **TBD**; paywall is suspended during beta. The app is free for TestFlight / initial listing.

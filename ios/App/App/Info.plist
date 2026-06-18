@@ -51,6 +51,12 @@
 	</array>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>EOD-Hub needs camera access so you can take photos and videos for posts and your profile.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>EOD-Hub needs photo library access so you can choose photos and videos for posts and your profile.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>EOD-Hub needs microphone access when you record videos with sound for posts and your profile.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
