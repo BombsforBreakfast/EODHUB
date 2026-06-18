@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { isNativeApp } from "../lib/native/isNativeApp";
 import { handleNativeDeepLink } from "../lib/native/completeNativeOAuthCallback";
+import { deliverRestoredCameraFiles, handleCameraRestoredResult } from "../lib/native/pickFeedMedia";
 import { getNotificationHref } from "../lib/notificationNavigation";
 import { supabase } from "../lib/lib/supabaseClient";
 
@@ -88,6 +89,12 @@ export default function NativeShellBridge() {
 
       App.addListener("appUrlOpen", (event) => {
         void onNativeDeepLink(event.url);
+      });
+
+      App.addListener("appRestoredResult", (event) => {
+        void handleCameraRestoredResult(event).then((files) => {
+          deliverRestoredCameraFiles(files);
+        });
       });
 
       void App.getLaunchUrl().then((launch) => {

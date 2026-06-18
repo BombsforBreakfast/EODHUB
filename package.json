@@ -14,11 +14,15 @@
     "refresh:disposable": "node scripts/fetch-disposable-domains.mjs",
     "cap:sync": "npx cap sync",
     "cap:sync:ios": "npx cap sync ios",
-    "cap:open:ios": "npx cap open ios"
+    "cap:sync:android": "npx cap sync android",
+    "cap:open:ios": "npx cap open ios",
+    "cap:open:android": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/action-sheet": "^7.0.4",
     "@capacitor/app": "^7.0.1",
     "@capacitor/browser": "^7.0.1",
+    "@capacitor/camera": "^7.0.5",
     "@capacitor/core": "^7.0.1",
     "@capacitor/push-notifications": "^7.0.1",
     "@capacitor/splash-screen": "^7.0.1",
@@ -42,6 +46,7 @@
     "stripe": "^21.0.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^7.6.6",
     "@capacitor/cli": "^7.0.1",
     "@capacitor/ios": "^7.0.1",
     "@tailwindcss/postcss": "^4",

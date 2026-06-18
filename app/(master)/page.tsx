@@ -14,6 +14,7 @@ import { PostLikersStack, type PostLikerBrief } from "../components/PostLikersSt
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
 import { prepareFeedUploadFile } from "../lib/prepareUploadFile";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
+import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../lib/native/pickFeedMedia";
 import {
   FEED_ATTACHMENT_ACCEPT,
   UPLOAD_LIMITS,
@@ -272,6 +273,7 @@ type RankedPostRow = {
   created_at: string;
   score?: number;
   ranking_score?: number;
+  feed_rank_age_offset_hours?: number;
 };
 
 type LegacyPostImageRow = {
@@ -375,7 +377,12 @@ type InitialFeedBatchCache = {
   eventIdByPostId: Map<string, string | null>;
   postMetaMap: Map<
     string,
-    { content_type: string | null; system_generated: boolean | null; news_item_id: string | null }
+    {
+      content_type: string | null;
+      system_generated: boolean | null;
+      news_item_id: string | null;
+      feed_rank_age_offset_hours: number;
+    }
   >;
   verdictAtByPostId: Map<string, string | null>;
   rabbitholeThreadIdByPostId: Map<string, string | null>;
@@ -548,6 +555,7 @@ type FeedPost = RankedPostRow & {
   rabbithole_thread_id?: string | null;
   rabbithole_contribution_id?: string | null;
   isInteractionHydrating?: boolean;
+  feed_rank_age_offset_hours?: number;
 };
 
 type FeedSelectedEvent = {
@@ -1166,6 +1174,7 @@ export default function HomePage() {
   }
 
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
+  const postVideoPdfInputRef = useRef<HTMLInputElement | null>(null);
   const postTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const commentTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const contentRawRef = useRef("");
@@ -2703,9 +2712,10 @@ export default function HomePage() {
       kangaroo: null,
       court_verdict_at: null,
       rabbithole_thread_id: null,
-      rabbithole_contribution_id: null,
-      isInteractionHydrating: false,
-      ...overrides,
+    rabbithole_contribution_id: null,
+    isInteractionHydrating: false,
+    feed_rank_age_offset_hours: 0,
+    ...overrides,
     };
   }
 
@@ -2721,7 +2731,7 @@ export default function HomePage() {
     const [legacyWithEvent, postAsRes, enrichment] = await Promise.all([
       supabase
         .from("posts")
-        .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id, court_verdict_at, rabbithole_thread_id, rabbithole_contribution_id")
+        .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id, court_verdict_at, rabbithole_thread_id, rabbithole_contribution_id, feed_rank_age_offset_hours")
         .in("id", postIds),
       supabase
         .from("posts")
@@ -2759,7 +2769,7 @@ export default function HomePage() {
     const postGifMap = new Map<string, string | null>();
     const postOgMap = new Map<string, { og_url: string | null; og_title: string | null; og_description: string | null; og_image: string | null; og_site_name: string | null }>();
     const eventIdByPostId = new Map<string, string | null>();
-    const postMetaMap = new Map<string, { content_type: string | null; system_generated: boolean | null; news_item_id: string | null }>();
+    const postMetaMap = new Map<string, { content_type: string | null; system_generated: boolean | null; news_item_id: string | null; feed_rank_age_offset_hours: number }>();
     const verdictAtByPostId = new Map<string, string | null>();
     const rabbitholeThreadIdByPostId = new Map<string, string | null>();
     const rabbitholeContributionIdByPostId = new Map<string, string | null>();
@@ -2768,6 +2778,7 @@ export default function HomePage() {
       court_verdict_at?: string | null;
       rabbithole_thread_id?: string | null;
       rabbithole_contribution_id?: string | null;
+      feed_rank_age_offset_hours?: number | null;
     }>).forEach((row) => {
       legacyPostImageMap.set(row.id, row.image_url ?? null);
       postGifMap.set(row.id, row.gif_url ?? null);
@@ -2783,6 +2794,7 @@ export default function HomePage() {
         content_type: row.content_type ?? null,
         system_generated: row.system_generated ?? null,
         news_item_id: row.news_item_id ?? null,
+        feed_rank_age_offset_hours: Number(row.feed_rank_age_offset_hours ?? 0),
       });
       verdictAtByPostId.set(row.id, row.court_verdict_at ?? null);
       rabbitholeThreadIdByPostId.set(row.id, row.rabbithole_thread_id ?? null);
@@ -2906,6 +2918,7 @@ export default function HomePage() {
         content_type: postMeta?.content_type ?? "user_post",
         system_generated: postMeta?.system_generated ?? false,
         news_item_id: postMeta?.news_item_id ?? null,
+        feed_rank_age_offset_hours: postMeta?.feed_rank_age_offset_hours ?? 0,
         authorUserId,
         authorName: profileNameMap.get(authorUserId) || "User",
         authorPhotoUrl: profilePhotoMap.get(authorUserId) || null,
@@ -3445,6 +3458,7 @@ export default function HomePage() {
         content_type: postMeta?.content_type ?? "user_post",
         system_generated: postMeta?.system_generated ?? false,
         news_item_id: postMeta?.news_item_id ?? null,
+        feed_rank_age_offset_hours: postMeta?.feed_rank_age_offset_hours ?? 0,
         authorUserId,
         authorName: profileNameMap.get(authorUserId) || "User",
         authorPhotoUrl: profilePhotoMap.get(authorUserId) || null,
@@ -3712,7 +3726,7 @@ export default function HomePage() {
     const [legacyWithEvent, postAsRes, enrichment] = await Promise.all([
       supabase
         .from("posts")
-        .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id")
+        .select("id, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, event_id, content_type, system_generated, news_item_id, feed_rank_age_offset_hours")
         .in("id", postIds),
       supabase
         .from("posts")
@@ -3737,7 +3751,8 @@ export default function HomePage() {
       const missingNewsMetaColumns =
         isMissingColumnError(legacyWithEvent.error, "content_type") ||
         isMissingColumnError(legacyWithEvent.error, "system_generated") ||
-        isMissingColumnError(legacyWithEvent.error, "news_item_id");
+        isMissingColumnError(legacyWithEvent.error, "news_item_id") ||
+        isMissingColumnError(legacyWithEvent.error, "feed_rank_age_offset_hours");
 
       if (missingNewsMetaColumns) {
         const fbWithEvent = await supabase
@@ -3792,8 +3807,8 @@ export default function HomePage() {
     const postGifMap = new Map<string, string | null>();
     const postOgMap = new Map<string, { og_url: string | null; og_title: string | null; og_description: string | null; og_image: string | null; og_site_name: string | null }>();
     const eventIdByPostId = new Map<string, string | null>();
-    const postMetaMap = new Map<string, { content_type: string | null; system_generated: boolean | null; news_item_id: string | null }>();
-    ((legacyPostImagesData ?? []) as LegacyPostRow[]).forEach((row) => {
+    const postMetaMap = new Map<string, { content_type: string | null; system_generated: boolean | null; news_item_id: string | null; feed_rank_age_offset_hours: number }>();
+    ((legacyPostImagesData ?? []) as Array<LegacyPostRow & { feed_rank_age_offset_hours?: number | null }>).forEach((row) => {
       legacyPostImageMap.set(row.id, row.image_url ?? null);
       postGifMap.set(row.id, row.gif_url ?? null);
       postOgMap.set(row.id, { og_url: row.og_url ?? null, og_title: row.og_title ?? null, og_description: row.og_description ?? null, og_image: row.og_image ?? null, og_site_name: row.og_site_name ?? null });
@@ -3802,6 +3817,7 @@ export default function HomePage() {
         content_type: row.content_type ?? null,
         system_generated: row.system_generated ?? null,
         news_item_id: row.news_item_id ?? null,
+        feed_rank_age_offset_hours: Number(row.feed_rank_age_offset_hours ?? 0),
       });
     });
 
@@ -4352,6 +4368,7 @@ export default function HomePage() {
         content_type: postMeta?.content_type ?? "user_post",
         system_generated: postMeta?.system_generated ?? false,
         news_item_id: postMeta?.news_item_id ?? null,
+        feed_rank_age_offset_hours: postMeta?.feed_rank_age_offset_hours ?? 0,
         authorUserId: postAsUserIdByPostId.get(post.id) ?? post.user_id,
         authorName: profileNameMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) || "User",
         authorPhotoUrl: profilePhotoMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) || null,
@@ -4453,7 +4470,12 @@ export default function HomePage() {
   }
 
   function openPostImagePicker() {
-    postImageInputRef.current?.click();
+    void openFeedMediaPicker({
+      mediaInputRef: postImageInputRef,
+      videoPdfInputRef: postVideoPdfInputRef,
+      onFiles: addPostImagesFromFiles,
+      remainingSlots: 10 - selectedPostImages.length,
+    });
   }
 
   function addPostImagesFromFiles(files: File[]) {
@@ -7134,6 +7156,14 @@ export default function HomePage() {
               ref={postImageInputRef}
               type="file"
               accept={FEED_ATTACHMENT_ACCEPT}
+              multiple
+              onChange={handlePostImageChange}
+              style={{ display: "none" }}
+            />
+            <input
+              ref={postVideoPdfInputRef}
+              type="file"
+              accept={FEED_VIDEO_PDF_ACCEPT}
               multiple
               onChange={handlePostImageChange}
               style={{ display: "none" }}

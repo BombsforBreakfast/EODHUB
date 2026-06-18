@@ -17,6 +17,7 @@ import ExpandableText from "../../../components/ExpandableText";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { prepareFeedUploadFile, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
+import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../../../lib/native/pickFeedMedia";
 import { FEED_ACTION_ROW_GAP, FEED_ACTION_ROW_PADDING, FEED_MEDIA_FRAME_BG, FEED_MEDIA_RADIUS, FEED_POST_AVATAR_SIZE, FEED_POST_IMAGES_MAX_WIDTH, FEED_SECTION_GAP, feedContainedImageStyle, feedPostCardStyle } from "../../../lib/feedLayout";
 import FeedPostImageGrid from "../../../components/FeedPostImageGrid";
 import FeedImageGalleryModal from "../../../components/FeedImageGalleryModal";
@@ -42,6 +43,11 @@ import {
   type ReactionType,
 } from "../../../lib/reactions";
 import { ExternalSiteLink } from "../../../components/ExternalSiteEmbedModal";
+import {
+  canViewUnitWallClient,
+  isEffectiveApprovedMember,
+  isEffectiveUnitGod,
+} from "../../../lib/unitAccess";
 
 const RABBITHOLE_THRESHOLD_BYPASS = true;
 
@@ -239,6 +245,7 @@ export default function UnitPage() {
   const [unit, setUnit] = useState<Unit | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [isFounder, setIsFounder] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [activeTab, setActiveTab] = useState<"wall" | "events" | "members" | "photos">("wall");
@@ -251,6 +258,7 @@ export default function UnitPage() {
   const [selectedPostImages, setSelectedPostImages] = useState<SelectedUnitPostImage[]>([]);
   const selectedPostImagesRef = useRef<SelectedUnitPostImage[]>([]);
   const postPhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const postVideoPdfInputRef = useRef<HTMLInputElement | null>(null);
   const [postGif, setPostGif] = useState<string | null>(null);
   const [submittingPost, setSubmittingPost] = useState(false);
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
@@ -333,8 +341,26 @@ export default function UnitPage() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession();
       const uid = session?.user?.id ?? null;
+      const token = session?.access_token ?? null;
       setCurrentUserId(uid);
-      await loadUnit(uid, session?.access_token ?? null);
+
+      let founder = false;
+      if (token) {
+        try {
+          const res = await fetch("/api/me/is-founder", {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const data = (await res.json()) as { isFounder?: boolean };
+            founder = data.isFounder === true;
+          }
+        } catch {
+          founder = false;
+        }
+      }
+      setIsFounder(founder);
+
+      await loadUnit(uid, token, founder);
     }
     init();
   }, [slug]);
@@ -417,7 +443,7 @@ export default function UnitPage() {
       window.location.href = "/login";
       return;
     }
-    if (!membership || membership.status !== "approved") return;
+    if (!isEffectiveApprovedMember(membership, isFounder)) return;
 
     try {
       setTogglingCommentReactionFor(commentId);
@@ -473,7 +499,7 @@ export default function UnitPage() {
     }
   }
 
-  async function loadUnit(uid: string | null, token: string | null) {
+  async function loadUnit(uid: string | null, token: string | null, founder = isFounder) {
     setLoading(true);
     try {
       const t = token ?? (await getToken());
@@ -494,7 +520,7 @@ export default function UnitPage() {
         setMembership(mem as Membership | null);
 
         const canBrowseWall =
-          mem?.status === "approved" || json.unit.visibility === "public";
+          founder || mem?.status === "approved" || json.unit.visibility === "public";
         if (canBrowseWall) {
           await loadPosts(token);
         }
@@ -682,21 +708,21 @@ export default function UnitPage() {
   }
 
   useEffect(() => {
-    if (activeTab === "members" && membership?.status === "approved" && members.length === 0) {
+    if (activeTab === "members" && isEffectiveApprovedMember(membership, isFounder) && members.length === 0) {
       loadMembers();
     }
   }, [activeTab, membership]);
 
   useEffect(() => {
-    if (activeTab === "events" && membership?.status === "approved" && !unitEventsLoaded) {
+    if (activeTab === "events" && isEffectiveApprovedMember(membership, isFounder) && !unitEventsLoaded) {
       void loadUnitEvents();
     }
-  }, [activeTab, membership?.status, unitEventsLoaded]);
+  }, [activeTab, membership?.status, unitEventsLoaded, isFounder]);
 
   // Deep-link from notifications: ?unitPostId=…&commentId=… (unit_post_comments id)
   useEffect(() => {
     if (loading) return;
-    if (membership?.status !== "approved") return;
+    if (!isEffectiveApprovedMember(membership, isFounder)) return;
     const params = new URLSearchParams(window.location.search);
     const unitPostId = params.get("unitPostId");
     const commentId = params.get("commentId");
@@ -759,7 +785,7 @@ export default function UnitPage() {
       cancelled = true;
       if (timeoutId != null) window.clearTimeout(timeoutId);
     };
-  }, [loading, membership?.status, posts, slug, comments]);
+  }, [loading, membership?.status, posts, slug, comments, isFounder]);
 
   // ── Join ─────────────────────────────────────────────────────────────────
 
@@ -1224,12 +1250,12 @@ export default function UnitPage() {
 
   // ── Styles ───────────────────────────────────────────────────────────────
 
-  const isApprovedMember = membership?.status === "approved";
-  const isPendingMember = membership?.status === "pending";
+  const isApprovedMember = isEffectiveApprovedMember(membership, isFounder);
+  const isPendingMember = !isFounder && membership?.status === "pending";
   const isPublicGroup = unit?.visibility === "public";
-  const canViewWall = isApprovedMember || isPublicGroup;
+  const canViewWall = canViewUnitWallClient(unit?.visibility, membership, isFounder);
 
-  const isGod = isApprovedMember && (membership!.role === "owner" || membership!.role === "admin");
+  const isGod = isEffectiveUnitGod(membership, isFounder);
   const wallPosts = posts.filter((p) => {
     if (p.post_type === "photo_album") return false;
     if (!isApprovedMember && p.post_type === "join_request") return false;
@@ -1369,18 +1395,18 @@ export default function UnitPage() {
                     Log in to join
                   </a>
                 )}
-                {currentUserId && !membership && (
+                {currentUserId && !membership && !isFounder && (
                   <button onClick={requestJoin} disabled={joining} style={{ background: joining ? t.badgeBg : "#111", color: joining ? t.textMuted : "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: joining ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                     {joining && <span className="btn-spinner btn-spinner-dark" />}
                     Request to Join
                   </button>
                 )}
-                {membership?.status === "pending" && (
+                {membership?.status === "pending" && !isFounder && (
                   <div style={{ background: isDark ? "#2a2a00" : "#fef9c3", color: "#854d0e", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 700 }}>
                     Request pending
                   </div>
                 )}
-                {membership?.status === "approved" && isGod && (
+                {isGod && (
                   <>
                     <Link
                       href={`/units/${slug}/admin`}
@@ -1391,16 +1417,18 @@ export default function UnitPage() {
                     <button onClick={openInviteModal} style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 18px", fontWeight: 800, fontSize: 13, cursor: "pointer" }}>
                       Invite Members
                     </button>
-                    <button
-                      onClick={leaveGroup}
-                      disabled={joining}
-                      style={{ background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: joining ? "not-allowed" : "pointer", opacity: joining ? 0.7 : 1 }}
-                    >
-                      {joining ? "Leaving..." : "Leave Group"}
-                    </button>
+                    {membership?.status === "approved" && (
+                      <button
+                        onClick={leaveGroup}
+                        disabled={joining}
+                        style={{ background: "transparent", color: t.textMuted, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 16px", fontWeight: 700, fontSize: 13, cursor: joining ? "not-allowed" : "pointer", opacity: joining ? 0.7 : 1 }}
+                      >
+                        {joining ? "Leaving..." : "Leave Group"}
+                      </button>
+                    )}
                   </>
                 )}
-                {membership?.status === "approved" && !isGod && (
+                {isApprovedMember && !isGod && (
                   <>
                     <button onClick={openInviteModal} style={{ background: t.badgeBg, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 18px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
                       Invite
@@ -1441,6 +1469,11 @@ export default function UnitPage() {
 
         {canViewWall && (
           <>
+            {isFounder && !membership && !isPublicGroup && (
+              <div style={{ border: `1px solid ${isDark ? "#1e3a5f" : "#bfdbfe"}`, borderRadius: 12, padding: "12px 16px", background: isDark ? "rgba(30,58,95,0.2)" : "#eff6ff", marginBottom: 16, fontSize: 13, color: t.textMuted, lineHeight: 1.55 }}>
+                Staff access — you can browse and moderate this private group without joining.
+              </div>
+            )}
             {isPublicGroup && !isApprovedMember && (
               <div style={{ border: `1px solid ${isDark ? "#14532d" : "#bbf7d0"}`, borderRadius: 12, padding: "12px 16px", background: isDark ? "rgba(22,101,52,0.15)" : "#f0fdf4", marginBottom: 16, fontSize: 13, color: t.textMuted, lineHeight: 1.55 }}>
                 You&apos;re browsing a public group. Request to join to post, comment, and see members and events.
@@ -1550,6 +1583,19 @@ export default function UnitPage() {
                       if (postPhotoInputRef.current) postPhotoInputRef.current.value = "";
                     }}
                   />
+                  <input
+                    ref={postVideoPdfInputRef}
+                    type="file"
+                    accept={FEED_VIDEO_PDF_ACCEPT}
+                    multiple
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      if (files.length === 0) return;
+                      addUnitPostImagesFromFiles(files);
+                      if (postVideoPdfInputRef.current) postVideoPdfInputRef.current.value = "";
+                    }}
+                  />
 
                   <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
                     Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
@@ -1560,7 +1606,14 @@ export default function UnitPage() {
                   <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginTop: 12 }}>
                     <button
                       type="button"
-                      onClick={() => postPhotoInputRef.current?.click()}
+                      onClick={() => {
+                        void openFeedMediaPicker({
+                          mediaInputRef: postPhotoInputRef,
+                          videoPdfInputRef: postVideoPdfInputRef,
+                          onFiles: addUnitPostImagesFromFiles,
+                          remainingSlots: 10 - selectedPostImages.length,
+                        });
+                      }}
                       style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                     >
                       {selectedPostImages.length > 0 ? "Add More" : "Add Photo or Video"}

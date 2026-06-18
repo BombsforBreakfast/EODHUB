@@ -36,6 +36,7 @@ import { FeedMediaAttachment } from "../../../components/FeedMediaAttachment";
 import OptimizedAvatarImg from "../../../components/OptimizedAvatarImg";
 import { galleryImageDisplayUrl } from "../../../lib/storageImageUrl";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
+import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../../../lib/native/pickFeedMedia";
 import { EMPLOYER_DOCUMENT_ACCEPT, FEED_ATTACHMENT_ACCEPT, inferEmployerDocumentContentType } from "../../../lib/uploadLimits";
 import {
   validateFeedAttachmentPick,
@@ -616,6 +617,7 @@ export default function PublicProfilePage() {
   const [selectedPostImages, setSelectedPostImages] = useState<{ file: File; previewUrl: string }[]>([]);
   const [selectedPostGif, setSelectedPostGif] = useState<string | null>(null);
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
+  const postVideoPdfInputRef = useRef<HTMLInputElement | null>(null);
   const postWallPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const postWallVideoInputRef = useRef<HTMLInputElement | null>(null);
   const [lightboxVideoUrl, setLightboxVideoUrl] = useState<string | null>(null);
@@ -5984,6 +5986,19 @@ export default function PublicProfilePage() {
                   }}
                   style={{ display: "none" }}
                 />
+                <input
+                  ref={postVideoPdfInputRef}
+                  type="file"
+                  accept={FEED_VIDEO_PDF_ACCEPT}
+                  multiple
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    if (files.length === 0) return;
+                    addWallPostImagesFromFiles(files);
+                    if (postVideoPdfInputRef.current) postVideoPdfInputRef.current.value = "";
+                  }}
+                  style={{ display: "none" }}
+                />
                 {isBusinessOrgProfile && (
                   <>
                     <input
@@ -6084,7 +6099,14 @@ export default function PublicProfilePage() {
                     ) : (
                       <button
                         type="button"
-                        onClick={() => postImageInputRef.current?.click()}
+                        onClick={() => {
+                          void openFeedMediaPicker({
+                            mediaInputRef: postImageInputRef,
+                            videoPdfInputRef: postVideoPdfInputRef,
+                            onFiles: addWallPostImagesFromFiles,
+                            remainingSlots: 10 - selectedPostImages.length,
+                          });
+                        }}
                         style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
                       >
                         {selectedPostImages.length > 0 ? "Add More" : "Add Photo or Video"}
