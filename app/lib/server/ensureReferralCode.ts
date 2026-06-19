@@ -3,9 +3,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 export function makeReferralCode(length = 8): string {
+  const array = new Uint32Array(length);
+  crypto.getRandomValues(array);
   let code = "";
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    code += CHARS[array[i] % CHARS.length];
   }
   return code;
 }
