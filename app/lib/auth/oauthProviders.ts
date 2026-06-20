@@ -45,6 +45,13 @@ export function resolveAuthUserEmail(user: User | null | undefined): string | nu
   if (direct) return direct;
   const metaEmail = user.user_metadata?.email;
   if (typeof metaEmail === "string" && metaEmail.trim()) return metaEmail.trim();
+  // Apple Hide My Email sometimes surfaces only on the linked identity record.
+  for (const identity of user.identities ?? []) {
+    const data = identity.identity_data as { email?: unknown } | undefined;
+    if (typeof data?.email === "string" && data.email.trim()) {
+      return data.email.trim();
+    }
+  }
   return null;
 }
 

@@ -67,8 +67,12 @@ export async function GET(request: NextRequest) {
 
       const { client: adminClient } = createSupabaseServiceRoleClient();
       if (adminClient) {
-        const oauthEmail = resolveAuthUserEmail(sessionData.user);
         const userId = sessionData.user?.id;
+        let oauthEmail = resolveAuthUserEmail(sessionData.user);
+        if (userId && !oauthEmail) {
+          const { data: authUser } = await adminClient.auth.admin.getUserById(userId);
+          oauthEmail = resolveAuthUserEmail(authUser?.user ?? null);
+        }
         if (userId && oauthEmail) {
           const stub = await ensureProfileStubForUser(adminClient, userId, oauthEmail);
           if (!stub.ok) {

@@ -2,14 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { buildNativeOAuthDeepLink } from "../../lib/native/nativeOAuthRedirect";
-import { isNativeApp } from "../../lib/native/isNativeApp";
 
 /**
  * OAuth browser-sheet bridge (Capacitor iOS/Android only).
  *
  * Supabase redirects here with ?code=… inside @capacitor/browser.
- * This page immediately hands off to com.eodhub.app://auth/callback so the
- * main WebView can run the server PKCE exchange at /auth/callback.
+ * Always hand off to com.eodhub.app://auth/callback — the main WebView runs
+ * the server PKCE exchange at /auth/callback. Never exchange the code here:
+ * the PKCE verifier lives in the main WebView and this sheet is a separate
+ * browsing context (attempting exchange here fails and sends users to /login).
  */
 export default function NativeOAuthAppCallbackPage() {
   const [stuck, setStuck] = useState(false);
@@ -17,22 +18,9 @@ export default function NativeOAuthAppCallbackPage() {
   useEffect(() => {
     const search = window.location.search;
     const hash = window.location.hash;
-    console.info("[auth/app-callback] bridge loaded", {
-      search,
-      hash,
-      nativeShell: isNativeApp(),
-    });
-
-    // Already in the main WebView — exchange here (bridge sheet uses custom scheme).
-    if (isNativeApp()) {
-      void import("../../lib/native/completeNativeOAuthCallback").then(({ completeNativeOAuthFromDeepLink }) =>
-        completeNativeOAuthFromDeepLink(window.location.href, async () => {}),
-      );
-      return;
-    }
+    console.info("[auth/app-callback] bridge loaded — handing off to native scheme", { search, hash });
 
     const deepLink = buildNativeOAuthDeepLink(search, hash);
-    console.info("[auth/app-callback] handing off to native scheme", deepLink);
     window.location.replace(deepLink);
 
     const timer = window.setTimeout(() => setStuck(true), 2500);
