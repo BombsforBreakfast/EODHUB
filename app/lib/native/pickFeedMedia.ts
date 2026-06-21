@@ -113,7 +113,7 @@ export async function handleCameraRestoredResult(event: {
 
   try {
     if (event.methodName === "getPhoto" && typeof event.data.webPath === "string") {
-      const file = await photoToFile(event.data as Photo);
+      const file = await photoToFile(event.data as unknown as Photo);
       return [file];
     }
     if (event.methodName === "pickImages" && Array.isArray(event.data.photos)) {
