@@ -25,7 +25,7 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
 
         <div className="rc-score-panel" style={hasBossHealth ? { marginTop: 70 } : undefined}>
           <div>Score: {hud.score}</div>
-          <div style={{ color: "#ffe080" }}>Time: {formatRainbowCowboyDuration(hud.elapsedSeconds)}</div>
+          <div>Time: {formatRainbowCowboyDuration(hud.elapsedSeconds)}</div>
           {personalBest != null && (
             <div className="rc-score-pb">
               PB: {personalBest.score}

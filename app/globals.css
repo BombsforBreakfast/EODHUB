@@ -1538,28 +1538,28 @@ body.game-playing-active .games-shell-nav {
   min-width: 0;
 }
 
-.rc-level-panel,
-.rc-score-panel {
+.rc-level-panel {
   background: rgba(0, 0, 0, 0.55);
   border-radius: 8px;
   padding: 5px 10px;
   font-size: 11px;
   line-height: 1.25;
-}
-
-.rc-level-panel {
   border: 2px solid rgba(255, 120, 200, 0.5);
   flex: 1 1 auto;
   min-width: 0;
 }
 
 .rc-score-panel {
-  border: 2px solid rgba(255, 200, 80, 0.45);
-  text-align: right;
-  line-height: 1.5;
+  font-size: 11px;
+  line-height: 1.45;
   flex: 0 1 auto;
   min-width: 0;
   max-width: 46vw;
+  text-align: right;
+  color: #fff;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.9),
+    0 0 10px rgba(0, 0, 0, 0.55);
 }
 
 .rc-boss-health-panel {
@@ -1794,16 +1794,15 @@ body.game-playing-active .games-shell-nav {
 
   .rc-score-panel {
     position: absolute;
-    top: max(8px, env(safe-area-inset-top, 0px));
-    left: max(12px, env(safe-area-inset-left, 0px));
+    top: max(2px, env(safe-area-inset-top, 0px));
+    left: max(4px, env(safe-area-inset-left, 0px));
     right: auto;
     margin: 0;
     max-width: min(220px, 34vw);
     font-size: clamp(12px, 2vw, 16px);
-    opacity: 0.85;
     text-align: left;
     line-height: 1.35;
-    padding: 4px 8px;
+    padding: 0;
   }
 
   .rc-boss-health-panel {
