@@ -47,8 +47,20 @@ export function isLevelUnlocked(
     return isHiveLevelUnlocked(progress);
   }
 
-  if (levelId === "level-5" || levelId === "level-6") {
+  if (levelId === "level-5") {
     return isFobThunderSecured(progress);
+  }
+
+  if (levelId === "level-6") {
+    return isFobThunderSecured(progress) && hasAnyCompletion(progress["level-5"]);
+  }
+
+  if (levelId === "level-7") {
+    return isFobThunderSecured(progress) && hasAnyCompletion(progress["level-6"]);
+  }
+
+  if (levelId === "level-8") {
+    return isFobThunderSecured(progress) && hasAnyCompletion(progress["level-7"]);
   }
 
   const previous = getPreviousPlayableLevel(levelId, levels);
@@ -80,8 +92,17 @@ export function getLevelLockMessage(
   if (levelId === HIVE_LEVEL_ID) {
     return getHiveLockMessage();
   }
-  if (levelId === "level-5" || levelId === "level-6") {
+  if (levelId === "level-5") {
     return "Secure FOB Thunder (beat The Hive) to unlock";
+  }
+  if (levelId === "level-6") {
+    return "Clear Deep Sea Rodeo to unlock";
+  }
+  if (levelId === "level-7") {
+    return "Clear Poseidon Trench to unlock";
+  }
+  if (levelId === "level-8") {
+    return "Clear Gator Gulch to unlock";
   }
   const previous = getPreviousPlayableLevel(levelId, levels);
   if (!previous) return null;

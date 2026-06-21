@@ -27,6 +27,7 @@ import { usePageTracking } from "../hooks/usePageTracking";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { shareListingToFeed } from "../lib/shareListingToFeed";
+import type { PostAsMode } from "../lib/postAsIdentity";
 
 type BusinessOrgListingType = "business" | "organization";
 
@@ -969,7 +970,7 @@ export default function BusinessesPage() {
     setShareComposerListing(listing);
   }
 
-  async function handleShareListing(listing: BusinessListing, content: string) {
+  async function handleShareListing(listing: BusinessListing, content: string, postAsMode?: PostAsMode) {
     if (!userId) {
       window.location.href = "/login";
       return;
@@ -978,7 +979,7 @@ export default function BusinessesPage() {
     setSharingListingId(listing.id);
     setBizNotice(null);
     try {
-      const result = await shareListingToFeed(supabase, listing.id, content);
+      const result = await shareListingToFeed(supabase, listing.id, content, postAsMode);
       if (!result.ok) {
         setBizNotice(result.error ?? "Could not share to the feed.");
         return;
@@ -1014,8 +1015,8 @@ export default function BusinessesPage() {
         onClose={() => {
           if (!sharingListingId) setShareComposerListing(null);
         }}
-        onSubmit={(content) => {
-          if (shareComposerListing) void handleShareListing(shareComposerListing, content);
+        onSubmit={(content, postAsMode) => {
+          if (shareComposerListing) void handleShareListing(shareComposerListing, content, postAsMode);
         }}
       />
 

@@ -25,7 +25,6 @@ import { GameArcadeNav } from "@/app/components/games/GameArcadeNav";
 import { ArcadeOutOfCoinsNotice } from "@/app/components/games/ArcadeOutOfCoinsNotice";
 import { ArcadeSessionBar } from "@/app/components/games/ArcadeSessionBar";
 import { useArcadeSession } from "@/app/components/games/useArcadeSession";
-import { RainbowCowboyLeaderboardStack } from "./RainbowCowboyLeaderboardStack";
 import { RainbowCowboyEndScreen } from "./RainbowCowboyEndScreen";
 import { RainbowCowboyLevelSelect } from "./RainbowCowboyLevelSelect";
 import { RainbowCowboyStartScreen } from "./RainbowCowboyStartScreen";
@@ -252,9 +251,9 @@ export function RainbowCowboyPage() {
             levels={levels}
             personalBests={personalBests}
             progress={progress}
+            refreshKey={leaderboardRefreshKey}
             onSelectLevel={handleSelectLevel}
           />
-          <RainbowCowboyLeaderboardStack levels={levels} refreshKey={leaderboardRefreshKey} />
         </>
       )}
 

@@ -58,6 +58,7 @@ import {
   PICKUP_SIZE,
   PLAYER_H,
   PLAYER_W,
+  FROGMAN_W,
   RAMPAGE_DURATION_MS,
   RAMPAGE_SPEED_MULT,
   RAINBOW_BLAST_RADIUS,
@@ -69,6 +70,44 @@ import {
   TONGUE_LENGTH,
   TONGUE_TIP_RADIUS,
   VIEW_W,
+  VIEW_H,
+  SWIM_SPEED,
+  WATER_SURFACE_Y,
+  SEA_MINE_SIZE,
+  SEA_MINE_SENSE_RADIUS,
+  SEA_MINE_ARM_MS,
+  SEA_MINE_BLAST_RADIUS,
+  SEA_MINE_SCORE,
+  SEA_MINE_BOB_AMP_MIN,
+  SEA_MINE_BOB_AMP_MAX,
+  CREEPER_MINE_W,
+  CREEPER_MINE_H,
+  CREEPER_MINE_SPEED,
+  CREEPER_OVERHEAD_HALF_W,
+  CREEPER_OVERHEAD_CANCEL_HALF_W,
+  CREEPER_MIN_Y_ABOVE,
+  CREEPER_CHARGE_MS,
+  CREEPER_CHARGE_CRAWL_MULT,
+  CREEPER_FIRE_COOLDOWN_MS,
+  CREEPER_BURST_GROW,
+  CREEPER_BURST_DURATION_MS,
+  CREEPER_MINE_SCORE,
+  SPEAR_PROJECTILE_SPEED,
+  SPEAR_FIRE_COOLDOWN_MS,
+  SONIC_PICKUP_CHARGES,
+  SONIC_FIRE_COOLDOWN_MS,
+  SONIC_WAVE_SPEED,
+  SONIC_WAVE_GROW,
+  SONIC_WAVE_MAX_RADIUS,
+  SONIC_WAVE_DURATION_MS,
+  LASER_SHARK_SHOOT_INTERVAL_MS,
+  LASER_SHARK_BULLET_SPEED,
+  SHARK_HOMING,
+  GATOR_KAMIKAZE,
+  GATOR_CHARGE_HIT_PAD_X,
+  GATOR_CHARGE_HIT_PAD_Y,
+  FLOATING_LOG_W,
+  FLOATING_LOG_H,
 } from "./rainbowCowboyConstants";
 import {
   DRONE_SCORES,
@@ -79,6 +118,7 @@ import {
   buildRainbowCowboyRunResult,
 } from "./rainbowCowboyScoring";
 import type { LevelConfig } from "./rainbowCowboyTypes";
+import { levelHasWeaponControls } from "./rainbowCowboyControlProfile";
 import type {
   RainbowCowboyEnemyKind,
   RainbowCowboyGamePhase,
@@ -87,6 +127,7 @@ import type {
   RainbowCowboyPickupKind,
   RainbowCowboyRunResult,
   WeaponKind,
+  SwimWeaponKind,
 } from "./rainbowCowboyTypes";
 import type { UnicornHeroAudioEvent } from "../unicorn-hero/unicornHeroAudio";
 import type { UnicornHeroRideType } from "../unicorn-hero/unicornHeroRides";
@@ -95,8 +136,21 @@ import {
   getRideStatusAttack,
   getRideStatusRiding,
 } from "../unicorn-hero/unicornHeroRides";
-import { getBossPressureMult, HIVE_BOSS_PRESSURE_MULT } from "./rainbowCowboyDifficulty";
+import { getAbyssEyeMinePressureMult, getBossPressureMult, HIVE_BOSS_PRESSURE_MULT } from "./rainbowCowboyDifficulty";
 import { HiveBossController, PHASE_3_PLUS_EASE_MULT } from "./rainbowCowboyHiveBoss";
+import { AbyssBossController } from "./rainbowCowboyAbyssBoss";
+import {
+  ABYSS_ARENA_Y,
+  ABYSS_ENGAGE_Y,
+  ABYSS_FALL_DAMAGE_INTERVAL_MS,
+  ABYSS_FALL_DAMAGE_THRESHOLD,
+  ABYSS_FLOOR_Y,
+  ABYSS_PLAYER_SPAWN_Y,
+  ABYSS_PLAYER_LANE_X,
+  ABYSS_SURFACE_Y,
+  ABYSS_TENTACLE_COUNT,
+} from "./rainbowCowboyAbyssConstants";
+import { rectIntersectsSonicCone, rectIntersectsHostileBurst, creeperBurstDirections, creeperBurstMaxLength } from "./rainbowCowboyDeepSea";
 import {
   HIVE_BAZOOKA_AMMO,
   HIVE_BAZOOKA_DAMAGE,
@@ -108,7 +162,7 @@ import {
 } from "./rainbowCowboyHiveConstants";
 
 /** Bumped when engine internals change so HMR can replace stale instances. */
-export const RAINBOW_COWBOY_ENGINE_REVISION = 32;
+export const RAINBOW_COWBOY_ENGINE_REVISION = 54;
 
 export interface GameInput {
   left: boolean;
@@ -131,7 +185,7 @@ interface Rect {
   h: number;
 }
 
-type EnemyPhase = "patrol" | "homing";
+type EnemyPhase = "patrol" | "homing" | "swoop";
 
 interface Enemy {
   id: string;
@@ -146,6 +200,8 @@ interface Enemy {
   bobPhase: number;
   phase: EnemyPhase;
   homingSince: number;
+  patrolMinX?: number;
+  patrolMaxX?: number;
   bombCooldownMs?: number;
   bombWarning?: boolean;
   hp?: number;
@@ -170,6 +226,31 @@ interface BlasterProjectile {
   weapon: WeaponKind;
 }
 
+export interface SonicWave {
+  id: string;
+  x: number;
+  y: number;
+  dir: 1 | -1;
+  radius: number;
+  bornMs: number;
+  active: boolean;
+  hitEnemyIds: string[];
+  hitHazardIds: string[];
+}
+
+export interface HostileSonicBurst {
+  id: string;
+  groupId: string;
+  x: number;
+  y: number;
+  dirX: number;
+  dirY: number;
+  length: number;
+  maxLength: number;
+  bornMs: number;
+  active: boolean;
+}
+
 interface Bomb {
   id: string;
   x: number;
@@ -191,6 +272,8 @@ interface EnemyBullet {
   vx: number;
   vy: number;
   active: boolean;
+  laser?: boolean;
+  fromAbyss?: boolean;
 }
 
 interface Nest {
@@ -206,6 +289,7 @@ interface Nest {
 
 interface WarningDef {
   triggerX: number;
+  triggerY?: number;
   message: string;
   fired: boolean;
 }
@@ -241,17 +325,30 @@ interface Hazard {
   baseY?: number;
   bobPhase?: number;
   bobAmp?: number;
+  bobSpeed?: number;
+  mineArmMs?: number;
+  /** Creeper mine charge countdown (ms remaining). */
+  chargeMs?: number;
+  chargeMaxMs?: number;
+  fireCooldownMs?: number;
+  w?: number;
+  h?: number;
 }
 
 interface SpawnDef {
   kind: RainbowCowboyEnemyKind;
   triggerX: number;
+  triggerY?: number;
   y: number;
   delayMs: number;
   triggeredAt: number | null;
   spawned: boolean;
   popupOnSpawn?: string;
   finalWave?: boolean;
+  fixedX?: number;
+  patrolMinX?: number;
+  patrolMaxX?: number;
+  patrolDir?: 1 | -1;
 }
 
 function isGroundEnemy(kind: RainbowCowboyEnemyKind): boolean {
@@ -294,6 +391,34 @@ function playerRect(x: number, y: number, ducking = false): Rect {
     return { x: x - PLAYER_W / 2 + 6, y: y - PLAYER_H + 22, w: PLAYER_W - 12, h: PLAYER_H - 22 };
   }
   return { x: x - PLAYER_W / 2, y: y - PLAYER_H, w: PLAYER_W, h: PLAYER_H };
+}
+
+function gatorPatrolLane(baseY: number, groundY: number): "surface" | "mid" | "deep" {
+  if (baseY < WATER_SURFACE_Y + 60) return "surface";
+  if (baseY > groundY - 88) return "deep";
+  return "mid";
+}
+
+function swimPlayerRect(x: number, y: number): Rect {
+  return {
+    x: x - FROGMAN_W / 2,
+    y: y - PLAYER_H * 0.55,
+    w: FROGMAN_W,
+    h: PLAYER_H * 0.55,
+  };
+}
+
+/** Hitbox for player attacks — charging gators get a forgiving pad. */
+function enemyAttackHitRect(enemy: Enemy): Rect {
+  if (enemy.kind === "laser_gator" && enemy.phase === "swoop") {
+    return {
+      x: enemy.x - GATOR_CHARGE_HIT_PAD_X,
+      y: enemy.y - GATOR_CHARGE_HIT_PAD_Y,
+      w: enemy.w + GATOR_CHARGE_HIT_PAD_X * 2,
+      h: enemy.h + GATOR_CHARGE_HIT_PAD_Y * 2,
+    };
+  }
+  return { x: enemy.x, y: enemy.y, w: enemy.w, h: enemy.h };
 }
 
 function quadBezier(
@@ -392,12 +517,18 @@ export class RainbowCowboyEngine {
   gunCooldownUntil = 0;
   lastGunFireMs = 0;
   lastGunWeapon: WeaponKind | null = null;
+  activeSwimWeapon: SwimWeaponKind = "spear";
+  sonicCharges = 0;
 
   blasterProjectiles: BlasterProjectile[] = [];
+  sonicWaves: SonicWave[] = [];
+  hostileSonicBursts: HostileSonicBurst[] = [];
   enemyBullets: EnemyBullet[] = [];
   finalWaveSurvived = false;
   finalWaveTriggered = false;
   finalWaveSpawns: SpawnDef[] = [];
+  rampageWaveTriggered = false;
+  rampageWaveSpawns: SpawnDef[] = [];
   extractionBlockedPopupUntil = 0;
 
   popupText: string | null = null;
@@ -407,6 +538,7 @@ export class RainbowCowboyEngine {
 
   rainbowBlastUntil = 0;
   cameraX = 0;
+  cameraY = 0;
 
   enemies: Enemy[] = [];
   pickups: Pickup[] = [];
@@ -427,15 +559,39 @@ export class RainbowCowboyEngine {
   audioEvents: UnicornHeroAudioEvent[] = [];
 
   hiveBoss: HiveBossController | null = null;
+  abyssBoss: AbyssBossController | null = null;
   arenaLocked = false;
   hiveBossHitCooldownUntil = 0;
+  abyssBossHitCooldownUntil = 0;
+  abyssFallDamageTimer = 0;
+  abyssTentacleDamageUntil = 0;
   fallingCrates: FallingCrate[] = [];
 
   constructor(config: LevelConfig, rideType: UnicornHeroRideType = "eod_robot") {
     this.config = config;
     this.rideType = rideType;
-    this.playerY = config.level.groundY;
+    if (config.scrollAxis === "vertical") {
+      this.playerX = ABYSS_PLAYER_LANE_X;
+      this.playerY = ABYSS_PLAYER_SPAWN_Y;
+      this.cameraY = ABYSS_PLAYER_SPAWN_Y - VIEW_H * 0.32;
+    } else if (config.playMode === "swim") {
+      this.playerY = 300;
+    } else {
+      this.playerY = config.level.groundY;
+    }
     this.initLevel();
+  }
+
+  private isSwimLevel(): boolean {
+    return this.config.playMode === "swim";
+  }
+
+  private isVerticalScroll(): boolean {
+    return this.config.scrollAxis === "vertical";
+  }
+
+  private isAbyssLevel(): boolean {
+    return this.config.level.id === "level-8" || this.config.bossKind === "abyss";
   }
 
   private initLevel() {
@@ -473,17 +629,49 @@ export class RainbowCowboyEngine {
         hazard.bobAmp = 10 + Math.random() * 22;
         this.balloonsSpawned += 1;
       }
+      if (h.kind === "sea_mine_floating" || h.kind === "sea_mine_tethered") {
+        hazard.baseY = h.y;
+        hazard.bobPhase = Math.random() * Math.PI * 2;
+        hazard.bobAmp =
+          SEA_MINE_BOB_AMP_MIN + Math.random() * (SEA_MINE_BOB_AMP_MAX - SEA_MINE_BOB_AMP_MIN);
+        hazard.bobSpeed = 0.016 + Math.random() * 0.048;
+      }
+      if (h.kind === "creeper_mine") {
+        if (this.isVerticalScroll()) {
+          hazard.y = h.y;
+          hazard.vx = 0;
+        } else {
+          const groundY = this.config.level.groundY;
+          hazard.y = groundY - CREEPER_MINE_H / 2 - 4;
+          hazard.vx = -(CREEPER_MINE_SPEED + Math.random() * 0.25);
+        }
+        hazard.fireCooldownMs = 400 + Math.random() * 800;
+      }
+      if (h.kind === "floating_log") {
+        const spawn = h as { logW?: number; logH?: number; logVx?: number };
+        hazard.w = spawn.logW ?? FLOATING_LOG_W;
+        hazard.h = spawn.logH ?? FLOATING_LOG_H;
+        hazard.vx = spawn.logVx ?? -(1.0 + Math.random() * 0.45);
+        hazard.baseY = h.y;
+        hazard.bobPhase = Math.random() * Math.PI * 2;
+        hazard.bobAmp = 3 + Math.random() * 4;
+      }
       return hazard;
     });
 
     this.spawns = this.config.enemies.map((e) => ({
       kind: e.kind,
       triggerX: e.triggerX,
+      triggerY: e.triggerY,
       y: e.y,
       delayMs: e.delayMs ?? 0,
       triggeredAt: null,
       spawned: false,
       popupOnSpawn: e.popupOnSpawn,
+      fixedX: e.fixedX,
+      patrolMinX: e.patrolMinX,
+      patrolMaxX: e.patrolMaxX,
+      patrolDir: e.patrolDir,
     }));
 
     this.nests = (this.config.nests ?? []).map((n) => ({
@@ -499,6 +687,7 @@ export class RainbowCowboyEngine {
 
     this.warnings = (this.config.warnings ?? []).map((w) => ({
       triggerX: w.triggerX,
+      triggerY: w.triggerY,
       message: w.message,
       fired: false,
     }));
@@ -519,14 +708,33 @@ export class RainbowCowboyEngine {
       popupOnSpawn: e.popupOnSpawn,
       finalWave: true,
     }));
+    this.rampageWaveTriggered = false;
+    this.rampageWaveSpawns = (this.config.rampageWave?.enemies ?? []).map((e) => ({
+      kind: e.kind,
+      triggerX: 0,
+      y: e.y,
+      delayMs: e.delayMs ?? 0,
+      triggeredAt: null,
+      spawned: false,
+      popupOnSpawn: e.popupOnSpawn,
+    }));
     this.extractionBlockedPopupUntil = 0;
     this.hasPistol = false;
     this.activeWeapon = "pistol";
     this.machineGunUntil = 0;
     this.machineGunAmmo = 0;
     this.bazookaAmmo = 0;
-    this.hasPistol = this.weaponsEnabled();
-    this.activeWeapon = "pistol";
+    if (this.isSwimLevel()) {
+      this.activeSwimWeapon = "spear";
+      this.sonicCharges = 0;
+      this.sonicWaves = [];
+      this.hostileSonicBursts = [];
+      this.activeWeapon = "spear";
+      this.status = "Swimming!";
+    } else {
+      this.hasPistol = this.weaponsEnabled();
+      this.activeWeapon = "pistol";
+    }
     this.gunCooldownUntil = 0;
     this.lastGunFireMs = 0;
     this.lastGunWeapon = null;
@@ -535,9 +743,12 @@ export class RainbowCowboyEngine {
     this.startTimeMs = performance.now();
     this.arenaLocked = false;
     this.hiveBossHitCooldownUntil = 0;
+    this.abyssBossHitCooldownUntil = 0;
+    this.abyssTentacleDamageUntil = 0;
+    this.abyssFallDamageTimer = 0;
     this.fallingCrates = [];
 
-    if (this.config.bossArena) {
+    if (this.config.bossArena && this.config.bossKind !== "abyss") {
       this.hiveBoss = new HiveBossController(
         this.config.bossArena,
         {
@@ -568,6 +779,36 @@ export class RainbowCowboyEngine {
     } else {
       this.hiveBoss = null;
     }
+
+    if (this.isAbyssLevel()) {
+      this.abyssBoss = new AbyssBossController(
+        {
+          spawnEnemy: (kind, x, y) => this.spawnBossEnemy(kind, x, y),
+          addScore: (points) => this.addScore(points),
+          showPopup: (text, ms) => this.showPopup(text, ms),
+          onDefeated: () => this.onAbyssBossDefeated(),
+          fireBullet: (x, y, vx, vy, laser) => this.spawnAbyssBullet(x, y, vx, vy, laser),
+          spawnInk: (x, y) => this.abyssBoss?.addInkCloud(x, y),
+          spawnSeaMine: (x, y, tethered) => this.spawnAbyssSeaMine(x, y, tethered),
+          countActiveSeaMines: () => this.countActiveSeaMines(),
+          damagePlayer: (amount, cause) => this.damagePlayer(amount, cause, 0),
+          getTimeMs: () => this.timeMs,
+          getPlayer: () => ({ x: this.playerX, y: this.playerY }),
+          getCameraY: () => this.cameraY,
+          pulseFx: (shakeMag, redAlpha) => this.pulseFinaleFx(shakeMag, redAlpha),
+          getCompleteBanner: () => this.config.completeBanner ?? "CAMP POSEIDON SECURED",
+        },
+        { eyeMinePressureMult: getAbyssEyeMinePressureMult(this.config.difficulty ?? "easy") },
+      );
+    } else {
+      this.abyssBoss = null;
+    }
+
+    if (this.isAbyssLevel()) {
+      this.sonicCharges = 2;
+      this.activeSwimWeapon = "spear";
+      this.showPopup("DESCEND — FIND THE ABYSS TO STARBOARD", 2800);
+    }
   }
 
   get scoreMultiplier(): number {
@@ -583,7 +824,7 @@ export class RainbowCowboyEngine {
   }
 
   get isMachineGunActive(): boolean {
-    if (this.isBossLevel()) return this.machineGunAmmo > 0;
+    if (this.isHiveBossLevel()) return this.machineGunAmmo > 0;
     return this.timeMs < this.machineGunUntil;
   }
 
@@ -594,7 +835,7 @@ export class RainbowCowboyEngine {
 
   private syncActiveWeapon() {
     if (!this.weaponsEnabled()) return;
-    if (this.isBossLevel()) {
+    if (this.isHiveBossLevel()) {
       if (this.activeWeapon === "machine_gun" && this.machineGunAmmo <= 0) {
         this.activeWeapon = "pistol";
       }
@@ -607,16 +848,20 @@ export class RainbowCowboyEngine {
   }
 
   private weaponsEnabled(): boolean {
-    return this.config.level.id === "level-3" || this.config.level.id === "level-4";
+    return levelHasWeaponControls(this.config);
   }
 
   private isBossLevel(): boolean {
+    return this.config.level.isBossLevel === true;
+  }
+
+  private isHiveBossLevel(): boolean {
     return this.config.level.id === "level-4";
   }
 
   private difficultySpeed(): number {
     const sm = this.config.difficultySpeedMult ?? 1;
-    if (this.isBossLevel() && this.hiveBoss?.active && !this.hiveBoss.defeated) {
+    if (this.isHiveBossLevel() && this.hiveBoss?.active && !this.hiveBoss.defeated) {
       let bossSm = sm * HIVE_BOSS_PRESSURE_MULT;
       if (this.hiveBoss.phase >= 3) {
         bossSm *= PHASE_3_PLUS_EASE_MULT;
@@ -797,7 +1042,8 @@ export class RainbowCowboyEngine {
         this.emitAudio({ type: "level_complete" });
       }
       this.decayFinaleFx();
-      this.updatePhysics(dt);
+      if (this.isSwimLevel()) this.updateSwimPhysics(dt);
+      else this.updatePhysics(dt);
       this.updateCamera();
       return;
     }
@@ -806,16 +1052,38 @@ export class RainbowCowboyEngine {
 
     this.processSpawns();
     this.processFinalWave();
+    this.processRampageWave();
     this.processWarnings();
     this.checkBossArenaEntry();
     this.handleInput(input);
-    this.updatePhysics(dt);
+    if (this.isSwimLevel()) {
+      this.updateSwimPhysics(dt);
+    } else {
+      this.updatePhysics(dt);
+    }
     this.updateEnemies(dt, dtMs);
     if (this.hiveBoss?.active) {
       this.hiveBoss.tick(dtMs);
     }
+    if (this.abyssBoss?.active) {
+      this.abyssBoss.tick(dtMs, this.playerY);
+      if (this.abyssBoss.isArenaLocked() && !this.arenaLocked) {
+        this.arenaLocked = true;
+        this.cameraY = ABYSS_ARENA_Y - 60;
+        this.playerY = ABYSS_ARENA_Y - 28;
+        this.playerX = ABYSS_PLAYER_LANE_X;
+        for (const enemy of this.enemies) {
+          if (enemy.active) enemy.active = false;
+        }
+      }
+      this.checkAbyssFallDamage(dtMs);
+      this.checkAbyssTentacleDamage();
+      this.checkAbyssInkDamage();
+    }
     this.tickFallingCrates(dt);
     this.updateBlasterProjectiles(dt);
+    this.updateSonicWaves(dt);
+    this.updateHostileSonicBursts(dt);
     this.updateEnemyBullets(dt);
     this.updateBombs(dt);
     this.updateNests(dtMs);
@@ -831,6 +1099,33 @@ export class RainbowCowboyEngine {
   private updateStatus() {
     this.syncActiveWeapon();
     if (this.timeMs < this.popupUntil && this.popupText) return;
+    if (this.isSwimLevel()) {
+      if (this.isRampage) this.status = "RAINBOW RAMPAGE";
+      else if (this.abyssBoss?.active && !this.abyssBoss.defeated) {
+        const st = this.abyssBoss.getState();
+        if (!st.engaged) {
+          if (st.revealProgress > 0.35) {
+            this.status = "THE ABYSS RISES…";
+          } else if (st.revealProgress > 0) {
+            this.status = "TENTACLES BELOW…";
+          } else {
+            this.status = "DESCEND — THE ABYSS LURKS TO STARBOARD";
+          }
+        } else if (st.mode === "ascent") {
+          this.status = st.bodyVulnerable
+            ? `THE ABYSS · CORE EXPOSED — SPEAR IT`
+            : `THE ABYSS · Section ${st.sectionIndex} · SPEAR TENTACLES`;
+        } else {
+          this.status = st.bodyVulnerable
+            ? `THE ABYSS · Phase ${st.phase} · HIT THE EYE`
+            : `THE ABYSS · SPEAR TENTACLE JOINTS (${st.tentaclesDestroyed}/${ABYSS_TENTACLE_COUNT})`;
+        }
+      } else if (this.timeMs < this.tongueUntil || this.timeMs < this.gunCooldownUntil + 80) {
+        this.status =
+          this.activeSwimWeapon === "sonic" ? "Sonic blast!" : "Spear fired!";
+      } else this.status = "Swimming!";
+      return;
+    }
     if (this.hiveBoss?.active && !this.hiveBoss.defeated) {
       this.status = `THE HIVE · Phase ${this.hiveBoss.getState().phase}${
         this.hiveBoss.getState().vulnerable ? " · HATCH OPEN" : ""
@@ -905,6 +1200,101 @@ export class RainbowCowboyEngine {
     if (triggerX == null || this.playerX < triggerX) return;
     this.arenaLocked = true;
     this.hiveBoss.enterArena(this.config.level.groundY);
+  }
+
+  private onAbyssBossDefeated() {
+    for (const enemy of this.enemies) {
+      if (enemy.active && !enemy.cosmetic) enemy.active = false;
+    }
+    this.clearFinaleChaos();
+    this.bossVictoryEpilogueComplete = true;
+    this.extractionReached = true;
+    this.levelCompleteHold = 0;
+    this.playerVx = 0;
+    this.playerVy = 0;
+  }
+
+  private spawnAbyssBullet(x: number, y: number, vx: number, vy: number, laser?: boolean) {
+    this.enemyBullets.push({
+      id: nextId(),
+      x,
+      y,
+      vx,
+      vy,
+      active: true,
+      laser: laser === true,
+      fromAbyss: true,
+    });
+  }
+
+  private countActiveSeaMines(): number {
+    return this.hazards.filter((h) => h.active && this.isSeaMine(h.kind)).length;
+  }
+
+  private spawnAbyssSeaMine(x: number, y: number, tethered?: boolean) {
+    const kind = tethered ? "sea_mine_tethered" : "sea_mine_floating";
+    this.hazards.push({
+      id: nextId(),
+      kind,
+      x,
+      y,
+      active: true,
+      baseY: y,
+      bobPhase: Math.random() * Math.PI * 2,
+      bobAmp: SEA_MINE_BOB_AMP_MIN + Math.random() * (SEA_MINE_BOB_AMP_MAX - SEA_MINE_BOB_AMP_MIN),
+      bobSpeed: 0.016 + Math.random() * 0.048,
+    });
+  }
+
+  private checkAbyssFallDamage(dtMs: number) {
+    if (!this.abyssBoss || this.abyssBoss.isArenaLocked() || !this.abyssBoss.engaged) return;
+    if (!this.abyssBoss.isCombatActive()) return;
+    if (!this.abyssBoss.shouldApplyFallDamage()) return;
+    const lag = this.playerY - (this.cameraY + ABYSS_FALL_DAMAGE_THRESHOLD);
+    if (lag > 0) {
+      this.abyssFallDamageTimer += dtMs;
+      if (this.abyssFallDamageTimer >= ABYSS_FALL_DAMAGE_INTERVAL_MS) {
+        this.abyssFallDamageTimer = 0;
+        this.damagePlayer(1, "Falling behind The Abyss", 0);
+        this.showPopup("TOO SLOW!", 700);
+      }
+    } else {
+      this.abyssFallDamageTimer = 0;
+    }
+  }
+
+  private checkAbyssTentacleDamage() {
+    if (!this.abyssBoss || this.abyssBoss.defeated || !this.abyssBoss.engaged) return;
+    if (this.isInvincible || this.isRampage || this.timeMs < this.hitFlashUntil) return;
+    if (this.timeMs < this.abyssTentacleDamageUntil) return;
+    const pr = swimPlayerRect(this.playerX, this.playerY);
+    const arena = this.abyssBoss.isArenaLocked();
+    const rects = arena
+      ? this.abyssBoss.getArenaTentacleHazards()
+      : this.abyssBoss.getAscentTentacleHazards(this.cameraY);
+    for (const r of rects) {
+      const hr = { x: r.x, y: r.y, w: r.w, h: r.h };
+      if (rectsOverlap(pr, hr)) {
+        this.abyssTentacleDamageUntil = this.timeMs + 1000;
+        this.damagePlayer(1, "Tentacle strike", r.x < this.playerX ? 5 : -5);
+        this.showPopup("TENTACLE!", 600);
+        return;
+      }
+    }
+  }
+
+  private checkAbyssInkDamage() {
+    if (!this.abyssBoss || !this.abyssBoss.isArenaLocked()) return;
+    const st = this.abyssBoss.getState();
+    const pr = swimPlayerRect(this.playerX, this.playerY);
+    for (const cloud of st.inkClouds) {
+      const dx = this.playerX - cloud.x;
+      const dy = this.playerY - cloud.y;
+      if (Math.hypot(dx, dy) < cloud.r && !this.isInvincible && this.timeMs >= this.hitFlashUntil) {
+        this.damagePlayer(1, "Ink cloud", 0);
+        return;
+      }
+    }
   }
 
   private onHiveBossDefeated() {
@@ -1004,17 +1394,25 @@ export class RainbowCowboyEngine {
   private processWarnings() {
     for (const w of this.warnings) {
       if (w.fired) continue;
-      if (this.playerX >= w.triggerX) {
+      const triggered = this.isVerticalScroll()
+        ? w.triggerY != null && this.playerY <= w.triggerY
+        : this.playerX >= w.triggerX;
+      if (triggered) {
         w.fired = true;
         this.showPopup(w.message, 1800);
       }
     }
   }
 
-  private createEnemyFromSpawn(spawn: Pick<SpawnDef, "kind" | "y" | "popupOnSpawn">, spawnX: number): Enemy {
+  private createEnemyFromSpawn(
+    spawn: Pick<SpawnDef, "kind" | "y" | "popupOnSpawn" | "patrolMinX" | "patrolMaxX" | "patrolDir">,
+    spawnX: number,
+  ): Enemy {
     const groundY = this.config.level.groundY;
     const size = ENEMY_SIZES[spawn.kind];
     const ground = isGroundEnemy(spawn.kind);
+    const shark = spawn.kind === "laser_shark";
+    const gator = spawn.kind === "laser_gator";
     const enemy: Enemy = {
       id: nextId(),
       kind: spawn.kind,
@@ -1023,13 +1421,28 @@ export class RainbowCowboyEngine {
       baseY: ground ? groundY - size.h : spawn.y,
       w: size.w,
       h: size.h,
-      vx: ground ? 0 : ENEMY_SPEEDS[spawn.kind as keyof typeof ENEMY_SPEEDS],
+      vx: gator
+        ? (spawn.patrolDir ?? 1) * ENEMY_SPEEDS.laser_gator
+        : shark
+          ? ENEMY_SPEEDS.laser_shark
+          : ground
+            ? 0
+            : ENEMY_SPEEDS[spawn.kind as keyof typeof ENEMY_SPEEDS],
       active: true,
       bobPhase: Math.random() * 6,
       phase: "patrol",
       homingSince: 0,
       groundUnit: ground,
     };
+
+    if (shark) {
+      enemy.shootCooldownMs = 900 + Math.random() * 700;
+    }
+
+    if (gator) {
+      if (spawn.patrolMinX != null) enemy.patrolMinX = spawn.patrolMinX;
+      if (spawn.patrolMaxX != null) enemy.patrolMaxX = spawn.patrolMaxX;
+    }
 
     if (ground) {
       const hp = enemyMaxHp(spawn.kind);
@@ -1059,14 +1472,34 @@ export class RainbowCowboyEngine {
   private processSpawns() {
     for (const spawn of this.spawns) {
       if (spawn.spawned) continue;
-      if (this.playerX < spawn.triggerX) continue;
+      const triggered = this.isVerticalScroll()
+        ? spawn.triggerY != null
+          ? this.playerY <= spawn.triggerY
+          : true
+        : this.playerX >= spawn.triggerX;
+      if (!triggered) continue;
       if (spawn.triggeredAt == null) spawn.triggeredAt = this.timeMs;
       if (this.timeMs - spawn.triggeredAt < spawn.delayMs) continue;
       spawn.spawned = true;
-      const spawnX = isGroundEnemy(spawn.kind)
-        ? this.playerX + VIEW_W * 0.58
-        : this.playerX + VIEW_W * 0.65;
-      this.enemies.push(this.createEnemyFromSpawn(spawn, spawnX));
+      const spawnX =
+        spawn.kind === "laser_shark" || spawn.kind === "laser_gator"
+          ? spawn.fixedX != null
+            ? spawn.fixedX
+            : this.isVerticalScroll()
+              ? 80 + Math.random() * (VIEW_W - 160)
+              : this.playerX + VIEW_W * 0.72 + Math.random() * 60
+          : spawn.fixedX != null
+            ? spawn.fixedX
+            : isGroundEnemy(spawn.kind)
+              ? this.playerX + VIEW_W * 0.58
+              : this.playerX + VIEW_W * 0.65;
+      const enemy = this.createEnemyFromSpawn(spawn, spawnX);
+      if (spawn.patrolMinX != null) enemy.patrolMinX = spawn.patrolMinX;
+      if (spawn.patrolMaxX != null) enemy.patrolMaxX = spawn.patrolMaxX;
+      if (spawn.patrolDir != null && spawn.kind === "laser_gator") {
+        enemy.vx = spawn.patrolDir * ENEMY_SPEEDS.laser_gator;
+      }
+      this.enemies.push(enemy);
     }
   }
 
@@ -1077,6 +1510,37 @@ export class RainbowCowboyEngine {
     const enemy = this.createEnemyFromSpawn(spawn, spawnX);
     enemy.fromFinalWave = true;
     this.enemies.push(enemy);
+  }
+
+  private spawnRampageWaveEnemy(spawn: SpawnDef) {
+    const spawnX =
+      spawn.kind === "laser_shark" || spawn.kind === "laser_gator"
+        ? this.playerX + VIEW_W * 0.68 + Math.random() * 100
+        : this.playerX + VIEW_W * 0.6;
+    this.enemies.push(this.createEnemyFromSpawn(spawn, spawnX));
+  }
+
+  private triggerRampageWave() {
+    const wave = this.config.rampageWave;
+    if (!wave || this.rampageWaveTriggered) return;
+    this.rampageWaveTriggered = true;
+    const now = this.timeMs;
+    for (const spawn of this.rampageWaveSpawns) {
+      spawn.triggeredAt = now;
+    }
+    this.showPopup(wave.message ?? "SHARK SWARM!", 2200);
+  }
+
+  private processRampageWave() {
+    if (!this.rampageWaveTriggered) return;
+
+    for (const spawn of this.rampageWaveSpawns) {
+      if (spawn.spawned) continue;
+      if (spawn.triggeredAt == null) spawn.triggeredAt = this.timeMs;
+      if (this.timeMs - spawn.triggeredAt < spawn.delayMs) continue;
+      spawn.spawned = true;
+      this.spawnRampageWaveEnemy(spawn);
+    }
   }
 
   private processFinalWave() {
@@ -1122,7 +1586,9 @@ export class RainbowCowboyEngine {
   }
 
   private enemyCollisionDamage(kind: RainbowCowboyEnemyKind): number {
-    return isBoomBot(kind) ? 2 : 1;
+    if (isBoomBot(kind)) return 2;
+    if (kind === "laser_gator") return 2;
+    return 1;
   }
 
   private destroyEnemy(
@@ -1203,12 +1669,72 @@ export class RainbowCowboyEngine {
         h: BALLOON_SIZE.h,
       };
     }
+    if (hazard.kind === "sea_mine_tethered" || hazard.kind === "sea_mine_floating") {
+      const s = SEA_MINE_SIZE;
+      return { x: hazard.x - s / 2, y: hazard.y - s / 2, w: s, h: s };
+    }
+    if (hazard.kind === "creeper_mine") {
+      return {
+        x: hazard.x - CREEPER_MINE_W / 2,
+        y: hazard.y - CREEPER_MINE_H / 2,
+        w: CREEPER_MINE_W,
+        h: CREEPER_MINE_H,
+      };
+    }
     return null;
+  }
+
+  private isSwimExplosiveHazard(kind: RainbowCowboyHazardKind): boolean {
+    return kind === "sea_mine_tethered" || kind === "sea_mine_floating";
+  }
+
+  private isSeaMine(kind: RainbowCowboyHazardKind): boolean {
+    return this.isSwimExplosiveHazard(kind);
+  }
+
+  private destroyCreeperMine(hazard: Hazard, cause: string, fromShot = false) {
+    if (!hazard.active) return;
+    hazard.active = false;
+    this.addScore(CREEPER_MINE_SCORE);
+    if (fromShot) this.showPopup("CREEPER DOWN", 700);
+    this.emitAudio({ type: "explosion" });
+  }
+
+  private detonateSeaMine(hazard: Hazard, cause: string, fromShot = false) {
+    if (!hazard.active) return;
+    hazard.active = false;
+    hazard.exploded = true;
+    hazard.explodeUntil = this.timeMs + LANDMINE_EXPLODE_MS;
+    this.emitAudio({ type: "explosion" });
+    this.landmineExplosionEvents.push({
+      x: hazard.x,
+      groundY: hazard.y,
+    });
+    if (fromShot) {
+      this.addScore(SEA_MINE_SCORE);
+      this.showPopup("MINE DOWN!", 500);
+    }
+    const dist = Math.hypot(this.playerX - hazard.x, this.playerY - hazard.y);
+    if (dist < SEA_MINE_BLAST_RADIUS && !this.isInvincible && !this.isRampage) {
+      const knock = this.playerX < hazard.x ? -8 : 8;
+      this.damagePlayer(1, cause, knock);
+      if (!fromShot) this.showPopup("MINE BLAST!", 800);
+    }
   }
 
   private hitHazardWithGun(hazard: Hazard, weapon: WeaponKind) {
     if (!hazard.active) return;
     const groundY = this.config.level.groundY;
+
+    if (this.isSeaMine(hazard.kind)) {
+      this.detonateSeaMine(hazard, "Shot a sea mine", true);
+      return;
+    }
+
+    if (hazard.kind === "creeper_mine") {
+      this.destroyCreeperMine(hazard, "Shot a creeper mine", true);
+      return;
+    }
 
     if (hazard.kind === "landmine") {
       const knock = this.playerX < hazard.x ? -4 : 4;
@@ -1252,6 +1778,15 @@ export class RainbowCowboyEngine {
   }
 
   private projectileHitRect(shot: BlasterProjectile): Rect {
+    if (shot.weapon === "spear") {
+      const dir = shot.vx >= 0 ? 1 : -1;
+      return {
+        x: shot.x - (dir > 0 ? 0 : 18),
+        y: shot.y - 3,
+        w: 18,
+        h: 6,
+      };
+    }
     const pw = shot.weapon === "bazooka" ? BAZOOKA_PROJECTILE_W : BLASTER_PROJECTILE_W;
     const ph = shot.weapon === "bazooka" ? BAZOOKA_PROJECTILE_H : BLASTER_PROJECTILE_H;
     const dir = shot.vx >= 0 ? 1 : -1;
@@ -1300,6 +1835,10 @@ export class RainbowCowboyEngine {
   }
 
   private tryFireGun(fromEdge: boolean, held: boolean) {
+    if (this.isSwimLevel()) {
+      this.tryFireSwimWeapon(fromEdge);
+      return;
+    }
     if (!this.weaponsEnabled()) return;
     if (this.timeMs < this.gunCooldownUntil) return;
 
@@ -1308,7 +1847,7 @@ export class RainbowCowboyEngine {
     let weapon = this.activeWeapon;
 
     if (weapon === "machine_gun") {
-      if (this.isBossLevel()) {
+      if (this.isHiveBossLevel()) {
         if (this.machineGunAmmo <= 0) {
           this.activeWeapon = "pistol";
           weapon = "pistol";
@@ -1337,7 +1876,7 @@ export class RainbowCowboyEngine {
       if (this.bazookaAmmo <= 0) {
         this.activeWeapon = "pistol";
       }
-    } else if (weapon === "machine_gun" && this.isBossLevel()) {
+    } else if (weapon === "machine_gun" && this.isHiveBossLevel()) {
       this.machineGunAmmo -= 1;
       if (this.machineGunAmmo <= 0) {
         this.activeWeapon = "pistol";
@@ -1355,6 +1894,27 @@ export class RainbowCowboyEngine {
     this.dronesEaten += 1;
     this.addScore(DRONE_SCORES[enemy.kind]);
     this.explodeMonsterTruckAt(cx, cy, enemy.kind);
+  }
+
+  private fireLaserShark(enemy: Enemy) {
+    const facingRight = enemy.vx >= 0;
+    const muzzleX = facingRight ? enemy.x + enemy.w - 8 : enemy.x + 6;
+    const muzzleY = enemy.y + 8;
+    const targetY = this.playerY - (this.isSwimLevel() ? PLAYER_H * 0.55 : PLAYER_H * 0.45);
+    const dx = this.playerX - muzzleX;
+    const dy = targetY - muzzleY;
+    const dist = Math.hypot(dx, dy) || 1;
+    const speed = LASER_SHARK_BULLET_SPEED;
+    this.enemyBullets.push({
+      id: nextId(),
+      x: muzzleX,
+      y: muzzleY,
+      vx: (dx / dist) * speed,
+      vy: (dy / dist) * speed,
+      active: true,
+      laser: true,
+    });
+    this.emitAudio({ type: "tongue" });
   }
 
   private fireTruckTurret(enemy: Enemy) {
@@ -1404,32 +1964,72 @@ export class RainbowCowboyEngine {
 
   private updateEnemyBullets(dt: number) {
     const cam = this.cameraX;
-    const pr = playerRect(this.playerX, this.playerY, this.ducking);
+    const camY = this.cameraY;
+    const groundY = this.config.level.groundY;
+    const pr = this.isSwimLevel()
+      ? swimPlayerRect(this.playerX, this.playerY)
+      : playerRect(this.playerX, this.playerY, this.ducking);
 
     for (const bullet of this.enemyBullets) {
       if (!bullet.active) continue;
       bullet.x += bullet.vx * dt;
       bullet.y += bullet.vy * dt;
 
-      if (bullet.x < cam - 60 || bullet.x > cam + VIEW_W + 60) {
+      if (this.isVerticalScroll()) {
+        const offY = bullet.y < camY - 140 || bullet.y > camY + VIEW_H + 140;
+        const offX = bullet.x < -140 || bullet.x > VIEW_W + 140;
+        if (offY || offX) {
+          bullet.active = false;
+          continue;
+        }
+      } else if (bullet.laser) {
+        const offLeft = bullet.x < cam - 280;
+        const offRight = bullet.x > cam + VIEW_W + 280;
+        const offVertical = bullet.y < WATER_SURFACE_Y - 20 || bullet.y > groundY + 20;
+        if (offLeft || offRight || offVertical) {
+          bullet.active = false;
+          continue;
+        }
+      } else if (bullet.x < cam - 60 || bullet.x > cam + VIEW_W + 60) {
         bullet.active = false;
         continue;
       }
 
+      const hitR = bullet.fromAbyss ? 7 : ENEMY_BULLET_RADIUS;
       const br: Rect = {
-        x: bullet.x - ENEMY_BULLET_RADIUS,
-        y: bullet.y - ENEMY_BULLET_RADIUS,
-        w: ENEMY_BULLET_RADIUS * 2,
-        h: ENEMY_BULLET_RADIUS * 2,
+        x: bullet.x - hitR,
+        y: bullet.y - hitR,
+        w: hitR * 2,
+        h: hitR * 2,
       };
       if (rectsOverlap(pr, br) && !this.isInvincible && this.timeMs >= this.hitFlashUntil) {
         bullet.active = false;
         const knock = bullet.vx > 0 ? 5 : -5;
-        this.damagePlayer(1, "Turret truck shot", knock);
+        const cause = bullet.fromAbyss
+          ? bullet.laser
+            ? "Abyss laser"
+            : "Abyss bolt"
+          : bullet.laser
+            ? "Shark laser"
+            : "Turret truck shot";
+        this.damagePlayer(1, cause, knock);
+        if (bullet.fromAbyss) {
+          this.showPopup(bullet.laser ? "LASER!" : "BOLT!", 500);
+        }
       }
     }
 
     this.enemyBullets = this.enemyBullets.filter((b) => b.active);
+  }
+
+  private enemyBulletHitRect(bullet: EnemyBullet): Rect {
+    const r = bullet.fromAbyss ? 9 : ENEMY_BULLET_RADIUS;
+    return { x: bullet.x - r, y: bullet.y - r, w: r * 2, h: r * 2 };
+  }
+
+  private destroyAbyssBullet(bullet: EnemyBullet) {
+    bullet.active = false;
+    this.emitAudio({ type: "tongue" });
   }
 
   private updateBlasterProjectiles(dt: number) {
@@ -1449,7 +2049,7 @@ export class RainbowCowboyEngine {
 
       for (const enemy of this.enemies) {
         if (!enemy.active) continue;
-        const er = { x: enemy.x, y: enemy.y, w: enemy.w, h: enemy.h };
+        const er = enemyAttackHitRect(enemy);
         if (rectsOverlap(sr, er)) {
           this.damageEnemyWithGun(enemy, shot.weapon);
           shot.active = false;
@@ -1502,6 +2102,34 @@ export class RainbowCowboyEngine {
           if (shot.weapon === "bazooka") {
             this.damageNearbyBossDrones(shot.x, shot.y, 120);
           }
+          shot.active = false;
+        }
+      }
+
+      if (!shot.active) continue;
+
+      if (this.abyssBoss?.engaged) {
+        for (const bullet of this.enemyBullets) {
+          if (!bullet.active || !bullet.fromAbyss) continue;
+          if (rectsOverlap(sr, this.enemyBulletHitRect(bullet))) {
+            this.destroyAbyssBullet(bullet);
+            shot.active = false;
+            break;
+          }
+        }
+      }
+
+      if (!shot.active) continue;
+
+      if (this.abyssBoss?.active && !this.abyssBoss.defeated && shot.weapon === "spear") {
+        const leadX = shot.vx >= 0 ? sr.x + sr.w : sr.x;
+        const leadY = sr.y + sr.h / 2;
+        if (
+          this.abyssBoss.tryHitSpear(sr, this.abyssBoss.getSpearDamage(), {
+            x: leadX,
+            y: leadY,
+          })
+        ) {
           shot.active = false;
         }
       }
@@ -1596,6 +2224,10 @@ export class RainbowCowboyEngine {
 
   private handleInput(input: GameInput) {
     if (this.phase !== "playing") return;
+    if (this.isSwimLevel()) {
+      this.handleSwimInput(input);
+      return;
+    }
 
     let speed = MOVE_SPEED;
     if (this.isGassed) speed *= GASSED_MOVE_MULT;
@@ -1648,9 +2280,286 @@ export class RainbowCowboyEngine {
       this.tryRainbowBlast();
     }
 
-    if (input.weaponSwapPressed && this.isBossLevel()) {
+    if (input.weaponSwapPressed && this.isHiveBossLevel()) {
       this.cycleBossWeapon();
     }
+  }
+
+  private handleSwimInput(input: GameInput) {
+    let speed = SWIM_SPEED;
+    if (this.isGassed) speed *= GASSED_MOVE_MULT;
+    if (this.isRampage) speed *= RAMPAGE_SPEED_MULT;
+    if (this.timeMs < this.speedBoostUntil) speed *= BOOST_SPEED_MULT;
+
+    let vx = 0;
+    let vy = 0;
+    if (input.left) {
+      vx -= speed;
+      this.facing = "left";
+    }
+    if (input.right) {
+      vx += speed;
+      this.facing = "right";
+    }
+    if (input.up) vy -= speed * 0.88;
+    if (input.down) vy += speed * 0.88;
+    if (vx !== 0 && vy !== 0) {
+      vx *= 0.707;
+      vy *= 0.707;
+    }
+    this.playerVx = vx + this.knockbackVx;
+    this.playerVy = vy;
+    this.knockbackVx *= KNOCKBACK_DECAY;
+
+    if (input.gunPressed || input.tonguePressed) {
+      this.tryFireSwimWeapon(true);
+    }
+    if (input.rainbowPressed) {
+      this.tryRainbowBlast();
+    }
+    if (input.weaponSwapPressed) {
+      this.cycleSwimWeapon();
+    }
+  }
+
+  private cycleSwimWeapon() {
+    if (this.sonicCharges <= 0) {
+      if (this.activeSwimWeapon !== "spear") {
+        this.activeSwimWeapon = "spear";
+        this.showPopup("HARPOON", 600);
+      }
+      return;
+    }
+    this.activeSwimWeapon = this.activeSwimWeapon === "spear" ? "sonic" : "spear";
+    this.showPopup(this.activeSwimWeapon === "sonic" ? "SONIC BLAST" : "HARPOON ∞", 700);
+  }
+
+  private tryFireSwimWeapon(fromEdge: boolean) {
+    if (!fromEdge) return;
+    if (this.timeMs < this.gunCooldownUntil) return;
+    if (this.activeSwimWeapon === "sonic") {
+      this.tryFireSonic();
+      return;
+    }
+    this.tryFireSpear();
+  }
+
+  private tryFireSpear() {
+    const dir = this.facing === "right" ? 1 : -1;
+    this.blasterProjectiles.push({
+      id: nextId(),
+      x: this.playerX + dir * 34,
+      y: this.playerY - PLAYER_H * 0.55,
+      vx: dir * SPEAR_PROJECTILE_SPEED,
+      active: true,
+      weapon: "spear",
+    });
+    this.gunCooldownUntil = this.timeMs + SPEAR_FIRE_COOLDOWN_MS;
+    this.lastGunFireMs = this.timeMs;
+    this.lastGunWeapon = "spear";
+    this.emitAudio({ type: "tongue" });
+  }
+
+  private tryFireSonic() {
+    if (this.sonicCharges <= 0) {
+      this.activeSwimWeapon = "spear";
+      this.showPopup("NO SONIC CHARGES", 600);
+      return;
+    }
+
+    const dir = (this.facing === "right" ? 1 : -1) as 1 | -1;
+    this.sonicWaves.push({
+      id: nextId(),
+      x: this.playerX + dir * 42,
+      y: this.playerY - PLAYER_H * 0.55,
+      dir,
+      radius: 24,
+      bornMs: this.timeMs,
+      active: true,
+      hitEnemyIds: [],
+      hitHazardIds: [],
+    });
+    this.sonicCharges -= 1;
+    if (this.sonicCharges <= 0) {
+      this.activeSwimWeapon = "spear";
+    }
+    this.gunCooldownUntil = this.timeMs + SONIC_FIRE_COOLDOWN_MS;
+    this.lastGunFireMs = this.timeMs;
+    this.lastGunWeapon = "sonic";
+    this.emitAudio({ type: "rainbow_blast" });
+  }
+
+  private updateSonicWaves(dt: number) {
+    if (!this.isSwimLevel()) return;
+    const cam = this.cameraX;
+    const viewLeft = cam - 120;
+    const viewRight = cam + VIEW_W + 120;
+
+    for (const wave of this.sonicWaves) {
+      if (!wave.active) continue;
+      wave.x += wave.dir * SONIC_WAVE_SPEED * dt;
+      wave.radius += SONIC_WAVE_GROW * dt * 16;
+
+      const expired =
+        this.timeMs - wave.bornMs > SONIC_WAVE_DURATION_MS ||
+        wave.radius >= SONIC_WAVE_MAX_RADIUS;
+      if (expired || wave.x < viewLeft - wave.radius || wave.x > viewRight + wave.radius) {
+        wave.active = false;
+        continue;
+      }
+
+      for (const enemy of this.enemies) {
+        if (!enemy.active || wave.hitEnemyIds.includes(enemy.id)) continue;
+        const er = enemyAttackHitRect(enemy);
+        if (rectIntersectsSonicCone(wave, er)) {
+          wave.hitEnemyIds.push(enemy.id);
+          this.destroyEnemy(enemy, "blaster");
+        }
+      }
+
+      for (const hazard of this.hazards) {
+        if (!hazard.active || wave.hitHazardIds.includes(hazard.id)) continue;
+        const hr = this.hazardGunRect(hazard);
+        if (!hr || !rectIntersectsSonicCone(wave, hr)) continue;
+        wave.hitHazardIds.push(hazard.id);
+        if (this.isSeaMine(hazard.kind)) {
+          this.detonateSeaMine(hazard, "Sonic blast", true);
+        } else if (hazard.kind === "creeper_mine") {
+          this.destroyCreeperMine(hazard, "Sonic blast", true);
+        }
+      }
+
+      if (this.abyssBoss?.active && !this.abyssBoss.defeated && this.abyssBoss.engaged) {
+        for (const bullet of this.enemyBullets) {
+          if (!bullet.active || !bullet.fromAbyss) continue;
+          if (rectIntersectsSonicCone(wave, this.enemyBulletHitRect(bullet))) {
+            this.destroyAbyssBullet(bullet);
+          }
+        }
+
+        for (const layout of this.abyssBoss.getTentacleLayouts(this.timeMs)) {
+          const key = `abyss-t${layout.id}`;
+          if (layout.dying || wave.hitEnemyIds.includes(key)) continue;
+          if (!rectIntersectsSonicCone(wave, layout.hitRect)) continue;
+          wave.hitEnemyIds.push(key);
+          this.abyssBoss.tryHitSpear(layout.hitRect, this.abyssBoss.getSonicTentacleDamage());
+        }
+        const body = this.abyssBoss.getBodyHitRect();
+        if (body && !wave.hitEnemyIds.includes("abyss-body") && rectIntersectsSonicCone(wave, body)) {
+          wave.hitEnemyIds.push("abyss-body");
+          this.abyssBoss.damageEye(this.abyssBoss.getSonicTentacleDamage());
+        }
+      }
+    }
+
+    this.sonicWaves = this.sonicWaves.filter((w) => w.active);
+  }
+
+  private fireCreeperMineBurst(hazard: Hazard) {
+    const originY = hazard.y - CREEPER_MINE_H / 2 - 2;
+    const groupId = nextId();
+    for (const { dirX, dirY } of creeperBurstDirections()) {
+      this.hostileSonicBursts.push({
+        id: nextId(),
+        groupId,
+        x: hazard.x,
+        y: originY,
+        dirX,
+        dirY,
+        length: 10,
+        maxLength: creeperBurstMaxLength(originY, dirX, dirY),
+        bornMs: this.timeMs,
+        active: true,
+      });
+    }
+    this.emitAudio({ type: "rainbow_blast" });
+  }
+
+  private updateHostileSonicBursts(dt: number) {
+    if (!this.isSwimLevel()) return;
+    const pr = swimPlayerRect(this.playerX, this.playerY);
+
+    for (const burst of this.hostileSonicBursts) {
+      if (!burst.active) continue;
+      if (burst.length < burst.maxLength) {
+        burst.length = Math.min(
+          burst.maxLength,
+          burst.length + CREEPER_BURST_GROW * dt * 16,
+        );
+      }
+
+      const expired = this.timeMs - burst.bornMs > CREEPER_BURST_DURATION_MS;
+      if (expired) {
+        burst.active = false;
+        continue;
+      }
+
+      if (
+        !this.isInvincible &&
+        !this.isRampage &&
+        this.timeMs >= this.hitFlashUntil &&
+        rectIntersectsHostileBurst(burst, pr)
+      ) {
+        const groupId = burst.groupId;
+        for (const b of this.hostileSonicBursts) {
+          if (b.groupId === groupId) b.active = false;
+        }
+        this.damagePlayer(1, "Creeper sonic burst", 0);
+        this.showPopup("SONIC HIT!", 900);
+      }
+    }
+
+    this.hostileSonicBursts = this.hostileSonicBursts.filter((b) => b.active);
+  }
+
+  private updateSwimPhysics(dt: number) {
+    const levelW = this.isVerticalScroll() ? VIEW_W : this.config.level.levelWidth;
+    let minY: number;
+    let maxY: number;
+
+    if (this.isVerticalScroll() && this.abyssBoss?.isArenaLocked()) {
+      minY = ABYSS_ARENA_Y - 36;
+      maxY = ABYSS_ARENA_Y + 80;
+    } else if (this.isVerticalScroll() && this.abyssBoss?.engaged && !this.abyssBoss.isArenaLocked()) {
+      const bandTop = this.abyssBoss.getEffectiveCameraY(this.playerY);
+      minY = bandTop + 36;
+      maxY = Math.min(bandTop + VIEW_H - 36, ABYSS_FLOOR_Y - 8);
+    } else if (this.isVerticalScroll()) {
+      minY = this.cameraY + 36;
+      maxY = ABYSS_ENGAGE_Y + 48;
+    } else {
+      minY = WATER_SURFACE_Y + 36;
+      maxY = this.config.level.groundY - 8;
+    }
+
+    this.playerX += this.playerVx * dt;
+    this.playerY += this.playerVy * dt;
+    this.playerX = Math.max(FROGMAN_W / 2, Math.min(levelW - FROGMAN_W / 2, this.playerX));
+    this.playerY = Math.max(minY, Math.min(maxY, this.playerY));
+
+    const pr = swimPlayerRect(this.playerX, this.playerY);
+    const obstacles = [...this.config.walls, ...this.config.platforms];
+    for (const hazard of this.hazards) {
+      if (!hazard.active || hazard.kind !== "floating_log") continue;
+      const lw = hazard.w ?? FLOATING_LOG_W;
+      const lh = hazard.h ?? FLOATING_LOG_H;
+      obstacles.push({ x: hazard.x - lw / 2, y: hazard.y - lh / 2, w: lw, h: lh });
+    }
+    for (const obstacle of obstacles) {
+      const ob = { x: obstacle.x, y: obstacle.y, w: obstacle.w, h: obstacle.h };
+      if (!rectsOverlap(pr, ob)) continue;
+      const overlapLeft = pr.x + pr.w - ob.x;
+      const overlapRight = ob.x + ob.w - pr.x;
+      const overlapTop = pr.y + pr.h - ob.y;
+      const overlapBottom = ob.y + ob.h - pr.y;
+      const minOverlap = Math.min(overlapLeft, overlapRight, overlapTop, overlapBottom);
+      if (minOverlap === overlapLeft) this.playerX -= overlapLeft;
+      else if (minOverlap === overlapRight) this.playerX += overlapRight;
+      else if (minOverlap === overlapTop) this.playerY -= overlapTop;
+      else this.playerY += overlapBottom;
+    }
+
+    this.grounded = false;
   }
 
   private tryRainbowBlast() {
@@ -1700,6 +2609,13 @@ export class RainbowCowboyEngine {
           if (hazard.kind === "dynamite") hazard.exploded = true;
         }
       }
+      if (hazard.kind === "sea_mine_tethered" || hazard.kind === "sea_mine_floating") {
+        const dist = Math.hypot(hazard.x - this.playerX, hazard.y - this.playerY);
+        if (dist < RAINBOW_BLAST_RADIUS) {
+          hazard.active = false;
+          this.addScore(SEA_MINE_SCORE + RAINBOW_BLAST_BONUS);
+        }
+      }
     }
 
     if (this.hiveBoss?.active && !this.hiveBoss.defeated) {
@@ -1708,6 +2624,10 @@ export class RainbowCowboyEngine {
         this.hiveBossHitCooldownUntil = 0;
         this.damageHiveBoss(HIVE_RAINBOW_DAMAGE, true);
       }
+    }
+
+    if (this.abyssBoss?.active && !this.abyssBoss.defeated) {
+      this.abyssBoss.damageRainbow();
     }
   }
 
@@ -1730,7 +2650,7 @@ export class RainbowCowboyEngine {
     this.playerX += this.playerVx * dt;
     this.playerY += this.playerVy * dt;
 
-    this.playerX = Math.max(PLAYER_W / 2, Math.min(levelW - PLAYER_W / 2, this.playerX));
+    this.playerX = Math.max(FROGMAN_W / 2, Math.min(levelW - FROGMAN_W / 2, this.playerX));
 
     if (this.arenaLocked && this.hiveBoss?.active) {
       const bounds = this.hiveBoss.getArenaBounds();
@@ -1790,7 +2710,7 @@ export class RainbowCowboyEngine {
 
   private updateEnemies(dt: number, dtMs: number) {
     const targetX = this.playerX;
-    const targetY = this.playerY - PLAYER_H * 0.45;
+    const targetY = this.playerY - (this.isSwimLevel() ? PLAYER_H * 0.55 : PLAYER_H * 0.45);
     const groundY = this.config.level.groundY;
     const sm = this.difficultySpeed();
 
@@ -1867,6 +2787,136 @@ export class RainbowCowboyEngine {
         if (e.x + e.w < this.cameraX - 120) {
           e.active = false;
         }
+        continue;
+      }
+
+      if (e.kind === "laser_shark") {
+        const minY = WATER_SURFACE_Y + 36;
+        const maxY = groundY - e.h - 8;
+        e.bobPhase += 0.05 * dt;
+
+        if (e.phase === "patrol") {
+          e.x += e.vx * dt * sm;
+          e.y = e.baseY + Math.sin(e.bobPhase) * 8;
+
+          const centerX = e.x + e.w / 2;
+          const passedPlayer = centerX < targetX - 18;
+          if (passedPlayer) {
+            e.phase = "homing";
+            e.homingSince = this.timeMs;
+          } else if (e.x + e.w < this.cameraX - 100) {
+            e.active = false;
+          }
+        } else {
+          const cfg = SHARK_HOMING;
+          const ecx = e.x + e.w / 2;
+          const ecy = e.y + e.h / 2;
+          const dx = targetX - ecx;
+          const dy = targetY - ecy;
+          const dist = Math.hypot(dx, dy) || 1;
+          const nx = dx / dist;
+          const ny = dy / dist;
+
+          const ramp = Math.min(1, (this.timeMs - e.homingSince) / 550);
+          const steer = cfg.steer * (0.6 + ramp * 0.4);
+          const speed = cfg.speed * (0.85 + ramp * 0.35) * sm;
+
+          e.x += nx * speed * steer * dt * 16;
+          e.y += ny * speed * steer * dt * 16;
+          e.bobPhase += 0.05 * dt;
+          e.y += Math.sin(e.bobPhase) * cfg.bob * 0.06 * dt;
+          e.y = Math.max(minY, Math.min(maxY, e.y));
+          e.vx = nx * Math.abs(ENEMY_SPEEDS.laser_shark);
+
+          const offLeft = e.x + e.w < this.cameraX - 180;
+          const lostChase = this.timeMs - e.homingSince > 8500 && dist > 400;
+          if (offLeft && lostChase) {
+            e.active = false;
+          }
+        }
+
+        e.shootCooldownMs = (e.shootCooldownMs ?? LASER_SHARK_SHOOT_INTERVAL_MS) - dtMs;
+        const ecx = e.x + e.w / 2;
+        const playerAhead = this.playerX < ecx + 40;
+        const inLaserRange = Math.abs(this.playerX - ecx) < 620;
+        if (
+          (e.shootCooldownMs ?? 0) <= 0 &&
+          playerAhead &&
+          inLaserRange &&
+          e.x < this.cameraX + VIEW_W + 40
+        ) {
+          this.fireLaserShark(e);
+          e.shootCooldownMs = LASER_SHARK_SHOOT_INTERVAL_MS + Math.random() * 600;
+        }
+
+        continue;
+      }
+
+      if (e.kind === "laser_gator") {
+        const minY = WATER_SURFACE_Y + 24;
+        const maxY = groundY - e.h - 8;
+        e.bobPhase += 0.06 * dt;
+        const targetX = this.playerX;
+        const targetY = this.playerY - PLAYER_H * 0.55;
+
+        if (e.phase === "patrol") {
+          e.x += e.vx * dt * sm;
+          e.y = e.baseY + Math.sin(e.bobPhase) * 6;
+
+          if (e.patrolMinX != null && e.x < e.patrolMinX) {
+            e.x = e.patrolMinX;
+            e.vx = Math.abs(e.vx);
+          }
+          if (e.patrolMaxX != null && e.x + e.w > e.patrolMaxX) {
+            e.x = e.patrolMaxX - e.w;
+            e.vx = -Math.abs(e.vx);
+          }
+
+          const lane = gatorPatrolLane(e.baseY, groundY);
+          const ecx = e.x + e.w / 2;
+          const ecy = e.y + e.h * 0.45;
+          const hDist = Math.abs(targetX - ecx);
+          const vDist = Math.abs(targetY - ecy);
+          const playerBelow = targetY > e.y + 16;
+
+          const triggerKamikaze =
+            lane === "surface"
+              ? hDist < 440 && playerBelow
+              : hDist < 460 && vDist < 155;
+
+          if (triggerKamikaze) {
+            e.phase = "swoop";
+            e.homingSince = this.timeMs;
+          } else if (e.x + e.w < this.cameraX - 120 || e.x > this.cameraX + VIEW_W + 160) {
+            if (e.x + e.w < this.cameraX - 120) e.active = false;
+          }
+        } else {
+          const cfg = GATOR_KAMIKAZE;
+          const ecx = e.x + e.w / 2;
+          const ecy = e.y + e.h / 2;
+          const dx = targetX - ecx;
+          const dy = targetY - ecy;
+          const dist = Math.hypot(dx, dy) || 1;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          const ramp = Math.min(1, (this.timeMs - e.homingSince) / 320);
+          const steer = cfg.steer * (0.8 + ramp * 0.6);
+          const speed = cfg.speed * (1.0 + ramp * 0.55) * sm;
+
+          e.x += nx * speed * steer * dt * 16;
+          e.y += ny * speed * steer * dt * 16;
+          e.y = Math.max(minY, Math.min(maxY, e.y));
+          e.vx = nx * Math.abs(ENEMY_SPEEDS.laser_gator);
+
+          const missed =
+            this.timeMs - e.homingSince > 900 &&
+            (targetY < e.y - 64 || Math.abs(targetX - ecx) > 120);
+          const offScreen = e.y >= maxY || e.x + e.w < this.cameraX - 80;
+          if (missed || offScreen || this.timeMs - e.homingSince > 5500) {
+            e.active = false;
+          }
+        }
+
         continue;
       }
 
@@ -2064,6 +3114,18 @@ export class RainbowCowboyEngine {
         }
       }
 
+      if (h.kind === "floating_log" && h.vx != null) {
+        h.x += h.vx * dt;
+        if (h.baseY != null) {
+          h.bobPhase = (h.bobPhase ?? 0) + 0.024 * dt;
+          h.y = h.baseY + Math.sin(h.bobPhase) * (h.bobAmp ?? 4);
+        }
+        const halfW = (h.w ?? FLOATING_LOG_W) / 2;
+        if (h.x + halfW < this.cameraX - 100) {
+          h.active = false;
+        }
+      }
+
       if (h.kind === "dynamite" && h.timerMs != null && !h.exploded) {
         h.timerMs -= dt * 16.67;
         if (h.timerMs <= 0) {
@@ -2071,6 +3133,73 @@ export class RainbowCowboyEngine {
           h.active = false;
           this.emitAudio({ type: "explosion" });
           this.triggerExplosion(h.x, h.y, DYNAMITE_RADIUS, 2, "Dynamite blast");
+        }
+      }
+
+      if (this.isSeaMine(h.kind) && h.baseY != null) {
+        h.bobPhase = (h.bobPhase ?? 0) + (h.bobSpeed ?? 0.03) * dt;
+        h.y = h.baseY + Math.sin(h.bobPhase) * (h.bobAmp ?? 22);
+
+        const dist = Math.hypot(this.playerX - h.x, this.playerY - h.y);
+        if (dist < SEA_MINE_SENSE_RADIUS && !this.isInvincible && !this.isRampage) {
+          if (h.mineArmMs == null) h.mineArmMs = SEA_MINE_ARM_MS;
+          h.mineArmMs -= dt * 16.67;
+          if (h.mineArmMs <= 0) {
+            this.detonateSeaMine(h, "Sea mine armed");
+          }
+        } else {
+          h.mineArmMs = undefined;
+        }
+      }
+
+      if (h.kind === "creeper_mine") {
+        if (!this.isVerticalScroll()) {
+          const groundY = this.config.level.groundY;
+          h.y = groundY - CREEPER_MINE_H / 2 - 4;
+        }
+
+        if ((h.fireCooldownMs ?? 0) > 0) {
+          h.fireCooldownMs = (h.fireCooldownMs ?? 0) - dt * 16.67;
+        }
+
+        const charging = h.chargeMs != null && h.chargeMs > 0;
+        const playerAbove = this.playerY < h.y - CREEPER_MIN_Y_ABOVE;
+        const playerDx = Math.abs(this.playerX - h.x);
+
+        if (!charging) {
+          h.x += (h.vx ?? -CREEPER_MINE_SPEED) * dt;
+        } else {
+          h.x += (h.vx ?? -CREEPER_MINE_SPEED) * dt * CREEPER_CHARGE_CRAWL_MULT;
+          const stillOverhead =
+            playerAbove && playerDx < CREEPER_OVERHEAD_CANCEL_HALF_W;
+          if (!stillOverhead) {
+            h.chargeMs = undefined;
+            h.chargeMaxMs = undefined;
+          } else {
+            h.chargeMs = (h.chargeMs ?? 0) - dt * 16.67;
+            if ((h.chargeMs ?? 0) <= 0) {
+              this.fireCreeperMineBurst(h);
+              h.fireCooldownMs = CREEPER_FIRE_COOLDOWN_MS;
+              h.chargeMs = undefined;
+              h.chargeMaxMs = undefined;
+            }
+          }
+        }
+
+        if (
+          !charging &&
+          (h.fireCooldownMs ?? 0) <= 0 &&
+          playerAbove &&
+          playerDx < CREEPER_OVERHEAD_HALF_W &&
+          !this.isInvincible &&
+          !this.isRampage
+        ) {
+          h.chargeMs = CREEPER_CHARGE_MS;
+          h.chargeMaxMs = CREEPER_CHARGE_MS;
+        }
+
+        if (!this.isVerticalScroll() && h.x < this.cameraX - 160) {
+          h.active = false;
         }
       }
     }
@@ -2126,7 +3255,7 @@ export class RainbowCowboyEngine {
     for (const enemy of this.enemies) {
       if (!enemy.active) continue;
       if (isBoomBot(enemy.kind)) continue;
-      const er = { x: enemy.x, y: enemy.y, w: enemy.w, h: enemy.h };
+      const er = enemyAttackHitRect(enemy);
       if (rectsOverlap(tipRect, er)) {
         this.destroyEnemy(enemy, "tongue");
         this.tongueUntil = this.timeMs;
@@ -2214,10 +3343,14 @@ export class RainbowCowboyEngine {
       case "rainbow":
         this.rainbowCharges = Math.min(MAX_RAINBOW_CHARGES, this.rainbowCharges + 1);
         this.emitAudio({ type: "rainbow_pickup" });
-        this.showPopup(`RAINBOW (${this.rainbowCharges})`);
+        this.showPopup(
+          this.isAbyssLevel()
+            ? `UNICORN BOMB (${this.rainbowCharges})`
+            : `RAINBOW (${this.rainbowCharges})`,
+        );
         break;
       case "unicorn_treat":
-        if (this.isBossLevel()) {
+        if (this.isHiveBossLevel()) {
           this.rainbowCharges = Math.min(MAX_RAINBOW_CHARGES, this.rainbowCharges + 1);
           this.emitAudio({ type: "rainbow_pickup" });
           this.showPopup(`RAINBOW (${this.rainbowCharges})`);
@@ -2226,6 +3359,7 @@ export class RainbowCowboyEngine {
         this.rampageUntil = this.timeMs + RAMPAGE_DURATION_MS;
         this.invincibleUntil = this.rampageUntil;
         this.speedBoostUntil = this.rampageUntil;
+        this.triggerRampageWave();
         this.emitAudio({ type: "unicorn_treat" });
         this.showPopup("RAINBOW RAMPAGE", 2000);
         break;
@@ -2235,7 +3369,7 @@ export class RainbowCowboyEngine {
         this.showPopup("PISTOL — active weapon (T / GUN to fire)", 1200);
         break;
       case "weapon_machine_gun":
-        if (this.isBossLevel()) {
+        if (this.isHiveBossLevel()) {
           this.machineGunAmmo = HIVE_MG_AMMO;
           this.showPopup(`MACHINE GUN — ${HIVE_MG_AMMO} rounds`, 1400);
         } else {
@@ -2245,7 +3379,7 @@ export class RainbowCowboyEngine {
         this.activeWeapon = "machine_gun";
         break;
       case "weapon_bazooka":
-        if (this.isBossLevel()) {
+        if (this.isHiveBossLevel()) {
           this.bazookaAmmo = HIVE_BAZOOKA_AMMO;
           this.showPopup(`BAZOOKA — ${HIVE_BAZOOKA_AMMO} rockets`, 1400);
         } else {
@@ -2254,13 +3388,29 @@ export class RainbowCowboyEngine {
         }
         this.activeWeapon = "bazooka";
         break;
+      case "weapon_sonic":
+        this.sonicCharges += SONIC_PICKUP_CHARGES;
+        this.activeSwimWeapon = "sonic";
+        this.showPopup(
+          this.isAbyssLevel()
+            ? `SONIC BOOM — ${this.sonicCharges} charges (Q to swap)`
+            : `SONIC BLAST — ${this.sonicCharges} charges (Q to swap)`,
+          1400,
+        );
+        break;
     }
   }
 
   private getWeaponHudLabel(): string | null {
+    if (this.isSwimLevel()) {
+      if (this.activeSwimWeapon === "sonic" && this.sonicCharges > 0) {
+        return `SONIC x${this.sonicCharges}`;
+      }
+      return "HARPOON ∞";
+    }
     if (!this.weaponsEnabled()) return null;
     this.syncActiveWeapon();
-    if (this.isBossLevel()) {
+    if (this.isHiveBossLevel()) {
       if (this.activeWeapon === "machine_gun" && this.machineGunAmmo > 0) {
         return `MG x${this.machineGunAmmo}`;
       }
@@ -2278,7 +3428,9 @@ export class RainbowCowboyEngine {
   }
 
   private checkCollisions() {
-    const pr = playerRect(this.playerX, this.playerY, this.ducking);
+    const pr = this.isSwimLevel()
+      ? swimPlayerRect(this.playerX, this.playerY)
+      : playerRect(this.playerX, this.playerY, this.ducking);
 
     for (const pickup of this.pickups) {
       if (!pickup.active) continue;
@@ -2308,7 +3460,11 @@ export class RainbowCowboyEngine {
           }
           this.damagePlayer(
             this.enemyCollisionDamage(enemy.kind),
-            `${enemy.kind} drone collision`,
+            enemy.kind === "laser_shark"
+              ? "Laser shark ram"
+              : enemy.kind === "laser_gator"
+                ? "Kamikaze gator"
+                : `${enemy.kind} drone collision`,
             enemy.vx > 0 ? 4 : -4,
           );
           enemy.active = false;
@@ -2355,6 +3511,18 @@ export class RainbowCowboyEngine {
           this.applyGas("Trash balloon collision");
         }
       }
+
+      if (hazard.kind === "creeper_mine") {
+        const cr = this.hazardGunRect(hazard);
+        if (cr && rectsOverlap(pr, cr)) {
+          if (this.isRampage) {
+            this.destroyCreeperMine(hazard, "Rampage stomp");
+            this.showPopup("CRUSHED!", 600);
+          } else if (!this.isInvincible && this.timeMs >= this.hitFlashUntil) {
+            this.damagePlayer(1, "Creeper mine collision", hazard.vx && hazard.vx > 0 ? 4 : -4);
+          }
+        }
+      }
     }
   }
 
@@ -2381,6 +3549,25 @@ export class RainbowCowboyEngine {
       this.cameraShakeY = 0;
     }
 
+    if (this.isVerticalScroll()) {
+      if (this.arenaLocked && this.abyssBoss?.isArenaLocked()) {
+        this.cameraY = ABYSS_ARENA_Y - 60;
+        this.cameraX = 0;
+        return;
+      }
+      const targetCam = this.playerY - VIEW_H * 0.55;
+      if (this.abyssBoss?.engaged && !this.abyssBoss.isArenaLocked()) {
+        this.cameraY = this.abyssBoss.getEffectiveCameraY(this.playerY);
+      } else if (this.abyssBoss?.engaged) {
+        this.cameraY = Math.min(targetCam, this.abyssBoss.getMinCameraY());
+      } else {
+        this.cameraY = this.playerY - VIEW_H * 0.32;
+      }
+      this.cameraY = Math.max(ABYSS_SURFACE_Y, this.cameraY);
+      this.cameraX = 0;
+      return;
+    }
+
     if (this.arenaLocked && this.hiveBoss?.active) {
       this.cameraX = this.hiveBoss.getArenaBounds().cameraX;
       return;
@@ -2390,7 +3577,14 @@ export class RainbowCowboyEngine {
   }
 
   getHud(): RainbowCowboyHudSnapshot {
-    const bossState = this.hiveBoss?.getState();
+    const hiveState = this.hiveBoss?.getState();
+    const abyssState = this.abyssBoss?.getState();
+    const bossState =
+      abyssState?.engaged && abyssState.mode === "arena" && abyssState.active && !abyssState.defeated
+        ? abyssState
+        : hiveState?.active && !hiveState.defeated
+          ? hiveState
+          : null;
     return {
       hearts: this.hearts,
       maxHearts: MAX_HEARTS,
@@ -2409,12 +3603,22 @@ export class RainbowCowboyEngine {
       ),
       weaponLabel: this.getWeaponHudLabel(),
       bazookaAmmo: this.bazookaAmmo,
-      bossHp: bossState?.active && !bossState.defeated ? bossState.hp : null,
-      bossMaxHp: bossState?.active && !bossState.defeated ? bossState.maxHp : null,
-      bossPhase: bossState?.active && !bossState.defeated ? bossState.phase : null,
-      bossHatchOpen: bossState?.active && !bossState.defeated ? bossState.vulnerable : null,
-      bossSegments: bossState?.active && !bossState.defeated ? bossState.segments : null,
-      machineGunAmmo: this.isBossLevel() ? this.machineGunAmmo : null,
+      bossHp: bossState ? bossState.hp : null,
+      bossMaxHp: bossState ? bossState.maxHp : null,
+      bossPhase: bossState ? bossState.phase : null,
+      bossHatchOpen:
+        bossState && "bodyVulnerable" in bossState
+          ? bossState.bodyVulnerable
+          : bossState && "vulnerable" in bossState
+            ? bossState.vulnerable
+            : null,
+      bossSegments:
+        bossState && "tentaclesDestroyed" in bossState
+          ? ABYSS_TENTACLE_COUNT - bossState.tentaclesDestroyed
+          : bossState && "segments" in bossState
+            ? bossState.segments
+            : null,
+      machineGunAmmo: this.isHiveBossLevel() ? this.machineGunAmmo : null,
     };
   }
 
@@ -2440,6 +3644,7 @@ export class RainbowCowboyEngine {
       deathCause: this.deathCause,
       difficulty: this.config.difficulty ?? "easy",
       hiveBossDamage: this.hiveBoss?.bossDamageDealt,
+      abyssBossDamage: this.abyssBoss?.bossDamageDealt,
     });
   }
 

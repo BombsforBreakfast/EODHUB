@@ -5,10 +5,12 @@ import { VIEW_H, VIEW_W } from "./rainbowCowboyConstants";
 import { RainbowCowboyEngine, RAINBOW_COWBOY_ENGINE_REVISION, type GameInput } from "./rainbowCowboyEngine";
 import { drawWorld, maybeSpawnDust } from "./rainbowCowboyGraphics";
 import { drawHiveArenaSilhouette } from "./rainbowCowboyHiveBoss";
+import { drawAbyssArenaSilhouette } from "./rainbowCowboyAbyssBoss";
 import { RainbowCowboyParticlePool } from "./rainbowCowboyParticles";
 import type { LevelConfig, RainbowCowboyPersonalBest } from "./rainbowCowboyTypes";
 import type { RainbowCowboyHudSnapshot, RainbowCowboyRunResult } from "./rainbowCowboyTypes";
 import { RainbowCowboyControls } from "./RainbowCowboyControls";
+import { getRainbowCowboyControlProfile } from "./rainbowCowboyControlProfile";
 import { RainbowCowboyControlSettings } from "./RainbowCowboyControlSettings";
 import {
   loadRainbowCowboyControlPrefs,
@@ -109,7 +111,16 @@ export function RainbowCowboyGame({
   const pausedUiRef = useRef(false);
   const hiddenRef = useRef(false);
   const bossIntroUntilRef = useRef(0);
+  const isSwimLevel = config.playMode === "swim";
   const isBossLevel = config.level.isBossLevel === true;
+  const controlProfile = useMemo(
+    () =>
+      getRainbowCowboyControlProfile(config, {
+        attack: isSwimLevel ? "Spear" : rideConfig.attackLabel,
+        special: rideConfig.specialLabel,
+      }),
+    [config, isSwimLevel, rideConfig.attackLabel, rideConfig.specialLabel],
+  );
   const [hud, setHud] = useState(defaultHud);
   const [paused, setPaused] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(showInstructions);
@@ -357,7 +368,11 @@ export function RainbowCowboyGame({
       drawWorld(ctx, engine, now, particles);
 
       if (bossIntroActive) {
-        drawHiveArenaSilhouette(ctx, now);
+        if (config.level.id === "level-8") {
+          drawAbyssArenaSilhouette(ctx, now);
+        } else {
+          drawHiveArenaSilhouette(ctx, now);
+        }
       }
 
       if (!endedRef.current) {
@@ -385,7 +400,12 @@ export function RainbowCowboyGame({
       if (k === "a" || k === "arrowleft") input.left = true;
       if (k === "d" || k === "arrowright") input.right = true;
       if (k === "s" || k === "arrowdown") input.down = true;
-      if (k === " " || k === "arrowup" || k === "w") {
+      if (isSwimLevel) {
+        if (k === "w" || k === "arrowup") {
+          e.preventDefault();
+          input.up = true;
+        }
+      } else if (k === " " || k === "arrowup" || k === "w") {
         e.preventDefault();
         input.jumpPressed = true;
       }
@@ -405,6 +425,7 @@ export function RainbowCowboyGame({
       if (k === "a" || k === "arrowleft") input.left = false;
       if (k === "d" || k === "arrowright") input.right = false;
       if (k === "s" || k === "arrowdown") input.down = false;
+      if (isSwimLevel && (k === "w" || k === "arrowup")) input.up = false;
       if (k === "t") input.gunHeld = false;
     };
     window.addEventListener("keydown", onKeyDown);
@@ -413,7 +434,7 @@ export function RainbowCowboyGame({
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("keyup", onKeyUp);
     };
-  }, []);
+  }, [isSwimLevel]);
 
   return (
     <div
@@ -521,13 +542,13 @@ export function RainbowCowboyGame({
         hud={hud}
         personalBest={personalBest}
         levelTitle={config.level.title}
-        rideLabel={rideConfig.label}
+        rideLabel={isSwimLevel ? "Frogman" : rideConfig.label}
       />
 
       <RainbowCowboyInstructionsModal
         open={instructionsOpen}
         levelId={config.level.id}
-        attackLabel={rideConfig.attackLabel}
+        attackLabel={isSwimLevel ? "Spear gun" : rideConfig.attackLabel}
         specialLabel={rideConfig.specialLabel}
         onDismiss={() => {
           instructionsOpenRef.current = false;
@@ -550,10 +571,8 @@ export function RainbowCowboyGame({
 
       <RainbowCowboyControls
         actions={inputActions}
+        profile={controlProfile}
         disabled={paused || instructionsOpen}
-        showWeaponButton={config.level.id === "level-3"}
-        attackLabel={rideConfig.attackLabel}
-        specialLabel={rideConfig.specialLabel}
         specialCharges={hud.rainbowCharges}
         controlPrefs={controlPrefs}
       />

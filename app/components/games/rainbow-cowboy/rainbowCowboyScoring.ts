@@ -3,6 +3,11 @@ import {
   HIVE_NO_DAMAGE_BONUS,
   HIVE_FAST_TIME_BONUS,
 } from "./rainbowCowboyHiveConstants";
+import {
+  ABYSS_COMPLETE_BONUS,
+  ABYSS_FAST_TIME_BONUS,
+  ABYSS_NO_DAMAGE_BONUS,
+} from "./rainbowCowboyAbyssConstants";
 import type { RainbowCowboyDifficulty, RainbowCowboyRunResult } from "./rainbowCowboyTypes";
 
 export const DRONE_SCORES = {
@@ -16,6 +21,8 @@ export const DRONE_SCORES = {
   armored_boom_bot: 200,
   grenade_goblin_bot: 250,
   hive_turret: 250,
+  laser_shark: 175,
+  laser_gator: 190,
 } as const;
 
 export const PICKUP_SCORES = {
@@ -27,6 +34,7 @@ export const PICKUP_SCORES = {
   weapon_pistol: 50,
   weapon_machine_gun: 75,
   weapon_bazooka: 100,
+  weapon_sonic: 90,
 } as const;
 
 export const NEST_DESTROY_SCORE = 500;
@@ -73,10 +81,50 @@ const LEVEL_4_RANKS: [number, string][] = [
   [6000, "Drone Wrangler"],
 ];
 
+export const LEVEL_5_COMPLETE_BONUS = 1500;
+export const LEVEL_5_NO_DAMAGE_BONUS = 750;
+export const LEVEL_5_FAST_TIME_BONUS = 500;
+
+const LEVEL_5_RANKS: [number, string][] = [
+  [4500, "Depth Charge"],
+  [3500, "Mine Whisperer"],
+  [2500, "Frogman"],
+  [1500, "Bubble Rider"],
+];
+
+const LEVEL_6_RANKS: [number, string][] = [
+  [4200, "Trench Lord"],
+  [3200, "Creeper Dodger"],
+  [2200, "Frogman II"],
+  [1400, "Bubble Rider"],
+];
+
+const LEVEL_7_RANKS: [number, string][] = [
+  [4000, "Dock Master"],
+  [3000, "Log Weaver"],
+  [2000, "Gator Bait Survivor"],
+  [1300, "Lake Frog"],
+];
+
+const LEVEL_8_RANKS: [number, string][] = [
+  [14000, "Abyss Breaker"],
+  [11000, "Depth Escape Artist"],
+  [8500, "Squid Slayer"],
+  [6500, "Pressure Diver"],
+];
+
 export function getRainbowCowboyRank(levelId: string, score: number): string {
   const table =
-    levelId === "level-4"
-      ? LEVEL_4_RANKS
+    levelId === "level-8"
+      ? LEVEL_8_RANKS
+      : levelId === "level-7"
+      ? LEVEL_7_RANKS
+      : levelId === "level-6"
+      ? LEVEL_6_RANKS
+      : levelId === "level-5"
+      ? LEVEL_5_RANKS
+      : levelId === "level-4"
+        ? LEVEL_4_RANKS
       : levelId === "level-3"
         ? LEVEL_3_RANKS
         : levelId === "level-2"
@@ -86,10 +134,28 @@ export function getRainbowCowboyRank(levelId: string, score: number): string {
     if (score >= threshold) return rank;
   }
   if (levelId === "level-4") return "Rookie Exterminator";
+  if (levelId === "level-8") return "Bubble Fodder";
+  if (levelId === "level-6") return "Guppy";
+  if (levelId === "level-7") return "Tadpole";
+  if (levelId === "level-5") return "Guppy";
   return "Pony Recruit";
 }
 
 function getLevelBonuses(levelId: string) {
+  if (levelId === "level-8") {
+    return {
+      complete: ABYSS_COMPLETE_BONUS,
+      noDamage: ABYSS_NO_DAMAGE_BONUS,
+      fastTime: ABYSS_FAST_TIME_BONUS,
+    };
+  }
+  if (levelId === "level-5" || levelId === "level-6" || levelId === "level-7") {
+    return {
+      complete: LEVEL_5_COMPLETE_BONUS,
+      noDamage: LEVEL_5_NO_DAMAGE_BONUS,
+      fastTime: LEVEL_5_FAST_TIME_BONUS,
+    };
+  }
   if (levelId === "level-4") {
     return {
       complete: HIVE_COMPLETE_BONUS,
@@ -138,6 +204,7 @@ export function buildRainbowCowboyRunResult(params: {
   deathCause?: string;
   difficulty?: RainbowCowboyDifficulty;
   hiveBossDamage?: number;
+  abyssBossDamage?: number;
   turretsDestroyed?: number;
 }): RainbowCowboyRunResult {
   let score = params.baseScore;
@@ -169,6 +236,7 @@ export function buildRainbowCowboyRunResult(params: {
     completedAt: new Date().toISOString(),
     difficulty: params.difficulty ?? "easy",
     hiveBossDamage: params.hiveBossDamage,
+    abyssBossDamage: params.abyssBossDamage,
     turretsDestroyed: params.turretsDestroyed,
   };
 }

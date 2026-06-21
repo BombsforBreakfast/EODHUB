@@ -43,7 +43,8 @@ export function RainbowCowboyEndScreen({
   const isLevel2 = result.levelId === "level-2";
   const isLevel3 = result.levelId === "level-3";
   const isLevel4 = result.levelId === "level-4";
-  const isAdvancedLevel = isLevel2 || isLevel3 || isLevel4;
+  const isLevel8 = result.levelId === "level-8";
+  const isAdvancedLevel = isLevel2 || isLevel3 || isLevel4 || isLevel8;
   const victoryTitle = getVictoryTitle(result);
 
   return (
@@ -60,7 +61,9 @@ export function RainbowCowboyEndScreen({
     >
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 8 }}>
         {isVictory ? (
-          isLevel4 ? (
+          isLevel8 ? (
+            <span style={{ fontSize: 40 }}>🦑</span>
+          ) : isLevel4 ? (
             <span style={{ fontSize: 40 }}>🏴</span>
           ) : isLevel2 ? (
             <span style={{ fontSize: 40 }}>🏜️</span>
@@ -97,6 +100,8 @@ export function RainbowCowboyEndScreen({
                 <Stat label="Red Barons Down" value={String(result.redBaronsDestroyed)} t={t} />
                 {isLevel4 ? (
                   <Stat label="Hive Damage" value={String(result.hiveBossDamage ?? 0)} t={t} />
+                ) : isLevel8 ? (
+                  <Stat label="Abyss Damage" value={String(result.abyssBossDamage ?? 0)} t={t} />
                 ) : (
                   <>
                     <Stat label="Nests Destroyed" value={String(result.nestsDestroyed)} t={t} />
@@ -116,6 +121,24 @@ export function RainbowCowboyEndScreen({
           t={t}
         />
       </div>
+
+      {isVictory && isLevel8 && (
+        <div
+          style={{
+            padding: 14,
+            borderRadius: 10,
+            background: "rgba(128,255,200,0.08)",
+            border: "1px solid rgba(128,255,200,0.35)",
+            marginBottom: 16,
+            fontSize: 14,
+            color: t.text,
+            lineHeight: 1.5,
+          }}
+        >
+          <strong>CAMP POSEIDON SECURED</strong>
+          <div style={{ marginTop: 6 }}>Skywatch branch unlocked</div>
+        </div>
+      )}
 
       {isVictory && isLevel4 && (
         <div

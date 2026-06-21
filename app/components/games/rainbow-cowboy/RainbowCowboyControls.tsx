@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RainbowCowboyInputActions } from "./rainbowCowboyGameInput";
+import type { RainbowCowboyControlProfile } from "./rainbowCowboyControlProfile";
 import {
   getControlMetrics,
   loadRainbowCowboyControlPrefs,
@@ -11,10 +12,8 @@ import {
 
 interface Props {
   actions: RainbowCowboyInputActions;
-  attackLabel?: string;
-  specialLabel?: string;
+  profile: RainbowCowboyControlProfile;
   specialCharges?: number;
-  showWeaponButton?: boolean;
   disabled?: boolean;
   controlPrefs?: RainbowCowboyControlPrefs;
 }
@@ -69,6 +68,7 @@ function VirtualJoystick({
   prefs,
   opacity,
   onActivity,
+  swimMode,
 }: {
   disabled?: boolean;
   actions: RainbowCowboyInputActions;
@@ -76,6 +76,7 @@ function VirtualJoystick({
   prefs: RainbowCowboyControlPrefs;
   opacity: number;
   onActivity: () => void;
+  swimMode?: boolean;
 }) {
   const padRef = useRef<HTMLDivElement>(null);
   const zoneRef = useRef<HTMLDivElement>(null);
@@ -120,15 +121,19 @@ function VirtualJoystick({
 
       const moveLeft = dx < -JOYSTICK_H_THRESH;
       const moveRight = dx > JOYSTICK_H_THRESH;
-      const duck = dy > JOYSTICK_V_THRESH && dy > Math.abs(dx) * 0.45;
-      const aimUp = dy < -JOYSTICK_V_THRESH && Math.abs(dy) >= Math.abs(dx) * 0.45;
+      const duck = swimMode
+        ? dy > JOYSTICK_V_THRESH
+        : dy > JOYSTICK_V_THRESH && dy > Math.abs(dx) * 0.45;
+      const aimUp = swimMode
+        ? dy < -JOYSTICK_V_THRESH
+        : dy < -JOYSTICK_V_THRESH && Math.abs(dy) >= Math.abs(dx) * 0.45;
 
       actions.setMoveLeft(moveLeft);
       actions.setMoveRight(moveRight);
       actions.setDuck(duck);
       actions.setAimUp(aimUp);
     },
-    [actions, stickMax],
+    [actions, stickMax, swimMode],
   );
 
   const bindWindowTracking = useCallback(
@@ -249,6 +254,7 @@ function ArcadeActionButton({
   size,
   tone,
   disabled,
+  unavailable,
   cooldownPct,
   onPress,
   onPressStart,
@@ -260,8 +266,9 @@ function ArcadeActionButton({
   label: string;
   sub?: string;
   size: number;
-  tone: "jump" | "attack" | "special" | "gun";
+  tone: "jump" | "attack" | "special" | "gun" | "swap";
   disabled?: boolean;
+  unavailable?: boolean;
   cooldownPct?: number;
   onPress?: () => void;
   onPressStart?: () => void;
@@ -273,7 +280,7 @@ function ArcadeActionButton({
   const [pressed, setPressed] = useState(false);
   const firedRef = useRef(false);
 
-  const tones = {
+  const palette = {
     jump: {
       border: "rgba(120, 220, 140, 0.75)",
       fill: "rgba(34, 120, 58, 0.55)",
@@ -298,10 +305,24 @@ function ArcadeActionButton({
       glow: "rgba(100, 220, 255, 0.35)",
       pressed: "rgba(40, 130, 170, 0.72)",
     },
-  }[tone];
+    swap: {
+      border: "rgba(180, 190, 210, 0.72)",
+      fill: "rgba(58, 64, 78, 0.56)",
+      glow: "rgba(180, 200, 255, 0.28)",
+      pressed: "rgba(88, 96, 112, 0.78)",
+    },
+    unavailable: {
+      border: "rgba(110, 115, 125, 0.45)",
+      fill: "rgba(42, 44, 50, 0.42)",
+      glow: "transparent",
+      pressed: "rgba(42, 44, 50, 0.42)",
+    },
+  };
+
+  const tones = unavailable ? palette.unavailable : palette[tone];
 
   const handleDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    if (disabled || (cooldownPct != null && cooldownPct > 0)) return;
+    if (disabled || unavailable || (cooldownPct != null && cooldownPct > 0)) return;
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     setPressed(true);
@@ -327,7 +348,7 @@ function ArcadeActionButton({
   return (
     <button
       type="button"
-      disabled={disabled}
+      disabled={disabled || unavailable}
       className="rc-mobile-action-btn"
       onPointerDown={handleDown}
       onPointerUp={handleUp}
@@ -349,7 +370,7 @@ function ArcadeActionButton({
         color: "#fff",
         fontFamily: "monospace",
         fontWeight: 800,
-        cursor: disabled || onCooldown ? "not-allowed" : "pointer",
+        cursor: disabled || unavailable || onCooldown ? "not-allowed" : "pointer",
         touchAction: "none",
         userSelect: "none",
         WebkitUserSelect: "none",
@@ -359,7 +380,7 @@ function ArcadeActionButton({
         justifyContent: "center",
         lineHeight: 1.05,
         padding: 4,
-        opacity: disabled ? 0.45 : onCooldown ? opacity * 0.55 : opacity,
+        opacity: unavailable ? 0.42 : disabled ? 0.45 : onCooldown ? opacity * 0.55 : opacity,
         transform: pressed ? "scale(0.92)" : "scale(1)",
         boxShadow: pressed ? `0 0 18px ${tones.glow}` : `0 2px 10px rgba(0,0,0,0.28)`,
         transition: "transform 70ms ease, box-shadow 70ms ease, opacity 280ms ease, background 70ms ease",
@@ -390,10 +411,8 @@ function ArcadeActionButton({
 
 function MobileActionTriangle({
   actions,
-  attackLabel,
-  specialLabel,
+  profile,
   specialCharges,
-  showWeaponButton,
   disabled,
   metrics,
   prefs,
@@ -401,19 +420,20 @@ function MobileActionTriangle({
   onActivity,
 }: {
   actions: RainbowCowboyInputActions;
-  attackLabel: string;
-  specialLabel: string;
+  profile: RainbowCowboyControlProfile;
   specialCharges: number;
-  showWeaponButton: boolean;
   disabled?: boolean;
   metrics: ReturnType<typeof getControlMetrics>;
   prefs: RainbowCowboyControlPrefs;
   opacity: number;
   onActivity: () => void;
 }) {
+  const { swimMode, weaponEnabled, weaponSwapEnabled, specialLabel } = profile;
   const specialShort = specialLabel.split(" ")[0] ?? "Special";
   const specialSub =
     specialCharges > 0 ? `${specialShort} ×${specialCharges}` : "EMPTY";
+  const weaponLabel = swimMode ? "SPEAR" : "GUN";
+  const weaponSub = weaponEnabled ? (swimMode ? "FIRE" : "HOLD") : "—";
 
   return (
     <div
@@ -425,21 +445,23 @@ function MobileActionTriangle({
     >
       <div className="rc-action-slot rc-action-slot--jump">
         <ArcadeActionButton
-          label="JUMP"
+          label={swimMode ? "UP" : "JUMP"}
           size={metrics.jump}
           tone="jump"
           disabled={disabled}
           prefs={prefs}
           opacity={1}
           onActivity={onActivity}
-          onPress={actions.pressJump}
+          onPressStart={swimMode ? () => actions.setAimUp(true) : undefined}
+          onPressEnd={swimMode ? () => actions.setAimUp(false) : undefined}
+          onPress={swimMode ? undefined : actions.pressJump}
         />
       </div>
 
       <div className="rc-action-slot rc-action-slot--attack">
         <ArcadeActionButton
           label="ATK"
-          sub={attackLabel.length > 10 ? attackLabel.slice(0, 9) + "…" : attackLabel}
+          sub="Slurp"
           size={metrics.attack}
           tone="attack"
           disabled={disabled}
@@ -465,45 +487,61 @@ function MobileActionTriangle({
         />
       </div>
 
-      {showWeaponButton ? (
-        <div className="rc-action-slot rc-action-slot--gun">
+      <div className="rc-action-slot rc-action-slot--gun">
+        <ArcadeActionButton
+          label={weaponLabel}
+          sub={weaponSub}
+          size={metrics.gun}
+          tone="gun"
+          disabled={disabled}
+          unavailable={!weaponEnabled}
+          prefs={prefs}
+          opacity={1}
+          onActivity={onActivity}
+          onPress={weaponEnabled && swimMode ? actions.pressWeapon : undefined}
+          onPressStart={
+            weaponEnabled && !swimMode
+              ? () => {
+                  actions.pressWeapon();
+                  actions.setWeaponHeld(true);
+                }
+              : undefined
+          }
+          onPressEnd={weaponEnabled && !swimMode ? () => actions.releaseWeapon() : undefined}
+        />
+      </div>
+
+      {weaponSwapEnabled && (
+        <div className="rc-action-slot rc-action-slot--swap">
           <ArcadeActionButton
-            label="GUN"
-            sub="HOLD"
-            size={metrics.gun}
-            tone="gun"
+            label="SWAP"
+            sub="WEAP"
+            size={metrics.swap}
+            tone="swap"
             disabled={disabled}
             prefs={prefs}
             opacity={1}
             onActivity={onActivity}
-            onPressStart={() => {
-              actions.pressWeapon();
-              actions.setWeaponHeld(true);
-            }}
-            onPressEnd={() => actions.releaseWeapon()}
+            onPress={actions.pressWeaponSwap}
           />
         </div>
-      ) : null}
+      )}
     </div>
   );
 }
 
 function MobileControlPad({
   actions,
-  attackLabel,
-  specialLabel,
+  profile,
   specialCharges,
-  showWeaponButton,
   disabled,
   prefs,
   controlsActive,
   bumpActivity,
 }: {
   actions: RainbowCowboyInputActions;
-  attackLabel: string;
-  specialLabel: string;
+  profile: RainbowCowboyControlProfile;
   specialCharges: number;
-  showWeaponButton: boolean;
   disabled?: boolean;
   prefs: RainbowCowboyControlPrefs;
   controlsActive: boolean;
@@ -542,15 +580,14 @@ function MobileControlPad({
           prefs={prefs}
           opacity={opacity}
           onActivity={bumpActivity}
+          swimMode={profile.swimMode}
         />
       </div>
       <div className="rc-action-cluster-anchor">
         <MobileActionTriangle
           actions={actions}
-          attackLabel={attackLabel}
-          specialLabel={specialLabel}
+          profile={profile}
           specialCharges={specialCharges}
-          showWeaponButton={showWeaponButton}
           disabled={disabled}
           metrics={metrics}
           prefs={prefs}
@@ -564,10 +601,8 @@ function MobileControlPad({
 
 export function RainbowCowboyControls({
   actions,
-  attackLabel = "Attack",
-  specialLabel = "Special",
+  profile,
   specialCharges = 0,
-  showWeaponButton = false,
   disabled,
   controlPrefs: controlPrefsProp,
 }: Props) {
@@ -609,10 +644,8 @@ export function RainbowCowboyControls({
     <>
       <MobileControlPad
         actions={actions}
-        attackLabel={attackLabel}
-        specialLabel={specialLabel}
+        profile={profile}
         specialCharges={specialCharges}
-        showWeaponButton={showWeaponButton}
         disabled={disabled}
         prefs={controlPrefs}
         controlsActive={controlsActive}

@@ -26,7 +26,7 @@ interface Props {
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
-function DifficultyBadge({ difficulty }: { difficulty: string }) {
+export function DifficultyBadge({ difficulty }: { difficulty: string }) {
   const label = formatDifficultyLabel(difficulty as RainbowCowboyDifficulty);
   const color = getDifficultyBadgeColor(difficulty);
   return (
@@ -47,6 +47,109 @@ function DifficultyBadge({ difficulty }: { difficulty: string }) {
     >
       {label}
     </span>
+  );
+}
+
+/** Single top entry for inline level-card previews. */
+export function GameLeaderboardTopPreview({
+  entry,
+  loading,
+  accentColor = "#c9a227",
+  emptyLabel = "No scores yet",
+}: {
+  entry?: GameLeaderboardEntry | null;
+  loading?: boolean;
+  accentColor?: string;
+  emptyLabel?: string;
+}) {
+  const { t } = useTheme();
+
+  if (loading) {
+    return (
+      <div style={{ fontSize: 11, color: t.textMuted, padding: "4px 0" }}>Loading…</div>
+    );
+  }
+
+  if (!entry) {
+    return (
+      <div style={{ fontSize: 11, color: t.textMuted, lineHeight: 1.45, padding: "4px 0" }}>
+        {emptyLabel}
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "6px 8px",
+        borderRadius: 8,
+        background: `${accentColor}12`,
+      }}
+    >
+      <div style={{ fontSize: 16, flexShrink: 0, lineHeight: 1 }}>{MEDALS[0]}</div>
+      <Link
+        href={`/profile/${entry.userId}`}
+        style={{ textDecoration: "none", flexShrink: 0, lineHeight: 0 }}
+        title={entry.displayName}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <LikerAvatar
+          photoUrl={entry.photoUrl}
+          name={entry.displayName}
+          size={32}
+          service={entry.service}
+          isEmployer={entry.isEmployer}
+        />
+      </Link>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <Link
+          href={`/profile/${entry.userId}`}
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            display: "block",
+            textDecoration: "none",
+            color: t.text,
+            fontWeight: 700,
+            fontSize: 12,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {entry.displayName}
+        </Link>
+        {entry.rank && (
+          <div
+            style={{
+              fontSize: 10,
+              color: t.textMuted,
+              marginTop: 1,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {entry.rank}
+          </div>
+        )}
+      </div>
+      <div style={{ textAlign: "right", flexShrink: 0 }}>
+        <div style={{ fontWeight: 800, fontSize: 13, color: accentColor }}>{entry.score}</div>
+        {entry.durationSeconds != null && (
+          <div style={{ fontSize: 10, color: t.textMuted }}>
+            {formatGameDuration(entry.durationSeconds)}
+          </div>
+        )}
+        {entry.difficulty && (
+          <div style={{ marginTop: 2 }}>
+            <DifficultyBadge difficulty={entry.difficulty} />
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

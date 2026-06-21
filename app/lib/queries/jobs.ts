@@ -26,4 +26,39 @@ export async function fetchApprovedJobs<T>(
   return (data ?? []) as T[];
 }
 
+export type JobBoardStats = {
+  totalApprovedCount: number | null;
+  newTodayCount: number | null;
+};
+
+/** Approved job totals for board headers (side rail + /jobs mobile). */
+export async function fetchJobBoardStats(
+  supabase: SupabaseClient,
+  cutoff: string,
+): Promise<JobBoardStats> {
+  const now = new Date();
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfNextDay = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+
+  const [totalRes, todayRes] = await Promise.all([
+    supabase
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("is_approved", true)
+      .gte("created_at", cutoff),
+    supabase
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("is_approved", true)
+      .gte("created_at", cutoff)
+      .gte("created_at", startOfDay.toISOString())
+      .lt("created_at", startOfNextDay.toISOString()),
+  ]);
+
+  return {
+    totalApprovedCount: totalRes.error ? null : (totalRes.count ?? 0),
+    newTodayCount: todayRes.error ? null : (todayRes.count ?? 0),
+  };
+}
+
 export { jobListingCutoffIso };

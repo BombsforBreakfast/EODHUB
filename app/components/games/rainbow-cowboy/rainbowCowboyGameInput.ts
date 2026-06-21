@@ -13,6 +13,7 @@ export type RainbowCowboyInputActions = {
   pressWeapon: () => void;
   setWeaponHeld: (held: boolean) => void;
   releaseWeapon: () => void;
+  pressWeaponSwap: () => void;
   releaseMovement: () => void;
 };
 
@@ -49,6 +50,9 @@ export function createRainbowCowboyInputBridge(
     },
     releaseWeapon() {
       inputRef.current.gunHeld = false;
+    },
+    pressWeaponSwap() {
+      inputRef.current.weaponSwapPressed = true;
     },
     releaseMovement() {
       inputRef.current.left = false;

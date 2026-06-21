@@ -14,7 +14,9 @@ export type RainbowCowboyEnemyKind =
   | "boom_bot"
   | "armored_boom_bot"
   | "grenade_goblin_bot"
-  | "hive_turret";
+  | "hive_turret"
+  | "laser_shark"
+  | "laser_gator";
 
 export type RainbowCowboyPickupKind =
   | "range_beer"
@@ -24,13 +26,38 @@ export type RainbowCowboyPickupKind =
   | "unicorn_treat"
   | "weapon_pistol"
   | "weapon_machine_gun"
-  | "weapon_bazooka";
+  | "weapon_bazooka"
+  | "weapon_sonic";
 
-export type WeaponKind = "pistol" | "machine_gun" | "bazooka";
+export type WeaponKind = "pistol" | "machine_gun" | "bazooka" | "spear" | "sonic";
 
-export type RainbowCowboyHazardKind = "landmine" | "dynamite" | "trash_balloon";
+export type SwimWeaponKind = "spear" | "sonic";
 
-export type RainbowCowboyLevelTheme = "pasture" | "canyon" | "alamo" | "hive";
+export type RainbowCowboyHazardKind =
+  | "landmine"
+  | "dynamite"
+  | "trash_balloon"
+  | "sea_mine_tethered"
+  | "sea_mine_floating"
+  | "creeper_mine"
+  | "floating_log";
+
+export type RainbowCowboyLevelTheme =
+  | "pasture"
+  | "canyon"
+  | "alamo"
+  | "hive"
+  | "deep_sea"
+  | "lake"
+  | "abyss";
+
+export type RainbowCowboyPlayMode = "side_scroll" | "swim";
+
+export type RainbowCowboyScrollAxis = "horizontal" | "vertical";
+
+export type RainbowCowboyBossKind = "hive" | "abyss";
+
+export type RainbowCowboyCharacter = "default" | "frogman";
 
 export type RainbowCowboyVictoryCondition = "extraction" | "boss_defeated";
 
@@ -51,10 +78,18 @@ export interface RainbowCowboyLevel {
   estimatedMinutes: string;
   levelWidth: number;
   groundY: number;
+  /** Vertical-scroll levels: world depth (ocean floor Y). */
+  levelHeight?: number;
   targetTimeSeconds: number;
   locked?: boolean;
   status?: "playable" | "coming_soon";
-  campaignBase?: "fob_thunder" | "camp_poseidon" | "skywatch";
+  campaignBase?:
+    | "fob_thunder"
+    | "camp_poseidon"
+    | "camp_poseidon_trench"
+    | "camp_gator_gulch"
+    | "camp_poseidon_abyss"
+    | "skywatch";
   isBossLevel?: boolean;
 }
 
@@ -74,6 +109,7 @@ export interface RainbowCowboyRunResult {
   nestsDestroyed: number;
   bombsDodged: number;
   hiveBossDamage?: number;
+  abyssBossDamage?: number;
   turretsDestroyed?: number;
   completeBanner?: string;
   deathCause?: string;
@@ -116,6 +152,7 @@ export interface RainbowCowboyEngineSnapshot {
   phase: RainbowCowboyGamePhase;
   hud: RainbowCowboyHudSnapshot;
   cameraX: number;
+  cameraY: number;
   playerX: number;
   playerY: number;
   timeMs: number;
@@ -147,18 +184,31 @@ export interface LevelHazardSpawn {
   x: number;
   y: number;
   timerSeconds?: number;
+  /** Floating log width (lake levels). */
+  logW?: number;
+  logH?: number;
+  logVx?: number;
 }
 
 export interface LevelEnemySpawn {
   kind: RainbowCowboyEnemyKind;
   triggerX: number;
+  /** Vertical levels: spawn when player ascends past this Y. */
+  triggerY?: number;
   y: number;
   delayMs?: number;
   popupOnSpawn?: string;
+  /** World X for patrol enemies (e.g. laser sharks) instead of spawning off-screen. */
+  fixedX?: number;
+  patrolMinX?: number;
+  patrolMaxX?: number;
+  /** Initial swim direction for laser sharks. */
+  patrolDir?: 1 | -1;
 }
 
 export interface LevelWarning {
   triggerX: number;
+  triggerY?: number;
   message: string;
 }
 
@@ -184,11 +234,15 @@ export interface BossArenaConfig {
 export interface LevelConfig {
   level: RainbowCowboyLevel;
   theme?: RainbowCowboyLevelTheme;
+  playMode?: RainbowCowboyPlayMode;
+  scrollAxis?: RainbowCowboyScrollAxis;
+  character?: RainbowCowboyCharacter;
   storyIntro?: string;
   completeBanner?: string;
   difficulty?: RainbowCowboyDifficulty;
   difficultySpeedMult?: number;
   victoryCondition?: RainbowCowboyVictoryCondition;
+  bossKind?: RainbowCowboyBossKind;
   bossArena?: BossArenaConfig;
   platforms: LevelPlatform[];
   walls: LevelWall[];
@@ -199,12 +253,19 @@ export interface LevelConfig {
   nests?: LevelNestSpawn[];
   hiveTurrets?: LevelHiveTurretSpawn[];
   extractionX: number;
+  /** Vertical levels: reach this Y to trigger extraction (ascent boss uses arena instead). */
+  extractionY?: number;
   /** Extraction stays locked until any listed condition is met. */
   extractionGate?: RainbowCowboyExtractionGate[];
   finalWave?: {
     triggerX: number;
     message?: string;
     bonusScore: number;
+    enemies: LevelEnemySpawn[];
+  };
+  /** Spawns when the player collects unicorn_treat (Deep Sea rampage finale). */
+  rampageWave?: {
+    message?: string;
     enemies: LevelEnemySpawn[];
   };
 }

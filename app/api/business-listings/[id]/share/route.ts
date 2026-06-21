@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import type { PostAsMode } from "@/app/lib/postAsIdentity";
+import { resolveListingSharePostAsUserId } from "@/app/lib/server/resolveListingSharePostAsUserId";
 
 function getAdminClient() {
   return createClient(
@@ -38,6 +40,10 @@ export async function POST(
 
   const body = await req.json().catch(() => null);
   const shareText = typeof body?.content === "string" ? body.content.trim().slice(0, 4000) : "";
+  const postAsMode =
+    body?.postAsMode === "admin" || body?.postAsMode === "self"
+      ? (body.postAsMode as PostAsMode)
+      : undefined;
 
   const { id: listingId } = await params;
   const adminClient = getAdminClient();
@@ -56,11 +62,13 @@ export async function POST(
   const title = listing.og_title || listing.business_name || listing.og_site_name || "Community listing";
   const description = listing.custom_blurb || listing.og_description || null;
   const content = shareText || `Shared a ${kind}: ${title}`;
+  const postAsUserId = await resolveListingSharePostAsUserId(adminClient, user, postAsMode);
 
-  const { data: inserted, error: insertErr } = await adminClient
+  const { data: inserted, error: insertErr } = await userClient
     .from("posts")
     .insert({
       user_id: user.id,
+      post_as_user_id: postAsUserId,
       wall_user_id: null,
       content,
       image_url: null,

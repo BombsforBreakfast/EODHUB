@@ -31,6 +31,9 @@ const LEVEL_3_DIFFICULTY_SCALE = 0.8;
 /** Easy is 10% gentler than the baseline; novice/hard stay unchanged. */
 export const EASY_PRESSURE_MULT = 0.9;
 
+/** Gator Gulch easy — 10% tougher than the default easy tier. */
+const LEVEL_7_EASY_HARDEN_MULT = 1.1;
+
 export function getDifficultySpeedMult(difficulty: RainbowCowboyDifficulty): number {
   if (difficulty === "novice") return 1.25;
   if (difficulty === "hard") return 1.5;
@@ -43,6 +46,12 @@ export const HIVE_BOSS_PRESSURE_MULT = 0.855;
 export function getBossPressureMult(difficulty: RainbowCowboyDifficulty): number {
   const tierMult = difficulty === "easy" ? EASY_PRESSURE_MULT : 1;
   return tierMult * HIVE_BOSS_PRESSURE_MULT;
+}
+
+export function getAbyssEyeMinePressureMult(difficulty: RainbowCowboyDifficulty): number {
+  if (difficulty === "hard") return 1.35;
+  if (difficulty === "novice") return 1.15;
+  return 1.0;
 }
 
 function thinEnemySpawns(spawns: LevelEnemySpawn[], keepRatio: number): LevelEnemySpawn[] {
@@ -160,12 +169,18 @@ export function applyDifficulty(
   difficulty: RainbowCowboyDifficulty,
 ): LevelConfig {
   const isLevel3 = base.level.id === "level-3";
+  const isLevel7 = base.level.id === "level-7";
   let speedMult = getDifficultySpeedMult(difficulty);
   let extraEnemyFrac = difficulty === "hard" ? 1 : difficulty === "novice" ? 0.5 : 0;
   const extraPickupFrac =
     difficulty === "hard" ? 0.25 : difficulty === "novice" ? 0.12 : 0;
   const supportPickups = getLevelSupportPickups(base, difficulty);
-  const easyEnemyKeep = difficulty === "easy" ? EASY_PRESSURE_MULT : 1;
+  let easyEnemyKeep = difficulty === "easy" ? EASY_PRESSURE_MULT : 1;
+
+  if (isLevel7 && difficulty === "easy") {
+    speedMult *= LEVEL_7_EASY_HARDEN_MULT;
+    easyEnemyKeep = Math.min(1, easyEnemyKeep * LEVEL_7_EASY_HARDEN_MULT);
+  }
 
   const baseEnemies = thinEnemySpawns(
     isLevel3 ? thinEnemySpawns(base.enemies, LEVEL_3_DIFFICULTY_SCALE) : base.enemies,

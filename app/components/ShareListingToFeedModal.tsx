@@ -1,8 +1,18 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import PostAsSelector from "./PostAsSelector";
 import { OgCard } from "./master/masterShared";
 import { useTheme } from "../lib/ThemeContext";
+import { supabase } from "../lib/lib/supabaseClient";
+import {
+  adminPostDisplayName,
+  canUsePostAsSelector,
+  loadStoredListingSharePostAsMode,
+  POST_AS_ADMIN_EMAIL,
+  storeListingSharePostAsMode,
+  type PostAsMode,
+} from "../lib/postAsIdentity";
 
 export type ShareListingPreview = {
   id: string;
@@ -20,12 +30,72 @@ type Props = {
   label: string;
   submitting: boolean;
   onClose: () => void;
-  onSubmit: (content: string) => void;
+  onSubmit: (content: string, postAsMode?: PostAsMode) => void;
 };
 
 export default function ShareListingToFeedModal({ listing, label, submitting, onClose, onSubmit }: Props) {
   const { t } = useTheme();
   const [content, setContent] = useState("");
+  const [postAsMode, setPostAsMode] = useState<PostAsMode>(() => loadStoredListingSharePostAsMode());
+  const [canChoosePostAs, setCanChoosePostAs] = useState(false);
+  const [selfLabel, setSelfLabel] = useState("You");
+  const [selfPhotoUrl, setSelfPhotoUrl] = useState<string | null>(null);
+  const [adminLabel, setAdminLabel] = useState("EOD HUB Admin");
+  const [adminPhotoUrl, setAdminPhotoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!listing) return;
+    setContent("");
+    setPostAsMode(loadStoredListingSharePostAsMode());
+  }, [listing?.id]);
+
+  useEffect(() => {
+    if (!listing) return;
+    let cancelled = false;
+
+    async function loadPostAsOptions() {
+      const { data: authData } = await supabase.auth.getUser();
+      const authUser = authData.user;
+      if (!authUser || cancelled) return;
+
+      const viewerEmail = authUser.email?.trim().toLowerCase() ?? null;
+      if (!canUsePostAsSelector(viewerEmail)) {
+        if (!cancelled) setCanChoosePostAs(false);
+        return;
+      }
+
+      const [{ data: viewerProfile }, { data: adminProfile }] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("display_name, first_name, last_name, photo_url")
+          .eq("user_id", authUser.id)
+          .maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("display_name, first_name, last_name, photo_url")
+          .ilike("email", POST_AS_ADMIN_EMAIL)
+          .maybeSingle(),
+      ]);
+
+      if (cancelled) return;
+      setCanChoosePostAs(Boolean(adminProfile));
+      if (viewerProfile) {
+        setSelfLabel(
+          adminPostDisplayName(viewerProfile) || "You",
+        );
+        setSelfPhotoUrl(viewerProfile.photo_url ?? null);
+      }
+      if (adminProfile) {
+        setAdminLabel(adminPostDisplayName(adminProfile));
+        setAdminPhotoUrl(adminProfile.photo_url ?? null);
+      }
+    }
+
+    void loadPostAsOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [listing?.id]);
 
   useEffect(() => {
     if (!listing) return;
@@ -96,10 +166,24 @@ export default function ShareListingToFeedModal({ listing, label, submitting, on
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!submitting) onSubmit(content);
+            if (!submitting) onSubmit(content, canChoosePostAs ? postAsMode : undefined);
           }}
           style={{ padding: 16 }}
         >
+          {canChoosePostAs && (
+            <PostAsSelector
+              mode={postAsMode}
+              onChange={(mode) => {
+                setPostAsMode(mode);
+                storeListingSharePostAsMode(mode);
+              }}
+              selfLabel={selfLabel}
+              selfPhotoUrl={selfPhotoUrl}
+              adminLabel={adminLabel}
+              adminPhotoUrl={adminPhotoUrl}
+              disabled={submitting}
+            />
+          )}
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value.slice(0, 4000))}

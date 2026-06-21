@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { PostAsMode } from "./postAsIdentity";
 
 type ShareJobResult = {
   ok: boolean;
@@ -10,6 +11,7 @@ export async function shareJobToFeed(
   supabase: SupabaseClient,
   jobId: string,
   content?: string,
+  postAsMode?: PostAsMode,
 ): Promise<ShareJobResult> {
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
@@ -21,7 +23,10 @@ export async function shareJobToFeed(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ content: content?.trim() ?? "" }),
+    body: JSON.stringify({
+      content: content?.trim() ?? "",
+      ...(postAsMode ? { postAsMode } : {}),
+    }),
   });
   const json = await res.json().catch(() => null) as { postId?: string; error?: string } | null;
 

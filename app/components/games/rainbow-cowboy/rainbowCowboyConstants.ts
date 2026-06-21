@@ -2,6 +2,10 @@ export const VIEW_W = 960;
 export const VIEW_H = 540;
 export const PLAYER_W = 64;
 export const PLAYER_H = 64;
+
+/** Frogman swim hitbox — same scale family as PLAYER_W/H (64) */
+export const FROGMAN_W = 80;
+export const FROGMAN_H = 36;
 export const GROUND_TILE = 16;
 export const MAX_HEARTS = 5;
 export const MAX_RAINBOW_CHARGES = 3;
@@ -54,6 +58,8 @@ export const ENEMY_SIZES = {
   armored_boom_bot: { w: 62, h: 44 },
   grenade_goblin_bot: { w: 58, h: 40 },
   hive_turret: { w: 48, h: 44 },
+  laser_shark: { w: 64, h: 36 },
+  laser_gator: { w: 72, h: 28 },
 } as const;
 
 export const ENEMY_SPEEDS = {
@@ -63,7 +69,23 @@ export const ENEMY_SPEEDS = {
   recon: -2.8,
   red_baron: -1.6,
   cargo: -1.4,
+  laser_shark: -2.6,
+  laser_gator: 1.85,
 } as const;
+
+export const LASER_SHARK_SHOOT_INTERVAL_MS = 2520;
+export const LASER_SHARK_BULLET_SPEED = 8.1;
+export const SHARK_HOMING = { steer: 0.062, speed: 2.38, bob: 6 } as const;
+
+export const GATOR_KAMIKAZE = { steer: 0.084, speed: 3.12, bob: 2 } as const;
+export const GATOR_SURFACE_Y_OFFSET = 18;
+/** Offensive hitbox padding while kamikaze-charging (harpoon / slurp / sonic). */
+export const GATOR_CHARGE_HIT_PAD_X = 18;
+export const GATOR_CHARGE_HIT_PAD_Y = 14;
+
+export const FLOATING_LOG_W = 96;
+export const FLOATING_LOG_H = 26;
+export const FLOATING_LOG_VX = -1.35;
 
 /** After the first fly-by, drones steer toward the player. */
 export const DRONE_HOMING = {
@@ -115,3 +137,53 @@ export const BALLOON_ALTITUDE = { minAboveGround: 58, maxAboveGround: 168 };
 export const PICKUP_SIZE = 28;
 export const MINE_SIZE = 38;
 export const DYNAMITE_SIZE = 32;
+
+/** Deep Sea Rodeo — Frogman swim level */
+export const WATER_SURFACE_Y = 100;
+export const SWIM_SPEED = 4.2;
+export const SEA_MINE_SIZE = 44;
+export const SEA_MINE_SENSE_RADIUS = 112;
+export const SEA_MINE_ARM_MS = 756;
+/** @deprecated Instant radius replaced by sense + arm timer */
+export const SEA_MINE_PROXIMITY = SEA_MINE_SENSE_RADIUS;
+export const SEA_MINE_BLAST_RADIUS = 90;
+export const SEA_MINE_SCORE = 75;
+export const SEA_MINE_BOB_AMP_MIN = 12;
+export const SEA_MINE_BOB_AMP_MAX = 34;
+
+/** Floor-crawling mine — creeps R→L, sonic burst when Frogman is overhead */
+export const CREEPER_MINE_W = 52;
+export const CREEPER_MINE_H = 30;
+export const CREEPER_MINE_SPEED = 1.28;
+export const CREEPER_OVERHEAD_HALF_W = 40;
+/** Wider band — leave this and charge cancels (dodge window) */
+export const CREEPER_OVERHEAD_CANCEL_HALF_W = 48;
+export const CREEPER_MIN_Y_ABOVE = 50;
+export const CREEPER_CHARGE_MS = 600;
+export const CREEPER_FIRE_COOLDOWN_MS = 2400;
+/** Degrees from straight up for left/right fan bursts */
+export const CREEPER_BURST_TILT_DEG = 10;
+export const CREEPER_BURST_GROW = 0.49;
+export const CREEPER_BURST_DURATION_MS = 1150;
+export const CREEPER_BURST_NEAR_HALF = 22;
+export const CREEPER_BURST_FAR_SPREAD = 0.36;
+/** Collision uses a tighter cone than the visual (fair dodge gaps) */
+export const CREEPER_BURST_HIT_MULT = 0.8;
+export const CREEPER_CHARGE_CRAWL_MULT = 0.35;
+export const CREEPER_MINE_SCORE = 120;
+export const MAX_SPEAR_AMMO = 3;
+/** @deprecated Spear is unlimited on swim levels — cooldown only */
+export const SPEAR_RELOAD_MS = 1500;
+export const SPEAR_PROJECTILE_SPEED = 15;
+export const SPEAR_FIRE_COOLDOWN_MS = 280;
+
+export const SONIC_PICKUP_CHARGES = 4;
+export const SONIC_FIRE_COOLDOWN_MS = 1100;
+export const SONIC_WAVE_SPEED = 8.94;
+export const SONIC_WAVE_GROW = 0.358;
+export const SONIC_WAVE_MAX_RADIUS = 228;
+export const SONIC_WAVE_DURATION_MS = 1056;
+/** Cone half-height at the muzzle (px) */
+export const SONIC_CONE_NEAR_HALF = 14;
+/** Cone half-height at the wavefront = length * this ratio */
+export const SONIC_CONE_FAR_SPREAD = 0.52;

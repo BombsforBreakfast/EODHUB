@@ -1,9 +1,39 @@
 import {
+  drawCreeperMine,
+  drawDeepSeaBackground,
+  drawDeepSeaExtraction,
+  drawDeepSeaFloor,
+  drawDeepSeaForeground,
+  drawDeepSeaPlatform,
+  drawDeepSeaSky,
+  drawDeepSeaWall,
+  drawHostileSonicBursts,
+  drawLaserShark,
+  drawSeaMine,
+  drawSeaMineExplosion,
+  drawSpearProjectile,
+  drawSonicWaves,
+} from "./rainbowCowboyDeepSea";
+import {
+  drawFloatingLog,
+  drawLakeBackground,
+  drawLakeExtraction,
+  drawLakeFloor,
+  drawLakeForeground,
+  drawLakePlatform,
+  drawLakeSky,
+  drawLakeWall,
+  drawKamikazeGator,
+} from "./rainbowCowboyLake";
+import { drawFrogman, drawFrogmanSpearMuzzleFlash, drawFrogmanSonicFlash } from "./rainbowCowboyFrogmanSprite";
+import {
   BALLOON_SIZE,
   DYNAMITE_RADIUS,
   DYNAMITE_SIZE,
   GROUND_TILE,
   LANDMINE_EXPLODE_MS,
+  CREEPER_CHARGE_MS,
+  SEA_MINE_ARM_MS,
   NEST_H,
   NEST_W,
   PICKUP_SIZE,
@@ -21,6 +51,19 @@ import {
   drawHiveBoss,
   drawHivePlanks,
 } from "./rainbowCowboyHiveBoss";
+import {
+  drawAbyssLurkGlow,
+  drawAbyssDeepBackground,
+  drawAbyssExtractionMarker,
+  drawAbyssFloor,
+  drawAbyssPlatform,
+  drawAbyssSky,
+  drawAbyssTentacleHazards,
+  drawAbyssVictoryEpilogue,
+  drawAbyssWall,
+  drawMechanicalSquid,
+} from "./rainbowCowboyAbyssGraphics";
+import { ABYSS_ARENA_Y, ABYSS_REVEAL_START_Y } from "./rainbowCowboyAbyssConstants";
 
 let cachedNoise: CanvasPattern | null = null;
 
@@ -484,8 +527,55 @@ function drawEnemyBullet(
   x: number,
   y: number,
   camX: number,
+  laser = false,
+  vx = 0,
+  vy = 0,
+  fromAbyss = false,
 ) {
   const sx = x - camX;
+  if (fromAbyss) {
+    const speed = Math.hypot(vx, vy) || 1;
+    const ux = vx / speed;
+    const uy = vy / speed;
+    const tailLen = laser ? 34 : 18;
+    const tailX = sx - ux * tailLen;
+    const tailY = y - uy * tailLen;
+    ctx.strokeStyle = laser ? "rgba(255,120,80,0.55)" : "rgba(255,220,100,0.5)";
+    ctx.lineWidth = laser ? 5 : 4;
+    ctx.beginPath();
+    ctx.moveTo(tailX, tailY);
+    ctx.lineTo(sx + ux * 8, y + uy * 8);
+    ctx.stroke();
+    ctx.fillStyle = laser ? "rgba(255,80,60,0.35)" : "rgba(255,200,80,0.3)";
+    ctx.beginPath();
+    ctx.arc(sx, y, laser ? 12 : 9, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = laser ? "#ff6644" : "#ffcc44";
+    ctx.beginPath();
+    ctx.arc(sx, y, laser ? 6 : 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(sx - 2, y - 2, 4, 4);
+    return;
+  }
+  if (laser) {
+    const speed = Math.hypot(vx, vy) || 1;
+    const ux = vx / speed;
+    const uy = vy / speed;
+    const tailX = sx - ux * 22;
+    const tailY = y - uy * 22;
+    ctx.strokeStyle = "rgba(100,240,255,0.45)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(tailX, tailY);
+    ctx.lineTo(sx + ux * 6, y + uy * 6);
+    ctx.stroke();
+    ctx.fillStyle = "#66eeff";
+    ctx.fillRect(sx - 3, y - 3, 6, 6);
+    ctx.fillStyle = "#eeffff";
+    ctx.fillRect(sx - 1, y - 1, 3, 3);
+    return;
+  }
   ctx.fillStyle = "#ff6040";
   ctx.fillRect(sx - 4, y - 2, 8, 4);
   ctx.fillStyle = "#ffe080";
@@ -529,10 +619,14 @@ function drawBlasterProjectile(
   x: number,
   y: number,
   camX: number,
-  weapon: "pistol" | "machine_gun" | "bazooka" = "pistol",
+  weapon: "pistol" | "machine_gun" | "bazooka" | "spear" | "sonic" = "pistol",
   dir: 1 | -1 = 1,
 ) {
   const sx = x - camX;
+  if (weapon === "spear" || weapon === "sonic") {
+    if (weapon === "spear") drawSpearProjectile(ctx, x, y, camX, dir);
+    return;
+  }
   if (weapon === "bazooka") {
     drawRocketArrow(ctx, sx, y, dir, 1);
     ctx.fillStyle = "rgba(255,120,40,0.35)";
@@ -557,8 +651,9 @@ function drawBlasterMuzzle(
   ctx: CanvasRenderingContext2D,
   engine: RainbowCowboyEngine,
   camX: number,
-  weapon?: "pistol" | "machine_gun" | "bazooka",
+  weapon?: "pistol" | "machine_gun" | "bazooka" | "spear" | "sonic",
 ) {
+  if (weapon === "spear" || weapon === "sonic") return;
   const dir = engine.facing === "right" ? 1 : -1;
   const cx = engine.playerX - camX + dir * 28;
   const cy = engine.playerY - (engine.isDucking ? 34 : 40);
@@ -817,6 +912,19 @@ function drawPickup(
       drawRocketArrow(ctx, sx, py + 14 + bob, 1, 0.85);
       ctx.fillStyle = `rgba(255,100,40,${0.35 + Math.sin(time / 200) * 0.2})`;
       ctx.fillRect(sx - 20, py + 4 + bob, 40, 22);
+      break;
+    }
+    case "weapon_sonic": {
+      const pulse = 0.55 + Math.sin(time / 120) * 0.45;
+      px(ctx, sx - 10, py + 4, 20, 14, "#284860");
+      px(ctx, sx - 8, py + 6, 16, 10, "#386878");
+      for (let i = 0; i < 3; i++) {
+        const ox = i * 5;
+        px(ctx, sx - 6 + ox, py + 8 - i, 8, 4, `rgba(100,230,255,${0.5 + pulse * 0.4})`);
+      }
+      px(ctx, sx - 2, py + 2, 4, 4, "#a8f8ff");
+      ctx.fillStyle = `rgba(100,220,255,${0.25 + pulse * 0.25})`;
+      ctx.fillRect(sx - 14, py, 28, 20);
       break;
     }
   }
@@ -1120,9 +1228,33 @@ function drawEnemy(
   camX: number,
   time: number,
   bombWarning = false,
-  opts?: { hp?: number; maxHp?: number; beepPhase?: number; turretAngle?: number },
+  opts?: {
+    hp?: number;
+    maxHp?: number;
+    beepPhase?: number;
+    turretAngle?: number;
+    vx?: number;
+    phase?: string;
+  },
 ) {
   const sx = x - camX;
+  if (kind === "laser_shark") {
+    drawLaserShark(ctx, sx, y, w, h, time, (opts?.vx ?? -1) >= 0);
+    return;
+  }
+  if (kind === "laser_gator") {
+    drawKamikazeGator(
+      ctx,
+      sx,
+      y,
+      w,
+      h,
+      time,
+      (opts?.vx ?? 1) >= 0,
+      opts?.phase === "swoop",
+    );
+    return;
+  }
   drawGroundShadow(ctx, sx + w / 2, y + h, kind === "red_baron" || kind === "armored_boom_bot" ? 26 : 18);
   if (kind === "boom_bot") {
     drawMonsterTruck(ctx, sx, y, w, h, time, "basic", opts?.hp, opts?.maxHp, opts?.beepPhase);
@@ -1598,6 +1730,12 @@ function drawPlayer(
   camX: number,
   time: number,
 ) {
+  if (engine.config.character === "frogman") {
+    drawFrogman(ctx, engine, camX, time);
+    drawFrogmanSpearMuzzleFlash(ctx, engine, camX);
+    drawFrogmanSonicFlash(ctx, engine, camX);
+    return;
+  }
   if (engine.rideType === "eod_robot") {
     drawEodRobot(ctx, engine, camX, time);
   } else {
@@ -1759,8 +1897,153 @@ export function drawWorld(
   particles?: RainbowCowboyParticlePool,
 ) {
   const camX = engine.cameraX;
+  const camY = engine.cameraY;
   const config = engine.config;
   const theme = config.theme ?? "pasture";
+
+  if (theme === "abyss") {
+    drawAbyssSky(ctx, camY, time, config.level.groundY);
+    drawAbyssDeepBackground(ctx, camY, time);
+    ctx.save();
+    ctx.translate(0, -camY);
+
+    drawAbyssFloor(ctx, config.level.groundY, 0);
+
+    for (const plat of config.platforms) {
+      if (plat.y + plat.h < camY - 40 || plat.y > camY + VIEW_H + 40) continue;
+      drawAbyssPlatform(ctx, plat.x, plat.y, plat.w, plat.h, 0);
+    }
+    for (const wall of config.walls) {
+      if (wall.y + wall.h < camY - 40 || wall.y > camY + VIEW_H + 40) continue;
+      drawAbyssWall(ctx, wall.x, wall.y, wall.w, wall.h, 0);
+    }
+
+    if (!engine.abyssBoss?.isArenaLocked()) {
+      drawAbyssExtractionMarker(ctx, ABYSS_ARENA_Y, 0, time);
+    }
+
+    for (const pickup of engine.pickups) {
+      if (!pickup.active) continue;
+      if (pickup.y < camY - 40 || pickup.y > camY + VIEW_H + 40) continue;
+      drawPickup(ctx, pickup.kind, pickup.x, pickup.y, 0, time);
+    }
+
+    for (const hazard of engine.hazards) {
+      if (!hazard.active) continue;
+      if (hazard.y < camY - 80 || hazard.y > camY + VIEW_H + 80) continue;
+      if (hazard.kind === "sea_mine_tethered" || hazard.kind === "sea_mine_floating") {
+        const mineFx = hazard as { mineArmMs?: number };
+        const armPct =
+          mineFx.mineArmMs != null ? 1 - Math.max(0, mineFx.mineArmMs) / SEA_MINE_ARM_MS : 0;
+        drawSeaMine(ctx, hazard.kind, hazard.x, hazard.y, config.level.groundY, 0, time, armPct);
+        continue;
+      }
+      if (hazard.kind === "creeper_mine") {
+        const creeperFx = hazard as { chargeMs?: number; chargeMaxMs?: number };
+        drawCreeperMine(
+          ctx,
+          hazard.x,
+          hazard.y,
+          0,
+          time,
+          creeperFx.chargeMs,
+          creeperFx.chargeMaxMs ?? CREEPER_CHARGE_MS,
+        );
+      }
+    }
+
+    for (const shot of engine.blasterProjectiles) {
+      if (!shot.active) continue;
+      if (shot.y < camY - 40 || shot.y > camY + VIEW_H + 40) continue;
+      drawSpearProjectile(ctx, shot.x, shot.y, 0, shot.vx >= 0 ? 1 : -1);
+    }
+
+    for (const enemy of engine.enemies) {
+      if (!enemy.active) continue;
+      if (enemy.y + enemy.h < camY - 60 || enemy.y > camY + VIEW_H + 60) continue;
+      drawEnemy(ctx, enemy.kind, enemy.x, enemy.y, enemy.w, enemy.h, 0, time, enemy.bombWarning, {
+        hp: enemy.hp,
+        maxHp: enemy.maxHp,
+        beepPhase: enemy.beepPhase,
+        turretAngle: enemy.turretAngle,
+        vx: enemy.vx,
+        phase: enemy.phase,
+      });
+    }
+
+    if (engine.abyssBoss) {
+      const arena = engine.abyssBoss.isArenaLocked();
+      const st = engine.abyssBoss.getState();
+      if (st.revealProgress <= 0 && !st.engaged) {
+        drawAbyssLurkGlow(ctx, time, engine.playerY, ABYSS_REVEAL_START_Y);
+      } else {
+        if (!st.engaged) {
+          drawAbyssLurkGlow(ctx, time, engine.playerY, ABYSS_REVEAL_START_Y);
+        }
+        drawMechanicalSquid(ctx, engine.abyssBoss, 0, time, arena);
+        if (st.engaged) {
+          const tentRects = arena
+            ? engine.abyssBoss.getArenaTentacleHazards()
+            : engine.abyssBoss.getAscentTentacleHazards(camY);
+          drawAbyssTentacleHazards(ctx, tentRects, 0, arena, time);
+        }
+      }
+      if (st.collapseEpilogue) {
+        ctx.restore();
+        drawAbyssVictoryEpilogue(
+          ctx,
+          st.collapseEpilogueHold,
+          st.collapseLabel ?? "THE ABYSS DEFEATED",
+          st.victoryMissionBanner ?? config.completeBanner ?? "CAMP POSEIDON SECURED",
+        );
+        if (engine.isGassed) drawGassedOverlay(ctx, time);
+        drawAtmosphere(ctx);
+        return;
+      }
+    }
+
+    drawPlayer(ctx, engine, 0, time);
+    for (const bullet of engine.enemyBullets) {
+      if (!bullet.active) continue;
+      if (bullet.y < camY - 40 || bullet.y > camY + VIEW_H + 40) continue;
+      drawEnemyBullet(
+        ctx,
+        bullet.x,
+        bullet.y,
+        0,
+        bullet.laser === true,
+        bullet.vx,
+        bullet.vy,
+        bullet.fromAbyss === true,
+      );
+    }
+    drawRainbowBlast(ctx, engine);
+    if (engine.sonicWaves.length > 0) {
+      drawSonicWaves(ctx, engine.sonicWaves, 0, engine.timeMs);
+    }
+    if (engine.hostileSonicBursts.length > 0) {
+      drawHostileSonicBursts(ctx, engine.hostileSonicBursts, 0, engine.timeMs);
+    }
+    ctx.restore();
+
+    if (engine.extractionReached && engine.bossVictoryEpilogueComplete && engine.abyssBoss) {
+      drawAbyssVictoryEpilogue(
+        ctx,
+        3200,
+        "THE ABYSS DEFEATED",
+        config.completeBanner ?? "CAMP POSEIDON SECURED",
+      );
+    }
+
+    if (engine.isGassed) drawGassedOverlay(ctx, time);
+    if (engine.finaleRedFlash > 0) {
+      ctx.fillStyle = `rgba(210,0,0,${Math.min(0.92, engine.finaleRedFlash)})`;
+      ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
+    particles?.draw(ctx);
+    drawAtmosphere(ctx);
+    return;
+  }
 
   ctx.save();
   if (engine.isGassed) {
@@ -1780,6 +2063,14 @@ export function drawWorld(
   } else if (theme === "hive") {
     drawHiveSky(ctx, camX, time);
     drawHiveGroundLayer(ctx, config, camX);
+  } else if (theme === "deep_sea") {
+    drawDeepSeaSky(ctx, camX, time);
+    drawDeepSeaBackground(ctx, camX, time, config.level.groundY);
+    drawDeepSeaFloor(ctx, config, camX);
+  } else if (theme === "lake") {
+    drawLakeSky(ctx, camX, time);
+    drawLakeBackground(ctx, camX, time, config.level.groundY);
+    drawLakeFloor(ctx, config, camX);
   } else {
     drawParallaxSky(ctx, camX, time);
     drawGroundLayer(ctx, config, camX);
@@ -1787,7 +2078,9 @@ export function drawWorld(
 
   for (const plat of config.platforms) {
     if (plat.x + plat.w < camX - 20 || plat.x > camX + VIEW_W + 20) continue;
-    if (theme === "canyon") drawCanyonPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
+    if (theme === "deep_sea") drawDeepSeaPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
+    else if (theme === "lake") drawLakePlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
+    else if (theme === "canyon") drawCanyonPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
     else if (theme === "alamo") drawAlamoPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
     else if (theme === "hive") drawHivePlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
     else drawPlatform(ctx, plat.x, plat.y, plat.w, plat.h, camX);
@@ -1795,14 +2088,20 @@ export function drawWorld(
 
   for (const wall of config.walls) {
     if (wall.x + wall.w < camX - 20 || wall.x > camX + VIEW_W + 20) continue;
-    if (theme === "canyon") drawCanyonWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
+    if (theme === "deep_sea") drawDeepSeaWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
+    else if (theme === "lake") drawLakeWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
+    else if (theme === "canyon") drawCanyonWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
     else if (theme === "alamo") drawAlamoWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
     else if (theme === "hive") drawHiveWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
     else drawWall(ctx, wall.x, wall.y, wall.w, wall.h, camX);
   }
 
   if (theme !== "hive") {
-    if (theme === "canyon") {
+    if (theme === "deep_sea") {
+      drawDeepSeaExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
+    } else if (theme === "lake") {
+      drawLakeExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
+    } else if (theme === "canyon") {
       drawCanyonExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
     } else if (theme === "alamo") {
       drawAlamoExtraction(ctx, config.extractionX, config.level.groundY, camX, time);
@@ -1828,7 +2127,13 @@ export function drawWorld(
   }
 
   for (const hazard of engine.hazards) {
-    const fx = hazard as { explodeUntil?: number; kind: string; x: number; y: number };
+    const fx = hazard as {
+      explodeUntil?: number;
+      kind: string;
+      x: number;
+      y: number;
+      mineArmMs?: number;
+    };
     if (fx.explodeUntil && engine.timeMs < fx.explodeUntil && fx.kind === "landmine") {
       drawLandmineExplosion(
         ctx,
@@ -1840,8 +2145,51 @@ export function drawWorld(
         engine.timeMs,
       );
     }
+    if (
+      fx.explodeUntil &&
+      engine.timeMs < fx.explodeUntil &&
+      (fx.kind === "sea_mine_tethered" || fx.kind === "sea_mine_floating")
+    ) {
+      drawSeaMineExplosion(ctx, fx.x, fx.y, camX, time, fx.explodeUntil, engine.timeMs);
+    }
     if (!hazard.active) continue;
     if (hazard.x < camX - 80 || hazard.x > camX + VIEW_W + 80) continue;
+    if (hazard.kind === "sea_mine_tethered" || hazard.kind === "sea_mine_floating") {
+      const mineFx = hazard as { mineArmMs?: number };
+      const armPct =
+        mineFx.mineArmMs != null
+          ? 1 - Math.max(0, mineFx.mineArmMs) / SEA_MINE_ARM_MS
+          : 0;
+      drawSeaMine(
+        ctx,
+        hazard.kind,
+        hazard.x,
+        hazard.y,
+        config.level.groundY,
+        camX,
+        time,
+        armPct,
+      );
+      continue;
+    }
+    if (hazard.kind === "creeper_mine") {
+      const creeperFx = hazard as { chargeMs?: number; chargeMaxMs?: number };
+      drawCreeperMine(
+        ctx,
+        hazard.x,
+        hazard.y,
+        camX,
+        time,
+        creeperFx.chargeMs,
+        creeperFx.chargeMaxMs ?? CREEPER_CHARGE_MS,
+      );
+      continue;
+    }
+    if (hazard.kind === "floating_log") {
+      const logFx = hazard as { w?: number; h?: number };
+      drawFloatingLog(ctx, hazard.x, hazard.y, camX, time, logFx.w, logFx.h);
+      continue;
+    }
     drawHazard(
       ctx,
       hazard.kind,
@@ -1870,7 +2218,7 @@ export function drawWorld(
   for (const bullet of engine.enemyBullets) {
     if (!bullet.active) continue;
     if (bullet.x < camX - 40 || bullet.x > camX + VIEW_W + 40) continue;
-    drawEnemyBullet(ctx, bullet.x, bullet.y, camX);
+    drawEnemyBullet(ctx, bullet.x, bullet.y, camX, bullet.laser === true, bullet.vx, bullet.vy);
   }
 
   for (const enemy of engine.enemies) {
@@ -1891,6 +2239,8 @@ export function drawWorld(
         maxHp: enemy.maxHp,
         beepPhase: enemy.beepPhase,
         turretAngle: enemy.turretAngle,
+        vx: enemy.vx,
+        phase: enemy.phase,
       },
     );
   }
@@ -1930,7 +2280,20 @@ export function drawWorld(
 
   drawPlayer(ctx, engine, camX, time);
   drawRainbowBlast(ctx, engine);
+  if ((theme === "deep_sea" || theme === "lake") && engine.sonicWaves.length > 0) {
+    drawSonicWaves(ctx, engine.sonicWaves, camX, engine.timeMs);
+  }
+  if ((theme === "deep_sea" || theme === "lake") && engine.hostileSonicBursts.length > 0) {
+    drawHostileSonicBursts(ctx, engine.hostileSonicBursts, camX, engine.timeMs);
+  }
   particles?.draw(ctx);
+
+  if (theme === "deep_sea") {
+    drawDeepSeaForeground(ctx, camX, time, config.level.groundY);
+  }
+  if (theme === "lake") {
+    drawLakeForeground(ctx, camX, time, config.level.groundY);
+  }
 
   if (engine.isGassed) drawGassedOverlay(ctx, time);
 

@@ -28,8 +28,9 @@ import { usePageTracking } from "../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../lib/pageTrackingPaths";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { shareJobToFeed } from "../lib/shareJobToFeed";
+import type { PostAsMode } from "../lib/postAsIdentity";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
-import { fetchApprovedJobs, JOBS_LIST_STALE_MS } from "../lib/queries/jobs";
+import { fetchApprovedJobs, fetchJobBoardStats, JOBS_LIST_STALE_MS } from "../lib/queries/jobs";
 import {
   fetchSavedJobs,
   savedJobRowFromJob,
@@ -145,6 +146,13 @@ export default function JobsPage() {
     staleTime: JOBS_LIST_STALE_MS,
   });
 
+  const jobBoardStatsQuery = useQuery({
+    queryKey: queryKeys.jobBoardStats(listingCutoff),
+    queryFn: () => fetchJobBoardStats(supabase, listingCutoff),
+    enabled: !!userId,
+    staleTime: JOBS_LIST_STALE_MS,
+  });
+
   const EMPTY_JOBS = useMemo<JobListItem[]>(() => [], []);
   const jobs = jobsQuery.data ?? EMPTY_JOBS;
 
@@ -189,7 +197,7 @@ export default function JobsPage() {
     setShareComposerJob(job);
   }, [userId]);
 
-  const handleShareJob = useCallback(async (job: JobModalData, content: string) => {
+  const handleShareJob = useCallback(async (job: JobModalData, content: string, postAsMode?: PostAsMode) => {
     if (!userId) {
       window.location.href = "/login";
       return;
@@ -198,7 +206,7 @@ export default function JobsPage() {
     setSharingJobId(job.id);
     setJobNotice(null);
     try {
-      const result = await shareJobToFeed(supabase, job.id, content);
+      const result = await shareJobToFeed(supabase, job.id, content, postAsMode);
       if (!result.ok) {
         setJobNotice(result.error ?? "Could not share this job to the feed.");
         return;
@@ -306,8 +314,8 @@ export default function JobsPage() {
         onClose={() => {
           if (!sharingJobId) setShareComposerJob(null);
         }}
-        onSubmit={(content) => {
-          if (shareComposerJob) void handleShareJob(shareComposerJob, content);
+        onSubmit={(content, postAsMode) => {
+          if (shareComposerJob) void handleShareJob(shareComposerJob, content, postAsMode);
         }}
       />
 
@@ -319,6 +327,21 @@ export default function JobsPage() {
               ? "Browse the full approved job board."
               : "Previewing the 5 most recent approved jobs."}
           </div>
+          {isMobile && jobBoardStatsQuery.isSuccess && (
+            <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted, fontWeight: 600, lineHeight: 1.45 }}>
+              <div>
+                ({jobBoardStatsQuery.data.totalApprovedCount !== null
+                  ? jobBoardStatsQuery.data.totalApprovedCount.toLocaleString()
+                  : "—"}) jobs as of{" "}
+                {new Date().toLocaleDateString("en-US", { month: "2-digit", day: "2-digit", year: "2-digit" })}
+              </div>
+              <div style={{ marginTop: 4 }}>
+                ({jobBoardStatsQuery.data.newTodayCount !== null
+                  ? jobBoardStatsQuery.data.newTodayCount.toLocaleString()
+                  : "—"}) new jobs today!
+              </div>
+            </div>
+          )}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
           <a

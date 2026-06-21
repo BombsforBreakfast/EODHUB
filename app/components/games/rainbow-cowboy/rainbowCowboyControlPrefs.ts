@@ -82,6 +82,7 @@ export function getControlMetrics(prefs: RainbowCowboyControlPrefs) {
     attack: clampPx(68, 10, 96, vw, mult),
     special: clampPx(60, 9, 86, vw, mult),
     gun: clampPx(52, 8, 72, vw, mult),
+    swap: clampPx(46, 7, 64, vw, mult),
     joystickOuter: clampPx(72, 10, 96, vw, mult),
     joystickStick: clampPx(28, 4, 38, vw, mult),
     joystickPad: clampPx(92, 13, 120, vw, mult),

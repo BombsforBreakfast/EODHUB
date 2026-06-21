@@ -15,6 +15,7 @@ import {
   BSM_BUTTON_BORDER,
   BSM_BUTTON_GRADIENT,
   BSM_TITLE_GRADIENT,
+  BSM_ACCENT_LIGHT,
 } from "../bomb-suit-man/bombSuitManTheme";
 import { UnicornHeroRideSelect } from "../unicorn-hero/UnicornHeroRideSelect";
 import {
@@ -43,6 +44,10 @@ interface Props {
 const DISCLAIMER =
   "Bomb Suit Man is a fictional arcade game for community fun. It does not teach real EOD procedures. Intended for adult audiences; adult references are used as powerups.";
 
+function isFrogmanLevel(levelId: string): boolean {
+  return levelId === "level-5" || levelId === "level-6" || levelId === "level-7" || levelId === "level-8";
+}
+
 export function RainbowCowboyStartScreen({
   level,
   storyIntro,
@@ -68,7 +73,15 @@ export function RainbowCowboyStartScreen({
   return (
     <div style={{ textAlign: "center", padding: "8px 0 24px" }}>
       <div style={{ fontSize: 48, marginBottom: 8 }}>
-        {level.id === "level-4" ? "🐝" : level.id === "level-2" ? "🏜️" : RIDE_EMOJI[selectedRide]}
+        {isFrogmanLevel(level.id)
+          ? level.id === "level-8"
+            ? "🦑"
+            : "🤿"
+          : level.id === "level-4"
+            ? "🐝"
+            : level.id === "level-2"
+              ? "🏜️"
+              : RIDE_EMOJI[selectedRide]}
       </div>
       <h1
         style={{
@@ -104,7 +117,44 @@ export function RainbowCowboyStartScreen({
         </div>
       )}
 
-      <UnicornHeroRideSelect selected={selectedRide} onChange={handleRideChange} />
+      {isFrogmanLevel(level.id) ? (
+        <div style={{ marginBottom: 20, textAlign: "left" }}>
+          <h2
+            style={{
+              margin: "0 0 10px",
+              fontSize: 18,
+              fontWeight: 900,
+              textAlign: "center",
+              color: BSM_ACCENT_LIGHT,
+            }}
+          >
+            Your Operator
+          </h2>
+          <div
+            style={{
+              padding: "14px 16px",
+              borderRadius: 12,
+              border: `3px solid ${BSM_BUTTON_BORDER}`,
+              background: "rgba(10, 40, 70, 0.35)",
+              color: t.text,
+            }}
+          >
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🤿</div>
+            <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 6, color: BSM_ACCENT_LIGHT }}>
+              Frogman
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.5, color: t.textMuted }}>
+              Elite EOD diver for Camp Poseidon. Swim in four directions with the spear gun —
+              no bomb suit, no unicorn, no jumping.
+            </div>
+            <div style={{ marginTop: 10, fontSize: 12, color: t.textMuted }}>
+              Harpoon ∞ · sonic blast pickups · Q to swap · rainbow blast
+            </div>
+          </div>
+        </div>
+      ) : (
+        <UnicornHeroRideSelect selected={selectedRide} onChange={handleRideChange} />
+      )}
 
       <div style={{ marginBottom: 16, textAlign: "left" }}>
         <div
@@ -157,6 +207,27 @@ export function RainbowCowboyStartScreen({
           })}
         </div>
       </div>
+
+      {isFrogmanLevel(level.id) && (
+        <p
+          style={{
+            margin: "0 0 16px",
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "2px solid rgba(80,180,255,0.5)",
+            background: "rgba(10,60,100,0.25)",
+            fontSize: 12,
+            lineHeight: 1.45,
+            color: t.text,
+            textAlign: "left",
+          }}
+        >
+          <strong>Deep Sea Rodeo</strong> — swim with <strong>WASD / arrow keys</strong> (no jump).
+          Swim <strong>through the sunken wreck</strong>, dodge <strong>laser sharks</strong>, and fire the
+          unlimited <strong>harpoon</strong> with <strong>T</strong> or <strong>R</strong>.
+          Pick up <strong>sonic blasts</strong> and press <strong>Q</strong> to swap weapons.
+        </p>
+      )}
 
       {level.id === "level-4" && (
         <p
@@ -229,7 +300,7 @@ export function RainbowCowboyStartScreen({
           opacity: canStart ? 1 : 0.7,
         }}
       >
-        Start Ride
+        Start {isFrogmanLevel(level.id) ? "Dive" : "Ride"}
       </button>
 
       <div>
