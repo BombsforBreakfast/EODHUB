@@ -1777,14 +1777,13 @@ body.game-playing-active .games-shell-nav {
   (pointer: coarse) and (orientation: landscape) {
   .rc-hud-root {
     padding:
-      max(8px, env(safe-area-inset-top, 0px))
+      0
       max(12px, env(safe-area-inset-right, 0px))
       max(8px, env(safe-area-inset-bottom, 0px))
-      max(12px, env(safe-area-inset-left, 0px));
+      0;
   }
 
   .rc-hud-top {
-    position: relative;
     min-height: 0;
   }
 
@@ -1794,8 +1793,8 @@ body.game-playing-active .games-shell-nav {
 
   .rc-score-panel {
     position: absolute;
-    top: max(2px, env(safe-area-inset-top, 0px));
-    left: max(4px, env(safe-area-inset-left, 0px));
+    top: 0;
+    left: 0;
     right: auto;
     margin: 0;
     max-width: min(220px, 34vw);
