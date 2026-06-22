@@ -232,8 +232,9 @@ export async function GET(req: NextRequest) {
   let imported = 0;
   let refreshed = 0;
   const importedTitles: string[] = [];
+  const inserts: Record<string, unknown>[] = [];
+  const updates: Record<string, unknown>[] = [];
   const now = new Date().toISOString();
-  const upsertRows: Record<string, unknown>[] = [];
 
   for (const candidate of candidates) {
     const existing = existingByAdId.get(candidate.adId);
@@ -242,16 +243,7 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    if (existing) refreshed++;
-    else {
-      imported++;
-      importedTitles.push(candidate.title);
-    }
-
-    upsertRows.push({
-      // Conflict on the real primary key; the adzuna_ad_id unique index is
-      // partial, so Postgres cannot infer it for ON CONFLICT.
-      ...(existing ? { id: existing.id } : {}),
+    const rowPayload = {
       title: candidate.title,
       company_name: candidate.companyName,
       location: candidate.location,
@@ -268,18 +260,39 @@ export async function GET(req: NextRequest) {
         intake_channel: candidate.intakeChannel,
         relevance_score: candidate.relevanceScore,
       },
-      is_approved: existing?.is_approved ?? false,
-      source_type: "adzuna",
       last_seen_at: now,
+    };
+
+    if (existing) {
+      updates.push({ id: existing.id, ...rowPayload });
+      refreshed++;
+      continue;
+    }
+
+    inserts.push({
+      ...rowPayload,
+      is_approved: false,
+      source_type: "adzuna",
     });
+    importedTitles.push(candidate.title);
   }
 
-  for (const upsertChunk of chunkArray(upsertRows, JOB_IMPORT_WRITE_CHUNK)) {
-    const { error: upsertErr } = await supabase
+  for (const insertChunk of chunkArray(inserts, JOB_IMPORT_WRITE_CHUNK)) {
+    const { error: insErr } = await supabase.from("jobs").insert(insertChunk);
+    if (insErr) {
+      errors.push(`[insert adzuna batch] ${insErr.message}`);
+      continue;
+    }
+    imported += insertChunk.length;
+  }
+
+  for (const updateChunk of chunkArray(updates, JOB_IMPORT_WRITE_CHUNK)) {
+    const { error: upErr } = await supabase
       .from("jobs")
-      .upsert(upsertChunk, { onConflict: "id" });
-    if (upsertErr) {
-      errors.push(`[upsert adzuna batch] ${upsertErr.message}`);
+      .upsert(updateChunk, { onConflict: "id" });
+    if (upErr) {
+      errors.push(`[update adzuna batch] ${upErr.message}`);
+      refreshed -= updateChunk.length;
     }
   }
 

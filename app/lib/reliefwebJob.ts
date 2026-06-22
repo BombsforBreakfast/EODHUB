@@ -277,32 +277,77 @@ export function buildReliefWebSourceQueryBody(
   };
 }
 
+const RELIEFWEB_MIN_REQUEST_GAP_MS = 450;
+const RELIEFWEB_BOT_RETRY_DELAY_MS = 2500;
+const RELIEFWEB_BOT_RETRY_ATTEMPTS = 2;
+
+let reliefWebLastRequestAt = 0;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isReliefWebBotBlock(status: number, text: string): boolean {
+  return status === 406 || /blocked due to bot activity/i.test(text);
+}
+
+async function postReliefWebJobsOnce(
+  body: Record<string, unknown>,
+  appName: string
+): Promise<{ jobs: ReliefWebApiJob[]; error?: string; status?: number }> {
+  const url = `${RELIEFWEB_API_BASE}?appname=${encodeURIComponent(appName)}`;
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      // ReliefWeb/HDX blocks unidentified clients with HTTP 406. Identify the
+      // app explicitly (alongside the appname query param) to avoid bot blocks.
+      "User-Agent": `${appName} (+https://www.eod-hub.com; hello@eod-hub.com)`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    return { jobs: [], error: `${res.status}: ${text.slice(0, 500)}`, status: res.status };
+  }
+
+  const data = (await res.json()) as ReliefWebApiResponse;
+  return { jobs: data.data ?? [] };
+}
+
 async function postReliefWebJobs(
   body: Record<string, unknown>,
   appName: string
 ): Promise<{ jobs: ReliefWebApiJob[]; error?: string }> {
-  const url = `${RELIEFWEB_API_BASE}?appname=${encodeURIComponent(appName)}`;
-
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        // ReliefWeb/HDX blocks unidentified clients with HTTP 406. Identify the
-        // app explicitly (alongside the appname query param) to avoid bot blocks.
-        "User-Agent": `${appName} (+https://www.eod-hub.com; hello@eod-hub.com)`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => res.statusText);
-      return { jobs: [], error: `${res.status}: ${text.slice(0, 500)}` };
+    const sinceLastRequest = Date.now() - reliefWebLastRequestAt;
+    if (sinceLastRequest < RELIEFWEB_MIN_REQUEST_GAP_MS) {
+      await sleep(RELIEFWEB_MIN_REQUEST_GAP_MS - sinceLastRequest);
     }
 
-    const data = (await res.json()) as ReliefWebApiResponse;
-    return { jobs: data.data ?? [] };
+    let lastResult = await postReliefWebJobsOnce(body, appName);
+    reliefWebLastRequestAt = Date.now();
+
+    for (
+      let attempt = 0;
+      attempt < RELIEFWEB_BOT_RETRY_ATTEMPTS &&
+      lastResult.error &&
+      isReliefWebBotBlock(lastResult.status ?? 0, lastResult.error);
+      attempt++
+    ) {
+      await sleep(RELIEFWEB_BOT_RETRY_DELAY_MS * (attempt + 1));
+      lastResult = await postReliefWebJobsOnce(body, appName);
+      reliefWebLastRequestAt = Date.now();
+    }
+
+    if (lastResult.error) {
+      return { jobs: [], error: lastResult.error };
+    }
+
+    return { jobs: lastResult.jobs };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { jobs: [], error: msg };

@@ -50,17 +50,14 @@ export const ADZUNA_KEYWORD_CHANNELS: AdzunaKeywordChannel[] = [
 /**
  * Employers that frequently post EOD/UXO/ordnance roles under generic titles.
  * Company filter matches the hiring organization, not the headline.
+ *
+ * Some employer names return HTTP 400 from Adzuna (PAE, Parsons, etc.) — keep
+ * only names verified against the live API.
  */
 export const ADZUNA_COMPANY_CHANNELS: AdzunaCompanyChannel[] = [
-  { id: "co:pae", company: "PAE", what: "ordnance OR explosive OR ammunition OR EOD OR UXO", maxPages: 2, maxDaysOld: 90 },
   { id: "co:amentum", company: "Amentum", what: "ordnance OR explosive OR ammunition OR EOD OR UXO", maxPages: 2, maxDaysOld: 90 },
   { id: "co:leidos", company: "Leidos", what: "ordnance OR explosive OR EOD OR CBRN OR UXO", maxPages: 2, maxDaysOld: 90 },
-  { id: "co:parsons", company: "Parsons", what: "ordnance OR explosive OR EOD OR UXO", maxPages: 2, maxDaysOld: 90 },
-  { id: "co:tetra-tech", company: "Tetra Tech", what: "ordnance OR demining OR mine action OR EOD", maxPages: 2, maxDaysOld: 90 },
   { id: "co:kbr", company: "KBR", what: "ordnance OR explosive OR EOD OR ammunition", maxPages: 2, maxDaysOld: 90 },
-  { id: "co:constellis", company: "Constellis", what: "ordnance OR explosive OR EOD OR security", maxPages: 2, maxDaysOld: 90 },
-  { id: "co:valiant", company: "Valiant", what: "ordnance OR explosive OR EOD OR UXO", maxPages: 2, maxDaysOld: 90 },
-  { id: "co:cape-fox", company: "Cape Fox", what: "ordnance OR explosive OR EOD", maxPages: 2, maxDaysOld: 90 },
 ];
 
 /** Category + keyword combos for roles that rarely say EOD in the title. */
