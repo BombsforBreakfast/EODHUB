@@ -104,7 +104,9 @@ export default function JobDetailsModal({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 16,
+        padding:
+          "max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))",
+        overflow: "hidden",
       }}
     >
       <div
@@ -115,7 +117,7 @@ export default function JobDetailsModal({
         style={{
           width: "100%",
           maxWidth: 720,
-          maxHeight: "calc(100vh - 32px)",
+          maxHeight: "calc(100dvh - 24px)",
           background: t.surface,
           border: `1px solid ${t.border}`,
           borderRadius: 14,
@@ -123,9 +125,19 @@ export default function JobDetailsModal({
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
+          minHeight: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", padding: "18px 20px 8px", gap: 12 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-start",
+            justifyContent: "space-between",
+            padding: "18px 20px 8px",
+            gap: 12,
+            flexShrink: 0,
+          }}
+        >
           <div style={{ minWidth: 0 }}>
             <h2 id="job-modal-title" style={{ margin: 0, fontSize: 22, fontWeight: 900, color: t.text, lineHeight: 1.25 }}>
               {title}
@@ -167,32 +179,40 @@ export default function JobDetailsModal({
           </button>
         </div>
 
-        <JobImage
-          src={job.og_image}
-          alt={title}
-          height={220}
-          borderTop={`1px solid ${t.border}`}
-          borderBottom={`1px solid ${t.border}`}
-        />
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: "auto",
+            WebkitOverflowScrolling: "touch",
+            overscrollBehavior: "contain",
+          }}
+        >
+          <JobImage
+            src={job.og_image}
+            alt={title}
+            aspectRatio="16 / 9"
+            maxHeight={180}
+            borderBottom={`1px solid ${t.border}`}
+          />
 
+          <div style={{ padding: "14px 20px 4px" }}>
+            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: t.text }}>Job Description</h3>
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 14,
+                lineHeight: 1.6,
+                color: t.text,
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {description.trim().length > 0 ? description : "No description available. Use “Visit site” to view the full listing at the source."}
+            </div>
 
-        <div style={{ padding: "14px 20px 4px", overflowY: "auto", flex: 1, minHeight: 0 }}>
-          <h3 style={{ margin: 0, fontSize: 15, fontWeight: 900, color: t.text }}>Job Description</h3>
-          <div
-            style={{
-              marginTop: 8,
-              fontSize: 14,
-              lineHeight: 1.6,
-              color: t.text,
-              whiteSpace: "pre-wrap",
-            }}
-          >
-            {description.trim().length > 0 ? description : "No description available. Use “Visit site” to view the full listing at the source."}
-          </div>
-
-          {/* Report stale listing */}
-          <div style={{ marginTop: 18, borderTop: `1px dashed ${t.border}`, paddingTop: 12 }}>
-            <JobStaleReportControl jobId={job.id} variant="inline" />
+            <div style={{ marginTop: 18, borderTop: `1px dashed ${t.border}`, paddingTop: 12 }}>
+              <JobStaleReportControl jobId={job.id} variant="inline" />
+            </div>
           </div>
         </div>
 
@@ -202,10 +222,11 @@ export default function JobDetailsModal({
             alignItems: "center",
             justifyContent: "space-between",
             gap: 10,
-            padding: "12px 20px 16px",
+            padding: "12px 20px max(16px, env(safe-area-inset-bottom))",
             borderTop: `1px solid ${t.border}`,
             background: t.surface,
             flexWrap: "wrap",
+            flexShrink: 0,
           }}
         >
           {applyUrl ? (
