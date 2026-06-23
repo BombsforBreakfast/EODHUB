@@ -45,6 +45,8 @@ type DesktopConversation = {
   last_message_preview: string | null;
 };
 
+const RAIL_CONVERSATION_LIMIT = 5;
+
 function timeAgoShort(dateString: string) {
   const diff = Date.now() - new Date(dateString).getTime();
   const mins = Math.floor(diff / 60000);
@@ -152,64 +154,34 @@ export default function MasterRightColumn({
   const businessListings = businessListingsQuery.data ?? EMPTY_BUSINESS_LISTINGS;
   const bizLoaded = businessListingsQuery.isSuccess;
 
-  const loadDesktopConversations = useCallback(async (uid: string) => {
-    const { data, error } = await supabase
-      .from("conversations")
-      .select("id, participant_1, participant_2, last_message_at")
-      .or(`participant_1.eq.${uid},participant_2.eq.${uid}`)
-      .order("last_message_at", { ascending: false });
-
-    if (error || !data) {
+  const loadDesktopConversations = useCallback(async (_uid: string) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (!token) {
       setDesktopConversations([]);
       return;
     }
 
-    const otherIds = data.map((c) => (c.participant_1 === uid ? c.participant_2 : c.participant_1));
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("user_id, first_name, last_name, display_name, photo_url")
-      .in("user_id", otherIds);
-    const profileMap = new Map(
-      (profiles ?? []).map((p: { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null; photo_url: string | null }) => [
-        p.user_id,
-        p,
-      ])
-    );
-
-    const allIds = data.map((c) => c.id);
-    const unreadMap = new Map<string, number>();
-    const previewMap = new Map<string, string>();
-    if (allIds.length > 0) {
-      const { data: msgData } = await supabase
-        .from("messages")
-        .select("conversation_id, content, is_read, sender_id, created_at")
-        .in("conversation_id", allIds)
-        .order("created_at", { ascending: false });
-      (msgData ?? []).forEach((m: { conversation_id: string; content: string; is_read: boolean; sender_id: string }) => {
-        if (!previewMap.has(m.conversation_id)) previewMap.set(m.conversation_id, m.content);
-        if (m.sender_id !== uid && !m.is_read) unreadMap.set(m.conversation_id, (unreadMap.get(m.conversation_id) ?? 0) + 1);
-      });
+    const params = new URLSearchParams({
+      limit: String(RAIL_CONVERSATION_LIMIT),
+      offset: "0",
+    });
+    const res = await fetch(`/api/sidebar/conversations?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      setDesktopConversations([]);
+      return;
     }
 
-    const convs: DesktopConversation[] = data.map((c) => {
-      const otherId = c.participant_1 === uid ? c.participant_2 : c.participant_1;
-      const profile = profileMap.get(otherId);
-      const name = profile?.display_name || `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() || "EOD Member";
-      return {
-        ...c,
-        other_user_id: otherId,
-        other_user_name: name,
-        other_user_photo: profile?.photo_url ?? null,
-        unread_count: unreadMap.get(c.id) ?? 0,
-        last_message_preview: previewMap.get(c.id) ?? null,
-      };
-    });
+    const json = (await res.json()) as { conversations?: DesktopConversation[] };
+    const convs = json.conversations ?? [];
     const sorted = [...convs].sort((a, b) => {
       const unreadDelta = (b.unread_count > 0 ? 1 : 0) - (a.unread_count > 0 ? 1 : 0);
       if (unreadDelta !== 0) return unreadDelta;
       return new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime();
     });
-    setDesktopConversations(sorted);
+    setDesktopConversations(sorted.slice(0, RAIL_CONVERSATION_LIMIT));
   }, []);
 
   useEffect(() => {
@@ -578,9 +550,9 @@ export default function MasterRightColumn({
             Collapse
           </button>
         </div>
-        <div style={{ display: "grid", gap: 8, maxHeight: 172, overflowY: "auto", paddingRight: 2 }}>
+        <div style={{ display: "grid", gap: 8 }}>
           {desktopConversations.length === 0 && <div style={{ color: t.textFaint, fontSize: 12 }}>No conversations yet.</div>}
-          {desktopConversations.map((conv) => (
+          {desktopConversations.slice(0, RAIL_CONVERSATION_LIMIT).map((conv) => (
             <button
               key={conv.id}
               type="button"
