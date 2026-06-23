@@ -12,6 +12,7 @@ import {
   clearAppAuthState,
   clearLoginRedirectAttempts,
   clearNativeOAuthInProgress,
+  isNativeOAuthCompleting,
   isNativeOAuthInProgress,
   markAppSessionActive,
   markOAuthRememberPending,
@@ -309,10 +310,10 @@ export default function LoginPage() {
 
       if (authLoading) return;
 
-      if (isNativeOAuthInProgress()) {
-        await new Promise((resolve) => window.setTimeout(resolve, 500));
+      if (isNativeOAuthInProgress() || isNativeOAuthCompleting()) {
+        await new Promise((resolve) => window.setTimeout(resolve, 800));
         if (cancelled) return;
-        if (isNativeOAuthInProgress()) return;
+        if (isNativeOAuthInProgress() || isNativeOAuthCompleting()) return;
       }
 
       const user = await loadRedirectableSessionUser();

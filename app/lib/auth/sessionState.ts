@@ -6,6 +6,10 @@ const APP_AUTH_LOCAL_KEYS = ["eod_no_persist"] as const;
 // it once the session lands back in the app (see SessionGuard).
 const OAUTH_REMEMBER_PENDING_KEY = "eod_oauth_remember";
 const NATIVE_OAUTH_IN_PROGRESS_KEY = "eod_native_oauth_in_progress";
+/** Set while the native deep-link handler owns post-OAuth navigation (TestFlight / Capacitor). */
+const NATIVE_OAUTH_COMPLETING_KEY = "eod_native_oauth_completing";
+const NATIVE_OAUTH_COMPLETING_TS_KEY = "eod_native_oauth_completing_ts";
+const NATIVE_OAUTH_COMPLETING_MS = 15_000;
 
 export function markNativeOAuthInProgress() {
   if (typeof window === "undefined") return;
@@ -20,6 +24,29 @@ export function clearNativeOAuthInProgress() {
 export function isNativeOAuthInProgress(): boolean {
   if (typeof window === "undefined") return false;
   return window.sessionStorage.getItem(NATIVE_OAUTH_IN_PROGRESS_KEY) === "1";
+}
+
+export function markNativeOAuthCompleting() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(NATIVE_OAUTH_COMPLETING_KEY, "1");
+  window.sessionStorage.setItem(NATIVE_OAUTH_COMPLETING_TS_KEY, String(Date.now()));
+}
+
+export function clearNativeOAuthCompleting() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(NATIVE_OAUTH_COMPLETING_KEY);
+  window.sessionStorage.removeItem(NATIVE_OAUTH_COMPLETING_TS_KEY);
+}
+
+export function isNativeOAuthCompleting(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.sessionStorage.getItem(NATIVE_OAUTH_COMPLETING_KEY) !== "1") return false;
+  const ts = Number(window.sessionStorage.getItem(NATIVE_OAUTH_COMPLETING_TS_KEY) ?? "0");
+  if (Date.now() - ts > NATIVE_OAUTH_COMPLETING_MS) {
+    clearNativeOAuthCompleting();
+    return false;
+  }
+  return true;
 }
 
 /** Read pending OAuth remember choice without clearing it. */

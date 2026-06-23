@@ -8,6 +8,7 @@ import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { getAccessToken, getSupabaseSession, supabase } from "../lib/lib/supabaseClient";
 import { useAuth } from "../lib/auth/AuthProvider";
+import { clearNativeOAuthCompleting } from "../lib/auth/sessionState";
 import { useTheme } from "../lib/ThemeContext";
 import MentionTextarea, { extractMentionIds } from "../components/MentionTextarea";
 import { PostLikersStack, type PostLikerBrief } from "../components/PostLikersStack";
@@ -5879,6 +5880,7 @@ export default function HomePage() {
         await feedReady;
         if (isMounted && activeProfileLoadSeqRef.current === loadSeq) {
           setLoading(false);
+          clearNativeOAuthCompleting();
         }
 
         const isDesktopViewport = typeof window !== "undefined" && window.innerWidth > 900;

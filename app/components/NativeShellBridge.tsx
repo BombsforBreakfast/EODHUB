@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { isNativeApp } from "../lib/native/isNativeApp";
-import { isNativeOAuthInProgress } from "../lib/auth/sessionState";
+import { isNativeOAuthCompleting, isNativeOAuthInProgress } from "../lib/auth/sessionState";
 import { handleNativeDeepLink } from "../lib/native/completeNativeOAuthCallback";
 import { deliverRestoredCameraFiles, handleCameraRestoredResult } from "../lib/native/pickFeedMedia";
 import { getNotificationHref } from "../lib/notificationNavigation";
@@ -19,7 +19,7 @@ function isEodHubHost(hostname: string): boolean {
 }
 
 function recoverBlankWebView() {
-  if (isNativeOAuthInProgress()) return;
+  if (isNativeOAuthInProgress() || isNativeOAuthCompleting()) return;
   if (window.location.href === "about:blank") {
     window.location.replace(PRODUCTION_ORIGIN);
     return;
@@ -106,13 +106,13 @@ export default function NativeShellBridge() {
       App.addListener("appStateChange", ({ isActive }) => {
         if (!isActive) return;
         void closeInAppBrowser();
-        if (!isNativeOAuthInProgress()) {
+        if (!isNativeOAuthInProgress() && !isNativeOAuthCompleting()) {
           window.setTimeout(recoverBlankWebView, 150);
         }
       });
 
       Browser.addListener("browserFinished", () => {
-        if (!isNativeOAuthInProgress()) {
+        if (!isNativeOAuthInProgress() && !isNativeOAuthCompleting()) {
           window.setTimeout(recoverBlankWebView, 150);
         }
       });

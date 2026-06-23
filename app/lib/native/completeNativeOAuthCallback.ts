@@ -4,6 +4,7 @@ import {
   clearNativeOAuthInProgress,
   consumeOAuthRememberPending,
   markAppSessionActive,
+  markNativeOAuthCompleting,
 } from "../auth/sessionState";
 import { oauthDebugLog } from "../auth/oauthDebugLog";
 import { getAccessToken, supabase } from "../lib/supabaseClient";
@@ -92,6 +93,8 @@ async function resolveNativeOAuthDestination(next: string): Promise<string> {
 }
 
 async function finishNativeOAuth(next: string): Promise<void> {
+  // Keep login-page auto-redirect and blank-WebView recovery from racing this navigation.
+  markNativeOAuthCompleting();
   clearNativeOAuthInProgress();
   const destination = await resolveNativeOAuthDestination(next);
   oauthDebugLog("native_oauth_navigate", { destination });
@@ -145,6 +148,7 @@ export async function completeNativeOAuthFromDeepLink(
   const pendingRemember = consumeOAuthRememberPending();
   markAppSessionActive(pendingRemember ?? true);
   clearLoginRedirectAttempts();
+  markNativeOAuthCompleting();
 
   if (params.code) {
     if (wasCodeHandled(params.code)) {
