@@ -105,11 +105,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === "TOKEN_REFRESHED") {
         setAuthCache(nextSession);
-        setState({
-          user: nextSession?.user ?? null,
+        setState((prev) => ({
+          // Keep a stable user reference when only tokens rotated — otherwise
+          // feed/shell effects keyed on `user` tear down and reload on every refresh.
+          user:
+            prev.user?.id === nextSession?.user?.id
+              ? prev.user
+              : (nextSession?.user ?? null),
           session: nextSession,
           isLoading: false,
-        });
+        }));
         return;
       }
 
@@ -124,7 +129,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (event === "SIGNED_IN") {
         invalidateAuthCache();
-        applySession(nextSession, setState);
+        setAuthCache(nextSession);
+        setState((prev) => ({
+          user:
+            prev.user?.id === nextSession?.user?.id
+              ? prev.user
+              : (nextSession?.user ?? null),
+          session: nextSession,
+          isLoading: false,
+        }));
         void getSupabaseSession({ force: true, source: "AuthProvider.SIGNED_IN" }).then(({ data }) => {
           oauthDebugLog("signed_in_getSession", { hasSession: !!data.session?.user });
         });

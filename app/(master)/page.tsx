@@ -927,6 +927,8 @@ export default function HomePage() {
   const { t, isDark } = useTheme();
   const queryClient = useQueryClient();
   const { user: authUser, isLoading: authLoading } = useAuth();
+  /** Stable key — OAuth/token refresh must not re-run feed init when the user id is unchanged. */
+  const authUserId = authUser?.id ?? null;
   const [jobs, setJobs] = useState<Job[]>([]);
   const [jobSubmitters, setJobSubmitters] = useState<Map<string, string>>(new Map());
   const [jobLeaderboard, setJobLeaderboard] = useState<{ user_id: string; name: string; photo_url: string | null; count: number }[]>([]);
@@ -5983,7 +5985,7 @@ export default function HomePage() {
         }
       });
     };
-  }, [authLoading, authUser]);
+  }, [authLoading, authUserId]);
 
   useEffect(() => {
     return () => {
@@ -6307,6 +6309,11 @@ export default function HomePage() {
       return;
     }
     setShowJobsUpgradePrompt(true);
+  }
+
+  function handleJobDeleted(jobId: string) {
+    setJobs((prev) => prev.filter((j) => j.id !== jobId));
+    if (jobDetailsModal?.id === jobId) setJobDetailsModal(null);
   }
 
   const skeletonStyle: React.CSSProperties = {
@@ -9086,6 +9093,8 @@ export default function HomePage() {
                 isTogglingSave={togglingJobSaveFor === job.id}
                 onToggleSave={(j) => toggleSaveJob(j.id)}
                 posterName={jobSubmitters.get(job.user_id ?? "") ?? null}
+                canAdminDelete={isAdmin}
+                onJobDeleted={handleJobDeleted}
               />
             ))}
           </div>
@@ -9653,6 +9662,8 @@ export default function HomePage() {
           canSave={!!userId}
           isTogglingSave={togglingJobSaveFor === jobDetailsModal.id}
           onToggleSave={(j) => toggleSaveJob(j.id)}
+          canAdminDelete={isAdmin}
+          onJobDeleted={handleJobDeleted}
         />
       )}
 

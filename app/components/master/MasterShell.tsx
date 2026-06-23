@@ -132,7 +132,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
     return () => {
       cancelled = true;
     };
-  }, [authLoading, queryClient, user]);
+  }, [authLoading, queryClient, user?.id]);
 
   useEffect(() => {
     if (!isDesktop) {
