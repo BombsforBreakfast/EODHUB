@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { oauthDebugLog } from "../../lib/auth/oauthDebugLog";
 import { buildNativeOAuthDeepLink } from "../../lib/native/nativeOAuthRedirect";
 
 /**
@@ -18,9 +19,21 @@ export default function NativeOAuthAppCallbackPage() {
   useEffect(() => {
     const search = window.location.search;
     const hash = window.location.hash;
-    console.info("[auth/app-callback] bridge loaded — handing off to native scheme", { search, hash });
+    const hasCode = new URLSearchParams(search).has("code");
+    const hasHashTokens =
+      hash.includes("access_token") || hash.includes("refresh_token");
+    const hasError = new URLSearchParams(search).has("error");
+
+    oauthDebugLog("bridge_loaded", {
+      hasCode,
+      hasHashTokens,
+      hasError,
+      searchLength: search.length,
+      hashLength: hash.length,
+    });
 
     const deepLink = buildNativeOAuthDeepLink(search, hash);
+    oauthDebugLog("bridge_handoff", { deepLink: deepLink.split("?")[0] ?? deepLink });
     window.location.replace(deepLink);
 
     const timer = window.setTimeout(() => setStuck(true), 2500);

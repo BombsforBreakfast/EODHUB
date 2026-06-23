@@ -10,7 +10,12 @@ import {
 } from "@/app/lib/onboardingGate";
 import { clearFailedAuthReportsOnSuccessfulLogin } from "@/app/lib/server/clearFailedAuthReportsOnLogin";
 import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
-import { resolveAuthUserEmail } from "@/app/lib/auth/oauthProviders";
+import { collectUserOAuthProviders, resolveAuthUserEmail } from "@/app/lib/auth/oauthProviders";
+
+function truncateCode(code: string | null): string | null {
+  if (!code) return null;
+  return code.length <= 8 ? `${code.slice(0, 4)}…` : `${code.slice(0, 4)}…(${code.length})`;
+}
 
 /**
  * Server-side OAuth callback handler (Supabase PKCE flow).
@@ -31,10 +36,37 @@ import { resolveAuthUserEmail } from "@/app/lib/auth/oauthProviders";
  * (or any other destination).
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams, origin, pathname } = new URL(request.url);
   const code = searchParams.get("code");
+  const oauthError = searchParams.get("error");
+  const oauthErrorDescription = searchParams.get("error_description");
   // Where to send the user after successful auth (defaults to onboarding).
   const next = searchParams.get("next") ?? "/onboarding";
+
+  console.info("[oauth] server_callback", {
+    pathname,
+    hasCode: !!code,
+    hasError: !!oauthError,
+    error: oauthError,
+    errorDescription: oauthErrorDescription,
+    code: truncateCode(code),
+    next,
+  });
+
+  if (oauthError && !code) {
+    void logFailedAuthAttempt({
+      failureReason: "SERVER_ERROR",
+      errorCode: "oauth_provider_error",
+      rawErrorMessage: oauthErrorDescription ?? oauthError,
+      sourceRoute: "/auth/callback",
+      request,
+    });
+    const provider = oauthError.includes("apple") ? "apple" : undefined;
+    const loginUrl = provider
+      ? `${origin}/login?error=auth&provider=${provider}`
+      : `${origin}/login?error=auth`;
+    return NextResponse.redirect(loginUrl);
+  }
 
   if (code) {
     // Collect the session cookies emitted during the code exchange so we can
@@ -61,6 +93,13 @@ export async function GET(request: NextRequest) {
 
     const { data: sessionData, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
+      const providers = collectUserOAuthProviders(sessionData.user ?? {});
+      console.info("[oauth] exchange_success", {
+        userId: sessionData.user?.id ?? null,
+        providers: providers.join(",") || null,
+        cookieCount: cookiesToApply.length,
+      });
+
       // Default to the requested `next` (preserves ?ref= and the business-org
       // flow). Only fully-onboarded users get routed past /onboarding below.
       let destination = next;
@@ -111,6 +150,8 @@ export async function GET(request: NextRequest) {
         void clearFailedAuthReportsOnSuccessfulLogin(adminClient, oauthEmail);
       }
 
+      console.info("[oauth] redirect_destination", { destination });
+
       // Build the redirect to the resolved destination and attach the session
       // cookies so they arrive in the browser before the next page load.
       const redirectResponse = NextResponse.redirect(`${origin}${destination}`);
@@ -119,6 +160,8 @@ export async function GET(request: NextRequest) {
       });
       return redirectResponse;
     }
+
+    console.info("[oauth] exchange_failed", { message: error.message });
     void logFailedAuthAttempt({
       failureReason: "SERVER_ERROR",
       errorCode: "oauth_exchange_failed",

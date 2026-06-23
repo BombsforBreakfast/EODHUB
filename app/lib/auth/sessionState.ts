@@ -5,6 +5,30 @@ const APP_AUTH_LOCAL_KEYS = ["eod_no_persist"] as const;
 // choice can't be applied inline. We stash it here before redirecting and apply
 // it once the session lands back in the app (see SessionGuard).
 const OAUTH_REMEMBER_PENDING_KEY = "eod_oauth_remember";
+const NATIVE_OAUTH_IN_PROGRESS_KEY = "eod_native_oauth_in_progress";
+
+export function markNativeOAuthInProgress() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(NATIVE_OAUTH_IN_PROGRESS_KEY, "1");
+}
+
+export function clearNativeOAuthInProgress() {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(NATIVE_OAUTH_IN_PROGRESS_KEY);
+}
+
+export function isNativeOAuthInProgress(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.sessionStorage.getItem(NATIVE_OAUTH_IN_PROGRESS_KEY) === "1";
+}
+
+/** Read pending OAuth remember choice without clearing it. */
+export function peekOAuthRememberPending(): boolean | null {
+  if (typeof window === "undefined") return null;
+  const value = window.localStorage.getItem(OAUTH_REMEMBER_PENDING_KEY);
+  if (value === null) return null;
+  return value === "1";
+}
 
 export function clearAppAuthState() {
   if (typeof window === "undefined") return;

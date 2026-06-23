@@ -18,6 +18,7 @@ import {
   setAuthCache,
   supabase,
 } from "../lib/supabaseClient";
+import { oauthDebugLog } from "./oauthDebugLog";
 import { markAuthReady } from "./authReady";
 
 export type AuthContextValue = {
@@ -47,6 +48,7 @@ function applySession(
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const initialLoadDone = useRef(false);
+  const bootstrapHadSession = useRef(false);
   const [{ user, session, isLoading }, setState] = useState<{
     user: User | null;
     session: Session | null;
@@ -70,7 +72,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data, error } = await getSupabaseSession({ source: "AuthProvider.bootstrap" });
       if (!mounted) return;
       if (error) console.error("[auth] bootstrap error:", error);
+      bootstrapHadSession.current = !!data.session?.user;
       applySession(data.session ?? null, setState);
+      oauthDebugLog("auth_bootstrap", {
+        hasSession: !!data.session?.user,
+        userId: data.session?.user?.id ?? null,
+      });
       if (!initialLoadDone.current) {
         initialLoadDone.current = true;
         markAuthReady();
@@ -83,6 +90,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
+
+      oauthDebugLog("auth_state_change", {
+        event,
+        hasSession: !!nextSession?.user,
+      });
 
       if (event === "SIGNED_OUT") {
         invalidateAuthCache();
@@ -102,6 +114,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (event === "INITIAL_SESSION") {
+        if (!bootstrapHadSession.current && nextSession?.user) {
+          invalidateAuthCache();
+          applySession(nextSession, setState);
+          oauthDebugLog("initial_session_applied", { userId: nextSession.user.id });
+        }
+        return;
+      }
+
+      if (event === "SIGNED_IN") {
+        invalidateAuthCache();
+        applySession(nextSession, setState);
+        void getSupabaseSession({ force: true, source: "AuthProvider.SIGNED_IN" }).then(({ data }) => {
+          oauthDebugLog("signed_in_getSession", { hasSession: !!data.session?.user });
+        });
         return;
       }
 

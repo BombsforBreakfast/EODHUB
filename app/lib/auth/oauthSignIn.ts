@@ -1,11 +1,28 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OAuthRedirectProvider } from "./oauthProviders";
+import { oauthDebugLog } from "./oauthDebugLog";
+import { markNativeOAuthInProgress } from "./sessionState";
 import { isNativeApp } from "../native/isNativeApp";
 import { buildNativeOAuthRedirectTo } from "../native/nativeOAuthRedirect";
 
 export function buildOAuthCallbackRedirect(nextPath: string): string {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   return `${origin}/auth/callback?next=${encodeURIComponent(nextPath)}`;
+}
+
+function buildProviderQueryParams(
+  provider: OAuthRedirectProvider,
+  base: Record<string, string>,
+  loginHint?: string,
+): Record<string, string> {
+  const queryParams = { ...base };
+  if (loginHint?.includes("@") && provider === "google") {
+    queryParams.login_hint = loginHint;
+  }
+  if (provider === "apple") {
+    queryParams.scope = "email name";
+  }
+  return queryParams;
 }
 
 export async function signInWithOAuthProvider(
@@ -18,14 +35,16 @@ export async function signInWithOAuthProvider(
   },
 ) {
   const nextPath = options?.nextPath ?? "/onboarding";
-  const queryParams = { ...(options?.queryParams ?? {}) };
-  if (options?.loginHint?.includes("@") && provider === "google") {
-    queryParams.login_hint = options.loginHint;
-  }
+  const queryParams = buildProviderQueryParams(
+    provider,
+    { ...(options?.queryParams ?? {}) },
+    options?.loginHint,
+  );
 
   if (typeof window !== "undefined" && isNativeApp()) {
     const redirectTo = buildNativeOAuthRedirectTo(nextPath);
-    console.info("[oauthSignIn] native OAuth start", { provider, redirectTo, nextPath });
+    markNativeOAuthInProgress();
+    oauthDebugLog("native_oauth_start", { provider, redirectTo, nextPath });
 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
@@ -37,7 +56,7 @@ export async function signInWithOAuthProvider(
     });
 
     if (error) {
-      console.warn("[oauthSignIn] native OAuth error", error.message);
+      oauthDebugLog("native_oauth_error", { provider, message: error.message });
       return { data, error };
     }
 
@@ -49,7 +68,7 @@ export async function signInWithOAuthProvider(
   }
 
   const redirectTo = buildOAuthCallbackRedirect(nextPath);
-  console.info("[oauthSignIn] web OAuth start", { provider, redirectTo, nextPath });
+  oauthDebugLog("web_oauth_start", { provider, redirectTo, nextPath });
   return supabase.auth.signInWithOAuth({
     provider,
     options: {
@@ -75,7 +94,8 @@ export async function linkOAuthIdentity(
 ) {
   if (typeof window !== "undefined" && isNativeApp()) {
     const redirectTo = buildNativeOAuthRedirectTo(nextPath);
-    console.info("[oauthSignIn] native link start", { provider, redirectTo, nextPath });
+    markNativeOAuthInProgress();
+    oauthDebugLog("native_link_start", { provider, redirectTo, nextPath });
 
     const { data, error } = await supabase.auth.linkIdentity({
       provider,
@@ -83,7 +103,7 @@ export async function linkOAuthIdentity(
     });
 
     if (error) {
-      console.warn("[oauthSignIn] native link error", error.message);
+      oauthDebugLog("native_link_error", { provider, message: error.message });
       return { data, error };
     }
 
@@ -95,7 +115,7 @@ export async function linkOAuthIdentity(
   }
 
   const redirectTo = `${window.location.origin}${nextPath}`;
-  console.info("[oauthSignIn] web link start", { provider, redirectTo, nextPath });
+  oauthDebugLog("web_link_start", { provider, redirectTo, nextPath });
   return supabase.auth.linkIdentity({
     provider,
     options: { redirectTo },

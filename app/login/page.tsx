@@ -7,9 +7,12 @@ import { supabase } from "../lib/lib/supabaseClient";
 import EodCrabLogo from "../components/EodCrabLogo";
 import { useTheme } from "../lib/ThemeContext";
 import { loadActiveProfile } from "../lib/auth/activeProfile";
+import { useAuthOptional } from "../lib/auth/AuthProvider";
 import {
   clearAppAuthState,
   clearLoginRedirectAttempts,
+  clearNativeOAuthInProgress,
+  isNativeOAuthInProgress,
   markAppSessionActive,
   markOAuthRememberPending,
   recordLoginRedirectAttempt,
@@ -44,6 +47,7 @@ import { clearFailedAuthReportsAfterLogin } from "../lib/auth/clearFailedAuthRep
 import { formatOAuthProviderLabel } from "../lib/auth/oauthProviders";
 import { signInWithOAuthProvider } from "../lib/auth/oauthSignIn";
 import type { OAuthRedirectProvider } from "../lib/auth/oauthProviders";
+import ProudPartnersSection from "../components/login/ProudPartnersSection";
 
 /**
  * How many login → protected-route redirects may happen in quick succession
@@ -92,6 +96,8 @@ function reportAuthFailure(payload: {
 
 export default function LoginPage() {
   const { t, isDark } = useTheme();
+  const auth = useAuthOptional();
+  const authLoading = auth?.isLoading ?? false;
   const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
 
   const [email, setEmail] = useState("");
@@ -288,8 +294,17 @@ export default function LoginPage() {
     void (async () => {
       if (params.get("error") === "auth") {
         clearLoginRedirectAttempts();
+        clearNativeOAuthInProgress();
         await supabase.auth.signOut().catch(() => {});
         return;
+      }
+
+      if (authLoading) return;
+
+      if (isNativeOAuthInProgress()) {
+        await new Promise((resolve) => window.setTimeout(resolve, 500));
+        if (cancelled) return;
+        if (isNativeOAuthInProgress()) return;
       }
 
       const user = await loadRedirectableSessionUser();
@@ -323,7 +338,7 @@ export default function LoginPage() {
     return () => {
       cancelled = true;
     };
-  }, [rememberMe]);
+  }, [rememberMe, authLoading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -804,17 +819,24 @@ export default function LoginPage() {
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: 18, lineHeight: 1.4, fontWeight: 700, color: t.text }}>
+        <div className="login-intro-headline" style={{ color: t.text }}>
           EOD Hub connects the community in one place—built by and for those who&apos;ve done the work
         </div>
-        <div style={{ marginTop: 10, fontSize: 16, lineHeight: 1.55, color: t.text }}>
-          <div>- Jobs, businesses, and events</div>
-          <div>- Groups and real conversations</div>
-          <div>- Resources and deep-dive knowledge</div>
-        </div>
-        <div style={{ marginTop: 10, fontSize: 16, lineHeight: 1.45, color: t.text }}>
-          Join the network. Find opportunities. Stay connected.
-        </div>
+        <details className="login-intro-details">
+          <summary className="login-intro-summary" style={{ color: t.textMuted }}>
+            What&apos;s on EOD Hub
+          </summary>
+          <div className="login-intro-details-body">
+            <div style={{ marginTop: 10, fontSize: 16, lineHeight: 1.55, color: t.text }}>
+              <div>- Jobs, businesses, and events</div>
+              <div>- Groups and real conversations</div>
+              <div>- Resources and deep-dive knowledge</div>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 16, lineHeight: 1.45, color: t.text }}>
+              Join the network. Find opportunities. Stay connected.
+            </div>
+          </div>
+        </details>
       </div>
 
       <div
@@ -957,6 +979,24 @@ export default function LoginPage() {
           }}
           style={{ display: "grid", gap: mode === "login" ? 9 : 12, marginTop: mode === "login" ? 0 : 8 }}
         >
+          {mode === "login" && (
+            <>
+              <OAuthProviderButtons
+                disabled={submitting}
+                buttonSecondary={buttonSecondary}
+                onGoogle={() => signInWithGoogleOAuth()}
+                onApple={() => openAppleAuthHelper()}
+                googleLabel="Sign in with Google"
+                appleLabel="Sign in with Apple"
+              />
+              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
+                <div style={{ flex: 1, height: 1, background: t.border }} />
+                <span style={{ fontSize: 13, color: t.textMuted }}>or</span>
+                <div style={{ flex: 1, height: 1, background: t.border }} />
+              </div>
+            </>
+          )}
+
           <input
             type="email"
             placeholder="Email"
@@ -1044,19 +1084,6 @@ export default function LoginPage() {
                 {submitting && <span className={isDark ? "btn-spinner btn-spinner-dark" : "btn-spinner"} />}
                 Login
               </button>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
-                <div style={{ flex: 1, height: 1, background: t.border }} />
-                <span style={{ fontSize: 13, color: t.textMuted }}>or</span>
-                <div style={{ flex: 1, height: 1, background: t.border }} />
-              </div>
-              <OAuthProviderButtons
-                disabled={submitting}
-                buttonSecondary={buttonSecondary}
-                onGoogle={() => signInWithGoogleOAuth()}
-                onApple={() => openAppleAuthHelper()}
-                googleLabel="Sign in with Google"
-                appleLabel="Sign in with Apple"
-              />
               <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("signup"); }} disabled={submitting} style={buttonSecondary}>
                 Need an account? Sign Up
               </button>
@@ -1374,6 +1401,8 @@ export default function LoginPage() {
           </div>
         </div>
       )}
+
+      <ProudPartnersSection />
 
       {(businessOrgPromptOpen || businessOrgEmailGateOpen) && (
         <div
