@@ -24,7 +24,7 @@ const config: CapacitorConfig = {
     backgroundColor: "#0a0a0a",
     allowsLinkPreview: false,
     scrollEnabled: true,
-    webContentsDebuggingEnabled: true,
+    webContentsDebuggingEnabled: false,
   },
   plugins: {
     SplashScreen: {
