@@ -46,6 +46,7 @@ import {
 import { clearFailedAuthReportsAfterLogin } from "../lib/auth/clearFailedAuthReportsOnLogin";
 import { formatOAuthProviderLabel } from "../lib/auth/oauthProviders";
 import { signInWithOAuthProvider } from "../lib/auth/oauthSignIn";
+import { oauthDebugLog } from "../lib/auth/oauthDebugLog";
 import type { OAuthRedirectProvider } from "../lib/auth/oauthProviders";
 import ProudPartnersSection from "../components/login/ProudPartnersSection";
 
@@ -293,6 +294,15 @@ export default function LoginPage() {
     let cancelled = false;
     void (async () => {
       if (params.get("error") === "auth") {
+        const { data: errorSession } = await supabase.auth.getSession();
+        if (errorSession.session?.user) {
+          oauthDebugLog("login_error_auth_but_session_exists", {
+            userId: errorSession.session.user.id,
+          });
+          markAppSessionActive(rememberMe);
+          await redirectForSessionUser(errorSession.session.user);
+          return;
+        }
         clearLoginRedirectAttempts();
         clearNativeOAuthInProgress();
         await supabase.auth.signOut().catch(() => {});

@@ -19,9 +19,6 @@ function buildProviderQueryParams(
   if (loginHint?.includes("@") && provider === "google") {
     queryParams.login_hint = loginHint;
   }
-  if (provider === "apple") {
-    queryParams.scope = "email name";
-  }
   return queryParams;
 }
 

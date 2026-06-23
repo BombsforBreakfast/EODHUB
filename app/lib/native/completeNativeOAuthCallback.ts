@@ -58,14 +58,17 @@ function redirectToLoginAuthError(provider?: string) {
   window.location.assign(`/login${query}`);
 }
 
+function buildOAuthCompleteUrl(next: string): string {
+  const params = new URLSearchParams({ next });
+  return `${NATIVE_APP_ORIGIN}/auth/oauth-complete?${params.toString()}`;
+}
+
 /**
  * Complete OAuth in the main Capacitor WebView.
  *
- * The PKCE verifier is stored in this WebView's cookies when signInWithOAuth
- * starts. We hand the auth code to the server /auth/callback route so session
- * cookies are set atomically on the redirect response. Client-side
- * exchangeCodeForSession raced cookie writes and bounced new signups to /login
- * (especially on iPad native shells).
+ * PKCE verifier is stored in this WebView when signInWithOAuth starts. Exchange
+ * the code here first — server-side exchange often fails on iOS because the
+ * verifier cookie does not reliably reach the route handler.
  */
 export async function completeNativeOAuthFromDeepLink(
   rawUrl: string,
@@ -111,14 +114,31 @@ export async function completeNativeOAuthFromDeepLink(
   if (params.code) {
     if (wasCodeHandled(params.code)) {
       oauthDebugLog("code_already_handled", { code: params.code });
+      const completeUrl = buildOAuthCompleteUrl(params.next);
+      window.location.assign(completeUrl);
       return true;
     }
 
-    markCodeHandled(params.code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(params.code);
 
+    oauthDebugLog("client_exchange", {
+      hasSession: !!data.session?.user,
+      error: error?.message ?? null,
+    });
+
+    if (!error && data.session?.user) {
+      markCodeHandled(params.code);
+      clearNativeOAuthInProgress();
+      window.location.assign(buildOAuthCompleteUrl(params.next));
+      return true;
+    }
+
+    oauthDebugLog("client_exchange_fallback_server", {
+      error: error?.message ?? null,
+    });
+
+    markCodeHandled(params.code);
     const serverCallbackUrl = toAbsoluteNativeAppUrl(`${callbackPath}${hash}`);
-    oauthDebugLog("navigate_server_callback", { url: serverCallbackUrl.split("?")[0] });
-    clearNativeOAuthInProgress();
     window.location.assign(serverCallbackUrl);
     return true;
   }
@@ -144,8 +164,7 @@ export async function completeNativeOAuthFromDeepLink(
       clearNativeOAuthInProgress();
 
       if (data.session?.user) {
-        const destination = params.next.startsWith("/") ? params.next : "/onboarding";
-        window.location.assign(`${NATIVE_APP_ORIGIN}${destination}`);
+        window.location.assign(buildOAuthCompleteUrl(params.next));
       } else {
         redirectToLoginAuthError();
       }

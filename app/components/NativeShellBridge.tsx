@@ -106,11 +106,15 @@ export default function NativeShellBridge() {
       App.addListener("appStateChange", ({ isActive }) => {
         if (!isActive) return;
         void closeInAppBrowser();
-        window.setTimeout(recoverBlankWebView, 150);
+        if (!isNativeOAuthInProgress()) {
+          window.setTimeout(recoverBlankWebView, 150);
+        }
       });
 
       Browser.addListener("browserFinished", () => {
-        window.setTimeout(recoverBlankWebView, 150);
+        if (!isNativeOAuthInProgress()) {
+          window.setTimeout(recoverBlankWebView, 150);
+        }
       });
 
       const openExternalUrl = async (url: string) => {

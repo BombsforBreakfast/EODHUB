@@ -12,7 +12,7 @@ import {
 } from "../lib/auth/sessionState";
 import { oauthDebugLog } from "../lib/auth/oauthDebugLog";
 
-const SESSION_RETRY_ATTEMPTS = 3;
+const SESSION_RETRY_ATTEMPTS = 6;
 const SESSION_RETRY_DELAY_MS = 500;
 
 async function getSessionWithRetry(): Promise<boolean> {
