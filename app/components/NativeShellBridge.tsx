@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { isNativeApp } from "../lib/native/isNativeApp";
 import { isNativeOAuthCompleting, isNativeOAuthInProgress } from "../lib/auth/sessionState";
-import { handleNativeDeepLink } from "../lib/native/completeNativeOAuthCallback";
+import { handleNativeDeepLink, isHandledOAuthDeepLink } from "../lib/native/completeNativeOAuthCallback";
+import { oauthDebugLog } from "../lib/auth/oauthDebugLog";
 import { deliverRestoredCameraFiles, handleCameraRestoredResult } from "../lib/native/pickFeedMedia";
 import { getNotificationHref } from "../lib/notificationNavigation";
 import { supabase } from "../lib/lib/supabaseClient";
@@ -99,8 +100,17 @@ export default function NativeShellBridge() {
         });
       });
 
+      // getLaunchUrl() returns the same URL for the whole process lifetime, so a
+      // cold-launch OAuth deep link would be re-processed on every WebView reload.
+      // Skip it once the code has already been exchanged to avoid a reload loop;
+      // warm-path callbacks still arrive via the appUrlOpen listener above.
       void App.getLaunchUrl().then((launch) => {
-        if (launch?.url) void onNativeDeepLink(launch.url);
+        if (!launch?.url) return;
+        if (isHandledOAuthDeepLink(launch.url)) {
+          oauthDebugLog("launch_url_oauth_skipped", {});
+          return;
+        }
+        void onNativeDeepLink(launch.url);
       });
 
       App.addListener("appStateChange", ({ isActive }) => {
