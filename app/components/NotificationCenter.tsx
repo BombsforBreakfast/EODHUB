@@ -91,6 +91,7 @@ export default function NotificationCenter({
   }, new Map<string, { lead: CenterNotification; count: number; unreadCount: number }>());
 
   const groupedItems = Array.from(grouped.values());
+  const panelCap = "min(85vh, 640px)";
 
   return createPortal(
     <div
@@ -118,7 +119,8 @@ export default function NotificationCenter({
         style={{
           width: "100%",
           maxWidth: 440,
-          maxHeight: "min(85vh, 640px)",
+          height: groupedItems.length > 0 ? panelCap : undefined,
+          maxHeight: panelCap,
           marginTop: 56,
           borderRadius: 18,
           background: panelBg,
