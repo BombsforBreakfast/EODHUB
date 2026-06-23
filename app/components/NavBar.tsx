@@ -13,7 +13,6 @@ import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPending
 import { isVerifiedRabbitholeViewer } from "../lib/rabbitholeAccess";
 import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
-import AtlwHotlineModal from "./AtlwHotlineModal";
 import NotificationCenter from "./NotificationCenter";
 import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
@@ -69,7 +68,6 @@ export default function NavBar() {
   const [avatarPhotoUrl, setAvatarPhotoUrl] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showHub, setShowHub] = useState(false);
-  const [showAtlwHotline, setShowAtlwHotline] = useState(false);
   const hubBtnRef = useRef<HTMLButtonElement>(null);
   const hubPanelRef = useRef<HTMLDivElement>(null);
 
@@ -964,7 +962,6 @@ export default function NavBar() {
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),
                     { label: "Sidebars", href: "/sidebar", emoji: "💬", badge: 0, onNav: null },
-                    { label: "ATLW Hotline", emoji: "📞", badge: 0, href: "", atlwHotline: true },
                   ].map((item) => {
                     const comingSoonBadge = "comingSoon" in item && item.comingSoon ? (
                       <span
@@ -997,31 +994,6 @@ export default function NavBar() {
                       fontSize: 14,
                       background: t.bg,
                     };
-
-                    if ("atlwHotline" in item && item.atlwHotline) {
-                      return (
-                        <button
-                          key={item.label}
-                          type="button"
-                          className="nav-hub-atlw-tab"
-                          onClick={() => {
-                            setShowHub(false);
-                            setShowAtlwHotline(true);
-                          }}
-                          style={{
-                            ...rowStyle,
-                            border: "2px solid #991b1b",
-                            background: "#dc2626",
-                            color: "#ffffff",
-                            cursor: "pointer",
-                            boxSizing: "border-box",
-                          }}
-                        >
-                          <span style={{ fontSize: 20, lineHeight: 1 }} aria-hidden>{item.emoji}</span>
-                          <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
-                        </button>
-                      );
-                    }
 
                     if ("disabled" in item && item.disabled) {
                       return (
@@ -1062,8 +1034,6 @@ export default function NavBar() {
             document.body,
           )
         : null}
-
-      <AtlwHotlineModal open={showAtlwHotline} onClose={() => setShowAtlwHotline(false)} />
 
       <NotificationCenter
         open={showNotifPanel}

@@ -875,34 +875,6 @@ a.rabbithole-brand-link:focus-visible {
   min-width: 0;
 }
 
-.nav-hub-modal-grid .nav-hub-atlw-tab {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 11px 14px;
-  border: 2px solid #991b1b !important;
-  border-radius: 10px;
-  background: #dc2626 !important;
-  color: #ffffff !important;
-  font-weight: 700;
-  font-size: 14px;
-  line-height: 1.2;
-  cursor: pointer;
-  box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
-}
-
-.nav-hub-modal-grid .nav-hub-atlw-tab:hover {
-  background: #b91c1c !important;
-  border-color: #7f1d1d !important;
-}
-
-.nav-hub-modal-grid .nav-hub-atlw-tab:active {
-  transform: scale(0.99);
-}
-
 /* Desktop: spacer not needed (NavBar sets height 0); hide empty node */
 @media (min-width: 901px) {
   .nav-mobile-spacer {
