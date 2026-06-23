@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
@@ -49,7 +49,11 @@ export default function JobStaleReportControl({
   const [reportError, setReportError] = useState<string | null>(null);
   const [reported, setReported] = useState(false);
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
-  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [desktopPopoverStyle, setDesktopPopoverStyle] = useState<React.CSSProperties | null>(
+    null,
+  );
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const popoverPanelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -71,14 +75,76 @@ export default function JobStaleReportControl({
     setReported(false);
   }, [jobId]);
 
+  const POPOVER_WIDTH = 280;
+  const POPOVER_GAP = 8;
+
+  function updateDesktopPopoverPosition() {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+
+    const rect = trigger.getBoundingClientRect();
+    const viewportPadding = 12;
+    const maxWidth = Math.min(POPOVER_WIDTH, window.innerWidth - viewportPadding * 2);
+
+    let left = rect.right - maxWidth;
+    left = Math.max(viewportPadding, Math.min(left, window.innerWidth - maxWidth - viewportPadding));
+
+    const panel = popoverPanelRef.current;
+    const panelHeight = panel?.offsetHeight ?? 360;
+    const spaceAbove = rect.top - viewportPadding;
+    const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
+    const placeAbove = spaceAbove >= panelHeight + POPOVER_GAP || spaceAbove >= spaceBelow;
+
+    if (placeAbove) {
+      setDesktopPopoverStyle({
+        position: "fixed",
+        top: Math.max(viewportPadding, rect.top - POPOVER_GAP),
+        left,
+        width: maxWidth,
+        transform: "translateY(-100%)",
+        zIndex: 500,
+        visibility: "visible",
+      });
+    } else {
+      setDesktopPopoverStyle({
+        position: "fixed",
+        top: Math.min(window.innerHeight - viewportPadding, rect.bottom + POPOVER_GAP),
+        left,
+        width: maxWidth,
+        zIndex: 500,
+        visibility: "visible",
+      });
+    }
+  }
+
+  // Position the portaled desktop popover relative to the trigger (avoids card overflow clipping).
+  useLayoutEffect(() => {
+    if (variant !== "compact" || !open || isNarrowViewport) {
+      setDesktopPopoverStyle(null);
+      return;
+    }
+
+    const run = () => updateDesktopPopoverPosition();
+    run();
+    const raf = requestAnimationFrame(run);
+
+    window.addEventListener("resize", run);
+    window.addEventListener("scroll", run, true);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", run);
+      window.removeEventListener("scroll", run, true);
+    };
+  }, [variant, open, isNarrowViewport, reason, notes, reportError]);
+
   // Close compact popover on outside click (desktop popover only).
   useEffect(() => {
     if (variant !== "compact" || !open || isNarrowViewport) return;
     function onDocClick(e: MouseEvent) {
-      if (!popoverRef.current) return;
-      if (!popoverRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
+      const target = e.target as Node;
+      if (triggerRef.current?.contains(target)) return;
+      if (popoverPanelRef.current?.contains(target)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onDocClick);
     return () => document.removeEventListener("mousedown", onDocClick);
@@ -106,7 +172,11 @@ export default function JobStaleReportControl({
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setReportError(json.error ?? `Report failed (${res.status})`);
+        setReportError(
+          json.error === "Job not found."
+            ? "This listing has been removed."
+            : (json.error ?? `Report failed (${res.status})`),
+        );
         return;
       }
       setReported(true);
@@ -274,29 +344,40 @@ export default function JobStaleReportControl({
     boxShadow: "0 12px 32px rgba(0,0,0,0.18)",
   };
 
-  // Compact variant — text trigger; bottom sheet on mobile, anchored popover on desktop.
+  // Compact variant — text trigger; bottom sheet on mobile, portaled popover on desktop.
   return (
-    <div style={{ position: "relative", display: "inline-block" }} ref={popoverRef}>
-      <button type="button" onClick={() => setOpen((v) => !v)} style={triggerStyle}>
+    <div style={{ display: "inline-block" }}>
+      <button
+        ref={triggerRef}
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={triggerStyle}
+      >
         {triggerLabel}
       </button>
-      {open && !isNarrowViewport && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: "absolute",
-            bottom: "calc(100% + 6px)",
-            right: 0,
-            left: "auto",
-            zIndex: 50,
-            width: 280,
-            maxWidth: "calc(100vw - 24px)",
-            ...popoverPanelStyle,
-          }}
-        >
-          {form}
-        </div>
-      )}
+      {open &&
+        !isNarrowViewport &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={popoverPanelRef}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              ...popoverPanelStyle,
+              ...(desktopPopoverStyle ?? {
+                position: "fixed",
+                top: -9999,
+                left: -9999,
+                width: POPOVER_WIDTH,
+                zIndex: 500,
+                visibility: "hidden" as const,
+              }),
+            }}
+          >
+            {form}
+          </div>,
+          document.body,
+        )}
       {open &&
         isNarrowViewport &&
         typeof document !== "undefined" &&

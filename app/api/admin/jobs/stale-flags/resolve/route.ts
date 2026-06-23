@@ -13,12 +13,11 @@ const ALLOWED_ACTIONS: ResolveAction[] = ["delete_job", "dismiss"];
  *
  * Body: { jobId: string; action: 'delete_job' | 'dismiss'; notes?: string }
  *
- *  - delete_job: marks the job as rejected (matches the existing admin reject
- *    flow so the row disappears from the public feed without losing audit
- *    trail) and closes all flags for that job as 'job_deleted'.
+ *  - delete_job: permanently deletes the job row (and cascaded stale flags).
  *  - dismiss: closes all open flags for that job as 'dismissed' but leaves
  *    the listing live (e.g. admin clicked the link and it works).
  */
+import { deleteJobPermanently } from "@/app/lib/server/deleteJobPermanently";
 export async function POST(req: NextRequest) {
   const authHeader =
     req.headers.get("Authorization") ?? req.headers.get("authorization");
@@ -91,15 +90,22 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString();
 
   if (action === "delete_job") {
-    // Mark the job rejected — matches the admin Reject button so the listing
-    // disappears from the feed while preserving the row for analytics.
-    const { error: jobErr } = await adminClient
-      .from("jobs")
-      .update({ is_rejected: true, is_approved: false })
-      .eq("id", jobId);
-    if (jobErr) {
-      return NextResponse.json({ error: jobErr.message }, { status: 500 });
+    const { count: openFlagCount } = await adminClient
+      .from("job_stale_flags")
+      .select("id", { count: "exact", head: true })
+      .eq("job_id", jobId)
+      .eq("status", "open");
+
+    const result = await deleteJobPermanently(adminClient, jobId);
+    if (!result.ok) {
+      return NextResponse.json({ error: result.error }, { status: 500 });
     }
+
+    return NextResponse.json({
+      ok: true,
+      action,
+      resolvedCount: openFlagCount ?? 0,
+    });
   }
 
   const { data: updated, error: flagErr } = await adminClient

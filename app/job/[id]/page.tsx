@@ -70,6 +70,7 @@ export default function JobDetailPage() {
         )
         .eq("id", jobId)
         .eq("is_approved", true)
+        .neq("is_rejected", true)
         .single();
 
       if (jobError || !jobData || isJobListingExpired((jobData as Job).created_at)) {

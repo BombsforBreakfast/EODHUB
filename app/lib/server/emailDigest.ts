@@ -357,6 +357,7 @@ async function buildCommunitySections(
       .from("jobs")
       .select("id, title, company_name, location, created_at")
       .eq("is_approved", true)
+      .neq("is_rejected", true)
       .gte("created_at", windowStart)
       .lte("created_at", windowEnd)
       .order("created_at", { ascending: false })

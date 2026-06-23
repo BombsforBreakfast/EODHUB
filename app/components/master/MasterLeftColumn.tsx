@@ -573,13 +573,14 @@ export default function MasterLeftColumn({
     const listingCutoff = jobListingCutoffIso();
 
     const [jobsRes, lastSeenRes, totalRes, todayRes] = await Promise.all([
-      supabase.from("jobs").select("*").eq("is_approved", true).gte("created_at", listingCutoff).order("created_at", { ascending: false }).limit(limit),
+      supabase.from("jobs").select("*").eq("is_approved", true).neq("is_rejected", true).gte("created_at", listingCutoff).order("created_at", { ascending: false }).limit(limit),
       supabase.from("jobs").select("last_seen_at").eq("source_type", "usajobs").order("last_seen_at", { ascending: false }).limit(1).maybeSingle(),
-      supabase.from("jobs").select("*", { count: "exact", head: true }).eq("is_approved", true).gte("created_at", listingCutoff),
+      supabase.from("jobs").select("*", { count: "exact", head: true }).eq("is_approved", true).neq("is_rejected", true).gte("created_at", listingCutoff),
       supabase
         .from("jobs")
         .select("*", { count: "exact", head: true })
         .eq("is_approved", true)
+        .neq("is_rejected", true)
         .gte("created_at", listingCutoff)
         .gte("created_at", startOfDay.toISOString())
         .lt("created_at", startOfNextDay.toISOString()),

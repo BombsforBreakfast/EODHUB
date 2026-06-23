@@ -19,6 +19,7 @@ export async function fetchApprovedJobs<T>(
     .from("jobs")
     .select(JOBS_PAGE_COLUMNS)
     .eq("is_approved", true)
+    .neq("is_rejected", true)
     .gte("created_at", cutoff)
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -45,11 +46,13 @@ export async function fetchJobBoardStats(
       .from("jobs")
       .select("id", { count: "exact", head: true })
       .eq("is_approved", true)
+      .neq("is_rejected", true)
       .gte("created_at", cutoff),
     supabase
       .from("jobs")
       .select("id", { count: "exact", head: true })
       .eq("is_approved", true)
+      .neq("is_rejected", true)
       .gte("created_at", cutoff)
       .gte("created_at", startOfDay.toISOString())
       .lt("created_at", startOfNextDay.toISOString()),
