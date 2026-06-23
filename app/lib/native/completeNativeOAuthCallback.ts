@@ -116,9 +116,79 @@ async function waitForAuthCookies(maxWaitMs = 1500, intervalMs = 100): Promise<b
   return hasAuthCookie();
 }
 
-function redirectToLoginAuthError(provider?: string) {
+/** sourceRoute used for native OAuth failures so the admin tab can distinguish them from the web /auth/callback path. */
+const NATIVE_OAUTH_FAILURE_ROUTE = "native:/auth/callback";
+
+/**
+ * Persist a native OAuth failure to the admin Failed Auth tab.
+ *
+ * The native path runs entirely client-side and bounces to /login on failure,
+ * so without this report the failure is invisible server-side (only the device
+ * console shows the [oauth] lines). Fire-and-forget; never throws.
+ */
+function reportNativeOAuthFailure(errorCode: string, rawMessage?: string | null) {
+  try {
+    void fetch("/api/auth/report-failure", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        failureReason: "SERVER_ERROR",
+        errorCode,
+        rawErrorMessage: rawMessage ?? undefined,
+        sourceRoute: NATIVE_OAUTH_FAILURE_ROUTE,
+      }),
+    }).catch(() => {});
+  } catch {
+    /* reporting must never break the auth flow */
+  }
+}
+
+/**
+ * Poll the server until it confirms the auth-session cookie has committed.
+ *
+ * proxy.ts bounces protected navigations lacking a visible -auth-token cookie to
+ * /login. On iOS, WKWebView commits Set-Cookie asynchronously, so navigating
+ * immediately after exchange races the commit (the classic "worked on the third
+ * try"). Polling a cookie-authenticated endpoint proves the SERVER (and thus
+ * proxy.ts) sees the session before we navigate. Resolves once confirmed or when
+ * the budget is exhausted.
+ */
+async function confirmServerSession(
+  maxTries = 12,
+  intervalMs = 250,
+): Promise<{ ok: boolean; elapsedMs: number }> {
+  const start = Date.now();
+  for (let attempt = 0; attempt < maxTries; attempt += 1) {
+    try {
+      const res = await fetch("/api/auth/session-check", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { authenticated?: boolean };
+        if (data.authenticated) {
+          return { ok: true, elapsedMs: Date.now() - start };
+        }
+      }
+    } catch {
+      /* network hiccup mid-commit — keep polling within budget */
+    }
+    await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+  }
+  return { ok: false, elapsedMs: Date.now() - start };
+}
+
+function redirectToLoginAuthError(
+  errorCode: string,
+  opts?: { provider?: string; rawMessage?: string | null },
+) {
   clearNativeOAuthInProgress();
-  const query = provider ? `?error=auth&provider=${encodeURIComponent(provider)}` : "?error=auth";
+  reportNativeOAuthFailure(errorCode, opts?.rawMessage ?? null);
+  const query = opts?.provider
+    ? `?error=auth&provider=${encodeURIComponent(opts.provider)}`
+    : "?error=auth";
   window.location.assign(`/login${query}`);
 }
 
@@ -164,8 +234,25 @@ async function finishNativeOAuth(next: string): Promise<void> {
   // Keep login-page auto-redirect and blank-WebView recovery from racing this navigation.
   markNativeOAuthCompleting();
   clearNativeOAuthInProgress();
+  // resolveNativeOAuthDestination POSTs to oauth-native-complete, which returns
+  // the auth cookies as Set-Cookie. Then wait until the server actually sees the
+  // committed cookie before navigating, so proxy.ts won't bounce us to /login.
   const destination = await resolveNativeOAuthDestination(next);
-  oauthDebugLog("native_oauth_navigate", { destination });
+  const confirmed = await confirmServerSession();
+  oauthDebugLog("native_oauth_navigate", {
+    destination,
+    sessionConfirmed: confirmed.ok,
+    confirmMs: confirmed.elapsedMs,
+  });
+  if (!confirmed.ok) {
+    // Cookie never confirmed within budget — navigate anyway (the login page can
+    // still recover from a client session), but record it so we can see how often
+    // the commit is slow on real devices.
+    reportNativeOAuthFailure(
+      "native_cookie_commit_timeout",
+      `session-check unconfirmed after ${confirmed.elapsedMs}ms`,
+    );
+  }
   window.location.assign(destination);
 }
 
@@ -209,7 +296,10 @@ export async function completeNativeOAuthFromDeepLink(
       error: params.error,
       errorDescription: params.errorDescription,
     });
-    redirectToLoginAuthError("apple");
+    redirectToLoginAuthError("native_provider_error", {
+      provider: "apple",
+      rawMessage: params.errorDescription ?? params.error,
+    });
     return true;
   }
 
@@ -234,7 +324,7 @@ export async function completeNativeOAuthFromDeepLink(
         clearNativeOAuthCompleting();
         oauthDebugLog("already_handled_noop", { suppressedNavigation: true });
       } else {
-        redirectToLoginAuthError();
+        redirectToLoginAuthError("native_handled_code_no_session");
       }
       return true;
     }
@@ -259,7 +349,24 @@ export async function completeNativeOAuthFromDeepLink(
     }
 
     oauthDebugLog("client_exchange_failed", { error: error?.message ?? null });
-    redirectToLoginAuthError();
+
+    // The exchange can fail transiently (e.g. the code was already consumed by a
+    // racing listener, or a brief lock contention). Before bouncing to /login,
+    // check whether a valid session already exists — if so, proceed rather than
+    // forcing the user to retry.
+    const { data: existing } = await supabase.auth.getSession();
+    if (existing.session?.user) {
+      oauthDebugLog("exchange_failed_but_session_exists", {});
+      markCodeHandled(params.code);
+      clearLoginRedirectAttempts();
+      await syncSessionCookies(existing.session);
+      await finishNativeOAuth(params.next);
+      return true;
+    }
+
+    redirectToLoginAuthError("native_apple_exchange_failed", {
+      rawMessage: error?.message ?? "exchange returned no session",
+    });
     return true;
   }
 
@@ -290,18 +397,20 @@ export async function completeNativeOAuthFromDeepLink(
         }
         await finishNativeOAuth(params.next);
       } else {
-        redirectToLoginAuthError();
+        redirectToLoginAuthError("native_hash_setsession_failed", {
+          rawMessage: error?.message ?? "setSession returned no session",
+        });
       }
       return true;
     }
 
     oauthDebugLog("hash_fallback_missing_tokens", {});
-    redirectToLoginAuthError();
+    redirectToLoginAuthError("native_hash_missing_tokens");
     return true;
   }
 
   oauthDebugLog("callback_missing_code", {});
-  redirectToLoginAuthError();
+  redirectToLoginAuthError("native_callback_missing_code");
   return true;
 }
 

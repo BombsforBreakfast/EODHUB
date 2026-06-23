@@ -59,6 +59,14 @@ import ProudPartnersSection from "../components/login/ProudPartnersSection";
  */
 const LOGIN_REDIRECT_LOOP_THRESHOLD = 3;
 
+/**
+ * Minimum signup password length. Mirrors PASSWORD_MIN in
+ * app/api/auth/signup/route.ts — kept in sync so the client can surface the
+ * requirement and pre-empt the server's deliberately-generic rejection (which
+ * otherwise leaves users retrying a too-short password without knowing why).
+ */
+const SIGNUP_PASSWORD_MIN = 8;
+
 function devClientAuthLog(tag: string, data: Record<string, unknown>) {
   if (process.env.NODE_ENV === "development") {
     console.debug(`[auth:${tag}]`, data);
@@ -132,7 +140,6 @@ export default function LoginPage() {
   const [emailNotFoundGuidance, setEmailNotFoundGuidance] = useState(false);
   const [highlightSignupCta, setHighlightSignupCta] = useState(false);
   const [signupCtaReducedMotion, setSignupCtaReducedMotion] = useState(false);
-  const [appleHelperOpen, setAppleHelperOpen] = useState(false);
   const [appleHideEmailInfoOpen, setAppleHideEmailInfoOpen] = useState(false);
   const [businessOrgPromptOpen, setBusinessOrgPromptOpen] = useState(false);
   const [businessOrgEmailGateOpen, setBusinessOrgEmailGateOpen] = useState(false);
@@ -467,21 +474,6 @@ export default function LoginPage() {
     return signInWithOAuth("apple");
   }
 
-  /**
-   * Apple Auth helper: rather than firing OAuth immediately, surface a short
-   * explainer so users with an existing EOD-HUB account on a different email
-   * don't accidentally create a duplicate via Apple Private Relay.
-   */
-  function openAppleAuthHelper() {
-    setAppleHideEmailInfoOpen(false);
-    setAppleHelperOpen(true);
-  }
-
-  function confirmAppleAuthFromHelper() {
-    setAppleHelperOpen(false);
-    void signInWithAppleOAuth();
-  }
-
   async function shouldGuideToSignupAfterLoginFailure(
     rawMessage: string,
     authErrorCode: string | null,
@@ -588,6 +580,17 @@ export default function LoginPage() {
     setSignupAwaitingEmail(false);
     setOauthExistsProviders(null);
     setOauthSetupSent(false);
+
+    if (password.length < SIGNUP_PASSWORD_MIN) {
+      setSignupError(`Your password must be at least ${SIGNUP_PASSWORD_MIN} characters.`);
+      reportAuthFailure({
+        email,
+        failureReason: "CLIENT_VALIDATION_FAILED",
+        errorCode: "client_password_too_short",
+        sourceRoute: "/login",
+      });
+      return;
+    }
 
     if (password !== confirmPassword) {
       setSignupError("Passwords do not match.");
@@ -994,9 +997,16 @@ export default function LoginPage() {
                 disabled={submitting}
                 buttonSecondary={buttonSecondary}
                 onGoogle={() => signInWithGoogleOAuth()}
-                onApple={() => openAppleAuthHelper()}
+                onApple={() => signInWithAppleOAuth()}
                 googleLabel="Sign in with Google"
                 appleLabel="Sign in with Apple"
+              />
+              <AppleAuthHelperNote
+                open={appleHideEmailInfoOpen}
+                onToggle={() => setAppleHideEmailInfoOpen((prev) => !prev)}
+                textColor={t.text}
+                mutedColor={t.textMuted}
+                borderColor={t.border}
               />
               <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "4px 0" }}>
                 <div style={{ flex: 1, height: 1, background: t.border }} />
@@ -1043,6 +1053,21 @@ export default function LoginPage() {
               borderColor={confirmPassword && confirmPassword !== password ? "#ef4444" : undefined}
               autoComplete="new-password"
             />
+          )}
+
+          {mode === "signup" && (
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: 1.4,
+                marginTop: -4,
+                color: password && password.length < SIGNUP_PASSWORD_MIN ? "#b91c1c" : t.textMuted,
+              }}
+            >
+              {password && password.length < SIGNUP_PASSWORD_MIN
+                ? `Password is too short — use at least ${SIGNUP_PASSWORD_MIN} characters.`
+                : `Use at least ${SIGNUP_PASSWORD_MIN} characters.`}
+            </div>
           )}
 
           {mode === "login" && (
@@ -1240,9 +1265,16 @@ export default function LoginPage() {
                 disabled={submitting}
                 buttonSecondary={buttonSecondary}
                 onGoogle={() => signInWithGoogleOAuth()}
-                onApple={() => openAppleAuthHelper()}
+                onApple={() => signInWithAppleOAuth()}
                 googleLabel="Sign up with Google"
                 appleLabel="Sign up with Apple"
+              />
+              <AppleAuthHelperNote
+                open={appleHideEmailInfoOpen}
+                onToggle={() => setAppleHideEmailInfoOpen((prev) => !prev)}
+                textColor={t.text}
+                mutedColor={t.textMuted}
+                borderColor={t.border}
               />
               <button type="button" onClick={() => { clearEmailNotFoundGuidance(); setMode("login"); }} disabled={submitting} style={buttonSecondary}>
                 Back to Login
@@ -1252,163 +1284,6 @@ export default function LoginPage() {
 
         </form>
         </>
-      )}
-
-      {appleHelperOpen && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="apple-auth-helper-title"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 80,
-            display: "grid",
-            placeItems: "center",
-            padding: 18,
-            background: "rgba(15, 23, 42, 0.55)",
-          }}
-          onClick={() => setAppleHelperOpen(false)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "min(100%, 460px)",
-              borderRadius: 18,
-              border: `1px solid ${t.border}`,
-              background: t.surface,
-              color: t.text,
-              padding: 22,
-              boxShadow: "0 24px 70px rgba(0,0,0,.24)",
-            }}
-          >
-            <h2 id="apple-auth-helper-title" style={{ margin: 0, fontSize: 22, fontWeight: 900 }}>
-              Continue with Apple
-            </h2>
-            <div style={{ display: "grid", gap: 14, marginTop: 14 }}>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>New to EOD-HUB?</div>
-                <p style={{ margin: "4px 0 0", color: t.textMuted, lineHeight: 1.55, fontSize: 14 }}>
-                  Continue with Apple and we&apos;ll walk you through account setup.
-                </p>
-              </div>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 14, color: t.text }}>Already have an account?</div>
-                <p style={{ margin: "4px 0 0", color: t.textMuted, lineHeight: 1.55, fontSize: 14 }}>
-                  If your EOD-HUB account uses the same email as your Apple ID, you can continue.
-                </p>
-                <p style={{ margin: "8px 0 0", color: t.textMuted, lineHeight: 1.55, fontSize: 14 }}>
-                  If your EOD-HUB account uses a different email, log in with your existing account
-                  method first. Then go to <strong>Settings → Sign-In Methods → Apple Auth</strong> to
-                  link Apple to your account for future sign-ins.
-                </p>
-              </div>
-            </div>
-
-            {/* Secondary, collapsed-by-default disclosure: educate without adding friction */}
-            <div
-              style={{
-                marginTop: 14,
-                borderTop: `1px solid ${t.border}`,
-                paddingTop: 12,
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setAppleHideEmailInfoOpen((prev) => !prev)}
-                aria-expanded={appleHideEmailInfoOpen}
-                aria-controls="apple-hide-email-info"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  width: "100%",
-                  background: "none",
-                  border: "none",
-                  padding: "4px 0",
-                  cursor: "pointer",
-                  color: t.textMuted,
-                  fontSize: 13,
-                  fontWeight: 700,
-                  textAlign: "left",
-                }}
-              >
-                <span aria-hidden style={{ fontSize: 14, lineHeight: 1 }}>ℹ️</span>
-                <span style={{ flex: 1 }}>About Apple&apos;s Hide My Email option</span>
-                <ChevronDown
-                  size={16}
-                  strokeWidth={2.5}
-                  aria-hidden
-                  style={{
-                    flexShrink: 0,
-                    transition: "transform 0.2s ease",
-                    transform: appleHideEmailInfoOpen ? "rotate(180deg)" : "rotate(0deg)",
-                  }}
-                />
-              </button>
-              {appleHideEmailInfoOpen && (
-                <div
-                  id="apple-hide-email-info"
-                  role="region"
-                  aria-label="About Apple's Hide My Email option"
-                  style={{
-                    marginTop: 10,
-                    display: "grid",
-                    gap: 10,
-                    fontSize: 13,
-                    lineHeight: 1.55,
-                    color: t.textMuted,
-                  }}
-                >
-                  <p style={{ margin: 0 }}>
-                    Apple gives you the option to share your email address or use a private relay
-                    email when signing in.
-                  </p>
-                  <p style={{ margin: 0 }}>
-                    If you already have an EOD-HUB account and choose &quot;Hide My Email&quot; before
-                    linking Apple Auth under <strong>Settings → Sign-In Methods → Apple Auth</strong>,
-                    Apple may provide a different email address than the one associated with your
-                    existing account. This could result in an unintended duplicate account.
-                  </p>
-                  <p style={{ margin: 0 }}>
-                    If you already use EOD-HUB, we recommend logging in with your current method first
-                    and linking Apple Auth from Settings before using Apple sign-in.
-                  </p>
-                  <p style={{ margin: 0 }}>
-                    For new users creating an account for the first time, either option will work
-                    normally.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div style={{ display: "grid", gap: 10, marginTop: 18 }}>
-              <button
-                type="button"
-                style={{ ...buttonPrimary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
-                onClick={() => confirmAppleAuthFromHelper()}
-              >
-                <AppleIcon />
-                I&apos;m new — Continue with Apple
-              </button>
-              <button
-                type="button"
-                style={{ ...buttonSecondary, display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}
-                onClick={() => confirmAppleAuthFromHelper()}
-              >
-                <AppleIcon />
-                I already use this Apple email — Continue
-              </button>
-              <button
-                type="button"
-                style={buttonSecondary}
-                onClick={() => setAppleHelperOpen(false)}
-              >
-                Use another sign-in method
-              </button>
-            </div>
-          </div>
-        </div>
       )}
 
       <ProudPartnersSection />
@@ -1650,6 +1525,95 @@ function OAuthProviderButtons({
         <AppleIcon />
         {appleLabel}
       </button>
+    </div>
+  );
+}
+
+/**
+ * Non-blocking Apple sign-in guidance shown directly beneath the OAuth buttons.
+ *
+ * Replaces the old two-button helper modal: a single "Sign in with Apple" button
+ * fires OAuth immediately (the server decides new vs. existing), while this note
+ * warns the small set of users at duplicate-account risk — those who already have
+ * an account on a different email, or who pick Apple's Hide My Email.
+ */
+function AppleAuthHelperNote({
+  open,
+  onToggle,
+  textColor,
+  mutedColor,
+  borderColor,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  textColor: string;
+  mutedColor: string;
+  borderColor: string;
+}) {
+  return (
+    <div style={{ marginTop: 2 }}>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls="apple-hide-email-info"
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          width: "100%",
+          background: "none",
+          border: "none",
+          padding: "4px 0",
+          cursor: "pointer",
+          color: mutedColor,
+          fontSize: 12,
+          fontWeight: 700,
+          textAlign: "left",
+        }}
+      >
+        <span aria-hidden style={{ fontSize: 13, lineHeight: 1 }}>ℹ️</span>
+        <span style={{ flex: 1 }}>Already have an account, or using Hide My Email?</span>
+        <ChevronDown
+          size={15}
+          strokeWidth={2.5}
+          aria-hidden
+          style={{
+            flexShrink: 0,
+            transition: "transform 0.2s ease",
+            transform: open ? "rotate(180deg)" : "rotate(0deg)",
+          }}
+        />
+      </button>
+      {open && (
+        <div
+          id="apple-hide-email-info"
+          role="region"
+          aria-label="About Apple sign-in and existing accounts"
+          style={{
+            marginTop: 8,
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: `1px solid ${borderColor}`,
+            display: "grid",
+            gap: 8,
+            fontSize: 12.5,
+            lineHeight: 1.5,
+            color: mutedColor,
+          }}
+        >
+          <p style={{ margin: 0 }}>
+            New here? Just continue with Apple — we&apos;ll walk you through setup.
+          </p>
+          <p style={{ margin: 0 }}>
+            Already have an EOD-HUB account on a <strong style={{ color: textColor }}>different email</strong>, or
+            planning to use Apple&apos;s <strong style={{ color: textColor }}>Hide My Email</strong>? Sign in with
+            your existing method first, then link Apple under{" "}
+            <strong style={{ color: textColor }}>Settings → Sign-In Methods → Apple Auth</strong>. Otherwise Apple
+            may hand us a different address and create a duplicate account.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
