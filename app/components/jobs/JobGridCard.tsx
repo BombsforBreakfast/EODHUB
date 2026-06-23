@@ -5,6 +5,7 @@ import { useTheme } from "../../lib/ThemeContext";
 import type { JobListItem } from "../../lib/jobFilters";
 import JobCardActions from "./JobCardActions";
 import JobImage, { JobCardClickableText } from "./JobImage";
+import JobAdminDeleteButton from "./JobAdminDeleteButton";
 import JobStaleReportControl from "./JobStaleReportControl";
 import type { JobModalData } from "./JobDetailsModal";
 
@@ -18,6 +19,8 @@ type Props = {
   canShare?: boolean;
   isSharing?: boolean;
   onShare?: (job: JobModalData) => void;
+  canAdminDelete?: boolean;
+  onJobDeleted?: (jobId: string) => void;
   formatPay: (min: number | null, max: number | null) => string;
   formatSource: (sourceType: string | null) => string;
 };
@@ -32,6 +35,8 @@ export default function JobGridCard({
   canShare = false,
   isSharing = false,
   onShare,
+  canAdminDelete = false,
+  onJobDeleted,
   formatPay,
   formatSource,
 }: Props) {
@@ -109,7 +114,16 @@ export default function JobGridCard({
           }}
         >
           <span>Via {formatSource(job.source_type)}</span>
-          <JobStaleReportControl jobId={job.id} variant="compact" triggerLabel="Report" />
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            {canAdminDelete && (
+              <JobAdminDeleteButton
+                jobId={job.id}
+                size="compact"
+                onDeleted={() => onJobDeleted?.(job.id)}
+              />
+            )}
+            <JobStaleReportControl jobId={job.id} variant="compact" triggerLabel="Report" />
+          </div>
         </div>
       </div>
     </div>

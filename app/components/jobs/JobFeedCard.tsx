@@ -5,6 +5,7 @@ import { useTheme } from "../../lib/ThemeContext";
 import { httpsAssetUrl, type JobRow } from "../master/masterShared";
 import JobCardActions from "./JobCardActions";
 import JobImage, { JobCardClickableText } from "./JobImage";
+import JobAdminDeleteButton from "./JobAdminDeleteButton";
 import JobStaleReportControl from "./JobStaleReportControl";
 import type { JobModalData } from "./JobDetailsModal";
 
@@ -16,6 +17,8 @@ type Props = {
   isTogglingSave: boolean;
   onToggleSave: (job: JobModalData) => void | Promise<void>;
   posterName?: string | null;
+  canAdminDelete?: boolean;
+  onJobDeleted?: (jobId: string) => void;
 };
 
 export default function JobFeedCard({
@@ -26,6 +29,8 @@ export default function JobFeedCard({
   isTogglingSave,
   onToggleSave,
   posterName,
+  canAdminDelete = false,
+  onJobDeleted,
 }: Props) {
   const { t } = useTheme();
   const modalJob = job as JobModalData;
@@ -109,8 +114,18 @@ export default function JobFeedCard({
             borderTop: `1px dashed ${t.border}`,
             display: "flex",
             justifyContent: "flex-end",
+            alignItems: "center",
+            gap: 8,
+            flexWrap: "wrap",
           }}
         >
+          {canAdminDelete && (
+            <JobAdminDeleteButton
+              jobId={job.id}
+              size="compact"
+              onDeleted={() => onJobDeleted?.(job.id)}
+            />
+          )}
           <JobStaleReportControl jobId={job.id} variant="compact" triggerLabel="Report" />
         </div>
       </div>

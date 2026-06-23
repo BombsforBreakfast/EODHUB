@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useTheme } from "../../lib/ThemeContext";
 import JobImage from "./JobImage";
+import JobAdminDeleteButton from "./JobAdminDeleteButton";
 import JobStaleReportControl from "./JobStaleReportControl";
 
 export type JobModalData = {
@@ -37,6 +38,8 @@ type Props = {
   canShare?: boolean;
   isSharing?: boolean;
   onShare?: (job: JobModalData) => void;
+  canAdminDelete?: boolean;
+  onJobDeleted?: (jobId: string) => void;
 };
 
 function formatExternalUrl(url: string | null | undefined): string | null {
@@ -56,6 +59,8 @@ export default function JobDetailsModal({
   canShare = false,
   isSharing = false,
   onShare,
+  canAdminDelete = false,
+  onJobDeleted,
 }: Props) {
   const { t } = useTheme();
 
@@ -250,6 +255,12 @@ export default function JobDetailsModal({
             <span style={{ fontSize: 13, color: t.textFaint }}>No external link for this listing.</span>
           )}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+            {canAdminDelete && (
+              <JobAdminDeleteButton
+                jobId={job.id}
+                onDeleted={() => onJobDeleted?.(job.id)}
+              />
+            )}
             <button
               type="button"
               onClick={() => onShare?.(job)}
