@@ -119,7 +119,7 @@ export default function NotificationCenter({
         style={{
           width: "100%",
           maxWidth: 440,
-          height: groupedItems.length > 0 ? panelCap : undefined,
+          height: panelCap,
           maxHeight: panelCap,
           marginTop: 56,
           borderRadius: 18,
@@ -194,7 +194,7 @@ export default function NotificationCenter({
         <div
           className="notification-center-list"
           style={{
-            overflowY: "auto",
+            overflowY: groupedItems.length > 0 ? "auto" : "hidden",
             overflowX: "hidden",
             padding: 10,
             flex: "1 1 0",
@@ -207,7 +207,18 @@ export default function NotificationCenter({
           }}
         >
           {groupedItems.length === 0 ? (
-            <div style={{ padding: "32px 16px", textAlign: "center", color: t.textMuted, fontSize: 14 }}>
+            <div
+              style={{
+                flex: 1,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: "32px 16px",
+                textAlign: "center",
+                color: t.textMuted,
+                fontSize: 14,
+              }}
+            >
               You&apos;re all caught up.
             </div>
           ) : (
