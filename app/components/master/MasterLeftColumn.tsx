@@ -155,6 +155,7 @@ export default function MasterLeftColumn({
   const [jobsNewTodayCount, setJobsNewTodayCount] = useState<number | null>(null);
   const [jobSort] = useState<"recent" | "az" | "za">("recent");
   const [canViewFullJobs, setCanViewFullJobs] = useState(true);
+  const [userIsAdmin, setUserIsAdmin] = useState(false);
   const [showJobsUpgradePrompt, setShowJobsUpgradePrompt] = useState(false);
   const [togglingJobSaveFor, setTogglingJobSaveFor] = useState<string | null>(null);
   const [jobDetailsModal, setJobDetailsModal] = useState<JobModalData | null>(null);
@@ -637,6 +638,7 @@ export default function MasterLeftColumn({
         isAdmin: profileCheck?.is_admin,
       });
       setCanViewFullJobs(featureAccess.canViewFullJobs);
+      setUserIsAdmin(Boolean(profileCheck?.is_admin));
       await Promise.all([
         loadJobs(featureAccess.canViewFullJobs ? 500 : 5),
         loadDesktopSavedEvents(uid),
@@ -776,6 +778,11 @@ export default function MasterLeftColumn({
       return;
     }
     setShowJobsUpgradePrompt(true);
+  }
+
+  function handleJobDeleted(jobId: string) {
+    setJobs((prev) => prev.filter((j) => j.id !== jobId));
+    if (jobDetailsModal?.id === jobId) setJobDetailsModal(null);
   }
 
   async function toggleSaveJob(jobId: string) {
@@ -1552,6 +1559,8 @@ export default function MasterLeftColumn({
                 isTogglingSave={togglingJobSaveFor === job.id}
                 onToggleSave={(j) => toggleSaveJob(j.id)}
                 posterName={jobSubmitters.get(job.user_id ?? "") ?? null}
+                canAdminDelete={userIsAdmin}
+                onJobDeleted={handleJobDeleted}
               />
             ))}
         </div>
@@ -1585,6 +1594,8 @@ export default function MasterLeftColumn({
         canSave={!!userId}
         isTogglingSave={jobDetailsModal ? togglingJobSaveFor === jobDetailsModal.id : false}
         onToggleSave={(j) => toggleSaveJob(j.id)}
+        canAdminDelete={userIsAdmin}
+        onJobDeleted={handleJobDeleted}
       />
 
       {eventInviteTarget && typeof document !== "undefined" && createPortal(

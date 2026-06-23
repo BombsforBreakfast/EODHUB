@@ -122,6 +122,7 @@ export default function JobsPage() {
   const [canUseJobFilters, setCanUseJobFilters] = useState(true);
   const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [togglingJobId, setTogglingJobId] = useState<string | null>(null);
   const [sharingJobId, setSharingJobId] = useState<string | null>(null);
   const [shareComposerJob, setShareComposerJob] = useState<JobModalData | null>(null);
@@ -221,6 +222,19 @@ export default function JobsPage() {
     }
   }, [sharingJobId, userId]);
 
+  const handleJobDeleted = useCallback(
+    (jobId: string) => {
+      queryClient.setQueryData<JobListItem[]>(
+        queryKeys.jobsList(500, listingCutoff),
+        (old) => old?.filter((j) => j.id !== jobId) ?? [],
+      );
+      if (detailsJob?.id === jobId) setDetailsJob(null);
+      setJobNotice("Job deleted.");
+      window.setTimeout(() => setJobNotice(null), 4500);
+    },
+    [queryClient, listingCutoff, detailsJob],
+  );
+
   useEffect(() => {
     let mounted = true;
 
@@ -258,6 +272,7 @@ export default function JobsPage() {
       }
       if (!mounted) return;
       setUserId(uid);
+      setIsAdmin(Boolean(p.is_admin));
       setCanViewFullJobs(true);
       setCanUseJobFilters(true);
     }
@@ -557,6 +572,8 @@ export default function JobsPage() {
                 canShare={!!userId}
                 isSharing={sharingJobId === job.id}
                 onShare={openShareComposer}
+                canAdminDelete={isAdmin}
+                onJobDeleted={handleJobDeleted}
                 formatPay={formatPay}
                 formatSource={formatSource}
               />
@@ -577,6 +594,8 @@ export default function JobsPage() {
         canShare={!!userId}
         isSharing={detailsJob ? sharingJobId === detailsJob.id : false}
         onShare={openShareComposer}
+        canAdminDelete={isAdmin}
+        onJobDeleted={handleJobDeleted}
       />
     </div>
   );
