@@ -36,8 +36,6 @@ function isPublicPath(pathname: string) {
 
     "/auth/callback",
 
-    "/auth/oauth-complete",
-
     "/auth/app-callback",
 
     "/business-org",

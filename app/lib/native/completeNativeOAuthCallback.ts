@@ -1,3 +1,4 @@
+import type { Session } from "@supabase/supabase-js";
 import {
   clearLoginRedirectAttempts,
   clearNativeOAuthInProgress,
@@ -5,12 +6,11 @@ import {
   markAppSessionActive,
 } from "../auth/sessionState";
 import { oauthDebugLog } from "../auth/oauthDebugLog";
-import { supabase } from "../lib/supabaseClient";
+import { getAccessToken, supabase } from "../lib/supabaseClient";
 import {
   isNativeAuthCallbackPath,
   NATIVE_APP_ORIGIN,
   resolveNativeAppUrlOpenTarget,
-  toAbsoluteNativeAppUrl,
   toNativeAuthCallbackPath,
 } from "./nativeOAuthRedirect";
 
@@ -58,9 +58,44 @@ function redirectToLoginAuthError(provider?: string) {
   window.location.assign(`/login${query}`);
 }
 
-function buildOAuthCompleteUrl(next: string): string {
-  const params = new URLSearchParams({ next });
-  return `${NATIVE_APP_ORIGIN}/auth/oauth-complete?${params.toString()}`;
+/** Force @supabase/ssr to write auth cookies before navigating to a protected route. */
+async function syncSessionCookies(session: Session): Promise<boolean> {
+  const { data, error } = await supabase.auth.setSession({
+    access_token: session.access_token,
+    refresh_token: session.refresh_token,
+  });
+  return !error && !!data.session?.user;
+}
+
+async function resolveNativeOAuthDestination(next: string): Promise<string> {
+  const accessToken = await getAccessToken({ force: true });
+  if (!accessToken) return next;
+
+  try {
+    const res = await fetch("/api/auth/oauth-native-complete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ next }),
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { destination?: string };
+      if (typeof data.destination === "string") return data.destination;
+    }
+  } catch {
+    oauthDebugLog("native_oauth_destination_api_failed", { next });
+  }
+
+  return next;
+}
+
+async function finishNativeOAuth(next: string): Promise<void> {
+  clearNativeOAuthInProgress();
+  const destination = await resolveNativeOAuthDestination(next);
+  oauthDebugLog("native_oauth_navigate", { destination });
+  window.location.assign(destination);
 }
 
 /**
@@ -114,8 +149,15 @@ export async function completeNativeOAuthFromDeepLink(
   if (params.code) {
     if (wasCodeHandled(params.code)) {
       oauthDebugLog("code_already_handled", { code: params.code });
-      const completeUrl = buildOAuthCompleteUrl(params.next);
-      window.location.assign(completeUrl);
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session?.user) {
+        await syncSessionCookies(session);
+        await finishNativeOAuth(params.next);
+      } else {
+        redirectToLoginAuthError();
+      }
       return true;
     }
 
@@ -128,18 +170,13 @@ export async function completeNativeOAuthFromDeepLink(
 
     if (!error && data.session?.user) {
       markCodeHandled(params.code);
-      clearNativeOAuthInProgress();
-      window.location.assign(buildOAuthCompleteUrl(params.next));
+      await syncSessionCookies(data.session);
+      await finishNativeOAuth(params.next);
       return true;
     }
 
-    oauthDebugLog("client_exchange_fallback_server", {
-      error: error?.message ?? null,
-    });
-
-    markCodeHandled(params.code);
-    const serverCallbackUrl = toAbsoluteNativeAppUrl(`${callbackPath}${hash}`);
-    window.location.assign(serverCallbackUrl);
+    oauthDebugLog("client_exchange_failed", { error: error?.message ?? null });
+    redirectToLoginAuthError();
     return true;
   }
 
@@ -161,10 +198,9 @@ export async function completeNativeOAuthFromDeepLink(
         error: error?.message ?? null,
       });
 
-      clearNativeOAuthInProgress();
-
       if (data.session?.user) {
-        window.location.assign(buildOAuthCompleteUrl(params.next));
+        await syncSessionCookies(data.session);
+        await finishNativeOAuth(params.next);
       } else {
         redirectToLoginAuthError();
       }

@@ -294,13 +294,11 @@ export default function LoginPage() {
     let cancelled = false;
     void (async () => {
       if (params.get("error") === "auth") {
-        const { data: errorSession } = await supabase.auth.getSession();
-        if (errorSession.session?.user) {
-          oauthDebugLog("login_error_auth_but_session_exists", {
-            userId: errorSession.session.user.id,
-          });
+        const user = await loadRedirectableSessionUser();
+        if (user) {
+          oauthDebugLog("login_error_auth_but_session_exists", { userId: user.id });
           markAppSessionActive(rememberMe);
-          await redirectForSessionUser(errorSession.session.user);
+          await redirectForSessionUser(user);
           return;
         }
         clearLoginRedirectAttempts();
