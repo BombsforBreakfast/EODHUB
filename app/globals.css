@@ -434,6 +434,35 @@ a.rabbithole-brand-link:focus-visible {
 .sidebar-composer-actions {
   display: contents;
 }
+.sidebar-composer-row--desktop {
+  align-items: flex-end;
+}
+.sidebar-composer-row--desktop .sidebar-composer-input-stack {
+  display: flex;
+  flex: 1 1 0%;
+  min-width: 0;
+}
+.sidebar-composer-row--desktop .sidebar-composer-input-stack > .sidebar-composer-textarea {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+}
+.sidebar-composer-row--desktop .sidebar-composer-actions {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.sidebar-composer-row--desktop .sidebar-composer-actions > button,
+.sidebar-composer-row--desktop .sidebar-composer-actions > div {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .sidebar-send-btn {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
@@ -444,6 +473,24 @@ a.rabbithole-brand-link:focus-visible {
 .sidebar-send-btn:not(:disabled):active {
   transform: translateY(0);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* Notification center — scroll long lists inside the modal cap */
+.notification-center-list {
+  scrollbar-gutter: stable;
+}
+.notification-center-list::-webkit-scrollbar {
+  width: 8px;
+}
+.notification-center-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.notification-center-list::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.45);
+  border-radius: 4px;
+}
+.notification-center-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.65);
 }
 
 /* Three-column shells: hide side rails on narrow viewports before JS viewport detection runs. */
@@ -821,7 +868,7 @@ a.rabbithole-brand-link:focus-visible {
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: flex-start;
+    justify-content: flex-end;
     gap: 6px;
     width: 100%;
     flex-shrink: 0;
@@ -834,7 +881,7 @@ a.rabbithole-brand-link:focus-visible {
     justify-content: center;
   }
   .sidebar-composer-actions .sidebar-send-btn {
-    margin-left: auto;
+    margin-left: 0;
   }
   .sidebar-delete-confirm {
     flex-wrap: wrap;

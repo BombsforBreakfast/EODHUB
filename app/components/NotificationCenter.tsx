@@ -190,13 +190,18 @@ export default function NotificationCenter({
         </div>
 
         <div
+          className="notification-center-list"
           style={{
             overflowY: "auto",
+            overflowX: "hidden",
             padding: 10,
-            flex: 1,
+            flex: "1 1 0",
+            minHeight: 0,
             display: "flex",
             flexDirection: "column",
             gap: 8,
+            WebkitOverflowScrolling: "touch",
+            overscrollBehavior: "contain",
           }}
         >
           {groupedItems.length === 0 ? (
