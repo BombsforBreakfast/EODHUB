@@ -8,7 +8,7 @@ import {
   markNativeOAuthCompleting,
 } from "../auth/sessionState";
 import { oauthDebugLog } from "../auth/oauthDebugLog";
-import { getAccessToken, supabase } from "../lib/supabaseClient";
+import { supabase } from "../lib/supabaseClient";
 import {
   isNativeAuthCallbackPath,
   NATIVE_APP_ORIGIN,
@@ -132,7 +132,12 @@ async function syncSessionCookies(session: Session): Promise<boolean> {
 }
 
 async function resolveNativeOAuthDestination(next: string): Promise<string> {
-  const accessToken = await getAccessToken({ force: true });
+  // Send both tokens so the route can write the auth cookies via Set-Cookie.
+  // Client-side cookies (document.cookie) don't reliably reach WKWebView's HTTP
+  // cookie store before the next navigation, which bounces fresh logins to /login.
+  const { data: { session } } = await supabase.auth.getSession();
+  const accessToken = session?.access_token;
+  const refreshToken = session?.refresh_token ?? null;
   if (!accessToken) return next;
 
   try {
@@ -142,7 +147,7 @@ async function resolveNativeOAuthDestination(next: string): Promise<string> {
         "Content-Type": "application/json",
         Authorization: `Bearer ${accessToken}`,
       },
-      body: JSON.stringify({ next }),
+      body: JSON.stringify({ next, refresh_token: refreshToken }),
     });
     if (res.ok) {
       const data = (await res.json()) as { destination?: string };
