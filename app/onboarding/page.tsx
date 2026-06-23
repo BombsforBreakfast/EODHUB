@@ -62,11 +62,14 @@ export default function OnboardingPage() {
   const [showRequiredHelper, setShowRequiredHelper] = useState(false);
   const [employerConfirmOpen, setEmployerConfirmOpen] = useState(false);
 
-  const { user: authUser, isLoading: authLoading } = useAuth();
+  const { user: authUser, isLoading: authLoading, refreshAuth } = useAuth();
   // Ensures the heavy first-load check (profile fetch, name prefill, routing)
   // runs once per session and isn't re-triggered by later auth updates such as
   // token refreshes, which would otherwise clobber in-progress form input.
   const didInitRef = useRef(false);
+  // Guards the one-time post-OAuth session recovery so we don't spin up the
+  // retry loop on every render while waiting for AuthProvider to hydrate.
+  const sessionRecoveryAttemptedRef = useRef(false);
 
   useOnboardingStepTracking("onboarding_viewed", !checking);
 
@@ -175,7 +178,31 @@ export default function OnboardingPage() {
     if (authLoading) return;
     if (didInitRef.current) return;
     if (!authUser) {
-      window.location.href = "/login";
+      // Post-OAuth hydration race: right after the OAuth navigation (especially
+      // in the native WKWebView), AuthProvider's bootstrap getSession() can
+      // resolve to null a beat before INITIAL_SESSION publishes the user. The
+      // feed tolerates this; onboarding used to bounce straight to /login, which
+      // kicked brand-new OAuth users back to the login screen on their first
+      // attempt. proxy.ts already guards /onboarding server-side, so a null user
+      // here means the session just hasn't surfaced yet — retry before bouncing.
+      if (sessionRecoveryAttemptedRef.current) {
+        window.location.href = "/login";
+        return;
+      }
+      sessionRecoveryAttemptedRef.current = true;
+      void (async () => {
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const { data } = await supabase.auth.getSession();
+          if (data.session?.user) {
+            // Force AuthProvider to publish the user so this effect re-runs into
+            // the normal onboarding path instead of redirecting.
+            await refreshAuth();
+            return;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
+        }
+        window.location.href = "/login";
+      })();
       return;
     }
     didInitRef.current = true;
@@ -336,7 +363,7 @@ export default function OnboardingPage() {
       setChecking(false);
     }
     check();
-  }, [authLoading, authUser]);
+  }, [authLoading, authUser, refreshAuth]);
 
   async function redirectAfterOnboarding(skipsEmailVerification: boolean) {
     if (skipsEmailVerification) {
