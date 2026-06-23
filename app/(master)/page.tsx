@@ -175,6 +175,7 @@ const SidebarThreadDrawer = dynamic(() => import("../components/SidebarThreadDra
 const UpgradePromptModal = dynamic(() => import("../components/UpgradePromptModal"), { ssr: false });
 const JobDetailsModal = dynamic(() => import("../components/jobs/JobDetailsModal"), { ssr: false });
 const EventPostCard = dynamic(() => import("../components/EventPostCard"), { ssr: false });
+const EventScrapbookFeedCard = dynamic(() => import("../components/events/EventScrapbookFeedCard"), { ssr: false });
 const EventScrapbookPreview = dynamic(() => import("../components/events/EventScrapbookPreview"), { ssr: false });
 const MemorialScrapbookPreview = dynamic(
   () => import("../components/memorial/scrapbook").then((m) => m.MemorialScrapbookPreview),
@@ -8316,61 +8317,16 @@ export default function HomePage() {
                         />
                       )}
                       {post.feed_event && post.content_type === "event_scrapbook" && (
-                        <div
-                          style={{
-                            marginTop: 12,
-                            width: "100%",
-                            maxWidth: FEED_POST_EMBED_MAX_WIDTH,
-                            marginLeft: "auto",
-                            marginRight: "auto",
-                            borderRadius: 12,
-                            border: `1px solid ${t.border}`,
-                            background: t.surface,
-                            padding: isMobile ? "12px 14px" : "14px 16px",
-                            boxSizing: "border-box",
-                          }}
-                        >
-                          <div style={{ fontSize: isMobile ? 10 : 11, fontWeight: 800, letterSpacing: 0.8, color: t.textMuted }}>
-                            MEMORIES
-                          </div>
-                          <div
-                            style={{
-                              marginTop: 6,
-                              fontSize: isMobile ? 17 : 20,
-                              fontWeight: 900,
-                              color: t.text,
-                              lineHeight: 1.25,
-                              wordBreak: "break-word",
-                            }}
-                          >
-                            Share memories from {post.feed_event.title}
-                          </div>
-                          <div style={{ marginTop: 8, fontSize: isMobile ? 12 : 13, color: t.textMuted, lineHeight: 1.4 }}>
-                            {formatEventDisplayDate(post.feed_event.date) ?? post.feed_event.date}
-                            {post.feed_event.location ? ` · ${post.feed_event.location}` : ""}
-                          </div>
-                          <div style={{ marginTop: 12 }}>
-                            <button
-                              type="button"
-                              onClick={() => void openFeedEventModal(post.feed_event!.id)}
-                              style={{
-                                border: "none",
-                                borderRadius: 10,
-                                padding: isMobile ? "12px 16px" : "8px 14px",
-                                width: isMobile ? "100%" : "auto",
-                                minHeight: isMobile ? 44 : undefined,
-                                boxSizing: "border-box",
-                                background: t.text,
-                                color: t.surface,
-                                fontWeight: 800,
-                                fontSize: isMobile ? 15 : undefined,
-                                cursor: "pointer",
-                              }}
-                            >
-                              Open Scrapbook
-                            </button>
-                          </div>
-                        </div>
+                        <EventScrapbookFeedCard
+                          event={post.feed_event}
+                          onOpen={(eventId) => void openFeedEventModal(eventId)}
+                          maxWidth={FEED_POST_EMBED_MAX_WIDTH}
+                          t={t}
+                          isMobile={isMobile}
+                          isDark={isDark}
+                          scrapbookActorUserId={userId}
+                          scrapbookActorIsAdmin={isAdmin}
+                        />
                       )}
                       {post.content_type !== "event_scrapbook" && (
                         <EventFeedActions

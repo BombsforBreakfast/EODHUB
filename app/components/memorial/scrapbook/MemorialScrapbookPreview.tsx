@@ -44,8 +44,8 @@ type Props = {
   subjectType?: "memorial" | "event";
   t: MemorialScrapbookTheme;
   accentColor: string;
-  /** Full strip + buttons, or single summary line for compact memorial cards */
-  variant?: "full" | "compact";
+  /** Full strip + buttons, compact summary line, or thumbnail-only strip for feed cards */
+  variant?: "full" | "compact" | "feedStrip";
   isMobile?: boolean;
   /** When set, empty / muted panels use this instead of `t.badgeBg` (keeps branch cards on-theme). */
   panelBackground?: string;
@@ -281,6 +281,181 @@ export function MemorialScrapbookPreview({
 
   const stripItems = displayItems.slice(0, SCRAPBOOK_PREVIEW_STRIP_MAX);
 
+  const thumbStrip = (
+    <div
+      style={{
+        marginTop: 10,
+        display: "flex",
+        gap: 10,
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
+        overscrollBehaviorX: "contain",
+        touchAction: "pan-x",
+        paddingBottom: 2,
+        scrollbarWidth: "thin",
+      }}
+    >
+      {stripItems.map((it, i) => (
+        <div
+          key={it.id}
+          style={{
+            width: SCRAPBOOK_PREVIEW_THUMB_PX,
+            flexShrink: 0,
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "stretch",
+            gap: 4,
+            boxSizing: "border-box",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setViewerIndex(i);
+              setViewerOpen(true);
+            }}
+            style={{
+              width: "100%",
+              padding: "3px 5px 0",
+              borderRadius: 12,
+              border: `1px solid ${t.border}`,
+              background: t.surfaceHover,
+              cursor: "pointer",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "stretch",
+              gap: 2,
+              boxSizing: "border-box",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                aspectRatio: "1 / 1",
+                minHeight: 0,
+                overflow: "hidden",
+                borderRadius: 10,
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <ScrapbookItemCard item={it} t={t} accentColor={accentColor} variant="thumb" />
+            </div>
+          </button>
+          {canManageItem(it) && (
+            <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => setEditItem(it)}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: "4px 8px",
+                  borderRadius: 8,
+                  border: `1px solid ${t.border}`,
+                  background: t.surface,
+                  color: t.text,
+                  cursor: "pointer",
+                }}
+              >
+                Edit
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteItem(it)}
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  padding: "4px 8px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "#ef4444",
+                  color: "white",
+                  cursor: "pointer",
+                }}
+              >
+                Delete
+              </button>
+            </div>
+          )}
+          <span
+            style={{
+              margin: 0,
+              padding: 0,
+              fontSize: 10,
+              fontWeight: 800,
+              color: t.textMuted,
+              textAlign: "center",
+              lineHeight: 1,
+              letterSpacing: "0.02em",
+            }}
+          >
+            {scrapbookThumbKindLabel(it)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+
+  const scrapbookModals = (
+    <>
+      <MemorialScrapbookViewer
+        open={viewerOpen}
+        items={displayItems}
+        initialIndex={viewerIndex}
+        onClose={() => setViewerOpen(false)}
+        onFlag={async (itemId) => {
+          if (!(await requireUserOrLogin())) return;
+          setFlagItemId(itemId);
+        }}
+        t={t}
+        accentColor={accentColor}
+        isMobile={isMobile}
+        canManageItem={canManageItem}
+        onEditItem={(it) => setEditItem(it)}
+        onDeleteItem={(it) => void handleDeleteItem(it)}
+      />
+
+      <EditScrapbookItemModal
+        open={editItem !== null}
+        item={editItem}
+        onClose={() => setEditItem(null)}
+        onSaved={() => void refresh()}
+        t={t}
+        accentColor={accentColor}
+        subjectType={subjectType}
+      />
+
+      <FlagScrapbookItemModal
+        open={flagItemId !== null}
+        itemId={flagItemId}
+        onClose={() => setFlagItemId(null)}
+        onSubmitted={() => void refresh()}
+        t={t}
+        accentColor={accentColor}
+        subjectType={subjectType}
+      />
+    </>
+  );
+
+  if (variant === "feedStrip") {
+    if (loading) {
+      return <div style={{ marginTop: 12, fontSize: 13, color: t.textFaint }}>Loading scrapbook…</div>;
+    }
+    if (count === 0) return null;
+    return (
+      <>
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.textMuted }}>
+            Scrapbook · {count} contribution{count === 1 ? "" : "s"}
+          </div>
+          {thumbStrip}
+        </div>
+        {scrapbookModals}
+      </>
+    );
+  }
+
   if (variant === "compact") {
     return (
       <>
@@ -409,148 +584,11 @@ export function MemorialScrapbookPreview({
             are reviewed before they appear here.
           </div>
         ) : (
-          <div
-            style={{
-              marginTop: 10,
-              display: "flex",
-              gap: 10,
-              overflowX: "auto",
-              WebkitOverflowScrolling: "touch",
-              overscrollBehaviorX: "contain",
-              touchAction: "pan-x",
-              paddingBottom: 2,
-              scrollbarWidth: "thin",
-            }}
-          >
-            {stripItems.map((it, i) => (
-              <div
-                key={it.id}
-                style={{
-                  width: SCRAPBOOK_PREVIEW_THUMB_PX,
-                  flexShrink: 0,
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "stretch",
-                  gap: 4,
-                  boxSizing: "border-box",
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setViewerIndex(i);
-                    setViewerOpen(true);
-                  }}
-                  style={{
-                    width: "100%",
-                    padding: "3px 5px 0",
-                    borderRadius: 12,
-                    border: `1px solid ${t.border}`,
-                    background: t.surfaceHover,
-                    cursor: "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "stretch",
-                    gap: 2,
-                    boxSizing: "border-box",
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "100%",
-                      aspectRatio: "1 / 1",
-                      minHeight: 0,
-                      overflow: "hidden",
-                      borderRadius: 10,
-                      display: "flex",
-                      flexDirection: "column",
-                    }}
-                  >
-                    <ScrapbookItemCard item={it} t={t} accentColor={accentColor} variant="thumb" />
-                  </div>
-                </button>
-                {canManageItem(it) && (
-                  <div style={{ display: "flex", gap: 6, justifyContent: "center", flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      onClick={() => setEditItem(it)}
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 800,
-                        padding: "4px 8px",
-                        borderRadius: 8,
-                        border: `1px solid ${t.border}`,
-                        background: t.surface,
-                        color: t.text,
-                        cursor: "pointer",
-                      }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteItem(it)}
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 800,
-                        padding: "4px 8px",
-                        borderRadius: 8,
-                        border: "none",
-                        background: "#ef4444",
-                        color: "white",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
-                <span
-                  style={{
-                    margin: 0,
-                    padding: 0,
-                    fontSize: 10,
-                    fontWeight: 800,
-                    color: t.textMuted,
-                    textAlign: "center",
-                    lineHeight: 1,
-                    letterSpacing: "0.02em",
-                  }}
-                >
-                  {scrapbookThumbKindLabel(it)}
-                </span>
-              </div>
-            ))}
-          </div>
+          thumbStrip
         )}
       </div>
 
-      <MemorialScrapbookViewer
-        open={viewerOpen}
-        items={displayItems}
-        initialIndex={viewerIndex}
-        onClose={() => setViewerOpen(false)}
-        onFlag={async (itemId) => {
-          if (!(await requireUserOrLogin())) return;
-          setFlagItemId(itemId);
-        }}
-        t={t}
-        accentColor={accentColor}
-        isMobile={isMobile}
-        canManageItem={canManageItem}
-        onEditItem={(it) => setEditItem(it)}
-        onDeleteItem={(it) => void handleDeleteItem(it)}
-      />
-
-      <EditScrapbookItemModal
-        open={editItem !== null}
-        item={editItem}
-        onClose={() => setEditItem(null)}
-        onSaved={() => void refresh()}
-        t={t}
-        accentColor={accentColor}
-        subjectType={subjectType}
-      />
+      {scrapbookModals}
 
       <AddScrapbookItemModal
         open={addOpen}
@@ -561,16 +599,6 @@ export function MemorialScrapbookPreview({
         onSubmitted={() => void refresh()}
         t={t}
         accentColor={accentColor}
-      />
-
-      <FlagScrapbookItemModal
-        open={flagItemId !== null}
-        itemId={flagItemId}
-        onClose={() => setFlagItemId(null)}
-        onSubmitted={() => void refresh()}
-        t={t}
-        accentColor={accentColor}
-        subjectType={subjectType}
       />
     </>
   );
