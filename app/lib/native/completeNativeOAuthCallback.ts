@@ -83,6 +83,12 @@ function wasCodeHandled(code: string): boolean {
   return code in readHandledCodes();
 }
 
+export function shouldRecoverHandledOAuthNavigation(): boolean {
+  if (typeof window === "undefined") return false;
+  const path = window.location.pathname;
+  return path === "/login" || path === "/auth/app-callback" || isNativeAuthCallbackPath(path);
+}
+
 /** True when the deep link's OAuth code was already exchanged on a previous load. */
 export function isHandledOAuthDeepLink(rawUrl: string): boolean {
   const target = resolveNativeAppUrlOpenTarget(rawUrl);
@@ -211,8 +217,13 @@ async function resolveNativeOAuthDestination(next: string): Promise<string> {
   if (!accessToken) return next;
 
   try {
+    oauthDebugLog("native_oauth_complete_request", {
+      hasAccessToken: !!accessToken,
+      hasRefreshToken: !!refreshToken,
+    });
     const res = await fetch("/api/auth/oauth-native-complete", {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${accessToken}`,
@@ -314,15 +325,23 @@ export async function completeNativeOAuthFromDeepLink(
         data: { session },
       } = await supabase.auth.getSession();
       if (session?.user) {
-        // Session was already established on the first pass. Do NOT navigate
-        // again — re-navigating on a re-delivered launch URL is exactly what
-        // turns the post-OAuth landing into an infinite reload loop. Just
-        // re-sync cookies, clear the in-flight flags, and let the current page
-        // render normally.
         await syncSessionCookies(session);
-        clearNativeOAuthInProgress();
-        clearNativeOAuthCompleting();
-        oauthDebugLog("already_handled_noop", { suppressedNavigation: true });
+        if (shouldRecoverHandledOAuthNavigation()) {
+          oauthDebugLog("already_handled_recover_navigation", {
+            currentPath: window.location.pathname,
+            next: params.next,
+          });
+          await finishNativeOAuth(params.next);
+        } else {
+          // Session was already established on the first pass. Do NOT navigate
+          // again — re-navigating on a re-delivered launch URL is exactly what
+          // turns the post-OAuth landing into an infinite reload loop. Just
+          // re-sync cookies, clear the in-flight flags, and let the current page
+          // render normally.
+          clearNativeOAuthInProgress();
+          clearNativeOAuthCompleting();
+          oauthDebugLog("already_handled_noop", { suppressedNavigation: true });
+        }
       } else {
         redirectToLoginAuthError("native_handled_code_no_session");
       }

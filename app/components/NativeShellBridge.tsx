@@ -4,7 +4,11 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { isNativeApp } from "../lib/native/isNativeApp";
 import { isNativeOAuthCompleting, isNativeOAuthInProgress } from "../lib/auth/sessionState";
-import { handleNativeDeepLink, isHandledOAuthDeepLink } from "../lib/native/completeNativeOAuthCallback";
+import {
+  handleNativeDeepLink,
+  isHandledOAuthDeepLink,
+  shouldRecoverHandledOAuthNavigation,
+} from "../lib/native/completeNativeOAuthCallback";
 import { oauthDebugLog } from "../lib/auth/oauthDebugLog";
 import { deliverRestoredCameraFiles, handleCameraRestoredResult } from "../lib/native/pickFeedMedia";
 import { getNotificationHref } from "../lib/notificationNavigation";
@@ -106,7 +110,7 @@ export default function NativeShellBridge() {
       // warm-path callbacks still arrive via the appUrlOpen listener above.
       void App.getLaunchUrl().then((launch) => {
         if (!launch?.url) return;
-        if (isHandledOAuthDeepLink(launch.url)) {
+        if (isHandledOAuthDeepLink(launch.url) && !shouldRecoverHandledOAuthNavigation()) {
           oauthDebugLog("launch_url_oauth_skipped", {});
           return;
         }
