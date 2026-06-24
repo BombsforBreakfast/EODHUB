@@ -37,7 +37,9 @@ export async function POST(req: NextRequest) {
     }
 
     const { userId } = await req.json();
-    if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 });
+    if (!userId || typeof userId !== "string") {
+      return NextResponse.json({ error: "Missing or invalid userId" }, { status: 400 });
+    }
 
     devAuthLog("admin-verify-user", { step: "request", adminId: caller.id, userId });
 
