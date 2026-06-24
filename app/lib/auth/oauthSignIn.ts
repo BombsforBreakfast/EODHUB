@@ -2,7 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { OAuthRedirectProvider } from "./oauthProviders";
 import { oauthDebugLog } from "./oauthDebugLog";
 import { markNativeOAuthInProgress } from "./sessionState";
-import { isNativeApp } from "../native/isNativeApp";
+import { isNativeApp, isNativeIosApp } from "../native/isNativeApp";
+import { signInWithNativeApple } from "../native/nativeAppleSignIn";
 import { buildNativeOAuthRedirectTo } from "../native/nativeOAuthRedirect";
 
 export function buildOAuthCallbackRedirect(nextPath: string): string {
@@ -39,6 +40,10 @@ export async function signInWithOAuthProvider(
   );
 
   if (typeof window !== "undefined" && isNativeApp()) {
+    if (provider === "apple" && isNativeIosApp()) {
+      return signInWithNativeApple(supabase, nextPath);
+    }
+
     const redirectTo = buildNativeOAuthRedirectTo(nextPath);
     markNativeOAuthInProgress();
     oauthDebugLog("native_oauth_start", { provider, redirectTo, nextPath });
