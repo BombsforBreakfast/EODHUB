@@ -23,6 +23,7 @@ import {
 // durable "already handled" marker the feed re-navigates to itself forever.
 const HANDLED_CODES_KEY = "eod_oauth_handled_codes";
 const HANDLED_CODE_TTL_MS = 10 * 60 * 1000;
+const processingCodes = new Set<string>();
 
 type AuthCallbackParams = {
   code: string | null;
@@ -120,6 +121,24 @@ async function waitForAuthCookies(maxWaitMs = 1500, intervalMs = 100): Promise<b
     await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
   }
   return hasAuthCookie();
+}
+
+async function waitForClientSession(
+  maxWaitMs = 3000,
+  intervalMs = 150,
+): Promise<Session | null> {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.user) return session;
+    await new Promise((resolve) => window.setTimeout(resolve, intervalMs));
+  }
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session?.user ? session : null;
 }
 
 /** sourceRoute used for native OAuth failures so the admin tab can distinguish them from the web /auth/callback path. */
@@ -343,11 +362,29 @@ export async function completeNativeOAuthFromDeepLink(
           oauthDebugLog("already_handled_noop", { suppressedNavigation: true });
         }
       } else {
-        redirectToLoginAuthError("native_handled_code_no_session");
+        clearNativeOAuthInProgress();
+        clearNativeOAuthCompleting();
+        oauthDebugLog("already_handled_no_session_noop", { suppressedNavigation: true });
       }
       return true;
     }
 
+    if (processingCodes.has(params.code)) {
+      oauthDebugLog("code_exchange_already_in_progress", { code: params.code });
+      const session = await waitForClientSession();
+      if (session?.user) {
+        markCodeHandled(params.code);
+        clearLoginRedirectAttempts();
+        await syncSessionCookies(session);
+        await finishNativeOAuth(params.next);
+      } else {
+        oauthDebugLog("code_exchange_in_progress_no_session", { code: params.code });
+      }
+      return true;
+    }
+
+    processingCodes.add(params.code);
+    try {
     const { data, error } = await supabase.auth.exchangeCodeForSession(params.code);
 
     oauthDebugLog("client_exchange", {
@@ -373,20 +410,24 @@ export async function completeNativeOAuthFromDeepLink(
     // racing listener, or a brief lock contention). Before bouncing to /login,
     // check whether a valid session already exists — if so, proceed rather than
     // forcing the user to retry.
-    const { data: existing } = await supabase.auth.getSession();
-    if (existing.session?.user) {
+    const existingSession = await waitForClientSession();
+    if (existingSession?.user) {
       oauthDebugLog("exchange_failed_but_session_exists", {});
       markCodeHandled(params.code);
       clearLoginRedirectAttempts();
-      await syncSessionCookies(existing.session);
+      await syncSessionCookies(existingSession);
       await finishNativeOAuth(params.next);
       return true;
     }
 
-    redirectToLoginAuthError("native_apple_exchange_failed", {
+    markCodeHandled(params.code);
+    redirectToLoginAuthError("native_oauth_exchange_failed", {
       rawMessage: error?.message ?? "exchange returned no session",
     });
     return true;
+    } finally {
+      processingCodes.delete(params.code);
+    }
   }
 
   if (hashHasSessionTokens(params.hash)) {
