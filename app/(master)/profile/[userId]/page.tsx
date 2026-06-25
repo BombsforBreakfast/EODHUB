@@ -98,7 +98,7 @@ import {
   type PlankHolderResponse,
   type PlankHolderToastState,
 } from "../../../lib/plankHolderChallengeClient";
-import { isEmployerAccount } from "../../../lib/profileCompleteness";
+import { isEmployerAccount, MEMBER_STATUS_OPTIONS } from "../../../lib/profileCompleteness";
 import EmployerAccountCardDetails from "../../../components/profile/EmployerAccountCardDetails";
 import { BUSINESS_ORG_PAGE_SELECT, type BusinessOrgPageRow } from "../../../lib/businessOrgPages";
 import {
@@ -325,7 +325,7 @@ type GroupTile = {
 };
 
 const SERVICE_OPTIONS = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal", "Civilian Bomb Tech"];
-const STATUS_OPTIONS = ["Active Duty", "Former", "Retired", "Civil Service"];
+const STATUS_OPTIONS = [...MEMBER_STATUS_OPTIONS];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "LEO/FED", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
 const WORK_TAG_PREVIEW_LIMIT = 3;

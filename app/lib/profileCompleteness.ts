@@ -11,6 +11,8 @@ export const MEMBER_SERVICE_OPTIONS = [
 
 export const MEMBER_STATUS_OPTIONS = [
   "Active Duty",
+  "National Guard",
+  "Reserves",
   "Former",
   "Retired",
   "Civil Service",
