@@ -22,7 +22,15 @@ export function parseReactionType(value: unknown): ReactionType | null {
 }
 
 /** Extend migration CHECK when adding surfaces (comments, DMs, …). */
-export type ReactionSubjectKind = "post" | "post_comment" | "unit_post" | "unit_post_comment" | "event" | "event_comment";
+export type ReactionSubjectKind =
+  | "post"
+  | "post_comment"
+  | "unit_post"
+  | "unit_post_comment"
+  | "event"
+  | "event_comment"
+  | "memorial"
+  | "memorial_comment";
 
 export type ReactionMeta = {
   emoji: string;

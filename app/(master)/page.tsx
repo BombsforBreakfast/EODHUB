@@ -492,6 +492,17 @@ type MemorialComment = {
   created_at: string;
   authorName: string;
   authorPhotoUrl: string | null;
+  myReaction: ReactionType | null;
+  likeCount: number;
+  reactionCountsByType: Partial<Record<ReactionType, number>>;
+  reactorNamesByType: Partial<Record<ReactionType, string[]>>;
+};
+
+type MemorialEngagementState = {
+  myReaction: ReactionType | null;
+  totalReactionCount: number;
+  reactionCountsByType: Partial<Record<ReactionType, number>>;
+  reactorNamesByType: Partial<Record<ReactionType, string[]>>;
 };
 
 type OgPreview = {
@@ -1105,11 +1116,13 @@ export default function HomePage() {
   const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
   const dismissedMemorialIdsRef = useRef<Set<string>>(new Set());
   const [expandedMemorialCards, setExpandedMemorialCards] = useState<Record<string, boolean>>({});
-  const [memorialLikes, setMemorialLikes] = useState<Record<string, string[]>>({});
+  const [memorialEngagement, setMemorialEngagement] = useState<Record<string, MemorialEngagementState>>({});
   const [memorialComments, setMemorialComments] = useState<Record<string, MemorialComment[]>>({});
   const [memorialCommentInputs, setMemorialCommentInputs] = useState<Record<string, string>>({});
   const [submittingMemorialComment, setSubmittingMemorialComment] = useState<string | null>(null);
   const [memorialCommentsOpen, setMemorialCommentsOpen] = useState<Record<string, boolean>>({});
+  const [togglingMemorialReactionFor, setTogglingMemorialReactionFor] = useState<string | null>(null);
+  const [togglingMemorialCommentReactionFor, setTogglingMemorialCommentReactionFor] = useState<string | null>(null);
   const [editingMemorialCommentId, setEditingMemorialCommentId] = useState<string | null>(null);
   const [editingMemorialCommentContent, setEditingMemorialCommentContent] = useState("");
   const [savingMemorialCommentId, setSavingMemorialCommentId] = useState<string | null>(null);
@@ -1891,7 +1904,7 @@ export default function HomePage() {
       .maybeSingle();
     if (pref && (pref as { show_memorial_feed_cards?: boolean | null }).show_memorial_feed_cards === false) {
       setTodayMemorials([]);
-      setMemorialLikes({});
+      setMemorialEngagement({});
       setMemorialComments({});
       setMemorialCommentInputs({});
       setMemorialCommentsOpen({});
@@ -1948,52 +1961,143 @@ export default function HomePage() {
 
   async function loadMemorialInteractions(ids: string[]) {
     if (ids.length === 0) return;
-    const [likesRes, commentsRes] = await Promise.all([
-      supabase.from("memorial_likes").select("memorial_id, user_id").in("memorial_id", ids),
-      supabase.from("memorial_comments").select("id, memorial_id, user_id, content, created_at").in("memorial_id", ids).order("created_at", { ascending: true }),
+    const [commentsRes, memorialReactionRows] = await Promise.all([
+      supabase
+        .from("memorial_comments")
+        .select("id, memorial_id, user_id, content, created_at")
+        .in("memorial_id", ids)
+        .order("created_at", { ascending: true }),
+      fetchContentReactionsForSubjects(supabase, "memorial", ids),
     ]);
 
-    const likesMap: Record<string, string[]> = {};
-    for (const like of (likesRes.data ?? [])) {
-      if (!likesMap[like.memorial_id]) likesMap[like.memorial_id] = [];
-      likesMap[like.memorial_id].push(like.user_id);
-    }
-    setMemorialLikes(likesMap);
+    const commentRows = (commentsRes.data ?? []) as Array<{
+      id: string;
+      memorial_id: string;
+      user_id: string;
+      content: string;
+      created_at: string;
+    }>;
+    const commentIds = commentRows.map((c) => c.id);
+    const commentReactionRows =
+      commentIds.length > 0
+        ? await fetchContentReactionsForSubjects(supabase, "memorial_comment", commentIds)
+        : [];
 
-    const authorIds = [...new Set((commentsRes.data ?? []).map((c: { user_id: string }) => c.user_id))];
+    const profileUserIds = new Set<string>();
+    for (const c of commentRows) profileUserIds.add(c.user_id);
+    for (const r of memorialReactionRows) profileUserIds.add(r.user_id);
+    for (const r of commentReactionRows) profileUserIds.add(r.user_id);
+
     const profileMap: Record<string, { name: string; photo: string | null }> = {};
-    if (authorIds.length > 0) {
-      const { data: profiles } = await supabase.from("profiles").select("user_id, display_name, first_name, last_name, photo_url").in("user_id", authorIds);
-      for (const p of (profiles ?? []) as { user_id: string; display_name: string | null; first_name: string | null; last_name: string | null; photo_url: string | null }[]) {
+    const profileNameMap = new Map<string, string>();
+    if (profileUserIds.size > 0) {
+      const { data: profiles } = await supabase
+        .from("profiles")
+        .select("user_id, display_name, first_name, last_name, photo_url")
+        .in("user_id", [...profileUserIds]);
+      for (const p of (profiles ?? []) as {
+        user_id: string;
+        display_name: string | null;
+        first_name: string | null;
+        last_name: string | null;
+        photo_url: string | null;
+      }[]) {
         const name =
           (p.display_name?.trim() || null) ||
           `${p.first_name ?? ""} ${p.last_name ?? ""}`.trim() ||
           "User";
         profileMap[p.user_id] = { name, photo: p.photo_url ?? null };
+        profileNameMap.set(p.user_id, name);
       }
     }
 
+    const memorialAggregates = aggregatesBySubjectId(memorialReactionRows, userId);
+    const commentAggregates = aggregatesBySubjectId(commentReactionRows, userId);
+
+    const engagementMap: Record<string, MemorialEngagementState> = {};
+    for (const id of ids) {
+      const agg = memorialAggregates.get(id) ?? emptyAggregate();
+      engagementMap[id] = {
+        myReaction: agg.myReaction,
+        totalReactionCount: agg.totalCount,
+        reactionCountsByType: agg.countsByType,
+        reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(
+          memorialReactionRows,
+          id,
+          profileNameMap,
+        ),
+      };
+    }
+    setMemorialEngagement(engagementMap);
+
     const commentsMap: Record<string, MemorialComment[]> = {};
-    for (const c of (commentsRes.data ?? []) as (MemorialComment)[]) {
+    for (const c of commentRows) {
+      const cAgg = commentAggregates.get(c.id) ?? emptyAggregate();
+      const enriched: MemorialComment = {
+        ...c,
+        authorName: profileMap[c.user_id]?.name ?? "User",
+        authorPhotoUrl: profileMap[c.user_id]?.photo ?? null,
+        myReaction: cAgg.myReaction,
+        likeCount: cAgg.totalCount,
+        reactionCountsByType: cAgg.countsByType,
+        reactorNamesByType: buildReactorDisplayNamesByTypeForSubject(
+          commentReactionRows,
+          c.id,
+          profileNameMap,
+        ),
+      };
       if (!commentsMap[c.memorial_id]) commentsMap[c.memorial_id] = [];
-      commentsMap[c.memorial_id].push({ ...c, authorName: profileMap[c.user_id]?.name ?? "User", authorPhotoUrl: profileMap[c.user_id]?.photo ?? null });
+      commentsMap[c.memorial_id].push(enriched);
     }
     setMemorialComments(commentsMap);
   }
 
-  async function toggleMemorialLike(memorialId: string) {
-    if (!userId) { window.location.href = "/login"; return; }
-    if (blockMemberInteraction()) return;
-    const liked = (memorialLikes[memorialId] ?? []).includes(userId);
-    if (liked) {
-      await supabase.from("memorial_likes").delete().eq("memorial_id", memorialId).eq("user_id", userId);
-    } else {
-      await supabase.from("memorial_likes").insert({ memorial_id: memorialId, user_id: userId });
+  async function handleMemorialReaction(memorialId: string, picked: ReactionType) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
     }
-    setMemorialLikes(prev => ({
-      ...prev,
-      [memorialId]: liked ? (prev[memorialId] ?? []).filter(id => id !== userId) : [...(prev[memorialId] ?? []), userId],
-    }));
+    if (blockMemberInteraction()) return;
+
+    try {
+      setTogglingMemorialReactionFor(memorialId);
+      await applyContentReaction(supabase, {
+        subjectKind: "memorial",
+        subjectId: memorialId,
+        userId,
+        picked,
+      });
+      await loadMemorialInteractions([memorialId]);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save reaction");
+    } finally {
+      setTogglingMemorialReactionFor(null);
+    }
+  }
+
+  async function handleMemorialCommentReaction(commentId: string, memorialId: string, picked: ReactionType) {
+    if (!userId) {
+      window.location.href = "/login";
+      return;
+    }
+    if (blockMemberInteraction()) return;
+
+    try {
+      setTogglingMemorialCommentReactionFor(commentId);
+      await applyContentReaction(supabase, {
+        subjectKind: "memorial_comment",
+        subjectId: commentId,
+        userId,
+        picked,
+      });
+      await loadMemorialInteractions([memorialId]);
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : "Could not save reaction");
+    } finally {
+      setTogglingMemorialCommentReactionFor(null);
+    }
   }
 
   async function submitMemorialComment(memorialId: string) {
@@ -2006,10 +2110,8 @@ export default function HomePage() {
       .insert({ memorial_id: memorialId, user_id: userId, content: text })
       .select("id, memorial_id, user_id, content, created_at").single();
     if (!error && data) {
-      setMemorialComments(prev => ({
-        ...prev,
-        [memorialId]: [...(prev[memorialId] ?? []), { ...data, authorName: currentUserName ?? "User", authorPhotoUrl: null }],
-      }));
+      setMemorialCommentsOpen((prev) => ({ ...prev, [memorialId]: true }));
+      await loadMemorialInteractions([memorialId]);
       setMemorialCommentInputs(prev => ({ ...prev, [memorialId]: "" }));
       memorialCommentRawsRef.current[memorialId] = "";
       const mentionIds = extractMentionIds(text).filter(id => id !== userId);
@@ -2078,7 +2180,7 @@ export default function HomePage() {
   useEffect(() => {
     if (!userId || !showMemorialFeedCards) {
       setTodayMemorials([]);
-      setMemorialLikes({});
+      setMemorialEngagement({});
       setMemorialComments({});
       setMemorialCommentInputs({});
       setMemorialCommentsOpen({});
@@ -7763,7 +7865,13 @@ export default function HomePage() {
               todayMemorials.filter(m => !dismissedMemorialIds.has(m.id)).map((m) => {
               const isExpanded = !!expandedMemorialCards[m.id];
               const memorialCommentList = memorialComments[m.id] ?? [];
-              const compactPreviewComments = memorialCommentList.slice(0, 2);
+              const memorialCommentsOpenForCard = !!memorialCommentsOpen[m.id];
+              const engagement = memorialEngagement[m.id] ?? {
+                myReaction: null,
+                totalReactionCount: 0,
+                reactionCountsByType: {},
+                reactorNamesByType: {},
+              };
               const theme = memorialTheme(m.category, m.service);
               return (
                 <div key={`memorial-${m.id}`} style={{ border: `2px solid ${theme.outlineColor}`, borderRadius: 14, overflow: "hidden" }}>
@@ -7833,34 +7941,6 @@ export default function HomePage() {
                           >
                             Show full bio
                           </button>
-                          <div style={{ marginTop: 10, fontSize: 13, color: t.textMuted, fontWeight: 700 }}>
-                            Comments {memorialCommentList.length}
-                          </div>
-                          {compactPreviewComments.length > 0 && (
-                            <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-                              {compactPreviewComments.map((c) => (
-                                <div key={`compact-${c.id}`} style={{ display: "flex", gap: 8 }}>
-                                  <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.text }}>
-                                    {c.authorPhotoUrl ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : c.authorName[0]?.toUpperCase()}
-                                  </div>
-                                  <div style={{ background: isDark ? theme.darkCommentBg : theme.lightCommentBg, borderRadius: 10, padding: "6px 10px", flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontWeight: 700, fontSize: 12, color: theme.color, marginBottom: 2 }}>{c.authorName}</div>
-                                    <div style={{ fontSize: 13, lineHeight: 1.45, color: t.text }}>{renderContent(c.content)}</div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setExpandedMemorialCards((prev) => ({ ...prev, [m.id]: true }));
-                              setMemorialCommentsOpen((prev) => ({ ...prev, [m.id]: true }));
-                            }}
-                            style={{ marginTop: 8, background: "transparent", border: "none", padding: 0, cursor: "pointer", color: theme.color, fontSize: 13, fontWeight: 700 }}
-                          >
-                            See all comments
-                          </button>
                           <MemorialScrapbookPreview
                             memorialId={m.id}
                             t={t}
@@ -7887,118 +7967,365 @@ export default function HomePage() {
                           >
                             See less
                           </button>
-                          {(() => {
-                            const comments = memorialComments[m.id] ?? [];
-                            const commentsOpen = !!memorialCommentsOpen[m.id];
-                            return (
-                              <>
-                                <div style={{ display: "flex", alignItems: "center", gap: 18, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}` }}>
-                                  <button type="button" onClick={() => setMemorialCommentsOpen(p => ({ ...p, [m.id]: !commentsOpen }))} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, color: t.textMuted, fontSize: 14, padding: 0 }}>
-                                    Comments{comments.length > 0 && <span style={{ fontSize: 13 }}>{comments.length}</span>}
-                                  </button>
-                                </div>
-                                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}` }}>
-                                  <button type="button" onClick={() => setDonateModal(memorialDonationConfig(m.category, m.service))} style={{ background: theme.color, border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
-                                    {memorialDonationConfig(m.category, m.service).title}
-                                  </button>
-                                </div>
-                                <div style={{ textAlign: "left", width: "100%" }}>
-                                  <MemorialScrapbookPreview
-                                    memorialId={m.id}
-                                    t={t}
-                                    accentColor={theme.color}
-                                    variant="full"
-                                    isMobile={isMobile}
-                                    panelBackground={isDark ? theme.darkCommentBg : theme.lightCommentBg}
-                                    scrapbookActorUserId={userId}
-                                    scrapbookActorIsAdmin={isAdmin}
-                                  />
-                                </div>
-                                {commentsOpen && (
-                                  <div style={{ marginTop: 12 }}>
-                                    {comments.map(c => (
-                                      <div key={c.id} style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-                                        <div style={{ width: 26, height: 26, borderRadius: "50%", background: t.border, flexShrink: 0, overflow: "hidden", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: t.text }}>
-                                          {c.authorPhotoUrl ? <img src={c.authorPhotoUrl} alt={c.authorName} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : c.authorName[0]?.toUpperCase()}
-                                        </div>
-                                        <div style={{ background: isDark ? theme.darkCommentBg : theme.lightCommentBg, borderRadius: 10, padding: "6px 10px", flex: 1 }}>
-                                          <div style={{ fontWeight: 700, fontSize: 12, color: theme.color, marginBottom: 2 }}>{c.authorName}</div>
-                                          {editingMemorialCommentId === c.id ? (
-                                            <div>
-                                              <textarea
-                                                value={editingMemorialCommentContent}
-                                                onChange={(e) => setEditingMemorialCommentContent(e.target.value)}
-                                                rows={3}
-                                                style={{ width: "100%", border: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}`, borderRadius: 8, padding: 8, fontSize: 13, boxSizing: "border-box", background: isDark ? theme.darkBg : theme.lightBg, color: t.text, resize: "vertical" }}
-                                              />
-                                              <div style={{ marginTop: 6, display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => setEditingMemorialCommentId(null)}
-                                                  style={{ background: "transparent", border: `1px solid ${t.border}`, borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, color: t.text, cursor: "pointer" }}
-                                                >
-                                                  Cancel
-                                                </button>
-                                                <button
-                                                  type="button"
-                                                  onClick={() => saveMemorialCommentEdit(m.id, c.id)}
-                                                  disabled={savingMemorialCommentId === c.id || !editingMemorialCommentContent.trim()}
-                                                  style={{ background: theme.color, border: "none", borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, color: "white", cursor: savingMemorialCommentId === c.id ? "not-allowed" : "pointer", opacity: savingMemorialCommentId === c.id ? 0.7 : 1 }}
-                                                >
-                                                  {savingMemorialCommentId === c.id ? "Saving..." : "Save"}
-                                                </button>
-                                              </div>
-                                            </div>
-                                          ) : (
-                                            <>
-                                              <div style={{ fontSize: 13, lineHeight: 1.45, color: t.text }}>{renderContent(c.content)}</div>
-                                              {c.user_id === userId && (
-                                                <div style={{ marginTop: 6, display: "flex", gap: 8 }}>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                      setEditingMemorialCommentId(c.id);
-                                                      setEditingMemorialCommentContent(c.content);
-                                                    }}
-                                                    style={{ background: "transparent", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: theme.color, cursor: "pointer" }}
-                                                  >
-                                                    Edit
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => deleteMemorialComment(m.id, c.id)}
-                                                    disabled={deletingMemorialCommentId === c.id}
-                                                    style={{ background: "transparent", border: "none", padding: 0, fontSize: 12, fontWeight: 700, color: "#ef4444", cursor: deletingMemorialCommentId === c.id ? "not-allowed" : "pointer", opacity: deletingMemorialCommentId === c.id ? 0.7 : 1 }}
-                                                  >
-                                                    {deletingMemorialCommentId === c.id ? "Deleting..." : "Delete"}
-                                                  </button>
-                                                </div>
-                                              )}
-                                            </>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
-                                      <MentionTextarea
-                                        value={memorialCommentInputs[m.id] || ""}
-                                        onChange={val => setMemorialCommentInputs(p => ({ ...p, [m.id]: val }))}
-                                        onChangeRaw={raw => { memorialCommentRawsRef.current[m.id] = raw; }}
-                                        placeholder="Leave a tribute..."
-                                        style={{ width: "100%", minHeight: 70, border: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}`, borderRadius: 10, padding: 10, resize: "vertical", fontSize: 14, boxSizing: "border-box", background: isDark ? theme.darkBg : theme.lightBg, color: t.text, outline: "none" }}
-                                      />
-                                      <button type="button" onClick={() => submitMemorialComment(m.id)} disabled={submittingMemorialComment === m.id} style={{ alignSelf: "flex-end", background: theme.color, color: "white", border: "none", borderRadius: 10, padding: "8px 16px", fontWeight: 700, cursor: submittingMemorialComment === m.id ? "not-allowed" : "pointer", opacity: submittingMemorialComment === m.id ? 0.7 : 1, fontSize: 13 }}>
-                                        {submittingMemorialComment === m.id ? "..." : "Reply"}
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
-                              </>
-                            );
-                          })()}
+                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}` }}>
+                            <button type="button" onClick={() => setDonateModal(memorialDonationConfig(m.category, m.service))} style={{ background: theme.color, border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
+                              {memorialDonationConfig(m.category, m.service).title}
+                            </button>
+                          </div>
+                          <div style={{ textAlign: "left", width: "100%" }}>
+                            <MemorialScrapbookPreview
+                              memorialId={m.id}
+                              t={t}
+                              accentColor={theme.color}
+                              variant="full"
+                              isMobile={isMobile}
+                              panelBackground={isDark ? theme.darkCommentBg : theme.lightCommentBg}
+                              scrapbookActorUserId={userId}
+                              scrapbookActorIsAdmin={isAdmin}
+                            />
+                          </div>
                         </>
                       )}
                     </div>
+                  </div>
+                  <div
+                    style={{
+                      padding: isMobile ? "0 22px 16px" : "0 20px 16px",
+                      background: isDark ? theme.darkBg : theme.lightBg,
+                      borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}`,
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "flex-start",
+                        gap: FEED_ACTION_ROW_GAP,
+                        alignItems: "center",
+                        marginTop: FEED_SECTION_GAP,
+                        padding: FEED_ACTION_ROW_PADDING,
+                        flexWrap: "wrap",
+                        width: "100%",
+                        minWidth: 0,
+                        boxSizing: "border-box",
+                      }}
+                    >
+                      <ReactionPickerTrigger
+                        t={t}
+                        disabled={!userId}
+                        viewerReaction={engagement.myReaction}
+                        totalCount={engagement.totalReactionCount}
+                        busy={togglingMemorialReactionFor === m.id}
+                        showTriggerCount={false}
+                        onPick={(type) => void handleMemorialReaction(m.id, type)}
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setMemorialCommentsOpen((prev) => ({ ...prev, [m.id]: !memorialCommentsOpenForCard }))
+                        }
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          padding: 0,
+                          minWidth: 70,
+                          cursor: "pointer",
+                          fontWeight: 700,
+                          color: t.textMuted,
+                        }}
+                      >
+                        {memorialCommentsOpenForCard ? "Hide Comments" : "Comment"}
+                      </button>
+                      <div style={{ flex: "1 1 24px", minWidth: 0 }} />
+                      <ReactionLeaderboard
+                        t={t}
+                        countsByType={engagement.reactionCountsByType}
+                        reactorNamesByType={engagement.reactorNamesByType}
+                      />
+                      <div style={{ fontSize: 14, color: t.textMuted, minWidth: 86 }}>
+                        {memorialCommentList.length}{" "}
+                        {memorialCommentList.length === 1 ? "comment" : "comments"}
+                      </div>
+                    </div>
+
+                    {(memorialCommentList.length > 0 || memorialCommentsOpenForCard) && (
+                      <div
+                        style={{
+                          marginTop: FEED_SECTION_GAP,
+                          paddingTop: FEED_SECTION_GAP,
+                          borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}`,
+                        }}
+                      >
+                        {memorialCommentList.length > 0 && (
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {(memorialCommentsOpenForCard
+                              ? memorialCommentList
+                              : memorialCommentList.slice(0, 2)
+                            ).map((c) => (
+                              <div key={c.id} style={{ display: "flex", gap: 8 }}>
+                                <div
+                                  style={{
+                                    width: 26,
+                                    height: 26,
+                                    borderRadius: "50%",
+                                    background: t.border,
+                                    flexShrink: 0,
+                                    overflow: "hidden",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: 11,
+                                    fontWeight: 700,
+                                    color: t.text,
+                                  }}
+                                >
+                                  {c.authorPhotoUrl ? (
+                                    <img
+                                      src={c.authorPhotoUrl}
+                                      alt={c.authorName}
+                                      style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                                    />
+                                  ) : (
+                                    c.authorName[0]?.toUpperCase()
+                                  )}
+                                </div>
+                                <div
+                                  style={{
+                                    background: isDark ? theme.darkCommentBg : theme.lightCommentBg,
+                                    borderRadius: 10,
+                                    padding: "6px 10px",
+                                    flex: 1,
+                                    minWidth: 0,
+                                  }}
+                                >
+                                  <div
+                                    style={{
+                                      fontWeight: 700,
+                                      fontSize: 12,
+                                      color: theme.color,
+                                      marginBottom: 2,
+                                    }}
+                                  >
+                                    {c.authorName}
+                                  </div>
+                                  {editingMemorialCommentId === c.id ? (
+                                    <div>
+                                      <textarea
+                                        value={editingMemorialCommentContent}
+                                        onChange={(e) => setEditingMemorialCommentContent(e.target.value)}
+                                        rows={3}
+                                        style={{
+                                          width: "100%",
+                                          border: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}`,
+                                          borderRadius: 8,
+                                          padding: 8,
+                                          fontSize: 13,
+                                          boxSizing: "border-box",
+                                          background: isDark ? theme.darkBg : theme.lightBg,
+                                          color: t.text,
+                                          resize: "vertical",
+                                        }}
+                                      />
+                                      <div
+                                        style={{
+                                          marginTop: 6,
+                                          display: "flex",
+                                          gap: 8,
+                                          justifyContent: "flex-end",
+                                          flexWrap: "wrap",
+                                        }}
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={() => setEditingMemorialCommentId(null)}
+                                          style={{
+                                            background: "transparent",
+                                            border: `1px solid ${t.border}`,
+                                            borderRadius: 8,
+                                            padding: "4px 10px",
+                                            fontSize: 12,
+                                            fontWeight: 700,
+                                            color: t.text,
+                                            cursor: "pointer",
+                                          }}
+                                        >
+                                          Cancel
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => saveMemorialCommentEdit(m.id, c.id)}
+                                          disabled={
+                                            savingMemorialCommentId === c.id ||
+                                            !editingMemorialCommentContent.trim()
+                                          }
+                                          style={{
+                                            background: theme.color,
+                                            border: "none",
+                                            borderRadius: 8,
+                                            padding: "4px 10px",
+                                            fontSize: 12,
+                                            fontWeight: 700,
+                                            color: "white",
+                                            cursor:
+                                              savingMemorialCommentId === c.id ? "not-allowed" : "pointer",
+                                            opacity: savingMemorialCommentId === c.id ? 0.7 : 1,
+                                          }}
+                                        >
+                                          {savingMemorialCommentId === c.id ? "Saving..." : "Save"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div style={{ fontSize: 13, lineHeight: 1.45, color: t.text }}>
+                                        {renderContent(c.content)}
+                                      </div>
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          gap: 10,
+                                          alignItems: "center",
+                                          marginTop: 6,
+                                          flexWrap: "wrap",
+                                        }}
+                                      >
+                                        <ReactionPickerTrigger
+                                          t={t}
+                                          disabled={!userId}
+                                          viewerReaction={c.myReaction}
+                                          totalCount={c.likeCount}
+                                          busy={togglingMemorialCommentReactionFor === c.id}
+                                          showTriggerCount={false}
+                                          onPick={(type) =>
+                                            void handleMemorialCommentReaction(c.id, m.id, type)
+                                          }
+                                        />
+                                        {c.user_id === userId && (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setEditingMemorialCommentId(c.id);
+                                                setEditingMemorialCommentContent(c.content);
+                                              }}
+                                              style={{
+                                                background: "transparent",
+                                                border: "none",
+                                                padding: 0,
+                                                fontSize: 12,
+                                                fontWeight: 700,
+                                                color: theme.color,
+                                                cursor: "pointer",
+                                              }}
+                                            >
+                                              Edit
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => deleteMemorialComment(m.id, c.id)}
+                                              disabled={deletingMemorialCommentId === c.id}
+                                              style={{
+                                                background: "transparent",
+                                                border: "none",
+                                                padding: 0,
+                                                fontSize: 12,
+                                                fontWeight: 700,
+                                                color: "#ef4444",
+                                                cursor:
+                                                  deletingMemorialCommentId === c.id
+                                                    ? "not-allowed"
+                                                    : "pointer",
+                                                opacity: deletingMemorialCommentId === c.id ? 0.7 : 1,
+                                              }}
+                                            >
+                                              {deletingMemorialCommentId === c.id
+                                                ? "Deleting..."
+                                                : "Delete"}
+                                            </button>
+                                          </>
+                                        )}
+                                        <div style={{ flex: "1 1 12px", minWidth: 0 }} />
+                                        <ReactionLeaderboard
+                                          t={t}
+                                          countsByType={c.reactionCountsByType}
+                                          reactorNamesByType={c.reactorNamesByType}
+                                        />
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {!memorialCommentsOpenForCard && memorialCommentList.length > 2 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setMemorialCommentsOpen((prev) => ({ ...prev, [m.id]: true }))
+                            }
+                            style={{
+                              marginTop: 8,
+                              background: "transparent",
+                              border: "none",
+                              padding: 0,
+                              cursor: "pointer",
+                              color: theme.color,
+                              fontSize: 13,
+                              fontWeight: 700,
+                            }}
+                          >
+                            See all comments
+                          </button>
+                        )}
+                        {memorialCommentsOpenForCard && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 12 }}>
+                            <MentionTextarea
+                              value={memorialCommentInputs[m.id] || ""}
+                              onChange={(val) =>
+                                setMemorialCommentInputs((p) => ({ ...p, [m.id]: val }))
+                              }
+                              onChangeRaw={(raw) => {
+                                memorialCommentRawsRef.current[m.id] = raw;
+                              }}
+                              placeholder="Leave a tribute..."
+                              style={{
+                                width: "100%",
+                                minHeight: 70,
+                                border: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}`,
+                                borderRadius: 10,
+                                padding: 10,
+                                resize: "vertical",
+                                fontSize: 14,
+                                boxSizing: "border-box",
+                                background: isDark ? theme.darkBg : theme.lightBg,
+                                color: t.text,
+                                outline: "none",
+                              }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => submitMemorialComment(m.id)}
+                              disabled={submittingMemorialComment === m.id}
+                              style={{
+                                alignSelf: "flex-end",
+                                background: theme.color,
+                                color: "white",
+                                border: "none",
+                                borderRadius: 10,
+                                padding: "8px 16px",
+                                fontWeight: 700,
+                                cursor:
+                                  submittingMemorialComment === m.id ? "not-allowed" : "pointer",
+                                opacity: submittingMemorialComment === m.id ? 0.7 : 1,
+                                fontSize: 13,
+                              }}
+                            >
+                              {submittingMemorialComment === m.id ? "..." : "Reply"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div
                     style={{
