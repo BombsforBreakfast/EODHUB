@@ -343,6 +343,79 @@ function downloadWaitlistCsv(rows: WaitlistSignupRow[]): void {
   URL.revokeObjectURL(url);
 }
 
+function adminUserOutreachStatus(u: UserProfile): string {
+  if (u.verification_status === "verified") return "Verified";
+  if (u.verification_status === "denied") return "Denied";
+  const isIncompleteSignup = !!u.signup_incomplete || blocksSignupApproval(u);
+  if (isAtAdminReviewTier(u)) return "Pending admin review";
+  if (!isIncompleteSignup && !u.email_verified) return "Awaiting email verification";
+  if (isIncompleteSignup) return "Incomplete signup";
+  return "Unverified";
+}
+
+function adminUserAccountType(u: UserProfile): string {
+  if (u.is_employer || u.account_type === "employer") return "Employer";
+  if (u.is_pure_admin) return "Admin";
+  return "Member";
+}
+
+function buildUsersOutreachCsv(rows: Array<UserProfile & { adminList?: string }>): string {
+  const header = [
+    "Email",
+    "First Name",
+    "Last Name",
+    "Display Name",
+    "Account Type",
+    "Admin List",
+    "Outreach Status",
+    "Missing Fields",
+    "Email Verified",
+    "Service",
+    "Company",
+    "Signed Up",
+    "User ID",
+  ];
+  const lines = [header.map(escapeCsvField).join(",")];
+  for (const u of rows) {
+    const missing = signupProfileMissingFields(u);
+    const signedUp = u.created_at ? new Date(u.created_at).toLocaleString() : "";
+    lines.push(
+      [
+        u.email ?? "",
+        u.first_name ?? "",
+        u.last_name ?? "",
+        u.display_name || u.name || "",
+        adminUserAccountType(u),
+        u.adminList ?? "",
+        adminUserOutreachStatus(u),
+        missing.join("; "),
+        u.email_verified ? "yes" : "no",
+        u.service ?? "",
+        u.company_name ?? "",
+        signedUp,
+        u.user_id,
+      ]
+        .map(escapeCsvField)
+        .join(","),
+    );
+  }
+  return lines.join("\r\n");
+}
+
+function downloadUsersOutreachCsv(rows: UserProfile[], filenameStem: string): void {
+  const csv = buildUsersOutreachCsv(rows);
+  const blob = new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `eod-hub-users-${filenameStem}-${stamp}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const SIGNUP_OUTREACH_EXPORT_FILTERS: UserStatusFilter[] = ["unverified", "onboarding"];
+
 function isoToDatetimeLocalValue(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
@@ -768,6 +841,7 @@ export default function AdminPage() {
   const [usersShowAll, setUsersShowAll] = useState(false);
   const [usersTotalCount, setUsersTotalCount] = useState(0);
   const [usersLoading, setUsersLoading] = useState(false);
+  const [usersExportLoading, setUsersExportLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
@@ -1808,6 +1882,78 @@ export default function AdminPage() {
       setUsersTotalCount(json.totalCount ?? rows.length);
     } finally {
       setUsersLoading(false);
+    }
+  }
+
+  async function fetchUsersForExport(status: UserStatusFilter): Promise<UserProfile[]> {
+    const { data: { session } } = await supabase.auth.getSession();
+    const params = new URLSearchParams();
+    params.set("status", status);
+    params.set("full", "true");
+    if (userSearchDebounced.trim()) params.set("q", userSearchDebounced.trim());
+
+    const res = await fetch(`/api/admin/users?${params.toString()}`, {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+    });
+    if (!res.ok) throw new Error("export fetch failed");
+    const json = (await res.json()) as { users?: UserProfile[] };
+    return json.users ?? [];
+  }
+
+  async function exportUsersCsv() {
+    setUsersExportLoading(true);
+    try {
+      const rows = await fetchUsersForExport(userFilter);
+      if (rows.length === 0) {
+        alert("No users to export in this filter.");
+        return;
+      }
+      const labeled = rows.map((u) => ({
+        ...u,
+        adminList: userFilter === "onboarding" ? "Onboarding" : userFilter === "unverified" ? "Unverified" : userFilter,
+      }));
+      downloadUsersOutreachCsv(labeled, userFilter);
+      showToast(`Exported ${rows.length} user${rows.length === 1 ? "" : "s"} to CSV`);
+    } catch {
+      alert("Could not export users. Try refreshing and signing in again.");
+    } finally {
+      setUsersExportLoading(false);
+    }
+  }
+
+  async function exportSignupOutreachCsv() {
+    setUsersExportLoading(true);
+    try {
+      const merged = new Map<string, UserProfile & { adminList: string }>();
+      for (const filter of SIGNUP_OUTREACH_EXPORT_FILTERS) {
+        const rows = await fetchUsersForExport(filter);
+        const label = filter === "onboarding" ? "Onboarding" : "Unverified";
+        for (const u of rows) {
+          const existing = merged.get(u.user_id);
+          if (existing) {
+            const lists = new Set(existing.adminList.split("; "));
+            lists.add(label);
+            existing.adminList = [...lists].sort().join("; ");
+          } else {
+            merged.set(u.user_id, { ...u, adminList: label });
+          }
+        }
+      }
+      const rows = [...merged.values()].sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+        return bTime - aTime;
+      });
+      if (rows.length === 0) {
+        alert("No unverified or onboarding users to export.");
+        return;
+      }
+      downloadUsersOutreachCsv(rows, "signup-outreach");
+      showToast(`Exported ${rows.length} user${rows.length === 1 ? "" : "s"} (Unverified + Onboarding)`);
+    } catch {
+      alert("Could not export users. Try refreshing and signing in again.");
+    } finally {
+      setUsersExportLoading(false);
     }
   }
 
@@ -4624,6 +4770,32 @@ export default function AdminPage() {
                 )}
                 <button type="button" onClick={() => void loadUsers()} style={actionBtn("#374151")} disabled={usersLoading}>
                   {usersLoading ? "Loading…" : "↻ Refresh"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void exportSignupOutreachCsv()}
+                  style={{
+                    ...actionBtn("#1d4ed8"),
+                    opacity: usersExportLoading ? 0.5 : 1,
+                    cursor: usersExportLoading ? "not-allowed" : "pointer",
+                  }}
+                  disabled={usersExportLoading}
+                  title="Download Unverified and Onboarding users in one CSV for email outreach"
+                >
+                  {usersExportLoading ? "Exporting…" : "Export outreach CSV"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void exportUsersCsv()}
+                  style={{
+                    ...actionBtn("#374151"),
+                    opacity: usersExportLoading || usersTotalCount === 0 ? 0.5 : 1,
+                    cursor: usersExportLoading || usersTotalCount === 0 ? "not-allowed" : "pointer",
+                  }}
+                  disabled={usersExportLoading || usersTotalCount === 0}
+                  title="Download users in the current tab only (Unverified, Onboarding, Pending, etc.)"
+                >
+                  Export tab CSV
                 </button>
               </div>
             </div>

@@ -125,6 +125,35 @@ function userMatchesStatus(row: Record<string, unknown>, status: UserStatusFilte
   return true;
 }
 
+/** Status tabs that refine rows in JS — DB filters alone over-count vs what admins see. */
+function statusNeedsPostFilter(status: UserStatusFilter): boolean {
+  return status === "pending" || status === "onboarding" || status === "unverified";
+}
+
+function statusIncludesAuthOnlySignups(status: UserStatusFilter): boolean {
+  return status === "onboarding" || status === "unverified";
+}
+
+async function loadAllAuthUsers(
+  adminClient: ReturnType<typeof createClient>,
+  cap = FULL_LIST_LIMIT,
+) {
+  const authUserMap = new Map<string, { email: string; full_name: string | null }>();
+  let page = 1;
+  for (;;) {
+    const authUsersRes = await adminClient.auth.admin.listUsers({ page, perPage: 1000 });
+    for (const authUser of authUsersRes.data?.users ?? []) {
+      authUserMap.set(authUser.id, {
+        email: authUser.email ?? "",
+        full_name: authMetadataDisplayName(authUser.user_metadata ?? null),
+      });
+    }
+    if ((authUsersRes.data?.users ?? []).length < 1000 || authUserMap.size >= cap) break;
+    page += 1;
+  }
+  return authUserMap;
+}
+
 export async function GET(req: NextRequest) {
   // Verify caller is admin
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
@@ -160,6 +189,8 @@ export async function GET(req: NextRequest) {
   const search = req.nextUrl.searchParams.get("q")?.trim() ?? "";
   const status = parseStatusFilter(req.nextUrl.searchParams.get("status"));
   const full = req.nextUrl.searchParams.get("full") === "true";
+  const needsPostFilter = statusNeedsPostFilter(status);
+  const includeAuthOnlySignups = full || statusIncludesAuthOnlySignups(status);
   const offset = full ? 0 : parseBoundedInt(req.nextUrl.searchParams.get("offset"), 0, 0, 100_000);
   const limit = full
     ? FULL_LIST_LIMIT
@@ -170,7 +201,7 @@ export async function GET(req: NextRequest) {
     .select(PROFILE_SELECT_WITH_MIRRORS, { count: "exact" })
     .order("created_at", { ascending: false });
   profileQuery = applyProfileStatusFilter(applyProfileSearch(profileQuery, search, true), status);
-  if (!full) profileQuery = profileQuery.range(offset, offset + limit - 1);
+  if (!full && !needsPostFilter) profileQuery = profileQuery.range(offset, offset + limit - 1);
 
   let profilesQuery = (await profileQuery) as ProfilesQueryResult;
   if (profilesQuery.error) {
@@ -179,7 +210,7 @@ export async function GET(req: NextRequest) {
       .select(PROFILE_SELECT_BASE, { count: "exact" })
       .order("created_at", { ascending: false });
     fallbackQuery = applyProfileStatusFilter(applyProfileSearch(fallbackQuery, search, false), status);
-    if (!full) fallbackQuery = fallbackQuery.range(offset, offset + limit - 1);
+    if (!full && !needsPostFilter) fallbackQuery = fallbackQuery.range(offset, offset + limit - 1);
     profilesQuery = (await fallbackQuery) as ProfilesQueryResult;
   }
 
@@ -243,19 +274,9 @@ export async function GET(req: NextRequest) {
     .map((p) => (typeof p.user_id === "string" ? p.user_id : null))
     .filter((id): id is string => !!id);
 
-  if (full) {
-    let page = 1;
-    for (;;) {
-      const authUsersRes = await adminClient.auth.admin.listUsers({ page, perPage: 1000 });
-      for (const authUser of authUsersRes.data?.users ?? []) {
-        authUserMap.set(authUser.id, {
-          email: authUser.email ?? "",
-          full_name: authMetadataDisplayName(authUser.user_metadata ?? null),
-        });
-      }
-      if ((authUsersRes.data?.users ?? []).length < 1000 || authUserMap.size >= FULL_LIST_LIMIT) break;
-      page += 1;
-    }
+  if (full || includeAuthOnlySignups) {
+    const loaded = await loadAllAuthUsers(adminClient);
+    for (const [id, meta] of loaded) authUserMap.set(id, meta);
   } else {
     await Promise.all(
       visibleProfileIds.map(async (id) => {
@@ -274,7 +295,7 @@ export async function GET(req: NextRequest) {
   const profileUserIds = new Set(
     (profilesQuery.data ?? []).map((p) => String((p as { user_id: string }).user_id)),
   );
-  const authUsersForIncomplete = full
+  const authUsersForIncomplete = includeAuthOnlySignups
     ? [...authUserMap.entries()].map(([id, meta]) => ({
         id,
         email: meta.email,
@@ -371,9 +392,18 @@ export async function GET(req: NextRequest) {
   }),
   ].filter((row) => userMatchesStatus(row as Record<string, unknown>, status));
 
+  const totalCount = needsPostFilter || full
+    ? profiles.length
+    : (profilesQuery.count ?? profiles.length);
+  const pageOffset = full ? 0 : offset;
+  const pageLimit = full ? FULL_LIST_LIMIT : limit;
+  const users = needsPostFilter || full
+    ? profiles.slice(pageOffset, pageOffset + pageLimit)
+    : profiles;
+
   return NextResponse.json({
-    users: full ? profiles.slice(0, FULL_LIST_LIMIT) : profiles,
-    totalCount: full ? profiles.length : (profilesQuery.count ?? profiles.length),
+    users,
+    totalCount,
     full,
   });
 }
