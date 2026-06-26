@@ -28,6 +28,9 @@ export const DIFFICULTY_OPTIONS: {
 /** Boom Bot Alamo tuning — 20% easier across easy / novice / hard. */
 const LEVEL_3_DIFFICULTY_SCALE = 0.8;
 
+/** Drone Valley — novice & hard are 5% gentler than default tier tuning. */
+const LEVEL_2_NOVICE_HARD_EASE = 0.95;
+
 /** Easy is 10% gentler than the baseline; novice/hard stay unchanged. */
 export const EASY_PRESSURE_MULT = 0.9;
 
@@ -170,12 +173,18 @@ export function applyDifficulty(
 ): LevelConfig {
   const isLevel3 = base.level.id === "level-3";
   const isLevel7 = base.level.id === "level-7";
+  const isLevel2 = base.level.id === "level-2";
   let speedMult = getDifficultySpeedMult(difficulty);
   let extraEnemyFrac = difficulty === "hard" ? 1 : difficulty === "novice" ? 0.5 : 0;
   const extraPickupFrac =
     difficulty === "hard" ? 0.25 : difficulty === "novice" ? 0.12 : 0;
   const supportPickups = getLevelSupportPickups(base, difficulty);
   let easyEnemyKeep = difficulty === "easy" ? EASY_PRESSURE_MULT : 1;
+
+  if (isLevel2 && (difficulty === "novice" || difficulty === "hard")) {
+    speedMult *= LEVEL_2_NOVICE_HARD_EASE;
+    extraEnemyFrac *= LEVEL_2_NOVICE_HARD_EASE;
+  }
 
   if (isLevel7 && difficulty === "easy") {
     speedMult *= LEVEL_7_EASY_HARDEN_MULT;

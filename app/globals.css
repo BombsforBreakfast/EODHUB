@@ -1593,6 +1593,21 @@ body.game-playing-active .games-shell-nav {
   box-shadow: 0 0 18px rgba(255, 64, 128, 0.18);
 }
 
+/* Boss fights: score/time top-left (boss HP stays top-right). */
+.rc-hud-root--boss .rc-level-panel {
+  display: none;
+}
+
+.rc-hud-root--boss .rc-score-panel {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top, 0px));
+  left: max(12px, env(safe-area-inset-left, 0px));
+  right: auto;
+  margin: 0;
+  max-width: min(220px, 40vw);
+  text-align: left;
+}
+
 .rc-boss-health-track {
   position: relative;
   display: flex;

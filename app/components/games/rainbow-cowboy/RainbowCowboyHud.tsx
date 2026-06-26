@@ -14,7 +14,7 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
   const hasBossHealth = hud.bossHp != null && hud.bossMaxHp != null;
 
   return (
-    <div className="rc-hud-root">
+    <div className={`rc-hud-root${hasBossHealth ? " rc-hud-root--boss" : ""}`}>
       <div className="rc-hud-top">
         <div className="rc-level-panel">
           <div style={{ color: "#ff80d0", fontWeight: 700 }}>{levelTitle}</div>
@@ -23,7 +23,7 @@ export function RainbowCowboyHud({ hud, personalBest, levelTitle, rideLabel }: P
           </div>
         </div>
 
-        <div className="rc-score-panel" style={hasBossHealth ? { marginTop: 70 } : undefined}>
+        <div className="rc-score-panel">
           <div>Score: {hud.score}</div>
           <div>Time: {formatRainbowCowboyDuration(hud.elapsedSeconds)}</div>
           {personalBest != null && (
