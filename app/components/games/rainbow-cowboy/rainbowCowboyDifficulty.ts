@@ -144,8 +144,15 @@ function getLevelSupportPickups(
     ];
   }
 
-  if (base.level.id !== "level-2" || difficulty !== "hard") return [];
+  if (base.level.id !== "level-2" || (difficulty !== "novice" && difficulty !== "hard")) return [];
   const ground = base.level.groundY;
+  const extraRainbows: LevelPickupSpawn[] = [
+    // Lower canyon — reload before the drone mix thickens
+    { kind: "rainbow", x: 2200, y: ground - 36 },
+    // Balloon field — ammo before trash balloons and swarm corridor
+    { kind: "rainbow", x: 10100, y: ground - 36 },
+  ];
+  if (difficulty === "novice") return extraRainbows;
   return [
     // First Red Baron approach
     { kind: "rainbow", x: 3900, y: ground - 36 },
@@ -164,6 +171,7 @@ function getLevelSupportPickups(
     { kind: "unicorn_treat", x: 13950, y: ground - 36 },
     { kind: "rainbow", x: 14650, y: ground - 36 },
     { kind: "white_energy_drink", x: 15350, y: ground - 36 },
+    ...extraRainbows,
   ];
 }
 
