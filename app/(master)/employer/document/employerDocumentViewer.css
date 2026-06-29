@@ -57,7 +57,7 @@
     margin-bottom: 12px !important;
     /* docx-preview preserves Word page margins as CSS padding. On phones that
        leaves a tiny text column, so use app-level reading margins instead. */
-    padding: 18px 18px 28px !important;
+    padding: clamp(8px, 2.5vw, 18px) clamp(8px, 2.5vw, 18px) 28px !important;
   }
 
   .employer-docx-canvas section.docx p,
