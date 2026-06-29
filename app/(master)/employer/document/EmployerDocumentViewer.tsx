@@ -21,8 +21,15 @@ function bindDocxPreviewFit(viewport: HTMLElement): () => void {
     const maxPageWidth = 816;
     const horizontalPadding = viewport.clientWidth <= 640 ? 0 : 24;
     const pageWidth = Math.min(maxPageWidth, Math.max(1, viewport.clientWidth - horizontalPadding));
+    const visualScale = viewport.clientWidth <= 640 ? 1.1 : 1;
 
     canvas.style.setProperty("--employer-docx-page-width", `${pageWidth}px`);
+    canvas.style.setProperty("--employer-docx-visual-scale", String(visualScale));
+
+    const naturalHeight = wrapper.offsetHeight;
+    if (naturalHeight > 0) {
+      canvas.style.minHeight = `${naturalHeight * visualScale}px`;
+    }
   };
 
   apply();
