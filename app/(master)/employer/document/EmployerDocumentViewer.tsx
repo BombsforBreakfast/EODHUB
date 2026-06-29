@@ -9,6 +9,46 @@ import {
   documentExtension,
   type CandidateDocumentKind,
 } from "../lib/candidateDocumentLinks";
+import "./employerDocumentViewer.css";
+
+function bindDocxPreviewFit(viewport: HTMLElement): () => void {
+  const apply = () => {
+    const canvas = viewport.querySelector(".employer-docx-canvas") as HTMLElement | null;
+    const wrapper = viewport.querySelector(".docx-wrapper") as HTMLElement | null;
+    if (!canvas || !wrapper) return;
+
+    wrapper.classList.add("employer-docx-fit");
+    wrapper.style.transform = "";
+    wrapper.style.width = "";
+    canvas.style.height = "";
+
+    const horizontalPadding = 24;
+    const availableWidth = Math.max(1, viewport.clientWidth - horizontalPadding);
+    const naturalWidth = wrapper.scrollWidth || wrapper.offsetWidth;
+    const naturalHeight = wrapper.offsetHeight;
+
+    if (naturalWidth <= availableWidth) {
+      canvas.style.height = naturalHeight > 0 ? `${naturalHeight}px` : "";
+      return;
+    }
+
+    const scale = availableWidth / naturalWidth;
+    wrapper.style.width = `${naturalWidth}px`;
+    wrapper.style.transform = `scale(${scale})`;
+    canvas.style.height = `${naturalHeight * scale}px`;
+  };
+
+  apply();
+  requestAnimationFrame(apply);
+
+  const observer = new ResizeObserver(apply);
+  observer.observe(viewport);
+  window.addEventListener("orientationchange", apply);
+  return () => {
+    observer.disconnect();
+    window.removeEventListener("orientationchange", apply);
+  };
+}
 
 type DocMeta = { url: string; filename: string };
 
@@ -163,11 +203,13 @@ function DocxRenderer({
   filename: string;
   downloadHref: string | null;
 }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     let cancelled = false;
+    let unbindFit: (() => void) | undefined;
     const container = containerRef.current;
     (async () => {
       setState("loading");
@@ -183,21 +225,26 @@ function DocxRenderer({
         await renderAsync(blob, container, undefined, {
           className: "docx-render",
           inWrapper: true,
-          ignoreWidth: false,
+          ignoreWidth: true,
           ignoreHeight: false,
+          breakPages: true,
         });
-        if (!cancelled) setState("ready");
+        if (cancelled) return;
+        const scrollHost = scrollRef.current;
+        if (scrollHost) unbindFit = bindDocxPreviewFit(scrollHost);
+        setState("ready");
       } catch {
         if (!cancelled) setState("error");
       }
     })();
     return () => {
       cancelled = true;
+      unbindFit?.();
     };
   }, [inlineHref]);
 
   return (
-    <div style={{ flex: 1, position: "relative", overflow: "auto", background: "#525659" }}>
+    <div ref={scrollRef} className="employer-docx-viewer">
       {state === "loading" && (
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "#f3f4f6", fontSize: 15, fontWeight: 600 }}>
           Loading document…
@@ -218,8 +265,9 @@ function DocxRenderer({
       )}
       <div
         ref={containerRef}
+        className="employer-docx-canvas"
         aria-label={filename}
-        style={{ padding: "16px 0", display: state === "ready" ? "block" : "none" }}
+        style={{ display: state === "ready" ? "flex" : "none" }}
       />
     </div>
   );
