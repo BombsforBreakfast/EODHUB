@@ -2,24 +2,23 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   candidateDocumentApiHref,
-  isPdfDocument,
-  parseFilenameFromContentDisposition,
+  candidateDocumentMetaHref,
+  documentExtension,
+  isOfficeExtension,
+  isPdfExtension,
+  officeViewerUrl,
   type CandidateDocumentKind,
 } from "../lib/candidateDocumentLinks";
+
+type DocMeta = { url: string; filename: string };
 
 type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | {
-      status: "ready";
-      blobUrl: string;
-      contentType: string;
-      filename: string;
-      isPdf: boolean;
-    };
+  | { status: "ready"; meta: DocMeta; ext: string };
 
 function parseKind(value: string | null): CandidateDocumentKind | null {
   if (value === "resume" || value === "education" || value === "training") return value;
@@ -38,12 +37,10 @@ export default function EmployerDocumentViewer() {
   const kind = parseKind(searchParams.get("kind"));
   const tag = searchParams.get("tag");
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
-  const openedPreviewRef = useRef(false);
-  const blobUrlRef = useRef<string | null>(null);
 
-  const apiHref = useMemo(() => {
+  const metaHref = useMemo(() => {
     if (!userId || !kind) return null;
-    return candidateDocumentApiHref(userId, kind, tag ?? undefined, "inline");
+    return candidateDocumentMetaHref(userId, kind, tag ?? undefined);
   }, [userId, kind, tag]);
 
   const downloadHref = useMemo(() => {
@@ -52,36 +49,25 @@ export default function EmployerDocumentViewer() {
   }, [userId, kind, tag]);
 
   useEffect(() => {
-    if (!apiHref) {
+    if (!metaHref) {
       setLoadState({ status: "error", message: "Missing document request." });
       return;
     }
-
     let cancelled = false;
-
     (async () => {
       setLoadState({ status: "loading" });
       try {
-        const res = await fetch(apiHref, { credentials: "include" });
+        const res = await fetch(metaHref, { credentials: "include" });
         if (!res.ok) {
-          throw new Error(res.status === 403 ? "You do not have access to this document." : "Could not load document.");
+          throw new Error(
+            res.status === 403
+              ? "You do not have access to this document."
+              : "Could not load document.",
+          );
         }
-        const filename =
-          parseFilenameFromContentDisposition(res.headers.get("content-disposition")) ??
-          `${kind ?? "document"}-${userId}`;
-        const contentType = res.headers.get("content-type") ?? "application/octet-stream";
-        const blob = await res.blob();
+        const meta = (await res.json()) as DocMeta;
         if (cancelled) return;
-        if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
-        const blobUrl = URL.createObjectURL(blob);
-        blobUrlRef.current = blobUrl;
-        setLoadState({
-          status: "ready",
-          blobUrl,
-          contentType,
-          filename,
-          isPdf: isPdfDocument(contentType, filename),
-        });
+        setLoadState({ status: "ready", meta, ext: documentExtension(meta.filename || meta.url) });
       } catch (err) {
         if (!cancelled) {
           setLoadState({
@@ -91,77 +77,87 @@ export default function EmployerDocumentViewer() {
         }
       }
     })();
-
     return () => {
       cancelled = true;
     };
-  }, [apiHref, kind, userId]);
-
-  useEffect(() => {
-    if (loadState.status !== "ready" || loadState.isPdf || openedPreviewRef.current) return;
-    openedPreviewRef.current = true;
-    window.location.assign(loadState.blobUrl);
-  }, [loadState]);
-
-  useEffect(() => {
-    return () => {
-      if (openedPreviewRef.current) return;
-      if (blobUrlRef.current) {
-        URL.revokeObjectURL(blobUrlRef.current);
-        blobUrlRef.current = null;
-      }
-    };
-  }, []);
+  }, [metaHref]);
 
   if (!userId || !kind) {
     return (
       <ViewerShell title="Document">
-        <MessagePanel message="Missing document request." backHref="/employer" />
+        <MessagePanel message="Missing document request." />
       </ViewerShell>
     );
   }
 
-  const title = loadState.status === "ready" ? loadState.filename : kindLabel(kind);
+  const title = loadState.status === "ready" ? loadState.meta.filename : kindLabel(kind);
 
   return (
-    <ViewerShell
-      title={title}
-      downloadHref={downloadHref}
-      backHref="/employer"
-    >
-      {loadState.status === "loading" && (
-        <MessagePanel message="Loading document…" />
-      )}
-      {loadState.status === "error" && (
-        <MessagePanel message={loadState.message} backHref="/employer" />
-      )}
-      {loadState.status === "ready" && loadState.isPdf && (
-        <iframe
-          src={loadState.blobUrl}
-          title={loadState.filename}
-          style={{ flex: 1, width: "100%", border: 0, background: "#525659" }}
-        />
-      )}
-      {loadState.status === "ready" && !loadState.isPdf && (
-        <MessagePanel
-          message="Opening preview in your device viewer…"
-          hint="Use the share menu there if you need a copy on your device."
-          actionHref={loadState.blobUrl}
-          actionLabel="View document"
-        />
+    <ViewerShell title={title} downloadHref={downloadHref}>
+      {loadState.status === "loading" && <MessagePanel message="Loading document…" />}
+      {loadState.status === "error" && <MessagePanel message={loadState.message} />}
+      {loadState.status === "ready" && (
+        <DocumentFrame meta={loadState.meta} ext={loadState.ext} downloadHref={downloadHref} />
       )}
     </ViewerShell>
   );
 }
 
+function DocumentFrame({
+  meta,
+  ext,
+  downloadHref,
+}: {
+  meta: DocMeta;
+  ext: string;
+  downloadHref: string | null;
+}) {
+  if (isPdfExtension(ext)) {
+    return (
+      <iframe
+        src={meta.url}
+        title={meta.filename}
+        style={{ flex: 1, width: "100%", border: 0, background: "#525659" }}
+      />
+    );
+  }
+
+  if (isOfficeExtension(ext)) {
+    return (
+      <iframe
+        src={officeViewerUrl(meta.url)}
+        title={meta.filename}
+        style={{ flex: 1, width: "100%", border: 0, background: "#fff" }}
+      />
+    );
+  }
+
+  // Images render natively; anything else falls back to an open/save action.
+  if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflow: "auto" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- candidate document image */}
+        <img src={meta.url} alt={meta.filename} style={{ maxWidth: "100%", height: "auto" }} />
+      </div>
+    );
+  }
+
+  return (
+    <MessagePanel
+      message="This file type can't be previewed in the browser."
+      hint="Save a copy to open it in another app."
+      actionHref={downloadHref ?? meta.url}
+      actionLabel="Save copy"
+    />
+  );
+}
+
 function ViewerShell({
   title,
-  backHref = "/employer",
   downloadHref,
   children,
 }: {
   title: string;
-  backHref?: string;
   downloadHref?: string | null;
   children: React.ReactNode;
 }) {
@@ -186,14 +182,8 @@ function ViewerShell({
         }}
       >
         <Link
-          href={backHref}
-          style={{
-            color: "#93c5fd",
-            textDecoration: "none",
-            fontSize: 14,
-            fontWeight: 600,
-            flexShrink: 0,
-          }}
+          href="/employer"
+          style={{ color: "#93c5fd", textDecoration: "none", fontSize: 14, fontWeight: 600, flexShrink: 0 }}
         >
           ← Back
         </Link>
@@ -212,13 +202,7 @@ function ViewerShell({
         {downloadHref ? (
           <a
             href={downloadHref}
-            style={{
-              color: "#9ca3af",
-              textDecoration: "none",
-              fontSize: 12,
-              fontWeight: 500,
-              flexShrink: 0,
-            }}
+            style={{ color: "#9ca3af", textDecoration: "none", fontSize: 12, fontWeight: 500, flexShrink: 0 }}
           >
             Save copy
           </a>
@@ -234,13 +218,11 @@ function MessagePanel({
   hint,
   actionHref,
   actionLabel,
-  backHref,
 }: {
   message: string;
   hint?: string;
   actionHref?: string;
   actionLabel?: string;
-  backHref?: string;
 }) {
   return (
     <div
@@ -274,11 +256,9 @@ function MessagePanel({
           {actionLabel}
         </a>
       ) : null}
-      {backHref ? (
-        <Link href={backHref} style={{ color: "#93c5fd", fontSize: 13, textDecoration: "none" }}>
-          Return to employer dashboard
-        </Link>
-      ) : null}
+      <Link href="/employer" style={{ color: "#93c5fd", fontSize: 13, textDecoration: "none" }}>
+        Return to employer dashboard
+      </Link>
     </div>
   );
 }

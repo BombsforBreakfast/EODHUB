@@ -22,6 +22,38 @@ export function candidateDocumentApiHref(
   return `/api/employer/candidate-document?${params.toString()}`;
 }
 
+export function candidateDocumentMetaHref(
+  userId: string,
+  kind: CandidateDocumentKind,
+  tag?: string,
+): string {
+  const params = new URLSearchParams({ userId, kind, meta: "1" });
+  if (tag) params.set("tag", tag);
+  return `/api/employer/candidate-document?${params.toString()}`;
+}
+
+export function documentExtension(filename: string): string {
+  const clean = filename.split("?")[0].split("#")[0];
+  const dot = clean.lastIndexOf(".");
+  if (dot < 0) return "";
+  return clean.slice(dot + 1).toLowerCase();
+}
+
+const OFFICE_EXTENSIONS = new Set(["doc", "docx", "ppt", "pptx", "xls", "xlsx"]);
+
+export function isPdfExtension(ext: string): boolean {
+  return ext === "pdf";
+}
+
+export function isOfficeExtension(ext: string): boolean {
+  return OFFICE_EXTENSIONS.has(ext);
+}
+
+/** Microsoft Office Online embed viewer — renders Office docs as a web page (no download prompt). */
+export function officeViewerUrl(publicUrl: string): string {
+  return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(publicUrl)}`;
+}
+
 export function parseFilenameFromContentDisposition(header: string | null): string | null {
   if (!header) return null;
   const utf8Match = header.match(/filename\*=UTF-8''([^;\s]+)/i);

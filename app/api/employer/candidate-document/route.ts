@@ -122,6 +122,15 @@ export async function GET(req: NextRequest) {
   const documentUrl = documentUrlForKind(profile, kind, tag);
   if (!documentUrl) return NextResponse.json({ error: "Document unavailable." }, { status: 404 });
 
+  // Metadata mode: return the (public) document URL + filename so the in-app
+  // viewer can embed it directly (PDF inline, Office docs via Office viewer)
+  // instead of forcing a browser download prompt. Access is still gated above.
+  if (req.nextUrl.searchParams.get("meta") === "1") {
+    const fallbackName = `${kind}-${userId}`;
+    const filename = filenameFromUrl(documentUrl, fallbackName);
+    return NextResponse.json({ url: documentUrl, filename, kind });
+  }
+
   let upstream: Response;
   try {
     upstream = await fetch(documentUrl, { cache: "no-store" });
