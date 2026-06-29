@@ -34,6 +34,40 @@
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
 
+.employer-docx-canvas section.docx {
+  min-width: 0 !important;
+  overflow-wrap: anywhere;
+}
+
+.employer-docx-canvas section.docx > article,
+.employer-docx-canvas section.docx > div,
+.employer-docx-canvas section.docx > main {
+  box-sizing: border-box !important;
+  max-width: 100% !important;
+}
+
+@media (max-width: 640px) {
+  .employer-docx-canvas {
+    padding: 0 0 24px;
+    --employer-docx-page-width: 100vw;
+  }
+
+  .employer-docx-canvas .docx-wrapper > section.docx {
+    border-radius: 0;
+    margin-bottom: 12px !important;
+    /* docx-preview preserves Word page margins as CSS padding. On phones that
+       leaves a tiny text column, so use app-level reading margins instead. */
+    padding: 18px 18px 28px !important;
+  }
+
+  .employer-docx-canvas section.docx p,
+  .employer-docx-canvas section.docx table,
+  .employer-docx-canvas section.docx ul,
+  .employer-docx-canvas section.docx ol {
+    max-width: 100% !important;
+  }
+}
+
 .employer-docx-fit {
   transform: none !important;
 }

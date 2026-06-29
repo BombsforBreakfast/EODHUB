@@ -19,7 +19,7 @@ function bindDocxPreviewFit(viewport: HTMLElement): () => void {
 
     wrapper.classList.add("employer-docx-fit");
     const maxPageWidth = 816;
-    const horizontalPadding = viewport.clientWidth <= 640 ? 16 : 24;
+    const horizontalPadding = viewport.clientWidth <= 640 ? 0 : 24;
     const pageWidth = Math.min(maxPageWidth, Math.max(1, viewport.clientWidth - horizontalPadding));
 
     canvas.style.setProperty("--employer-docx-page-width", `${pageWidth}px`);
