@@ -15,6 +15,25 @@ type ProfilesQueryResult = {
   count?: number | null;
 };
 
+type AdminListUsersClient = {
+  auth: {
+    admin: {
+      listUsers: (params: {
+        page: number;
+        perPage: number;
+      }) => Promise<{
+        data?: {
+          users?: Array<{
+            id: string;
+            email?: string | null;
+            user_metadata?: unknown;
+          }> | null;
+        } | null;
+      }>;
+    };
+  };
+};
+
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const FULL_LIST_LIMIT = 5000;
@@ -135,7 +154,7 @@ function statusIncludesAuthOnlySignups(status: UserStatusFilter): boolean {
 }
 
 async function loadAllAuthUsers(
-  adminClient: ReturnType<typeof createClient>,
+  adminClient: AdminListUsersClient,
   cap = FULL_LIST_LIMIT,
 ) {
   const authUserMap = new Map<string, { email: string; full_name: string | null }>();
@@ -145,7 +164,9 @@ async function loadAllAuthUsers(
     for (const authUser of authUsersRes.data?.users ?? []) {
       authUserMap.set(authUser.id, {
         email: authUser.email ?? "",
-        full_name: authMetadataDisplayName(authUser.user_metadata ?? null),
+        full_name: authMetadataDisplayName(
+          (authUser.user_metadata ?? null) as Record<string, unknown> | null,
+        ),
       });
     }
     if ((authUsersRes.data?.users ?? []).length < 1000 || authUserMap.size >= cap) break;
