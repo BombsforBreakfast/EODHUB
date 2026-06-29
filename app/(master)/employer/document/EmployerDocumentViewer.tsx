@@ -2,14 +2,11 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   candidateDocumentApiHref,
   candidateDocumentMetaHref,
   documentExtension,
-  isOfficeExtension,
-  isPdfExtension,
-  officeViewerUrl,
   type CandidateDocumentKind,
 } from "../lib/candidateDocumentLinks";
 
@@ -41,6 +38,11 @@ export default function EmployerDocumentViewer() {
   const metaHref = useMemo(() => {
     if (!userId || !kind) return null;
     return candidateDocumentMetaHref(userId, kind, tag ?? undefined);
+  }, [userId, kind, tag]);
+
+  const inlineHref = useMemo(() => {
+    if (!userId || !kind) return null;
+    return candidateDocumentApiHref(userId, kind, tag ?? undefined, "inline");
   }, [userId, kind, tag]);
 
   const downloadHref = useMemo(() => {
@@ -97,7 +99,12 @@ export default function EmployerDocumentViewer() {
       {loadState.status === "loading" && <MessagePanel message="Loading document…" />}
       {loadState.status === "error" && <MessagePanel message={loadState.message} />}
       {loadState.status === "ready" && (
-        <DocumentFrame meta={loadState.meta} ext={loadState.ext} downloadHref={downloadHref} />
+        <DocumentFrame
+          meta={loadState.meta}
+          ext={loadState.ext}
+          inlineHref={inlineHref}
+          downloadHref={downloadHref}
+        />
       )}
     </ViewerShell>
   );
@@ -106,13 +113,15 @@ export default function EmployerDocumentViewer() {
 function DocumentFrame({
   meta,
   ext,
+  inlineHref,
   downloadHref,
 }: {
   meta: DocMeta;
   ext: string;
+  inlineHref: string | null;
   downloadHref: string | null;
 }) {
-  if (isPdfExtension(ext)) {
+  if (ext === "pdf") {
     return (
       <iframe
         src={meta.url}
@@ -122,17 +131,10 @@ function DocumentFrame({
     );
   }
 
-  if (isOfficeExtension(ext)) {
-    return (
-      <iframe
-        src={officeViewerUrl(meta.url)}
-        title={meta.filename}
-        style={{ flex: 1, width: "100%", border: 0, background: "#fff" }}
-      />
-    );
+  if (ext === "docx" && inlineHref) {
+    return <DocxRenderer inlineHref={inlineHref} filename={meta.filename} downloadHref={downloadHref} />;
   }
 
-  // Images render natively; anything else falls back to an open/save action.
   if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) {
     return (
       <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 16, overflow: "auto" }}>
@@ -149,6 +151,77 @@ function DocumentFrame({
       actionHref={downloadHref ?? meta.url}
       actionLabel="Save copy"
     />
+  );
+}
+
+function DocxRenderer({
+  inlineHref,
+  filename,
+  downloadHref,
+}: {
+  inlineHref: string;
+  filename: string;
+  downloadHref: string | null;
+}) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    const container = containerRef.current;
+    (async () => {
+      setState("loading");
+      try {
+        const [{ renderAsync }, res] = await Promise.all([
+          import("docx-preview"),
+          fetch(inlineHref, { credentials: "include" }),
+        ]);
+        if (!res.ok) throw new Error("fetch failed");
+        const blob = await res.blob();
+        if (cancelled || !container) return;
+        container.innerHTML = "";
+        await renderAsync(blob, container, undefined, {
+          className: "docx-render",
+          inWrapper: true,
+          ignoreWidth: false,
+          ignoreHeight: false,
+        });
+        if (!cancelled) setState("ready");
+      } catch {
+        if (!cancelled) setState("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [inlineHref]);
+
+  return (
+    <div style={{ flex: 1, position: "relative", overflow: "auto", background: "#525659" }}>
+      {state === "loading" && (
+        <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "#f3f4f6", fontSize: 15, fontWeight: 600 }}>
+          Loading document…
+        </div>
+      )}
+      {state === "error" && (
+        <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center", color: "#f3f4f6" }}>
+          <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>Couldn&apos;t render this document.</p>
+          {downloadHref ? (
+            <a
+              href={downloadHref}
+              style={{ background: "#2563eb", color: "white", textDecoration: "none", borderRadius: 10, padding: "10px 18px", fontSize: 14, fontWeight: 700 }}
+            >
+              Save copy
+            </a>
+          ) : null}
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        aria-label={filename}
+        style={{ padding: "16px 0", display: state === "ready" ? "block" : "none" }}
+      />
+    </div>
   );
 }
 
