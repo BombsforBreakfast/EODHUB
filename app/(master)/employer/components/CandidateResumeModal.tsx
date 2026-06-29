@@ -294,7 +294,12 @@ export default function CandidateResumeModal({
               {field(
                 "Resume",
                 detail.resume_url ? (
-                  <a href={candidateDocumentHref(candidate.user_id, "resume")} style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>
+                  <a
+                    href={candidateDocumentHref(candidate.user_id, "resume")}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}
+                  >
                     Download resume →
                   </a>
                 ) : (
@@ -304,7 +309,12 @@ export default function CandidateResumeModal({
               {field(
                 "Education",
                 detail.education_url ? (
-                  <a href={candidateDocumentHref(candidate.user_id, "education")} style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>
+                  <a
+                    href={candidateDocumentHref(candidate.user_id, "education")}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}
+                  >
                     Download →
                   </a>
                 ) : (
@@ -463,6 +473,8 @@ function TagBlock({
               <a
                 key={tag}
                 href={candidateUserId ? candidateDocumentHref(candidateUserId, "training", tag) : docUrl}
+                target="_blank"
+                rel="noreferrer"
                 style={{ textDecoration: "none" }}
               >
                 {content}

@@ -23,6 +23,38 @@ function filenameFromUrl(url: string, fallback: string): string {
   }
 }
 
+function isIosLikeUserAgent(userAgent: string): boolean {
+  return /\b(iPhone|iPad|iPod)\b/i.test(userAgent);
+}
+
+function contentTypeForFilename(filename: string, upstreamContentType: string | null): string {
+  const normalized = upstreamContentType?.split(";")[0]?.trim().toLowerCase();
+  if (normalized && normalized !== "application/octet-stream") return upstreamContentType!;
+
+  const lower = filename.toLowerCase();
+  if (lower.endsWith(".docx")) {
+    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  }
+  if (lower.endsWith(".doc")) return "application/msword";
+  if (lower.endsWith(".pdf")) return "application/pdf";
+  if (lower.endsWith(".rtf")) return "application/rtf";
+  if (lower.endsWith(".txt")) return "text/plain; charset=utf-8";
+  if (lower.endsWith(".odt")) return "application/vnd.oasis.opendocument.text";
+  return upstreamContentType || "application/octet-stream";
+}
+
+function contentDispositionForRequest(req: NextRequest, filename: string): string {
+  const requestedMode = req.nextUrl.searchParams.get("mode");
+  const disposition =
+    requestedMode === "download"
+      ? "attachment"
+      : requestedMode === "inline" || isIosLikeUserAgent(req.headers.get("user-agent") ?? "")
+        ? "inline"
+        : "attachment";
+  const safeFilename = filename.replace(/["\r\n]/g, "");
+  return `${disposition}; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`;
+}
+
 function documentUrlForKind(
   profile: {
     resume_url?: string | null;
@@ -113,11 +145,11 @@ export async function GET(req: NextRequest) {
 
   const fallbackName = `${kind}-${userId}.pdf`;
   const filename = filenameFromUrl(documentUrl, fallbackName);
-  const contentType = upstream.headers.get("content-type") || "application/octet-stream";
+  const contentType = contentTypeForFilename(filename, upstream.headers.get("content-type"));
   const contentLength = upstream.headers.get("content-length");
   const headers = new Headers({
     "Content-Type": contentType,
-    "Content-Disposition": `attachment; filename="${filename.replace(/"/g, "")}"`,
+    "Content-Disposition": contentDispositionForRequest(req, filename),
     "Cache-Control": "private, no-store",
   });
   if (contentLength) headers.set("Content-Length", contentLength);
