@@ -1,5 +1,7 @@
 import type { RefObject } from "react";
 import type { GalleryPhoto, Photo } from "@capacitor/camera";
+import type { PickedFile } from "@capawesome/capacitor-file-picker";
+import { Capacitor } from "@capacitor/core";
 import { isNativeIosApp } from "./isNativeApp";
 
 /** Video and PDF only — avoids iOS WKWebView camera crash from image/* file inputs. */
@@ -14,7 +16,60 @@ export type OpenFeedMediaPickerOptions = {
 
 function isUserCancel(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
-  return /cancel|dismiss|user denied|no image|no photo/i.test(message);
+  return /cancel|dismiss|pickfiles canceled|user denied|no image|no photo/i.test(message);
+}
+
+function extensionForFormat(format: string): string {
+  const normalized = format.toLowerCase();
+  if (normalized === "jpeg") return "jpg";
+  return normalized.replace(/[^a-z0-9]/g, "") || "jpg";
+}
+
+function mimeForFormat(format: string): string {
+  const normalized = format.toLowerCase();
+  if (normalized === "jpg" || normalized === "jpeg") return "image/jpeg";
+  return `image/${normalized}`;
+}
+
+function extensionForMime(mimeType: string, fallbackKind: "image" | "video" | "document"): string {
+  const normalized = mimeType.toLowerCase();
+  if (normalized === "image/jpeg") return "jpg";
+  if (normalized === "video/quicktime") return "mov";
+  if (normalized === "application/pdf") return "pdf";
+  const subtype = normalized.split("/")[1]?.split(";")[0]?.replace(/[^a-z0-9]/g, "");
+  if (subtype) return subtype;
+  if (fallbackKind === "video") return "mov";
+  if (fallbackKind === "document") return "pdf";
+  return "jpg";
+}
+
+function base64ToBlob(data: string, mimeType: string): Blob {
+  const binary = window.atob(data);
+  const chunks: ArrayBuffer[] = [];
+  const chunkSize = 8192;
+  for (let offset = 0; offset < binary.length; offset += chunkSize) {
+    const slice = binary.slice(offset, offset + chunkSize);
+    const buffer = new ArrayBuffer(slice.length);
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < slice.length; i += 1) {
+      bytes[i] = slice.charCodeAt(i);
+    }
+    chunks.push(buffer);
+  }
+  return new Blob(chunks, { type: mimeType });
+}
+
+async function dataUrlToFile(dataUrl: string, format: string, index: number): Promise<File> {
+  const response = await fetch(dataUrl);
+  if (!response.ok) {
+    throw new Error("Could not read the selected photo.");
+  }
+  const blob = await response.blob();
+  const ext = extensionForFormat(format);
+  return new File([blob], `photo-${Date.now()}-${index}.${ext}`, {
+    type: blob.type || mimeForFormat(format),
+    lastModified: Date.now(),
+  });
 }
 
 async function webPathToFile(webPath: string, format: string, index: number): Promise<File> {
@@ -23,8 +78,8 @@ async function webPathToFile(webPath: string, format: string, index: number): Pr
     throw new Error("Could not read the selected photo.");
   }
   const blob = await response.blob();
-  const ext = format === "jpeg" ? "jpg" : format;
-  const mime = blob.type || `image/${format === "jpg" ? "jpeg" : format}`;
+  const ext = extensionForFormat(format);
+  const mime = blob.type || mimeForFormat(format);
   return new File([blob], `photo-${Date.now()}-${index}.${ext}`, {
     type: mime,
     lastModified: Date.now(),
@@ -32,8 +87,52 @@ async function webPathToFile(webPath: string, format: string, index: number): Pr
 }
 
 export async function photoToFile(photo: Photo | GalleryPhoto, index = 0): Promise<File> {
-  if (!photo.webPath) throw new Error("Could not read the captured photo.");
-  return webPathToFile(photo.webPath, photo.format || "jpeg", index);
+  const format = photo.format || "jpeg";
+  if ("dataUrl" in photo && typeof photo.dataUrl === "string") {
+    return dataUrlToFile(photo.dataUrl, format, index);
+  }
+  if (photo.webPath) {
+    return webPathToFile(photo.webPath, format, index);
+  }
+  if (photo.path) {
+    return webPathToFile(Capacitor.convertFileSrc(photo.path), format, index);
+  }
+  throw new Error("Could not read the selected photo.");
+}
+
+async function pickedFileToFile(
+  pickedFile: PickedFile,
+  index: number,
+  fallbackKind: "image" | "video" | "document",
+): Promise<File> {
+  const mimeType = pickedFile.mimeType || (
+    fallbackKind === "video" ? "video/quicktime" : fallbackKind === "document" ? "application/pdf" : "image/jpeg"
+  );
+  const fallbackName = `${fallbackKind}-${Date.now()}-${index}.${extensionForMime(mimeType, fallbackKind)}`;
+  const fileName = pickedFile.name || fallbackName;
+  const lastModified = pickedFile.modifiedAt ?? Date.now();
+
+  if (pickedFile.blob) {
+    return new File([pickedFile.blob], fileName, { type: mimeType, lastModified });
+  }
+
+  if (pickedFile.data) {
+    return new File([base64ToBlob(pickedFile.data, mimeType)], fileName, { type: mimeType, lastModified });
+  }
+
+  if (pickedFile.path) {
+    const response = await fetch(Capacitor.convertFileSrc(pickedFile.path));
+    if (!response.ok) {
+      throw new Error("Could not read the selected file.");
+    }
+    const blob = await response.blob();
+    return new File([blob], fileName, {
+      type: blob.type || mimeType,
+      lastModified,
+    });
+  }
+
+  throw new Error("Could not read the selected file.");
 }
 
 async function ensureCameraPermission(): Promise<boolean> {
@@ -63,7 +162,7 @@ export async function takeNativePhoto(): Promise<File | null> {
     const photo = await Camera.getPhoto({
       quality: 90,
       allowEditing: false,
-      resultType: CameraResultType.Uri,
+      resultType: CameraResultType.DataUrl,
       source: CameraSource.Camera,
     });
     return photoToFile(photo);
@@ -78,13 +177,15 @@ export async function takeNativePhoto(): Promise<File | null> {
 
 async function pickNativePhotosFromLibrary(limit: number): Promise<File[]> {
   if (!(await ensurePhotosPermission())) return [];
-  const { Camera } = await import("@capacitor/camera");
+  const { FilePicker } = await import("@capawesome/capacitor-file-picker");
   try {
-    const result = await Camera.pickImages({
-      quality: 90,
-      limit: limit > 0 ? limit : undefined,
+    const result = await FilePicker.pickImages({
+      limit: limit > 0 ? limit : 1,
+      ordered: true,
+      readData: true,
+      skipTranscoding: false,
     });
-    return Promise.all(result.photos.map((photo, index) => photoToFile(photo, index)));
+    return Promise.all(result.files.map((file, index) => pickedFileToFile(file, index, "image")));
   } catch (err) {
     if (!isUserCancel(err)) {
       console.error("pickNativePhotosFromLibrary failed:", err);
@@ -94,7 +195,44 @@ async function pickNativePhotosFromLibrary(limit: number): Promise<File[]> {
   }
 }
 
-type IosFeedMediaChoice = "camera" | "library" | "videoPdf" | "cancel";
+async function pickNativeVideosFromLibrary(limit: number): Promise<File[]> {
+  const { FilePicker } = await import("@capawesome/capacitor-file-picker");
+  try {
+    const result = await FilePicker.pickVideos({
+      limit: limit > 0 ? limit : undefined,
+      ordered: true,
+      readData: false,
+      skipTranscoding: true,
+    });
+    return Promise.all(result.files.map((file, index) => pickedFileToFile(file, index, "video")));
+  } catch (err) {
+    if (!isUserCancel(err)) {
+      console.error("pickNativeVideosFromLibrary failed:", err);
+      alert("Could not open the video library. Please try again.");
+    }
+    return [];
+  }
+}
+
+async function pickNativePdfFiles(limit: number): Promise<File[]> {
+  const { FilePicker } = await import("@capawesome/capacitor-file-picker");
+  try {
+    const result = await FilePicker.pickFiles({
+      types: ["application/pdf"],
+      limit: limit > 0 ? 1 : undefined,
+      readData: false,
+    });
+    return Promise.all(result.files.map((file, index) => pickedFileToFile(file, index, "document")));
+  } catch (err) {
+    if (!isUserCancel(err)) {
+      console.error("pickNativePdfFiles failed:", err);
+      alert("Could not open the file picker. Please try again.");
+    }
+    return [];
+  }
+}
+
+type IosFeedMediaChoice = "camera" | "photos" | "videos" | "pdf" | "cancel";
 
 let pendingCameraFilesCallback: ((files: File[]) => void) | null = null;
 
@@ -139,13 +277,15 @@ async function showIosFeedMediaActionSheet(): Promise<IosFeedMediaChoice> {
     options: [
       { title: "Take Photo" },
       { title: "Photo Library" },
-      { title: "Video or PDF" },
+      { title: "Video Library" },
+      { title: "PDF" },
       { title: "Cancel", style: ActionSheetButtonStyle.Cancel },
     ],
   });
   if (index === 0) return "camera";
-  if (index === 1) return "library";
-  if (index === 2) return "videoPdf";
+  if (index === 1) return "photos";
+  if (index === 2) return "videos";
+  if (index === 3) return "pdf";
   return "cancel";
 }
 
@@ -175,7 +315,7 @@ export async function openFeedMediaPicker({
     return;
   }
 
-  if (choice === "library") {
+  if (choice === "photos") {
     setPendingCameraFilesCallback(onFiles);
     try {
       const files = await pickNativePhotosFromLibrary(remainingSlots);
@@ -186,9 +326,17 @@ export async function openFeedMediaPicker({
     return;
   }
 
-  if (videoPdfInputRef?.current) {
-    videoPdfInputRef.current.click();
-  } else {
-    alert("Video and PDF picking is not available here.");
+  if (choice === "videos") {
+    const files = await pickNativeVideosFromLibrary(remainingSlots);
+    if (files.length > 0) onFiles(files);
+    return;
   }
+
+  if (choice === "pdf") {
+    const files = await pickNativePdfFiles(remainingSlots);
+    if (files.length > 0) onFiles(files);
+    return;
+  }
+
+  videoPdfInputRef?.current?.click();
 }
