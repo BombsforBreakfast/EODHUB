@@ -23,8 +23,10 @@ function filenameFromUrl(url: string, fallback: string): string {
   }
 }
 
-function isIosLikeUserAgent(userAgent: string): boolean {
-  return /\b(iPhone|iPad|iPod)\b/i.test(userAgent);
+function contentDispositionForRequest(req: NextRequest, filename: string): string {
+  const disposition = req.nextUrl.searchParams.get("mode") === "download" ? "attachment" : "inline";
+  const safeFilename = filename.replace(/["\r\n]/g, "");
+  return `${disposition}; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`;
 }
 
 function contentTypeForFilename(filename: string, upstreamContentType: string | null): string {
@@ -41,18 +43,6 @@ function contentTypeForFilename(filename: string, upstreamContentType: string | 
   if (lower.endsWith(".txt")) return "text/plain; charset=utf-8";
   if (lower.endsWith(".odt")) return "application/vnd.oasis.opendocument.text";
   return upstreamContentType || "application/octet-stream";
-}
-
-function contentDispositionForRequest(req: NextRequest, filename: string): string {
-  const requestedMode = req.nextUrl.searchParams.get("mode");
-  const disposition =
-    requestedMode === "download"
-      ? "attachment"
-      : requestedMode === "inline" || isIosLikeUserAgent(req.headers.get("user-agent") ?? "")
-        ? "inline"
-        : "attachment";
-  const safeFilename = filename.replace(/["\r\n]/g, "");
-  return `${disposition}; filename="${safeFilename}"; filename*=UTF-8''${encodeURIComponent(safeFilename)}`;
 }
 
 function documentUrlForKind(

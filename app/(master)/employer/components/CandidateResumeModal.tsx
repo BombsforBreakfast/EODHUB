@@ -15,6 +15,7 @@ import {
   candidateLocation,
   toTagArray,
 } from "../lib/candidateUtils";
+import { candidateDocumentViewHref } from "../lib/candidateDocumentLinks";
 
 type Props = {
   candidate: PublicCandidate;
@@ -27,16 +28,6 @@ type Props = {
   isSaved: boolean;
   isInterested: boolean;
 };
-
-function candidateDocumentHref(
-  userId: string,
-  kind: "resume" | "education" | "training",
-  tag?: string,
-): string {
-  const params = new URLSearchParams({ userId, kind });
-  if (tag) params.set("tag", tag);
-  return `/api/employer/candidate-document?${params.toString()}`;
-}
 
 export default function CandidateResumeModal({
   candidate,
@@ -295,12 +286,10 @@ export default function CandidateResumeModal({
                 "Resume",
                 detail.resume_url ? (
                   <a
-                    href={candidateDocumentHref(candidate.user_id, "resume")}
-                    target="_blank"
-                    rel="noreferrer"
+                    href={candidateDocumentViewHref(candidate.user_id, "resume")}
                     style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}
                   >
-                    Download resume →
+                    View resume →
                   </a>
                 ) : (
                   "Not provided"
@@ -310,12 +299,10 @@ export default function CandidateResumeModal({
                 "Education",
                 detail.education_url ? (
                   <a
-                    href={candidateDocumentHref(candidate.user_id, "education")}
-                    target="_blank"
-                    rel="noreferrer"
+                    href={candidateDocumentViewHref(candidate.user_id, "education")}
                     style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}
                   >
-                    Download →
+                    View →
                   </a>
                 ) : (
                   "Not provided"
@@ -472,9 +459,7 @@ function TagBlock({
             return (
               <a
                 key={tag}
-                href={candidateUserId ? candidateDocumentHref(candidateUserId, "training", tag) : docUrl}
-                target="_blank"
-                rel="noreferrer"
+                href={candidateUserId ? candidateDocumentViewHref(candidateUserId, "training", tag) : docUrl}
                 style={{ textDecoration: "none" }}
               >
                 {content}
