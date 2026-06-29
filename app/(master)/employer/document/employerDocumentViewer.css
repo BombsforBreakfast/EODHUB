@@ -10,67 +10,42 @@
 .employer-docx-canvas {
   box-sizing: border-box;
   width: 100%;
-  padding: 8px 8px 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  --employer-docx-page-width: min(816px, calc(100vw - 16px));
-  --employer-docx-visual-scale: 1;
+  padding: 12px 12px 24px;
 }
 
-.employer-docx-canvas .docx-wrapper {
-  margin: 0 auto !important;
-  background: transparent !important;
+/* docx-preview builds these with the className we pass (`docx-render`),
+   so the real elements are `.docx-render-wrapper` and `section.docx-render`. */
+.employer-docx-canvas .docx-render-wrapper {
+  width: 100% !important;
+  margin: 0 !important;
   padding: 0 !important;
-  width: calc(var(--employer-docx-page-width) / var(--employer-docx-visual-scale)) !important;
-  max-width: 100% !important;
+  background: transparent !important;
+  align-items: stretch !important;
 }
 
-.employer-docx-canvas .docx-wrapper > section.docx {
+.employer-docx-canvas section.docx-render {
   box-sizing: border-box !important;
-  width: calc(var(--employer-docx-page-width) / var(--employer-docx-visual-scale)) !important;
+  width: 100% !important;
   max-width: 100% !important;
-  margin: 0 auto 16px !important;
+  margin: 0 0 16px 0 !important;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-}
-
-.employer-docx-canvas section.docx {
-  min-width: 0 !important;
   overflow-wrap: anywhere;
 }
 
-.employer-docx-canvas section.docx > article,
-.employer-docx-canvas section.docx > div,
-.employer-docx-canvas section.docx > main {
-  box-sizing: border-box !important;
-  max-width: 100% !important;
-}
-
+/* The library copies Word's page margins (~1in) onto the section as inline
+   padding, which leaves a tiny text column on phones. Trim it on mobile so
+   the content uses the screen width. */
 @media (max-width: 640px) {
   .employer-docx-canvas {
-    padding: 0 0 24px;
-    --employer-docx-page-width: 100vw;
-    --employer-docx-visual-scale: 1.1;
+    padding: 8px 6px 24px;
   }
 
-  .employer-docx-canvas .docx-wrapper > section.docx {
+  .employer-docx-canvas section.docx-render {
     border-radius: 0;
     margin-bottom: 12px !important;
-    /* docx-preview preserves Word page margins as CSS padding. On phones that
-       leaves a tiny text column, so use app-level reading margins instead. */
-    padding: clamp(8px, 2.5vw, 18px) clamp(8px, 2.5vw, 18px) 28px !important;
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+    padding-top: 16px !important;
+    padding-bottom: 20px !important;
   }
-
-  .employer-docx-canvas section.docx p,
-  .employer-docx-canvas section.docx table,
-  .employer-docx-canvas section.docx ul,
-  .employer-docx-canvas section.docx ol {
-    max-width: 100% !important;
-  }
-}
-
-.employer-docx-fit {
-  transform: scale(var(--employer-docx-visual-scale)) !important;
-  transform-origin: top center;
 }

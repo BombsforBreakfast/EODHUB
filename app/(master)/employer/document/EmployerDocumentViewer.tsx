@@ -11,39 +11,6 @@ import {
 } from "../lib/candidateDocumentLinks";
 import "./employerDocumentViewer.css";
 
-function bindDocxPreviewFit(viewport: HTMLElement): () => void {
-  const apply = () => {
-    const canvas = viewport.querySelector(".employer-docx-canvas") as HTMLElement | null;
-    const wrapper = viewport.querySelector(".docx-wrapper") as HTMLElement | null;
-    if (!canvas || !wrapper) return;
-
-    wrapper.classList.add("employer-docx-fit");
-    const maxPageWidth = 816;
-    const horizontalPadding = viewport.clientWidth <= 640 ? 0 : 24;
-    const pageWidth = Math.min(maxPageWidth, Math.max(1, viewport.clientWidth - horizontalPadding));
-    const visualScale = viewport.clientWidth <= 640 ? 1.1 : 1;
-
-    canvas.style.setProperty("--employer-docx-page-width", `${pageWidth}px`);
-    canvas.style.setProperty("--employer-docx-visual-scale", String(visualScale));
-
-    const naturalHeight = wrapper.offsetHeight;
-    if (naturalHeight > 0) {
-      canvas.style.minHeight = `${naturalHeight * visualScale}px`;
-    }
-  };
-
-  apply();
-  requestAnimationFrame(apply);
-
-  const observer = new ResizeObserver(apply);
-  observer.observe(viewport);
-  window.addEventListener("orientationchange", apply);
-  return () => {
-    observer.disconnect();
-    window.removeEventListener("orientationchange", apply);
-  };
-}
-
 type DocMeta = { url: string; filename: string };
 
 type LoadState =
@@ -197,13 +164,11 @@ function DocxRenderer({
   filename: string;
   downloadHref: string | null;
 }) {
-  const scrollRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     let cancelled = false;
-    let unbindFit: (() => void) | undefined;
     const container = containerRef.current;
     (async () => {
       setState("loading");
@@ -223,22 +188,18 @@ function DocxRenderer({
           ignoreHeight: false,
           breakPages: true,
         });
-        if (cancelled) return;
-        const scrollHost = scrollRef.current;
-        if (scrollHost) unbindFit = bindDocxPreviewFit(scrollHost);
-        setState("ready");
+        if (!cancelled) setState("ready");
       } catch {
         if (!cancelled) setState("error");
       }
     })();
     return () => {
       cancelled = true;
-      unbindFit?.();
     };
   }, [inlineHref]);
 
   return (
-    <div ref={scrollRef} className="employer-docx-viewer">
+    <div className="employer-docx-viewer">
       {state === "loading" && (
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: "#f3f4f6", fontSize: 15, fontWeight: 600 }}>
           Loading document…
@@ -261,7 +222,7 @@ function DocxRenderer({
         ref={containerRef}
         className="employer-docx-canvas"
         aria-label={filename}
-        style={{ display: state === "ready" ? "flex" : "none" }}
+        style={{ display: state === "ready" ? "block" : "none" }}
       />
     </div>
   );
