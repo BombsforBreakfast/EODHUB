@@ -28,6 +28,16 @@ type Props = {
   isInterested: boolean;
 };
 
+function candidateDocumentHref(
+  userId: string,
+  kind: "resume" | "education" | "training",
+  tag?: string,
+): string {
+  const params = new URLSearchParams({ userId, kind });
+  if (tag) params.set("tag", tag);
+  return `/api/employer/candidate-document?${params.toString()}`;
+}
+
 export default function CandidateResumeModal({
   candidate,
   initialNotes,
@@ -284,8 +294,8 @@ export default function CandidateResumeModal({
               {field(
                 "Resume",
                 detail.resume_url ? (
-                  <a href={detail.resume_url} target="_blank" rel="noreferrer" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>
-                    Open resume →
+                  <a href={candidateDocumentHref(candidate.user_id, "resume")} style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>
+                    Download resume →
                   </a>
                 ) : (
                   "Not provided"
@@ -294,8 +304,8 @@ export default function CandidateResumeModal({
               {field(
                 "Education",
                 detail.education_url ? (
-                  <a href={detail.education_url} target="_blank" rel="noreferrer" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>
-                    Open →
+                  <a href={candidateDocumentHref(candidate.user_id, "education")} style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>
+                    Download →
                   </a>
                 ) : (
                   "Not provided"
@@ -350,6 +360,7 @@ export default function CandidateResumeModal({
               label="Specialized Training"
               tags={toTagArray(detail.specialized_training)}
               t={t}
+              candidateUserId={candidate.user_id}
               docs={trainingDocs}
             />
 
@@ -414,11 +425,13 @@ function TagBlock({
   label,
   tags,
   t,
+  candidateUserId,
   docs,
 }: {
   label: string;
   tags: string[];
   t: ReturnType<typeof useTheme>["t"];
+  candidateUserId?: string;
   docs?: Record<string, string> | null;
 }) {
   if (tags.length === 0) return null;
@@ -447,7 +460,11 @@ function TagBlock({
           );
           if (docUrl) {
             return (
-              <a key={tag} href={docUrl} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+              <a
+                key={tag}
+                href={candidateUserId ? candidateDocumentHref(candidateUserId, "training", tag) : docUrl}
+                style={{ textDecoration: "none" }}
+              >
                 {content}
               </a>
             );
