@@ -2,7 +2,13 @@
   "name": "eod-job-board",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
   "scripts": {
+    "bsm:dev": "npm run dev --workspace=bomb-suit-man",
+    "bsm:build": "npm run build --workspace=bomb-suit-man",
+    "bsm:cap:sync": "npm run cap:sync --workspace=bomb-suit-man",
     "dev": "next dev",
     "prebuild": "node scripts/fetch-disposable-domains.mjs",
     "build": "next build",

@@ -1,0 +1,6 @@
+dist
+.env
+.env.local
+ios
+android
+node_modules
