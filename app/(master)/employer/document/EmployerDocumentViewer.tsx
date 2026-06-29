@@ -18,24 +18,11 @@ function bindDocxPreviewFit(viewport: HTMLElement): () => void {
     if (!canvas || !wrapper) return;
 
     wrapper.classList.add("employer-docx-fit");
-    wrapper.style.transform = "";
-    wrapper.style.width = "";
-    canvas.style.height = "";
+    const maxPageWidth = 816;
+    const horizontalPadding = viewport.clientWidth <= 640 ? 16 : 24;
+    const pageWidth = Math.min(maxPageWidth, Math.max(1, viewport.clientWidth - horizontalPadding));
 
-    const horizontalPadding = 24;
-    const availableWidth = Math.max(1, viewport.clientWidth - horizontalPadding);
-    const naturalWidth = wrapper.scrollWidth || wrapper.offsetWidth;
-    const naturalHeight = wrapper.offsetHeight;
-
-    if (naturalWidth <= availableWidth) {
-      canvas.style.height = naturalHeight > 0 ? `${naturalHeight}px` : "";
-      return;
-    }
-
-    const scale = availableWidth / naturalWidth;
-    wrapper.style.width = `${naturalWidth}px`;
-    wrapper.style.transform = `scale(${scale})`;
-    canvas.style.height = `${naturalHeight * scale}px`;
+    canvas.style.setProperty("--employer-docx-page-width", `${pageWidth}px`);
   };
 
   apply();

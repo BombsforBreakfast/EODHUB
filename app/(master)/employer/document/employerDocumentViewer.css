@@ -10,23 +10,30 @@
 .employer-docx-canvas {
   box-sizing: border-box;
   width: 100%;
-  padding: 12px 12px 24px;
+  padding: 8px 8px 24px;
   display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
+  --employer-docx-page-width: min(816px, calc(100vw - 16px));
 }
 
 .employer-docx-canvas .docx-wrapper {
   margin: 0 auto !important;
   background: transparent !important;
   padding: 0 !important;
+  width: var(--employer-docx-page-width) !important;
+  max-width: 100% !important;
 }
 
 .employer-docx-canvas .docx-wrapper > section.docx {
+  box-sizing: border-box !important;
+  width: var(--employer-docx-page-width) !important;
+  max-width: 100% !important;
   margin: 0 auto 16px !important;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
 }
 
 .employer-docx-fit {
-  transform-origin: top center;
-  will-change: transform;
+  transform: none !important;
 }
