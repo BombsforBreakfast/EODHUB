@@ -277,14 +277,32 @@ function ReactionLeaderboardWithNames({
 
   useEffect(() => {
     if (!openFor) return;
+
+    const close = () => setOpenFor(null);
+
     function onDocPointerDown(ev: PointerEvent) {
       const root = wrapRef.current;
       if (!root) return;
       if (ev.target instanceof Node && root.contains(ev.target)) return;
-      setOpenFor(null);
+      close();
     }
+
+    function onScrollOrResize(ev: Event) {
+      const root = wrapRef.current;
+      if (!root) return;
+      const target = ev.target;
+      if (target instanceof Node && root.contains(target)) return;
+      close();
+    }
+
     document.addEventListener("pointerdown", onDocPointerDown, true);
-    return () => document.removeEventListener("pointerdown", onDocPointerDown, true);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
+    return () => {
+      document.removeEventListener("pointerdown", onDocPointerDown, true);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
+    };
   }, [openFor]);
 
   useEffect(() => {

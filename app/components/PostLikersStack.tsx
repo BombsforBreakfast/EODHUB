@@ -160,20 +160,35 @@ function MobileLikersPopover({
 
   useEffect(() => {
     if (!popoverOpen) return;
+
+    const close = () => setPopoverOpen(false);
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setPopoverOpen(false);
+      if (e.key === "Escape") close();
     };
-    const onPointerDown = (e: MouseEvent) => {
+
+    const onPointerDown = (e: PointerEvent) => {
       const target = e.target as Node;
       if (rootRef.current?.contains(target)) return;
       if (panelRef.current?.contains(target)) return;
-      setPopoverOpen(false);
+      close();
     };
+
+    const onScrollOrResize = (e: Event) => {
+      const target = e.target as Node | null;
+      if (target && panelRef.current?.contains(target)) return;
+      close();
+    };
+
     window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("scroll", onScrollOrResize, true);
+    window.addEventListener("resize", onScrollOrResize);
     return () => {
       window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("scroll", onScrollOrResize, true);
+      window.removeEventListener("resize", onScrollOrResize);
     };
   }, [popoverOpen]);
 
@@ -299,14 +314,18 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
 
   useEffect(() => {
     if (!modalOpen) return;
+    const close = () => setModalOpen(false);
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setModalOpen(false);
+      if (e.key === "Escape") close();
     };
+    const onScroll = () => close();
     window.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onScroll, true);
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onScroll, true);
       document.body.style.overflow = prev;
     };
   }, [modalOpen]);
