@@ -22,6 +22,7 @@ import {
   adminPostDisplayName,
   canUsePostAsSelector,
   loadStoredPostAsMode,
+  resolvePostAsModeFromPost,
   resolvePostAsUserIdForSubmit,
   storePostAsMode,
   type PostAsAdminProfile,
@@ -731,6 +732,7 @@ export default function PublicProfilePage() {
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingPostContent, setEditingPostContent] = useState("");
+  const [editingPostAsMode, setEditingPostAsMode] = useState<PostAsMode>("self");
   const [savingPostId, setSavingPostId] = useState<string | null>(null);
   const [flaggingId, setFlaggingId] = useState<string | null>(null);
   const [flagModal, setFlagModal] = useState<{ contentType: "post"; contentId: string } | null>(null);
@@ -2103,23 +2105,36 @@ export default function PublicProfilePage() {
     } finally { setDeletingPostId(null); }
   }
 
-  function startEditPost(postId: string, currentContent: string) {
+  function startEditPost(postId: string, currentContent: string, postAsUserId?: string | null) {
     setEditingPostId(postId);
     setEditingPostContent(currentContent);
+    setEditingPostAsMode(
+      resolvePostAsModeFromPost(postAsUserId, postAsAdminProfile?.userId ?? null),
+    );
   }
 
   function cancelEditPost() {
     setEditingPostId(null);
     setEditingPostContent("");
+    setEditingPostAsMode("self");
   }
 
   async function savePostEdit(postId: string) {
     if (!currentUserId || !editingPostContent.trim()) return;
     try {
       setSavingPostId(postId);
+
+      const postAsUserId = resolvePostAsUserIdForSubmit(
+        editingPostAsMode,
+        postAsAdminProfile?.userId ?? null,
+      );
+
       const { error } = await supabase
         .from("posts")
-        .update({ content: editingPostContent.trim() })
+        .update({
+          content: editingPostContent.trim(),
+          post_as_user_id: postAsUserId,
+        })
         .eq("id", postId);
 
       if (error) {
@@ -2129,6 +2144,7 @@ export default function PublicProfilePage() {
 
       setEditingPostId(null);
       setEditingPostContent("");
+      setEditingPostAsMode("self");
       if (userId) await loadPosts(userId);
     } finally {
       setSavingPostId(null);
@@ -6191,7 +6207,7 @@ export default function PublicProfilePage() {
                           isFlagging={flaggingId === post.id}
                           authorUserId={postAuthorProfileId}
                           currentUserId={currentUserId}
-                          onEdit={() => startEditPost(post.id, post.content)}
+                          onEdit={() => startEditPost(post.id, post.content, post.post_as_user_id)}
                           onDelete={() => deleteWallPost(post.id)}
                           onFlag={() => openFlagModal(post.id)}
                           onBlockedUser={(blockedUserId) => {
@@ -6213,6 +6229,17 @@ export default function PublicProfilePage() {
 
                     {isEditingPost ? (
                       <div style={{ marginTop: 10 }}>
+                        {canManagePost && canUsePostAsSelector(currentUserEmail) && postAsAdminProfile ? (
+                          <PostAsSelector
+                            mode={editingPostAsMode}
+                            onChange={setEditingPostAsMode}
+                            selfLabel={currentUserName?.trim() || "You"}
+                            selfPhotoUrl={currentUserPhotoUrl}
+                            adminLabel="EOD HUB Admin"
+                            adminPhotoUrl={postAsAdminProfile.photoUrl}
+                            disabled={savingPostId === post.id}
+                          />
+                        ) : null}
                         <textarea
                           value={editingPostContent}
                           onChange={(e) => setEditingPostContent(e.target.value)}

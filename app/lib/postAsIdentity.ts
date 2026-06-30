@@ -60,6 +60,14 @@ export function resolvePostAsUserIdForSubmit(
   return adminUserId;
 }
 
+export function resolvePostAsModeFromPost(
+  postAsUserId: string | null | undefined,
+  adminUserId: string | null | undefined,
+): PostAsMode {
+  if (!adminUserId || !postAsUserId) return "self";
+  return postAsUserId === adminUserId ? "admin" : "self";
+}
+
 export function adminPostDisplayName(profile: {
   display_name?: string | null;
   first_name?: string | null;
