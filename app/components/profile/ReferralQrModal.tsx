@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { QRCodeSVG } from "qrcode.react";
 import { useTheme } from "@/app/lib/ThemeContext";
+import { writeClipboardText } from "@/app/lib/native/nativeClipboard";
+import { shareOrCopyUrl } from "@/app/lib/native/nativeShare";
 
 type Props = {
   open: boolean;
@@ -21,10 +23,21 @@ export function ReferralQrModal({ open, referralUrl, onClose, onInviteAction }: 
   }, [onInviteAction, open]);
 
   const copyLink = useCallback(() => {
-    void navigator.clipboard.writeText(referralUrl).then(() => {
+    void writeClipboardText(referralUrl, "Referral link").then(() => {
       setCopied(true);
       onInviteAction?.();
       window.setTimeout(() => setCopied(false), 2000);
+    });
+  }, [onInviteAction, referralUrl]);
+
+  const shareLink = useCallback(() => {
+    void shareOrCopyUrl({
+      title: "Join EOD HUB",
+      text: "Use my referral link to join EOD HUB.",
+      url: referralUrl,
+      dialogTitle: "Share referral link",
+    }).then(() => {
+      onInviteAction?.();
     });
   }, [onInviteAction, referralUrl]);
 
@@ -118,6 +131,24 @@ export function ReferralQrModal({ open, referralUrl, onClose, onInviteAction }: 
         </p>
 
         <div style={{ marginTop: 18, display: "flex", flexWrap: "wrap", gap: 10, justifyContent: "center" }}>
+          <button
+            type="button"
+            onClick={shareLink}
+            style={{
+              flex: "1 1 120px",
+              minWidth: 0,
+              padding: "10px 14px",
+              borderRadius: 10,
+              border: "none",
+              background: "#111",
+              color: "white",
+              fontWeight: 800,
+              fontSize: 14,
+              cursor: "pointer",
+            }}
+          >
+            Share Link
+          </button>
           <button
             type="button"
             onClick={copyLink}

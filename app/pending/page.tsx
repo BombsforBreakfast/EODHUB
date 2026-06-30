@@ -11,6 +11,7 @@ import {
 import { useOnboardingGate } from "../hooks/useOnboardingGate";
 import { useOnboardingStepTracking } from "../hooks/useOnboardingStepTracking";
 import { recordPlankHolderInvite } from "../lib/plankHolderChallengeClient";
+import { writeClipboardText } from "../lib/native/nativeClipboard";
 
 const VOUCHES_NEEDED = 3;
 
@@ -225,7 +226,7 @@ export default function PendingPage() {
               <button
                 type="button"
                 onClick={() => {
-                  navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${referralCode}`);
+                  void writeClipboardText(`https://eod-hub.com/login?ref=${referralCode}`, "Referral link");
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
                   void recordPlankHolderInvite().catch((error) => {

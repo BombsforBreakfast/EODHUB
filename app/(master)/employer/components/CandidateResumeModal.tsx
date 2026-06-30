@@ -16,6 +16,7 @@ import {
   toTagArray,
 } from "../lib/candidateUtils";
 import { candidateDocumentViewHref } from "../lib/candidateDocumentLinks";
+import { openDocumentLink } from "@/app/lib/native/nativeFileOpen";
 
 type Props = {
   candidate: PublicCandidate;
@@ -119,6 +120,8 @@ export default function CandidateResumeModal({
   );
 
   const trainingDocs = detail?.specialized_training_docs ?? null;
+  const resumeHref = candidateDocumentViewHref(candidate.user_id, "resume");
+  const educationHref = candidateDocumentViewHref(candidate.user_id, "education");
 
   if (!mounted) return null;
 
@@ -286,7 +289,8 @@ export default function CandidateResumeModal({
                 "Resume",
                 detail.resume_url ? (
                   <a
-                    href={candidateDocumentViewHref(candidate.user_id, "resume")}
+                    href={resumeHref}
+                    onClick={(event) => openDocumentLink(event, resumeHref)}
                     style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}
                   >
                     View resume →
@@ -299,7 +303,8 @@ export default function CandidateResumeModal({
                 "Education",
                 detail.education_url ? (
                   <a
-                    href={candidateDocumentViewHref(candidate.user_id, "education")}
+                    href={educationHref}
+                    onClick={(event) => openDocumentLink(event, educationHref)}
                     style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}
                   >
                     View →
@@ -456,10 +461,12 @@ function TagBlock({
             </span>
           );
           if (docUrl) {
+            const href = candidateUserId ? candidateDocumentViewHref(candidateUserId, "training", tag) : docUrl;
             return (
               <a
                 key={tag}
-                href={candidateUserId ? candidateDocumentViewHref(candidateUserId, "training", tag) : docUrl}
+                href={href}
+                onClick={(event) => openDocumentLink(event, href)}
                 style={{ textDecoration: "none" }}
               >
                 {content}

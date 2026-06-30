@@ -16,6 +16,7 @@ import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/comme
 import { prepareFeedUploadFile } from "../lib/prepareUploadFile";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../lib/native/pickFeedMedia";
+import { shareOrCopyUrl } from "../lib/native/nativeShare";
 import {
   FEED_ATTACHMENT_ACCEPT,
   UPLOAD_LIMITS,
@@ -7177,12 +7178,18 @@ export default function HomePage() {
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(`https://eod-hub.com/login?ref=${currentUserReferralCode}`);
-                    setReferralCopied(true);
-                    setTimeout(() => setReferralCopied(false), 1500);
-                    void recordPlankHolderInvite()
-                      .then(applyPlankHolderResponse)
-                      .catch((error) => console.error("plank holder invite tracking failed:", error));
+                    void shareOrCopyUrl({
+                      title: "Join EOD HUB",
+                      text: "Use my referral link to join EOD HUB.",
+                      url: `https://eod-hub.com/login?ref=${currentUserReferralCode}`,
+                      dialogTitle: "Share referral link",
+                    }).then(() => {
+                      setReferralCopied(true);
+                      setTimeout(() => setReferralCopied(false), 1500);
+                      void recordPlankHolderInvite()
+                        .then(applyPlankHolderResponse)
+                        .catch((error) => console.error("plank holder invite tracking failed:", error));
+                    });
                   }}
                   style={{ padding: "7px 14px", borderRadius: 10, background: referralCopied ? "#16a34a" : "#6366f1", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", border: "none", transition: "background 0.2s" }}
                 >

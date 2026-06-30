@@ -79,6 +79,7 @@ import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../
 import { isInternalOnlyPureAdmin, STAFF_DEFAULT_PROFILE_PHOTO_PATH } from "../../../lib/pureAdminAllowlist";
 import { getServiceRingColor } from "../../../lib/serviceBranchVisual";
 import { buildLoginReferralUrl } from "../../../lib/referralLink";
+import { shareOrCopyUrl } from "../../../lib/native/nativeShare";
 import { ReferralQrModal } from "../../../components/profile/ReferralQrModal";
 import { usePageTracking } from "../../../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../../../lib/pageTrackingPaths";
@@ -744,7 +745,7 @@ export default function PublicProfilePage() {
   const resumeFileInputRef = useRef<HTMLInputElement | null>(null);
   const educationFileInputRef = useRef<HTMLInputElement | null>(null);
   const trainingFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [copiedReferral, setCopiedReferral] = useState(false);
+  const [referralActionState, setReferralActionState] = useState<"idle" | "copied" | "shared">("idle");
   const [referralQrOpen, setReferralQrOpen] = useState(false);
   const [plankHolderChallenge, setPlankHolderChallenge] = useState<PlankHolderResponse | null>(null);
   const plankHolderChallengeRef = useRef<PlankHolderResponse | null>(null);
@@ -906,11 +907,19 @@ export default function PublicProfilePage() {
   }, [applyPlankHolderResponse]);
 
   const handleCopyReferralLink = useCallback(() => {
-    if (!profile?.referral_code) return;
-    void navigator.clipboard.writeText(buildLoginReferralUrl(profile.referral_code));
-    setCopiedReferral(true);
-    window.setTimeout(() => setCopiedReferral(false), 2000);
-    recordInviteForPlankHolder();
+    const referralCode = profile?.referral_code;
+    if (!referralCode) return;
+    const referralUrl = buildLoginReferralUrl(referralCode);
+    void shareOrCopyUrl({
+      title: "Join EOD HUB",
+      text: "Use my referral link to join EOD HUB.",
+      url: referralUrl,
+      dialogTitle: "Share referral link",
+    }).then((result) => {
+      setReferralActionState(result);
+      window.setTimeout(() => setReferralActionState("idle"), 2000);
+      recordInviteForPlankHolder();
+    });
   }, [profile?.referral_code, recordInviteForPlankHolder]);
 
   const closePlankHolderModal = useCallback(() => {
@@ -4613,7 +4622,7 @@ export default function PublicProfilePage() {
                             type="button"
                             onClick={handleCopyReferralLink}
                             style={{
-                              background: copiedReferral ? "#16a34a" : "#111",
+                              background: referralActionState === "idle" ? "#111" : "#16a34a",
                               color: "white",
                               border: "none",
                               borderRadius: 999,
@@ -4625,7 +4634,11 @@ export default function PublicProfilePage() {
                               transition: "background 0.2s",
                             }}
                           >
-                            {copiedReferral ? "Copied" : "Referral Link"}
+                            {referralActionState === "shared"
+                              ? "Shared"
+                              : referralActionState === "copied"
+                                ? "Copied"
+                                : "Referral Link"}
                           </button>
                           <button
                             type="button"
@@ -5058,7 +5071,7 @@ export default function PublicProfilePage() {
                           type="button"
                           onClick={handleCopyReferralLink}
                           style={{
-                            background: copiedReferral ? "#16a34a" : "#111",
+                            background: referralActionState === "idle" ? "#111" : "#16a34a",
                             color: "white",
                             border: "none",
                             borderRadius: 999,
@@ -5070,7 +5083,11 @@ export default function PublicProfilePage() {
                             transition: "background 0.2s",
                           }}
                         >
-                          {copiedReferral ? "Copied" : "Referral Link"}
+                          {referralActionState === "shared"
+                            ? "Shared"
+                            : referralActionState === "copied"
+                              ? "Copied"
+                              : "Referral Link"}
                         </button>
                         <button
                           type="button"

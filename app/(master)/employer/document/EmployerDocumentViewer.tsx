@@ -9,6 +9,7 @@ import {
   documentExtension,
   type CandidateDocumentKind,
 } from "../lib/candidateDocumentLinks";
+import { openDocumentLink } from "@/app/lib/native/nativeFileOpen";
 import "./employerDocumentViewer.css";
 
 type DocMeta = { url: string; filename: string };
@@ -150,6 +151,7 @@ function DocumentFrame({
       message="This file type can't be previewed in the browser."
       hint="Save a copy to open it in another app."
       actionHref={downloadHref ?? meta.url}
+      actionNativeOpen
       actionLabel="Save copy"
     />
   );
@@ -278,6 +280,9 @@ function ViewerShell({
         {downloadHref ? (
           <a
             href={downloadHref}
+            onClick={(event) => {
+              void openDocumentLink(event, downloadHref);
+            }}
             style={{ color: "#9ca3af", textDecoration: "none", fontSize: 12, fontWeight: 500, flexShrink: 0 }}
           >
             Save copy
@@ -293,11 +298,13 @@ function MessagePanel({
   message,
   hint,
   actionHref,
+  actionNativeOpen,
   actionLabel,
 }: {
   message: string;
   hint?: string;
   actionHref?: string;
+  actionNativeOpen?: boolean;
   actionLabel?: string;
 }) {
   return (
@@ -318,6 +325,10 @@ function MessagePanel({
       {actionHref && actionLabel ? (
         <a
           href={actionHref}
+          onClick={(event) => {
+            if (!actionNativeOpen) return;
+            void openDocumentLink(event, actionHref);
+          }}
           style={{
             marginTop: 8,
             background: "#2563eb",
