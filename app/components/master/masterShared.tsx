@@ -101,6 +101,25 @@ export function getBizTypePriority(
   return 2;
 }
 
+export function bizListingSortName(
+  listing: Pick<BusinessListingRow, "business_name" | "og_title" | "og_site_name" | "website_url">,
+): string {
+  return (
+    listing.business_name?.trim() ||
+    listing.og_title?.trim() ||
+    listing.og_site_name?.trim() ||
+    listing.website_url?.trim() ||
+    ""
+  );
+}
+
+export function compareBizListingsAlphabetically(
+  a: Pick<BusinessListingRow, "business_name" | "og_title" | "og_site_name" | "website_url">,
+  b: Pick<BusinessListingRow, "business_name" | "og_title" | "og_site_name" | "website_url">,
+): number {
+  return bizListingSortName(a).localeCompare(bizListingSortName(b), undefined, { sensitivity: "base" });
+}
+
 export function isBizListingTypeMissingColumnError(error: unknown): boolean {
   const msg = (error as { message?: string } | null)?.message?.toLowerCase?.() ?? "";
   return msg.includes("column") && msg.includes("listing_type");

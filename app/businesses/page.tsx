@@ -7,11 +7,10 @@ import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { roundToNearestHalf, StarRatingDisplay, StarRatingInput } from "../components/StarRating";
 import {
-  getBizTypePriority,
+  compareBizListingsAlphabetically,
   httpsAssetUrl,
   isBizListingTagsMissingColumnError,
   isBizListingTypeMissingColumnError,
-  isPermanentlyFeaturedListing,
   normalizeBizListingTypeForListing,
   normalizeUrl,
   OgCard,
@@ -350,7 +349,6 @@ export default function BusinessesPage() {
         .from("business_listings")
         .select(BUSINESS_LISTING_COLUMNS)
         .eq("is_approved", true)
-        .order("is_featured", { ascending: false })
         .order("business_name", { ascending: true, nullsFirst: false })
         .limit(500);
       if (error) {
@@ -358,7 +356,6 @@ export default function BusinessesPage() {
           .from("business_listings")
           .select(BUSINESS_LISTING_COLUMNS_FALLBACK)
           .eq("is_approved", true)
-          .order("is_featured", { ascending: false })
           .order("business_name", { ascending: true, nullsFirst: false })
           .limit(500);
         data = fallback.data?.map((row) => ({ ...row, claimed_business_org_page_id: null })) ?? null;
@@ -388,7 +385,6 @@ export default function BusinessesPage() {
       .from("business_listings")
       .select(BUSINESS_LISTING_COLUMNS)
       .eq("is_approved", true)
-      .order("is_featured", { ascending: false })
       .order("business_name", { ascending: true, nullsFirst: false })
       .limit(500);
     if (error) {
@@ -396,7 +392,6 @@ export default function BusinessesPage() {
         .from("business_listings")
         .select(BUSINESS_LISTING_COLUMNS_FALLBACK)
         .eq("is_approved", true)
-        .order("is_featured", { ascending: false })
         .order("business_name", { ascending: true, nullsFirst: false })
         .limit(500);
       data = fallback.data?.map((row) => ({ ...row, claimed_business_org_page_id: null })) ?? null;
@@ -843,19 +838,7 @@ export default function BusinessesPage() {
       return terms.some((term) => haystack.includes(term));
     });
 
-    return [...filtered].sort((a, b) => {
-      const aPinned = isPermanentlyFeaturedListing(a) ? 1 : 0;
-      const bPinned = isPermanentlyFeaturedListing(b) ? 1 : 0;
-      if (aPinned !== bPinned) return bPinned - aPinned;
-      const aFeatured = a.is_featured ? 1 : 0;
-      const bFeatured = b.is_featured ? 1 : 0;
-      if (aFeatured !== bFeatured) return bFeatured - aFeatured;
-      const typeDiff = getBizTypePriority(a) - getBizTypePriority(b);
-      if (typeDiff !== 0) return typeDiff;
-      const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return bTime - aTime;
-    });
+    return [...filtered].sort(compareBizListingsAlphabetically);
   }, [listings, filters]);
 
   const visibleListingIds = useMemo(() => visibleListings.map((r) => r.id), [visibleListings]);
