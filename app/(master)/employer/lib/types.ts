@@ -25,6 +25,7 @@ export const PUBLIC_CANDIDATE_COLUMNS = [
   "current_city",
   "current_state",
   "open_to_opportunities",
+  "resume_url",
   "account_type",
   "verification_status",
   "created_at",
@@ -69,6 +70,7 @@ export type PublicCandidate = {
   current_city: string | null;
   current_state: string | null;
   open_to_opportunities: boolean | null;
+  resume_url: string | null;
   account_type: string | null;
   verification_status: string | null;
   created_at: string | null;

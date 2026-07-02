@@ -8,6 +8,7 @@ import {
   splitFullName,
 } from "@/app/lib/profileCompleteness";
 import { referrerDisplayName } from "@/app/lib/referralReferrer";
+import { matchesAdminUserSearch, type AdminUserSearchRow } from "@/app/lib/adminUserSearch";
 
 type ProfilesQueryResult = {
   data: Array<Record<string, unknown>> | null;
@@ -64,10 +65,6 @@ function parseStatusFilter(value: string | null): UserStatusFilter {
   return "all";
 }
 
-function escapeIlike(value: string) {
-  return value.replace(/[%_]/g, (match) => `\\${match}`).replace(/,/g, " ");
-}
-
 function applyProfileStatusFilter<T extends { eq: (column: string, value: unknown) => T; neq: (column: string, value: unknown) => T; in: (column: string, values: string[]) => T; or: (filters: string) => T }>(
   query: T,
   status: UserStatusFilter,
@@ -84,27 +81,6 @@ function applyProfileStatusFilter<T extends { eq: (column: string, value: unknow
     return query.or("verification_status.is.null,and(verification_status.neq.verified,verification_status.neq.denied)");
   }
   return query;
-}
-
-function applyProfileSearch<T extends { or: (filters: string) => T }>(
-  query: T,
-  rawSearch: string,
-  includeMirroredColumns: boolean,
-) {
-  const q = escapeIlike(rawSearch.trim());
-  if (!q) return query;
-  const pattern = `%${q}%`;
-  const fields = [
-    "first_name",
-    "last_name",
-    "display_name",
-    "service",
-    "role",
-    "company_name",
-    "user_id",
-  ];
-  if (includeMirroredColumns) fields.splice(3, 0, "name", "email");
-  return query.or(fields.map((field) => `${field}.ilike.${pattern}`).join(","));
 }
 
 function isAtAdminReviewTier(row: Record<string, unknown>) {
@@ -208,12 +184,13 @@ export async function GET(req: NextRequest) {
   );
 
   const search = req.nextUrl.searchParams.get("q")?.trim() ?? "";
+  const searchActive = search.length > 0;
   const status = parseStatusFilter(req.nextUrl.searchParams.get("status"));
   const full = req.nextUrl.searchParams.get("full") === "true";
   const needsPostFilter = statusNeedsPostFilter(status);
-  const includeAuthOnlySignups = full || statusIncludesAuthOnlySignups(status);
-  const offset = full ? 0 : parseBoundedInt(req.nextUrl.searchParams.get("offset"), 0, 0, 100_000);
-  const limit = full
+  const includeAuthOnlySignups = full || statusIncludesAuthOnlySignups(status) || searchActive;
+  const offset = full || searchActive ? 0 : parseBoundedInt(req.nextUrl.searchParams.get("offset"), 0, 0, 100_000);
+  const limit = full || searchActive
     ? FULL_LIST_LIMIT
     : parseBoundedInt(req.nextUrl.searchParams.get("limit"), DEFAULT_LIMIT, 1, MAX_LIMIT);
 
@@ -221,8 +198,12 @@ export async function GET(req: NextRequest) {
     .from("profiles")
     .select(PROFILE_SELECT_WITH_MIRRORS, { count: "exact" })
     .order("created_at", { ascending: false });
-  profileQuery = applyProfileStatusFilter(applyProfileSearch(profileQuery, search, true), status);
-  if (!full && !needsPostFilter) profileQuery = profileQuery.range(offset, offset + limit - 1);
+  profileQuery = applyProfileStatusFilter(profileQuery, status);
+  if (full || searchActive || needsPostFilter) {
+    profileQuery = profileQuery.limit(FULL_LIST_LIMIT);
+  } else {
+    profileQuery = profileQuery.range(offset, offset + limit - 1);
+  }
 
   let profilesQuery = (await profileQuery) as ProfilesQueryResult;
   if (profilesQuery.error) {
@@ -230,8 +211,12 @@ export async function GET(req: NextRequest) {
       .from("profiles")
       .select(PROFILE_SELECT_BASE, { count: "exact" })
       .order("created_at", { ascending: false });
-    fallbackQuery = applyProfileStatusFilter(applyProfileSearch(fallbackQuery, search, false), status);
-    if (!full && !needsPostFilter) fallbackQuery = fallbackQuery.range(offset, offset + limit - 1);
+    fallbackQuery = applyProfileStatusFilter(fallbackQuery, status);
+    if (full || searchActive || needsPostFilter) {
+      fallbackQuery = fallbackQuery.limit(FULL_LIST_LIMIT);
+    } else {
+      fallbackQuery = fallbackQuery.range(offset, offset + limit - 1);
+    }
     profilesQuery = (await fallbackQuery) as ProfilesQueryResult;
   }
 
@@ -413,14 +398,18 @@ export async function GET(req: NextRequest) {
   }),
   ].filter((row) => userMatchesStatus(row as Record<string, unknown>, status));
 
-  const totalCount = needsPostFilter || full
-    ? profiles.length
-    : (profilesQuery.count ?? profiles.length);
-  const pageOffset = full ? 0 : offset;
-  const pageLimit = full ? FULL_LIST_LIMIT : limit;
-  const users = needsPostFilter || full
-    ? profiles.slice(pageOffset, pageOffset + pageLimit)
+  const searchedProfiles = searchActive
+    ? profiles.filter((row) => matchesAdminUserSearch(row as AdminUserSearchRow, search))
     : profiles;
+
+  const totalCount = needsPostFilter || full || searchActive
+    ? searchedProfiles.length
+    : (profilesQuery.count ?? searchedProfiles.length);
+  const pageOffset = full || searchActive ? 0 : offset;
+  const pageLimit = full || searchActive ? FULL_LIST_LIMIT : limit;
+  const users = needsPostFilter || full || searchActive
+    ? searchedProfiles.slice(pageOffset, pageOffset + pageLimit)
+    : searchedProfiles;
 
   return NextResponse.json({
     users,

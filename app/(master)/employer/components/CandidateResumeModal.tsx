@@ -143,7 +143,7 @@ export default function CandidateResumeModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`${name} resume`}
+        aria-label={`${name} professional bio`}
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%",
@@ -186,7 +186,7 @@ export default function CandidateResumeModal({
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                Employer View · Resume
+                Employer View · Professional Bio
               </div>
               <div style={{ fontSize: 20, fontWeight: 900, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                 {name}
@@ -217,8 +217,8 @@ export default function CandidateResumeModal({
           </button>
         </div>
 
-        {loading && <div style={{ color: t.textMuted, padding: "20px 0" }}>Loading resume…</div>}
-        {error && <div style={{ color: "#dc2626", padding: "12px 0" }}>Could not load resume: {error}</div>}
+        {loading && <div style={{ color: t.textMuted, padding: "20px 0" }}>Loading professional bio…</div>}
+        {error && <div style={{ color: "#dc2626", padding: "12px 0" }}>Could not load professional bio: {error}</div>}
 
         {detail && (
           <div style={{ display: "grid", gap: 12 }}>

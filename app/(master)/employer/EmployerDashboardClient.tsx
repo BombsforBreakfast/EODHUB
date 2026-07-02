@@ -1,10 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import { useMasterShell } from "../../components/master/masterShellContext";
 import CandidateResumeModal from "./components/CandidateResumeModal";
+import CandidateDocumentModal from "./components/CandidateDocumentModal";
 import {
   PUBLIC_CANDIDATE_COLUMNS,
   type EmployerAction,
@@ -43,7 +45,13 @@ export default function EmployerDashboardClient() {
   const [filters, setFilters] = useState<CandidateFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [resumeTarget, setResumeTarget] = useState<PublicCandidate | null>(null);
+  const [resumeDocumentTarget, setResumeDocumentTarget] = useState<PublicCandidate | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (access !== "not_logged_in") return;
+    if (typeof window !== "undefined") window.location.assign("/login");
+  }, [access]);
 
   /* ────────────────────────────────────────────────────────────────────────
    * Access check: employer accounts + admins (QA override) may see this page.
@@ -285,7 +293,6 @@ export default function EmployerDashboardClient() {
     );
   }
   if (access === "not_logged_in") {
-    if (typeof window !== "undefined") window.location.href = "/login";
     return null;
   }
   if (access === "not_permitted") {
@@ -296,12 +303,12 @@ export default function EmployerDashboardClient() {
           The Employer Dashboard is available to verified employer accounts and designated admins for QA.
           If you think this is a mistake, contact support from your account page.
         </p>
-        <a
+        <Link
           href="/profile"
           style={{ display: "inline-block", marginTop: 16, background: t.text, color: t.surface, padding: "8px 16px", borderRadius: 10, textDecoration: "none", fontWeight: 700, fontSize: 14 }}
         >
           Back to my account
-        </a>
+        </Link>
       </div>
     );
   }
@@ -562,7 +569,8 @@ export default function EmployerDashboardClient() {
             candidate={c}
             action={a}
             busy={busyAction === c.user_id}
-            onViewResume={() => setResumeTarget(c)}
+            onViewProfessionalBio={() => setResumeTarget(c)}
+            onViewResume={() => setResumeDocumentTarget(c)}
             onToggleSaved={() => toggleSaved(c.user_id)}
             onToggleInterested={() => toggleInterested(c.user_id)}
             onToggleHidden={() => toggleHidden(c.user_id)}
@@ -570,6 +578,13 @@ export default function EmployerDashboardClient() {
           />
         ))}
       </div>
+
+      {resumeDocumentTarget && (
+        <CandidateDocumentModal
+          candidate={resumeDocumentTarget}
+          onClose={() => setResumeDocumentTarget(null)}
+        />
+      )}
 
       {resumeTarget && currentUserId && (
         <CandidateResumeModal
@@ -597,6 +612,7 @@ function CandidateCard({
   candidate,
   action,
   busy,
+  onViewProfessionalBio,
   onViewResume,
   onToggleSaved,
   onToggleInterested,
@@ -606,6 +622,7 @@ function CandidateCard({
   candidate: PublicCandidate;
   action: EmployerAction | undefined;
   busy: boolean;
+  onViewProfessionalBio: () => void;
   onViewResume: () => void;
   onToggleSaved: () => void;
   onToggleInterested: () => void;
@@ -617,6 +634,7 @@ function CandidateCard({
   const initial = candidateInitial(candidate);
   const location = candidateLocation(candidate);
   const tags = candidateAllTags(candidate).slice(0, 6);
+  const hasResume = !!candidate.resume_url?.trim();
 
   const isSaved = !!action?.is_saved;
   const isInterested = !!action?.is_interested;
@@ -779,11 +797,43 @@ function CandidateCard({
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: "auto" }}>
         <button
           type="button"
-          onClick={onViewResume}
+          onClick={onViewProfessionalBio}
           style={{ ...chipBase, background: "#111", color: "white" }}
         >
-          View Resume
+          View Professional Bio
         </button>
+        {hasResume ? (
+          <button
+            type="button"
+            onClick={onViewResume}
+            style={{
+              ...chipBase,
+              background: t.bg,
+              color: t.text,
+              border: `1px solid ${t.border}`,
+            }}
+          >
+            View Resume
+          </button>
+        ) : (
+          <span title="No resume available" style={{ display: "inline-flex" }}>
+            <button
+              type="button"
+              disabled
+              aria-label="No resume available"
+              style={{
+                ...chipBase,
+                background: t.badgeBg,
+                color: t.textFaint,
+                border: `1px solid ${t.border}`,
+                opacity: 0.55,
+                cursor: "not-allowed",
+              }}
+            >
+              View Resume
+            </button>
+          </span>
+        )}
         <button
           type="button"
           onClick={onMessage}

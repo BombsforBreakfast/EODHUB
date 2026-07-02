@@ -13,6 +13,7 @@ import {
   formatNavBadgeCount,
   sumAdminPending,
 } from "../lib/adminPendingCounts";
+import { matchesAdminUserSearch } from "../lib/adminUserSearch";
 import { FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
@@ -244,21 +245,6 @@ function userMatchesStatusFilter(u: UserProfile, filter: UserStatusFilter): bool
   }
   if (filter === "unverified") return isReadyForAdminVerify(u);
   return false;
-}
-
-function userMatchesSearchQuery(u: UserProfile, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  const haystack = [
-    adminUserDisplayName(u),
-    u.email ?? "",
-    u.service ?? "",
-    u.role ?? "",
-    u.user_id,
-  ]
-    .join(" ")
-    .toLowerCase();
-  return haystack.includes(q);
 }
 
 type UsersFallbackQueryResult = {
@@ -842,6 +828,11 @@ export default function AdminPage() {
   const [usersTotalCount, setUsersTotalCount] = useState(0);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersExportLoading, setUsersExportLoading] = useState(false);
+  const visibleUsers = useMemo(() => {
+    const q = userSearch.trim();
+    if (!q) return users;
+    return users.filter((u) => matchesAdminUserSearch(u, q));
+  }, [users, userSearch]);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
@@ -1830,13 +1821,14 @@ export default function AdminPage() {
   }
 
   async function loadUsers() {
-    const full = usersShowAll;
+    const searchActive = !!userSearchDebounced.trim();
+    const full = usersShowAll || searchActive;
     setUsersLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const params = new URLSearchParams();
       params.set("status", userFilter);
-      if (userSearchDebounced.trim()) params.set("q", userSearchDebounced.trim());
+      if (searchActive) params.set("q", userSearchDebounced.trim());
       if (full) {
         params.set("full", "true");
       } else {
@@ -1852,23 +1844,27 @@ export default function AdminPage() {
           .from("profiles")
           .select("user_id, first_name, last_name, display_name, name, email, role, service, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at", { count: "exact" })
           .order("created_at", { ascending: false });
-        if (!full) fallbackQuery = fallbackQuery.limit(50);
+        fallbackQuery = full ? fallbackQuery.limit(5000) : fallbackQuery.limit(50);
         let fallback = (await fallbackQuery) as UsersFallbackQueryResult;
         if (fallback.error) {
           let narrowQuery = supabase
             .from("profiles")
             .select("user_id, first_name, last_name, display_name, role, service, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at", { count: "exact" })
             .order("created_at", { ascending: false });
-          if (!full) narrowQuery = narrowQuery.limit(50);
+          narrowQuery = full ? narrowQuery.limit(5000) : narrowQuery.limit(50);
           fallback = (await narrowQuery) as UsersFallbackQueryResult;
         }
         if (!fallback.error) {
-          const rows = (fallback.data ?? []).map((u) => ({
+          let rows = (fallback.data ?? []).map((u) => ({
             ...u,
             email: (u as { email?: string | null }).email ?? null,
           })) as UserProfile[];
+          rows = rows.filter((u) => userMatchesStatusFilter(u, userFilter));
+          if (searchActive) {
+            rows = rows.filter((u) => matchesAdminUserSearch(u, userSearchDebounced));
+          }
           setUsers(rows);
-          setUsersTotalCount(fallback.count ?? rows.length);
+          setUsersTotalCount(searchActive ? rows.length : (fallback.count ?? rows.length));
         }
         return;
       }
@@ -4712,7 +4708,11 @@ export default function AdminPage() {
                       <span style={{ opacity: 0.7 }}>({pendingCounts.users})</span>
                     ) : userFilter === f ? (
                       <span style={{ opacity: 0.7 }}>
-                        ({usersShowAll ? users.length : usersTotalCount || users.length})
+                        ({userSearch.trim()
+                          ? visibleUsers.length
+                          : usersShowAll
+                            ? users.length
+                            : usersTotalCount || users.length})
                       </span>
                     ) : null}
                   </button>
@@ -4750,7 +4750,7 @@ export default function AdminPage() {
                     Clear
                   </button>
                 )}
-                {!usersShowAll && usersTotalCount > users.length && (
+                {!usersShowAll && !userSearch.trim() && usersTotalCount > users.length && (
                   <button
                     type="button"
                     style={actionBtn("#1d4ed8")}
@@ -4799,12 +4799,17 @@ export default function AdminPage() {
                 </button>
               </div>
             </div>
-            {!usersShowAll && users.length > 0 && usersTotalCount > users.length && (
+            {!usersShowAll && !userSearch.trim() && users.length > 0 && usersTotalCount > users.length && (
               <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10 }}>
                 Showing {users.length} of {usersTotalCount} users in this filter. Use search or Show all for the full list.
               </div>
             )}
-            {users.length === 0 && !usersLoading && (
+            {userSearch.trim() && visibleUsers.length > 0 && (
+              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 10 }}>
+                {visibleUsers.length} match{visibleUsers.length === 1 ? "" : "es"} for &ldquo;{userSearch.trim()}&rdquo;
+              </div>
+            )}
+            {visibleUsers.length === 0 && !usersLoading && (
               <div
                 style={{
                   padding: 32,
@@ -4820,7 +4825,7 @@ export default function AdminPage() {
               </div>
             )}
             <div style={{ display: "grid", gap: 10 }}>
-              {users.map((u) => {
+              {visibleUsers.map((u) => {
                 const name = adminUserDisplayName(u);
                 const isGrandfathered = isGrandfatheredSignupProfile(u);
                 const isIncompleteSignup = !!u.signup_incomplete || blocksSignupApproval(u);
