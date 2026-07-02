@@ -48,3 +48,6 @@ next-env.d.ts
 # supabase CLI local cache
 supabase/.temp/
 
+# local query/export artifacts (never commit)
+exports/
+

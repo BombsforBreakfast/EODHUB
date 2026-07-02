@@ -18,12 +18,13 @@ type Props = {
   item: ScrapbookItemWithAuthor;
   t: MemorialScrapbookTheme;
   accentColor: string;
-  /** Larger main stage in viewer */
-  variant?: "thumb" | "stage";
+  /** Larger main stage in viewer, or full-bleed immersive mobile gallery */
+  variant?: "thumb" | "stage" | "immersive";
 };
 
 export function ScrapbookItemCard({ item, t, accentColor, variant = "stage" }: Props) {
   const isThumb = variant === "thumb";
+  const isImmersive = variant === "immersive";
   const file = scrapbookHttpsUrl(item.file_url);
   const thumb = scrapbookHttpsUrl(item.thumbnail_url);
   const ext = scrapbookHttpsUrl(item.external_url);
@@ -43,6 +44,87 @@ export function ScrapbookItemCard({ item, t, accentColor, variant = "stage" }: P
         ].filter(Boolean)
       : [];
   const metaLine = photoMetaParts.join(" · ");
+
+  if (isImmersive) {
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minWidth: 0,
+          minHeight: 0,
+        }}
+      >
+        {item.item_type === "photo" && file && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={file}
+            alt=""
+            style={{
+              width: "100%",
+              height: "100%",
+              objectFit: "contain",
+              display: "block",
+            }}
+          />
+        )}
+        {item.item_type === "document" && file && (
+          <div style={{ textAlign: "center", padding: 24 }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>📄</div>
+            <a
+              href={file}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: "#fff", fontWeight: 800, fontSize: 16, wordBreak: "break-all" }}
+            >
+              Open document
+            </a>
+          </div>
+        )}
+        {item.item_type === "article" && ext && (
+          (() => {
+            const ytId = youtubeVideoIdFromUrl(ext);
+            if (ytId) {
+              return (
+                <iframe
+                  src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(ytId)}?rel=0&playsinline=1`}
+                  title="YouTube video"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                  style={{ border: "none", width: "100%", height: "100%", display: "block" }}
+                />
+              );
+            }
+            return (
+              <div style={{ width: "100%", height: "100%", minHeight: 0 }}>
+                <ArticleStageEmbed externalUrl={ext} thumbnailUrl={thumb} caption={item.caption} t={t} />
+              </div>
+            );
+          })()
+        )}
+        {item.item_type === "memory" && (
+          <div
+            style={{
+              padding: "24px 28px",
+              fontSize: 17,
+              lineHeight: 1.55,
+              color: "#fff",
+              fontWeight: 700,
+              whiteSpace: "pre-wrap",
+              textAlign: "center",
+              maxWidth: 640,
+              textShadow: "0 1px 4px rgba(0,0,0,0.85)",
+            }}
+          >
+            {(item.memory_body || item.caption || "").trim() || "—"}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

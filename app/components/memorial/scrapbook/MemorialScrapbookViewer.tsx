@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { MemorialScrapbookTheme } from "./types";
 import type { ScrapbookItemWithAuthor } from "./types";
 import { ScrapbookItemCard } from "./ScrapbookItemCard";
-import { scrapbookThumbKindLabel } from "./scrapbookHelpers";
+import { scrapbookItemCaption, scrapbookThumbKindLabel } from "./scrapbookHelpers";
 import { useScrapbookCompact } from "./useScrapbookCompact";
+import { LandscapeRotateHint } from "./LandscapeRotateHint";
 
 type Props = {
   open: boolean;
@@ -21,6 +22,121 @@ type Props = {
   onDeleteItem: (item: ScrapbookItemWithAuthor) => void;
 };
 
+function ViewerThumbStrip({
+  items,
+  indexSafe,
+  accentColor,
+  t,
+  onSelect,
+  compactOverlay,
+}: {
+  items: ScrapbookItemWithAuthor[];
+  indexSafe: number;
+  accentColor: string;
+  t: MemorialScrapbookTheme;
+  onSelect: (index: number) => void;
+  compactOverlay?: boolean;
+}) {
+  const n = items.length;
+
+  return (
+    <div
+      style={{
+        overflowX: "auto",
+        WebkitOverflowScrolling: "touch",
+        overscrollBehaviorX: "contain",
+        touchAction: "pan-x",
+        ...(compactOverlay
+          ? { paddingBottom: 2 }
+          : {
+              padding: "10px 12px",
+              paddingBottom: `max(10px, env(safe-area-inset-bottom))`,
+              paddingLeft: `max(12px, env(safe-area-inset-left))`,
+              paddingRight: `max(12px, env(safe-area-inset-right))`,
+              borderTop: `1px solid ${t.border}`,
+              flexShrink: 0,
+              background: t.surfaceHover,
+            }),
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          gap: 10,
+          paddingBottom: 2,
+          alignItems: "flex-start",
+          justifyContent: compactOverlay ? "center" : undefined,
+        }}
+      >
+        {items.map((it, i) => (
+          <div
+            key={it.id}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 2,
+              flexShrink: 0,
+              maxWidth: compactOverlay ? 64 : 76,
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => onSelect(i)}
+              title={`${scrapbookThumbKindLabel(it)} · ${i + 1} of ${n}`}
+              style={{
+                width: compactOverlay ? 52 : 56,
+                height: compactOverlay ? 52 : 56,
+                padding: 0,
+                borderRadius: 8,
+                overflow: "hidden",
+                border: i === indexSafe ? `2px solid ${accentColor}` : compactOverlay ? "2px solid rgba(255,255,255,0.35)" : `1px solid ${t.border}`,
+                cursor: "pointer",
+                background: compactOverlay ? "rgba(0,0,0,0.35)" : t.badgeBg,
+                boxShadow: compactOverlay ? "0 2px 8px rgba(0,0,0,0.45)" : undefined,
+              }}
+            >
+              <div
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  transform: "scale(0.92)",
+                }}
+              >
+                <ScrapbookItemCard item={it} t={t} accentColor={accentColor} variant="thumb" />
+              </div>
+            </button>
+            {!compactOverlay && (
+              <span
+                style={{
+                  margin: 0,
+                  padding: 0,
+                  fontSize: 9,
+                  fontWeight: 800,
+                  color: t.textMuted,
+                  textAlign: "center",
+                  lineHeight: 1,
+                  letterSpacing: "0.03em",
+                  width: "100%",
+                  overflow: "hidden",
+                  display: "-webkit-box",
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: "vertical",
+                  wordBreak: "break-word",
+                }}
+              >
+                {scrapbookThumbKindLabel(it)}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function MemorialScrapbookViewer({
   open,
   items,
@@ -35,17 +151,20 @@ export function MemorialScrapbookViewer({
   onDeleteItem,
 }: Props) {
   const [index, setIndex] = useState(initialIndex);
+  const [actionsOpen, setActionsOpen] = useState(false);
   const compact = useScrapbookCompact(isMobile);
 
   useEffect(() => {
     if (!open) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- align viewer index when opening from strip
     setIndex(Math.min(Math.max(0, initialIndex), Math.max(0, items.length - 1)));
+    setActionsOpen(false);
   }, [open, initialIndex, items.length]);
 
   const n = items.length;
   const indexSafe = Math.min(Math.max(0, index), Math.max(0, n - 1));
   const current = n > 0 ? items[indexSafe] : null;
+  const caption = current ? scrapbookItemCaption(current) : "";
 
   useEffect(() => {
     if (!open || n === 0) return;
@@ -105,6 +224,290 @@ export function MemorialScrapbookViewer({
     justifyContent: "center" as const,
   };
 
+  if (compact) {
+    const overlayCaption =
+      current && current.item_type === "memory"
+        ? (current.caption?.trim() &&
+          current.caption.trim() !== (current.memory_body?.trim() ?? "")
+            ? current.caption.trim()
+            : "")
+        : caption;
+
+    return (
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Scrapbook viewer"
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 1100,
+          background: "#000",
+          touchAction: "none",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          {current && (
+            <ScrapbookItemCard key={current.id} item={current} t={t} accentColor={accentColor} variant="immersive" />
+          )}
+          {current?.item_type === "photo" && current.file_url && (
+            <LandscapeRotateHint fileUrl={current.file_url} />
+          )}
+        </div>
+
+        {n > 1 && (
+          <>
+            <button
+              type="button"
+              aria-label="Previous"
+              onClick={goPrev}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: 48,
+                height: 88,
+                border: "none",
+                borderRadius: "0 10px 10px 0",
+                background: "rgba(0,0,0,0.55)",
+                color: "#fff",
+                fontSize: 32,
+                fontWeight: 300,
+                lineHeight: 1,
+                cursor: "pointer",
+                zIndex: 3,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                paddingLeft: 4,
+              }}
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              aria-label="Next"
+              onClick={goNext}
+              style={{
+                position: "absolute",
+                right: 0,
+                top: "50%",
+                transform: "translateY(-50%)",
+                width: 48,
+                height: 88,
+                border: "none",
+                borderRadius: "10px 0 0 10px",
+                background: "rgba(0,0,0,0.55)",
+                color: "#fff",
+                fontSize: 32,
+                fontWeight: 300,
+                lineHeight: 1,
+                cursor: "pointer",
+                zIndex: 3,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                paddingRight: 4,
+              }}
+            >
+              ›
+            </button>
+          </>
+        )}
+
+        <button
+          type="button"
+          aria-label="Close"
+          title="Close"
+          onClick={onClose}
+          style={{
+            position: "absolute",
+            top: "max(10px, env(safe-area-inset-top))",
+            right: "max(10px, env(safe-area-inset-right))",
+            width: 44,
+            height: 44,
+            border: "none",
+            borderRadius: 10,
+            background: "rgba(0,0,0,0.55)",
+            color: "#fff",
+            fontWeight: 800,
+            fontSize: 28,
+            lineHeight: 1,
+            cursor: "pointer",
+            zIndex: 4,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          ×
+        </button>
+
+        {current && (
+          <div style={{ position: "absolute", top: "max(10px, env(safe-area-inset-top))", left: "max(10px, env(safe-area-inset-left))", zIndex: 4 }}>
+            <button
+              type="button"
+              aria-label="More actions"
+              aria-expanded={actionsOpen}
+              onClick={() => setActionsOpen((v) => !v)}
+              style={{
+                width: 44,
+                height: 44,
+                border: "none",
+                borderRadius: 10,
+                background: "rgba(0,0,0,0.55)",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: 22,
+                lineHeight: 1,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              ⋯
+            </button>
+            {actionsOpen && (
+              <div
+                style={{
+                  marginTop: 8,
+                  minWidth: 168,
+                  borderRadius: 12,
+                  background: "rgba(0,0,0,0.82)",
+                  border: "1px solid rgba(255,255,255,0.15)",
+                  padding: 6,
+                  display: "grid",
+                  gap: 4,
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.45)",
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionsOpen(false);
+                    onFlag(current.id);
+                  }}
+                  style={{
+                    border: "none",
+                    borderRadius: 8,
+                    background: "transparent",
+                    color: "#fff",
+                    fontWeight: 700,
+                    fontSize: 13,
+                    padding: "10px 12px",
+                    textAlign: "left",
+                    cursor: "pointer",
+                  }}
+                >
+                  Flag / report
+                </button>
+                {canManageItem(current) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      onEditItem(current);
+                    }}
+                    style={{
+                      border: "none",
+                      borderRadius: 8,
+                      background: "transparent",
+                      color: "#fff",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      padding: "10px 12px",
+                      textAlign: "left",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Edit
+                  </button>
+                )}
+                {canManageItem(current) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActionsOpen(false);
+                      onDeleteItem(current);
+                    }}
+                    style={{
+                      border: "none",
+                      borderRadius: 8,
+                      background: "transparent",
+                      color: "#fca5a5",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      padding: "10px 12px",
+                      textAlign: "left",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 3,
+            pointerEvents: "none",
+            background: "linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.5) 45%, transparent 100%)",
+            paddingTop: 56,
+            paddingBottom: "max(10px, env(safe-area-inset-bottom))",
+            paddingLeft: "max(10px, env(safe-area-inset-left))",
+            paddingRight: "max(10px, env(safe-area-inset-right))",
+          }}
+        >
+          {overlayCaption && (
+            <p
+              style={{
+                margin: "0 0 12px",
+                padding: "0 8px",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: 15,
+                lineHeight: 1.35,
+                textAlign: "center",
+                textShadow: "0 1px 4px rgba(0,0,0,0.9)",
+                pointerEvents: "none",
+              }}
+            >
+              {overlayCaption}
+            </p>
+          )}
+          <div style={{ pointerEvents: "auto" }}>
+            <ViewerThumbStrip
+              items={items}
+              indexSafe={indexSafe}
+              accentColor={accentColor}
+              t={t}
+              onSelect={setIndex}
+              compactOverlay
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       role="presentation"
@@ -117,9 +520,7 @@ export function MemorialScrapbookViewer({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: compact
-          ? "max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))"
-          : 20,
+        padding: 20,
         boxSizing: "border-box",
         touchAction: "none",
       }}
@@ -132,12 +533,10 @@ export function MemorialScrapbookViewer({
         style={{
           width: "100%",
           maxWidth: 720,
-          maxHeight: compact
-            ? "min(92dvh, calc(100svh - max(24px, env(safe-area-inset-top)) - max(24px, env(safe-area-inset-bottom))))"
-            : "calc(100vh - 48px)",
+          maxHeight: "calc(100vh - 48px)",
           background: t.surface,
           color: t.text,
-          borderRadius: compact ? 12 : 16,
+          borderRadius: 16,
           border: `1px solid ${t.border}`,
           boxShadow: "0 24px 64px rgba(0,0,0,0.45)",
           display: "flex",
@@ -152,9 +551,9 @@ export function MemorialScrapbookViewer({
             alignItems: "center",
             justifyContent: "space-between",
             gap: 12,
-            padding: compact ? "12px 14px" : "14px 16px",
-            paddingLeft: `max(${compact ? 14 : 16}px, env(safe-area-inset-left))`,
-            paddingRight: `max(${compact ? 14 : 16}px, env(safe-area-inset-right))`,
+            padding: "14px 16px",
+            paddingLeft: `max(16px, env(safe-area-inset-left))`,
+            paddingRight: `max(16px, env(safe-area-inset-right))`,
             borderBottom: `1px solid ${t.border}`,
             flexShrink: 0,
           }}
@@ -196,53 +595,35 @@ export function MemorialScrapbookViewer({
             overflowY: "auto",
             WebkitOverflowScrolling: "touch",
             overscrollBehavior: "contain",
-            padding: compact ? "12px 14px" : "16px 18px",
-            paddingLeft: `max(${compact ? 14 : 18}px, env(safe-area-inset-left))`,
-            paddingRight: `max(${compact ? 14 : 18}px, env(safe-area-inset-right))`,
+            padding: "16px 18px",
+            paddingLeft: `max(18px, env(safe-area-inset-left))`,
+            paddingRight: `max(18px, env(safe-area-inset-right))`,
             display: "flex",
             flexDirection: "column",
             gap: 14,
           }}
         >
-          {compact ? (
-            <>
-              <div style={{ width: "100%", minWidth: 0 }}>
-                {current && (
-                  <ScrapbookItemCard key={current.id} item={current} t={t} accentColor={accentColor} variant="stage" />
-                )}
-              </div>
-              <div style={{ display: "flex", gap: 10, width: "100%" }}>
-                <button type="button" aria-label="Previous" onClick={goPrev} style={{ ...navCircleBtn, flex: 1, width: "auto", height: 48, borderRadius: 12 }}>
-                  ‹
-                </button>
-                <button type="button" aria-label="Next" onClick={goNext} style={{ ...navCircleBtn, flex: 1, width: "auto", height: 48, borderRadius: 12 }}>
-                  ›
-                </button>
-              </div>
-            </>
-          ) : (
-            <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
-              <button type="button" aria-label="Previous" onClick={goPrev} style={navCircleBtn}>
-                ‹
-              </button>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                {current && (
-                  <ScrapbookItemCard key={current.id} item={current} t={t} accentColor={accentColor} variant="stage" />
-                )}
-              </div>
-              <button type="button" aria-label="Next" onClick={goNext} style={navCircleBtn}>
-                ›
-              </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center" }}>
+            <button type="button" aria-label="Previous" onClick={goPrev} style={navCircleBtn}>
+              ‹
+            </button>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {current && (
+                <ScrapbookItemCard key={current.id} item={current} t={t} accentColor={accentColor} variant="stage" />
+              )}
             </div>
-          )}
+            <button type="button" aria-label="Next" onClick={goNext} style={navCircleBtn}>
+              ›
+            </button>
+          </div>
 
           {current && (
             <div
               style={{
                 display: "flex",
                 flexWrap: "wrap",
-                flexDirection: compact ? "column" : "row",
-                alignItems: compact ? "stretch" : "center",
+                flexDirection: "row",
+                alignItems: "center",
                 gap: 12,
                 paddingTop: 4,
                 borderTop: `1px solid ${t.borderLight}`,
@@ -285,12 +666,12 @@ export function MemorialScrapbookViewer({
               </div>
               <div
                 style={{
-                  marginLeft: compact ? 0 : "auto",
+                  marginLeft: "auto",
                   display: "flex",
                   flexWrap: "wrap",
                   gap: 8,
                   alignItems: "center",
-                  justifyContent: compact ? "flex-start" : "flex-end",
+                  justifyContent: "flex-end",
                 }}
               >
                 <button
@@ -353,85 +734,13 @@ export function MemorialScrapbookViewer({
           )}
         </div>
 
-        <div
-          style={{
-            padding: "10px 12px",
-            paddingBottom: `max(10px, env(safe-area-inset-bottom))`,
-            paddingLeft: `max(12px, env(safe-area-inset-left))`,
-            paddingRight: `max(12px, env(safe-area-inset-right))`,
-            borderTop: `1px solid ${t.border}`,
-            overflowX: "auto",
-            WebkitOverflowScrolling: "touch",
-            overscrollBehaviorX: "contain",
-            touchAction: "pan-x",
-            flexShrink: 0,
-            background: t.surfaceHover,
-          }}
-        >
-          <div style={{ display: "flex", gap: 10, paddingBottom: 2, alignItems: "flex-start" }}>
-            {items.map((it, i) => (
-              <div
-                key={it.id}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 2,
-                  flexShrink: 0,
-                  maxWidth: 76,
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() => setIndex(i)}
-                  title={`${scrapbookThumbKindLabel(it)} · ${i + 1} of ${n}`}
-                  style={{
-                    width: 56,
-                    height: 56,
-                    padding: 0,
-                    borderRadius: 8,
-                    overflow: "hidden",
-                    border: i === indexSafe ? `2px solid ${accentColor}` : `1px solid ${t.border}`,
-                    cursor: "pointer",
-                    background: t.badgeBg,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      display: "flex",
-                      flexDirection: "column",
-                      transform: "scale(0.92)",
-                    }}
-                  >
-                    <ScrapbookItemCard item={it} t={t} accentColor={accentColor} variant="thumb" />
-                  </div>
-                </button>
-                <span
-                  style={{
-                    margin: 0,
-                    padding: 0,
-                    fontSize: 9,
-                    fontWeight: 800,
-                    color: t.textMuted,
-                    textAlign: "center",
-                    lineHeight: 1,
-                    letterSpacing: "0.03em",
-                    width: "100%",
-                    overflow: "hidden",
-                    display: "-webkit-box",
-                    WebkitLineClamp: 2,
-                    WebkitBoxOrient: "vertical",
-                    wordBreak: "break-word",
-                  }}
-                >
-                  {scrapbookThumbKindLabel(it)}
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ViewerThumbStrip
+          items={items}
+          indexSafe={indexSafe}
+          accentColor={accentColor}
+          t={t}
+          onSelect={setIndex}
+        />
       </div>
     </div>
   );

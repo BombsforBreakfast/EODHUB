@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "../../../lib/ThemeContext";
 import { useMasterShell } from "../../../components/master/masterShellContext";
@@ -9,67 +9,12 @@ import type { PublicCandidate } from "../lib/types";
 import { candidateDocumentApiHref } from "../lib/candidateDocumentLinks";
 import { openDocumentLink } from "@/app/lib/native/nativeFileOpen";
 import CandidateDocumentPreview from "./CandidateDocumentPreview";
+import { useCenterPaneRect, useViewportMobile } from "../../../hooks/useCenterPaneRect";
 
 type Props = {
   candidate: PublicCandidate;
   onClose: () => void;
 };
-
-type HostRect = { top: number; left: number; width: number; height: number };
-
-function useViewportMobile() {
-  const [mobile, setMobile] = useState(false);
-
-  useEffect(() => {
-    const mq = window.matchMedia("(max-width: 900px)");
-    const sync = () => setMobile(mq.matches);
-    sync();
-    mq.addEventListener("change", sync);
-    return () => mq.removeEventListener("change", sync);
-  }, []);
-
-  return mobile;
-}
-
-function useCenterPaneRect(enabled: boolean): HostRect | null {
-  const [rect, setRect] = useState<HostRect | null>(null);
-
-  useLayoutEffect(() => {
-    if (!enabled) {
-      return;
-    }
-
-    function measure() {
-      const main = document.querySelector(".master-shell-main");
-      if (!main) {
-        setRect(null);
-        return;
-      }
-      const bounds = main.getBoundingClientRect();
-      setRect({
-        top: bounds.top,
-        left: bounds.left,
-        width: bounds.width,
-        height: bounds.height,
-      });
-    }
-
-    measure();
-    window.addEventListener("resize", measure);
-    window.addEventListener("scroll", measure, true);
-    const main = document.querySelector(".master-shell-main");
-    const observer = main ? new ResizeObserver(measure) : null;
-    observer?.observe(main!);
-
-    return () => {
-      window.removeEventListener("resize", measure);
-      window.removeEventListener("scroll", measure, true);
-      observer?.disconnect();
-    };
-  }, [enabled]);
-
-  return rect;
-}
 
 export default function CandidateDocumentModal({ candidate, onClose }: Props) {
   const { t } = useTheme();

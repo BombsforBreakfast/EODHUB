@@ -75,6 +75,18 @@ export function articleLinkThumbParts(externalUrl: string): { site: string; path
   }
 }
 
+/** Primary caption text for fullscreen gallery overlay. */
+export function scrapbookItemCaption(item: {
+  item_type: "photo" | "article" | "document" | "memory";
+  caption: string | null;
+  memory_body: string | null;
+}): string {
+  if (item.item_type === "memory") {
+    return (item.memory_body || item.caption || "").trim();
+  }
+  return (item.caption || "").trim();
+}
+
 /** Short label under scrapbook thumbnails (preview strip + gallery viewer). */
 export function scrapbookThumbKindLabel(item: {
   item_type: "photo" | "article" | "document" | "memory";

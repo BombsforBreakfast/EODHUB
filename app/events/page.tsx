@@ -37,6 +37,8 @@ import {
 } from "../lib/reactions";
 import { MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
 import { ExternalSiteEmbedModal, ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
+import { useMasterShell } from "../components/master/masterShellContext";
+import { useCenterPaneRect, useViewportMobile } from "../hooks/useCenterPaneRect";
 
 type EventReactionBundle = ReactionAggregate & {
   reactorNamesByType: Partial<Record<ReactionType, string[]>>;
@@ -304,6 +306,10 @@ function EventsPageInner() {
   const [memWizMsg, setMemWizMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   const { t, isDark } = useTheme();
+  const { isDesktopShell } = useMasterShell();
+  const viewportMobile = useViewportMobile();
+  const fillEventModalCenterPane = isDesktopShell && !viewportMobile;
+  const eventModalCenterPaneRect = useCenterPaneRect(fillEventModalCenterPane);
 
   const memorialWizTheme = useMemo(
     () => memorialTheme(memWizCategory, memWizService),
@@ -3451,33 +3457,63 @@ function EventsPageInner() {
       {selectedEvent && (
         <div
           onClick={() => setSelectedEvent(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.35)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 1000,
-          }}
+          style={
+            fillEventModalCenterPane && eventModalCenterPaneRect
+              ? {
+                  position: "fixed",
+                  top: eventModalCenterPaneRect.top,
+                  left: eventModalCenterPaneRect.left,
+                  width: eventModalCenterPaneRect.width,
+                  height: eventModalCenterPaneRect.height,
+                  zIndex: 1000,
+                  background: "rgba(0,0,0,0.55)",
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
+                }
+              : {
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(0,0,0,0.35)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 20,
+                  zIndex: 1000,
+                }
+          }
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 560,
-              maxHeight: "min(85vh, calc(100dvh - 40px))",
-              overflowY: "auto",
-              WebkitOverflowScrolling: "touch",
-              overscrollBehavior: "contain",
-              boxSizing: "border-box",
-              background: t.surface,
-              color: t.text,
-              borderRadius: 18,
-              padding: 24,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
-            }}
+            style={
+              fillEventModalCenterPane && eventModalCenterPaneRect
+                ? {
+                    flex: 1,
+                    minHeight: 0,
+                    width: "100%",
+                    overflowY: "auto",
+                    WebkitOverflowScrolling: "touch",
+                    overscrollBehavior: "contain",
+                    boxSizing: "border-box",
+                    background: t.surface,
+                    color: t.text,
+                    padding: 24,
+                  }
+                : {
+                    width: "100%",
+                    maxWidth: 560,
+                    maxHeight: "min(85vh, calc(100dvh - 40px))",
+                    overflowY: "auto",
+                    WebkitOverflowScrolling: "touch",
+                    overscrollBehavior: "contain",
+                    boxSizing: "border-box",
+                    background: t.surface,
+                    color: t.text,
+                    borderRadius: 18,
+                    padding: 24,
+                    boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+                  }
+            }
           >
             <div
               style={{
@@ -3489,7 +3525,7 @@ function EventsPageInner() {
             >
               <div style={{ flex: 1, minWidth: 0 }}>
                 {selectedEvent.image_url ? (
-                  <div style={{ marginBottom: 14, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "16 / 9", maxHeight: 220, background: t.bg }}>
+                  <div style={{ marginBottom: 14, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "16 / 9", maxHeight: fillEventModalCenterPane ? 320 : 220, background: t.bg }}>
                     <img src={httpsAssetUrl(selectedEvent.image_url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                   </div>
                 ) : null}

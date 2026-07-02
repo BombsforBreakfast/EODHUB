@@ -33,6 +33,8 @@ import {
   type SavedJobRow,
 } from "../../lib/queries/savedJobs";
 import { queryKeys } from "../../lib/queryKeys";
+import { useMasterShell } from "./masterShellContext";
+import { useCenterPaneRect, useViewportMobile } from "../../hooks/useCenterPaneRect";
 
 const CALENDAR_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -145,6 +147,10 @@ export default function MasterLeftColumn({
   sideRailsReady,
 }: Props) {
   const { t, isDark } = useTheme();
+  const { isDesktopShell } = useMasterShell();
+  const viewportMobile = useViewportMobile();
+  const fillEventModalCenterPane = isDesktopShell && !viewportMobile;
+  const eventModalCenterPaneRect = useCenterPaneRect(fillEventModalCenterPane);
   const queryClient = useQueryClient();
 
   const [jobs, setJobs] = useState<JobRow[]>([]);
@@ -1830,36 +1836,64 @@ export default function MasterLeftColumn({
       {selectedEvent && typeof document !== "undefined" && createPortal(
         <div
           onClick={() => setSelectedEvent(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.55)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 1000,
-          }}
+          style={
+            fillEventModalCenterPane && eventModalCenterPaneRect
+              ? {
+                  position: "fixed",
+                  top: eventModalCenterPaneRect.top,
+                  left: eventModalCenterPaneRect.left,
+                  width: eventModalCenterPaneRect.width,
+                  height: eventModalCenterPaneRect.height,
+                  zIndex: 1000,
+                  background: "rgba(0,0,0,0.55)",
+                  display: "flex",
+                  flexDirection: "column",
+                  overflow: "hidden",
+                }
+              : {
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(0,0,0,0.55)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  padding: 20,
+                  zIndex: 1000,
+                }
+          }
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{
-              width: "100%",
-              maxWidth: 560,
-              maxHeight: "calc(100vh - 40px)",
-              background: t.surface,
-              color: t.text,
-              borderRadius: 18,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
-              display: "flex",
-              flexDirection: "column",
-              overflow: "hidden",
-            }}
+            style={
+              fillEventModalCenterPane && eventModalCenterPaneRect
+                ? {
+                    flex: 1,
+                    minHeight: 0,
+                    width: "100%",
+                    background: t.surface,
+                    color: t.text,
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                  }
+                : {
+                    width: "100%",
+                    maxWidth: 560,
+                    maxHeight: "calc(100vh - 40px)",
+                    background: t.surface,
+                    color: t.text,
+                    borderRadius: 18,
+                    boxShadow: "0 20px 60px rgba(0,0,0,0.4)",
+                    display: "flex",
+                    flexDirection: "column",
+                    overflow: "hidden",
+                }
+            }
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, padding: "22px 24px 10px" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 {selectedEvent.image_url ? (
-                  <div style={{ marginBottom: 14, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "16 / 9", maxHeight: 220, background: t.bg }}>
+                  <div style={{ marginBottom: 14, borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, aspectRatio: "16 / 9", maxHeight: fillEventModalCenterPane ? 320 : 220, background: t.bg }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={httpsAssetUrl(selectedEvent.image_url)} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                   </div>
