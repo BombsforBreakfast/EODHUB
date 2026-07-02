@@ -28,6 +28,7 @@ function post(overrides: Partial<FeedSortPost> & { id: string }): FeedSortPost {
     news_item_id: overrides.news_item_id,
     rabbithole_thread_id: overrides.rabbithole_thread_id,
     rabbithole_contribution_id: overrides.rabbithole_contribution_id,
+    feed_rank_age_offset_hours: overrides.feed_rank_age_offset_hours,
   };
 }
 
@@ -91,6 +92,24 @@ const diversified = diversifyFeedPosts(clustered, { authorWindow: 3, candidateLo
 assert(
   diversified[0].user_id !== diversified[1].user_id,
   "Expected diversity pass to interleave posts from different authors when alternatives exist.",
+);
+
+const highEngagementRecent = post({
+  id: "high-engagement-recent",
+  created_at: hoursAgo(72),
+  likeCount: 30,
+  commentCount: 10,
+});
+const highEngagementDecayed = post({
+  id: "high-engagement-decayed",
+  created_at: hoursAgo(72),
+  likeCount: 30,
+  commentCount: 10,
+  feed_rank_age_offset_hours: 600,
+});
+assert(
+  score(highEngagementRecent) > score(highEngagementDecayed),
+  "Expected feed_rank_age_offset_hours to sink a post without changing its visible timestamp.",
 );
 
 console.log("Feed ranking scenarios passed.");

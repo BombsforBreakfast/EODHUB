@@ -38,8 +38,14 @@ import OptimizedAvatarImg from "../../../components/OptimizedAvatarImg";
 import { galleryImageDisplayUrl } from "../../../lib/storageImageUrl";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
 import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../../../lib/native/pickFeedMedia";
-import { EMPLOYER_DOCUMENT_ACCEPT, FEED_ATTACHMENT_ACCEPT, inferEmployerDocumentContentType } from "../../../lib/uploadLimits";
 import {
+  EMPLOYER_DOCUMENT_ACCEPT,
+  FEED_ATTACHMENT_ACCEPT,
+  inferEmployerDocumentContentType,
+} from "../../../lib/uploadLimits";
+import {
+  attachmentRenderKindFromFile,
+  CAD_PREVIEW_IMAGE_ACCEPT,
   validateFeedAttachmentPick,
   validateImagePick,
   UPLOAD_LIMITS,
@@ -49,6 +55,14 @@ import {
   isVideoFile,
   isVideoUrl,
 } from "../../../lib/uploadLimits";
+import {
+  CAD_FILE_PREFIX,
+  CAD_PREVIEW_PREFIX,
+  attachmentsFromUrls,
+  buildCadStorageFileName,
+  createCadAttachmentToken,
+  isPreviewImageForCad,
+} from "../../../lib/postAttachments";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
 import { postNotifyJson } from "../../../lib/postNotifyClient";
@@ -616,10 +630,17 @@ export default function PublicProfilePage() {
   const [ogPreview, setOgPreview] = useState<OgPreview | null>(null);
   const [fetchingOg, setFetchingOg] = useState(false);
   const ogDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [selectedPostImages, setSelectedPostImages] = useState<{ file: File; previewUrl: string }[]>([]);
+  const [selectedPostImages, setSelectedPostImages] = useState<Array<{
+    file: File;
+    previewUrl: string;
+    kind: "image" | "video" | "pdf" | "cad3d" | "other";
+    cadToken?: string;
+    cadRole?: "file" | "preview";
+  }>>([]);
   const [selectedPostGif, setSelectedPostGif] = useState<string | null>(null);
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
   const postVideoPdfInputRef = useRef<HTMLInputElement | null>(null);
+  const postCadPreviewInputRef = useRef<HTMLInputElement | null>(null);
   const postWallPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const postWallVideoInputRef = useRef<HTMLInputElement | null>(null);
   const [lightboxVideoUrl, setLightboxVideoUrl] = useState<string | null>(null);
@@ -2641,15 +2662,31 @@ export default function PublicProfilePage() {
     }, 800);
   }
 
-  async function uploadWallImage(file: File, postId: string): Promise<string> {
+  async function uploadWallImage(file: File, postId: string, forcedFileName?: string): Promise<string> {
     const prepared = await prepareFeedUploadFile(file, { accountType: profile?.account_type });
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
-    const safeName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const safeName = forcedFileName ?? `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `${currentUserId}/posts/${postId}/${safeName}`;
     const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
     if (error) throw new Error(error.message);
     return supabase.storage.from("feed-images").getPublicUrl(filePath).data.publicUrl;
+  }
+
+  function missingCadPreviewTokens(
+    items: Array<{ kind: string; cadRole?: "file" | "preview"; cadToken?: string }>,
+  ): string[] {
+    const fileTokens = new Set(
+      items
+        .filter((item) => item.kind === "cad3d" && item.cadRole === "file" && item.cadToken)
+        .map((item) => item.cadToken as string),
+    );
+    const previewTokens = new Set(
+      items
+        .filter((item) => item.cadRole === "preview" && item.cadToken)
+        .map((item) => item.cadToken as string),
+    );
+    return [...fileTokens].filter((token) => !previewTokens.has(token));
   }
 
   function addWallPostImagesFromFiles(
@@ -2670,7 +2707,7 @@ export default function PublicProfilePage() {
     setSelectedPostImages((prev) => {
       const slots = 10 - prev.length;
       if (slots <= 0) {
-        alert("You can attach up to 10 photos or videos per post.");
+        alert("You can attach up to 10 files per post.");
         return prev;
       }
       const toAddFiles = filtered.slice(0, slots);
@@ -2685,8 +2722,61 @@ export default function PublicProfilePage() {
       if (filtered.length > slots) {
         alert("Only the first files were added. Max is 10 attachments per post.");
       }
-      const toAdd = toAddFiles.map((f) => ({ file: f, previewUrl: URL.createObjectURL(f) }));
+      const toAdd = toAddFiles.map((f) => {
+        const kind = attachmentRenderKindFromFile(f);
+        if (kind === "cad3d") {
+          return {
+            file: f,
+            previewUrl: "",
+            kind: "cad3d" as const,
+            cadRole: "file" as const,
+            cadToken: createCadAttachmentToken(),
+          };
+        }
+        return {
+          file: f,
+          previewUrl: URL.createObjectURL(f),
+          kind: kind === "pdf" ? "pdf" : kind === "video" ? "video" : kind === "image" ? "image" : "other",
+        };
+      });
       return [...prev, ...toAdd];
+    });
+  }
+
+  function addWallCadPreviewImagesFromFiles(files: File[]) {
+    if (files.length === 0) return;
+
+    setSelectedPostImages((prev) => {
+      const missingTokens = missingCadPreviewTokens(prev);
+      if (missingTokens.length === 0) {
+        alert("All CAD/3D files already have previews.");
+        return prev;
+      }
+
+      const validImages = files.filter((file) => isPreviewImageForCad(file));
+      if (validImages.length === 0) {
+        alert("Please choose a JPG, PNG, or WEBP preview image.");
+        return prev;
+      }
+
+      const previewsToAdd = validImages.slice(0, missingTokens.length);
+      const next = [...prev];
+      previewsToAdd.forEach((file, index) => {
+        const token = missingTokens[index];
+        const pickError = validateImagePick(file);
+        if (pickError) {
+          alert(pickError);
+          return;
+        }
+        next.push({
+          file,
+          previewUrl: URL.createObjectURL(file),
+          kind: "image",
+          cadRole: "preview",
+          cadToken: token,
+        });
+      });
+      return next;
     });
   }
 
@@ -2704,6 +2794,12 @@ export default function PublicProfilePage() {
 
     try {
       setSubmittingPost(true);
+      const missingCadTokens = missingCadPreviewTokens(selectedPostImages);
+      if (missingCadTokens.length > 0) {
+        alert("Each CAD/3D file needs a preview image (JPG, PNG, or WEBP) before posting.");
+        setSubmittingPost(false);
+        return;
+      }
       const postAsUserId = resolvePostAsUserIdForSubmit(postAsMode, postAsAdminProfile?.userId ?? null);
       const actorName =
         postAsMode === "admin" && postAsAdminProfile
@@ -2764,7 +2860,11 @@ export default function PublicProfilePage() {
       if (imagesToUpload.length > 0) {
         const uploadedUrls: string[] = [];
         for (const item of imagesToUpload) {
-          const url = await uploadWallImage(item.file, postId);
+          const forcedFileName =
+            item.cadToken && item.cadRole
+              ? buildCadStorageFileName(item.cadToken, item.cadRole, item.file.name)
+              : undefined;
+          const url = await uploadWallImage(item.file, postId, forcedFileName);
           uploadedUrls.push(url);
         }
         await supabase.from("post_images").insert(
@@ -2772,7 +2872,14 @@ export default function PublicProfilePage() {
             post_id: postId,
             image_url: url,
             sort_order: i,
-            file_type: imagesToUpload[i]?.file.type.startsWith("video/") ? "video" : "image",
+            file_type:
+              imagesToUpload[i]?.kind === "video"
+                ? "video"
+                : imagesToUpload[i]?.kind === "pdf"
+                  ? "pdf"
+                  : imagesToUpload[i]?.kind === "cad3d"
+                    ? "cad3d"
+                    : "image",
           }))
         );
         await supabase.from("posts").update({ image_url: uploadedUrls[0] }).eq("id", postId);
@@ -2787,7 +2894,12 @@ export default function PublicProfilePage() {
       postContentRawRef.current = "";
       setOgPreview(null);
       setSelectedPostGif(null);
-      setSelectedPostImages((prev) => { prev.forEach((item) => URL.revokeObjectURL(item.previewUrl)); return []; });
+      setSelectedPostImages((prev) => {
+        prev.forEach((item) => {
+          if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+        });
+        return [];
+      });
       await loadPosts(userId);
     } catch (err) {
       console.error("Submit post error:", err);
@@ -3316,7 +3428,8 @@ export default function PublicProfilePage() {
     const seenVideos = new Set<string>();
 
     for (const post of posts) {
-      for (const url of post.image_urls) {
+      for (const attachment of attachmentsFromUrls(post.image_urls)) {
+        const url = attachment.kind === "cad3d" ? attachment.renderUrl : attachment.url;
         const item: BusinessWallMediaItem = {
           url,
           postId: post.id,
@@ -6032,6 +6145,19 @@ export default function PublicProfilePage() {
                   }}
                   style={{ display: "none" }}
                 />
+                <input
+                  ref={postCadPreviewInputRef}
+                  type="file"
+                  accept={CAD_PREVIEW_IMAGE_ACCEPT}
+                  multiple
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    if (files.length === 0) return;
+                    addWallCadPreviewImagesFromFiles(files);
+                    if (postCadPreviewInputRef.current) postCadPreviewInputRef.current.value = "";
+                  }}
+                  style={{ display: "none" }}
+                />
                 {isBusinessOrgProfile && (
                   <>
                     <input
@@ -6072,17 +6198,39 @@ export default function PublicProfilePage() {
                       <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
                         {isVideoFile(item.file) ? (
                           <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
-                        ) : item.file.type === "application/pdf" ? (
+                        ) : item.kind === "pdf" ? (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: t.textMuted }}>
                             <FileText size={28} color={t.textMuted} />
                             <span style={{ textAlign: "center", padding: "0 4px", wordBreak: "break-all" }}>{item.file.name}</span>
+                          </div>
+                        ) : item.kind === "cad3d" && item.cadRole === "file" ? (
+                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: t.textMuted, padding: 6, textAlign: "center" }}>
+                            <div style={{ fontWeight: 800 }}>CAD / 3D</div>
+                            <span style={{ wordBreak: "break-all" }}>{item.file.name}</span>
+                            {item.cadToken && missingCadPreviewTokens(selectedPostImages).includes(item.cadToken) && (
+                              <span style={{ color: "#f59e0b", fontWeight: 700 }}>Preview required</span>
+                            )}
                           </div>
                         ) : (
                           <img src={item.previewUrl} alt="" style={feedContainedImageStyle} />
                         )}
                         <button
                           type="button"
-                          onClick={() => setSelectedPostImages((prev) => { URL.revokeObjectURL(prev[i].previewUrl); return prev.filter((_, idx) => idx !== i); })}
+                          onClick={() => setSelectedPostImages((prev) => {
+                            const item = prev[i];
+                            if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
+                            if (item?.kind === "cad3d" && item.cadToken) {
+                              return prev.filter((entry, idx) => {
+                                if (idx === i) return false;
+                                if (entry.cadToken === item.cadToken) {
+                                  if (entry.previewUrl) URL.revokeObjectURL(entry.previewUrl);
+                                  return false;
+                                }
+                                return true;
+                              });
+                            }
+                            return prev.filter((_, idx) => idx !== i);
+                          })}
                           style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}
                         >�</button>
                       </div>
@@ -6095,7 +6243,12 @@ export default function PublicProfilePage() {
                     {selectedPostImages.length > 0 && (
                       <button
                         type="button"
-                        onClick={() => setSelectedPostImages((prev) => { prev.forEach((item) => URL.revokeObjectURL(item.previewUrl)); return []; })}
+                        onClick={() => setSelectedPostImages((prev) => {
+                          prev.forEach((item) => {
+                            if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+                          });
+                          return [];
+                        })}
                         style={{ background: "transparent", border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 12px", fontWeight: 700, cursor: "pointer", color: t.text }}
                       >
                         Remove All Attachments
@@ -6109,7 +6262,7 @@ export default function PublicProfilePage() {
                     {wallFeedUploadLimits.videoDurationHint}).
                     {isBusinessOrgProfile
                       ? " Photos and videos appear in separate sections above your feed."
-                      : " For longer video, paste a YouTube or Vimeo link in your post."}
+                      : ` PDFs/CAD files up to ${formatUploadBytes(UPLOAD_LIMITS.document)} are supported; CAD files need preview images.`}
                   </p>
                   <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
                     {isBusinessOrgProfile ? (
@@ -6128,22 +6281,49 @@ export default function PublicProfilePage() {
                         >
                           Add Video
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => postVideoPdfInputRef.current?.click()}
+                          style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
+                        >
+                          Add File
+                        </button>
+                        {missingCadPreviewTokens(selectedPostImages).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => postCadPreviewInputRef.current?.click()}
+                            style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
+                          >
+                            Add Preview Image ({missingCadPreviewTokens(selectedPostImages).length})
+                          </button>
+                        )}
                       </>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void openFeedMediaPicker({
-                            mediaInputRef: postImageInputRef,
-                            videoPdfInputRef: postVideoPdfInputRef,
-                            onFiles: addWallPostImagesFromFiles,
-                            remainingSlots: 10 - selectedPostImages.length,
-                          });
-                        }}
-                        style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
-                      >
-                        {selectedPostImages.length > 0 ? "Add More" : "Add Photo or Video"}
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            void openFeedMediaPicker({
+                              mediaInputRef: postImageInputRef,
+                              videoPdfInputRef: postVideoPdfInputRef,
+                              onFiles: addWallPostImagesFromFiles,
+                              remainingSlots: 10 - selectedPostImages.length,
+                            });
+                          }}
+                          style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
+                        >
+                          {selectedPostImages.length > 0 ? "Add More" : "Add Photo / Video / File"}
+                        </button>
+                        {missingCadPreviewTokens(selectedPostImages).length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => postCadPreviewInputRef.current?.click()}
+                            style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
+                          >
+                            Add Preview Image ({missingCadPreviewTokens(selectedPostImages).length})
+                          </button>
+                        )}
+                      </>
                     )}
                     <GifPickerButton
                       onSelect={(url) => setSelectedPostGif(url)}
@@ -6344,14 +6524,24 @@ export default function PublicProfilePage() {
 
                     {/* Post images (member profiles show inline; business shows in Photos/Videos sections) */}
                     {post.image_urls.length > 0 && !isBusinessOrgProfile && (() => {
-                      const visible = post.image_urls.slice(0, 3);
-                      const remaining = post.image_urls.length - 3;
+                      const attachments = attachmentsFromUrls(post.image_urls);
+                      const visible = attachments.slice(0, 3);
+                      const remaining = attachments.length - 3;
                       return (
                         <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: visible.length === 1 ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 8, maxWidth: 420 }}>
-                          {visible.map((url, i) => (
-                            <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
+                          {visible.map((attachment, i) => (
+                            <button
+                              key={`${attachment.url}-${i}`}
+                              type="button"
+                              onClick={() => {
+                                if (attachment.kind === "pdf" || attachment.kind === "cad3d" || attachment.kind === "other") {
+                                  window.open(attachment.url, "_blank", "noopener,noreferrer");
+                                }
+                              }}
+                              style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG, padding: 0, cursor: attachment.kind === "pdf" || attachment.kind === "cad3d" || attachment.kind === "other" ? "pointer" : "default" }}
+                            >
                               <FeedMediaAttachment
-                                url={url}
+                                attachment={attachment}
                                 alt={`Post image ${i + 1}`}
                                 style={feedContainedImageStyle}
                                 loading={postIndex === 0 ? "eager" : "lazy"}
@@ -6361,7 +6551,7 @@ export default function PublicProfilePage() {
                                   +{remaining}
                                 </div>
                               )}
-                            </div>
+                            </button>
                           ))}
                         </div>
                       );

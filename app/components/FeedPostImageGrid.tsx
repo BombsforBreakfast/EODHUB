@@ -1,6 +1,7 @@
 "use client";
 
 import { FeedMediaAttachment } from "./FeedMediaAttachment";
+import type { PostAttachment } from "../lib/postAttachments";
 import {
   FEED_MEDIA_FRAME_BG,
   FEED_MEDIA_GRID_GAP,
@@ -12,22 +13,23 @@ import {
 } from "../lib/feedLayout";
 
 type Props = {
-  imageUrls: string[];
+  attachments: PostAttachment[];
   onOpenGallery: (startIndex: number) => void;
   borderColor: string;
   maxWidth?: string;
 };
 
 export default function FeedPostImageGrid({
-  imageUrls,
+  attachments,
   onOpenGallery,
   borderColor,
   maxWidth = FEED_POST_IMAGES_MAX_WIDTH,
 }: Props) {
-  if (imageUrls.length === 0) return null;
+  if (attachments.length === 0) return null;
 
-  const visibleImages = imageUrls.slice(0, 3);
-  const remainingCount = imageUrls.length - 3;
+  const visibleImages = attachments.slice(0, 3);
+  const remainingCount = attachments.length - 3;
+  const galleryItems = attachments.filter((item) => item.kind === "image" || item.kind === "video");
 
   return (
     <div
@@ -46,15 +48,27 @@ export default function FeedPostImageGrid({
         boxSizing: "border-box",
       }}
     >
-      {visibleImages.map((url, index) => {
+      {visibleImages.map((attachment, index) => {
         const showOverlay = index === 2 && remainingCount > 0;
         const isSingleImage = visibleImages.length === 1;
+        const isGalleryItem = attachment.kind === "image" || attachment.kind === "video";
+        const galleryStartIndex = isGalleryItem
+          ? galleryItems.findIndex((item) => item.url === attachment.url && item.renderUrl === attachment.renderUrl)
+          : -1;
 
         return (
           <button
-            key={`${url}-${index}`}
+            key={`${attachment.url}-${index}`}
             type="button"
-            onClick={() => onOpenGallery(index)}
+            onClick={() => {
+              if (isGalleryItem && galleryStartIndex >= 0) {
+                onOpenGallery(galleryStartIndex);
+                return;
+              }
+              if (typeof window !== "undefined") {
+                window.open(attachment.url, "_blank", "noopener,noreferrer");
+              }
+            }}
             style={{
               position: "relative",
               borderRadius: FEED_MEDIA_RADIUS,
@@ -68,7 +82,7 @@ export default function FeedPostImageGrid({
             }}
           >
             <FeedMediaAttachment
-              url={url}
+              attachment={attachment}
               alt={`Post image ${index + 1}`}
               style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
             />

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../lib/memberSubscriptionServer";
 import { normalizeUnitVisibility } from "../../lib/unitAccessServer";
+import { isFounderUserId } from "../../lib/server/founderAccess";
 
 function getAdminClient() {
   return createClient(
@@ -66,6 +67,7 @@ export async function GET(req: NextRequest) {
   }
 
   const myUnitIds = (myMemberRows ?? []).map((row: { unit_id: string }) => row.unit_id);
+  const isFounder = isFounderUserId(user.id);
 
   let dbQuery = userClient
     .from("units")
@@ -73,10 +75,12 @@ export async function GET(req: NextRequest) {
     .order("created_at", { ascending: false })
     .limit(50);
 
-  if (myUnitIds.length > 0) {
-    dbQuery = dbQuery.or(`visibility.eq.public,id.in.(${myUnitIds.join(",")})`);
-  } else {
-    dbQuery = dbQuery.eq("visibility", "public");
+  if (!isFounder) {
+    if (myUnitIds.length > 0) {
+      dbQuery = dbQuery.or(`visibility.eq.public,id.in.(${myUnitIds.join(",")})`);
+    } else {
+      dbQuery = dbQuery.eq("visibility", "public");
+    }
   }
 
   if (q.trim()) {

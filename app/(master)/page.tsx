@@ -18,14 +18,21 @@ import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../lib/native/pickFeedMedia";
 import { shareOrCopyUrl } from "../lib/native/nativeShare";
 import {
+  CAD_PREVIEW_IMAGE_ACCEPT,
   FEED_ATTACHMENT_ACCEPT,
   UPLOAD_LIMITS,
+  attachmentRenderKindFromFile,
   formatUploadBytes,
   isVideoFile,
-  isVideoUrl,
   validateFeedAttachmentPick,
   validateImagePick,
 } from "../lib/uploadLimits";
+import {
+  attachmentsFromUrls,
+  buildCadStorageFileName,
+  createCadAttachmentToken,
+  isPreviewImageForCad,
+} from "../lib/postAttachments";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import type { JobModalData } from "../components/jobs/JobDetailsModal";
 import JobCardActions from "../components/jobs/JobCardActions";
@@ -262,6 +269,9 @@ type Job = {
 type SelectedPostImage = {
   file: File;
   previewUrl: string;
+  kind: "image" | "video" | "pdf" | "cad3d" | "other";
+  cadToken?: string;
+  cadRole?: "file" | "preview";
 };
 
 type SelectedCommentImage = {
@@ -1195,6 +1205,7 @@ export default function HomePage() {
 
   const postImageInputRef = useRef<HTMLInputElement | null>(null);
   const postVideoPdfInputRef = useRef<HTMLInputElement | null>(null);
+  const postCadPreviewInputRef = useRef<HTMLInputElement | null>(null);
   const postTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const commentTextareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const contentRawRef = useRef("");
@@ -4588,6 +4599,20 @@ export default function HomePage() {
     });
   }
 
+  function missingCadPreviewTokens(items: SelectedPostImage[]): string[] {
+    const fileTokens = new Set(
+      items
+        .filter((item) => item.kind === "cad3d" && item.cadRole === "file" && item.cadToken)
+        .map((item) => item.cadToken as string),
+    );
+    const previewTokens = new Set(
+      items
+        .filter((item) => item.cadRole === "preview" && item.cadToken)
+        .map((item) => item.cadToken as string),
+    );
+    return [...fileTokens].filter((token) => !previewTokens.has(token));
+  }
+
   function addPostImagesFromFiles(files: File[]) {
     if (files.length === 0) return;
 
@@ -4595,14 +4620,14 @@ export default function HomePage() {
       const remainingSlots = 10 - prev.length;
 
       if (remainingSlots <= 0) {
-        alert("You can attach up to 10 photos or videos per post.");
+        alert("You can attach up to 10 files per post.");
         return prev;
       }
 
       const filesToAdd = files.slice(0, remainingSlots);
 
       if (files.length > remainingSlots) {
-        alert("Only the first files were added. Max is 10 photos or videos per post.");
+        alert("Only the first files were added. Max is 10 files per post.");
       }
 
       const pickError = validateFeedAttachmentPick(filesToAdd);
@@ -4611,12 +4636,68 @@ export default function HomePage() {
         return prev;
       }
 
-      const newItems = filesToAdd.map((file) => ({
-        file,
-        previewUrl: URL.createObjectURL(file),
-      }));
+      const newItems: SelectedPostImage[] = filesToAdd.map((file) => {
+        const kind = attachmentRenderKindFromFile(file);
+        if (kind === "cad3d") {
+          return {
+            file,
+            previewUrl: "",
+            kind: "cad3d",
+            cadRole: "file",
+            cadToken: createCadAttachmentToken(),
+          };
+        }
+        return {
+          file,
+          previewUrl: URL.createObjectURL(file),
+          kind: kind === "pdf" ? "pdf" : kind === "video" ? "video" : kind === "image" ? "image" : "other",
+        };
+      });
 
       return [...prev, ...newItems];
+    });
+  }
+
+  function addCadPreviewImagesFromFiles(files: File[]) {
+    if (files.length === 0) return;
+
+    setSelectedPostImages((prev) => {
+      const missingTokens = missingCadPreviewTokens(prev);
+      if (missingTokens.length === 0) {
+        alert("All CAD/3D files already have previews.");
+        return prev;
+      }
+
+      const validImages = files.filter((file) => isPreviewImageForCad(file));
+      if (validImages.length === 0) {
+        alert("Please choose a JPG, PNG, or WEBP preview image.");
+        return prev;
+      }
+
+      const previewsToAdd = validImages.slice(0, missingTokens.length);
+      const next = [...prev];
+
+      previewsToAdd.forEach((file, index) => {
+        const token = missingTokens[index];
+        const pickError = validateImagePick(file);
+        if (pickError) {
+          alert(pickError);
+          return;
+        }
+        next.push({
+          file,
+          previewUrl: URL.createObjectURL(file),
+          kind: "image",
+          cadRole: "preview",
+          cadToken: token,
+        });
+      });
+
+      if (validImages.length > missingTokens.length) {
+        alert("Only required CAD preview images were added.");
+      }
+
+      return next;
     });
   }
 
@@ -4638,10 +4719,19 @@ export default function HomePage() {
   function removeSelectedPostImage(indexToRemove: number) {
     setSelectedPostImages((prev) => {
       const itemToRemove = prev[indexToRemove];
-      if (itemToRemove) {
+      if (itemToRemove?.previewUrl) {
         URL.revokeObjectURL(itemToRemove.previewUrl);
       }
-
+      if (itemToRemove?.kind === "cad3d" && itemToRemove.cadToken) {
+        return prev.filter((item, index) => {
+          if (index === indexToRemove) return false;
+          if (item.cadToken === itemToRemove.cadToken) {
+            if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+            return false;
+          }
+          return true;
+        });
+      }
       return prev.filter((_, index) => index !== indexToRemove);
     });
   }
@@ -4649,7 +4739,7 @@ export default function HomePage() {
   function clearSelectedPostImages() {
     setSelectedPostImages((prev) => {
       prev.forEach((item) => {
-        URL.revokeObjectURL(item.previewUrl);
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       });
       return [];
     });
@@ -4755,13 +4845,14 @@ export default function HomePage() {
 
   async function uploadFileToFeedImagesBucket(
     file: File,
-    pathPrefix: string
+    pathPrefix: string,
+    forcedFileName?: string,
   ): Promise<string> {
     const prepared = await prepareFeedUploadFile(file);
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
 
-    const safeFileName = `${Date.now()}-${Math.random()
+    const safeFileName = forcedFileName ?? `${Date.now()}-${Math.random()
       .toString(36)
       .slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `${pathPrefix}/${safeFileName}`;
@@ -4814,6 +4905,12 @@ export default function HomePage() {
       const contentToPost = (contentRawRef.current || content).trim();
       const imagesToUpload = [...selectedPostImages];
       const gifToPost = selectedPostGif;
+      const missingCadTokens = missingCadPreviewTokens(imagesToUpload);
+      if (missingCadTokens.length > 0) {
+        alert("Each CAD/3D file needs a preview image (JPG, PNG, or WEBP) before posting.");
+        setSubmittingPost(false);
+        return;
+      }
 
       const currentOg = ogPreview;
 
@@ -4822,7 +4919,11 @@ export default function HomePage() {
         const uploadPrefix = `${userId}/posts/kc-${Date.now()}`;
         for (let i = 0; i < imagesToUpload.length; i += 1) {
           const item = imagesToUpload[i];
-          const publicUrl = await uploadFileToFeedImagesBucket(item.file, uploadPrefix);
+          const forcedFileName =
+            item.cadToken && item.cadRole
+              ? buildCadStorageFileName(item.cadToken, item.cadRole, item.file.name)
+              : undefined;
+          const publicUrl = await uploadFileToFeedImagesBucket(item.file, uploadPrefix, forcedFileName);
           uploadedUrls.push(publicUrl);
         }
 
@@ -4936,9 +5037,14 @@ export default function HomePage() {
 
       for (let i = 0; i < imagesToUpload.length; i += 1) {
         const item = imagesToUpload[i];
+        const forcedFileName =
+          item.cadToken && item.cadRole
+            ? buildCadStorageFileName(item.cadToken, item.cadRole, item.file.name)
+            : undefined;
         const publicUrl = await uploadFileToFeedImagesBucket(
           item.file,
-          `${userId}/posts/${postId}`
+          `${userId}/posts/${postId}`,
+          forcedFileName,
         );
         uploadedUrls.push(publicUrl);
       }
@@ -6097,7 +6203,7 @@ export default function HomePage() {
       supabase.removeChannel(channel);
 
       selectedPostImagesRef.current.forEach((item) => {
-        URL.revokeObjectURL(item.previewUrl);
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
       });
 
       Object.values(selectedCommentImagesRef.current).forEach((item) => {
@@ -7303,6 +7409,18 @@ export default function HomePage() {
               onChange={handlePostImageChange}
               style={{ display: "none" }}
             />
+            <input
+              ref={postCadPreviewInputRef}
+              type="file"
+              accept={CAD_PREVIEW_IMAGE_ACCEPT}
+              multiple
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                if (files.length > 0) addCadPreviewImagesFromFiles(files);
+                if (postCadPreviewInputRef.current) postCadPreviewInputRef.current.value = "";
+              }}
+              style={{ display: "none" }}
+            />
 
             {selectedPostImages.length > 0 && (
               <div style={{ marginTop: 8, fontSize: 13, color: t.textMuted }}>
@@ -7321,7 +7439,7 @@ export default function HomePage() {
               >
                 {selectedPostImages.map((item, index) => (
                   <div
-                    key={`${item.previewUrl}-${index}`}
+                    key={`${item.previewUrl || item.file.name}-${index}`}
                     style={{
                       position: "relative",
                       borderRadius: 12,
@@ -7333,9 +7451,17 @@ export default function HomePage() {
                   >
                     {isVideoFile(item.file) ? (
                       <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
-                    ) : item.file.type === "application/pdf" ? (
+                    ) : item.kind === "pdf" ? (
                       <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: t.textMuted, padding: 8, textAlign: "center", wordBreak: "break-all" }}>
                         {item.file.name}
+                      </div>
+                    ) : item.kind === "cad3d" && item.cadRole === "file" ? (
+                      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontSize: 11, color: t.textMuted, padding: 8, textAlign: "center", gap: 6 }}>
+                        <div style={{ fontWeight: 800 }}>CAD / 3D</div>
+                        <div style={{ wordBreak: "break-all" }}>{item.file.name}</div>
+                        {item.cadToken && missingCadPreviewTokens(selectedPostImages).includes(item.cadToken) && (
+                          <div style={{ color: "#f59e0b", fontWeight: 700 }}>Preview required</div>
+                        )}
                       </div>
                     ) : (
                       <img
@@ -7372,7 +7498,8 @@ export default function HomePage() {
             <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
               Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
               Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~3–4 min).
-              For longer video, paste a YouTube or Vimeo link in your post.
+              PDFs and CAD/3D files up to {formatUploadBytes(UPLOAD_LIMITS.document)} are supported.
+              CAD/3D files require a JPG/PNG/WEBP preview image.
             </p>
 
             {kcComposerPhase === "confirm" && (
@@ -7591,8 +7718,25 @@ export default function HomePage() {
                     cursor: "pointer",
                   }}
                 >
-                  {selectedPostImages.length > 0 ? "Add More" : "Add Photo or Video"}
+                  {selectedPostImages.length > 0 ? "Add More" : "Add Photo / Video / File"}
                 </button>
+                {missingCadPreviewTokens(selectedPostImages).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => postCadPreviewInputRef.current?.click()}
+                    style={{
+                      background: t.surface,
+                      color: t.text,
+                      border: `1px solid ${t.border}`,
+                      borderRadius: 10,
+                      padding: "10px 14px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Add Preview Image ({missingCadPreviewTokens(selectedPostImages).length})
+                  </button>
+                )}
 
                 <EmojiPickerButton
                   value={content}
@@ -8573,8 +8717,12 @@ export default function HomePage() {
 
                       {post.image_urls.length > 0 &&
                         (() => {
-                          const visibleImages = post.image_urls.slice(0, 3);
-                          const remainingCount = post.image_urls.length - 3;
+                          const attachments = attachmentsFromUrls(post.image_urls);
+                          const visibleImages = attachments.slice(0, 3);
+                          const remainingCount = attachments.length - 3;
+                          const galleryUrls = attachments
+                            .filter((item) => item.kind === "image" || item.kind === "video")
+                            .map((item) => item.renderUrl);
 
                           return (
                             <div
@@ -8593,15 +8741,22 @@ export default function HomePage() {
                                 boxSizing: "border-box",
                               }}
                             >
-                              {visibleImages.map((url, index) => {
+                              {visibleImages.map((attachment, index) => {
                                 const showOverlay = index === 2 && remainingCount > 0;
                                 const isSingleImage = visibleImages.length === 1;
+                                const galleryIndex = galleryUrls.findIndex((url) => url === attachment.renderUrl);
 
                                 return (
                                   <button
-                                    key={`${url}-${index}`}
+                                    key={`${attachment.url}-${index}`}
                                     type="button"
-                                    onClick={() => openGallery(post.image_urls, index)}
+                                    onClick={() => {
+                                      if (galleryIndex >= 0) {
+                                        openGallery(galleryUrls, galleryIndex);
+                                        return;
+                                      }
+                                      window.open(attachment.url, "_blank", "noopener,noreferrer");
+                                    }}
                                     style={{
                                       ...(isSingleImage
                                         ? feedSingleMediaFrameStyle
@@ -8619,7 +8774,7 @@ export default function HomePage() {
                                     }}
                                   >
                                     <FeedMediaAttachment
-                                      url={url}
+                                      attachment={attachment}
                                       alt={`Post image ${index + 1}`}
                                       style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
                                       loading={postIndex === 0 ? "eager" : "lazy"}

@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createNotification } from "../../../../lib/notificationsServer";
+import { assertUnitAdmin } from "../../../../lib/unitAccessServer";
+import { unitHasFileLibraryTab } from "../../../../lib/unitFileLibraryGroups";
 
 function getAdminClient() {
   return createClient(
@@ -36,22 +38,12 @@ async function resolveUnitAndCheckAdmin(req: NextRequest, slug: string) {
 
   if (unitError || !unit) return { error: "Unit not found", status: 404 } as const;
 
-  const { data: membership } = await db
-    .from("unit_members")
-    .select("role, status")
-    .eq("unit_id", unit.id)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (
-    !membership ||
-    membership.status !== "approved" ||
-    !["owner", "admin"].includes(membership.role)
-  ) {
+  const access = await assertUnitAdmin(db, unit.id, user.id);
+  if (!access.ok) {
     return { error: "Forbidden", status: 403 } as const;
   }
 
-  return { unit, user, db, membership };
+  return { unit, user, db, membership: access.membership, isFounderGod: access.isFounderGod };
 }
 
 // GET — return pending members, approved members, and photo posts
@@ -111,12 +103,43 @@ export async function GET(
     .eq("unit_id", unit.id)
     .order("date", { ascending: true });
 
+  const showFileLibrary = unitHasFileLibraryTab(unit.slug, unit.name);
+  let filePosts: Array<{
+    id: string;
+    user_id: string;
+    content: string | null;
+    photo_url: string | null;
+    created_at: string;
+    hidden_for_review?: boolean | null;
+  }> = [];
+
+  if (showFileLibrary) {
+    const fileSelect = "id, user_id, content, photo_url, created_at, hidden_for_review, meta";
+    let filePostsResult = await db
+      .from("unit_posts")
+      .select(fileSelect)
+      .eq("unit_id", unit.id)
+      .eq("post_type", "file_library")
+      .order("created_at", { ascending: false });
+    filePosts = filePostsResult.data ?? [];
+    if (filePostsResult.error && String(filePostsResult.error.message ?? "").toLowerCase().includes("hidden_for_review")) {
+      const fallback = await db
+        .from("unit_posts")
+        .select("id, user_id, content, photo_url, created_at, meta")
+        .eq("unit_id", unit.id)
+        .eq("post_type", "file_library")
+        .order("created_at", { ascending: false });
+      filePosts = (fallback.data ?? []).map((entry) => ({ ...entry, hidden_for_review: false }));
+    }
+  }
+
   // Collect all user ids to fetch profiles for
   const allUserIds = [
     ...new Set([
       ...(pendingRows ?? []).map((r: { user_id: string }) => r.user_id),
       ...(memberRows ?? []).map((r: { user_id: string }) => r.user_id),
       ...(photoPosts ?? []).map((r: { user_id: string }) => r.user_id),
+      ...(filePosts ?? []).map((r) => r.user_id),
       ...((eventRows ?? []) as Array<{ user_id: string }>).map((r) => r.user_id),
     ]),
   ];
@@ -172,6 +195,62 @@ export async function GET(
     author_photo: profileMap[p.user_id]?.photo_url ?? null,
   }));
 
+  let fileLibrary: Array<{
+    id: string;
+    user_id: string;
+    content: string | null;
+    photo_url: string | null;
+    created_at: string;
+    hidden_for_review: boolean;
+    author_name: string;
+    author_photo: string | null;
+    image_urls: string[];
+  }> = [];
+
+  if (showFileLibrary && filePosts.length > 0) {
+    const filePostIds = filePosts.map((entry) => entry.id);
+    const imageUrlsByPostId = new Map<string, string[]>();
+    const { data: imageRows } = await db
+      .from("unit_post_images")
+      .select("unit_post_id, image_url, sort_order")
+      .in("unit_post_id", filePostIds)
+      .order("sort_order", { ascending: true });
+    for (const row of (imageRows ?? []) as { unit_post_id: string; image_url: string }[]) {
+      const existing = imageUrlsByPostId.get(row.unit_post_id) ?? [];
+      existing.push(row.image_url);
+      imageUrlsByPostId.set(row.unit_post_id, existing);
+    }
+
+    fileLibrary = filePosts.map((entry) => ({
+      id: entry.id,
+      user_id: entry.user_id,
+      content: entry.content,
+      photo_url: entry.photo_url,
+      created_at: entry.created_at,
+      hidden_for_review: entry.hidden_for_review ?? false,
+      author_name: getName(entry.user_id),
+      author_photo: profileMap[entry.user_id]?.photo_url ?? null,
+      image_urls:
+        imageUrlsByPostId.get(entry.id)?.length
+          ? imageUrlsByPostId.get(entry.id)!
+          : entry.photo_url?.trim()
+            ? [entry.photo_url.trim()]
+            : [],
+    }));
+  } else if (showFileLibrary) {
+    fileLibrary = filePosts.map((entry) => ({
+      id: entry.id,
+      user_id: entry.user_id,
+      content: entry.content,
+      photo_url: entry.photo_url,
+      created_at: entry.created_at,
+      hidden_for_review: entry.hidden_for_review ?? false,
+      author_name: getName(entry.user_id),
+      author_photo: profileMap[entry.user_id]?.photo_url ?? null,
+      image_urls: entry.photo_url?.trim() ? [entry.photo_url.trim()] : [],
+    }));
+  }
+
   const events = ((eventRows ?? []) as Array<{
     id: string;
     user_id: string;
@@ -194,7 +273,17 @@ export async function GET(
     author_photo: profileMap[event.user_id]?.photo_url ?? null,
   }));
 
-  return NextResponse.json({ unit, pending, members, photos, pending_photos: photos.filter((photo) => photo.hidden_for_review), events });
+  return NextResponse.json({
+    unit,
+    pending,
+    members,
+    photos,
+    pending_photos: photos.filter((photo) => photo.hidden_for_review),
+    show_file_library: showFileLibrary,
+    file_library: fileLibrary,
+    pending_file_library: fileLibrary.filter((entry) => entry.hidden_for_review),
+    events,
+  });
 }
 
 // PATCH — admin actions
@@ -207,8 +296,8 @@ export async function PATCH(
   if ("error" in result) {
     return NextResponse.json({ error: result.error }, { status: result.status });
   }
-  const { unit, db, membership } = result;
-  const isOwner = membership.role === "owner";
+  const { unit, db, membership, isFounderGod } = result;
+  const isOwner = isFounderGod || membership?.role === "owner";
 
   const body = await req.json() as {
     action: "approve_member" | "deny_member" | "remove_member" | "change_role" | "delete_post" | "approve_photo" | "delete_event";

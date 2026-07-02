@@ -46,6 +46,10 @@ type PhotoPost = {
   hidden_for_review?: boolean | null;
 };
 
+type FileLibraryEntry = PhotoPost & {
+  image_urls?: string[];
+};
+
 type UnitEvent = {
   id: string;
   user_id: string;
@@ -65,6 +69,9 @@ type AdminData = {
   members: Member[];
   photos: PhotoPost[];
   pending_photos?: PhotoPost[];
+  show_file_library?: boolean;
+  file_library?: FileLibraryEntry[];
+  pending_file_library?: FileLibraryEntry[];
   events?: UnitEvent[];
 };
 
@@ -93,7 +100,7 @@ export default function UnitAdminPage() {
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"requests" | "members" | "photos" | "events">("requests");
+  const [tab, setTab] = useState<"requests" | "members" | "photos" | "files" | "events">("requests");
   const [working, setWorking] = useState<string | null>(null); // id of item being actioned
   const [myRole, setMyRole] = useState<string | null>(null);
 
@@ -216,6 +223,10 @@ export default function UnitAdminPage() {
   const { unit, pending, members } = data;
   const pendingPhotos = data.pending_photos ?? data.photos.filter((photo) => photo.hidden_for_review);
   const approvedPhotos = data.photos.filter((photo) => !photo.hidden_for_review);
+  const showFileLibrary = data.show_file_library ?? false;
+  const fileLibrary = data.file_library ?? [];
+  const pendingFileLibrary = data.pending_file_library ?? fileLibrary.filter((entry) => entry.hidden_for_review);
+  const approvedFileLibrary = fileLibrary.filter((entry) => !entry.hidden_for_review);
   const events = data.events ?? [];
   const isOwner = myRole === "owner";
 
@@ -252,6 +263,11 @@ export default function UnitAdminPage() {
         <button style={tabBtn(tab === "photos")} onClick={() => setTab("photos")}>
           Photos ({approvedPhotos.length}) {pendingPhotos.length > 0 && <span style={{ marginLeft: 6, background: "#f97316", color: "#fff", borderRadius: 20, padding: "1px 7px", fontSize: 11 }}>{pendingPhotos.length}</span>}
         </button>
+        {showFileLibrary && (
+          <button style={tabBtn(tab === "files")} onClick={() => setTab("files")}>
+            File Library ({approvedFileLibrary.length}) {pendingFileLibrary.length > 0 && <span style={{ marginLeft: 6, background: "#f97316", color: "#fff", borderRadius: 20, padding: "1px 7px", fontSize: 11 }}>{pendingFileLibrary.length}</span>}
+          </button>
+        )}
         <button style={tabBtn(tab === "events")} onClick={() => setTab("events")}>
           Events ({events.length})
         </button>
@@ -462,6 +478,116 @@ export default function UnitAdminPage() {
                     >
                       {working === ph.id && <span className="btn-spinner" style={{ borderTopColor: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }} />}
                       Delete Photo
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── File Library ── */}
+      {tab === "files" && showFileLibrary && (
+        <div>
+          {pendingFileLibrary.length > 0 && (
+            <div style={card}>
+              <div style={{ fontSize: 16, fontWeight: 900, color: t.text, marginBottom: 14 }}>Pending File Library Approvals</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+                {pendingFileLibrary.map((entry) => (
+                  <div key={entry.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, overflow: "hidden", background: t.surface }}>
+                    {entry.photo_url ? (
+                      <img
+                        src={entry.photo_url}
+                        alt="Pending maker file"
+                        style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", display: "block" }}
+                      />
+                    ) : (
+                      <div style={{ width: "100%", aspectRatio: "4/3", display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontSize: 13 }}>
+                        Maker file
+                      </div>
+                    )}
+                    <div style={{ padding: "10px 14px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <Avatar name={entry.author_name} photo={entry.author_photo} size={26} />
+                        <span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{entry.author_name}</span>
+                      </div>
+                      {entry.content && (
+                        <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8, lineHeight: 1.4 }}>{entry.content}</div>
+                      )}
+                      <div style={{ fontSize: 11, color: t.textFaint, marginBottom: 10 }}>
+                        Submitted {new Date(entry.created_at).toLocaleDateString()}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <button
+                          style={{ ...actionBtn("approve"), flex: 1, justifyContent: "center", display: "flex", alignItems: "center", gap: 5 }}
+                          disabled={working === entry.id}
+                          onClick={() => action({ action: "approve_photo", post_id: entry.id })}
+                        >
+                          {working === entry.id && <span className="btn-spinner" />}
+                          Approve
+                        </button>
+                        <button
+                          style={{ ...actionBtn("remove"), flex: 1, justifyContent: "center", display: "flex", alignItems: "center", gap: 5 }}
+                          disabled={working === entry.id}
+                          onClick={() => {
+                            if (confirm("Delete this pending file?")) {
+                              action({ action: "delete_post", post_id: entry.id });
+                            }
+                          }}
+                        >
+                          {working === entry.id && <span className="btn-spinner" style={{ borderTopColor: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }} />}
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {approvedFileLibrary.length === 0 ? (
+            <div style={{ ...card, color: t.textMuted, fontSize: 14, textAlign: "center", padding: "40px 24px" }}>
+              No maker files in the library yet.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 16 }}>
+              {approvedFileLibrary.map((entry) => (
+                <div key={entry.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, overflow: "hidden", background: t.surface }}>
+                  {entry.photo_url ? (
+                    <img
+                      src={entry.photo_url}
+                      alt="Maker file"
+                      style={{ width: "100%", aspectRatio: "4/3", objectFit: "cover", display: "block" }}
+                    />
+                  ) : (
+                    <div style={{ width: "100%", aspectRatio: "4/3", display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontSize: 13 }}>
+                      Maker file
+                    </div>
+                  )}
+                  <div style={{ padding: "10px 14px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <Avatar name={entry.author_name} photo={entry.author_photo} size={26} />
+                      <span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{entry.author_name}</span>
+                    </div>
+                    {entry.content && (
+                      <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 8, lineHeight: 1.4 }}>{entry.content}</div>
+                    )}
+                    <div style={{ fontSize: 11, color: t.textFaint, marginBottom: 10 }}>
+                      {new Date(entry.created_at).toLocaleDateString()}
+                    </div>
+                    <button
+                      style={{ ...actionBtn("remove"), width: "100%", justifyContent: "center", display: "flex", alignItems: "center", gap: 5 }}
+                      disabled={working === entry.id}
+                      onClick={() => {
+                        if (confirm("Delete this file from the library?")) {
+                          action({ action: "delete_post", post_id: entry.id });
+                        }
+                      }}
+                    >
+                      {working === entry.id && <span className="btn-spinner" style={{ borderTopColor: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }} />}
+                      Delete File
                     </button>
                   </div>
                 </div>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../lib/memberSubscriptionServer";
 import { createNotification } from "../../../../lib/notificationsServer";
+import { hasFounderUnitGodAccess } from "../../../../lib/unitAccessServer";
 
 function getAdminClient() {
   return createClient(
@@ -60,12 +61,15 @@ export async function POST(
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (!approverMember || approverMember.status !== "approved") {
+  const founderGod = hasFounderUnitGodAccess(user.id);
+  if (!founderGod && (!approverMember || approverMember.status !== "approved")) {
     return NextResponse.json({ error: "Not a member" }, { status: 403 });
   }
 
   const isGod =
-    approverMember.role === "owner" || approverMember.role === "admin";
+    founderGod ||
+    approverMember?.role === "owner" ||
+    approverMember?.role === "admin";
 
   const { data: approverProfile } = await adminClient
     .from("profiles")

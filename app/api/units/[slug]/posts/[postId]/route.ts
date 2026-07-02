@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../../lib/memberSubscriptionServer";
+import { assertApprovedUnitMember } from "../../../../../lib/unitAccessServer";
 
 function getAdminClient() {
   return createClient(
@@ -34,13 +35,8 @@ async function getAuthorizedPost(req: NextRequest, slug: string, postId: string)
     .maybeSingle();
   if (unitError || !unit) return { error: "Unit not found" as const, status: 404 as const };
 
-  const { data: membership } = await adminClient
-    .from("unit_members")
-    .select("status")
-    .eq("unit_id", unit.id)
-    .eq("user_id", user.id)
-    .maybeSingle();
-  if (!membership || membership.status !== "approved") {
+  const access = await assertApprovedUnitMember(adminClient, unit.id, user.id);
+  if (!access.ok) {
     return { error: "Forbidden" as const, status: 403 as const };
   }
 

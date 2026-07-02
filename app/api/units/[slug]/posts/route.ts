@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../lib/memberSubscriptionServer";
-import { canUserViewUnitWall } from "../../../../lib/unitAccessServer";
+import { assertApprovedUnitMember, canUserViewUnitWall } from "../../../../lib/unitAccessServer";
 
 function getAdminClient() {
   return createClient(
@@ -261,16 +261,11 @@ export async function POST(
     return NextResponse.json({ error: "Unit not found" }, { status: 404 });
   }
 
-  const { data: membership } = await adminClient
-    .from("unit_members")
-    .select("role, status")
-    .eq("unit_id", unit.id)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (!membership || membership.status !== "approved") {
+  const access = await assertApprovedUnitMember(adminClient, unit.id, user.id);
+  if (!access.ok) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const membership = access.membership;
 
   const gate = await assertMemberInteractionAllowed(adminClient, user.id);
   if (!gate.ok) {
@@ -286,7 +281,7 @@ export async function POST(
     rabbithole_contribution_id?: string | null;
     meta?: Record<string, unknown> | null;
     photo_submission_only?: boolean;
-    post_type?: "post" | "photo_album";
+    post_type?: "post" | "photo_album" | "file_library";
   };
 
   const normalizedImageUrls = [
@@ -298,18 +293,25 @@ export async function POST(
   ];
   const primaryPhotoUrl = photo_url?.trim() || normalizedImageUrls[0] || null;
 
-  if (!content?.trim() && !primaryPhotoUrl && !gif_url) {
+  const hasMedia = Boolean(primaryPhotoUrl || gif_url || normalizedImageUrls.length > 0);
+  if (!content?.trim() && !hasMedia) {
     return NextResponse.json(
       { error: "Content, photo, or gif is required" },
       { status: 400 }
     );
   }
 
-  const normalizedPostType = post_type === "photo_album" ? "photo_album" : "post";
+  const normalizedPostType =
+    post_type === "photo_album"
+      ? "photo_album"
+      : post_type === "file_library"
+        ? "file_library"
+        : "post";
 
   const shouldHoldForApproval =
-    Boolean(photo_submission_only && primaryPhotoUrl) &&
-    !["owner", "admin"].includes(String(membership.role ?? ""));
+    Boolean(photo_submission_only && (primaryPhotoUrl || normalizedImageUrls.length > 0)) &&
+    !access.isFounderGod &&
+    !["owner", "admin"].includes(String(membership?.role ?? ""));
 
   const insertPayload: Record<string, unknown> = {
     unit_id: unit.id,

@@ -3,6 +3,7 @@ import {
   UPLOAD_LIMITS,
   feedUploadLimitsForAccount,
   inferEmployerDocumentContentType,
+  isCad3dFile,
   isDocumentFile,
   isImageFile,
   isVideoFile,
@@ -31,6 +32,10 @@ export async function prepareFeedUploadFile(
   }
 
   if (isDocumentFile(file)) {
+    return { ok: true, file };
+  }
+
+  if (isCad3dFile(file)) {
     return { ok: true, file };
   }
 

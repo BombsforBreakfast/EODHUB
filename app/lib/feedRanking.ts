@@ -63,6 +63,15 @@ export function staffPostAgeHours(createdAt: string, nowMs = Date.now()): number
   return Math.max(0, (nowMs - new Date(createdAt).getTime()) / 3_600_000);
 }
 
+/** Age used for feed ranking (actual age + optional offset; display timestamp unchanged). */
+export function feedRankAgeHours(
+  createdAt: string,
+  opts: { nowMs?: number; ageOffsetHours?: number | null } = {},
+): number {
+  const offset = Math.max(0, opts.ageOffsetHours ?? 0);
+  return staffPostAgeHours(createdAt, opts.nowMs) + offset;
+}
+
 export function isStaffPostSoftPinned(createdAt: string, nowMs = Date.now()): boolean {
   return staffPostAgeHours(createdAt, nowMs) <= STAFF_POST_SOFT_PIN_HOURS;
 }
@@ -91,6 +100,7 @@ export type FeedSortPost = {
   news_item_id?: string | null;
   rabbithole_thread_id?: string | null;
   rabbithole_contribution_id?: string | null;
+  feed_rank_age_offset_hours?: number | null;
 };
 
 export function feedFreshnessMultiplier(ageHours: number): number {
@@ -149,7 +159,10 @@ export function computeFeedSortScore(
     systemGenerated: post.system_generated,
   });
 
-  const ageHours = staffPostAgeHours(post.created_at, opts.nowMs);
+  const ageHours = feedRankAgeHours(post.created_at, {
+    nowMs: opts.nowMs,
+    ageOffsetHours: post.feed_rank_age_offset_hours,
+  });
   let score = Math.max(
     ((1 + weightedEngagement(post)) / Math.pow(ageHours + 2, FEED_AGE_DECAY_EXPONENT))
       * feedFreshnessMultiplier(ageHours),

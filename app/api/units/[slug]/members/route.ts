@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { assertApprovedUnitMember } from "../../../../lib/unitAccessServer";
 
 function getAdminClient() {
   return createClient(
@@ -51,14 +52,8 @@ export async function GET(
     return NextResponse.json({ error: "Unit not found" }, { status: 404 });
   }
 
-  const { data: currentMembership } = await adminClient
-    .from("unit_members")
-    .select("status")
-    .eq("unit_id", unit.id)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (!currentMembership || currentMembership.status !== "approved") {
+  const access = await assertApprovedUnitMember(adminClient, unit.id, user.id);
+  if (!access.ok) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

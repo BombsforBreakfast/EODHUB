@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { assertApprovedUnitMember } from "../../../../lib/unitAccessServer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,14 +47,8 @@ async function requireApprovedMember(req: NextRequest, slug: string) {
 
   if (unitError || !unit) return { error: NextResponse.json({ error: "Unit not found" }, { status: 404 }) };
 
-  const { data: membership } = await adminClient
-    .from("unit_members")
-    .select("role, status")
-    .eq("unit_id", unit.id)
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  if (!membership || membership.status !== "approved") {
+  const access = await assertApprovedUnitMember(adminClient, unit.id, user.id);
+  if (!access.ok) {
     return { error: NextResponse.json({ error: "Forbidden" }, { status: 403 }) };
   }
 

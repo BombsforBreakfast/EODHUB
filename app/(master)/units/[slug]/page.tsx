@@ -20,16 +20,28 @@ import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipbo
 import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../../../lib/native/pickFeedMedia";
 import { FEED_ACTION_ROW_GAP, FEED_ACTION_ROW_PADDING, FEED_MEDIA_FRAME_BG, FEED_MEDIA_RADIUS, FEED_POST_AVATAR_SIZE, FEED_POST_IMAGES_MAX_WIDTH, FEED_SECTION_GAP, feedContainedImageStyle, feedPostCardStyle } from "../../../lib/feedLayout";
 import FeedPostImageGrid from "../../../components/FeedPostImageGrid";
+import { FeedMediaAttachment } from "../../../components/FeedMediaAttachment";
 import FeedImageGalleryModal from "../../../components/FeedImageGalleryModal";
 import { useFeedImageGallery } from "../../../hooks/useFeedImageGallery";
 import {
+  attachmentRenderKindFromFile,
+  CAD_PREVIEW_IMAGE_ACCEPT,
   FEED_ATTACHMENT_ACCEPT,
+  FILE_LIBRARY_ACCEPT,
   UPLOAD_LIMITS,
   formatUploadBytes,
+  fileLibraryRequiresPreview,
   isVideoFile,
   validateFeedAttachmentPick,
+  validateFileLibrarySourcePick,
   validateImagePick,
 } from "../../../lib/uploadLimits";
+import {
+  attachmentsFromUrls,
+  buildCadStorageFileName,
+  createCadAttachmentToken,
+  isPreviewImageForCad,
+} from "../../../lib/postAttachments";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../../lib/flagCategories";
 import { ensureSavedEventForUser } from "../../../lib/ensureSavedEventForUser";
 import type { Theme } from "../../../lib/theme";
@@ -48,8 +60,19 @@ import {
   isEffectiveApprovedMember,
   isEffectiveUnitGod,
 } from "../../../lib/unitAccess";
+import { unitHasFileLibraryTab } from "../../../lib/unitFileLibraryGroups";
 
 const RABBITHOLE_THRESHOLD_BYPASS = true;
+
+type UnitTab = "wall" | "events" | "members" | "photos" | "files";
+
+const UNIT_TAB_LABELS: Record<UnitTab, string> = {
+  wall: "Wall",
+  events: "Events",
+  members: "Members",
+  photos: "Photos",
+  files: "File Library",
+};
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -77,7 +100,7 @@ type UnitPost = {
   photo_url: string | null;
   image_urls?: string[];
   gif_url: string | null;
-  post_type: "post" | "join_request" | "photo_album";
+  post_type: "post" | "join_request" | "photo_album" | "file_library";
   meta: {
     requester_id?: string;
     requester_name?: string;
@@ -234,6 +257,9 @@ function formatEventDate(date: string) {
 type SelectedUnitPostImage = {
   file: File;
   previewUrl: string;
+  kind: "image" | "video" | "pdf" | "cad3d" | "other";
+  cadToken?: string;
+  cadRole?: "file" | "preview";
 };
 
 export default function UnitPage() {
@@ -248,7 +274,7 @@ export default function UnitPage() {
   const [isFounder, setIsFounder] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [activeTab, setActiveTab] = useState<"wall" | "events" | "members" | "photos">("wall");
+  const [activeTab, setActiveTab] = useState<UnitTab>("wall");
 
   // Wall
   const [posts, setPosts] = useState<UnitPost[]>([]);
@@ -259,6 +285,7 @@ export default function UnitPage() {
   const selectedPostImagesRef = useRef<SelectedUnitPostImage[]>([]);
   const postPhotoInputRef = useRef<HTMLInputElement | null>(null);
   const postVideoPdfInputRef = useRef<HTMLInputElement | null>(null);
+  const postCadPreviewInputRef = useRef<HTMLInputElement | null>(null);
   const [postGif, setPostGif] = useState<string | null>(null);
   const [submittingPost, setSubmittingPost] = useState(false);
   const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
@@ -315,6 +342,17 @@ export default function UnitPage() {
   const [photoSubmitMsg, setPhotoSubmitMsg] = useState<string | null>(null);
   const photoUploadInputRef = useRef<HTMLInputElement | null>(null);
   const [galleryPhotoIndex, setGalleryPhotoIndex] = useState<number | null>(null);
+
+  // File library tab (selected maker groups)
+  const [libraryDescription, setLibraryDescription] = useState("");
+  const [librarySourceFile, setLibrarySourceFile] = useState<File | null>(null);
+  const [libraryPreviewFile, setLibraryPreviewFile] = useState<File | null>(null);
+  const [librarySourcePreviewUrl, setLibrarySourcePreviewUrl] = useState<string | null>(null);
+  const [libraryPreviewUrl, setLibraryPreviewUrl] = useState<string | null>(null);
+  const [submittingLibraryFile, setSubmittingLibraryFile] = useState(false);
+  const [librarySubmitMsg, setLibrarySubmitMsg] = useState<string | null>(null);
+  const librarySourceInputRef = useRef<HTMLInputElement | null>(null);
+  const libraryPreviewInputRef = useRef<HTMLInputElement | null>(null);
   const {
     galleryImages: postGalleryImages,
     galleryIndex: postGalleryIndex,
@@ -856,15 +894,29 @@ export default function UnitPage() {
 
   // ── Wall posts ───────────────────────────────────────────────────────────
 
-  async function uploadUnitMedia(file: File): Promise<string> {
+  async function uploadUnitMedia(file: File, forcedFileName?: string): Promise<string> {
     const prepared = await prepareFeedUploadFile(file);
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
-    const safeFileName = `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const safeFileName = forcedFileName ?? `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `unit-posts/${safeFileName}`;
     const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
     if (error) throw new Error(error.message);
     return supabase.storage.from("feed-images").getPublicUrl(filePath).data.publicUrl;
+  }
+
+  function missingCadPreviewTokens(items: SelectedUnitPostImage[]): string[] {
+    const fileTokens = new Set(
+      items
+        .filter((item) => item.kind === "cad3d" && item.cadRole === "file" && item.cadToken)
+        .map((item) => item.cadToken as string),
+    );
+    const previewTokens = new Set(
+      items
+        .filter((item) => item.cadRole === "preview" && item.cadToken)
+        .map((item) => item.cadToken as string),
+    );
+    return [...fileTokens].filter((token) => !previewTokens.has(token));
   }
 
   function addUnitPostImagesFromFiles(files: File[]) {
@@ -873,13 +925,13 @@ export default function UnitPage() {
     setSelectedPostImages((prev) => {
       const remainingSlots = 10 - prev.length;
       if (remainingSlots <= 0) {
-        alert("You can attach up to 10 photos or videos per post.");
+        alert("You can attach up to 10 files per post.");
         return prev;
       }
 
       const filesToAdd = files.slice(0, remainingSlots);
       if (files.length > remainingSlots) {
-        alert("Only the first files were added. Max is 10 photos or videos per post.");
+        alert("Only the first files were added. Max is 10 files per post.");
       }
 
       const pickError = validateFeedAttachmentPick(filesToAdd);
@@ -888,10 +940,23 @@ export default function UnitPage() {
         return prev;
       }
 
-      const newItems = filesToAdd.map((file) => ({
-        file,
-        previewUrl: URL.createObjectURL(file),
-      }));
+      const newItems: SelectedUnitPostImage[] = filesToAdd.map((file) => {
+        const kind = attachmentRenderKindFromFile(file);
+        if (kind === "cad3d") {
+          return {
+            file,
+            previewUrl: "",
+            kind: "cad3d",
+            cadRole: "file",
+            cadToken: createCadAttachmentToken(),
+          };
+        }
+        return {
+          file,
+          previewUrl: URL.createObjectURL(file),
+          kind: kind === "pdf" ? "pdf" : kind === "video" ? "video" : kind === "image" ? "image" : "other",
+        };
+      });
 
       return [...prev, ...newItems];
     });
@@ -903,6 +968,43 @@ export default function UnitPage() {
     if (postPhotoInputRef.current) postPhotoInputRef.current.value = "";
   }
 
+  function addCadPreviewImagesFromFiles(files: File[]) {
+    if (files.length === 0) return;
+    setSelectedPostImages((prev) => {
+      const missingTokens = missingCadPreviewTokens(prev);
+      if (missingTokens.length === 0) {
+        alert("All CAD/3D files already have previews.");
+        return prev;
+      }
+
+      const validImages = files.filter((file) => isPreviewImageForCad(file));
+      if (validImages.length === 0) {
+        alert("Please choose a JPG, PNG, or WEBP preview image.");
+        return prev;
+      }
+
+      const previewsToAdd = validImages.slice(0, missingTokens.length);
+      const next = [...prev];
+      previewsToAdd.forEach((file, index) => {
+        const token = missingTokens[index];
+        const pickError = validateImagePick(file);
+        if (pickError) {
+          alert(pickError);
+          return;
+        }
+        next.push({
+          file,
+          previewUrl: URL.createObjectURL(file),
+          kind: "image",
+          cadRole: "preview",
+          cadToken: token,
+        });
+      });
+
+      return next;
+    });
+  }
+
   function handleUnitPostImagePaste(e: ClipboardEvent) {
     handlePasteImageFromClipboard(e, addUnitPostImagesFromFiles);
   }
@@ -910,14 +1012,26 @@ export default function UnitPage() {
   function removeSelectedPostImage(indexToRemove: number) {
     setSelectedPostImages((prev) => {
       const itemToRemove = prev[indexToRemove];
-      if (itemToRemove) URL.revokeObjectURL(itemToRemove.previewUrl);
+      if (itemToRemove?.previewUrl) URL.revokeObjectURL(itemToRemove.previewUrl);
+      if (itemToRemove?.kind === "cad3d" && itemToRemove.cadToken) {
+        return prev.filter((item, index) => {
+          if (index === indexToRemove) return false;
+          if (item.cadToken === itemToRemove.cadToken) {
+            if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+            return false;
+          }
+          return true;
+        });
+      }
       return prev.filter((_, index) => index !== indexToRemove);
     });
   }
 
   function clearSelectedPostImages() {
     setSelectedPostImages((prev) => {
-      prev.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+      prev.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
       return [];
     });
     if (postPhotoInputRef.current) postPhotoInputRef.current.value = "";
@@ -925,11 +1039,20 @@ export default function UnitPage() {
 
   async function submitPost() {
     if (!postInput.trim() && selectedPostImages.length === 0 && !postPhotoUrl.trim() && !postGif) return;
+    const missingCadTokens = missingCadPreviewTokens(selectedPostImages);
+    if (missingCadTokens.length > 0) {
+      alert("Each CAD/3D file needs a preview image (JPG, PNG, or WEBP) before posting.");
+      return;
+    }
     setSubmittingPost(true);
     try {
       const uploadedUrls: string[] = [];
       for (const item of selectedPostImages) {
-        uploadedUrls.push(await uploadUnitMedia(item.file));
+        const forcedFileName =
+          item.cadToken && item.cadRole
+            ? buildCadStorageFileName(item.cadToken, item.cadRole, item.file.name)
+            : undefined;
+        uploadedUrls.push(await uploadUnitMedia(item.file, forcedFileName));
       }
       const token = await getToken();
       const res = await fetch(`/api/units/${slug}/posts`, {
@@ -1002,6 +1125,80 @@ export default function UnitPage() {
       await loadPosts();
     } finally {
       setSubmittingPhoto(false);
+    }
+  }
+
+  function clearLibraryForm() {
+    if (librarySourcePreviewUrl) URL.revokeObjectURL(librarySourcePreviewUrl);
+    if (libraryPreviewUrl) URL.revokeObjectURL(libraryPreviewUrl);
+    setLibraryDescription("");
+    setLibrarySourceFile(null);
+    setLibraryPreviewFile(null);
+    setLibrarySourcePreviewUrl(null);
+    setLibraryPreviewUrl(null);
+    if (librarySourceInputRef.current) librarySourceInputRef.current.value = "";
+    if (libraryPreviewInputRef.current) libraryPreviewInputRef.current.value = "";
+  }
+
+  async function submitGroupFileLibraryEntry() {
+    if (!librarySourceFile || submittingLibraryFile) return;
+    if (fileLibraryRequiresPreview(librarySourceFile) && !libraryPreviewFile) {
+      alert("Add a JPG, PNG, or WEBP preview image for this CAD / 3D file.");
+      return;
+    }
+
+    setSubmittingLibraryFile(true);
+    setLibrarySubmitMsg(null);
+    try {
+      const imageUrls: string[] = [];
+      let photoUrl: string | null = null;
+
+      if (fileLibraryRequiresPreview(librarySourceFile) && libraryPreviewFile) {
+        const cadToken = createCadAttachmentToken();
+        const previewUrl = await uploadUnitMedia(
+          libraryPreviewFile,
+          buildCadStorageFileName(cadToken, "preview", libraryPreviewFile.name),
+        );
+        const fileUrl = await uploadUnitMedia(
+          librarySourceFile,
+          buildCadStorageFileName(cadToken, "file", librarySourceFile.name),
+        );
+        imageUrls.push(previewUrl, fileUrl);
+        photoUrl = previewUrl;
+      } else {
+        const fileUrl = await uploadUnitMedia(librarySourceFile);
+        imageUrls.push(fileUrl);
+        photoUrl = fileUrl;
+      }
+
+      const token = await getToken();
+      const res = await fetch(`/api/units/${slug}/posts`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          content: libraryDescription.trim() || librarySourceFile.name,
+          photo_url: photoUrl,
+          image_urls: imageUrls,
+          post_type: "file_library",
+          photo_submission_only: !isGod,
+          meta: { source: "file_library_tab", file_name: librarySourceFile.name },
+        }),
+      });
+      const json = await res.json().catch(() => ({})) as { error?: string };
+      if (!res.ok) {
+        alert(json.error ?? "Could not add file to the library.");
+        return;
+      }
+
+      clearLibraryForm();
+      setLibrarySubmitMsg(
+        isGod
+          ? "File added to the library."
+          : "File submitted for admin approval.",
+      );
+      await loadPosts();
+    } finally {
+      setSubmittingLibraryFile(false);
     }
   }
 
@@ -1256,12 +1453,17 @@ export default function UnitPage() {
   const canViewWall = canViewUnitWallClient(unit?.visibility, membership, isFounder);
 
   const isGod = isEffectiveUnitGod(membership, isFounder);
+  const showFileLibraryTab = unitHasFileLibraryTab(unit?.slug, unit?.name);
+  const approvedMemberTabs: UnitTab[] = showFileLibraryTab
+    ? ["wall", "events", "members", "photos", "files"]
+    : ["wall", "events", "members", "photos"];
   const wallPosts = posts.filter((p) => {
-    if (p.post_type === "photo_album") return false;
+    if (p.post_type === "photo_album" || p.post_type === "file_library") return false;
     if (!isApprovedMember && p.post_type === "join_request") return false;
     return true;
   });
   const photos = posts.filter((p) => p.photo_url && p.post_type === "photo_album");
+  const fileLibraryEntries = posts.filter((p) => p.post_type === "file_library");
   const activeGalleryPhoto = galleryPhotoIndex !== null ? photos[galleryPhotoIndex] : null;
 
   async function openPhotoGallery(index: number) {
@@ -1482,7 +1684,7 @@ export default function UnitPage() {
 
             {/* Tab bar */}
             <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${t.border}`, paddingBottom: 0 }}>
-              {(isApprovedMember ? (["wall", "events", "members", "photos"] as const) : (["wall"] as const)).map((tab) => (
+              {(isApprovedMember ? approvedMemberTabs : (["wall"] as const)).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -1495,10 +1697,9 @@ export default function UnitPage() {
                     fontSize: 14,
                     padding: "10px 16px",
                     cursor: "pointer",
-                    textTransform: "capitalize",
                   }}
                 >
-                  {tab}
+                  {UNIT_TAB_LABELS[tab]}
                 </button>
               ))}
             </div>
@@ -1541,7 +1742,7 @@ export default function UnitPage() {
                     >
                       {selectedPostImages.map((item, index) => (
                         <div
-                          key={`${item.previewUrl}-${index}`}
+                          key={`${item.previewUrl || item.file.name}-${index}`}
                           style={{
                             position: "relative",
                             borderRadius: 12,
@@ -1553,9 +1754,17 @@ export default function UnitPage() {
                         >
                           {isVideoFile(item.file) ? (
                             <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
-                          ) : item.file.type === "application/pdf" ? (
+                          ) : item.kind === "pdf" ? (
                             <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, padding: 8, textAlign: "center" }}>
                               PDF
+                            </div>
+                          ) : item.kind === "cad3d" && item.cadRole === "file" ? (
+                            <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, padding: 8, textAlign: "center", flexDirection: "column", gap: 6 }}>
+                              <div>CAD / 3D</div>
+                              <div style={{ fontSize: 10, opacity: 0.85, wordBreak: "break-all" }}>{item.file.name}</div>
+                              {item.cadToken && missingCadPreviewTokens(selectedPostImages).includes(item.cadToken) && (
+                                <div style={{ color: "#f59e0b" }}>Preview required</div>
+                              )}
                             </div>
                           ) : (
                             <img src={item.previewUrl} alt="" style={feedContainedImageStyle} />
@@ -1596,11 +1805,25 @@ export default function UnitPage() {
                       if (postVideoPdfInputRef.current) postVideoPdfInputRef.current.value = "";
                     }}
                   />
+                  <input
+                    ref={postCadPreviewInputRef}
+                    type="file"
+                    accept={CAD_PREVIEW_IMAGE_ACCEPT}
+                    multiple
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      if (files.length === 0) return;
+                      addCadPreviewImagesFromFiles(files);
+                      if (postCadPreviewInputRef.current) postCadPreviewInputRef.current.value = "";
+                    }}
+                  />
 
                   <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
                     Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
                     Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~3–4 min).
-                    For longer video, paste a YouTube or Vimeo link in your post.
+                    PDFs and CAD/3D files up to {formatUploadBytes(UPLOAD_LIMITS.document)} are supported.
+                    CAD/3D files require a JPG/PNG/WEBP preview image.
                   </p>
 
                   <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginTop: 12 }}>
@@ -1616,8 +1839,17 @@ export default function UnitPage() {
                       }}
                       style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
                     >
-                      {selectedPostImages.length > 0 ? "Add More" : "Add Photo or Video"}
+                      {selectedPostImages.length > 0 ? "Add More" : "Add Photo / Video / File"}
                     </button>
+                    {missingCadPreviewTokens(selectedPostImages).length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => postCadPreviewInputRef.current?.click()}
+                        style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
+                      >
+                        Add Preview Image ({missingCadPreviewTokens(selectedPostImages).length})
+                      </button>
+                    )}
 
                     <EmojiPickerButton
                       value={postInput}
@@ -1713,7 +1945,10 @@ export default function UnitPage() {
                           : post.photo_url
                             ? [post.photo_url]
                             : [];
-                        openPostGallery(urls, startIndex);
+                        const galleryUrls = attachmentsFromUrls(urls)
+                          .filter((item) => item.kind === "image" || item.kind === "video")
+                          .map((item) => item.renderUrl);
+                        openPostGallery(galleryUrls, startIndex);
                       }}
                       canInteract={isApprovedMember}
                     />
@@ -2044,6 +2279,215 @@ export default function UnitPage() {
                       <img src={p.photo_url!} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
                     </button>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* FILE LIBRARY TAB */}
+            {activeTab === "files" && showFileLibraryTab && (
+              <div style={{ display: "grid", gap: 16 }}>
+                <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+                    <div>
+                      <div style={{ fontWeight: 900, fontSize: 16, color: t.text }}>Add to file library</div>
+                      <div style={{ color: t.textMuted, fontSize: 12, marginTop: 2, lineHeight: 1.5 }}>
+                        Share STL, OBJ, STEP, DXF, SVG, PDF, and other maker files for 3D printing, laser engraving, and CAD.
+                        CAD / 3D files need a JPG, PNG, or WEBP preview image.
+                        {" "}
+                        PDFs and documents up to {formatUploadBytes(UPLOAD_LIMITS.document)}.
+                      </div>
+                    </div>
+                    {librarySubmitMsg ? <div style={{ color: "#16a34a", fontSize: 13, fontWeight: 800 }}>{librarySubmitMsg}</div> : null}
+                  </div>
+
+                  {librarySourceFile ? (
+                    <div style={{ marginBottom: 12, padding: 12, borderRadius: 12, border: `1px solid ${t.border}`, background: isDark ? "rgba(255,255,255,0.03)" : "#f9fafb" }}>
+                      <div style={{ fontWeight: 800, fontSize: 14, color: t.text, wordBreak: "break-all" }}>{librarySourceFile.name}</div>
+                      <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
+                        {formatUploadBytes(librarySourceFile.size)}
+                        {fileLibraryRequiresPreview(librarySourceFile) && !libraryPreviewFile ? (
+                          <span style={{ color: "#f59e0b", fontWeight: 700, marginLeft: 8 }}>Preview required</span>
+                        ) : null}
+                      </div>
+                      {libraryPreviewUrl ? (
+                        <div style={{ width: 220, maxWidth: "100%", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, marginTop: 10, position: "relative" }}>
+                          <img src={libraryPreviewUrl} alt="File preview" style={{ width: "100%", height: 160, objectFit: "cover", display: "block" }} />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (libraryPreviewUrl) URL.revokeObjectURL(libraryPreviewUrl);
+                              setLibraryPreviewUrl(null);
+                              setLibraryPreviewFile(null);
+                              if (libraryPreviewInputRef.current) libraryPreviewInputRef.current.value = "";
+                            }}
+                            style={{ position: "absolute", top: 6, right: 6, width: 26, height: 26, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.7)", color: "#fff", fontWeight: 900, cursor: "pointer" }}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={clearLibraryForm}
+                        style={{ marginTop: 10, background: "none", border: "none", color: t.textMuted, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}
+                      >
+                        Remove file
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <input
+                    ref={librarySourceInputRef}
+                    type="file"
+                    accept={FILE_LIBRARY_ACCEPT}
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      if (!file) return;
+                      const pickError = validateFileLibrarySourcePick(file);
+                      if (pickError) {
+                        alert(pickError);
+                        e.target.value = "";
+                        return;
+                      }
+                      if (librarySourcePreviewUrl) URL.revokeObjectURL(librarySourcePreviewUrl);
+                      if (libraryPreviewUrl) URL.revokeObjectURL(libraryPreviewUrl);
+                      setLibrarySourceFile(file);
+                      setLibraryPreviewFile(null);
+                      setLibraryPreviewUrl(null);
+                      setLibrarySourcePreviewUrl(null);
+                      setLibrarySubmitMsg(null);
+                      if (libraryPreviewInputRef.current) libraryPreviewInputRef.current.value = "";
+                    }}
+                  />
+                  <input
+                    ref={libraryPreviewInputRef}
+                    type="file"
+                    accept={CAD_PREVIEW_IMAGE_ACCEPT}
+                    style={{ display: "none" }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      if (!file) return;
+                      if (!isPreviewImageForCad(file)) {
+                        alert("Preview must be a JPG, PNG, or WEBP image.");
+                        e.target.value = "";
+                        return;
+                      }
+                      const imageError = validateImagePick(file);
+                      if (imageError) {
+                        alert(imageError);
+                        e.target.value = "";
+                        return;
+                      }
+                      if (libraryPreviewUrl) URL.revokeObjectURL(libraryPreviewUrl);
+                      setLibraryPreviewFile(file);
+                      setLibraryPreviewUrl(URL.createObjectURL(file));
+                      setLibrarySubmitMsg(null);
+                    }}
+                  />
+
+                  <div style={{ display: "grid", gap: 10 }}>
+                    <input
+                      value={libraryDescription}
+                      onChange={(e) => setLibraryDescription(e.target.value)}
+                      placeholder="Title or description (optional)"
+                      style={{ ...inputStyle, marginBottom: 0 }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        onClick={() => librarySourceInputRef.current?.click()}
+                        style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 800, cursor: "pointer" }}
+                      >
+                        {librarySourceFile ? "Change File" : "Choose File"}
+                      </button>
+                      {librarySourceFile && fileLibraryRequiresPreview(librarySourceFile) ? (
+                        <button
+                          type="button"
+                          onClick={() => libraryPreviewInputRef.current?.click()}
+                          style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "9px 14px", fontWeight: 800, cursor: "pointer" }}
+                        >
+                          {libraryPreviewFile ? "Change Preview" : "Add Preview Image"}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={submitGroupFileLibraryEntry}
+                        disabled={
+                          !librarySourceFile ||
+                          submittingLibraryFile ||
+                          Boolean(librarySourceFile && fileLibraryRequiresPreview(librarySourceFile) && !libraryPreviewFile)
+                        }
+                        style={{ background: "#111", color: "#fff", border: "none", borderRadius: 10, padding: "9px 16px", fontWeight: 900, cursor: !librarySourceFile || submittingLibraryFile ? "not-allowed" : "pointer", opacity: !librarySourceFile || submittingLibraryFile ? 0.65 : 1 }}
+                      >
+                        {submittingLibraryFile ? "Submitting..." : isGod ? "Add to Library" : "Submit for Approval"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {fileLibraryEntries.length === 0 && (
+                  <div style={{ color: t.textMuted, textAlign: "center", padding: 40 }}>No maker files shared yet.</div>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
+                  {fileLibraryEntries.map((entry) => {
+                    const entryUrls = entry.image_urls?.length
+                      ? entry.image_urls
+                      : entry.photo_url
+                        ? [entry.photo_url]
+                        : [];
+                    const attachments = attachmentsFromUrls(entryUrls);
+                    const displayAttachment = attachments[0];
+                    const downloadUrl = attachments.find((a) => a.kind === "cad3d" || a.kind === "pdf" || a.kind === "other")?.url
+                      ?? displayAttachment?.url;
+                    const fileLabel = (entry.meta as { file_name?: string } | null)?.file_name
+                      ?? displayAttachment?.fileName
+                      ?? "Download file";
+
+                    return (
+                      <div
+                        key={entry.id}
+                        style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface }}
+                      >
+                        {displayAttachment ? (
+                          <a
+                            href={downloadUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ display: "block", background: FEED_MEDIA_FRAME_BG, aspectRatio: "4 / 3" }}
+                          >
+                            <FeedMediaAttachment
+                              attachment={displayAttachment}
+                              alt={fileLabel}
+                              style={{ width: "100%", height: "100%", objectFit: "contain" }}
+                            />
+                          </a>
+                        ) : (
+                          <div style={{ aspectRatio: "4 / 3", display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontSize: 13 }}>
+                            File
+                          </div>
+                        )}
+                        <div style={{ padding: "10px 12px" }}>
+                          <div style={{ fontWeight: 800, fontSize: 14, color: t.text, lineHeight: 1.35 }}>
+                            {entry.content?.trim() || fileLabel}
+                          </div>
+                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>
+                            {entry.author_name} · {new Date(entry.created_at).toLocaleDateString()}
+                          </div>
+                          {downloadUrl ? (
+                            <a
+                              href={downloadUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ display: "inline-block", marginTop: 8, fontSize: 12, fontWeight: 800, color: "#3b82f6", textDecoration: "none" }}
+                            >
+                              Download / open file
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -2572,6 +3016,7 @@ function PostCard({
       : post.photo_url
         ? [post.photo_url]
         : [];
+  const postAttachments = attachmentsFromUrls(postImageUrls);
 
   function clearCommentMedia() {
     setCommentGif(null);
@@ -2735,7 +3180,7 @@ function PostCard({
       })()}
 
       <FeedPostImageGrid
-        imageUrls={postImageUrls}
+        attachments={postAttachments}
         onOpenGallery={onOpenGallery}
         borderColor={t.borderLight}
       />

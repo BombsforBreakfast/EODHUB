@@ -4,8 +4,9 @@ import type { PickedFile } from "@capawesome/capacitor-file-picker";
 import { Capacitor } from "@capacitor/core";
 import { isNativeIosApp } from "./isNativeApp";
 
-/** Video and PDF only — avoids iOS WKWebView camera crash from image/* file inputs. */
-export const FEED_VIDEO_PDF_ACCEPT = "video/*,.mp4,.mov,.webm,.m4v,.pdf,application/pdf";
+/** Video and file types — avoids iOS WKWebView camera crash from image/* file inputs. */
+export const FEED_VIDEO_PDF_ACCEPT =
+  "video/*,.mp4,.mov,.webm,.m4v,.pdf,application/pdf,.svg,image/svg+xml,.tif,.tiff,image/tiff,.stl,.obj,.step,.stp,.iges,.igs,.dwg,.dxf,.3mf";
 
 export type OpenFeedMediaPickerOptions = {
   mediaInputRef: RefObject<HTMLInputElement | null>;
@@ -214,25 +215,37 @@ async function pickNativeVideosFromLibrary(limit: number): Promise<File[]> {
   }
 }
 
-async function pickNativePdfFiles(limit: number): Promise<File[]> {
+async function pickNativeDocumentFiles(limit: number): Promise<File[]> {
   const { FilePicker } = await import("@capawesome/capacitor-file-picker");
   try {
     const result = await FilePicker.pickFiles({
-      types: ["application/pdf"],
-      limit: limit > 0 ? 1 : undefined,
+      types: [
+        "application/pdf",
+        "image/svg+xml",
+        "image/tiff",
+        "model/stl",
+        "model/obj",
+        "model/step",
+        "model/iges",
+        "model/3mf",
+        "application/acad",
+        "image/vnd.dxf",
+        "application/octet-stream",
+      ],
+      limit: limit > 0 ? limit : undefined,
       readData: false,
     });
     return Promise.all(result.files.map((file, index) => pickedFileToFile(file, index, "document")));
   } catch (err) {
     if (!isUserCancel(err)) {
-      console.error("pickNativePdfFiles failed:", err);
+      console.error("pickNativeDocumentFiles failed:", err);
       alert("Could not open the file picker. Please try again.");
     }
     return [];
   }
 }
 
-type IosFeedMediaChoice = "camera" | "photos" | "videos" | "pdf" | "cancel";
+type IosFeedMediaChoice = "camera" | "photos" | "videos" | "file" | "cancel";
 
 let pendingCameraFilesCallback: ((files: File[]) => void) | null = null;
 
@@ -278,14 +291,14 @@ async function showIosFeedMediaActionSheet(): Promise<IosFeedMediaChoice> {
       { title: "Take Photo" },
       { title: "Photo Library" },
       { title: "Video Library" },
-      { title: "PDF" },
+      { title: "File" },
       { title: "Cancel", style: ActionSheetButtonStyle.Cancel },
     ],
   });
   if (index === 0) return "camera";
   if (index === 1) return "photos";
   if (index === 2) return "videos";
-  if (index === 3) return "pdf";
+  if (index === 3) return "file";
   return "cancel";
 }
 
@@ -332,8 +345,8 @@ export async function openFeedMediaPicker({
     return;
   }
 
-  if (choice === "pdf") {
-    const files = await pickNativePdfFiles(remainingSlots);
+  if (choice === "file") {
+    const files = await pickNativeDocumentFiles(remainingSlots);
     if (files.length > 0) onFiles(files);
     return;
   }

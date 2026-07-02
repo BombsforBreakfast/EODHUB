@@ -62,3 +62,44 @@ workflows:
         submit_to_testflight: true
         beta_groups:
           - Internal Testers
+
+  eod-hub-android:
+    name: EOD-Hub Android Internal
+    max_build_duration: 60
+    instance_type: linux_x2
+    environment:
+      android_signing:
+        - eodhub_android_keystore
+      vars:
+        PACKAGE_NAME: com.eodhub.app
+        CAPACITOR_SERVER_URL: https://eod-hub.com
+      node: 20
+      java: 17
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+          include: true
+    scripts:
+      - name: Install npm dependencies
+        script: npm ci
+      - name: Ensure Android platform exists
+        script: |
+          if [ ! -d android/app ]; then
+            npx cap add android
+          fi
+      - name: Sync Capacitor Android
+        script: npx cap sync android
+      - name: Set production server URL in Capacitor config
+        script: |
+          node scripts/patch-capacitor-server-url.mjs
+          npx cap sync android
+          node scripts/verify-capacitor-android-config.mjs
+      - name: Build Android App Bundle
+        script: |
+          cd android
+          ./gradlew bundleRelease
+    artifacts:
+      - android/app/build/outputs/**/*.aab
+      - android/app/build/outputs/**/*.apk

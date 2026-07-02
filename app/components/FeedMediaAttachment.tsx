@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, type CSSProperties, type MouseEvent } from "react";
-import { Play } from "lucide-react";
+import { File, FileArchive, FileText, Play } from "lucide-react";
 import { feedImageDisplayUrl } from "../lib/storageImageUrl";
-import { isVideoUrl } from "../lib/uploadLimits";
+import { attachmentRenderKindFromUrl, isVideoUrl } from "../lib/uploadLimits";
+import type { PostAttachment, PostAttachmentKind } from "../lib/postAttachments";
 
 type Props = {
-  url: string;
+  attachment: Pick<PostAttachment, "url" | "renderUrl" | "fileName" | "kind">;
   alt?: string;
   style?: CSSProperties;
   /** When true (default), videos do not hit the CDN until the user taps play. */
@@ -16,26 +17,102 @@ type Props = {
 };
 
 export function FeedMediaAttachment({
-  url,
+  attachment,
   alt = "",
   style,
   deferVideoLoad = true,
   loading = "lazy",
   fetchPriority = "auto",
 }: Props) {
-  if (isVideoUrl(url)) {
-    return <FeedVideoAttachment url={url} style={style} deferLoad={deferVideoLoad} />;
+  const detectedKind = attachmentRenderKindFromUrl(attachment.url);
+  const kind: PostAttachmentKind =
+    attachment.kind && attachment.kind !== "other"
+      ? attachment.kind
+      : detectedKind === "pdf"
+        ? "pdf"
+        : detectedKind === "video"
+          ? "video"
+          : detectedKind === "cad3d"
+            ? "cad3d"
+            : detectedKind === "image"
+              ? "image"
+              : "other";
+
+  if (kind === "video" || isVideoUrl(attachment.url)) {
+    return <FeedVideoAttachment url={attachment.url} style={style} deferLoad={deferVideoLoad} />;
   }
 
+  if (kind === "image" || (kind === "cad3d" && attachment.renderUrl !== attachment.url)) {
+    if (kind === "cad3d" && attachment.renderUrl !== attachment.url) {
+      return (
+        <div style={{ ...style, position: "relative", overflow: "hidden" }}>
+          <img
+            src={feedImageDisplayUrl(attachment.renderUrl)}
+            alt={alt}
+            loading={loading}
+            fetchPriority={fetchPriority}
+            decoding="async"
+            style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              bottom: 0,
+              padding: "5px 8px",
+              fontSize: 10,
+              fontWeight: 700,
+              color: "#fff",
+              background: "linear-gradient(to top, rgba(0,0,0,0.75), rgba(0,0,0,0))",
+            }}
+          >
+            CAD / 3D - Open original file
+          </div>
+        </div>
+      );
+    }
+    return (
+      <img
+        src={feedImageDisplayUrl(attachment.renderUrl)}
+        alt={alt}
+        loading={loading}
+        fetchPriority={fetchPriority}
+        decoding="async"
+        style={style}
+      />
+    );
+  }
+
+  const label = kind === "pdf" ? "PDF" : kind === "cad3d" ? "CAD / 3D" : "File";
+  const icon =
+    kind === "pdf"
+      ? <FileText size={28} />
+      : kind === "cad3d"
+        ? <FileArchive size={28} />
+        : <File size={28} />;
+
   return (
-    <img
-      src={feedImageDisplayUrl(url)}
-      alt={alt}
-      loading={loading}
-      fetchPriority={fetchPriority}
-      decoding="async"
-      style={style}
-    />
+    <div
+      style={{
+        ...style,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexDirection: "column",
+        gap: 6,
+        padding: 10,
+        color: "rgba(255,255,255,0.9)",
+        background: "rgba(0,0,0,0.45)",
+        textAlign: "center",
+      }}
+    >
+      {icon}
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4 }}>{label}</div>
+      <div style={{ fontSize: 10, opacity: 0.8, maxWidth: "100%", wordBreak: "break-all" }}>
+        {attachment.fileName || "attachment"}
+      </div>
+    </div>
   );
 }
 

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import Stripe from "stripe";
+import {
+  lookupUserIdByStripeCustomer,
+  syncStripeMemberSubscription,
+} from "../../../lib/server/billing/stripeMemberBilling";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +69,16 @@ export async function POST(req: NextRequest) {
       || typeof sub.metadata?.business_org_page_id === "string";
   }
 
+  async function syncMemberBillingFromSubscription(event: Stripe.Event, sub: Stripe.Subscription) {
+    const customerId = sub.customer as string;
+    const userId = await lookupUserIdByStripeCustomer(adminClient, customerId);
+    if (!userId) {
+      console.warn("[stripe webhook] no profile for customer", customerId);
+      return;
+    }
+    await syncStripeMemberSubscription(adminClient, event, sub, userId);
+  }
+
   switch (event.type) {
     case "customer.subscription.created": {
       const sub = event.data.object as Stripe.Subscription;
@@ -75,6 +89,7 @@ export async function POST(req: NextRequest) {
       }
       // Do not set verification_status here — access approval stays with admin (or community vouch), not payment.
       await updateByCustomer(sub.customer as string, status);
+      await syncMemberBillingFromSubscription(event, sub);
       break;
     }
     case "customer.subscription.updated": {
@@ -84,6 +99,7 @@ export async function POST(req: NextRequest) {
         break;
       }
       await updateByCustomer(sub.customer as string, sub.status);
+      await syncMemberBillingFromSubscription(event, sub);
       break;
     }
     case "customer.subscription.deleted": {
@@ -93,6 +109,7 @@ export async function POST(req: NextRequest) {
         break;
       }
       await updateByCustomer(sub.customer as string, "cancelled");
+      await syncMemberBillingFromSubscription(event, sub);
       break;
     }
     case "invoice.payment_failed": {

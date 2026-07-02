@@ -19,6 +19,10 @@ const config: CapacitorConfig = {
       "*.supabase.co",
     ],
   },
+  android: {
+    backgroundColor: "#0a0a0a",
+    allowMixedContent: false,
+  },
   ios: {
     contentInset: "automatic",
     backgroundColor: "#0a0a0a",
