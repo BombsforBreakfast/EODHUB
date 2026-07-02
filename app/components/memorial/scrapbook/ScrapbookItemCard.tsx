@@ -184,9 +184,7 @@ export function ScrapbookItemCard({ item, t, accentColor, variant = "stage" }: P
             <div
               style={{
                 width: "100%",
-                maxWidth: 520,
-                margin: "0 auto",
-                aspectRatio: "1 / 1",
+                minHeight: "min(68vh, 560px)",
                 background: "#080808",
                 display: "flex",
                 alignItems: "center",
@@ -198,8 +196,10 @@ export function ScrapbookItemCard({ item, t, accentColor, variant = "stage" }: P
                 src={file}
                 alt=""
                 style={{
-                  width: "100%",
-                  height: "100%",
+                  maxWidth: "100%",
+                  maxHeight: "min(68vh, 560px)",
+                  width: "auto",
+                  height: "auto",
                   objectFit: "contain",
                   display: "block",
                 }}
