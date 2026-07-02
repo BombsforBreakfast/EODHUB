@@ -1683,7 +1683,19 @@ export default function UnitPage() {
             )}
 
             {/* Tab bar */}
-            <div style={{ display: "flex", gap: 4, marginBottom: 20, borderBottom: `1px solid ${t.border}`, paddingBottom: 0 }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 4,
+                marginBottom: 20,
+                borderBottom: `1px solid ${t.border}`,
+                paddingBottom: 0,
+                overflowX: "auto",
+                overflowY: "hidden",
+                WebkitOverflowScrolling: "touch",
+                scrollbarWidth: "thin",
+              }}
+            >
               {(isApprovedMember ? approvedMemberTabs : (["wall"] as const)).map((tab) => (
                 <button
                   key={tab}
@@ -1697,6 +1709,8 @@ export default function UnitPage() {
                     fontSize: 14,
                     padding: "10px 16px",
                     cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
                   }}
                 >
                   {UNIT_TAB_LABELS[tab]}
