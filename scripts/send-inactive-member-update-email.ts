@@ -53,7 +53,7 @@ function sleep(ms: number) {
 }
 
 async function fetchVerifiedProfiles(
-  admin: ReturnType<typeof createClient>,
+  admin: ReturnType<typeof createClient<any>>,
 ): Promise<Array<{ user_id: string; email: string | null }>> {
   const rows: Array<{ user_id: string; email: string | null }> = [];
   let from = 0;
@@ -65,7 +65,12 @@ async function fetchVerifiedProfiles(
       .eq("verification_status", VERIFICATION.VERIFIED)
       .range(from, from + pageSize - 1);
     if (error) throw new Error(error.message);
-    for (const row of data ?? []) {
+    for (const row of (data ?? []) as Array<{
+      user_id: string;
+      email: string | null;
+      account_deleted_at: string | null;
+      must_complete_onboarding: boolean | null;
+    }>) {
       if (row.account_deleted_at) continue;
       if (row.must_complete_onboarding) continue;
       rows.push({ user_id: row.user_id, email: row.email ?? null });
@@ -77,7 +82,7 @@ async function fetchVerifiedProfiles(
 }
 
 async function fetchLastSignInByUserId(
-  admin: ReturnType<typeof createClient>,
+  admin: ReturnType<typeof createClient<any>>,
   userIds: string[],
 ): Promise<Map<string, string | null>> {
   const map = new Map<string, string | null>();

@@ -310,8 +310,8 @@ export function AddScrapbookItemModal({
         thumbnail_url: thumb,
         memory_body: memBody,
         caption: cap,
-        location: itemType === "photo" ? (location.trim() || null) : null,
-        event_date: itemType === "photo" ? (eventDate.trim() || null) : null,
+        location: null,
+        event_date: null,
         status: (isAdminContributor ? "approved" : "pending") as "pending" | "approved",
       };
 

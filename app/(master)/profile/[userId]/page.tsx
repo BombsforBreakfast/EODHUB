@@ -2722,7 +2722,7 @@ export default function PublicProfilePage() {
       if (filtered.length > slots) {
         alert("Only the first files were added. Max is 10 attachments per post.");
       }
-      const toAdd = toAddFiles.map((f) => {
+      const toAdd: typeof prev = toAddFiles.map((f) => {
         const kind = attachmentRenderKindFromFile(f);
         if (kind === "cad3d") {
           return {
@@ -2733,10 +2733,12 @@ export default function PublicProfilePage() {
             cadToken: createCadAttachmentToken(),
           };
         }
+        const normalizedKind: "image" | "video" | "pdf" | "other" =
+          kind === "pdf" ? "pdf" : kind === "video" ? "video" : kind === "image" ? "image" : "other";
         return {
           file: f,
           previewUrl: URL.createObjectURL(f),
-          kind: kind === "pdf" ? "pdf" : kind === "video" ? "video" : kind === "image" ? "image" : "other",
+          kind: normalizedKind,
         };
       });
       return [...prev, ...toAdd];
