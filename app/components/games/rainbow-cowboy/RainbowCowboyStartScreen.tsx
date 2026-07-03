@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTheme } from "@/app/lib/ThemeContext";
 import type { RainbowCowboyLevel, RainbowCowboyDifficulty } from "./rainbowCowboyTypes";
 import { DIFFICULTY_OPTIONS } from "./rainbowCowboyDifficulty";
@@ -22,6 +22,7 @@ import {
   saveUnicornHeroSelectedRide,
   type UnicornHeroRideType,
 } from "../unicorn-hero/unicornHeroRides";
+import { isStandaloneMode } from "@/app/components/games/arcadeImmersiveMode";
 
 const RIDE_EMOJI: Record<UnicornHeroRideType, string> = {
   unicorn: "🦄",
@@ -50,6 +51,29 @@ function isFrogmanLevel(levelId: string): boolean {
   return levelId === "level-5" || levelId === "level-6" || levelId === "level-7" || levelId === "level-8";
 }
 
+function useMobileLandscapeBrowserTab(): boolean {
+  const [show, setShow] = useState(false);
+
+  useEffect(() => {
+    const sync = () => {
+      const mobile = window.matchMedia("(pointer: coarse), (max-width: 900px), (max-height: 500px)").matches;
+      const landscape = window.matchMedia("(orientation: landscape)").matches;
+      setShow(mobile && landscape && !isStandaloneMode());
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    window.addEventListener("orientationchange", sync);
+    window.visualViewport?.addEventListener("resize", sync);
+    return () => {
+      window.removeEventListener("resize", sync);
+      window.removeEventListener("orientationchange", sync);
+      window.visualViewport?.removeEventListener("resize", sync);
+    };
+  }, []);
+
+  return show;
+}
+
 export function RainbowCowboyStartScreen({
   level,
   storyIntro,
@@ -65,6 +89,7 @@ export function RainbowCowboyStartScreen({
 }: Props) {
   const { t } = useTheme();
   const [audioPrefs, setAudioPrefs] = useState<UnicornHeroAudioPrefs>(() => loadUnicornHeroAudioPrefs());
+  const showCloseTabsHint = useMobileLandscapeBrowserTab();
 
   const progressionOptions = bypassProgression ? { bypassProgression: true as const } : undefined;
   const canStart = isDifficultyUnlocked(level.id, difficulty, progress, levels, progressionOptions);
@@ -101,6 +126,24 @@ export function RainbowCowboyStartScreen({
       </h1>
       <p style={{ margin: "0 0 8px", color: t.textMuted, fontSize: 15 }}>{level.subtitle}</p>
       <p style={{ margin: "0 0 16px", color: t.text, fontSize: 13 }}>{level.objective}</p>
+
+      {showCloseTabsHint ? (
+        <div
+          style={{
+            margin: "0 0 14px",
+            padding: "10px 12px",
+            borderRadius: 10,
+            border: "2px solid rgba(128,255,200,0.55)",
+            background: "rgba(0,0,0,0.25)",
+            color: t.text,
+            fontSize: 12,
+            lineHeight: 1.45,
+            textAlign: "left",
+          }}
+        >
+          <strong>Mobile tip:</strong> Close other internet tabs for best gameplay space.
+        </div>
+      ) : null}
 
       {storyIntro && (
         <div

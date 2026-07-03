@@ -26,14 +26,7 @@ import {
 import { UnicornHeroAudioControls } from "../unicorn-hero/UnicornHeroAudioControls";
 import { getUnicornHeroRideConfig, type UnicornHeroRideType } from "../unicorn-hero/unicornHeroRides";
 import { GameRotatePrompt } from "@/app/components/games/GameRotatePrompt";
-import {
-  collapseMobileBrowserChrome,
-  exitArcadeImmersiveMode,
-  isMobileArcadeSurface,
-  isStandaloneMode,
-  syncGameViewportCssVars,
-  tryGameFullscreen,
-} from "@/app/components/games/arcadeImmersiveMode";
+import { exitArcadeImmersiveMode } from "@/app/components/games/arcadeImmersiveMode";
 import { useMobileGameImmersiveMode } from "@/app/components/games/useMobileGameImmersiveMode";
 import { createRainbowCowboyInputBridge } from "./rainbowCowboyGameInput";
 
@@ -133,14 +126,8 @@ export function RainbowCowboyGame({
   const [instructionsOpen, setInstructionsOpen] = useState(showInstructions);
   const [audioPrefs, setAudioPrefs] = useState<UnicornHeroAudioPrefs>(() => loadUnicornHeroAudioPrefs());
   const [showAudioPanel, setShowAudioPanel] = useState(false);
-  const [expandHint, setExpandHint] = useState<string | null>(null);
-  const [focusMode, setFocusMode] = useState(false);
   const [controlPrefs, setControlPrefs] = useState<RainbowCowboyControlPrefs>(() =>
     loadRainbowCowboyControlPrefs(),
-  );
-  const showExpandButton = useMemo(
-    () => isMobileArcadeSurface() && !isStandaloneMode(),
-    [],
   );
 
   useEffect(() => {
@@ -226,25 +213,6 @@ export function RainbowCowboyGame({
     void exitArcadeImmersiveMode();
     onExit();
   }, [onExit]);
-
-  const handleExpandArcade = useCallback(async () => {
-    const html = document.documentElement;
-    collapseMobileBrowserChrome();
-    syncGameViewportCssVars(html);
-    const entered = await tryGameFullscreen(shellRef.current);
-    if (entered) {
-      setFocusMode(true);
-      setShowAudioPanel(false);
-      setExpandHint("Fullscreen enabled.");
-      window.setTimeout(() => setExpandHint(null), 1800);
-      return;
-    }
-    setFocusMode(true);
-    setShowAudioPanel(false);
-    syncGameViewportCssVars(html);
-    setExpandHint("Focus mode enabled. Add EOD Hub to Home Screen for true fullscreen.");
-    window.setTimeout(() => setExpandHint(null), 4500);
-  }, []);
 
   useEffect(() => {
     if (!instructionsOpen) void beginGameplayAudio();
@@ -480,27 +448,25 @@ export function RainbowCowboyGame({
         overflow: "hidden",
       }}
     >
-      <div className={`rc-top-actions${focusMode ? " rc-top-actions--focus" : ""}`}>
-        {!focusMode && (
-          <button
-            type="button"
-            onClick={() => setShowAudioPanel((v) => !v)}
-            className="rc-top-action-button rc-audio-button"
-            style={{
-              padding: "6px 10px",
-              borderRadius: 8,
-              border: "2px solid rgba(255,96,192,0.5)",
-              background: "rgba(0,0,0,0.75)",
-              color: "#fff",
-              fontSize: 11,
-              fontWeight: 700,
-              cursor: "pointer",
-              fontFamily: "monospace",
-            }}
-          >
-            {audioPrefs.musicEnabled || audioPrefs.sfxEnabled ? "🔊" : "🔇"}
-          </button>
-        )}
+      <div className="rc-top-actions">
+        <button
+          type="button"
+          onClick={() => setShowAudioPanel((v) => !v)}
+          className="rc-top-action-button rc-audio-button"
+          style={{
+            padding: "6px 10px",
+            borderRadius: 8,
+            border: "2px solid rgba(255,96,192,0.5)",
+            background: "rgba(0,0,0,0.75)",
+            color: "#fff",
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: "pointer",
+            fontFamily: "monospace",
+          }}
+        >
+          {audioPrefs.musicEnabled || audioPrefs.sfxEnabled ? "🔊" : "🔇"}
+        </button>
 
         <button
           type="button"
@@ -522,27 +488,6 @@ export function RainbowCowboyGame({
           Pause
         </button>
 
-        {showExpandButton && (
-          <button
-            type="button"
-            onClick={() => void handleExpandArcade()}
-            className="rc-top-action-button"
-            style={{
-              padding: "6px 10px",
-              borderRadius: 8,
-              border: "2px solid rgba(128,255,200,0.65)",
-              background: "rgba(0,0,0,0.75)",
-              color: "#fff",
-              fontSize: 11,
-              fontWeight: 800,
-              cursor: "pointer",
-              fontFamily: "monospace",
-            }}
-          >
-            {focusMode ? "Focused" : "Expand"}
-          </button>
-        )}
-
         <button
           type="button"
           onClick={handleExitArcade}
@@ -562,29 +507,6 @@ export function RainbowCowboyGame({
           Exit Arcade
         </button>
       </div>
-
-      {expandHint && (
-        <div
-          style={{
-            position: "absolute",
-            top: 44,
-            left: "max(8px, env(safe-area-inset-left, 0px))",
-            zIndex: 35,
-            borderRadius: 10,
-            border: "1px solid rgba(128,255,200,0.55)",
-            background: "rgba(0,0,0,0.78)",
-            color: "#d1fae5",
-            fontSize: 11,
-            fontWeight: 700,
-            fontFamily: "monospace",
-            lineHeight: 1.4,
-            padding: "8px 10px",
-            maxWidth: "min(260px, 76vw)",
-          }}
-        >
-          {expandHint}
-        </div>
-      )}
 
       {showAudioPanel && (
         <div
