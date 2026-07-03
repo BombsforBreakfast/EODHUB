@@ -2,73 +2,44 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { BombSuitManAvatar } from "@/app/components/games/bomb-suit-man/BombSuitManAvatar";
+import { BSM_ACCENT, BSM_TITLE_GRADIENT } from "@/app/components/games/bomb-suit-man/bombSuitManTheme";
 import { ArcadeHighScoresSummary, buildArcadeHighScoreRows } from "@/app/components/games/ArcadeHighScoresSummary";
 import { ArcadeSessionBar } from "@/app/components/games/ArcadeSessionBar";
 import { useArcadeSession } from "@/app/components/games/useArcadeSession";
 import { loadRainbowCowboyArcadeData } from "@/app/components/games/rainbow-cowboy/rainbowCowboyStorage";
 import { getRainbowCowboyLevels } from "@/app/components/games/rainbow-cowboy/rainbowCowboyLevels";
 import type { RainbowCowboyPersonalBest } from "@/app/components/games/rainbow-cowboy/rainbowCowboyTypes";
-import { loadRenderSafePersonalBests } from "@/app/components/render-safe/renderSafeStorage";
-import { getRenderSafeLevels } from "@/app/components/render-safe/renderSafeLevels";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { RequireFullAccess } from "@/app/hooks/useRequireFullAccess";
 import { RequireArcadePreview } from "@/app/components/games/RequireArcadePreview";
 
-const GAMES = [
-  {
-    title: "Render Safe",
-    subtitle: "Top-down night raid — get the assault force to the target.",
-    href: "/render-safe",
-    emoji: "💣",
-    accent: "#f97316",
-  },
-  {
-    title: "Bomb Suit Man",
-    subtitle: "Bomb suit operator on a robot — or a pink unicorn. Eat drones. Make poor life choices.",
-    footnote: "Game may or may not be inspired by an Army EOD senior leader.",
-    href: "/games/bomb-suit-man",
-    emoji: "🤖",
-    accent: "#c9a227",
-  },
-] as const;
+const FLAGSHIP_HREF = "/games/bomb-suit-man";
 
 function GamesHubContent() {
   const { t } = useTheme();
   const { userId, profile, wallet, walletLoading } = useArcadeSession();
-  const [renderSafeBests, setRenderSafeBests] = useState<Record<string, number | null>>({});
   const [rainbowBests, setRainbowBests] = useState<Record<string, RainbowCowboyPersonalBest | null>>({});
 
-  const renderSafeLevels = useMemo(() => getRenderSafeLevels(), []);
   const rainbowLevels = useMemo(() => getRainbowCowboyLevels(), []);
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([
-      loadRenderSafePersonalBests(userId),
-      loadRainbowCowboyArcadeData(userId),
-    ]).then(([renderSafeRows, rainbowData]) => {
+    void loadRainbowCowboyArcadeData(userId).then((rainbowData) => {
       if (cancelled) return;
-      const renderSafeScores: Record<string, number | null> = {};
-      for (const level of renderSafeLevels) {
-        renderSafeScores[level.id] = renderSafeRows[level.id]?.score ?? null;
-      }
-      setRenderSafeBests(renderSafeScores);
       setRainbowBests(rainbowData.personalBests);
     });
     return () => {
       cancelled = true;
     };
-  }, [renderSafeLevels, userId]);
+  }, [userId]);
 
   const highScoreRows = useMemo(
     () =>
       buildArcadeHighScoreRows({
-        renderSafe: renderSafeBests,
-        renderSafeLevelTitles: Object.fromEntries(renderSafeLevels.map((level) => [level.id, level.title])),
         rainbowCowboy: rainbowBests,
         rainbowCowboyLevelTitles: Object.fromEntries(rainbowLevels.map((level) => [level.id, level.title])),
       }),
-    [rainbowBests, rainbowLevels, renderSafeBests, renderSafeLevels],
+    [rainbowBests, rainbowLevels],
   );
 
   return (
@@ -79,7 +50,7 @@ function GamesHubContent() {
       <div
         style={{
           textAlign: "center",
-          marginBottom: 28,
+          marginBottom: 20,
           padding: "20px 16px",
           borderRadius: 16,
           border: `1px solid ${t.border}`,
@@ -93,40 +64,59 @@ function GamesHubContent() {
         </p>
       </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {GAMES.map((game) => (
-          <a
-            key={game.href}
-            href={game.href}
+      <a
+        href={FLAGSHIP_HREF}
+        style={{
+          display: "block",
+          textDecoration: "none",
+          padding: "22px 20px",
+          borderRadius: 18,
+          border: `2px solid ${BSM_ACCENT}66`,
+          background: `linear-gradient(165deg, ${t.surface} 0%, ${t.surfaceHover} 100%)`,
+          color: t.text,
+          boxShadow: `0 12px 36px ${BSM_ACCENT}22`,
+        }}
+      >
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, textAlign: "center" }}>
+          <BombSuitManAvatar size={72} />
+          <div>
+            <div
+              style={{
+                fontWeight: 900,
+                fontSize: 28,
+                background: BSM_TITLE_GRADIENT,
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+              }}
+            >
+              Bomb Suit Man
+            </div>
+            <div style={{ fontSize: 12, fontWeight: 800, color: BSM_ACCENT, marginTop: 6, letterSpacing: 0.4, textTransform: "uppercase" }}>
+              Flagship game
+            </div>
+            <div style={{ fontSize: 14, color: t.textMuted, marginTop: 10, lineHeight: 1.5, maxWidth: 420 }}>
+              Bomb suit operator on a robot — or a pink unicorn. Eat drones. Make poor life choices.
+            </div>
+            <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, opacity: 0.9 }}>
+              Game may or may not be inspired by an Army EOD senior leader.
+            </div>
+          </div>
+          <div
             style={{
-              display: "block",
-              textDecoration: "none",
-              padding: 18,
-              borderRadius: 14,
-              border: `2px solid ${game.accent}44`,
-              background: t.surface,
-              color: t.text,
+              marginTop: 4,
+              borderRadius: 12,
+              padding: "12px 22px",
+              background: BSM_TITLE_GRADIENT,
+              color: "#111",
+              fontWeight: 900,
+              fontSize: 15,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-              {game.title === "Bomb Suit Man" ? (
-                <BombSuitManAvatar size={44} />
-              ) : (
-                <span style={{ fontSize: 32 }}>{game.emoji}</span>
-              )}
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 18, color: game.accent }}>{game.title}</div>
-                <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>{game.subtitle}</div>
-                {"footnote" in game && game.footnote ? (
-                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4, opacity: 0.9 }}>
-                    {game.footnote}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          </a>
-        ))}
-      </div>
+            Play now
+          </div>
+        </div>
+      </a>
     </div>
   );
 }

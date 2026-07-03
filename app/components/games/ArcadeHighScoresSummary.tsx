@@ -12,22 +12,10 @@ export type ArcadeHighScoreRow = {
 };
 
 export function buildArcadeHighScoreRows(input: {
-  renderSafe: Record<string, number | null>;
-  renderSafeLevelTitles: Record<string, string>;
   rainbowCowboy: Record<string, RainbowCowboyPersonalBest | null>;
   rainbowCowboyLevelTitles: Record<string, string>;
 }): ArcadeHighScoreRow[] {
   const rows: ArcadeHighScoreRow[] = [];
-
-  for (const [levelId, best] of Object.entries(input.renderSafe)) {
-    if (best == null) continue;
-    rows.push({
-      gameLabel: "Render Safe",
-      levelLabel: input.renderSafeLevelTitles[levelId] ?? levelId,
-      scoreLabel: String(best),
-      accent: "#f97316",
-    });
-  }
 
   for (const [levelId, best] of Object.entries(input.rainbowCowboy)) {
     if (!best) continue;
@@ -41,7 +29,7 @@ export function buildArcadeHighScoreRows(input: {
     });
   }
 
-  return rows.sort((a, b) => a.gameLabel.localeCompare(b.gameLabel) || a.levelLabel.localeCompare(b.levelLabel));
+  return rows.sort((a, b) => a.levelLabel.localeCompare(b.levelLabel));
 }
 
 export function ArcadeHighScoresSummary({ rows }: { rows: ArcadeHighScoreRow[] }) {
