@@ -1708,6 +1708,10 @@ body.game-playing-active .games-shell-nav {
   pointer-events: auto;
 }
 
+.rainbow-cowboy-game-shell .rc-top-actions.rc-top-actions--focus {
+  gap: 6px;
+}
+
 .rainbow-cowboy-game-shell .rc-top-action-button {
   min-height: 32px;
   padding: 4px 10px !important;

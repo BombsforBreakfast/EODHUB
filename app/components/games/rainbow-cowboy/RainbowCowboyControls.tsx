@@ -266,7 +266,7 @@ function ArcadeActionButton({
   label: string;
   sub?: string;
   size: number;
-  tone: "jump" | "attack" | "special" | "gun" | "swap";
+  tone: "jump" | "attack" | "special" | "gun";
   disabled?: boolean;
   unavailable?: boolean;
   cooldownPct?: number;
@@ -304,12 +304,6 @@ function ArcadeActionButton({
       fill: "rgba(20, 90, 120, 0.5)",
       glow: "rgba(100, 220, 255, 0.35)",
       pressed: "rgba(40, 130, 170, 0.72)",
-    },
-    swap: {
-      border: "rgba(180, 190, 210, 0.72)",
-      fill: "rgba(58, 64, 78, 0.56)",
-      glow: "rgba(180, 200, 255, 0.28)",
-      pressed: "rgba(88, 96, 112, 0.78)",
     },
     unavailable: {
       border: "rgba(110, 115, 125, 0.45)",
@@ -428,7 +422,7 @@ function MobileActionTriangle({
   opacity: number;
   onActivity: () => void;
 }) {
-  const { swimMode, weaponEnabled, weaponSwapEnabled, specialLabel } = profile;
+  const { swimMode, weaponEnabled, specialLabel } = profile;
   const specialShort = specialLabel.split(" ")[0] ?? "Special";
   const specialSub =
     specialCharges > 0 ? `${specialShort} ×${specialCharges}` : "EMPTY";
@@ -511,21 +505,6 @@ function MobileActionTriangle({
         />
       </div>
 
-      {weaponSwapEnabled && (
-        <div className="rc-action-slot rc-action-slot--swap">
-          <ArcadeActionButton
-            label="SWAP"
-            sub="WEAP"
-            size={metrics.swap}
-            tone="swap"
-            disabled={disabled}
-            prefs={prefs}
-            opacity={1}
-            onActivity={onActivity}
-            onPress={actions.pressWeaponSwap}
-          />
-        </div>
-      )}
     </div>
   );
 }

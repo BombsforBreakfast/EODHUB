@@ -83,7 +83,7 @@ const DESKTOP_ROWS = (attackLabel: string, specialLabel: string, levelId?: strin
       action: "Fire gun — pistol from the start; upgrades on the field",
     });
     if (levelId === "level-4") {
-      rows.push({ keys: "Q / SWAP", action: "Cycle pistol, MG, and bazooka" });
+      rows.push({ keys: "Q", action: "Cycle pistol, MG, and bazooka" });
     }
   }
   return rows;
@@ -95,8 +95,6 @@ const MOBILE_LANDSCAPE_ROWS = (attackLabel: string, specialLabel: string, levelI
       { keys: "Joystick", action: "Swim all directions" },
       { keys: "UP", action: "Swim upward" },
       { keys: "SPEAR / ATK", action: "Harpoon (unlimited)" },
-      { keys: "Q / swap", action: "Sonic blast when picked up" },
-      { keys: "SWAP", action: "Swap harpoon / sonic blast" },
       { keys: "SPEC", action: `${specialLabel} (charge count)` },
     ];
   }
@@ -109,9 +107,6 @@ const MOBILE_LANDSCAPE_ROWS = (attackLabel: string, specialLabel: string, levelI
   ] as { keys: string; action: string }[];
   if (levelUsesGunHoldById(levelId)) {
     rows.push({ keys: "GUN", action: "Hold to fire" });
-    if (levelId === "level-4") {
-      rows.push({ keys: "SWAP", action: "Cycle pistol / MG / bazooka" });
-    }
   }
   return rows;
 };
@@ -121,8 +116,6 @@ const MOBILE_COMPACT_ROWS = (levelId?: string) => {
     return [
       { keys: "Joystick", action: "Swim · no jump" },
       { keys: "UP / SPEAR", action: "Ascend · fire harpoon" },
-      { keys: "Q", action: "Swap sonic blast" },
-      { keys: "SWAP", action: "Swap sonic blast" },
       { keys: "SPEC", action: "Rainbow blast" },
     ];
   }
@@ -132,7 +125,6 @@ const MOBILE_COMPACT_ROWS = (levelId?: string) => {
     { keys: "SPEC", action: "Special blast" },
   ] as { keys: string; action: string }[];
   if (levelUsesGunHoldById(levelId)) rows.push({ keys: "GUN", action: "Hold to fire" });
-  if (levelId === "level-4") rows.push({ keys: "SWAP", action: "Cycle weapons" });
   return rows;
 };
 
@@ -173,7 +165,7 @@ const LEVEL_3_HAZARDS = [
 
 const LEVEL_4_HAZARDS = [
   "Infinite pistol — GUN / T to fire; hold on mobile.",
-  "Supply crates — MG, bazooka, hearts, rainbow; press Q or SWAP to cycle weapons.",
+  "Supply crates — MG, bazooka, hearts, rainbow; press Q on keyboard to cycle weapons.",
   "Hive hatch — full damage when open; moving planks to ride.",
   "Boss drones and falling debris — dodge or shoot down.",
 ] as const;
@@ -313,10 +305,10 @@ export function RainbowCowboyInstructionsModal({
             >
               <strong style={{ color: "#80f0ff" }}>GUN:</strong> Hold the compact GUN button or press{" "}
               <strong>T</strong> on keyboard.
-              {controlProfile.weaponSwapEnabled ? (
+              {levelId === "level-4" ? (
                 <>
                   {" "}
-                  <strong>SWAP</strong> (or <strong>Q</strong>) cycles weapons.
+                  <strong>Q</strong> cycles weapons on keyboard.
                 </>
               ) : null}
             </div>

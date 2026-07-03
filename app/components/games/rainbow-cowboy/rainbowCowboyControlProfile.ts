@@ -6,7 +6,6 @@ export type RainbowCowboyWeaponFireMode = "none" | "hold" | "tap";
 export type RainbowCowboyControlProfile = {
   swimMode: boolean;
   weaponEnabled: boolean;
-  weaponSwapEnabled: boolean;
   weaponFireMode: RainbowCowboyWeaponFireMode;
   attackLabel: string;
   specialLabel: string;
@@ -34,10 +33,6 @@ export function levelHasWeaponControls(config: Pick<LevelConfig, "level" | "play
   );
 }
 
-export function levelHasWeaponSwap(config: Pick<LevelConfig, "level" | "playMode">): boolean {
-  return config.level.id === "level-4" || isSwimPlayMode(config.playMode);
-}
-
 export function levelUsesGunHold(config: Pick<LevelConfig, "level" | "playMode">): boolean {
   return levelHasWeaponControls(config) && !isSwimPlayMode(config.playMode);
 }
@@ -52,7 +47,6 @@ export function getRainbowCowboyControlProfile(
   return {
     swimMode,
     weaponEnabled,
-    weaponSwapEnabled: levelHasWeaponSwap(config),
     weaponFireMode: !weaponEnabled ? "none" : swimMode ? "tap" : "hold",
     attackLabel: labels.attack,
     specialLabel: labels.special,
@@ -70,7 +64,6 @@ export function getRainbowCowboyControlProfileByLevelId(
   return {
     swimMode,
     weaponEnabled,
-    weaponSwapEnabled: levelId === "level-4" || swimMode,
     weaponFireMode: !weaponEnabled ? "none" : swimMode ? "tap" : "hold",
     attackLabel: labels.attack,
     specialLabel: labels.special,
