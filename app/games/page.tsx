@@ -60,7 +60,7 @@ function GamesHubContent() {
         <div style={{ fontSize: 40, marginBottom: 8 }}>🕹️</div>
         <h1 style={{ margin: "0 0 6px", fontSize: 28, fontWeight: 800 }}>EOD-HUB Arcade</h1>
         <p style={{ margin: 0, color: t.textMuted, fontSize: 14 }}>
-          Fictional community games — not real EOD training. You get 10 challenge coins each day; each play costs 1. Beat the global high score on a level to earn one back.
+          You get 10 challenge coins each day; each play costs 1. Beat the global high score on a level to earn one back.
         </p>
       </div>
 
@@ -99,7 +99,7 @@ function GamesHubContent() {
               Bomb suit operator on a robot — or a pink unicorn. Eat drones. Make poor life choices.
             </div>
             <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, opacity: 0.9 }}>
-              Game may or may not be inspired by an Army EOD senior leader.
+              Unicorn option inspired by senior Army EOD leader.
             </div>
           </div>
           <div
