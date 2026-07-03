@@ -10,6 +10,7 @@ import { formatRainbowCowboyDuration } from "./rainbowCowboyFormat";
 import {
   getLevelLockMessage,
   isLevelUnlocked,
+  isPostHiveLevel,
   isPlayableLevelMeta,
   type RainbowCowboyProgressMap,
 } from "./rainbowCowboyProgression";
@@ -23,6 +24,8 @@ interface Props {
   personalBests: Record<string, RainbowCowboyPersonalBest | null>;
   progress: RainbowCowboyProgressMap;
   refreshKey?: number;
+  /** Staff admin test mode — skip campaign progression locks. */
+  bypassProgression?: boolean;
   onSelectLevel: (levelId: string) => void;
   /** Standalone BSM app: hide leaderboard previews (separate Supabase). Default true. */
   showLeaderboards?: boolean;
@@ -38,6 +41,7 @@ export function RainbowCowboyLevelSelect({
   refreshKey = 0,
   onSelectLevel,
   showLeaderboards = true,
+  bypassProgression = false,
   isAccessBlocked,
   getAccessBlockMessage,
 }: Props) {
@@ -79,20 +83,24 @@ export function RainbowCowboyLevelSelect({
   }, [levelKey, leaderboardLevels.length, refreshKey, showLeaderboards]);
 
   const leaderboardLoading = loadedKey !== levelKey;
+  const progressionOptions = bypassProgression ? { bypassProgression: true as const } : undefined;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {levels.map((level) => {
+        const postHiveComingSoon = !bypassProgression && isPostHiveLevel(level.id);
         const isBranchBase =
           level.campaignBase === "camp_poseidon" ||
           level.campaignBase === "camp_poseidon_trench" ||
           level.campaignBase === "camp_gator_gulch" ||
           level.campaignBase === "camp_poseidon_abyss";
-        const branchAwaitingHive = isBranchBase && !isFobThunderSecured(progress);
-        const comingSoon = level.locked || level.status === "coming_soon";
-        const progressionLocked = !comingSoon && !isLevelUnlocked(level.id, progress, levels);
+        const branchAwaitingHive =
+          !postHiveComingSoon && !bypassProgression && isBranchBase && !isFobThunderSecured(progress);
+        const comingSoon = postHiveComingSoon || level.locked || level.status === "coming_soon";
+        const progressionLocked =
+          !bypassProgression && !comingSoon && !isLevelUnlocked(level.id, progress, levels, progressionOptions);
         const accessBlocked = isAccessBlocked?.(level.id) ?? false;
-        const locked = comingSoon ? true : progressionLocked || branchAwaitingHive || accessBlocked;
+        const locked = comingSoon && !bypassProgression ? true : progressionLocked || branchAwaitingHive || accessBlocked;
         const best = personalBests[level.id];
         const lockMessage = accessBlocked
           ? (getAccessBlockMessage?.(level.id) ?? "Sign in to continue")
@@ -103,7 +111,7 @@ export function RainbowCowboyLevelSelect({
               : comingSoon && isBranchBase && isFobThunderSecured(progress)
                 ? "Unlocked · Coming Soon"
                 : null;
-        const showLeaderboard = showLeaderboards && isPlayableLevelMeta(level);
+        const showLeaderboard = showLeaderboards && isPlayableLevelMeta(level) && !comingSoon;
         const topEntry = entriesByLevel[level.id]?.[0] ?? null;
         const entryLoading = showLeaderboard && leaderboardLoading && entriesByLevel[level.id] == null;
 
@@ -121,6 +129,7 @@ export function RainbowCowboyLevelSelect({
             }}
             style={{
               width: "100%",
+              position: "relative",
               display: "flex",
               flexWrap: "wrap",
               alignItems: "stretch",
@@ -209,6 +218,28 @@ export function RainbowCowboyLevelSelect({
                   accentColor={LEADERBOARD_ACCENT}
                   emptyLabel="No scores yet — be first!"
                 />
+              </div>
+            )}
+
+            {postHiveComingSoon && (
+              <div
+                aria-hidden
+                style={{
+                  position: "absolute",
+                  right: 12,
+                  top: 12,
+                  borderRadius: 999,
+                  padding: "6px 10px",
+                  background: "rgba(0,0,0,0.65)",
+                  border: `1px solid ${BSM_ACCENT}`,
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 900,
+                  letterSpacing: "0.03em",
+                  textTransform: "uppercase",
+                }}
+              >
+                Coming Soon
               </div>
             )}
           </div>

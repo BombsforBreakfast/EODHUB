@@ -36,6 +36,8 @@ export function useArcadeSession() {
     },
   });
   const hasUnlimitedArcadeCoins = profileQuery.data?.is_pure_admin === true;
+  const canBypassArcadeProgression =
+    profileQuery.data?.is_pure_admin === true || profileQuery.data?.is_admin === true;
 
   const refreshWallet = useCallback(async (bypassCache = false) => {
     if (!userId) {
@@ -111,5 +113,6 @@ export function useArcadeSession() {
     setCoinError,
     refreshWallet,
     payToPlay,
+    canBypassArcadeProgression,
   };
 }

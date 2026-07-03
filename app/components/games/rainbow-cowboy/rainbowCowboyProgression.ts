@@ -11,9 +11,20 @@ export type LevelProgress = Partial<Record<RainbowCowboyDifficulty, true>>;
 export type RainbowCowboyProgressMap = Record<string, LevelProgress>;
 
 const DIFFICULTY_CHAIN: RainbowCowboyDifficulty[] = ["easy", "novice", "hard"];
+const POST_HIVE_LEVEL_IDS = new Set(["level-5", "level-6", "level-7", "level-8"]);
+
+export type RainbowCowboyProgressionOptions = {
+  /** Staff admins can jump to any level/difficulty for game testing. */
+  bypassProgression?: boolean;
+};
 
 export function isPlayableLevelMeta(level: RainbowCowboyLevel): boolean {
   return !level.locked && level.status !== "coming_soon";
+}
+
+/** Levels released in future drops after The Hive launch. */
+export function isPostHiveLevel(levelId: string): boolean {
+  return POST_HIVE_LEVEL_IDS.has(levelId);
 }
 
 export function getPlayableLevels(levels: RainbowCowboyLevel[]): RainbowCowboyLevel[] {
@@ -39,9 +50,18 @@ export function isLevelUnlocked(
   levelId: string,
   progress: RainbowCowboyProgressMap,
   levels: RainbowCowboyLevel[],
+  options?: RainbowCowboyProgressionOptions,
 ): boolean {
+  if (options?.bypassProgression) {
+    return levels.some((l) => l.id === levelId);
+  }
+
   const level = levels.find((l) => l.id === levelId);
   if (!level || !isPlayableLevelMeta(level)) return false;
+
+  if (isPostHiveLevel(levelId)) {
+    return false;
+  }
 
   if (levelId === HIVE_LEVEL_ID) {
     return isHiveLevelUnlocked(progress);
@@ -78,7 +98,12 @@ export function isDifficultyUnlocked(
   difficulty: RainbowCowboyDifficulty,
   progress: RainbowCowboyProgressMap,
   levels: RainbowCowboyLevel[],
+  options?: RainbowCowboyProgressionOptions,
 ): boolean {
+  if (options?.bypassProgression) {
+    return isLevelUnlocked(levelId, progress, levels, options);
+  }
+
   if (!isLevelUnlocked(levelId, progress, levels)) return false;
   if (difficulty === "easy") return true;
   if (difficulty === "novice") return progress[levelId]?.easy === true;
@@ -89,6 +114,10 @@ export function getLevelLockMessage(
   levelId: string,
   levels: RainbowCowboyLevel[],
 ): string | null {
+  if (isPostHiveLevel(levelId)) {
+    return "Coming soon";
+  }
+
   if (levelId === HIVE_LEVEL_ID) {
     return getHiveLockMessage();
   }
@@ -122,10 +151,11 @@ export function getHighestUnlockedDifficulty(
   levelId: string,
   progress: RainbowCowboyProgressMap,
   levels: RainbowCowboyLevel[],
+  options?: RainbowCowboyProgressionOptions,
 ): RainbowCowboyDifficulty {
   for (let i = DIFFICULTY_CHAIN.length - 1; i >= 0; i--) {
     const difficulty = DIFFICULTY_CHAIN[i];
-    if (isDifficultyUnlocked(levelId, difficulty, progress, levels)) return difficulty;
+    if (isDifficultyUnlocked(levelId, difficulty, progress, levels, options)) return difficulty;
   }
   return "easy";
 }

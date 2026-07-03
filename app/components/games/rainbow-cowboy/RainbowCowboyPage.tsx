@@ -53,7 +53,13 @@ export function RainbowCowboyPage() {
     setCoinError,
     refreshWallet,
     payToPlay,
+    canBypassArcadeProgression,
   } = useArcadeSession();
+
+  const progressionOptions = useMemo(
+    () => (canBypassArcadeProgression ? { bypassProgression: true as const } : undefined),
+    [canBypassArcadeProgression],
+  );
 
   const levels = useMemo(() => getRainbowCowboyLevels(), []);
   const [screen, setScreen] = useState<Screen>("select");
@@ -111,18 +117,18 @@ export function RainbowCowboyPage() {
 
   const handleSelectLevel = useCallback(
     (levelId: string) => {
-      if (!isLevelUnlocked(levelId, progress, levels)) return;
+      if (!isLevelUnlocked(levelId, progress, levels, progressionOptions)) return;
       setSelectedLevelId(levelId);
-      setDifficulty(getHighestUnlockedDifficulty(levelId, progress, levels));
+      setDifficulty(getHighestUnlockedDifficulty(levelId, progress, levels, progressionOptions));
       setScreen("start");
     },
-    [levels, progress],
+    [levels, progress, progressionOptions],
   );
 
   const handleStart = useCallback(async () => {
-    if (!isLevelUnlocked(selectedLevelId, progress, levels)) return;
-    if (!isDifficultyUnlocked(selectedLevelId, difficulty, progress, levels)) {
-      setDifficulty(getHighestUnlockedDifficulty(selectedLevelId, progress, levels));
+    if (!isLevelUnlocked(selectedLevelId, progress, levels, progressionOptions)) return;
+    if (!isDifficultyUnlocked(selectedLevelId, difficulty, progress, levels, progressionOptions)) {
+      setDifficulty(getHighestUnlockedDifficulty(selectedLevelId, progress, levels, progressionOptions));
       return;
     }
     const paid = await payToPlay("rainbow_cowboy", selectedLevelId);
@@ -132,7 +138,7 @@ export function RainbowCowboyPage() {
     remoteCompletionWritesThisRunRef.current = 0;
     setGameKey((k) => k + 1);
     setScreen("playing");
-  }, [difficulty, levels, payToPlay, progress, selectedLevelId]);
+  }, [difficulty, levels, payToPlay, progress, progressionOptions, selectedLevelId]);
 
   const handleComplete = useCallback(async (result: RainbowCowboyRunResult) => {
     setRunResult(result);
@@ -184,19 +190,19 @@ export function RainbowCowboyPage() {
   const handleNextLevel = useCallback(() => {
     if (!runResult) return;
     const next = getNextPlayableLevel(runResult.levelId);
-    if (!next || !isLevelUnlocked(next.id, progress, levels)) return;
+    if (!next || !isLevelUnlocked(next.id, progress, levels, progressionOptions)) return;
     setSelectedLevelId(next.id);
     setDifficulty("easy");
     setRunResult(null);
     setPersonalBestMessage("");
     setShowInstructions(true);
     setScreen("start");
-  }, [levels, progress, runResult]);
+  }, [levels, progress, progressionOptions, runResult]);
 
   const nextLevelCandidate =
     screen === "complete" && runResult ? getNextPlayableLevel(runResult.levelId) : undefined;
   const nextLevel =
-    nextLevelCandidate && isLevelUnlocked(nextLevelCandidate.id, progress, levels)
+    nextLevelCandidate && isLevelUnlocked(nextLevelCandidate.id, progress, levels, progressionOptions)
       ? nextLevelCandidate
       : undefined;
 
@@ -247,11 +253,27 @@ export function RainbowCowboyPage() {
       {screen === "select" && (
         <>
           <h2 style={{ fontSize: 16, marginBottom: 12, color: t.text }}>Select Level</h2>
+          {canBypassArcadeProgression ? (
+            <div
+              style={{
+                marginBottom: 12,
+                padding: "10px 12px",
+                borderRadius: 10,
+                border: `1px dashed ${t.border}`,
+                color: t.textMuted,
+                fontSize: 12,
+                lineHeight: 1.45,
+              }}
+            >
+              Admin test mode — all levels and difficulties are unlocked for you. Player progression rules are unchanged for everyone else.
+            </div>
+          ) : null}
           <RainbowCowboyLevelSelect
             levels={levels}
             personalBests={personalBests}
             progress={progress}
             refreshKey={leaderboardRefreshKey}
+            bypassProgression={canBypassArcadeProgression}
             onSelectLevel={handleSelectLevel}
           />
         </>
@@ -265,6 +287,7 @@ export function RainbowCowboyPage() {
           difficulty={difficulty}
           progress={progress}
           levels={levels}
+          bypassProgression={canBypassArcadeProgression}
           onDifficultyChange={setDifficulty}
           onRideChange={setSelectedRide}
           onStart={handleStart}

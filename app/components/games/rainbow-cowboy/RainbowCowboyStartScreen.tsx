@@ -35,6 +35,8 @@ interface Props {
   difficulty: RainbowCowboyDifficulty;
   progress: RainbowCowboyProgressMap;
   levels: RainbowCowboyLevel[];
+  /** Staff admin test mode — all difficulties selectable. */
+  bypassProgression?: boolean;
   onDifficultyChange: (d: RainbowCowboyDifficulty) => void;
   onRideChange: (ride: UnicornHeroRideType) => void;
   onStart: () => void;
@@ -55,6 +57,7 @@ export function RainbowCowboyStartScreen({
   difficulty,
   progress,
   levels,
+  bypassProgression = false,
   onDifficultyChange,
   onRideChange,
   onStart,
@@ -63,7 +66,8 @@ export function RainbowCowboyStartScreen({
   const { t } = useTheme();
   const [audioPrefs, setAudioPrefs] = useState<UnicornHeroAudioPrefs>(() => loadUnicornHeroAudioPrefs());
 
-  const canStart = isDifficultyUnlocked(level.id, difficulty, progress, levels);
+  const progressionOptions = bypassProgression ? { bypassProgression: true as const } : undefined;
+  const canStart = isDifficultyUnlocked(level.id, difficulty, progress, levels, progressionOptions);
 
   const handleRideChange = (ride: UnicornHeroRideType) => {
     onRideChange(ride);
@@ -172,7 +176,7 @@ export function RainbowCowboyStartScreen({
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {DIFFICULTY_OPTIONS.map((opt) => {
             const active = difficulty === opt.id;
-            const unlocked = isDifficultyUnlocked(level.id, opt.id, progress, levels);
+            const unlocked = isDifficultyUnlocked(level.id, opt.id, progress, levels, progressionOptions);
             const lockMessage = unlocked ? null : getDifficultyLockMessage(opt.id);
             return (
               <button
