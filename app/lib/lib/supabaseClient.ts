@@ -12,11 +12,11 @@ const isLocalDevHost =
   typeof window !== "undefined" &&
   (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
 
-const localAuthLockBypass = async (
+const localAuthLockBypass = async <R>(
   _name: string,
   _acquireTimeout: number,
-  fn: () => Promise<unknown>,
-) => fn();
+  fn: () => Promise<R>,
+): Promise<R> => fn();
 
 // Use @supabase/ssr's createBrowserClient (not supabase-js's plain createClient) so
 // auth state is written to cookies in addition to localStorage. The proxy.ts
@@ -28,7 +28,6 @@ export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey, {
     // Local-only workaround: some dev browser sessions can wedge the Navigator
     // auth lock and repeatedly time out after OAuth callback.
     lock: isLocalDevHost ? localAuthLockBypass : undefined,
-    lockAcquireTimeout: AUTH_LOCK_ACQUIRE_TIMEOUT_MS,
   },
 });
 
