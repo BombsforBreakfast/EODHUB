@@ -4,18 +4,20 @@ import { createClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type ResolveAction = "delete_job" | "dismiss";
+type ResolveAction = "delete_job" | "dismiss" | "mark_under_review";
 
-const ALLOWED_ACTIONS: ResolveAction[] = ["delete_job", "dismiss"];
+const ALLOWED_ACTIONS: ResolveAction[] = ["delete_job", "dismiss", "mark_under_review"];
 
 /**
  * POST /api/admin/jobs/stale-flags/resolve
  *
- * Body: { jobId: string; action: 'delete_job' | 'dismiss'; notes?: string }
+ * Body: { jobId: string; action: 'delete_job' | 'dismiss' | 'mark_under_review'; notes?: string }
  *
  *  - delete_job: permanently deletes the job row (and cascaded stale flags).
  *  - dismiss: closes all open flags for that job as 'dismissed' but leaves
  *    the listing live (e.g. admin clicked the link and it works).
+ *  - mark_under_review: keeps the job live, sets applications_under_review,
+ *    and closes open stale flags as dismissed.
  */
 import { deleteJobPermanently } from "@/app/lib/server/deleteJobPermanently";
 export async function POST(req: NextRequest) {
@@ -88,6 +90,18 @@ export async function POST(req: NextRequest) {
 
   const newFlagStatus = action === "delete_job" ? "job_deleted" : "dismissed";
   const now = new Date().toISOString();
+
+  if (action === "mark_under_review") {
+    const { error: jobErr } = await adminClient
+      .from("jobs")
+      .update({ applications_under_review: true })
+      .eq("id", jobId)
+      .neq("is_rejected", true);
+
+    if (jobErr) {
+      return NextResponse.json({ error: jobErr.message }, { status: 500 });
+    }
+  }
 
   if (action === "delete_job") {
     const { count: openFlagCount } = await adminClient

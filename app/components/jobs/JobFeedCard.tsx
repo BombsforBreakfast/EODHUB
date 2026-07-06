@@ -6,6 +6,8 @@ import { httpsAssetUrl, type JobRow } from "../master/masterShared";
 import JobCardActions from "./JobCardActions";
 import JobImage, { JobCardClickableText } from "./JobImage";
 import JobAdminDeleteButton from "./JobAdminDeleteButton";
+import JobAdminApplicationsUnderReviewButton from "./JobAdminApplicationsUnderReviewButton";
+import JobApplicationsUnderReviewBadge from "./JobApplicationsUnderReviewBadge";
 import JobStaleReportControl from "./JobStaleReportControl";
 import type { JobModalData } from "./JobDetailsModal";
 
@@ -19,6 +21,7 @@ type Props = {
   posterName?: string | null;
   canAdminDelete?: boolean;
   onJobDeleted?: (jobId: string) => void;
+  onApplicationsUnderReviewChanged?: (jobId: string, underReview: boolean) => void;
 };
 
 export default function JobFeedCard({
@@ -31,6 +34,7 @@ export default function JobFeedCard({
   posterName,
   canAdminDelete = false,
   onJobDeleted,
+  onApplicationsUnderReviewChanged,
 }: Props) {
   const { t } = useTheme();
   const modalJob = job as JobModalData;
@@ -45,6 +49,7 @@ export default function JobFeedCard({
         background: t.surface,
       }}
     >
+      {job.applications_under_review && <JobApplicationsUnderReviewBadge />}
       <JobImage
         src={httpsAssetUrl(job.og_image)}
         alt={job.title || job.og_title || "Job preview"}
@@ -120,11 +125,19 @@ export default function JobFeedCard({
           }}
         >
           {canAdminDelete && (
-            <JobAdminDeleteButton
-              jobId={job.id}
-              size="compact"
-              onDeleted={() => onJobDeleted?.(job.id)}
-            />
+            <>
+              <JobAdminApplicationsUnderReviewButton
+                jobId={job.id}
+                underReview={job.applications_under_review === true}
+                size="compact"
+                onChanged={(underReview) => onApplicationsUnderReviewChanged?.(job.id, underReview)}
+              />
+              <JobAdminDeleteButton
+                jobId={job.id}
+                size="compact"
+                onDeleted={() => onJobDeleted?.(job.id)}
+              />
+            </>
           )}
           <JobStaleReportControl jobId={job.id} variant="compact" triggerLabel="Report" />
         </div>

@@ -235,6 +235,26 @@ export default function JobsPage() {
     [queryClient, listingCutoff, detailsJob],
   );
 
+  const handleApplicationsUnderReviewChanged = useCallback(
+    (jobId: string, underReview: boolean) => {
+      queryClient.setQueryData<JobListItem[]>(
+        queryKeys.jobsList(500, listingCutoff),
+        (old) =>
+          old?.map((j) =>
+            j.id === jobId ? { ...j, applications_under_review: underReview } : j,
+          ) ?? [],
+      );
+      setDetailsJob((current) =>
+        current?.id === jobId
+          ? { ...current, applications_under_review: underReview }
+          : current,
+      );
+      setJobNotice(underReview ? "Marked applications under review." : "Cleared review status.");
+      window.setTimeout(() => setJobNotice(null), 4500);
+    },
+    [queryClient, listingCutoff],
+  );
+
   useEffect(() => {
     let mounted = true;
 
@@ -574,6 +594,7 @@ export default function JobsPage() {
                 onShare={openShareComposer}
                 canAdminDelete={isAdmin}
                 onJobDeleted={handleJobDeleted}
+                onApplicationsUnderReviewChanged={handleApplicationsUnderReviewChanged}
                 formatPay={formatPay}
                 formatSource={formatSource}
               />
@@ -596,6 +617,7 @@ export default function JobsPage() {
         onShare={openShareComposer}
         canAdminDelete={isAdmin}
         onJobDeleted={handleJobDeleted}
+        onApplicationsUnderReviewChanged={handleApplicationsUnderReviewChanged}
       />
     </div>
   );

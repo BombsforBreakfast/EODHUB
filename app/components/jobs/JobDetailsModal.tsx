@@ -6,6 +6,8 @@ import { X } from "lucide-react";
 import { useTheme } from "../../lib/ThemeContext";
 import JobImage from "./JobImage";
 import JobAdminDeleteButton from "./JobAdminDeleteButton";
+import JobAdminApplicationsUnderReviewButton from "./JobAdminApplicationsUnderReviewButton";
+import JobApplicationsUnderReviewBadge from "./JobApplicationsUnderReviewBadge";
 import JobStaleReportControl from "./JobStaleReportControl";
 
 export type JobModalData = {
@@ -20,6 +22,7 @@ export type JobModalData = {
   pay_max: number | null;
   clearance: string | null;
   source_type: string | null;
+  applications_under_review?: boolean | null;
   created_at?: string | null;
   og_title?: string | null;
   og_description?: string | null;
@@ -40,6 +43,7 @@ type Props = {
   onShare?: (job: JobModalData) => void;
   canAdminDelete?: boolean;
   onJobDeleted?: (jobId: string) => void;
+  onApplicationsUnderReviewChanged?: (jobId: string, underReview: boolean) => void;
 };
 
 function formatExternalUrl(url: string | null | undefined): string | null {
@@ -61,6 +65,7 @@ export default function JobDetailsModal({
   onShare,
   canAdminDelete = false,
   onJobDeleted,
+  onApplicationsUnderReviewChanged,
 }: Props) {
   const { t } = useTheme();
 
@@ -161,6 +166,11 @@ export default function JobDetailsModal({
             {job.source_type && (
               <div style={{ marginTop: 4, fontSize: 12, color: t.textFaint }}>Source: {job.source_type}</div>
             )}
+            {job.applications_under_review && (
+              <div style={{ marginTop: 10 }}>
+                <JobApplicationsUnderReviewBadge variant="pill" />
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -256,10 +266,17 @@ export default function JobDetailsModal({
           )}
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
             {canAdminDelete && (
-              <JobAdminDeleteButton
-                jobId={job.id}
-                onDeleted={() => onJobDeleted?.(job.id)}
-              />
+              <>
+                <JobAdminApplicationsUnderReviewButton
+                  jobId={job.id}
+                  underReview={job.applications_under_review === true}
+                  onChanged={(underReview) => onApplicationsUnderReviewChanged?.(job.id, underReview)}
+                />
+                <JobAdminDeleteButton
+                  jobId={job.id}
+                  onDeleted={() => onJobDeleted?.(job.id)}
+                />
+              </>
             )}
             <button
               type="button"

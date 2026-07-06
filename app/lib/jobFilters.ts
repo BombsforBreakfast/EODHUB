@@ -11,6 +11,7 @@ export type JobListItem = {
   apply_url: string | null;
   company_name: string | null;
   source_type: string | null;
+  applications_under_review?: boolean | null;
   user_id?: string | null;
   anonymous?: boolean | null;
   og_title: string | null;

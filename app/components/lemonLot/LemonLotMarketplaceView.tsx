@@ -19,6 +19,7 @@ import {
 } from "@/app/lib/lemonLot";
 import { useViewerGate } from "@/app/hooks/useRequireFullAccess";
 import { postNotifyJson } from "@/app/lib/postNotifyClient";
+import FeedImageGalleryModal from "@/app/components/FeedImageGalleryModal";
 
 const LemonLotComposer = dynamic(() => import("@/app/components/lemonLot/LemonLotComposer"), {
   ssr: false,
@@ -636,121 +637,32 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
         </div>
       )}
 
-      {galleryLightbox ? (
-        <div
-          role="presentation"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 13000,
-            background: "rgba(0,0,0,0.9)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 48,
-            boxSizing: "border-box",
-          }}
-          onClick={() => setGalleryLightbox(null)}
-        >
-          <button
-            type="button"
-            aria-label="Close gallery"
-            onClick={(e) => {
-              e.stopPropagation();
-              setGalleryLightbox(null);
-            }}
-            style={{
-              position: "fixed",
-              top: 16,
-              right: 16,
-              width: 40,
-              height: 40,
-              borderRadius: 10,
-              border: "none",
-              background: "rgba(255,255,255,0.12)",
-              color: "#fff",
-              fontSize: 22,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            ×
-          </button>
-          {galleryLightbox.urls.length > 1 ? (
-            <button
-              type="button"
-              aria-label="Previous photo"
-              onClick={(e) => {
-                e.stopPropagation();
-                setGalleryLightbox((lb) =>
-                  lb
-                    ? {
-                        urls: lb.urls,
-                        index: (lb.index - 1 + lb.urls.length) % lb.urls.length,
-                      }
-                    : null,
-                );
-              }}
-              style={{
-                position: "fixed",
-                left: 12,
-                top: "50%",
-                transform: "translateY(-50%)",
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                border: "none",
-                background: "rgba(255,255,255,0.15)",
-                color: "#fff",
-                fontSize: 22,
-                cursor: "pointer",
-              }}
-            >
-              ‹
-            </button>
-          ) : null}
-          {galleryLightbox.urls.length > 1 ? (
-            <button
-              type="button"
-              aria-label="Next photo"
-              onClick={(e) => {
-                e.stopPropagation();
-                setGalleryLightbox((lb) =>
-                  lb
-                    ? {
-                        urls: lb.urls,
-                        index: (lb.index + 1) % lb.urls.length,
-                      }
-                    : null,
-                );
-              }}
-              style={{
-                position: "fixed",
-                right: 12,
-                top: "50%",
-                transform: "translateY(-50%)",
-                width: 44,
-                height: 44,
-                borderRadius: "50%",
-                border: "none",
-                background: "rgba(255,255,255,0.15)",
-                color: "#fff",
-                fontSize: 22,
-                cursor: "pointer",
-              }}
-            >
-              ›
-            </button>
-          ) : null}
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={galleryLightbox.urls[galleryLightbox.index]}
-            alt=""
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: "100%", maxHeight: "85vh", objectFit: "contain", borderRadius: 4 }}
-          />
-        </div>
-      ) : null}
+      <FeedImageGalleryModal
+        open={!!galleryLightbox}
+        images={galleryLightbox?.urls ?? []}
+        index={galleryLightbox?.index ?? 0}
+        onClose={() => setGalleryLightbox(null)}
+        onPrev={() =>
+          setGalleryLightbox((lb) =>
+            lb
+              ? {
+                  urls: lb.urls,
+                  index: (lb.index - 1 + lb.urls.length) % lb.urls.length,
+                }
+              : null,
+          )
+        }
+        onNext={() =>
+          setGalleryLightbox((lb) =>
+            lb
+              ? {
+                  urls: lb.urls,
+                  index: (lb.index + 1) % lb.urls.length,
+                }
+              : null,
+          )
+        }
+      />
     </div>
   );
 }

@@ -38,6 +38,7 @@ export type StaleFlagJobGroup = {
     source_type: string | null;
     created_at: string | null;
     community_stale_count: number;
+    applications_under_review: boolean;
   };
   openCount: number;
   latestCreatedAt: string;
@@ -141,7 +142,7 @@ export async function GET(req: NextRequest) {
     adminClient
       .from("jobs")
       .select(
-        "id, title, company_name, location, category, apply_url, source_type, created_at, community_stale_count",
+        "id, title, company_name, location, category, apply_url, source_type, created_at, community_stale_count, applications_under_review",
       )
       .in("id", jobIds),
     adminClient
@@ -190,6 +191,7 @@ export async function GET(req: NextRequest) {
           source_type: job.source_type ?? null,
           created_at: job.created_at ?? null,
           community_stale_count: job.community_stale_count ?? 0,
+          applications_under_review: job.applications_under_review === true,
         },
         openCount: 0,
         latestCreatedAt: flag.created_at,

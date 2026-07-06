@@ -258,6 +258,7 @@ type Job = {
   company_name: string | null;
   is_approved: boolean | null;
   source_type: string | null;
+  applications_under_review?: boolean | null;
   user_id: string | null;
   og_title: string | null;
   og_description: string | null;
@@ -6543,6 +6544,15 @@ export default function HomePage() {
     if (jobDetailsModal?.id === jobId) setJobDetailsModal(null);
   }
 
+  function handleApplicationsUnderReviewChanged(jobId: string, underReview: boolean) {
+    setJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, applications_under_review: underReview } : j)),
+    );
+    setJobDetailsModal((current) =>
+      current?.id === jobId ? { ...current, applications_under_review: underReview } : current,
+    );
+  }
+
   const skeletonStyle: React.CSSProperties = {
     background: "linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%)",
     backgroundSize: "200% 100%",
@@ -9568,6 +9578,7 @@ export default function HomePage() {
                 posterName={jobSubmitters.get(job.user_id ?? "") ?? null}
                 canAdminDelete={isAdmin}
                 onJobDeleted={handleJobDeleted}
+                onApplicationsUnderReviewChanged={handleApplicationsUnderReviewChanged}
               />
             ))}
           </div>
@@ -10137,6 +10148,7 @@ export default function HomePage() {
           onToggleSave={(j) => toggleSaveJob(j.id)}
           canAdminDelete={isAdmin}
           onJobDeleted={handleJobDeleted}
+          onApplicationsUnderReviewChanged={handleApplicationsUnderReviewChanged}
         />
       )}
 

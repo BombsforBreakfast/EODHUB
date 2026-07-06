@@ -8,13 +8,29 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://placeholder
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "placeholder-anon-key";
 
 const AUTH_LOCK_ACQUIRE_TIMEOUT_MS = 30_000;
+const isLocalDevHost =
+  typeof window !== "undefined" &&
+  (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
+
+const localAuthLockBypass = async (
+  _name: string,
+  _acquireTimeout: number,
+  fn: () => Promise<unknown>,
+) => fn();
 
 // Use @supabase/ssr's createBrowserClient (not supabase-js's plain createClient) so
 // auth state is written to cookies in addition to localStorage. The proxy.ts
 // middleware reads cookies via createServerClient — using the plain client here
 // would leave cookies empty and cause the middleware to redirect every signed-in
 // request back to /login.
-export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    // Local-only workaround: some dev browser sessions can wedge the Navigator
+    // auth lock and repeatedly time out after OAuth callback.
+    lock: isLocalDevHost ? localAuthLockBypass : undefined,
+    lockAcquireTimeout: AUTH_LOCK_ACQUIRE_TIMEOUT_MS,
+  },
+});
 
 // Some current Supabase versions type/document lockAcquireTimeout but do not
 // always pass it through createClient initialization. Keep this defensive

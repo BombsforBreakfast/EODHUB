@@ -6,7 +6,9 @@ import type { JobListItem } from "../../lib/jobFilters";
 import JobCardActions from "./JobCardActions";
 import JobImage, { JobCardClickableText } from "./JobImage";
 import JobAdminDeleteButton from "./JobAdminDeleteButton";
+import JobAdminApplicationsUnderReviewButton from "./JobAdminApplicationsUnderReviewButton";
 import JobStaleReportControl from "./JobStaleReportControl";
+import JobApplicationsUnderReviewBadge from "./JobApplicationsUnderReviewBadge";
 import type { JobModalData } from "./JobDetailsModal";
 
 type Props = {
@@ -21,6 +23,7 @@ type Props = {
   onShare?: (job: JobModalData) => void;
   canAdminDelete?: boolean;
   onJobDeleted?: (jobId: string) => void;
+  onApplicationsUnderReviewChanged?: (jobId: string, underReview: boolean) => void;
   formatPay: (min: number | null, max: number | null) => string;
   formatSource: (sourceType: string | null) => string;
 };
@@ -37,6 +40,7 @@ export default function JobGridCard({
   onShare,
   canAdminDelete = false,
   onJobDeleted,
+  onApplicationsUnderReviewChanged,
   formatPay,
   formatSource,
 }: Props) {
@@ -47,6 +51,7 @@ export default function JobGridCard({
 
   return (
     <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden", background: t.surface, display: "flex", flexDirection: "column" }}>
+      {job.applications_under_review && <JobApplicationsUnderReviewBadge />}
       <JobImage
         src={job.og_image}
         alt={job.title || "Job preview"}
@@ -116,11 +121,19 @@ export default function JobGridCard({
           <span>Via {formatSource(job.source_type)}</span>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             {canAdminDelete && (
-              <JobAdminDeleteButton
-                jobId={job.id}
-                size="compact"
-                onDeleted={() => onJobDeleted?.(job.id)}
-              />
+              <>
+                <JobAdminApplicationsUnderReviewButton
+                  jobId={job.id}
+                  underReview={job.applications_under_review === true}
+                  size="compact"
+                  onChanged={(underReview) => onApplicationsUnderReviewChanged?.(job.id, underReview)}
+                />
+                <JobAdminDeleteButton
+                  jobId={job.id}
+                  size="compact"
+                  onDeleted={() => onJobDeleted?.(job.id)}
+                />
+              </>
             )}
             <JobStaleReportControl jobId={job.id} variant="compact" triggerLabel="Report" />
           </div>

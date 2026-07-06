@@ -791,6 +791,15 @@ export default function MasterLeftColumn({
     if (jobDetailsModal?.id === jobId) setJobDetailsModal(null);
   }
 
+  function handleApplicationsUnderReviewChanged(jobId: string, underReview: boolean) {
+    setJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, applications_under_review: underReview } : j)),
+    );
+    setJobDetailsModal((current) =>
+      current?.id === jobId ? { ...current, applications_under_review: underReview } : current,
+    );
+  }
+
   async function toggleSaveJob(jobId: string) {
     if (!userId) {
       window.location.href = "/login";
@@ -1567,6 +1576,7 @@ export default function MasterLeftColumn({
                 posterName={jobSubmitters.get(job.user_id ?? "") ?? null}
                 canAdminDelete={userIsAdmin}
                 onJobDeleted={handleJobDeleted}
+                onApplicationsUnderReviewChanged={handleApplicationsUnderReviewChanged}
               />
             ))}
         </div>
@@ -1602,6 +1612,7 @@ export default function MasterLeftColumn({
         onToggleSave={(j) => toggleSaveJob(j.id)}
         canAdminDelete={userIsAdmin}
         onJobDeleted={handleJobDeleted}
+        onApplicationsUnderReviewChanged={handleApplicationsUnderReviewChanged}
       />
 
       {eventInviteTarget && typeof document !== "undefined" && createPortal(

@@ -17,6 +17,7 @@ export type JobRow = {
   company_name: string | null;
   is_approved: boolean | null;
   source_type: string | null;
+  applications_under_review?: boolean | null;
   user_id: string | null;
   og_title: string | null;
   og_description: string | null;

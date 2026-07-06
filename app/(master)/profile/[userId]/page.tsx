@@ -34,6 +34,7 @@ import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib
 import { fetchBlockedUserIds, filterBlockedRows } from "../../../lib/userBlocks";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
 import { FeedMediaAttachment } from "../../../components/FeedMediaAttachment";
+import FeedImageGalleryModal from "../../../components/FeedImageGalleryModal";
 import OptimizedAvatarImg from "../../../components/OptimizedAvatarImg";
 import { galleryImageDisplayUrl } from "../../../lib/storageImageUrl";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
@@ -7338,50 +7339,14 @@ export default function PublicProfilePage() {
         </div>
       </div>
     )}
-    {expandedProfilePhotoUrl && (
-      <div
-        onClick={() => setExpandedProfilePhotoUrl(null)}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.86)",
-          zIndex: 1000,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24,
-        }}
-      >
-        <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", maxWidth: "min(980px, 100%)", width: "100%" }}>
-          <button
-            type="button"
-            onClick={() => setExpandedProfilePhotoUrl(null)}
-            aria-label="Close photo"
-            style={{
-              position: "absolute",
-              top: -10,
-              right: 0,
-              background: "rgba(255,255,255,0.14)",
-              color: "white",
-              border: "1px solid rgba(255,255,255,0.25)",
-              borderRadius: 999,
-              width: 42,
-              height: 42,
-              fontSize: 24,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            x
-          </button>
-          <img
-            src={expandedProfilePhotoUrl}
-            alt={fullName}
-            style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12, display: "block", margin: "0 auto" }}
-          />
-        </div>
-      </div>
-    )}
+    <FeedImageGalleryModal
+      open={!!expandedProfilePhotoUrl}
+      images={expandedProfilePhotoUrl ? [expandedProfilePhotoUrl] : []}
+      index={0}
+      onClose={() => setExpandedProfilePhotoUrl(null)}
+      onPrev={() => {}}
+      onNext={() => {}}
+    />
     {lightboxVideoUrl && (
       <div
         onClick={() => setLightboxVideoUrl(null)}
@@ -7429,50 +7394,14 @@ export default function PublicProfilePage() {
         </div>
       </div>
     )}
-    {expandedCommentImageUrl && (
-      <div
-        onClick={() => setExpandedCommentImageUrl(null)}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.86)",
-          zIndex: 1000,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: 24,
-        }}
-      >
-        <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", maxWidth: "min(980px, 100%)", width: "100%" }}>
-          <button
-            type="button"
-            onClick={() => setExpandedCommentImageUrl(null)}
-            aria-label="Close image"
-            style={{
-              position: "absolute",
-              top: -10,
-              right: 0,
-              background: "rgba(255,255,255,0.14)",
-              color: "white",
-              border: "1px solid rgba(255,255,255,0.25)",
-              borderRadius: 999,
-              width: 42,
-              height: 42,
-              fontSize: 24,
-              fontWeight: 700,
-              cursor: "pointer",
-            }}
-          >
-            x
-          </button>
-          <img
-            src={expandedCommentImageUrl}
-            alt="Comment image"
-            style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12, display: "block", margin: "0 auto" }}
-          />
-        </div>
-      </div>
-    )}
+    <FeedImageGalleryModal
+      open={!!expandedCommentImageUrl}
+      images={expandedCommentImageUrl ? [expandedCommentImageUrl] : []}
+      index={0}
+      onClose={() => setExpandedCommentImageUrl(null)}
+      onPrev={() => {}}
+      onNext={() => {}}
+    />
     {/* Connection list modal */}
     {connListOpen && (
       <div

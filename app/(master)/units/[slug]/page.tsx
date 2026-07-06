@@ -2513,11 +2513,11 @@ export default function UnitPage() {
       {activeGalleryPhoto && (
         <div
           onClick={(e) => { if (e.target === e.currentTarget) setGalleryPhotoIndex(null); }}
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.8)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 550, padding: isMobile ? 10 : 20 }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.88)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 550, padding: isMobile ? 8 : 16 }}
         >
-          <div style={{ width: "100%", maxWidth: 860, maxHeight: "92vh", borderRadius: 16, overflow: "hidden", border: `1px solid ${isDark ? "#222" : "#d1d5db"}`, background: isDark ? "#141414" : "#fff", display: "flex", flexDirection: "column" }}>
-            <div style={{ position: "relative", background: "#000", minHeight: isMobile ? 260 : 380, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <img src={activeGalleryPhoto.photo_url!} alt="" style={{ width: "100%", maxHeight: isMobile ? 360 : 520, objectFit: "contain", display: "block" }} />
+          <div style={{ width: "100%", maxWidth: 920, height: "calc(100vh - 16px)", borderRadius: 16, overflow: "hidden", border: `1px solid ${isDark ? "#222" : "#d1d5db"}`, background: isDark ? "#141414" : "#fff", display: "flex", flexDirection: "column" }}>
+            <div style={{ position: "relative", background: "#000", flex: "1 1 auto", minHeight: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <img src={activeGalleryPhoto.photo_url!} alt="" style={{ maxWidth: "100%", maxHeight: "100%", width: "auto", height: "auto", objectFit: "contain", display: "block" }} />
               <button onClick={() => setGalleryPhotoIndex(null)} style={{ position: "absolute", top: 10, right: 10, width: 34, height: 34, borderRadius: "50%", border: "none", background: "rgba(0,0,0,0.65)", color: "#fff", fontSize: 20, lineHeight: 1, cursor: "pointer" }}>×</button>
               {photos.length > 1 && (
                 <>
@@ -2527,7 +2527,7 @@ export default function UnitPage() {
               )}
             </div>
 
-            <div style={{ padding: 14, overflowY: "auto" }}>
+            <div style={{ padding: 14, overflowY: "auto", maxHeight: isMobile ? "42vh" : "38vh" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <button
                   type="button"
@@ -3454,50 +3454,14 @@ function PostCard({
           )}
         </div>
       )}
-      {expandedCommentImageUrl && (
-        <div
-          onClick={() => setExpandedCommentImageUrl(null)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.86)",
-            zIndex: 1000,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 24,
-          }}
-        >
-          <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", maxWidth: "min(980px, 100%)", width: "100%" }}>
-            <button
-              type="button"
-              onClick={() => setExpandedCommentImageUrl(null)}
-              aria-label="Close image"
-              style={{
-                position: "absolute",
-                top: -10,
-                right: 0,
-                background: "rgba(255,255,255,0.14)",
-                color: "white",
-                border: "1px solid rgba(255,255,255,0.25)",
-                borderRadius: 999,
-                width: 42,
-                height: 42,
-                fontSize: 24,
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              x
-            </button>
-            <img
-              src={expandedCommentImageUrl}
-              alt="Comment image"
-              style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 12, display: "block", margin: "0 auto" }}
-            />
-          </div>
-        </div>
-      )}
+      <FeedImageGalleryModal
+        open={!!expandedCommentImageUrl}
+        images={expandedCommentImageUrl ? [expandedCommentImageUrl] : []}
+        index={0}
+        onClose={() => setExpandedCommentImageUrl(null)}
+        onPrev={() => {}}
+        onNext={() => {}}
+      />
     </div>
   );
 }
