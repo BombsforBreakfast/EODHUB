@@ -5,7 +5,9 @@ const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 export function makeReferralCode(length = 8): string {
   let code = "";
   for (let i = 0; i < length; i++) {
-    code += CHARS[Math.floor(Math.random() * CHARS.length)];
+    const randomArray = new Uint32Array(1);
+    crypto.getRandomValues(randomArray);
+    code += CHARS[randomArray[0] % CHARS.length];
   }
   return code;
 }
