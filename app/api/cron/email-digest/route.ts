@@ -21,12 +21,15 @@ function isDigestType(value: unknown): value is DigestType {
 }
 
 async function authorize(req: NextRequest): Promise<NextResponse | null> {
-  const secret = process.env.DIGEST_CRON_SECRET;
-  if (!secret) {
-    return NextResponse.json({ error: "DIGEST_CRON_SECRET not configured" }, { status: 500 });
-  }
-  if (secret.length < MIN_CRON_SECRET_LENGTH) {
-    return NextResponse.json({ error: "DIGEST_CRON_SECRET must be at least 32 characters" }, { status: 500 });
+  const secrets = [process.env.DIGEST_CRON_SECRET, process.env.CRON_SECRET].filter(
+    (value): value is string => Boolean(value),
+  );
+  const validSecrets = secrets.filter((value) => value.length >= MIN_CRON_SECRET_LENGTH);
+  if (validSecrets.length === 0) {
+    return NextResponse.json(
+      { error: "Configure DIGEST_CRON_SECRET or CRON_SECRET with at least 32 characters" },
+      { status: 500 },
+    );
   }
 
   const auth = req.headers.get("authorization") ?? "";
@@ -34,7 +37,9 @@ async function authorize(req: NextRequest): Promise<NextResponse | null> {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!constantTimeEquals(auth.slice(7), secret)) {
+  const incomingSecret = auth.slice(7);
+  const authorized = validSecrets.some((secret) => constantTimeEquals(incomingSecret, secret));
+  if (!authorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

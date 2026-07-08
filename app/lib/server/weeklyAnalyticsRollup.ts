@@ -5,9 +5,13 @@ export type WeeklyAnalyticsRollup = {
   window_end: string;
   this_week: {
     new_users: number;
+    new_members: number;
+    new_member_names: string[];
     new_verified: number;
+    new_jobs: number;
     new_community_jobs: number;
     new_resources: number;
+    new_business_listings: number;
     new_posts: number;
     new_recruits: number;
     new_plank_holders: number;
@@ -15,6 +19,9 @@ export type WeeklyAnalyticsRollup = {
   };
   platform: {
     total_members: number;
+    total_jobs: number;
+    total_resources: number;
+    total_business_listings: number;
     verified_members: number;
     pending_verification: number;
     completed_profiles: number;

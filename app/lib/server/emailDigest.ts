@@ -289,7 +289,6 @@ async function buildPersonalSections(
     .from("notifications")
     .select("id, created_at, message, type, category, link, post_id, unit_id, unit_post_id, post_owner_id, metadata")
     .eq("recipient_user_id", userId)
-    .is("read_at", null)
     .is("archived_at", null)
     .gte("created_at", window.windowStart.toISOString())
     .lte("created_at", window.windowEnd.toISOString())
