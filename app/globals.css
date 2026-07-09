@@ -25,6 +25,17 @@ html.native-shell-ios body {
   overflow-x: clip;
 }
 
+/*
+ * iOS zooms the visual viewport when a focused form control renders below
+ * 16px, and often keeps that zoom after submit. Keep native controls at the
+ * threshold while leaving user pinch-to-zoom enabled.
+ */
+html.native-shell-ios input,
+html.native-shell-ios textarea,
+html.native-shell-ios select {
+  font-size: 16px !important;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
