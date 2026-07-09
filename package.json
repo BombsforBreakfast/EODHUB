@@ -16,7 +16,8 @@
     "cap:sync:ios": "npx cap sync ios",
     "cap:sync:android": "npx cap sync android",
     "cap:open:ios": "npx cap open ios",
-    "cap:open:android": "npx cap open android"
+    "cap:open:android": "npx cap open android",
+    "generate:splash": "node scripts/generate-splash.mjs"
   },
   "dependencies": {
     "@capacitor-community/apple-sign-in": "^7.1.0",
