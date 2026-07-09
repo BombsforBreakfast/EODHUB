@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
+import { useEffect, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { isVideoUrl } from "../lib/uploadLimits";
+
+function resolveGalleryCloseTop(): number {
+  if (typeof window === "undefined") return 16;
+  const isMobile = window.matchMedia("(max-width: 900px), (pointer: coarse)").matches;
+  const vvTop = window.visualViewport?.offsetTop ?? 0;
+  const base = isMobile ? 96 : 16;
+  return Math.max(base, vvTop + (isMobile ? 72 : 12));
+}
 
 type Props = {
   open: boolean;
@@ -46,12 +54,31 @@ export default function FeedImageGalleryModal({
   onPrev,
   onNext,
 }: Props) {
+  const [closeTop, setCloseTop] = useState(16);
+
   useEffect(() => {
     if (!open) return;
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prevOverflow;
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const syncCloseTop = () => setCloseTop(resolveGalleryCloseTop());
+    syncCloseTop();
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", syncCloseTop);
+    vv?.addEventListener("scroll", syncCloseTop);
+    window.addEventListener("resize", syncCloseTop);
+    window.addEventListener("orientationchange", syncCloseTop);
+    return () => {
+      vv?.removeEventListener("resize", syncCloseTop);
+      vv?.removeEventListener("scroll", syncCloseTop);
+      window.removeEventListener("resize", syncCloseTop);
+      window.removeEventListener("orientationchange", syncCloseTop);
     };
   }, [open]);
 
@@ -84,7 +111,7 @@ export default function FeedImageGalleryModal({
         onPointerDown={(e) => e.stopPropagation()}
         style={{
           width: "100vw",
-          height: "100vh",
+          height: "100dvh",
           position: "relative",
           display: "flex",
           alignItems: "center",
@@ -114,7 +141,7 @@ export default function FeedImageGalleryModal({
             style={{
               position: "relative",
               maxWidth: "100vw",
-              maxHeight: "100vh",
+              maxHeight: "100dvh",
               display: "inline-block",
               lineHeight: 0,
             }}
@@ -124,7 +151,7 @@ export default function FeedImageGalleryModal({
               alt={`Gallery image ${indexSafe + 1}`}
               style={{
                 maxWidth: "100vw",
-                maxHeight: "100vh",
+                maxHeight: "100dvh",
                 width: "auto",
                 height: "auto",
                 objectFit: "contain",
@@ -178,6 +205,7 @@ export default function FeedImageGalleryModal({
 
         <button
           type="button"
+          className="feed-gallery-close-btn"
           aria-label="Close gallery"
           onPointerDown={stopControlEvent}
           onClick={(e) => {
@@ -187,7 +215,8 @@ export default function FeedImageGalleryModal({
           style={{
             ...NAV_BTN,
             position: "absolute",
-            top: "calc(max(10px, env(safe-area-inset-top)) + 56px)",
+            ["--feed-gallery-close-top" as string]: `${closeTop}px`,
+            top: "var(--feed-gallery-close-top)",
             right: "max(10px, env(safe-area-inset-right))",
             width: 42,
             height: 42,

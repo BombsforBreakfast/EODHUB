@@ -889,6 +889,18 @@ a.rabbithole-brand-link:focus-visible {
   }
 }
 
+/* Feed image gallery — keep close control below mobile browser URL bar */
+.feed-gallery-close-btn {
+  --feed-gallery-close-top: max(16px, env(safe-area-inset-top, 0px));
+  top: var(--feed-gallery-close-top);
+}
+
+@media (max-width: 900px), (pointer: coarse) {
+  .feed-gallery-close-btn {
+    --feed-gallery-close-top: max(96px, calc(env(safe-area-inset-top, 0px) + 72px));
+  }
+}
+
 /* EOD Hub modal — anchor near top on mobile; centered on desktop */
 .nav-hub-modal-backdrop {
   align-items: flex-start;
