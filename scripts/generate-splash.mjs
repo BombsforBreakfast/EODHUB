@@ -7,11 +7,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, "..");
 
 const BRAND_BG = "#0a0a0a";
+/** Logo size relative to canvas — keep inset so text stays on-screen on notched phones. */
+const LOGO_SCALE = 0.8;
 
 function splashSvg(width, height) {
   const scale = Math.min(width, height) / 1024;
-  const fontSize = Math.max(72, Math.round(248 * scale));
-  const letterSpacing = Math.round(-8 * scale);
+  const fontSize = Math.max(
+    Math.round(72 * LOGO_SCALE),
+    Math.round(248 * scale * LOGO_SCALE),
+  );
+  const letterSpacing = Math.round(-8 * scale * LOGO_SCALE);
   const centerY = height / 2;
   const lineGap = fontSize * 0.52;
 
