@@ -22,6 +22,10 @@ import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import { isNativeApp } from "../lib/native/isNativeApp";
 import {
+  defaultMobileNavSpacerPx,
+  setMobileNavSpacerPx,
+} from "../lib/mobileNavOffset";
+import {
   businessListingSearchBadge,
   loadBusinessListingProfileLinks,
   loadBusinessOrgPageTypesById,
@@ -89,7 +93,7 @@ export default function NavBar() {
 
   /** Mobile: reserve vertical space so fixed nav does not cover page content (height tracks hub/search). */
   const navRootRef = useRef<HTMLDivElement>(null);
-  const [mobileNavSpacerPx, setMobileNavSpacerPx] = useState(0);
+  const [mobileNavSpacerPx, setMobileNavSpacerPxState] = useState(defaultMobileNavSpacerPx);
 
   /** Mobile breakpoint — fixed nav + layout. */
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);
@@ -506,24 +510,41 @@ export default function NavBar() {
     function measure() {
       const el = navRootRef.current;
       if (!mq.matches || !el) {
+        setMobileNavSpacerPxState(0);
         setMobileNavSpacerPx(0);
         return;
       }
-      const rect = el.getBoundingClientRect();
       const mb = parseFloat(getComputedStyle(el).marginBottom) || 0;
-      setMobileNavSpacerPx(Math.ceil(rect.height + mb));
+      const measured = Math.ceil(el.offsetHeight + mb);
+      const buffered = measured + (isNativeApp() ? 8 : 4);
+      setMobileNavSpacerPxState(buffered);
+      setMobileNavSpacerPx(buffered);
     }
 
-    const ro = new ResizeObserver(() => measure());
+    function scheduleRemeasure() {
+      measure();
+      requestAnimationFrame(() => {
+        measure();
+        requestAnimationFrame(measure);
+      });
+    }
+
+    const ro = new ResizeObserver(() => scheduleRemeasure());
     const el = navRootRef.current;
     if (el) ro.observe(el);
-    measure();
-    mq.addEventListener("change", measure);
-    window.addEventListener("resize", measure);
+    scheduleRemeasure();
+    mq.addEventListener("change", scheduleRemeasure);
+    window.addEventListener("resize", scheduleRemeasure);
+    window.visualViewport?.addEventListener("resize", scheduleRemeasure);
+    const late1 = window.setTimeout(scheduleRemeasure, 150);
+    const late2 = window.setTimeout(scheduleRemeasure, 500);
     return () => {
       ro.disconnect();
-      mq.removeEventListener("change", measure);
-      window.removeEventListener("resize", measure);
+      mq.removeEventListener("change", scheduleRemeasure);
+      window.removeEventListener("resize", scheduleRemeasure);
+      window.visualViewport?.removeEventListener("resize", scheduleRemeasure);
+      window.clearTimeout(late1);
+      window.clearTimeout(late2);
     };
   }, [showSearchDropdown, authLoaded, currentUserId]);
 

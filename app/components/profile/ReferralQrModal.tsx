@@ -6,6 +6,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { useTheme } from "@/app/lib/ThemeContext";
 import { writeClipboardText } from "@/app/lib/native/nativeClipboard";
 import { shareOrCopyUrl } from "@/app/lib/native/nativeShare";
+import { isMobileNavLayout, readMobileNavSpacerPx } from "@/app/lib/mobileNavOffset";
 
 type Props = {
   open: boolean;
@@ -17,6 +18,23 @@ type Props = {
 export function ReferralQrModal({ open, referralUrl, onClose, onInviteAction }: Props) {
   const { t, isDark } = useTheme();
   const [copied, setCopied] = useState(false);
+  const [mobileNavOffset, setMobileNavOffset] = useState(0);
+  const [isMobileLayout, setIsMobileLayout] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const sync = () => {
+      setIsMobileLayout(isMobileNavLayout());
+      setMobileNavOffset(readMobileNavSpacerPx());
+    };
+    sync();
+    window.addEventListener("resize", sync);
+    window.visualViewport?.addEventListener("resize", sync);
+    return () => {
+      window.removeEventListener("resize", sync);
+      window.visualViewport?.removeEventListener("resize", sync);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (open) onInviteAction?.();
@@ -61,6 +79,9 @@ export function ReferralQrModal({ open, referralUrl, onClose, onInviteAction }: 
   const border = t.border;
   const muted = t.textMuted;
   const accent = "#60a5fa";
+  const topInset = isMobileLayout
+    ? `max(calc(${mobileNavOffset}px + 12px), env(safe-area-inset-top, 0px))`
+    : "max(16px, env(safe-area-inset-top, 0px))";
 
   const modal = (
     <div
@@ -71,11 +92,12 @@ export function ReferralQrModal({ open, referralUrl, onClose, onInviteAction }: 
         inset: 0,
         zIndex: 10100,
         display: "flex",
-        alignItems: "center",
+        alignItems: isMobileLayout ? "flex-start" : "center",
         justifyContent: "center",
-        padding: "max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left))",
+        padding: `${topInset} max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px))`,
         boxSizing: "border-box",
         background: "rgba(0,0,0,0.72)",
+        overflowY: "auto",
       }}
     >
       <div

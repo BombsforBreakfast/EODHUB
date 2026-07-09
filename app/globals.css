@@ -941,6 +941,17 @@ a.rabbithole-brand-link:focus-visible {
   }
 }
 
+@media (max-width: 900px) {
+  .nav-mobile-spacer {
+    flex-shrink: 0;
+    min-height: calc(112px + env(safe-area-inset-top, 0px));
+  }
+
+  html.native-shell .nav-mobile-spacer {
+    min-height: calc(124px + env(safe-area-inset-top, 0px));
+  }
+}
+
 /* Group (unit) page: vertical split — cover portrait column | details */
 .unit-header-split {
   display: flex;
