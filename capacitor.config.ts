@@ -24,7 +24,10 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
   },
   ios: {
-    contentInset: "automatic",
+    // The web app already lays itself out with viewport-fit=cover and
+    // env(safe-area-inset-*). Letting WKWebView add another automatic inset
+    // makes its visible viewport disagree with the CSS viewport on iPhone.
+    contentInset: "never",
     backgroundColor: "#0a0a0a",
     allowsLinkPreview: false,
     scrollEnabled: true,

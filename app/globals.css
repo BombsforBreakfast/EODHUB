@@ -5,6 +5,26 @@
   --foreground: #171717;
 }
 
+html {
+  width: 100%;
+  max-width: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+
+/* WKWebView should never expand the document beyond its CSS viewport. */
+html.native-shell-ios,
+html.native-shell-ios body {
+  overflow-x: clip;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -4037,7 +4037,7 @@ export default function AdminPage() {
                             {[page.page_type, page.location, page.business_email].filter(Boolean).join(" · ")}
                           </div>
                           <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
-                            Billing: {page.subscription_status}
+                            Status: {page.verification_status}
                             {page.website_url ? ` · ${page.website_url}` : ""}
                           </div>
                         </div>
@@ -4095,7 +4095,7 @@ export default function AdminPage() {
                             {[page.page_type, page.location, page.business_email].filter(Boolean).join(" · ")}
                           </div>
                           <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
-                            Billing: {page.subscription_status}
+                            Status: {page.verification_status}
                             {page.website_url ? ` · ${page.website_url}` : ""}
                           </div>
                         </div>
@@ -4164,7 +4164,7 @@ export default function AdminPage() {
                           Linked Email Validation: {page.linked_email_matches_account ? "YES" : "NO"}
                         </span>
                         <span style={{ fontSize: 12, color: t.textMuted }}>Review: {page.verification_status}</span>
-                        <span style={{ fontSize: 12, color: t.textMuted }}>Billing: {page.subscription_status}</span>
+                        <span style={{ fontSize: 12, color: t.textMuted }}>Status: {page.verification_status}</span>
                         <button
                           type="button"
                           style={{ ...actionBtn("#16a34a"), display: "flex", alignItems: "center", gap: 5 }}

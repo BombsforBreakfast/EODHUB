@@ -41,7 +41,6 @@ export default function BusinessPagesAccountPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [billingFor, setBillingFor] = useState<string | null>(null);
   const [pages, setPages] = useState<BusinessOrgPageRow[]>([]);
   const [authEmail, setAuthEmail] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -187,31 +186,6 @@ export default function BusinessPagesAccountPage() {
     }
   }
 
-  async function startBilling(pageId: string, portal: boolean) {
-    setBillingFor(pageId);
-    setError(null);
-    try {
-      const headers = await authHeaders();
-      if (!headers) {
-        window.location.href = "/login";
-        return;
-      }
-      const res = await fetch(portal ? "/api/stripe/business-org-portal" : "/api/stripe/business-org-checkout", {
-        method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        body: JSON.stringify({ pageId }),
-      });
-      const data = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        setError(data.error ?? "Could not open billing.");
-        return;
-      }
-      window.location.href = data.url;
-    } finally {
-      setBillingFor(null);
-    }
-  }
-
   const inputStyle: React.CSSProperties = {
     width: "100%",
     border: `1px solid ${t.border}`,
@@ -250,8 +224,8 @@ export default function BusinessPagesAccountPage() {
           <h1 style={{ margin: 0, fontSize: 32, fontWeight: 900 }}>{isBusinessLogin ? "Business Profile" : "Business / Organization Pages"}</h1>
           <p style={{ margin: "8px 0 0", color: t.textMuted, lineHeight: 1.55 }}>
             {isBusinessLogin
-              ? "Manage your Business / Organization profile and billing from your business account."
-              : "Create public-facing pages linked to your validated personal EOD-HUB account. Pages are reviewed and billed separately."}
+              ? "Manage your Business / Organization profile from your business account."
+              : "Create public-facing pages linked to your validated personal EOD-HUB account. Pages are reviewed separately."}
           </p>
         </div>
         <Link href="/business-org" style={{ color: "#2563eb", fontWeight: 800 }}>Browse public pages</Link>
@@ -271,7 +245,7 @@ export default function BusinessPagesAccountPage() {
             <div>
               <h2 style={{ margin: 0, fontSize: 28, fontWeight: 950 }}>{primaryPage.business_name}</h2>
               <div style={{ marginTop: 6, color: t.textMuted, fontSize: 13 }}>
-                Review: {primaryPage.verification_status} · Billing: {primaryPage.subscription_status}
+                Review: {primaryPage.verification_status}
               </div>
             </div>
             <p style={{ margin: 0, color: t.text, lineHeight: 1.6 }}>{primaryPage.description}</p>
@@ -285,14 +259,6 @@ export default function BusinessPagesAccountPage() {
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
               <button type="button" style={buttonSecondary} onClick={() => editPage(primaryPage)}>Edit profile</button>
               <Link href={`/business-org/${primaryPage.id}`} style={{ ...buttonSecondary, textDecoration: "none" }}>View public page</Link>
-              <button
-                type="button"
-                style={buttonSecondary}
-                disabled={billingFor === primaryPage.id}
-                onClick={() => void startBilling(primaryPage.id, Boolean(primaryPage.stripe_customer_id))}
-              >
-                {billingFor === primaryPage.id ? "Opening..." : primaryPage.stripe_customer_id ? "Manage billing" : "Start page subscription"}
-              </button>
             </div>
           </div>
         </section>
@@ -317,7 +283,7 @@ export default function BusinessPagesAccountPage() {
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <h2 style={{ margin: 0, fontSize: 20, fontWeight: 900 }}>{page.business_name}</h2>
                     <div style={{ marginTop: 4, color: t.textMuted, fontSize: 13 }}>
-                      Review: {page.verification_status} · Billing: {page.subscription_status}
+                      Review: {page.verification_status}
                     </div>
                     <div style={{ marginTop: 4, color: t.textMuted, fontSize: 13 }}>
                       Linked email: {page.linked_account_email}
@@ -328,14 +294,6 @@ export default function BusinessPagesAccountPage() {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button type="button" style={buttonSecondary} onClick={() => editPage(page)}>Edit</button>
                   <Link href={`/business-org/${page.id}`} style={{ ...buttonSecondary, textDecoration: "none" }}>View public page</Link>
-                  <button
-                    type="button"
-                    style={buttonSecondary}
-                    disabled={billingFor === page.id}
-                    onClick={() => void startBilling(page.id, Boolean(page.stripe_customer_id))}
-                  >
-                    {billingFor === page.id ? "Opening..." : page.stripe_customer_id ? "Manage billing" : "Start page subscription"}
-                  </button>
                 </div>
               </article>
             ))

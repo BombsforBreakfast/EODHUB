@@ -1761,12 +1761,12 @@ export default function BusinessesPage() {
                   <option value="">My personal account ({currentUserName})</option>
                   {businessOrgPages.map((page) => (
                     <option key={page.id} value={page.id}>
-                      {page.business_name} ({page.subscription_status})
+                      {page.business_name} ({page.verification_status})
                     </option>
                   ))}
                 </select>
                 <span style={{ fontSize: 12, fontWeight: 500, color: t.textMuted }}>
-                  Individual user claims stay available. Business / Organization page claims require admin review and an active page subscription.
+                  Individual user claims stay available. Business / Organization page claims require admin review.
                 </span>
               </label>
             )}

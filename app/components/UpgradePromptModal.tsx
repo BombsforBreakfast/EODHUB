@@ -13,7 +13,7 @@ type Props = {
 export default function UpgradePromptModal({
   open,
   onClose,
-  ctaLabel = "Subscribe — $2/month",
+  ctaLabel = "Continue",
   onUpgradeClick,
 }: Props) {
   const { t } = useTheme();
@@ -65,10 +65,10 @@ export default function UpgradePromptModal({
         }}
       >
         <h2 id="upgrade-prompt-title" style={{ margin: 0, fontSize: 21, fontWeight: 900, color: t.text }}>
-          Unlock Full Job Access
+          Limited Access
         </h2>
         <p style={{ margin: "10px 0 0", fontSize: 14, lineHeight: 1.6, color: t.textMuted }}>
-          Subscribe for full access to the job board and all member features.
+          Some features are currently limited for this account.
         </p>
 
         <ul style={{ margin: "14px 0 0", paddingLeft: 18, color: t.text, lineHeight: 1.7, fontSize: 14 }}>

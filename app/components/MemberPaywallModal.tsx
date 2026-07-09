@@ -7,19 +7,19 @@ type Props = {
   open: boolean;
   onClose: () => void;
   message?: string;
-  /** When true, only Subscribe — used after trial expires (no dismiss). */
+  /** When true, keep the modal blocking (no dismiss button). */
   requireSubscription?: boolean;
-  /** Post–onboarding: information + acknowledgement, then continue to verification. No checkout. */
+  /** Post-onboarding acknowledgement before verification. */
   onboardingAck?: {
     onContinue: () => void | Promise<void>;
   };
 };
 
 const DEFAULT_MSG =
-  "Your free trial has expired. Please subscribe for full access!";
+  "Access to this action is currently limited.";
 
 const ONBOARDING_BODY =
-  "EOD HUB is free during beta. After beta ends, new members receive a free trial period, then membership is $1.99/month. Your subscription helps us operate, maintain, and improve the site.";
+  "Access rules and feature availability can change over time. You can continue now and review account updates in Support and Terms anytime.";
 
 export default function MemberPaywallModal({
   open,
@@ -88,7 +88,7 @@ export default function MemberPaywallModal({
         }}
       >
         <div id="paywall-title" style={{ fontWeight: 900, fontSize: 18, color: t.text, marginBottom: 12 }}>
-          {isOnboarding ? "Member subscription" : "Subscription"}
+          {isOnboarding ? "Member access" : "Access update"}
         </div>
         <p style={{ margin: 0, fontSize: 15, color: t.textMuted, lineHeight: 1.55 }}>{bodyText}</p>
         {isOnboarding && onboardingAck && (
@@ -110,7 +110,7 @@ export default function MemberPaywallModal({
               onChange={(e) => setOnboardingChecked(e.target.checked)}
               style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }}
             />
-            <span>I have read and understand the subscription information above.</span>
+            <span>I have read and understand the access information above.</span>
           </label>
         )}
         <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end", flexWrap: "wrap" }}>
@@ -179,7 +179,7 @@ export default function MemberPaywallModal({
                   width: blocking ? "100%" : undefined,
                 }}
               >
-                Subscribe
+                Continue
               </button>
             </>
           )}

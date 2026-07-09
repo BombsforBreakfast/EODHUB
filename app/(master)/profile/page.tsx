@@ -11,73 +11,9 @@ import NotificationPreferencesCard from "../../components/account/NotificationPr
 import ChangePasswordSection from "../../components/account/ChangePasswordSection";
 import DeleteAccountSection from "../../components/account/DeleteAccountSection";
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
-import { isPaywallEnforced, memberHasInteractionAccess } from "../../lib/subscriptionAccess";
 import { hasPublicMemberProfile } from "../../lib/pureAdminAllowlist";
 import EmployerAccountCardDetails from "../../components/profile/EmployerAccountCardDetails";
 import { linkOAuthIdentity } from "../../lib/auth/oauthSignIn";
-
-function BillingCard({ hasActiveMembership }: { hasActiveMembership: boolean }) {
-  const { t } = useTheme();
-  const [loading, setLoading] = useState(false);
-
-  async function handleSubscribe() {
-    setLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
-      });
-      const json = await res.json();
-      if (json.url) window.location.href = json.url;
-      else alert(json.error ?? "Something went wrong.");
-    } finally { setLoading(false); }
-  }
-
-  async function handlePortal() {
-    setLoading(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/stripe/portal", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
-      });
-      const json = await res.json();
-      if (json.url) window.location.href = json.url;
-      else alert(json.error ?? "Something went wrong.");
-    } finally { setLoading(false); }
-  }
-
-  return (
-    <div style={{ border: `1px solid ${t.border}`, borderRadius: 16, padding: "18px 24px", background: t.surface, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-      <div style={{ flex: 1, minWidth: 200 }}>
-        <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Membership</div>
-        <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
-          $2/month — full access to EOD HUB
-        </div>
-      </div>
-      {hasActiveMembership ? (
-        <button
-          onClick={handlePortal}
-          disabled={loading}
-          style={{ background: t.surface, border: `1px solid ${t.border}`, borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", color: t.text, opacity: loading ? 0.6 : 1, display: "flex", alignItems: "center", gap: 6 }}
-        >
-          {loading && <span className="btn-spinner btn-spinner-dark" />}
-          Manage Billing
-        </button>
-      ) : (
-        <button
-          onClick={handleSubscribe}
-          disabled={loading}
-          style={{ background: "#111", color: "white", border: "none", borderRadius: 10, padding: "8px 18px", fontWeight: 700, fontSize: 14, cursor: loading ? "not-allowed" : "pointer", opacity: loading ? 0.6 : 1, display: "flex", alignItems: "center", gap: 6 }}
-        >
-          {loading && <span className="btn-spinner" />}
-          Subscribe — $2/mo
-        </button>
-      )}
-    </div>
-  );
-}
 
 type Profile = {
   user_id: string;
@@ -217,7 +153,7 @@ export default function MyAccountPage() {
       <div style={{ maxWidth: 860, margin: "0 auto" }}>
       <h1 style={{ fontSize: 32, fontWeight: 900, marginTop: 6, color: t.text }}>My Account</h1>
       <p style={{ fontSize: 14, color: t.textMuted, lineHeight: 1.55, marginTop: 10, marginBottom: 0 }}>
-        Account settings, sign-in, and billing. Your profile, photo, saved events, saved jobs, and groups are on your profile page and the jobs page.
+        Account settings and sign-in tools. Your profile, photo, saved events, saved jobs, and groups are on your profile page and the jobs page.
       </p>
       <nav aria-label="Legal" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <a
@@ -399,20 +335,6 @@ export default function MyAccountPage() {
             </button>
           </div>
 
-        </div>
-      )}
-
-      {/* Billing Card — employers are always free; members manage or start subscription here */}
-      {!loading && isPaywallEnforced() && profile?.account_type !== "employer" && (
-        <div style={{ marginTop: 16 }}>
-          <BillingCard
-            hasActiveMembership={memberHasInteractionAccess({
-              accountType: profile?.account_type,
-              subscriptionStatus: profile?.subscription_status ?? null,
-              authUserCreatedAtIso: authCreatedAt,
-              isAdmin: profile?.is_admin,
-            })}
-          />
         </div>
       )}
 

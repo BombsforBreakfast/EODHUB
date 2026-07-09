@@ -32,8 +32,7 @@ export default function SupportPage() {
         <section style={{ marginTop: 24 }}>
           <h2 style={{ fontSize: 18, fontWeight: 800, margin: "0 0 8px" }}>iOS app</h2>
           <p style={{ margin: 0, fontSize: 15, lineHeight: 1.6, color: t.textMuted }}>
-            The EOD-Hub iOS app uses the same account as the website. For subscription billing or
-            account changes, sign in at{" "}
+            The EOD-Hub iOS app uses the same account as the website. For account changes, sign in at{" "}
             <a href="https://www.eod-hub.com" style={{ color: "#2563eb", textDecoration: "none" }}>
               eod-hub.com
             </a>
