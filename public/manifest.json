@@ -2,10 +2,10 @@
   "name": "EOD Hub",
   "short_name": "EOD Hub",
   "description": "The community platform for EOD professionals",
-  "start_url": "/games",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "orientation": "landscape",
+  "orientation": "any",
   "theme_color": "#0f0f0f",
   "background_color": "#0f0f0f",
   "icons": [
