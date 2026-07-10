@@ -45,6 +45,7 @@ import {
   type FailedAuthReason,
 } from "../lib/auth/failedAuthReasons";
 import { clearFailedAuthReportsAfterLogin } from "../lib/auth/clearFailedAuthReportsOnLogin";
+import { resolveAuthLoginEmail } from "../lib/auth/resolveAuthLoginEmail";
 import { formatOAuthProviderLabel } from "../lib/auth/oauthProviders";
 import { signInWithOAuthProvider } from "../lib/auth/oauthSignIn";
 import { oauthDebugLog } from "../lib/auth/oauthDebugLog";
@@ -238,8 +239,9 @@ export default function LoginPage() {
     setBusinessOrgEmailMessage(null);
     try {
       clearAppAuthState();
+      const resolvedOwnerEmail = await resolveAuthLoginEmail(supabase, ownerEmail);
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: ownerEmail,
+        email: resolvedOwnerEmail,
         password: businessOrgOwnerPassword,
       });
       if (error || !data.session) {
@@ -514,7 +516,8 @@ export default function LoginPage() {
       setSubmitting(true);
 
       clearAppAuthState();
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const resolvedEmail = await resolveAuthLoginEmail(supabase, email);
+      const { error } = await supabase.auth.signInWithPassword({ email: resolvedEmail, password });
 
       if (error) {
         const mapped = mapSupabaseAuthError(error.message);
