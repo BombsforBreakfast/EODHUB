@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup";
 import { resolveOAuthPostAuthDestination } from "@/app/lib/server/oauthPostAuthRedirect";
+import { resolveClaimedOAuthSessionUser } from "@/app/lib/server/claimPendingOAuthLoginAlias";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,11 +81,22 @@ export async function POST(req: NextRequest) {
   const origin = new URL(req.url).origin;
   const { client: adminClient, error: adminError } = createSupabaseServiceRoleClient();
 
+  let activeUser = user;
+  if (!adminError && adminClient) {
+    const claimed = await resolveClaimedOAuthSessionUser(supabase, adminClient, user);
+    if (claimed.claimError) {
+      const errorRes = NextResponse.json({ error: "oauth_alias_claim_failed" }, { status: 500 });
+      applyCookies(errorRes, cookiesToApply);
+      return errorRes;
+    }
+    activeUser = claimed.user;
+  }
+
   let destination = next;
   if (!adminError && adminClient) {
     const { destination: resolved, profileError } = await resolveOAuthPostAuthDestination(
       adminClient,
-      user,
+      activeUser,
       next,
       origin,
     );

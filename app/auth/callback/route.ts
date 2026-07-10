@@ -5,6 +5,7 @@ import {
   collectUserOAuthProviders,
 } from "@/app/lib/auth/oauthProviders";
 import { resolveOAuthPostAuthDestination } from "@/app/lib/server/oauthPostAuthRedirect";
+import { resolveClaimedOAuthSessionUser } from "@/app/lib/server/claimPendingOAuthLoginAlias";
 import { logFailedAuthAttempt } from "@/app/lib/server/logFailedAuthAttempt";
 
 function truncateCode(code: string | null): string | null {
@@ -78,21 +79,43 @@ export async function GET(request: NextRequest) {
 
     const { data: sessionData, error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error && sessionData.user) {
-      const providers = collectUserOAuthProviders(sessionData.user);
+      const { client: adminClient } = createSupabaseServiceRoleClient();
+      let activeUser = sessionData.user;
+
+      if (adminClient) {
+        const claimed = await resolveClaimedOAuthSessionUser(
+          supabase,
+          adminClient,
+          sessionData.user,
+        );
+        if (claimed.claimError) {
+          void logFailedAuthAttempt({
+            emailAttempted: sessionData.user.email ?? undefined,
+            failureReason: "SERVER_ERROR",
+            errorCode: "oauth_alias_claim_failed",
+            rawErrorMessage: claimed.claimError,
+            sourceRoute: "/auth/callback",
+            request,
+          });
+          return NextResponse.redirect(`${origin}/login?error=auth`);
+        }
+        activeUser = claimed.user;
+      }
+
+      const providers = collectUserOAuthProviders(activeUser);
       console.info("[oauth] exchange_success", {
-        userId: sessionData.user.id,
+        userId: activeUser.id,
         providers: providers.join(",") || null,
         cookieCount: cookiesToApply.length,
       });
 
-      const { client: adminClient } = createSupabaseServiceRoleClient();
       let destination = next;
 
       if (adminClient) {
         const { destination: resolved, oauthEmail, profileError } =
           await resolveOAuthPostAuthDestination(
             adminClient,
-            sessionData.user,
+            activeUser,
             next,
             origin,
           );
