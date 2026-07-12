@@ -624,11 +624,14 @@ export default function ResourcesPage() {
         imageSrc={resourceCropSrc}
         aspect={ASPECT_RESOURCE_LOGO}
         cropShape="rect"
-        title="Crop resource photo"
+        preserveImage
+        title="Fit resource photo"
         onCancel={closeResourceCrop}
         onComplete={async (blob) => {
           if (resourceImagePreview) URL.revokeObjectURL(resourceImagePreview);
-          const file = new File([blob], "resource-cover.jpg", { type: "image/jpeg" });
+          const fileType = blob.type || "image/jpeg";
+          const extension = fileType === "image/png" ? "png" : fileType === "image/webp" ? "webp" : "jpg";
+          const file = new File([blob], `resource-cover.${extension}`, { type: fileType });
           setResourceImageFile(file);
           setResourceImagePreview(URL.createObjectURL(file));
           closeResourceCrop();
@@ -712,7 +715,14 @@ export default function ResourcesPage() {
                   style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${t.inputBorder}`, fontSize: 13, boxSizing: "border-box", background: t.input, color: t.text }}
                 />
                 {fetchingResourceOg && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>Fetching preview...</div>}
-                {resourceOgPreview && <OgCard og={resourceOgPreview} />}
+                {resourceOgPreview && (
+                  <OgCard
+                    og={{
+                      ...resourceOgPreview,
+                      title: resourceName.trim() || resourceOgPreview.title,
+                    }}
+                  />
+                )}
               </div>
 
               <div style={{ marginBottom: 10 }}>
@@ -725,12 +735,12 @@ export default function ResourcesPage() {
                   onChange={onPickResourcePhoto}
                 />
                 {displayedResourceFormImage ? (
-                  <div style={{ width: 320, maxWidth: "100%", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, marginBottom: 8, position: "relative", background: "#111827" }}>
+                  <div style={{ width: 320, maxWidth: "100%", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, marginBottom: 8, position: "relative", background: "#6b7280" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={httpsAssetUrl(displayedResourceFormImage)}
                       alt="Selected resource preview"
-                      style={{ width: "100%", aspectRatio: "2 / 1", objectFit: hasManualResourceImage ? "cover" : "contain", display: "block" }}
+                      style={{ width: "100%", aspectRatio: "2 / 1", objectFit: "contain", display: "block" }}
                     />
                     {hasManualResourceImage ? (
                       <button
@@ -873,7 +883,7 @@ export default function ResourcesPage() {
           }}
         >
           {visibleResources.map((listing) => {
-            const displayTitle = listing.og_title || listing.business_name || listing.og_site_name || "Resource";
+            const displayTitle = listing.business_name || listing.og_title || listing.og_site_name || "Resource";
             const displayDescription = listing.custom_blurb || listing.og_description || "Visit resource";
             const comments = resourceCommentsById[listing.id] ?? [];
             const { averageRounded, ratedCount } = getRatingSummary(listing.id);
@@ -902,7 +912,7 @@ export default function ResourcesPage() {
                   style={{ display: "block", textDecoration: "none", color: "inherit" }}
                 >
                   {listing.og_image ? (
-                    <div style={{ width: "100%", aspectRatio: "2 / 1", background: "#111827", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <div style={{ width: "100%", aspectRatio: "2 / 1", background: "#6b7280", display: "flex", alignItems: "center", justifyContent: "center" }}>
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={httpsAssetUrl(listing.og_image)}
@@ -1037,7 +1047,7 @@ export default function ResourcesPage() {
             <div style={{ padding: 16, borderBottom: `1px solid ${t.border}`, display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
               <div>
                 <div style={{ fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>
-                  {selectedResource.og_title || selectedResource.business_name || selectedResource.og_site_name || "Resource"}
+                  {selectedResource.business_name || selectedResource.og_title || selectedResource.og_site_name || "Resource"}
                 </div>
                 <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted }}>
                   {(resourceCommentsById[selectedResource.id] ?? []).length} comments
@@ -1048,7 +1058,7 @@ export default function ResourcesPage() {
               </button>
             </div>
             {selectedResource.og_image ? (
-              <div style={{ width: "100%", aspectRatio: "2 / 1", maxHeight: 320, background: "#111827", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{ width: "100%", aspectRatio: "2 / 1", maxHeight: 320, background: "#6b7280", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={httpsAssetUrl(selectedResource.og_image)}

@@ -10,6 +10,7 @@ type Props = {
   imageSrc: string | null;
   aspect: number;
   cropShape?: "rect" | "round";
+  preserveImage?: boolean;
   title?: string;
   onCancel: () => void;
   onComplete: (blob: Blob) => void | Promise<void>;
@@ -20,6 +21,7 @@ export default function ImageCropDialog({
   imageSrc,
   aspect,
   cropShape = "rect",
+  preserveImage = false,
   title = "Crop image",
   onCancel,
   onComplete,
@@ -43,10 +45,12 @@ export default function ImageCropDialog({
   }, []);
 
   async function apply() {
-    if (!imageSrc || !croppedAreaPixels) return;
+    if (!imageSrc || (!preserveImage && !croppedAreaPixels)) return;
     setBusy(true);
     try {
-      const blob = await getCroppedImageBlob(imageSrc, croppedAreaPixels);
+      const blob = preserveImage
+        ? await fetch(imageSrc).then((response) => response.blob())
+        : await getCroppedImageBlob(imageSrc, croppedAreaPixels!);
       await onComplete(blob);
     } finally {
       setBusy(false);
@@ -79,7 +83,7 @@ export default function ImageCropDialog({
           background: t.surface,
           borderRadius: 16,
           width: "100%",
-          maxWidth: 520,
+          maxWidth: preserveImage ? 720 : 520,
           border: `1px solid ${t.border}`,
           overflow: "hidden",
           boxShadow: "0 20px 50px rgba(0,0,0,0.35)",
@@ -97,33 +101,55 @@ export default function ImageCropDialog({
         >
           {title}
         </div>
-        <div style={{ position: "relative", width: "100%", height: 320, background: "#111" }}>
-          <Cropper
-            image={imageSrc}
-            crop={crop}
-            zoom={zoom}
-            aspect={aspect}
-            cropShape={cropShape}
-            showGrid={false}
-            onCropChange={setCrop}
-            onZoomChange={setZoom}
-            onCropComplete={onCropComplete}
-          />
+        <div
+          style={{
+            position: "relative",
+            width: "100%",
+            height: preserveImage ? "auto" : 320,
+            aspectRatio: preserveImage ? String(aspect) : undefined,
+            background: preserveImage ? "#6b7280" : "#111",
+          }}
+        >
+          {preserveImage ? (
+            // This previews the exact card frame while preserving the source image.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imageSrc}
+              alt="Selected image fitted inside the card frame"
+              style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+            />
+          ) : (
+            <Cropper
+              image={imageSrc}
+              crop={crop}
+              zoom={zoom}
+              aspect={aspect}
+              cropShape={cropShape}
+              showGrid={false}
+              onCropChange={setCrop}
+              onZoomChange={setZoom}
+              onCropComplete={onCropComplete}
+            />
+          )}
         </div>
         <div style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12, color: t.textMuted, flex: "1 1 120px" }}>
-            Drag to position · adjust zoom
+            {preserveImage
+              ? "The full image and its original proportions will be preserved. Empty space becomes card padding."
+              : "Drag to position · adjust zoom"}
           </span>
-          <input
-            type="range"
-            min={1}
-            max={3}
-            step={0.05}
-            value={zoom}
-            onChange={(e) => setZoom(Number(e.target.value))}
-            style={{ width: 120, flexShrink: 0 }}
-            aria-label="Zoom"
-          />
+          {!preserveImage ? (
+            <input
+              type="range"
+              min={1}
+              max={3}
+              step={0.05}
+              value={zoom}
+              onChange={(e) => setZoom(Number(e.target.value))}
+              style={{ width: 120, flexShrink: 0 }}
+              aria-label="Zoom"
+            />
+          ) : null}
         </div>
         <div
           style={{
@@ -153,7 +179,7 @@ export default function ImageCropDialog({
           <button
             type="button"
             onClick={() => void apply()}
-            disabled={busy || !croppedAreaPixels}
+            disabled={busy || (!preserveImage && !croppedAreaPixels)}
             style={{
               padding: "10px 18px",
               borderRadius: 10,
@@ -161,7 +187,7 @@ export default function ImageCropDialog({
               background: "#111",
               color: "#fff",
               fontWeight: 800,
-              cursor: busy || !croppedAreaPixels ? "not-allowed" : "pointer",
+              cursor: busy || (!preserveImage && !croppedAreaPixels) ? "not-allowed" : "pointer",
               display: "flex",
               alignItems: "center",
               gap: 8,
