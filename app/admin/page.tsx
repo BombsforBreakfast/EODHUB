@@ -18,6 +18,7 @@ import { FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
+import AdminPushCampaignsPanel from "../components/admin/AdminPushCampaignsPanel";
 import SupabaseUsagePanel from "../components/admin/SupabaseUsagePanel";
 import TrafficByHourChart from "../components/admin/TrafficByHourChart";
 import type { TrafficByHourSummary } from "../lib/analyticsTrafficByHour";
@@ -426,6 +427,7 @@ type Tab =
   | "directory"
   | "engagement"
   | "infrastructure"
+  | "push"
   | "news"
   | "waitlist"
   | "lemon_lot"
@@ -3710,6 +3712,9 @@ export default function AdminPage() {
           <button type="button" style={tabStyle("infrastructure")} onClick={() => setActiveTab("infrastructure")}>
             Infrastructure
           </button>
+          <button type="button" style={tabStyle("push")} onClick={() => setActiveTab("push")}>
+            Push
+          </button>
           <button type="button" style={tabStyle("news")} onClick={() => setActiveTab("news")}>
             News
             {tabNotifyBadge(newsPendingCount)}
@@ -5648,6 +5653,8 @@ export default function AdminPage() {
         {activeTab === "infrastructure" && (
           <SupabaseUsagePanel t={t} isDark={isDark} />
         )}
+
+        {activeTab === "push" && <AdminPushCampaignsPanel />}
 
         {/* ── NEWS TAB ── */}
         {activeTab === "news" && (

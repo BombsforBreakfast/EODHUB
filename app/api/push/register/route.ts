@@ -54,6 +54,18 @@ export async function POST(req: NextRequest) {
     .from("notification_preferences")
     .upsert({ user_id: user.id }, { onConflict: "user_id", ignoreDuplicates: true });
 
+  // APNs tokens identify an app installation, not an account. If this device
+  // switches accounts, prevent the prior account from receiving its pushes.
+  const { error: ownershipError } = await db
+    .from("push_device_tokens")
+    .delete()
+    .eq("token", token)
+    .neq("user_id", user.id);
+  if (ownershipError) {
+    console.error("[push/register] token ownership cleanup failed", ownershipError);
+    return NextResponse.json({ error: ownershipError.message }, { status: 500 });
+  }
+
   const { error } = await db.from("push_device_tokens").upsert(
     {
       user_id: user.id,

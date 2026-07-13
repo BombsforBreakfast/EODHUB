@@ -2572,7 +2572,10 @@ export default function PublicProfilePage() {
           const name = currentUserName?.trim() || "Someone";
           scheduleDelayedLikeNotify(`wall:photo:${photoId}:${currentUserId}`, () => {
             if (!photoLikesRef.current[photoId]?.likedByMe) return;
-            return notify(uid, `${name} liked your photo`, uid);
+            return notify(uid, `${name} liked your photo`, uid, {
+              type: "profile_photo_like",
+              post_id: photoId,
+            });
           });
         }
       }
@@ -2588,7 +2591,10 @@ export default function PublicProfilePage() {
       setSubmittingPhotoComment(true);
       await supabase.from("profile_photo_comments").insert([{ photo_id: photoId, user_id: currentUserId, content: text }]);
       if (profile && currentUserId !== profile.user_id) {
-        await notify(profile.user_id, `${currentUserName} commented on your photo`, profile.user_id);
+        await notify(profile.user_id, `${currentUserName} commented on your photo`, profile.user_id, {
+          type: "profile_photo_comment",
+          post_id: photoId,
+        });
       }
       setPhotoCommentInput("");
       await loadPhotoInteractions(photos.map((p) => p.id));

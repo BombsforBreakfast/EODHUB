@@ -91,9 +91,21 @@ export async function sendApnsPush(
 
   return new Promise((resolve) => {
     const client = http2.connect(`https://${host}`);
-    client.on("error", (err) => {
+    let settled = false;
+    const finish = (result: { ok: true } | { ok: false; reason: string; status?: number }) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
       client.close();
-      resolve({ ok: false, reason: err.message });
+      resolve(result);
+    };
+    const timeout = setTimeout(() => {
+      client.destroy();
+      finish({ ok: false, reason: "apns_request_timeout" });
+    }, 10_000);
+
+    client.on("error", (err) => {
+      finish({ ok: false, reason: err.message });
     });
 
     const req = client.request({
@@ -114,12 +126,11 @@ export async function sendApnsPush(
         responseBody += chunk;
       });
       req.on("end", () => {
-        client.close();
         if (status >= 200 && status < 300) {
-          resolve({ ok: true });
+          finish({ ok: true });
           return;
         }
-        resolve({
+        finish({
           ok: false,
           reason: responseBody || `apns_http_${status}`,
           status,
@@ -128,8 +139,7 @@ export async function sendApnsPush(
     });
 
     req.on("error", (err) => {
-      client.close();
-      resolve({ ok: false, reason: err.message });
+      finish({ ok: false, reason: err.message });
     });
 
     req.write(body);

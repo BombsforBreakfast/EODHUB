@@ -3,6 +3,8 @@ import { isPushEligibleNotificationType } from "../pushEligibleTypes";
 import type { CreateNotificationInput } from "../notificationsServer";
 import { sendApnsPush, isApnsConfigured } from "./apnsSend";
 
+let warnedApnsMissing = false;
+
 function pushTitle(input: CreateNotificationInput): string {
   if (input.title?.trim()) return input.title.trim();
   if (input.actorName?.trim()) return input.actorName.trim();
@@ -21,7 +23,24 @@ export async function dispatchPushForNotification(
   notificationId?: string | null,
 ): Promise<void> {
   if (!isPushEligibleNotificationType(input.type)) return;
-  if (!isApnsConfigured()) return;
+  if (!isApnsConfigured()) {
+    if (!warnedApnsMissing) {
+      warnedApnsMissing = true;
+      console.warn("[pushDispatch] APNs environment variables are not configured");
+    }
+    return;
+  }
+
+  // The notification RPC can return an existing row when a dedupe key matches.
+  // Do not emit the same native push again after that row was already delivered.
+  if (notificationId) {
+    const { data: existing } = await db
+      .from("notifications")
+      .select("pushed_at")
+      .eq("id", notificationId)
+      .maybeSingle();
+    if (existing?.pushed_at) return;
+  }
 
   const { data: prefs } = await db
     .from("notification_preferences")
@@ -52,7 +71,10 @@ export async function dispatchPushForNotification(
       sentCount += 1;
       continue;
     }
-    if (result.status === 410 || result.status === 400) {
+    if (
+      result.status === 410 ||
+      /BadDeviceToken|DeviceTokenNotForTopic|Unregistered/i.test(result.reason)
+    ) {
       staleTokenIds.push(row.id);
     }
     console.warn("[pushDispatch] APNs send failed", {

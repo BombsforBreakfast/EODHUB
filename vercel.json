@@ -39,6 +39,10 @@
     {
       "path": "/api/cron/inactive-member-update-email",
       "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/push-campaigns",
+      "schedule": "* * * * *"
     }
   ]
 }

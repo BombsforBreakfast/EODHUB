@@ -38,6 +38,8 @@ function recoverBlankWebView() {
 export default function NativeShellBridge() {
   const router = useRouter();
   const registeredTokenRef = useRef<string | null>(null);
+  const registeredPlatformRef = useRef<"ios" | "android">("ios");
+  const lastAccessTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isNativeApp()) return;
@@ -175,9 +177,11 @@ export default function NativeShellBridge() {
       if (!Capacitor.isPluginAvailable("PushNotifications")) return;
 
       async function registerToken(token: string) {
-        if (registeredTokenRef.current === token) return;
+        registeredTokenRef.current = token;
+        registeredPlatformRef.current = Capacitor.getPlatform() === "android" ? "android" : "ios";
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) return;
+        lastAccessTokenRef.current = session.access_token;
 
         const res = await fetch("/api/push/register", {
           method: "POST",
@@ -185,9 +189,11 @@ export default function NativeShellBridge() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ token, platform: Capacitor.getPlatform() }),
+          body: JSON.stringify({ token, platform: registeredPlatformRef.current }),
         });
-        if (res.ok) registeredTokenRef.current = token;
+        if (!res.ok) {
+          console.warn("[NativeShellBridge] push token registration failed", res.status);
+        }
       }
 
       if (!pushListenersRegistered) {
@@ -223,6 +229,7 @@ export default function NativeShellBridge() {
       }
 
       const { data: { session } } = await supabase.auth.getSession();
+      lastAccessTokenRef.current = session?.access_token ?? null;
       if (session?.access_token && registeredTokenRef.current) {
         await registerToken(registeredTokenRef.current);
       }
@@ -232,6 +239,7 @@ export default function NativeShellBridge() {
 
     const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.access_token && registeredTokenRef.current) {
+        lastAccessTokenRef.current = session.access_token;
         void fetch("/api/push/register", {
           method: "POST",
           headers: {
@@ -240,12 +248,24 @@ export default function NativeShellBridge() {
           },
           body: JSON.stringify({
             token: registeredTokenRef.current,
-            platform: "ios",
+            platform: registeredPlatformRef.current,
           }),
         });
       }
       if (!session && registeredTokenRef.current) {
-        registeredTokenRef.current = null;
+        const token = registeredTokenRef.current;
+        const accessToken = lastAccessTokenRef.current;
+        lastAccessTokenRef.current = null;
+        if (accessToken) {
+          void fetch("/api/push/register", {
+            method: "DELETE",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`,
+            },
+            body: JSON.stringify({ token }),
+          });
+        }
       }
     });
 
