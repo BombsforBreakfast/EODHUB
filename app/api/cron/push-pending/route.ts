@@ -13,7 +13,12 @@ export const maxDuration = 300;
 // ancient rows. The min-age gate lets the immediate `after()` dispatch (for
 // Node-created notifications) win first; the sweep is the backstop for
 // notifications created outside the Node layer (e.g. Kangaroo Court SQL RPCs).
-const WINDOW_MINUTES = 60;
+//
+// The window must comfortably exceed the cron interval (currently every 4h)
+// so a notification created just after one run is still in range at the next
+// run — with headroom for an occasionally-skipped run. Already-processed rows
+// get `pushed_at` set, so a wide window never causes duplicate pushes.
+const WINDOW_MINUTES = 12 * 60;
 const MIN_AGE_SECONDS = 90;
 const BATCH_SIZE = 200;
 
