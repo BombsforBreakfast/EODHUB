@@ -58,8 +58,9 @@ export type CandidateFilters = {
   service: string;
   yearsExperience: string;
   location: string;
-  tag: string;
   clearance: string;
+  hasPhoto: boolean;
+  hasResume: boolean;
 };
 
 export const EMPTY_FILTERS: CandidateFilters = {
@@ -67,8 +68,9 @@ export const EMPTY_FILTERS: CandidateFilters = {
   service: "",
   yearsExperience: "",
   location: "",
-  tag: "",
   clearance: "",
+  hasPhoto: false,
+  hasResume: false,
 };
 
 export function candidateMatchesFilters<T extends PublicCandidate & {
@@ -118,17 +120,14 @@ export function candidateMatchesFilters<T extends PublicCandidate & {
     if (!candidateLoc.includes(loc)) return false;
   }
 
-  if (filters.tag) {
-    const tag = filters.tag.toLowerCase();
-    const tags = candidateAllTags(c).map((t) => t.toLowerCase());
-    if (!tags.includes(tag)) return false;
-  }
-
   if (filters.clearance) {
     if ((c.clearance_level ?? "").toLowerCase() !== filters.clearance.toLowerCase()) {
       return false;
     }
   }
+
+  if (filters.hasPhoto && !c.photo_url?.trim()) return false;
+  if (filters.hasResume && !c.resume_url?.trim()) return false;
 
   return true;
 }
@@ -141,15 +140,12 @@ export function candidateMatchesFilters<T extends PublicCandidate & {
 export function collectFilterOptions(candidates: PublicCandidate[]) {
   const services = new Set<string>();
   const years = new Set<string>();
-  const tags = new Set<string>();
   for (const c of candidates) {
     if (c.service) services.add(c.service);
     if (c.years_experience) years.add(c.years_experience);
-    for (const tag of candidateAllTags(c)) tags.add(tag);
   }
   return {
     services: Array.from(services).sort(),
     years: Array.from(years).sort(),
-    tags: Array.from(tags).sort(),
   };
 }

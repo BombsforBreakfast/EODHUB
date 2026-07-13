@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { supabase } from "../../lib/lib/supabaseClient";
 import { useTheme } from "../../lib/ThemeContext";
 import { useMasterShell } from "../../components/master/masterShellContext";
@@ -26,8 +26,25 @@ import {
 } from "./lib/candidateUtils";
 
 type AccessState = "loading" | "not_logged_in" | "not_permitted" | "ok";
+type CandidateViewMode = "cards" | "list";
 
 type ActionPatch = Partial<Pick<EmployerAction, "is_saved" | "is_interested" | "is_hidden" | "notes">>;
+
+const MOBILE_CANDIDATE_VIEW_QUERY = "(max-width: 640px)";
+
+function subscribeToMobileCandidateView(onStoreChange: () => void): () => void {
+  const media = window.matchMedia(MOBILE_CANDIDATE_VIEW_QUERY);
+  media.addEventListener("change", onStoreChange);
+  return () => media.removeEventListener("change", onStoreChange);
+}
+
+function getMobileCandidateViewSnapshot(): boolean {
+  return window.matchMedia(MOBILE_CANDIDATE_VIEW_QUERY).matches;
+}
+
+function getMobileCandidateViewServerSnapshot(): boolean {
+  return false;
+}
 
 export default function EmployerDashboardClient() {
   const { t } = useTheme();
@@ -42,6 +59,13 @@ export default function EmployerDashboardClient() {
   const [actionsWarning, setActionsWarning] = useState<string | null>(null);
 
   const [tab, setTab] = useState<EmployerTab>("all");
+  const isMobileCandidateView = useSyncExternalStore(
+    subscribeToMobileCandidateView,
+    getMobileCandidateViewSnapshot,
+    getMobileCandidateViewServerSnapshot,
+  );
+  const [viewModeOverride, setViewModeOverride] = useState<CandidateViewMode | null>(null);
+  const viewMode = viewModeOverride ?? (isMobileCandidateView ? "list" : "cards");
   const [filters, setFilters] = useState<CandidateFilters>(EMPTY_FILTERS);
   const [showFilters, setShowFilters] = useState(false);
   const [resumeTarget, setResumeTarget] = useState<PublicCandidate | null>(null);
@@ -388,6 +412,36 @@ export default function EmployerDashboardClient() {
         >
           Filters{activeFilterCount > 0 ? ` · ${activeFilterCount}` : ""}
         </button>
+        <div className="employer-mobile-asset-filters" aria-label="Profile asset filters">
+          {[
+            { key: "hasPhoto" as const, label: "Has photo" },
+            { key: "hasResume" as const, label: "Has resume" },
+          ].map(({ key, label }) => {
+            const active = filters[key] ?? false;
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setFilters((prev) => ({ ...prev, [key]: !active }))}
+                style={{
+                  minHeight: 34,
+                  padding: "0 11px",
+                  borderRadius: 999,
+                  border: `1px solid ${active ? t.text : t.border}`,
+                  background: active ? t.text : t.surface,
+                  color: active ? t.surface : t.text,
+                  cursor: "pointer",
+                  fontSize: 12,
+                  fontWeight: 750,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {active ? "✓ " : ""}{label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Filter bar */}
@@ -416,13 +470,6 @@ export default function EmployerDashboardClient() {
             value={filters.yearsExperience}
             onChange={(v) => setFilters((prev) => ({ ...prev, yearsExperience: v }))}
             options={filterOptions.years}
-            t={t}
-          />
-          <SelectFilter
-            label="Tag / Tech / Qualification"
-            value={filters.tag}
-            onChange={(v) => setFilters((prev) => ({ ...prev, tag: v }))}
-            options={filterOptions.tags}
             t={t}
           />
           <div>
@@ -454,6 +501,41 @@ export default function EmployerDashboardClient() {
             options={["Secret", "Top Secret", "TS/SCI", "None"]}
             t={t}
           />
+          <fieldset className="employer-desktop-asset-filters" style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
+            <legend
+              style={{
+                fontSize: 11,
+                fontWeight: 800,
+                color: t.textFaint,
+                textTransform: "uppercase",
+                letterSpacing: 0.5,
+                marginBottom: 7,
+                padding: 0,
+              }}
+            >
+              Profile assets
+            </legend>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, minHeight: 34, flexWrap: "wrap" }}>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 7, color: t.text, fontSize: 13, fontWeight: 650, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={filters.hasPhoto ?? false}
+                  onChange={(e) => setFilters((prev) => ({ ...prev, hasPhoto: e.target.checked }))}
+                  style={{ width: 16, height: 16, margin: 0, accentColor: t.text, cursor: "pointer" }}
+                />
+                Has photo
+              </label>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 7, color: t.text, fontSize: 13, fontWeight: 650, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={filters.hasResume ?? false}
+                  onChange={(e) => setFilters((prev) => ({ ...prev, hasResume: e.target.checked }))}
+                  style={{ width: 16, height: 16, margin: 0, accentColor: t.text, cursor: "pointer" }}
+                />
+                Has resume
+              </label>
+            </div>
+          </fieldset>
           {activeFilterCount > 0 && (
             <div style={{ display: "flex", alignItems: "flex-end" }}>
               <button
@@ -478,52 +560,109 @@ export default function EmployerDashboardClient() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div
-        role="tablist"
-        aria-label="Employer dashboard tabs"
-        style={{ display: "flex", gap: 4, borderBottom: `1px solid ${t.border}`, marginBottom: 14, flexWrap: "wrap" }}
-      >
-        {tabs.map(({ id, label, count }) => {
-          const active = tab === id;
-          return (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => setTab(id)}
-              style={{
-                appearance: "none",
-                background: active ? t.surface : "transparent",
-                border: "none",
-                borderBottom: active ? `2px solid ${t.text}` : "2px solid transparent",
-                color: active ? t.text : t.textMuted,
-                fontWeight: 800,
-                fontSize: 14,
-                padding: "10px 14px",
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-              }}
-            >
-              {label}
-              <span
+      {/* Tabs + view selector */}
+      <div className="employer-results-toolbar" style={{ borderBottom: `1px solid ${t.border}` }}>
+        <div
+          role="tablist"
+          aria-label="Employer dashboard tabs"
+          style={{ display: "flex", gap: 4, flexWrap: "wrap" }}
+        >
+          {tabs.map(({ id, label, count }) => {
+            const active = tab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(id)}
                 style={{
-                  background: t.badgeBg,
-                  color: t.badgeText,
-                  borderRadius: 999,
-                  padding: "1px 7px",
-                  fontSize: 11,
+                  appearance: "none",
+                  background: active ? t.surface : "transparent",
+                  border: "none",
+                  borderBottom: active ? `2px solid ${t.text}` : "2px solid transparent",
+                  color: active ? t.text : t.textMuted,
                   fontWeight: 800,
+                  fontSize: 14,
+                  padding: "10px 14px",
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 6,
                 }}
               >
-                {count}
-              </span>
-            </button>
-          );
-        })}
+                {label}
+                <span
+                  style={{
+                    background: t.badgeBg,
+                    color: t.badgeText,
+                    borderRadius: 999,
+                    padding: "1px 7px",
+                    fontSize: 11,
+                    fontWeight: 800,
+                  }}
+                >
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div
+          role="group"
+          aria-label="Candidate view"
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 3,
+            padding: 3,
+            border: `1px solid ${t.border}`,
+            borderRadius: 9,
+            background: t.surface,
+          }}
+        >
+          {(["cards", "list"] as const).map((mode) => {
+            const active = viewMode === mode;
+            return (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setViewModeOverride(mode)}
+                title={mode === "cards" ? "Card view" : "List view"}
+                style={{
+                  border: "none",
+                  borderRadius: 6,
+                  background: active ? t.badgeBg : "transparent",
+                  color: active ? t.text : t.textMuted,
+                  padding: "5px 9px",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                }}
+              >
+                {mode === "cards" ? (
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
+                    <rect x="1.5" y="1.5" width="5" height="5" rx="1" />
+                    <rect x="9.5" y="1.5" width="5" height="5" rx="1" />
+                    <rect x="1.5" y="9.5" width="5" height="5" rx="1" />
+                    <rect x="9.5" y="9.5" width="5" height="5" rx="1" />
+                  </svg>
+                ) : (
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+                    <line x1="2" y1="3" x2="14" y2="3" />
+                    <line x1="2" y1="8" x2="14" y2="8" />
+                    <line x1="2" y1="13" x2="14" y2="13" />
+                  </svg>
+                )}
+                <span>{mode === "cards" ? "Cards" : "List"}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Results */}
@@ -557,26 +696,26 @@ export default function EmployerDashboardClient() {
       )}
 
       <div
-        style={{
-          display: "grid",
-          gap: 12,
-          gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))",
-        }}
+        className={viewMode === "cards" ? "employer-candidate-grid" : "employer-candidate-list"}
       >
-        {filtered.map(({ c, a }) => (
-          <CandidateCard
-            key={c.user_id}
-            candidate={c}
-            action={a}
-            busy={busyAction === c.user_id}
-            onViewProfessionalBio={() => setResumeTarget(c)}
-            onViewResume={() => setResumeDocumentTarget(c)}
-            onToggleSaved={() => toggleSaved(c.user_id)}
-            onToggleInterested={() => toggleInterested(c.user_id)}
-            onToggleHidden={() => toggleHidden(c.user_id)}
-            onMessage={() => messageCandidate(c.user_id)}
-          />
-        ))}
+        {filtered.map(({ c, a }) => {
+          const sharedProps = {
+            candidate: c,
+            action: a,
+            busy: busyAction === c.user_id,
+            onViewProfessionalBio: () => setResumeTarget(c),
+            onViewResume: () => setResumeDocumentTarget(c),
+            onToggleSaved: () => toggleSaved(c.user_id),
+            onToggleInterested: () => toggleInterested(c.user_id),
+            onToggleHidden: () => toggleHidden(c.user_id),
+            onMessage: () => messageCandidate(c.user_id),
+          };
+          return viewMode === "cards" ? (
+            <CandidateCard key={c.user_id} {...sharedProps} />
+          ) : (
+            <CandidateListRow key={c.user_id} {...sharedProps} />
+          );
+        })}
       </div>
 
       {resumeDocumentTarget && (
@@ -599,8 +738,281 @@ export default function EmployerDashboardClient() {
           isInterested={!!actions[resumeTarget.user_id]?.is_interested}
         />
       )}
+      <style jsx global>{`
+        .employer-results-toolbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 14px;
+        }
+        .employer-mobile-asset-filters {
+          display: none;
+        }
+        .employer-candidate-grid {
+          display: grid;
+          gap: 12px;
+          grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
+        }
+        .employer-candidate-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+        .employer-candidate-list-main {
+          display: grid;
+          grid-template-columns: minmax(210px, 0.8fr) minmax(220px, 1fr) auto;
+          align-items: center;
+          gap: 16px;
+        }
+        .employer-candidate-list-actions {
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+          gap: 5px;
+          flex-wrap: wrap;
+        }
+        @media (max-width: 920px) {
+          .employer-candidate-list-main {
+            grid-template-columns: minmax(210px, 0.8fr) minmax(220px, 1fr);
+          }
+          .employer-candidate-list-actions {
+            grid-column: 1 / -1;
+            justify-content: flex-start;
+            padding-left: 52px;
+          }
+        }
+        @media (max-width: 640px) {
+          .employer-mobile-asset-filters {
+            display: flex;
+            width: 100%;
+            gap: 7px;
+            align-items: center;
+            overflow-x: auto;
+            scrollbar-width: none;
+          }
+          .employer-mobile-asset-filters::-webkit-scrollbar {
+            display: none;
+          }
+          .employer-desktop-asset-filters {
+            display: none;
+          }
+          .employer-results-toolbar {
+            align-items: flex-start;
+            flex-direction: column;
+          }
+          .employer-candidate-list-main {
+            display: flex;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 9px;
+          }
+          .employer-candidate-list-actions {
+            padding-left: 0;
+          }
+        }
+      `}</style>
     </div>
     </NativeDesktopOnlyGate>
+  );
+}
+
+type CandidatePresentationProps = {
+  candidate: PublicCandidate;
+  action: EmployerAction | undefined;
+  busy: boolean;
+  onViewProfessionalBio: () => void;
+  onViewResume: () => void;
+  onToggleSaved: () => void;
+  onToggleInterested: () => void;
+  onToggleHidden: () => void;
+  onMessage: () => void;
+};
+
+function CandidateListRow({
+  candidate,
+  action,
+  busy,
+  onViewProfessionalBio,
+  onViewResume,
+  onToggleSaved,
+  onToggleInterested,
+  onToggleHidden,
+  onMessage,
+}: CandidatePresentationProps) {
+  const { t } = useTheme();
+  const name = candidateDisplayName(candidate);
+  const initial = candidateInitial(candidate);
+  const location = candidateLocation(candidate);
+  const tags = candidateAllTags(candidate).slice(0, 3);
+  const hasResume = !!candidate.resume_url?.trim();
+  const isSaved = !!action?.is_saved;
+  const isInterested = !!action?.is_interested;
+  const isHidden = !!action?.is_hidden;
+  const buttonStyle: React.CSSProperties = {
+    borderRadius: 999,
+    padding: "4px 9px",
+    fontSize: 10,
+    fontWeight: 750,
+    border: `1px solid ${t.border}`,
+    background: t.bg,
+    color: t.text,
+    cursor: busy ? "not-allowed" : "pointer",
+    opacity: busy ? 0.7 : 1,
+    whiteSpace: "nowrap",
+  };
+
+  return (
+    <article
+      style={{
+        border: `1px solid ${t.border}`,
+        borderRadius: 12,
+        background: t.surface,
+        padding: "10px 12px",
+      }}
+    >
+      <div className="employer-candidate-list-main">
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <div
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: "50%",
+              background: t.text,
+              color: t.surface,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 800,
+              fontSize: 17,
+              overflow: "hidden",
+              flexShrink: 0,
+            }}
+          >
+            {candidate.photo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element -- user photo
+              <img src={candidate.photo_url} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              initial
+            )}
+          </div>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+              <a
+                href={`/profile/${candidate.user_id}`}
+                target="_blank"
+                rel="noreferrer"
+                title={name}
+                style={{
+                  fontSize: 14,
+                  fontWeight: 850,
+                  color: t.text,
+                  textDecoration: "none",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {name}
+              </a>
+              <span
+                style={{
+                  background: "#dcfce7",
+                  color: "#15803d",
+                  borderRadius: 999,
+                  padding: "2px 7px",
+                  fontSize: 9,
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.35,
+                  flexShrink: 0,
+                }}
+              >
+                Open
+              </span>
+            </div>
+            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {[candidate.role, candidate.service, candidate.years_experience, candidate.status, location]
+                .filter(Boolean)
+                .join(" · ") || "EOD Professional"}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ minWidth: 0 }}>
+          {candidate.bio?.trim() ? (
+            <div
+              style={{
+                fontSize: 11,
+                color: t.textMuted,
+                lineHeight: 1.45,
+                display: "-webkit-box",
+                WebkitLineClamp: 5,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {candidate.bio}
+            </div>
+          ) : (
+            <div style={{ fontSize: 11, color: t.textFaint }}>No professional summary added.</div>
+          )}
+          {tags.length > 0 && (
+            <div style={{ display: "flex", gap: 4, marginTop: 5, overflow: "hidden" }}>
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  style={{
+                    background: t.badgeBg,
+                    color: t.badgeText,
+                    borderRadius: 999,
+                    padding: "2px 7px",
+                    fontSize: 10,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="employer-candidate-list-actions">
+          <button type="button" onClick={onViewProfessionalBio} style={{ ...buttonStyle, background: "#111", color: "white", borderColor: "#111" }}>
+            Bio
+          </button>
+          <button
+            type="button"
+            onClick={onViewResume}
+            disabled={!hasResume}
+            title={hasResume ? "View resume" : "No resume available"}
+            style={{ ...buttonStyle, opacity: hasResume ? buttonStyle.opacity : 0.45, cursor: hasResume ? buttonStyle.cursor : "not-allowed" }}
+          >
+            Resume
+          </button>
+          <button type="button" onClick={onMessage} style={buttonStyle}>Message</button>
+          <button
+            type="button"
+            onClick={onToggleSaved}
+            style={{ ...buttonStyle, background: isSaved ? "#fef3c7" : t.badgeBg, color: isSaved ? "#92400e" : t.badgeText, borderColor: "transparent" }}
+          >
+            {isSaved ? "★ Saved" : "☆ Save"}
+          </button>
+          <button
+            type="button"
+            onClick={onToggleInterested}
+            style={{ ...buttonStyle, background: isInterested ? "#dcfce7" : t.badgeBg, color: isInterested ? "#15803d" : t.badgeText, borderColor: "transparent" }}
+          >
+            {isInterested ? "✓ Interested" : "+ Interested"}
+          </button>
+          <button type="button" onClick={onToggleHidden} title={isHidden ? "Unhide" : "Hide from All"} style={{ ...buttonStyle, color: t.textMuted }}>
+            {isHidden ? "Unhide" : "Hide"}
+          </button>
+        </div>
+      </div>
+    </article>
   );
 }
 
@@ -618,17 +1030,7 @@ function CandidateCard({
   onToggleInterested,
   onToggleHidden,
   onMessage,
-}: {
-  candidate: PublicCandidate;
-  action: EmployerAction | undefined;
-  busy: boolean;
-  onViewProfessionalBio: () => void;
-  onViewResume: () => void;
-  onToggleSaved: () => void;
-  onToggleInterested: () => void;
-  onToggleHidden: () => void;
-  onMessage: () => void;
-}) {
+}: CandidatePresentationProps) {
   const { t } = useTheme();
   const name = candidateDisplayName(candidate);
   const initial = candidateInitial(candidate);
