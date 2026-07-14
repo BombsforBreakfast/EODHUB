@@ -9,8 +9,11 @@ External job listings are ingested via cron-backed API routes. All imported jobs
 | USAJobs | `GET /api/import-usajobs` | `0 6 * * *` | `USAJOBS_API_KEY`, `USAJOBS_EMAIL` |
 | Adzuna | `GET /api/import-adzuna` | `30 6 * * *` | `ADZUNA_APP_ID`, `ADZUNA_APP_KEY` |
 | ReliefWeb | `GET /api/import-reliefweb` | `0 7 * * *` | `RELIEFWEB_APP_NAME` |
+| LinkedIn (local Mac) | `POST /api/import-linkedin` | Run-on-wake 4:30–8 AM | `CRON_SECRET`, local Playwright session |
 
 Shared: `CRON_SECRET` (Vercel cron Bearer auth or manual `?secret=`).
+
+LinkedIn is **not** a Vercel cron — see [`docs/linkedin-job-import.md`](linkedin-job-import.md).
 
 ## USAJobs
 

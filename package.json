@@ -11,6 +11,9 @@
     "check:image-transforms": "node scripts/check-supabase-image-transforms.mjs",
     "test:feed-ranking": "tsx scripts/verify-feed-ranking.ts",
     "test:news": "tsx app/lib/news/goldenLasd.verify.ts",
+    "linkedin:login": "tsx scripts/linkedin-jobs-import.ts --login",
+    "linkedin:import": "tsx scripts/linkedin-jobs-import.ts",
+    "linkedin:import:dry": "tsx scripts/linkedin-jobs-import.ts --dry-run --force",
     "refresh:disposable": "node scripts/fetch-disposable-domains.mjs",
     "cap:sync": "npx cap sync",
     "cap:sync:ios": "npx cap sync ios",
@@ -63,6 +66,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "playwright": "^1.52.0",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
     "typescript": "^5"

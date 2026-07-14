@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  LinkedIn job import — run-on-wake (4:30–8:00 AM guard is inside the script).
+
+  Install:
+    1. Edit paths below to match your machine.
+    2. cp scripts/linkedin-jobs-import.launchd.plist.example ~/Library/LaunchAgents/com.eodhub.linkedin-jobs-import.plist
+    3. launchctl load ~/Library/LaunchAgents/com.eodhub.linkedin-jobs-import.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.eodhub.linkedin-jobs-import.plist
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.eodhub.linkedin-jobs-import</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/YOU/eod-job-board/scripts/linkedin-jobs-import.sh</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/YOU/.eod-hub/linkedin-import.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOU/.eod-hub/linkedin-import.log</string>
+</dict>
+</plist>
