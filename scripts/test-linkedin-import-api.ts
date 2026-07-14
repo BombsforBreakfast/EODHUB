@@ -16,12 +16,17 @@ if (fs.existsSync(envPath)) {
   }
 }
 
-const base = process.argv[2] ?? "http://localhost:3000";
-const secret = process.env.CRON_SECRET?.trim();
-if (!secret) {
-  console.error("Missing CRON_SECRET in .env.local");
-  process.exit(1);
+function getCronSecret(): string {
+  const value = process.env.CRON_SECRET?.trim();
+  if (!value) {
+    console.error("Missing CRON_SECRET in .env.local");
+    process.exit(1);
+  }
+  return value;
 }
+
+const base = process.argv[2] ?? "http://localhost:3000";
+const secret = getCronSecret();
 
 const sampleJob = {
   linkedinJobId: "9999999999",
