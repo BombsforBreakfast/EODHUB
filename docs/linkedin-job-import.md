@@ -46,19 +46,25 @@ Install the launchd agent:
 
 `RunAtLoad` triggers on login/wake; guards inside the script prevent daytime runs.
 
-## Searches (v1)
+## Searches
 
-Configured in [`app/lib/linkedin/intakeConfig.ts`](../app/lib/linkedin/intakeConfig.ts):
+Configured in [`app/lib/linkedin/intakeConfig.ts`](../app/lib/linkedin/intakeConfig.ts). Each category runs as its own LinkedIn keyword search (acronym + expanded forms where applicable):
 
-- EOD
-- UXO
-- Explosive Ordnance Disposal
+| Category | Search terms |
+|----------|--------------|
+| EOD | EOD, Explosive Ordnance Disposal, Direct Action EOD |
+| UXO | UXO, Unexploded Ordnance |
+| C-IED | C-IED, CIED, Counter IED, Improvised Explosive Device |
+| UAS | UAS, Unmanned Aerial Systems |
+| C-UAS | C-UAS, Counter UAS |
+| CWMD / WMD | CWMD, C-WMD, Counter Weapons of Mass Destruction, WMD, Weapons of Mass Destruction |
+| Explosive Safety | Explosive Safety, Explosives Specialist |
 
-All scoped to United States, past week. Relevance scoring reuses Adzuna EOD keyword weights.
+All scoped to United States, past week. Up to **4 jobs per search** (max **50** total per run) so every category gets representation. Relevance scoring reuses Adzuna EOD keyword weights.
 
 ## API
 
-`POST /api/import-linkedin` with `Authorization: Bearer $CRON_SECRET` and body:
+`POST /api/import-linkedin?secret=$CRON_SECRET` with body:
 
 ```json
 {

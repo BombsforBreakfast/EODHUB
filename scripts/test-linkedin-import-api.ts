@@ -35,14 +35,16 @@ const sampleJob = {
 };
 
 async function main() {
-  const res = await fetch(`${base}/api/import-linkedin`, {
+  const res = await fetch(
+    `${base}/api/import-linkedin?secret=${encodeURIComponent(secret)}`,
+    {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${secret}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ jobs: [sampleJob] }),
-  });
+    },
+  );
   const body = await res.json().catch(() => ({}));
   console.log(JSON.stringify({ status: res.status, body }, null, 2));
   if (!res.ok) process.exit(1);

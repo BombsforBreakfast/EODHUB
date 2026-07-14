@@ -16,6 +16,7 @@ import {
   LINKEDIN_IMPORT_WINDOW_END_MINUTES,
   LINKEDIN_IMPORT_WINDOW_START_MINUTES,
   LINKEDIN_JOBS_PER_SEARCH,
+  LINKEDIN_MAX_JOBS_PER_QUERY,
   LINKEDIN_MAX_JOBS_PER_RUN,
   LINKEDIN_SEARCH_QUERIES,
 } from "../app/lib/linkedin/intakeConfig";
@@ -135,14 +136,48 @@ async function runLogin() {
   const context = await browser.newContext();
   const page = await context.newPage();
   await page.goto("https://www.linkedin.com/login", { waitUntil: "domcontentloaded" });
-  console.log("Log in to LinkedIn in the browser window, then press Enter here…");
-  await new Promise<void>((resolveWait) => {
-    process.stdin.resume();
-    process.stdin.once("data", () => resolveWait());
+  console.log("Log in to LinkedIn in the browser window…");
+  console.log("Session saves automatically once login completes (or press Enter here to save now).");
+
+  const saveAndClose = async () => {
+    await context.storageState({ path: authPath });
+    await browser.close();
+    console.log(`Saved session to ${authPath}`);
+  };
+
+  let saved = false;
+  const saveOnce = async () => {
+    if (saved) return;
+    saved = true;
+    await saveAndClose();
+  };
+
+  process.stdin.resume();
+  process.stdin.once("data", () => {
+    void saveOnce();
   });
-  await context.storageState({ path: authPath });
-  await browser.close();
-  console.log(`Saved session to ${authPath}`);
+
+  const deadline = Date.now() + 5 * 60_000;
+  while (Date.now() < deadline && !saved) {
+    await page.waitForTimeout(2_000);
+    const url = page.url();
+    const loggedIn =
+      !url.includes("/login") &&
+      !url.includes("/checkpoint") &&
+      (url.includes("linkedin.com/feed") ||
+        url.includes("linkedin.com/jobs") ||
+        url.includes("linkedin.com/in/"));
+    if (loggedIn) {
+      await page.waitForTimeout(2_000);
+      await saveOnce();
+      return;
+    }
+  }
+
+  if (!saved) {
+    await browser.close();
+    throw new Error("Login timed out after 5 minutes. Re-run: npm run linkedin:login");
+  }
 }
 
 async function assertLoggedIn(page: Page) {
@@ -271,12 +306,15 @@ async function scrapeAll(context: BrowserContext): Promise<ScrapedJob[]> {
     if (collected.length >= LINKEDIN_MAX_JOBS_PER_RUN) break;
 
     console.log(`Searching LinkedIn: ${query.keywords} (${query.location})…`);
-    const batch = await scrapeSearchPage(page, query.keywords, query.location, query.keywords);
+    const batch = await scrapeSearchPage(page, query.keywords, query.location, query.id);
+    let addedFromQuery = 0;
     for (const job of batch) {
+      if (collected.length >= LINKEDIN_MAX_JOBS_PER_RUN) break;
+      if (addedFromQuery >= LINKEDIN_MAX_JOBS_PER_QUERY) break;
       if (seen.has(job.linkedinJobId)) continue;
       seen.add(job.linkedinJobId);
       collected.push(job);
-      if (collected.length >= LINKEDIN_MAX_JOBS_PER_RUN) break;
+      addedFromQuery++;
     }
 
     await page.waitForTimeout(2_000 + Math.floor(Math.random() * 1_500));
@@ -295,14 +333,16 @@ async function postToImportApi(jobs: ScrapedJob[]) {
     process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
     "https://www.eod-hub.com";
 
-  const res = await fetch(`${base.replace(/\/$/, "")}/api/import-linkedin`, {
+  const res = await fetch(
+    `${base.replace(/\/$/, "")}/api/import-linkedin?secret=${encodeURIComponent(secret)}`,
+    {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${secret}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ jobs }),
-  });
+    },
+  );
 
   const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) {

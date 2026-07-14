@@ -38,6 +38,13 @@ export const STRONG_RELEVANT_TERMS = [
   "counter uas",
   "c-uas",
   "drone operator",
+  "cwmd",
+  "c-wmd",
+  "counter weapons of mass destruction",
+  "wmd",
+  "weapons of mass destruction",
+  "direct action eod",
+  "direct action",
   "explosive handler",
   "pyrotechnic",
   "blasting",
@@ -186,10 +193,18 @@ export function scoreAdzunaJob(
 export function detectAdzunaCategory(title: string): string {
   const t = title.toLowerCase();
   if (t.includes("uxo") || t.includes("unexploded ordnance")) return "UXO";
+  if (t.includes("c-ied") || t.includes("cied") || t.includes("counter ied") || t.includes("improvised explosive"))
+    return "C-IED";
+  if (t.includes("cwmd") || t.includes("c-wmd") || t.includes("counter weapons of mass destruction"))
+    return "CWMD";
+  if (t.includes("wmd") || t.includes("weapons of mass destruction")) return "WMD";
   if (t.includes("uas") || t.includes("uav") || t.includes("unmanned aerial") || t.includes("drone"))
     return "UAS";
+  if (t.includes("c-uas") || t.includes("counter uas") || t.includes("counter-uas")) return "C-UAS";
+  if (t.includes("explosive safety") || t.includes("explosives specialist")) return "Explosive Safety";
+  if (t.includes("direct action")) return "Direct Action EOD";
   if (t.includes("bomb squad") || t.includes("bomb tech")) return "Bomb Squad";
   if (t.includes("demining") || t.includes("mine action") || t.includes("hma")) return "HMA";
-  if (t.includes("cbrn") || t.includes("cbrne") || t.includes("wmd")) return "CBRN";
+  if (t.includes("cbrn") || t.includes("cbrne")) return "CBRN";
   return "EOD";
 }
