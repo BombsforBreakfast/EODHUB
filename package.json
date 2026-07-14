@@ -14,6 +14,8 @@
     "linkedin:login": "tsx scripts/linkedin-jobs-import.ts --login",
     "linkedin:import": "tsx scripts/linkedin-jobs-import.ts",
     "linkedin:import:dry": "tsx scripts/linkedin-jobs-import.ts --dry-run --force",
+    "linkedin:install-task": "powershell -ExecutionPolicy Bypass -File scripts/register-linkedin-import-task.ps1",
+    "linkedin:uninstall-task": "powershell -ExecutionPolicy Bypass -File scripts/register-linkedin-import-task.ps1 -Unregister",
     "refresh:disposable": "node scripts/fetch-disposable-domains.mjs",
     "cap:sync": "npx cap sync",
     "cap:sync:ios": "npx cap sync ios",

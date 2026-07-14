@@ -1,6 +1,6 @@
-# LinkedIn job import (local Mac)
+# LinkedIn job import (local machine)
 
-LinkedIn has no public Jobs API. EOD-HUB uses a **local Playwright script** on your Mac that searches with your logged-in session and POSTs results to `/api/import-linkedin`. Jobs land in the admin queue (`is_approved = false`) like USAJobs/Adzuna.
+LinkedIn has no public Jobs API. EOD-HUB uses a **local Playwright script** on your computer that searches with your logged-in session and POSTs results to `/api/import-linkedin`. Jobs land in the admin queue (`is_approved = false`) like USAJobs/Adzuna.
 
 **Legal note:** LinkedIn restricts automated access. Run low-frequency, on your own machine, with your own account. Re-auth when sessions expire.
 
@@ -37,6 +37,30 @@ npx tsx scripts/linkedin-jobs-import.ts
 ## Run-on-wake (recommended)
 
 The script only runs when **local time is 4:30 AM – before 8:00 AM** and **at most once per calendar day**. Outside that window it exits immediately with `outside_import_window`.
+
+### Windows (Task Scheduler)
+
+From the repo root in PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/register-linkedin-import-task.ps1
+```
+
+This creates:
+
+- **EOD-HUB LinkedIn Import Daily** — scheduled task at **5:30 AM**
+- **Startup shortcut** — runs at log on (script guards skip runs outside 4:30–8 AM or after today's success)
+
+Guards inside the script prevent daytime or duplicate runs.
+
+Logs: `%USERPROFILE%\.eod-hub\linkedin-import.log`
+
+```powershell
+npm run linkedin:install-task
+npm run linkedin:uninstall-task
+```
+
+### macOS (launchd)
 
 Install the launchd agent:
 
@@ -93,4 +117,4 @@ All scoped to United States, past week. Up to **4 jobs per search** (max **50** 
 | Empty scrape | LinkedIn DOM may have changed — check selectors in `scripts/linkedin-jobs-import.ts` |
 | Import API 401 | Verify `CRON_SECRET` matches production |
 
-Logs (if using launchd): `~/.eod-hub/linkedin-import.log`
+Logs: `%USERPROFILE%\.eod-hub\linkedin-import.log` (Windows) or `~/.eod-hub/linkedin-import.log` (macOS)
