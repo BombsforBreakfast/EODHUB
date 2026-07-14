@@ -6,7 +6,7 @@ export const DEFAULT_WELCOME_SIDEBAR_SENDER_USER_ID =
 
 export const WELCOME_SIDEBAR_MESSAGE = `Hey — Mike here, creator of EOD-HUB. Just wanted to personally say thanks for joining.
 
-We're still early beta, so you're getting a front-row seat while this thing takes shape. Poke around, connect with people you know, break stuff, tell me what sucks, tell me what you'd like to see.
+Poke around, connect with people you know, break stuff, tell me what sucks, tell me what you'd like to see.
 
 The goal is pretty simple: build a solid place for EOD and PSBTs, and the broader community to stay connected, find opportunities, and share knowledge.
 
