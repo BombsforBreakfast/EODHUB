@@ -44,6 +44,132 @@ type ScrapedJob = {
   relevanceScore: number;
 };
 
+type JobDetail = {
+  description: string;
+  title?: string;
+  companyName?: string;
+  location?: string;
+};
+
+function cleanJobTitle(title: string): string {
+  const normalized = title.replace(/\s+/g, " ").trim();
+  if (normalized.length > 10 && normalized.length % 2 === 0) {
+    const half = normalized.slice(0, normalized.length / 2);
+    if (half === normalized.slice(normalized.length / 2)) return half;
+  }
+  return normalized;
+}
+
+function htmlToPlainText(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<li[^>]*>/gi, "\n• ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+}
+
+async function scrapeJobDetail(page: Page, applyUrl: string): Promise<JobDetail> {
+  await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
+  await page.waitForTimeout(1_500);
+
+  try {
+    const showMore = page
+      .locator('button.show-more-less-html__button, button[aria-label*="Show more"]')
+      .first();
+    if (await showMore.isVisible({ timeout: 2_000 }).catch(() => false)) {
+      await showMore.click();
+      await page.waitForTimeout(800);
+    }
+  } catch {
+    // Description may already be expanded.
+  }
+
+  return page.evaluate(() => {
+    function parseJsonLd(): {
+      description: string;
+      title?: string;
+      companyName?: string;
+      location?: string;
+    } | null {
+      for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+        try {
+          const parsed = JSON.parse(script.textContent || "null") as unknown;
+          const nodes = Array.isArray(parsed) ? parsed : [parsed];
+          for (const node of nodes) {
+            if (!node || typeof node !== "object") continue;
+            const record = node as Record<string, unknown>;
+            const type = record["@type"];
+            const isJobPosting =
+              type === "JobPosting" ||
+              (Array.isArray(type) && type.includes("JobPosting")) ||
+              (typeof type === "string" && type.includes("JobPosting"));
+            if (!isJobPosting) continue;
+
+            const hiringOrg = record.hiringOrganization as Record<string, unknown> | undefined;
+            const jobLocation = record.jobLocation as Record<string, unknown> | undefined;
+            const address = jobLocation?.address as Record<string, unknown> | undefined;
+            const description =
+              typeof record.description === "string" ? record.description : "";
+
+            return {
+              description,
+              title: typeof record.title === "string" ? record.title : undefined,
+              companyName:
+                typeof hiringOrg?.name === "string" ? hiringOrg.name : undefined,
+              location:
+                typeof address?.addressLocality === "string"
+                  ? address.addressLocality
+                  : undefined,
+            };
+          }
+        } catch {
+          // Try the next JSON-LD block.
+        }
+      }
+      return null;
+    }
+
+    function parseDomDescription(): string {
+      const selectors = [
+        ".show-more-less-html__markup",
+        ".jobs-description__content",
+        ".jobs-description-content__text",
+        ".jobs-box__html-content",
+        "#job-details",
+        ".description__text",
+      ];
+      for (const selector of selectors) {
+        const el = document.querySelector(selector);
+        const text = el?.textContent?.replace(/\s+/g, " ").trim();
+        if (text && text.length > 40) return text;
+      }
+      return "";
+    }
+
+    const jsonLd = parseJsonLd();
+    if (jsonLd?.description) return jsonLd;
+
+    const domDescription = parseDomDescription();
+    if (jsonLd) {
+      return { ...jsonLd, description: domDescription || jsonLd.description };
+    }
+    return { description: domDescription };
+  }).then((detail) => ({
+    ...detail,
+    description: detail.description.includes("<")
+      ? htmlToPlainText(detail.description)
+      : detail.description.replace(/\s+/g, " ").trim(),
+    title: detail.title ? cleanJobTitle(detail.title) : undefined,
+  }));
+}
+
+function randomDelayMs(min: number, max: number): number {
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
 type CliFlags = {
   login: boolean;
   dryRun: boolean;
@@ -270,11 +396,18 @@ async function scrapeSearchPage(
   const jobs: ScrapedJob[] = [];
   for (const item of raw.slice(0, LINKEDIN_JOBS_PER_SEARCH)) {
     const jobId = parseLinkedInJobIdFromUrl(item.applyUrl) ?? item.linkedinJobId;
+    const title = cleanJobTitle(item.title);
+
+    const detail = await scrapeJobDetail(page, item.applyUrl);
+    const description = detail.description || item.description;
+    const companyName = detail.companyName || item.companyName;
+    const location = detail.location || item.location;
+
     const relevance = scoreLinkedInJob(
       {
-        title: item.title,
-        description: item.description,
-        companyName: item.companyName,
+        title: detail.title || title,
+        description,
+        companyName,
       },
       { searchQuery },
     );
@@ -282,14 +415,16 @@ async function scrapeSearchPage(
 
     jobs.push({
       linkedinJobId: jobId,
-      title: item.title,
-      companyName: item.companyName || "Unknown employer",
-      location: item.location,
-      description: item.description,
+      title: detail.title || title,
+      companyName: companyName || "Unknown employer",
+      location,
+      description,
       applyUrl: canonicalLinkedInJobUrl(jobId),
       searchQuery,
       relevanceScore: relevance.score,
     });
+
+    await page.waitForTimeout(randomDelayMs(800, 1_800));
   }
 
   return jobs;
@@ -390,7 +525,9 @@ async function main() {
 
   console.log(`Scraped ${jobs.length} relevant job(s).`);
   for (const job of jobs) {
-    console.log(`  • [${job.relevanceScore}] ${job.title} — ${job.companyName}`);
+    const descNote =
+      job.description.length > 0 ? `${job.description.length} chars` : "no description";
+    console.log(`  • [${job.relevanceScore}] ${job.title} — ${job.companyName} (${descNote})`);
   }
 
   if (jobs.length === 0) {

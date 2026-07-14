@@ -84,7 +84,7 @@ Configured in [`app/lib/linkedin/intakeConfig.ts`](../app/lib/linkedin/intakeCon
 | CWMD / WMD | CWMD, C-WMD, Counter Weapons of Mass Destruction, WMD, Weapons of Mass Destruction |
 | Explosive Safety | Explosive Safety, Explosives Specialist |
 
-All scoped to United States, past week. Up to **4 jobs per search** (max **50** total per run) so every category gets representation. Relevance scoring reuses Adzuna EOD keyword weights.
+All scoped to United States, past week. Up to **4 jobs per search** (max **50** total per run) so every category gets representation. Each listing opens the job detail page to capture the full description (JSON-LD or page body). Relevance scoring reuses Adzuna EOD keyword weights.
 
 ## API
 
