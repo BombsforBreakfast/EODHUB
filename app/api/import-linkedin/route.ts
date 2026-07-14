@@ -195,9 +195,6 @@ export async function POST(req: NextRequest) {
       location: candidate.location,
       apply_url: candidate.applyUrl,
       linkedin_job_id: candidate.linkedinJobId,
-      description: candidate.description,
-      og_description: candidate.description,
-      og_site_name: "LinkedIn",
       category: detectLinkedInCategory(candidate.title),
       relevance_score: candidate.relevanceScore,
       import_metadata: {
@@ -217,6 +214,9 @@ export async function POST(req: NextRequest) {
 
     inserts.push({
       ...rowPayload,
+      description: candidate.description,
+      og_description: candidate.description,
+      og_site_name: "LinkedIn",
       is_approved: false,
       source_type: "linkedin",
     });
