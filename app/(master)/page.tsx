@@ -14,6 +14,7 @@ import MentionTextarea, { extractMentionIds } from "../components/MentionTextare
 import { PostLikersStack, type PostLikerBrief } from "../components/PostLikersStack";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
 import { prepareFeedUploadFile } from "../lib/prepareUploadFile";
+import { uploadResumableFeedFile } from "../lib/resumableFeedUpload";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../lib/native/pickFeedMedia";
 import { shareOrCopyUrl } from "../lib/native/nativeShare";
@@ -22,6 +23,7 @@ import {
   FEED_ATTACHMENT_ACCEPT,
   UPLOAD_LIMITS,
   attachmentRenderKindFromFile,
+  feedUploadLimitsForAccount,
   formatUploadBytes,
   isVideoFile,
   validateFeedAttachmentPick,
@@ -1035,6 +1037,8 @@ export default function HomePage() {
   const [currentUserName, setCurrentUserName] = useState<string | null>(null);
   const [currentUserPhotoUrl, setCurrentUserPhotoUrl] = useState<string | null>(null);
   const [currentUserEmail, setCurrentUserEmail] = useState<string | null>(null);
+  const [currentUserAccountType, setCurrentUserAccountType] = useState<string | null>(null);
+  const currentFeedUploadLimits = feedUploadLimitsForAccount(currentUserAccountType);
   const [postAsMode, setPostAsMode] = useState<PostAsMode>(() => loadStoredPostAsMode());
   const [postAsAdminProfile, setPostAsAdminProfile] = useState<PostAsAdminProfile | null>(null);
   const [currentUserReferralCode, setCurrentUserReferralCode] = useState<string | null>(null);
@@ -4631,7 +4635,10 @@ export default function HomePage() {
         alert("Only the first files were added. Max is 10 files per post.");
       }
 
-      const pickError = validateFeedAttachmentPick(filesToAdd);
+      const pickError = validateFeedAttachmentPick(
+        filesToAdd,
+        currentFeedUploadLimits,
+      );
       if (pickError) {
         alert(pickError);
         return prev;
@@ -4849,7 +4856,9 @@ export default function HomePage() {
     pathPrefix: string,
     forcedFileName?: string,
   ): Promise<string> {
-    const prepared = await prepareFeedUploadFile(file);
+    const prepared = await prepareFeedUploadFile(file, {
+      accountType: currentUserAccountType,
+    });
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
 
@@ -4858,15 +4867,19 @@ export default function HomePage() {
       .slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `${pathPrefix}/${safeFileName}`;
 
-    const { error: uploadError } = await supabase.storage
-      .from("feed-images")
-      .upload(filePath, file, {
-        upsert: false,
-      });
+    if (isVideoFile(file)) {
+      await uploadResumableFeedFile(file, filePath);
+    } else {
+      const { error: uploadError } = await supabase.storage
+        .from("feed-images")
+        .upload(filePath, file, {
+          upsert: false,
+        });
 
-    if (uploadError) {
-      console.error("Storage upload error:", uploadError);
-      throw new Error(uploadError.message);
+      if (uploadError) {
+        console.error("Storage upload error:", uploadError);
+        throw new Error(uploadError.message);
+      }
     }
 
     const { data } = supabase.storage.from("feed-images").getPublicUrl(filePath);
@@ -5956,6 +5969,7 @@ export default function HomePage() {
       setCurrentUserName(null);
       setCurrentUserPhotoUrl(null);
       setCurrentUserEmail(null);
+      setCurrentUserAccountType(null);
       setPostAsAdminProfile(null);
       setPostAsMode(loadStoredPostAsMode());
       setCurrentUserReferralCode(null);
@@ -6054,6 +6068,7 @@ export default function HomePage() {
             authUser.email?.trim().toLowerCase() ??
             null;
           setCurrentUserEmail(viewerEmail);
+          setCurrentUserAccountType(profileCheck.account_type ?? null);
           if (canUsePostAsSelector(viewerEmail)) {
             const { data: adminProfile } = await supabase
               .from("profiles")
@@ -7507,7 +7522,7 @@ export default function HomePage() {
 
             <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
               Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
-              Short videos up to {formatUploadBytes(UPLOAD_LIMITS.video)} (~3–4 min).
+              Short videos up to {formatUploadBytes(currentFeedUploadLimits.video)} ({currentFeedUploadLimits.videoDurationHint}).
               PDFs and CAD/3D files up to {formatUploadBytes(UPLOAD_LIMITS.document)} are supported.
               CAD/3D files require a JPG/PNG/WEBP preview image.
             </p>

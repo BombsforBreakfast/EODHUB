@@ -33,6 +33,7 @@ import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { fetchBlockedUserIds, filterBlockedRows } from "../../../lib/userBlocks";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
+import { uploadResumableFeedFile } from "../../../lib/resumableFeedUpload";
 import { FeedMediaAttachment } from "../../../components/FeedMediaAttachment";
 import FeedImageGalleryModal from "../../../components/FeedImageGalleryModal";
 import OptimizedAvatarImg from "../../../components/OptimizedAvatarImg";
@@ -2675,8 +2676,12 @@ export default function PublicProfilePage() {
     file = prepared.file;
     const safeName = forcedFileName ?? `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `${currentUserId}/posts/${postId}/${safeName}`;
-    const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
-    if (error) throw new Error(error.message);
+    if (isVideoFile(file)) {
+      await uploadResumableFeedFile(file, filePath);
+    } else {
+      const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
+      if (error) throw new Error(error.message);
+    }
     return supabase.storage.from("feed-images").getPublicUrl(filePath).data.publicUrl;
   }
 
