@@ -720,6 +720,7 @@ export default function ResourcesPage() {
                     og={{
                       ...resourceOgPreview,
                       title: resourceName.trim() || resourceOgPreview.title,
+                      description: resourceBlurb.trim() || resourceOgPreview.description,
                     }}
                   />
                 )}
