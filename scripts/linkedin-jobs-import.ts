@@ -33,6 +33,124 @@ const stateDir = join(homedir(), ".eod-hub");
 const authPath = join(stateDir, "linkedin-auth.json");
 const lastRunPath = join(stateDir, "linkedin-last-run.json");
 
+// Plain strings — tsx injects __name into page.evaluate() callbacks and breaks Playwright.
+const SCRAPE_LINKEDIN_SEARCH_RESULTS = `(() => {
+  const results = [];
+  const cards = document.querySelectorAll(
+    'li.scaffold-layout__list-item, li.jobs-search-results__list-item, div.job-search-card, div.base-card',
+  );
+
+  for (const el of cards) {
+    const link =
+      el.querySelector('a[href*="/jobs/view/"]') ??
+      el.querySelector('a.base-card__full-link');
+    if (!link || !link.href) continue;
+
+    const match = link.href.match(/\\/jobs\\/view\\/(\\d+)/i);
+    if (!match) continue;
+
+    const title =
+      el.querySelector('.base-search-card__title')?.textContent?.trim() ??
+      el.querySelector('.job-card-list__title')?.textContent?.trim() ??
+      link.textContent?.trim() ??
+      '';
+
+    const companyName =
+      el.querySelector('.base-search-card__subtitle')?.textContent?.trim() ??
+      el.querySelector('.job-card-container__company-name')?.textContent?.trim() ??
+      el.querySelector('.artdeco-entity-lockup__subtitle')?.textContent?.trim() ??
+      '';
+
+    const locationText =
+      el.querySelector('.job-search-card__location')?.textContent?.trim() ??
+      el.querySelector('.artdeco-entity-lockup__caption')?.textContent?.trim() ??
+      '';
+
+    const description =
+      el.querySelector('.job-search-card__snippet')?.textContent?.trim() ??
+      el.querySelector('.base-search-card__metadata')?.textContent?.trim() ??
+      '';
+
+    if (!title) continue;
+
+    results.push({
+      linkedinJobId: match[1],
+      title,
+      companyName,
+      location: locationText,
+      description,
+      applyUrl: 'https://www.linkedin.com/jobs/view/' + match[1] + '/',
+    });
+  }
+
+  return results;
+})()`;
+
+const SCRAPE_LINKEDIN_JOB_DETAIL = `(() => {
+  const parseJsonLd = () => {
+    for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+      try {
+        const parsed = JSON.parse(script.textContent || 'null');
+        const nodes = Array.isArray(parsed) ? parsed : [parsed];
+        for (const node of nodes) {
+          if (!node || typeof node !== 'object') continue;
+          const type = node['@type'];
+          const isJobPosting =
+            type === 'JobPosting' ||
+            (Array.isArray(type) && type.includes('JobPosting')) ||
+            (typeof type === 'string' && type.includes('JobPosting'));
+          if (!isJobPosting) continue;
+
+          const hiringOrg = node.hiringOrganization;
+          const jobLocation = node.jobLocation;
+          const address = jobLocation && jobLocation.address;
+          const description = typeof node.description === 'string' ? node.description : '';
+
+          return {
+            description,
+            title: typeof node.title === 'string' ? node.title : undefined,
+            companyName:
+              hiringOrg && typeof hiringOrg.name === 'string' ? hiringOrg.name : undefined,
+            location:
+              address && typeof address.addressLocality === 'string'
+                ? address.addressLocality
+                : undefined,
+          };
+        }
+      } catch {
+        // Try the next JSON-LD block.
+      }
+    }
+    return null;
+  };
+
+  const parseDomDescription = () => {
+    const selectors = [
+      '.show-more-less-html__markup',
+      '.jobs-description__content',
+      '.jobs-description-content__text',
+      '.jobs-box__html-content',
+      '#job-details',
+      '.description__text',
+    ];
+    for (const selector of selectors) {
+      const el = document.querySelector(selector);
+      const text = el?.textContent?.replace(/\\s+/g, ' ').trim();
+      if (text && text.length > 40) return text;
+    }
+    return '';
+  };
+
+  const jsonLd = parseJsonLd();
+  if (jsonLd?.description) return jsonLd;
+
+  const domDescription = parseDomDescription();
+  if (jsonLd) {
+    return { ...jsonLd, description: domDescription || jsonLd.description };
+  }
+  return { description: domDescription };
+})()`;
+
 type ScrapedJob = {
   linkedinJobId: string;
   title: string;
@@ -87,77 +205,7 @@ async function scrapeJobDetail(page: Page, applyUrl: string): Promise<JobDetail>
     // Description may already be expanded.
   }
 
-  return page.evaluate(() => {
-    function parseJsonLd(): {
-      description: string;
-      title?: string;
-      companyName?: string;
-      location?: string;
-    } | null {
-      for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
-        try {
-          const parsed = JSON.parse(script.textContent || "null") as unknown;
-          const nodes = Array.isArray(parsed) ? parsed : [parsed];
-          for (const node of nodes) {
-            if (!node || typeof node !== "object") continue;
-            const record = node as Record<string, unknown>;
-            const type = record["@type"];
-            const isJobPosting =
-              type === "JobPosting" ||
-              (Array.isArray(type) && type.includes("JobPosting")) ||
-              (typeof type === "string" && type.includes("JobPosting"));
-            if (!isJobPosting) continue;
-
-            const hiringOrg = record.hiringOrganization as Record<string, unknown> | undefined;
-            const jobLocation = record.jobLocation as Record<string, unknown> | undefined;
-            const address = jobLocation?.address as Record<string, unknown> | undefined;
-            const description =
-              typeof record.description === "string" ? record.description : "";
-
-            return {
-              description,
-              title: typeof record.title === "string" ? record.title : undefined,
-              companyName:
-                typeof hiringOrg?.name === "string" ? hiringOrg.name : undefined,
-              location:
-                typeof address?.addressLocality === "string"
-                  ? address.addressLocality
-                  : undefined,
-            };
-          }
-        } catch {
-          // Try the next JSON-LD block.
-        }
-      }
-      return null;
-    }
-
-    function parseDomDescription(): string {
-      const selectors = [
-        ".show-more-less-html__markup",
-        ".jobs-description__content",
-        ".jobs-description-content__text",
-        ".jobs-box__html-content",
-        "#job-details",
-        ".description__text",
-      ];
-      for (const selector of selectors) {
-        const el = document.querySelector(selector);
-        const text = el?.textContent?.replace(/\s+/g, " ").trim();
-        if (text && text.length > 40) return text;
-      }
-      return "";
-    }
-
-    const jsonLd = parseJsonLd();
-    if (jsonLd?.description) return jsonLd;
-
-    const domDescription = parseDomDescription();
-    if (jsonLd) {
-      return { ...jsonLd, description: domDescription || jsonLd.description };
-    }
-    return { description: domDescription };
-  }).then((detail) => ({
+  return page.evaluate(SCRAPE_LINKEDIN_JOB_DETAIL).then((detail) => ({
     ...detail,
     description: detail.description.includes("<")
       ? htmlToPlainText(detail.description)
@@ -333,65 +381,7 @@ async function scrapeSearchPage(
     await page.waitForTimeout(1_200);
   }
 
-  const raw = await page.evaluate(() => {
-    const results: Array<{
-      linkedinJobId: string;
-      title: string;
-      companyName: string;
-      location: string;
-      description: string;
-      applyUrl: string;
-    }> = [];
-
-    const cards = document.querySelectorAll(
-      'li.scaffold-layout__list-item, li.jobs-search-results__list-item, div.job-search-card, div.base-card',
-    );
-
-    for (const el of cards) {
-      const link =
-        el.querySelector<HTMLAnchorElement>('a[href*="/jobs/view/"]') ??
-        el.querySelector<HTMLAnchorElement>("a.base-card__full-link");
-      if (!link?.href) continue;
-
-      const match = link.href.match(/\/jobs\/view\/(\d+)/i);
-      if (!match) continue;
-
-      const title =
-        el.querySelector(".base-search-card__title")?.textContent?.trim() ??
-        el.querySelector(".job-card-list__title")?.textContent?.trim() ??
-        link.textContent?.trim() ??
-        "";
-
-      const companyName =
-        el.querySelector(".base-search-card__subtitle")?.textContent?.trim() ??
-        el.querySelector(".job-card-container__company-name")?.textContent?.trim() ??
-        el.querySelector(".artdeco-entity-lockup__subtitle")?.textContent?.trim() ??
-        "";
-
-      const locationText =
-        el.querySelector(".job-search-card__location")?.textContent?.trim() ??
-        el.querySelector(".artdeco-entity-lockup__caption")?.textContent?.trim() ??
-        "";
-
-      const description =
-        el.querySelector(".job-search-card__snippet")?.textContent?.trim() ??
-        el.querySelector(".base-search-card__metadata")?.textContent?.trim() ??
-        "";
-
-      if (!title) continue;
-
-      results.push({
-        linkedinJobId: match[1],
-        title,
-        companyName,
-        location: locationText,
-        description,
-        applyUrl: `https://www.linkedin.com/jobs/view/${match[1]}/`,
-      });
-    }
-
-    return results;
-  });
+  const raw = await page.evaluate(SCRAPE_LINKEDIN_SEARCH_RESULTS);
 
   const jobs: ScrapedJob[] = [];
   for (const item of raw.slice(0, LINKEDIN_JOBS_PER_SEARCH)) {

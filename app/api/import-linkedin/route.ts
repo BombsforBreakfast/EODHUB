@@ -207,15 +207,25 @@ export async function POST(req: NextRequest) {
     };
 
     if (existing) {
-      updates.push({ id: existing.id, ...rowPayload });
+      const updateRow: Record<string, unknown> = { id: existing.id, ...rowPayload };
+      const description = candidate.description.trim();
+      if (description) {
+        updateRow.description = description;
+        updateRow.og_description = description;
+      }
+      updates.push(updateRow);
       refreshed += 1;
       continue;
     }
 
+    const description =
+      candidate.description.trim() ||
+      `${candidate.title} at ${candidate.companyName}. View full details on LinkedIn.`;
+
     inserts.push({
       ...rowPayload,
-      description: candidate.description,
-      og_description: candidate.description,
+      description,
+      og_description: description,
       og_site_name: "LinkedIn",
       is_approved: false,
       source_type: "linkedin",
