@@ -8,6 +8,24 @@ import { isNativeIosApp } from "./isNativeApp";
 export const FEED_VIDEO_PDF_ACCEPT =
   "video/*,.mp4,.mov,.webm,.m4v,.pdf,application/pdf,.svg,image/svg+xml,.tif,.tiff,image/tiff,.stl,.obj,.step,.stp,.iges,.igs,.dwg,.dxf,.3mf";
 
+const NATIVE_IOS_VIDEO_PATH = "__eodNativeIosVideoPath";
+
+type NativeIosVideoFile = File & {
+  [NATIVE_IOS_VIDEO_PATH]?: string;
+};
+
+export function nativeIosVideoPath(file: File): string | null {
+  return (file as NativeIosVideoFile)[NATIVE_IOS_VIDEO_PATH] ?? null;
+}
+
+export function isNativeIosVideoFile(file: File): boolean {
+  return Boolean(nativeIosVideoPath(file));
+}
+
+export function feedPickedFilePreviewUrl(file: File): string {
+  return isNativeIosVideoFile(file) ? "" : URL.createObjectURL(file);
+}
+
 export type OpenFeedMediaPickerOptions = {
   mediaInputRef: RefObject<HTMLInputElement | null>;
   videoPdfInputRef?: RefObject<HTMLInputElement | null>;
@@ -117,6 +135,20 @@ async function pickedFileToFile(
   const fallbackName = `${fallbackKind}-${Date.now()}-${index}.${extensionForMime(mimeType, fallbackKind)}`;
   const fileName = pickedFile.name || fallbackName;
   const lastModified = pickedFile.modifiedAt ?? Date.now();
+
+  if (fallbackKind === "video" && pickedFile.path && isNativeIosApp()) {
+    if (!Number.isFinite(pickedFile.size) || pickedFile.size <= 0) {
+      throw new Error("The selected video has no readable file size.");
+    }
+    // Keep only metadata in WKWebView. The native Mux bridge reads and uploads
+    // the file path directly, avoiding a potentially 200 MB JavaScript Blob.
+    const proxy = new File([], fileName, { type: mimeType, lastModified }) as NativeIosVideoFile;
+    Object.defineProperties(proxy, {
+      size: { value: pickedFile.size },
+      [NATIVE_IOS_VIDEO_PATH]: { value: pickedFile.path },
+    });
+    return proxy;
+  }
 
   if (pickedFile.blob) {
     return new File([pickedFile.blob], fileName, { type: mimeType, lastModified });

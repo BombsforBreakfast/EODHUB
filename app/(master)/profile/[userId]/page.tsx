@@ -41,6 +41,7 @@ import { galleryImageDisplayUrl } from "../../../lib/storageImageUrl";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
 import {
   FEED_VIDEO_PDF_ACCEPT,
+  feedPickedFilePreviewUrl,
   openFeedMediaPicker,
   openFeedVideoPicker,
 } from "../../../lib/native/pickFeedMedia";
@@ -2760,7 +2761,7 @@ export default function PublicProfilePage() {
           kind === "pdf" ? "pdf" : kind === "video" ? "video" : kind === "image" ? "image" : "other";
         return {
           file: f,
-          previewUrl: URL.createObjectURL(f),
+          previewUrl: feedPickedFilePreviewUrl(f),
           kind: normalizedKind,
         };
       });
@@ -6245,8 +6246,13 @@ export default function PublicProfilePage() {
                   <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
                     {selectedPostImages.map((item, i) => (
                       <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
-                        {isVideoFile(item.file) ? (
+                        {isVideoFile(item.file) && item.previewUrl ? (
                           <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
+                        ) : isVideoFile(item.file) ? (
+                          <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 8, color: t.textMuted, textAlign: "center" }}>
+                            <div style={{ fontSize: 12, fontWeight: 800 }}>Video selected</div>
+                            <div style={{ fontSize: 10, wordBreak: "break-all" }}>{item.file.name}</div>
+                          </div>
                         ) : item.kind === "pdf" ? (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: t.textMuted }}>
                             <FileText size={28} color={t.textMuted} />

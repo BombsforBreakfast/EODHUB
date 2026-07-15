@@ -28,6 +28,7 @@ end
 target 'App' do
   capacitor_pods
   # Add your Pods here
+  pod 'Mux-Upload-SDK', '1.1.1'
 end
 
 post_install do |installer|

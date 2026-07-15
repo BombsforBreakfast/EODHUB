@@ -16,7 +16,11 @@ import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/comme
 import { prepareFeedUploadFile } from "../lib/prepareUploadFile";
 import { attachMuxVideosFromUrls, cancelMuxVideosFromUrls, uploadMuxFeedVideo } from "../lib/muxFeedUpload";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
-import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../lib/native/pickFeedMedia";
+import {
+  FEED_VIDEO_PDF_ACCEPT,
+  feedPickedFilePreviewUrl,
+  openFeedMediaPicker,
+} from "../lib/native/pickFeedMedia";
 import { shareOrCopyUrl } from "../lib/native/nativeShare";
 import {
   CAD_PREVIEW_IMAGE_ACCEPT,
@@ -4657,7 +4661,7 @@ export default function HomePage() {
         }
         return {
           file,
-          previewUrl: URL.createObjectURL(file),
+          previewUrl: feedPickedFilePreviewUrl(file),
           kind: kind === "pdf" ? "pdf" : kind === "video" ? "video" : kind === "image" ? "image" : "other",
         };
       });
@@ -7474,8 +7478,13 @@ export default function HomePage() {
                       aspectRatio: "1 / 1",
                     }}
                   >
-                    {isVideoFile(item.file) ? (
+                    {isVideoFile(item.file) && item.previewUrl ? (
                       <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
+                    ) : isVideoFile(item.file) ? (
+                      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 8, color: t.textMuted, textAlign: "center" }}>
+                        <div style={{ fontSize: 12, fontWeight: 800 }}>Video selected</div>
+                        <div style={{ fontSize: 10, wordBreak: "break-all" }}>{item.file.name}</div>
+                      </div>
                     ) : item.kind === "pdf" ? (
                       <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: t.textMuted, padding: 8, textAlign: "center", wordBreak: "break-all" }}>
                         {item.file.name}

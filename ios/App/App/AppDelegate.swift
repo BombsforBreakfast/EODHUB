@@ -1,5 +1,112 @@
 import UIKit
 import Capacitor
+import MuxUploadSDK
+
+@objc(MuxVideoUploadPlugin)
+public class MuxVideoUploadPlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "MuxVideoUploadPlugin"
+    public let jsName = "MuxVideoUpload"
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "upload", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "cancel", returnType: CAPPluginReturnPromise),
+    ]
+
+    private var uploads: [String: DirectUpload] = [:]
+    private var uploadCalls: [String: CAPPluginCall] = [:]
+
+    @objc public func upload(_ call: CAPPluginCall) {
+        guard
+            let uploadId = call.getString("uploadId"), !uploadId.isEmpty,
+            let uploadUrlValue = call.getString("uploadUrl"),
+            let uploadURL = URL(string: uploadUrlValue),
+            let filePath = call.getString("filePath"), !filePath.isEmpty
+        else {
+            call.reject("A Mux upload ID, upload URL, and local video path are required.")
+            return
+        }
+
+        let fileURL: URL
+        if let parsed = URL(string: filePath), parsed.isFileURL {
+            fileURL = parsed
+        } else {
+            fileURL = URL(fileURLWithPath: filePath)
+        }
+
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            call.reject("The selected video is no longer available on this device.")
+            return
+        }
+
+        DispatchQueue.main.async {
+            guard self.uploads[uploadId] == nil else {
+                call.reject("This video is already uploading.")
+                return
+            }
+
+            let upload = DirectUpload(
+                uploadURL: uploadURL,
+                inputFileURL: fileURL
+            )
+
+            self.uploads[uploadId] = upload
+            self.uploadCalls[uploadId] = call
+
+            upload.progressHandler = { [weak self] state in
+                guard
+                    let progress = state.progress,
+                    progress.totalUnitCount > 0
+                else {
+                    return
+                }
+                let percent = progress.fractionCompleted * 100
+                DispatchQueue.main.async {
+                    self?.notifyListeners("progress", data: [
+                        "uploadId": uploadId,
+                        "percent": percent,
+                    ])
+                }
+            }
+
+            upload.resultHandler = { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self = self else {
+                        return
+                    }
+                    let pendingCall = self.uploadCalls.removeValue(forKey: uploadId)
+                    self.uploads.removeValue(forKey: uploadId)
+
+                    switch result {
+                    case .success:
+                        pendingCall?.resolve()
+                    case .failure(let error):
+                        pendingCall?.reject(error.localizedDescription)
+                    }
+                }
+            }
+
+            upload.start()
+        }
+    }
+
+    @objc public func cancel(_ call: CAPPluginCall) {
+        guard let uploadId = call.getString("uploadId"), !uploadId.isEmpty else {
+            call.reject("A Mux upload ID is required.")
+            return
+        }
+
+        DispatchQueue.main.async {
+            self.uploads[uploadId]?.cancel()
+            call.resolve()
+        }
+    }
+}
+
+@objc(MainViewController)
+class MainViewController: CAPBridgeViewController {
+    override open func capacitorDidLoad() {
+        bridge?.registerPluginInstance(MuxVideoUploadPlugin())
+    }
+}
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {

@@ -1,5 +1,6 @@
 import { getAccessToken } from "./lib/supabaseClient";
 import { parseMuxFeedVideoUrl } from "./feedVideoUrl";
+import { nativeIosVideoPath } from "./native/pickFeedMedia";
 
 export type MuxFeedUploadResult = {
   videoId: string;
@@ -38,8 +39,21 @@ export async function uploadMuxFeedVideo(
     throw new Error(created.error ?? "Could not begin the Mux upload.");
   }
 
-  const { createUpload } = await import("@mux/upchunk");
   try {
+    const nativePath = nativeIosVideoPath(file);
+    if (nativePath) {
+      const { uploadNativeMuxVideo } = await import("./native/muxVideoUploadNative");
+      await uploadNativeMuxVideo({
+        uploadId: created.videoId,
+        uploadUrl: created.uploadUrl,
+        filePath: nativePath,
+        onProgress: options?.onProgress,
+        signal: options?.signal,
+      });
+      return { videoId: created.videoId, attachmentUrl: created.attachmentUrl };
+    }
+
+    const { createUpload } = await import("@mux/upchunk");
     await new Promise<void>((resolve, reject) => {
       const upload = createUpload({
         endpoint: created.uploadUrl!,

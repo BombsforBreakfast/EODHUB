@@ -8,6 +8,9 @@ import { fileURLToPath } from "url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const jsonPath = join(root, "ios", "App", "App", "capacitor.config.json");
 const expected = (process.env.CAPACITOR_SERVER_URL || "https://eod-hub.com").trim();
+const podfilePath = join(root, "ios", "App", "Podfile");
+const appDelegatePath = join(root, "ios", "App", "App", "AppDelegate.swift");
+const storyboardPath = join(root, "ios", "App", "App", "Base.lproj", "Main.storyboard");
 
 if (!existsSync(jsonPath)) {
   console.error("Missing", jsonPath, "— run npx cap sync ios first");
@@ -22,4 +25,30 @@ if (actual !== expected) {
   process.exit(1);
 }
 
+const requiredNativeFiles = [podfilePath, appDelegatePath, storyboardPath];
+for (const path of requiredNativeFiles) {
+  if (!existsSync(path)) {
+    console.error("Missing native iOS file", path);
+    process.exit(1);
+  }
+}
+
+const podfile = readFileSync(podfilePath, "utf8");
+const appDelegate = readFileSync(appDelegatePath, "utf8");
+const storyboard = readFileSync(storyboardPath, "utf8");
+
+if (!podfile.includes("pod 'Mux-Upload-SDK', '1.1.1'")) {
+  console.error("Podfile is missing the pinned Mux Upload SDK.");
+  process.exit(1);
+}
+if (!appDelegate.includes("class MuxVideoUploadPlugin") || !appDelegate.includes("registerPluginInstance(MuxVideoUploadPlugin())")) {
+  console.error("AppDelegate.swift is missing the native Mux Capacitor bridge.");
+  process.exit(1);
+}
+if (!storyboard.includes('customClass="MainViewController"')) {
+  console.error("Main.storyboard is not using the native plugin-registering view controller.");
+  process.exit(1);
+}
+
 console.log("OK: iOS capacitor.config.json server.url =", actual);
+console.log("OK: iOS native Mux video upload bridge is configured");
