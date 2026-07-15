@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../../lib/memberSubscriptionServer";
 import { assertApprovedUnitMember } from "../../../../../lib/unitAccessServer";
+import { deleteMuxVideosForParent } from "../../../../../lib/server/deleteFeedVideos";
 
 function getAdminClient() {
   return createClient(
@@ -86,6 +87,15 @@ export async function DELETE(
   const { slug, postId } = await params;
   const auth = await getAuthorizedPost(req, slug, postId);
   if ("error" in auth) return NextResponse.json({ error: auth.error }, { status: auth.status });
+
+  try {
+    await deleteMuxVideosForParent(auth.adminClient, { unitPostId: postId });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Video cleanup failed." },
+      { status: 502 },
+    );
+  }
 
   const { error } = await auth.adminClient
     .from("unit_posts")

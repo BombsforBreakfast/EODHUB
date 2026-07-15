@@ -51,3 +51,4 @@ supabase/.temp/
 # local query/export artifacts (never commit)
 exports/
 
+.env*.local

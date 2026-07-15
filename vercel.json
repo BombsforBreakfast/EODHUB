@@ -47,6 +47,10 @@
     {
       "path": "/api/cron/push-pending",
       "schedule": "0 */4 * * *"
+    },
+    {
+      "path": "/api/cron/mux-video-reconcile",
+      "schedule": "17 * * * *"
     }
   ]
 }

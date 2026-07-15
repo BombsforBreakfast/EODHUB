@@ -16,6 +16,7 @@ import FeedPostHeader from "../../../components/FeedPostHeader";
 import ExpandableText from "../../../components/ExpandableText";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { prepareFeedUploadFile, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
+import { cancelMuxVideosFromUrls, uploadMuxFeedVideo } from "../../../lib/muxFeedUpload";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
 import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../../../lib/native/pickFeedMedia";
 import { FEED_ACTION_ROW_GAP, FEED_ACTION_ROW_PADDING, FEED_MEDIA_FRAME_BG, FEED_MEDIA_RADIUS, FEED_POST_AVATAR_SIZE, FEED_POST_IMAGES_MAX_WIDTH, FEED_SECTION_GAP, feedContainedImageStyle, feedPostCardStyle } from "../../../lib/feedLayout";
@@ -31,6 +32,7 @@ import {
   UPLOAD_LIMITS,
   formatUploadBytes,
   fileLibraryRequiresPreview,
+  feedUploadLimitsForAccount,
   isVideoFile,
   validateFeedAttachmentPick,
   validateFileLibrarySourcePick,
@@ -271,6 +273,7 @@ export default function UnitPage() {
   const [unit, setUnit] = useState<Unit | null>(null);
   const [membership, setMembership] = useState<Membership | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [currentUserAccountType, setCurrentUserAccountType] = useState<string | null>(null);
   const [isFounder, setIsFounder] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -381,6 +384,14 @@ export default function UnitPage() {
       const uid = session?.user?.id ?? null;
       const token = session?.access_token ?? null;
       setCurrentUserId(uid);
+      if (uid) {
+        const { data: profileRow } = await supabase
+          .from("profiles")
+          .select("account_type")
+          .eq("user_id", uid)
+          .maybeSingle();
+        setCurrentUserAccountType(profileRow?.account_type ?? null);
+      }
 
       let founder = false;
       if (token) {
@@ -895,9 +906,12 @@ export default function UnitPage() {
   // ── Wall posts ───────────────────────────────────────────────────────────
 
   async function uploadUnitMedia(file: File, forcedFileName?: string): Promise<string> {
-    const prepared = await prepareFeedUploadFile(file);
+    const prepared = await prepareFeedUploadFile(file, { accountType: currentUserAccountType });
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
+    if (isVideoFile(file)) {
+      return (await uploadMuxFeedVideo(file)).attachmentUrl;
+    }
     const safeFileName = forcedFileName ?? `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `unit-posts/${safeFileName}`;
     const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
@@ -934,7 +948,10 @@ export default function UnitPage() {
         alert("Only the first files were added. Max is 10 files per post.");
       }
 
-      const pickError = validateFeedAttachmentPick(filesToAdd);
+      const pickError = validateFeedAttachmentPick(
+        filesToAdd,
+        feedUploadLimitsForAccount(currentUserAccountType),
+      );
       if (pickError) {
         alert(pickError);
         return prev;
@@ -1045,8 +1062,8 @@ export default function UnitPage() {
       return;
     }
     setSubmittingPost(true);
+    const uploadedUrls: string[] = [];
     try {
-      const uploadedUrls: string[] = [];
       for (const item of selectedPostImages) {
         const forcedFileName =
           item.cadToken && item.cadRole
@@ -1071,7 +1088,13 @@ export default function UnitPage() {
         setPostPhotoUrl("");
         setPostGif(null);
         await loadPosts();
+      } else {
+        const body = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "Failed to create post.");
       }
+    } catch (error) {
+      await cancelMuxVideosFromUrls(uploadedUrls);
+      alert(error instanceof Error ? error.message : "Failed to create post.");
     } finally {
       setSubmittingPost(false);
     }

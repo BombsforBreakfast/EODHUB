@@ -14,7 +14,7 @@ import MentionTextarea, { extractMentionIds } from "../components/MentionTextare
 import { PostLikersStack, type PostLikerBrief } from "../components/PostLikersStack";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
 import { prepareFeedUploadFile } from "../lib/prepareUploadFile";
-import { uploadResumableFeedFile } from "../lib/resumableFeedUpload";
+import { attachMuxVideosFromUrls, cancelMuxVideosFromUrls, uploadMuxFeedVideo } from "../lib/muxFeedUpload";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../lib/native/pickFeedMedia";
 import { shareOrCopyUrl } from "../lib/native/nativeShare";
@@ -4862,24 +4862,24 @@ export default function HomePage() {
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
 
+    if (isVideoFile(file)) {
+      return (await uploadMuxFeedVideo(file)).attachmentUrl;
+    }
+
     const safeFileName = forcedFileName ?? `${Date.now()}-${Math.random()
       .toString(36)
       .slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `${pathPrefix}/${safeFileName}`;
 
-    if (isVideoFile(file)) {
-      await uploadResumableFeedFile(file, filePath);
-    } else {
-      const { error: uploadError } = await supabase.storage
-        .from("feed-images")
-        .upload(filePath, file, {
-          upsert: false,
-        });
+    const { error: uploadError } = await supabase.storage
+      .from("feed-images")
+      .upload(filePath, file, {
+        upsert: false,
+      });
 
-      if (uploadError) {
-        console.error("Storage upload error:", uploadError);
-        throw new Error(uploadError.message);
-      }
+    if (uploadError) {
+      console.error("Storage upload error:", uploadError);
+      throw new Error(uploadError.message);
     }
 
     const { data } = supabase.storage.from("feed-images").getPublicUrl(filePath);
@@ -4927,20 +4927,25 @@ export default function HomePage() {
       }
 
       const currentOg = ogPreview;
-
-      if (kcComposerPhase === "builder" && labelsForKc.length >= 2) {
-        const uploadedUrls: string[] = [];
-        const uploadPrefix = `${userId}/posts/kc-${Date.now()}`;
+      const uploadedUrls: string[] = [];
+      const uploadPrefix = `${userId}/posts/pending-${Date.now()}`;
+      try {
         for (let i = 0; i < imagesToUpload.length; i += 1) {
           const item = imagesToUpload[i];
           const forcedFileName =
             item.cadToken && item.cadRole
               ? buildCadStorageFileName(item.cadToken, item.cadRole, item.file.name)
               : undefined;
-          const publicUrl = await uploadFileToFeedImagesBucket(item.file, uploadPrefix, forcedFileName);
-          uploadedUrls.push(publicUrl);
+          uploadedUrls.push(
+            await uploadFileToFeedImagesBucket(item.file, uploadPrefix, forcedFileName),
+          );
         }
+      } catch (error) {
+        await cancelMuxVideosFromUrls(uploadedUrls);
+        throw error;
+      }
 
+      if (kcComposerPhase === "builder" && labelsForKc.length >= 2) {
         const { data: kcRpcData, error: kcRpcError } = await supabase.rpc("create_feed_post_with_kangaroo_court", {
           p_content: contentToPost,
           p_gif_url: gifToPost ?? "",
@@ -4956,6 +4961,7 @@ export default function HomePage() {
         });
 
         if (kcRpcError || kcRpcData == null) {
+          await cancelMuxVideosFromUrls(uploadedUrls);
           console.error("create_feed_post_with_kangaroo_court:", kcRpcError);
           alert(kcRpcError?.message || "Failed to create post with Kangaroo Court.");
           setSubmittingPost(false);
@@ -4964,6 +4970,7 @@ export default function HomePage() {
 
         const kcRow = Array.isArray(kcRpcData) ? kcRpcData[0] : kcRpcData;
         const postId = (kcRow as { post_id: string }).post_id;
+        await attachMuxVideosFromUrls(uploadedUrls, "post", postId);
 
         const mentionIds = extractMentionIds(contentToPost).filter((id) => id !== userId);
         if (mentionIds.length > 0) {
@@ -5018,6 +5025,7 @@ export default function HomePage() {
         .single();
 
       if (insertError || !insertedPost?.id) {
+        await cancelMuxVideosFromUrls(uploadedUrls);
         console.error("INSERT ERROR:", insertError);
         alert(insertError?.message || "Failed to create post.");
         setSubmittingPost(false);
@@ -5047,22 +5055,6 @@ export default function HomePage() {
           ),
         );
       }
-      const uploadedUrls: string[] = [];
-
-      for (let i = 0; i < imagesToUpload.length; i += 1) {
-        const item = imagesToUpload[i];
-        const forcedFileName =
-          item.cadToken && item.cadRole
-            ? buildCadStorageFileName(item.cadToken, item.cadRole, item.file.name)
-            : undefined;
-        const publicUrl = await uploadFileToFeedImagesBucket(
-          item.file,
-          `${userId}/posts/${postId}`,
-          forcedFileName,
-        );
-        uploadedUrls.push(publicUrl);
-      }
-
       if (uploadedUrls.length > 0) {
         const postImageRows = uploadedUrls.map((url, index) => ({
           post_id: postId,
@@ -5080,6 +5072,7 @@ export default function HomePage() {
           setSubmittingPost(false);
           return;
         }
+        await attachMuxVideosFromUrls(uploadedUrls, "post", postId);
 
         const { error: legacyUpdateError } = await supabase
           .from("posts")
@@ -5714,8 +5707,15 @@ export default function HomePage() {
           errorMessage = body.error ?? "Failed to delete post.";
         }
       } else {
-        const { error } = await supabase.from("posts").delete().eq("id", postId);
-        if (error) errorMessage = error.message;
+        const token = await getAccessToken({ force: true, source: "deletePost" });
+        const res = await fetch(`/api/feed/posts/${encodeURIComponent(postId)}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token ?? ""}` },
+        });
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({} as { error?: string }));
+          errorMessage = body.error ?? "Failed to delete post.";
+        }
       }
 
       if (errorMessage) {

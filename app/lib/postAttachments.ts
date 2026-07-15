@@ -2,6 +2,7 @@ import {
   attachmentRenderKindFromUrl,
   isCad3dUrl,
 } from "./uploadLimits";
+import { muxPosterUrl, parseMuxFeedVideoUrl, type FeedVideoStatus } from "./feedVideoUrl";
 
 export type PostAttachmentKind = "image" | "video" | "pdf" | "cad3d" | "other";
 
@@ -13,6 +14,10 @@ export type PostAttachment = {
   renderUrl: string;
   fileName: string;
   cadToken?: string;
+  muxVideoId?: string;
+  muxPlaybackId?: string | null;
+  muxStatus?: FeedVideoStatus;
+  posterUrl?: string;
 };
 
 export const CAD_PREVIEW_PREFIX = "cadpreview-";
@@ -80,6 +85,21 @@ export function attachmentsFromUrls(urls: string[]): PostAttachment[] {
     const fileName = fileNameFromUrl(url);
     const token = cadTokenFromFileName(fileName);
     const kind = attachmentRenderKindFromUrl(url);
+    const muxVideo = parseMuxFeedVideoUrl(url);
+
+    if (muxVideo) {
+      attachments.push({
+        kind: "video",
+        url,
+        renderUrl: url,
+        fileName: "video",
+        muxVideoId: muxVideo.id,
+        muxPlaybackId: muxVideo.playbackId,
+        muxStatus: muxVideo.status,
+        posterUrl: muxVideo.playbackId ? muxPosterUrl(muxVideo.playbackId) : undefined,
+      });
+      continue;
+    }
 
     if (token && fileName.startsWith(CAD_PREVIEW_PREFIX)) {
       cadPreviewsByToken.set(token, { url, fileName });

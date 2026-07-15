@@ -119,7 +119,11 @@ export const FILE_LIBRARY_ACCEPT =
   ".stl,.obj,.step,.stp,.iges,.igs,.dwg,.dxf,.3mf,.svg,image/svg+xml,.pdf,application/pdf,image/vnd.dxf,application/acad,model/stl,model/obj,model/step,model/iges,model/3mf";
 
 export function isVideoUrl(url: string): boolean {
-  return /\.(mp4|webm|mov|m4v|avi|mkv|ogv)(\?|$)/i.test(url);
+  return (
+    url.startsWith("mux://feed-video/")
+    || /^https:\/\/stream\.mux\.com\/[^/?#]+\.m3u8(?:\?|$)/i.test(url)
+    || /\.(mp4|webm|mov|m4v|avi|mkv|ogv|m3u8)(\?|$)/i.test(url)
+  );
 }
 
 export function isPdfUrl(url: string): boolean {

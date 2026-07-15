@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { supabase } from "../../../lib/lib/supabaseClient";
+import { getAccessToken, supabase } from "../../../lib/lib/supabaseClient";
 import DesktopLayout from "../../../components/DesktopLayout";
 import ImageCropDialog from "../../../components/ImageCropDialog";
 import { useTheme } from "../../../lib/ThemeContext";
@@ -33,13 +33,17 @@ import ExpandableText from "../../../components/ExpandableText";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib/commentSidebarEligibility";
 import { fetchBlockedUserIds, filterBlockedRows } from "../../../lib/userBlocks";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
-import { uploadResumableFeedFile } from "../../../lib/resumableFeedUpload";
+import { attachMuxVideosFromUrls, cancelMuxVideosFromUrls, uploadMuxFeedVideo } from "../../../lib/muxFeedUpload";
 import { FeedMediaAttachment } from "../../../components/FeedMediaAttachment";
 import FeedImageGalleryModal from "../../../components/FeedImageGalleryModal";
 import OptimizedAvatarImg from "../../../components/OptimizedAvatarImg";
 import { galleryImageDisplayUrl } from "../../../lib/storageImageUrl";
 import { handlePasteImageFromClipboard } from "../../../lib/pasteImageFromClipboard";
-import { FEED_VIDEO_PDF_ACCEPT, openFeedMediaPicker } from "../../../lib/native/pickFeedMedia";
+import {
+  FEED_VIDEO_PDF_ACCEPT,
+  openFeedMediaPicker,
+  openFeedVideoPicker,
+} from "../../../lib/native/pickFeedMedia";
 import {
   EMPLOYER_DOCUMENT_ACCEPT,
   FEED_ATTACHMENT_ACCEPT,
@@ -2123,7 +2127,15 @@ export default function PublicProfilePage() {
     if (!window.confirm("Delete this post?")) return;
     try {
       setDeletingPostId(postId);
-      await supabase.from("posts").delete().eq("id", postId);
+      const token = await getAccessToken({ force: true, source: "deleteWallPost" });
+      const response = await fetch(`/api/feed/posts/${encodeURIComponent(postId)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token ?? ""}` },
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error ?? "Failed to delete post.");
+      }
       if (userId) await loadPosts(userId);
     } finally { setDeletingPostId(null); }
   }
@@ -2674,14 +2686,13 @@ export default function PublicProfilePage() {
     const prepared = await prepareFeedUploadFile(file, { accountType: profile?.account_type });
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
+    if (isVideoFile(file)) {
+      return (await uploadMuxFeedVideo(file)).attachmentUrl;
+    }
     const safeName = forcedFileName ?? `${Date.now()}-${Math.random().toString(36).slice(2)}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
     const filePath = `${currentUserId}/posts/${postId}/${safeName}`;
-    if (isVideoFile(file)) {
-      await uploadResumableFeedFile(file, filePath);
-    } else {
-      const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
-      if (error) throw new Error(error.message);
-    }
+    const { error } = await supabase.storage.from("feed-images").upload(filePath, file, { upsert: false });
+    if (error) throw new Error(error.message);
     return supabase.storage.from("feed-images").getPublicUrl(filePath).data.publicUrl;
   }
 
@@ -2806,6 +2817,8 @@ export default function PublicProfilePage() {
 
     if (!userId || (!postContent.trim() && selectedPostImages.length === 0 && !selectedPostGif)) return;
 
+    let createdPostId: string | null = null;
+    const uploadedForCleanup: string[] = [];
     try {
       setSubmittingPost(true);
       const missingCadTokens = missingCadPreviewTokens(selectedPostImages);
@@ -2848,6 +2861,7 @@ export default function PublicProfilePage() {
       }
 
       const postId = inserted.id;
+      createdPostId = postId;
 
       // Mention notifications
       const mentionIds = extractMentionIds(rawPostContent).filter(id => id !== currentUserId);
@@ -2880,6 +2894,7 @@ export default function PublicProfilePage() {
               : undefined;
           const url = await uploadWallImage(item.file, postId, forcedFileName);
           uploadedUrls.push(url);
+          uploadedForCleanup.push(url);
         }
         await supabase.from("post_images").insert(
           uploadedUrls.map((url, i) => ({
@@ -2896,6 +2911,7 @@ export default function PublicProfilePage() {
                     : "image",
           }))
         );
+        await attachMuxVideosFromUrls(uploadedUrls, "post", postId);
         await supabase.from("posts").update({ image_url: uploadedUrls[0] }).eq("id", postId);
       }
 
@@ -2917,7 +2933,15 @@ export default function PublicProfilePage() {
       await loadPosts(userId);
     } catch (err) {
       console.error("Submit post error:", err);
-      alert("Failed to create post");
+      await cancelMuxVideosFromUrls(uploadedForCleanup);
+      if (createdPostId) {
+        const token = await getAccessToken({ force: true, source: "cleanupFailedWallPost" });
+        await fetch(`/api/feed/posts/${encodeURIComponent(createdPostId)}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token ?? ""}` },
+        });
+      }
+      alert(err instanceof Error ? err.message : "Failed to create post");
     } finally {
       setSubmittingPost(false);
     }
@@ -4033,7 +4057,18 @@ export default function PublicProfilePage() {
                   />
                   <button
                     type="button"
-                    onClick={() => postWallVideoInputRef.current?.click()}
+                    onClick={() => {
+                      void openFeedVideoPicker({
+                        videoInputRef: postWallVideoInputRef,
+                        onFiles: (files) => {
+                          addWallPostImagesFromFiles(files, { videosOnly: true });
+                          document.getElementById("profile-wall-composer")?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                          });
+                        },
+                      });
+                    }}
                     style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "6px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", background: t.surface, color: t.text, whiteSpace: "nowrap" }}
                   >
                     + Add Video
@@ -6290,7 +6325,12 @@ export default function PublicProfilePage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => postWallVideoInputRef.current?.click()}
+                          onClick={() => {
+                            void openFeedVideoPicker({
+                              videoInputRef: postWallVideoInputRef,
+                              onFiles: (files) => addWallPostImagesFromFiles(files, { videosOnly: true }),
+                            });
+                          }}
                           style={{ background: t.surface, color: t.text, border: `1px solid ${t.border}`, borderRadius: 10, padding: "10px 14px", fontWeight: 700, cursor: "pointer" }}
                         >
                           Add Video
@@ -7395,12 +7435,10 @@ export default function PublicProfilePage() {
           >
             x
           </button>
-          <video
-            src={lightboxVideoUrl}
-            controls
-            autoPlay
-            playsInline
-            style={{ maxWidth: "100%", maxHeight: "80vh", borderRadius: 12, display: "block", margin: "0 auto", background: "#000" }}
+          <FeedMediaAttachment
+            attachment={attachmentsFromUrls([lightboxVideoUrl])[0]!}
+            deferVideoLoad={false}
+            style={{ width: "min(960px, 90vw)", maxWidth: "100%", maxHeight: "80vh", borderRadius: 12, display: "block", margin: "0 auto", background: "#000" }}
           />
         </div>
       </div>

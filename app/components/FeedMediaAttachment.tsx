@@ -1,13 +1,19 @@
 "use client";
 
-import { useState, type CSSProperties, type MouseEvent } from "react";
-import { File, FileArchive, FileText, Play } from "lucide-react";
+import { useEffect, useState, type CSSProperties, type MouseEvent } from "react";
+import MuxPlayer from "@mux/mux-player-react/lazy";
+import { AlertTriangle, File, FileArchive, FileText, LoaderCircle, Play } from "lucide-react";
 import { feedImageDisplayUrl } from "../lib/storageImageUrl";
 import { attachmentRenderKindFromUrl, isVideoUrl } from "../lib/uploadLimits";
 import type { PostAttachment, PostAttachmentKind } from "../lib/postAttachments";
+import { getAccessToken } from "../lib/lib/supabaseClient";
+import { muxPosterUrl, type FeedVideoStatus } from "../lib/feedVideoUrl";
 
 type Props = {
-  attachment: Pick<PostAttachment, "url" | "renderUrl" | "fileName" | "kind">;
+  attachment: Pick<
+    PostAttachment,
+    "url" | "renderUrl" | "fileName" | "kind" | "muxVideoId" | "muxPlaybackId" | "muxStatus" | "posterUrl"
+  >;
   alt?: string;
   style?: CSSProperties;
   /** When true (default), videos do not hit the CDN until the user taps play. */
@@ -39,7 +45,7 @@ export function FeedMediaAttachment({
               : "other";
 
   if (kind === "video" || isVideoUrl(attachment.url)) {
-    return <FeedVideoAttachment url={attachment.url} style={style} deferLoad={deferVideoLoad} />;
+    return <FeedVideoAttachment attachment={attachment} style={style} deferLoad={deferVideoLoad} />;
   }
 
   if (kind === "image" || (kind === "cad3d" && attachment.renderUrl !== attachment.url)) {
@@ -117,15 +123,76 @@ export function FeedMediaAttachment({
 }
 
 function FeedVideoAttachment({
-  url,
+  attachment,
   style,
   deferLoad,
 }: {
-  url: string;
+  attachment: Props["attachment"];
   style?: CSSProperties;
   deferLoad: boolean;
 }) {
   const [active, setActive] = useState(!deferLoad);
+  const [muxState, setMuxState] = useState({
+    status: attachment.muxStatus,
+    playbackId: attachment.muxPlaybackId,
+    posterUrl: attachment.posterUrl,
+  });
+  const status = muxState.status;
+  const failed = status === "upload_failed" || status === "asset_error" || status === "cancelled" || status === "timed_out";
+
+  useEffect(() => {
+    if (!attachment.muxVideoId || !status || status === "ready" || failed) return;
+    let cancelled = false;
+    const check = async () => {
+      const token = await getAccessToken({ source: "FeedVideoAttachment" });
+      if (!token || cancelled) return;
+      const response = await fetch(`/api/feed/video-uploads/${encodeURIComponent(attachment.muxVideoId!)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok || cancelled) return;
+      const body = await response.json() as {
+        status: FeedVideoStatus;
+        playbackId?: string | null;
+      };
+      setMuxState({
+        status: body.status,
+        playbackId: body.playbackId ?? null,
+        posterUrl: body.playbackId ? muxPosterUrl(body.playbackId) : undefined,
+      });
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [attachment.muxVideoId, failed, status]);
+
+  if (status && status !== "ready") {
+    return (
+      <div
+        style={{
+          ...style,
+          minHeight: style?.minHeight ?? 160,
+          background: "#111",
+          color: "#fff",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          padding: 16,
+          textAlign: "center",
+        }}
+      >
+        {failed ? <AlertTriangle size={26} /> : <LoaderCircle size={26} className="feed-video-processing-spinner" />}
+        <span style={{ fontSize: 13, fontWeight: 700 }}>
+          {failed ? "Video processing failed" : "Video is processing"}
+        </span>
+        {!failed && <span style={{ fontSize: 11, opacity: 0.75 }}>It will appear here automatically when ready.</span>}
+      </div>
+    );
+  }
 
   function handlePlayClick(e: MouseEvent) {
     e.preventDefault();
@@ -146,6 +213,9 @@ function FeedVideoAttachment({
           display: "block",
           width: style?.width ?? "100%",
           minHeight: style?.minHeight ?? 120,
+          backgroundImage: muxState.posterUrl ? `url("${muxState.posterUrl}")` : undefined,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
         }}
       >
         <div
@@ -177,14 +247,28 @@ function FeedVideoAttachment({
   }
 
   return (
-    <video
-      src={url}
-      controls
-      autoPlay
-      playsInline
-      preload="metadata"
-      onClick={(e) => e.stopPropagation()}
-      style={style}
-    />
+    muxState.playbackId ? (
+      <div onClick={(e) => e.stopPropagation()} style={style}>
+        <MuxPlayer
+          playbackId={muxState.playbackId}
+          streamType="on-demand"
+          autoPlay
+          playsInline
+          poster={muxState.posterUrl}
+          metadata={{ video_title: attachment.fileName || "Feed video" }}
+          style={{ width: "100%", height: "100%" }}
+        />
+      </div>
+    ) : (
+      <video
+        src={attachment.url}
+        controls
+        autoPlay
+        playsInline
+        preload="metadata"
+        onClick={(e) => e.stopPropagation()}
+        style={style}
+      />
+    )
   );
 }

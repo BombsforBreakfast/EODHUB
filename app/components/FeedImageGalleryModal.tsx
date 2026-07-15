@@ -2,6 +2,8 @@
 
 import { useEffect, useState, type CSSProperties, type MouseEvent, type PointerEvent } from "react";
 import { createPortal } from "react-dom";
+import MuxPlayer from "@mux/mux-player-react/lazy";
+import { parseMuxFeedVideoUrl, muxPosterUrl } from "../lib/feedVideoUrl";
 import { isVideoUrl } from "../lib/uploadLimits";
 
 function resolveGalleryCloseTop(): number {
@@ -86,6 +88,7 @@ export default function FeedImageGalleryModal({
 
   const indexSafe = Math.min(Math.max(index, 0), images.length - 1);
   const currentUrl = images[indexSafe];
+  const muxVideo = parseMuxFeedVideoUrl(currentUrl);
 
   const modal = (
     <div
@@ -121,20 +124,38 @@ export default function FeedImageGalleryModal({
       >
         {isVideoUrl(currentUrl) ? (
           <div style={{ position: "relative", width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <video
-              key={currentUrl}
-              src={currentUrl}
-              controls
-              autoPlay
-              playsInline
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                display: "block",
-                background: "#000",
-              }}
-            />
+            {muxVideo?.status === "ready" && muxVideo.playbackId ? (
+              <MuxPlayer
+                key={currentUrl}
+                playbackId={muxVideo.playbackId}
+                streamType="on-demand"
+                poster={muxPosterUrl(muxVideo.playbackId)}
+                autoPlay
+                playsInline
+                style={{ width: "100%", height: "100%", display: "block", background: "#000" }}
+              />
+            ) : muxVideo ? (
+              <div style={{ color: "#fff", fontWeight: 700, textAlign: "center", padding: 24 }}>
+                {["upload_failed", "asset_error", "cancelled", "timed_out"].includes(muxVideo.status)
+                  ? "Video processing failed."
+                  : "Video is processing and will be available soon."}
+              </div>
+            ) : (
+              <video
+                key={currentUrl}
+                src={currentUrl}
+                controls
+                autoPlay
+                playsInline
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  objectFit: "contain",
+                  display: "block",
+                  background: "#000",
+                }}
+              />
+            )}
           </div>
         ) : (
           <div

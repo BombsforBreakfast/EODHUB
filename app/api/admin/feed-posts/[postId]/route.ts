@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { deleteMuxVideosForParent } from "../../../../lib/server/deleteFeedVideos";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -68,6 +69,15 @@ export async function DELETE(
   }
   if (!postRow?.id) {
     return NextResponse.json({ error: "Post not found" }, { status: 404 });
+  }
+
+  try {
+    await deleteMuxVideosForParent(supabase, { postId: id });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Video cleanup failed." },
+      { status: 502 },
+    );
   }
 
   const { error: deleteErr } = await supabase

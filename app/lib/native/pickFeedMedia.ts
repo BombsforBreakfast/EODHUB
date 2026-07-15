@@ -15,6 +15,11 @@ export type OpenFeedMediaPickerOptions = {
   remainingSlots?: number;
 };
 
+export type OpenFeedVideoPickerOptions = {
+  videoInputRef: RefObject<HTMLInputElement | null>;
+  onFiles: (files: File[]) => void;
+};
+
 function isUserCancel(err: unknown): boolean {
   const message = err instanceof Error ? err.message : String(err);
   return /cancel|dismiss|pickfiles canceled|user denied|no image|no photo/i.test(message);
@@ -196,20 +201,26 @@ async function pickNativePhotosFromLibrary(limit: number): Promise<File[]> {
   }
 }
 
-async function pickNativeVideosFromLibrary(limit: number): Promise<File[]> {
+async function pickNativeVideosFromLibrary(): Promise<File[]> {
   const { FilePicker } = await import("@capawesome/capacitor-file-picker");
   try {
     const result = await FilePicker.pickVideos({
-      limit: limit > 0 ? limit : undefined,
+      // The native plugin supports only 0 (unlimited) or 1. Selecting videos
+      // one at a time is the most reliable path through the iOS photo picker.
+      limit: 1,
       ordered: true,
       readData: false,
       skipTranscoding: true,
     });
+    if (result.files.length === 0) {
+      throw new Error("The video library did not return the selected video.");
+    }
     return Promise.all(result.files.map((file, index) => pickedFileToFile(file, index, "video")));
   } catch (err) {
     if (!isUserCancel(err)) {
       console.error("pickNativeVideosFromLibrary failed:", err);
-      alert("Could not open the video library. Please try again.");
+      const message = err instanceof Error ? err.message : "";
+      alert(message || "Could not read the selected video. Please try again.");
     }
     return [];
   }
@@ -340,7 +351,7 @@ export async function openFeedMediaPicker({
   }
 
   if (choice === "videos") {
-    const files = await pickNativeVideosFromLibrary(remainingSlots);
+    const files = await pickNativeVideosFromLibrary();
     if (files.length > 0) onFiles(files);
     return;
   }
@@ -352,4 +363,18 @@ export async function openFeedMediaPicker({
   }
 
   videoPdfInputRef?.current?.click();
+}
+
+/** Opens a video-only picker, using the native iOS library instead of WKWebView input. */
+export async function openFeedVideoPicker({
+  videoInputRef,
+  onFiles,
+}: OpenFeedVideoPickerOptions): Promise<void> {
+  if (!isNativeIosApp()) {
+    videoInputRef.current?.click();
+    return;
+  }
+
+  const files = await pickNativeVideosFromLibrary();
+  if (files.length > 0) onFiles(files);
 }

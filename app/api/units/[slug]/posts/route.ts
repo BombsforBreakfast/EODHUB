@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { assertMemberInteractionAllowed } from "../../../../lib/memberSubscriptionServer";
 import { assertApprovedUnitMember, canUserViewUnitWall } from "../../../../lib/unitAccessServer";
+import { parseMuxFeedVideoUrl } from "../../../../lib/feedVideoUrl";
+import { syncFeedVideoAttachmentUrl } from "../../../../lib/server/feedVideoServer";
 
 function getAdminClient() {
   return createClient(
@@ -364,6 +366,30 @@ export async function POST(
     );
     if (imagesError && !isMissingColumnError(imagesError, "unit_post_images")) {
       return NextResponse.json({ error: imagesError.message }, { status: 500 });
+    }
+
+    for (const [sortOrder, url] of urlsToStore.entries()) {
+      const muxVideo = parseMuxFeedVideoUrl(url);
+      if (!muxVideo) continue;
+      const { data: attachedVideo, error: attachError } = await adminClient
+        .from("feed_videos")
+        .update({
+          post_id: null,
+          unit_post_id: post.id,
+          sort_order: sortOrder,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", muxVideo.id)
+        .eq("owner_user_id", user.id)
+        .select("*")
+        .single();
+      if (attachError || !attachedVideo) {
+        return NextResponse.json(
+          { error: attachError?.message ?? "Could not attach uploaded video." },
+          { status: 500 },
+        );
+      }
+      await syncFeedVideoAttachmentUrl(adminClient, attachedVideo);
     }
   }
 

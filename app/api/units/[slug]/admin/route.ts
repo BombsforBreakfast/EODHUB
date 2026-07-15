@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createNotification } from "../../../../lib/notificationsServer";
 import { assertUnitAdmin } from "../../../../lib/unitAccessServer";
 import { unitHasFileLibraryTab } from "../../../../lib/unitFileLibraryGroups";
+import { deleteMuxVideosForParent } from "../../../../lib/server/deleteFeedVideos";
 
 function getAdminClient() {
   return createClient(
@@ -74,7 +75,7 @@ export async function GET(
 
   // Photo posts
   const photoSelect = "id, user_id, content, photo_url, created_at, hidden_for_review";
-  let photoPostsResult = await db
+  const photoPostsResult = await db
     .from("unit_posts")
     .select(photoSelect)
     .eq("unit_id", unit.id)
@@ -115,7 +116,7 @@ export async function GET(
 
   if (showFileLibrary) {
     const fileSelect = "id, user_id, content, photo_url, created_at, hidden_for_review, meta";
-    let filePostsResult = await db
+    const filePostsResult = await db
       .from("unit_posts")
       .select(fileSelect)
       .eq("unit_id", unit.id)
@@ -371,6 +372,14 @@ export async function PATCH(
   if (action === "delete_post") {
     const { post_id } = body;
     if (!post_id) return NextResponse.json({ error: "post_id required" }, { status: 400 });
+    try {
+      await deleteMuxVideosForParent(db, { unitPostId: post_id });
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Video cleanup failed." },
+        { status: 502 },
+      );
+    }
     await db.from("unit_posts").delete().eq("id", post_id).eq("unit_id", unit.id);
     await db.from("unit_post_likes").delete().eq("unit_post_id", post_id);
     await db.from("unit_post_comments").delete().eq("unit_post_id", post_id);
