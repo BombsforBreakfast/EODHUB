@@ -1,5 +1,9 @@
 import crypto from "crypto";
 import http2 from "http2";
+import {
+  APNS_SOUND_FALLBACK,
+  IOS_PUSH_NOTIFICATION_SOUND,
+} from "../pushNotificationSound";
 
 type ApnsPayload = {
   title: string;
@@ -81,7 +85,8 @@ export async function sendApnsPush(
 
   const aps: Record<string, unknown> = {
     alert: { title: payload.title, body: payload.body },
-    sound: "default",
+    // iOS falls back to the default alert tone if the bundled file is missing.
+    sound: IOS_PUSH_NOTIFICATION_SOUND || APNS_SOUND_FALLBACK,
   };
 
   const body = JSON.stringify({

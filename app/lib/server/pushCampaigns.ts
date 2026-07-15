@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { isApnsConfigured, sendApnsPush } from "./apnsSend";
+import { isFcmConfigured, sendFcmPush, isInvalidFcmToken } from "./fcmSend";
+import { isNativePushConfigured } from "./pushDispatch";
 
 export type PushCampaignRow = {
   id: string;
@@ -21,24 +23,25 @@ type DeviceTokenRow = {
   id: string;
   user_id: string;
   token: string;
+  platform: "ios" | "android";
 };
 
 const TOKEN_PAGE_SIZE = 1000;
-const APNS_CONCURRENCY = 12;
+const PUSH_CONCURRENCY = 12;
 
-function isInvalidDeviceToken(result: { ok: false; reason: string; status?: number }): boolean {
+function isInvalidApnsToken(result: { ok: false; reason: string; status?: number }): boolean {
   if (result.status === 410) return true;
   return /BadDeviceToken|DeviceTokenNotForTopic|Unregistered/i.test(result.reason);
 }
 
-async function loadEligibleIosTokens(db: SupabaseClient): Promise<DeviceTokenRow[]> {
+async function loadEligibleNativeTokens(db: SupabaseClient): Promise<DeviceTokenRow[]> {
   const tokens: DeviceTokenRow[] = [];
 
   for (let from = 0; ; from += TOKEN_PAGE_SIZE) {
     const { data, error } = await db
       .from("push_device_tokens")
-      .select("id, user_id, token")
-      .eq("platform", "ios")
+      .select("id, user_id, token, platform")
+      .in("platform", ["ios", "android"])
       .order("id", { ascending: true })
       .range(from, from + TOKEN_PAGE_SIZE - 1);
     if (error) throw error;
@@ -66,6 +69,8 @@ async function loadEligibleIosTokens(db: SupabaseClient): Promise<DeviceTokenRow
   const seenTokens = new Set<string>();
   return tokens.filter((row) => {
     if (disabledUsers.has(row.user_id) || seenTokens.has(row.token)) return false;
+    if (row.platform === "ios" && !isApnsConfigured()) return false;
+    if (row.platform === "android" && !isFcmConfigured()) return false;
     seenTokens.add(row.token);
     return true;
   });
@@ -90,17 +95,17 @@ export async function dispatchPushCampaign(
   db: SupabaseClient,
   campaign: PushCampaignRow,
 ): Promise<void> {
-  if (!isApnsConfigured()) {
+  if (!isNativePushConfigured()) {
     await markCampaignFailed(
       db,
       campaign.id,
-      "APNs is not configured. Add APNS_KEY_ID, APNS_TEAM_ID, APNS_PRIVATE_KEY, APNS_BUNDLE_ID, and APNS_ENV.",
+      "No push providers configured. Add APNs env vars and/or FIREBASE_SERVICE_ACCOUNT_JSON.",
     );
     return;
   }
 
   try {
-    const tokens = await loadEligibleIosTokens(db);
+    const tokens = await loadEligibleNativeTokens(db);
     const staleTokenIds: string[] = [];
     let sentCount = 0;
     let failedCount = 0;
@@ -111,19 +116,29 @@ export async function dispatchPushCampaign(
         const row = tokens[cursor++];
         if (!row) return;
 
-        const result = await sendApnsPush(row.token, {
+        const payload = {
           title: campaign.title,
           body: campaign.body,
           link: campaign.link ?? "/",
-        });
+        };
+
+        const result =
+          row.platform === "android"
+            ? await sendFcmPush(row.token, payload)
+            : await sendApnsPush(row.token, payload);
 
         if (result.ok) {
           sentCount += 1;
         } else {
           failedCount += 1;
-          if (isInvalidDeviceToken(result)) staleTokenIds.push(row.id);
-          console.warn("[pushCampaign] APNs send failed", {
+          const invalid =
+            row.platform === "android"
+              ? isInvalidFcmToken(result)
+              : isInvalidApnsToken(result);
+          if (invalid) staleTokenIds.push(row.id);
+          console.warn("[pushCampaign] push send failed", {
             campaignId: campaign.id,
+            platform: row.platform,
             tokenId: row.id,
             reason: result.reason,
             status: result.status,
@@ -133,7 +148,7 @@ export async function dispatchPushCampaign(
     }
 
     await Promise.all(
-      Array.from({ length: Math.min(APNS_CONCURRENCY, Math.max(tokens.length, 1)) }, () => worker()),
+      Array.from({ length: Math.min(PUSH_CONCURRENCY, Math.max(tokens.length, 1)) }, () => worker()),
     );
 
     if (staleTokenIds.length > 0) {

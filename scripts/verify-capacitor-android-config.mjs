@@ -24,4 +24,15 @@ if (actual !== expected) {
   process.exit(1);
 }
 
+const notificationSoundPath = join(root, "android", "app", "src", "main", "res", "raw", "eod_click.wav");
+if (!existsSync(notificationSoundPath)) {
+  console.error(
+    "Missing bundled push notification sound",
+    notificationSoundPath,
+    "— run npm run generate:notification-sound",
+  );
+  process.exit(1);
+}
+
 console.log("OK: Android capacitor.config.json server.url =", actual);
+console.log("OK: Android push notification sound is bundled");

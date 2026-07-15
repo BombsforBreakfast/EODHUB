@@ -2,14 +2,21 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isPushEligibleNotificationType } from "../pushEligibleTypes";
 import type { CreateNotificationInput } from "../notificationsServer";
 import { sendApnsPush, isApnsConfigured } from "./apnsSend";
+import { sendFcmPush, isFcmConfigured, isInvalidFcmToken } from "./fcmSend";
 
-let warnedApnsMissing = false;
+let warnedPushMissing = false;
 
-function warnApnsMissingOnce(): void {
-  if (!warnedApnsMissing) {
-    warnedApnsMissing = true;
-    console.warn("[pushDispatch] APNs environment variables are not configured");
+function warnPushMissingOnce(): void {
+  if (!warnedPushMissing) {
+    warnedPushMissing = true;
+    console.warn(
+      "[pushDispatch] No push providers configured (APNs and/or FIREBASE_SERVICE_ACCOUNT_JSON)",
+    );
   }
+}
+
+export function isNativePushConfigured(): boolean {
+  return isApnsConfigured() || isFcmConfigured();
 }
 
 function pushTitle(input: CreateNotificationInput): string {
@@ -26,10 +33,15 @@ function pushBody(input: CreateNotificationInput): string {
 
 type PushContent = { title: string; body: string; link: string | null };
 
+type DeviceTokenRow = {
+  id: string;
+  token: string;
+  platform: string;
+};
+
 /**
- * Sends a native push to every eligible iOS device the user owns.
+ * Sends a native push to every eligible iOS/Android device the user owns.
  * Respects the user's push preference and prunes stale device tokens.
- * Returns the number of devices the push was successfully delivered to.
  */
 async function deliverPushToUser(
   db: SupabaseClient,
@@ -47,32 +59,53 @@ async function deliverPushToUser(
   const { data: tokens, error: tokenErr } = await db
     .from("push_device_tokens")
     .select("id, token, platform")
-    .eq("user_id", recipientUserId)
-    .eq("platform", "ios");
+    .eq("user_id", recipientUserId);
 
   if (tokenErr || !tokens?.length) return 0;
 
   const staleTokenIds: string[] = [];
   let sentCount = 0;
 
-  for (const row of tokens) {
-    const result = await sendApnsPush(row.token, content);
-    if (result.ok) {
-      sentCount += 1;
+  for (const row of tokens as DeviceTokenRow[]) {
+    if (row.platform === "ios") {
+      if (!isApnsConfigured()) continue;
+      const result = await sendApnsPush(row.token, content);
+      if (result.ok) {
+        sentCount += 1;
+        continue;
+      }
+      if (
+        result.status === 410 ||
+        /BadDeviceToken|DeviceTokenNotForTopic|Unregistered/i.test(result.reason)
+      ) {
+        staleTokenIds.push(row.id);
+      }
+      console.warn("[pushDispatch] APNs send failed", {
+        userId: recipientUserId,
+        tokenId: row.id,
+        reason: result.reason,
+        status: result.status,
+      });
       continue;
     }
-    if (
-      result.status === 410 ||
-      /BadDeviceToken|DeviceTokenNotForTopic|Unregistered/i.test(result.reason)
-    ) {
-      staleTokenIds.push(row.id);
+
+    if (row.platform === "android") {
+      if (!isFcmConfigured()) continue;
+      const result = await sendFcmPush(row.token, content);
+      if (result.ok) {
+        sentCount += 1;
+        continue;
+      }
+      if (isInvalidFcmToken(result)) {
+        staleTokenIds.push(row.id);
+      }
+      console.warn("[pushDispatch] FCM send failed", {
+        userId: recipientUserId,
+        tokenId: row.id,
+        reason: result.reason,
+        status: result.status,
+      });
     }
-    console.warn("[pushDispatch] APNs send failed", {
-      userId: recipientUserId,
-      tokenId: row.id,
-      reason: result.reason,
-      status: result.status,
-    });
   }
 
   if (staleTokenIds.length > 0) {
@@ -88,13 +121,11 @@ export async function dispatchPushForNotification(
   notificationId?: string | null,
 ): Promise<void> {
   if (!isPushEligibleNotificationType(input.type)) return;
-  if (!isApnsConfigured()) {
-    warnApnsMissingOnce();
+  if (!isNativePushConfigured()) {
+    warnPushMissingOnce();
     return;
   }
 
-  // The notification RPC can return an existing row when a dedupe key matches.
-  // Do not emit the same native push again after that row was already delivered.
   if (notificationId) {
     const { data: existing } = await db
       .from("notifications")
@@ -118,11 +149,6 @@ export async function dispatchPushForNotification(
   }
 }
 
-/**
- * Shape of a notification row consumed by the pending-push sweeper.
- * The `notifications` table stores the display text in `message` (there are no
- * separate title/body columns), so pushes fall back to actor + message.
- */
 export type PendingNotificationRow = {
   id: string;
   recipient_user_id: string;
@@ -133,21 +159,14 @@ export type PendingNotificationRow = {
   pushed_at: string | null;
 };
 
-/**
- * Push backstop for notifications created OUTSIDE the Node layer (e.g. SQL
- * triggers / RPCs such as Kangaroo Court) that never run through
- * `dispatchPushForNotification`. Marks the row as processed regardless of send
- * outcome so the sweeper does not retry the same row forever when a recipient
- * has push disabled or has no registered device.
- */
 export async function dispatchPushForPendingRow(
   db: SupabaseClient,
   row: PendingNotificationRow,
 ): Promise<{ pushed: boolean }> {
   if (row.pushed_at) return { pushed: false };
   if (!isPushEligibleNotificationType(row.type)) return { pushed: false };
-  if (!isApnsConfigured()) {
-    warnApnsMissingOnce();
+  if (!isNativePushConfigured()) {
+    warnPushMissingOnce();
     return { pushed: false };
   }
 

@@ -82,7 +82,6 @@ export default function FeedPostHeader({
     <div
       style={{
         display: "flex",
-        justifyContent: "space-between",
         gap: "clamp(4px, 1.4vw, 8px)",
         alignItems: "flex-start",
         flexWrap: "wrap",
@@ -164,10 +163,11 @@ export default function FeedPostHeader({
           gap: "clamp(6px, 1.6vw, 10px)",
           alignItems: "center",
           flexShrink: 0,
-          flexWrap: "wrap",
+          flexWrap: "nowrap",
           justifyContent: "flex-end",
           position: "relative",
-          minWidth: 0,
+          marginLeft: "auto",
+          alignSelf: "flex-end",
         }}
       >
         {showCollapsedOwnerMenu ? (
@@ -196,6 +196,7 @@ export default function FeedPostHeader({
                   position: "absolute",
                   top: "100%",
                   right: 0,
+                  left: "auto",
                   marginTop: 6,
                   display: "grid",
                   gap: 6,
@@ -205,7 +206,7 @@ export default function FeedPostHeader({
                   padding: 8,
                   background: t.surface,
                   boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-                  zIndex: 5,
+                  zIndex: 50,
                   maxWidth: "min(220px, 85vw)",
                 }}
               >
@@ -321,6 +322,7 @@ export default function FeedPostHeader({
                   position: "absolute",
                   top: "100%",
                   right: 0,
+                  left: "auto",
                   marginTop: 6,
                   display: "grid",
                   gap: 6,
@@ -330,7 +332,7 @@ export default function FeedPostHeader({
                   padding: 8,
                   background: t.surface,
                   boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-                  zIndex: 5,
+                  zIndex: 50,
                   maxWidth: "min(240px, 85vw)",
                 }}
               >

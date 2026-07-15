@@ -25,6 +25,7 @@
     "cap:sync:android": "npx cap sync android",
     "cap:open:ios": "npx cap open ios",
     "cap:open:android": "npx cap open android",
+    "generate:notification-sound": "node scripts/generate-notification-sound.mjs",
     "generate:splash": "node scripts/generate-splash.mjs"
   },
   "dependencies": {

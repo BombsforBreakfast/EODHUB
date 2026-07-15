@@ -50,5 +50,12 @@ if (!storyboard.includes('customClass="MainViewController"')) {
   process.exit(1);
 }
 
+const notificationSoundPath = join(root, "ios", "App", "App", "eod_click.wav");
+if (!existsSync(notificationSoundPath)) {
+  console.error("Missing bundled push notification sound", notificationSoundPath, "— run npm run generate:notification-sound");
+  process.exit(1);
+}
+
 console.log("OK: iOS capacitor.config.json server.url =", actual);
 console.log("OK: iOS native Mux video upload bridge is configured");
+console.log("OK: iOS push notification sound is bundled");

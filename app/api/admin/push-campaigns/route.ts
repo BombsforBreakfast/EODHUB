@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateAdminApiRequest } from "@/app/lib/server/adminApiAuth";
 import { isApnsConfigured } from "@/app/lib/server/apnsSend";
+import { isFcmConfigured } from "@/app/lib/server/fcmSend";
+import { isNativePushConfigured } from "@/app/lib/server/pushDispatch";
 import {
   dispatchPushCampaign,
   type PushCampaignRow,
@@ -27,7 +29,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
 
-  const [{ data, error }, { count: iosTokenCount, error: tokenError }] = await Promise.all([
+  const [{ data, error }, { count: iosTokenCount, error: tokenError }, { count: androidTokenCount, error: androidTokenError }] =
+    await Promise.all([
     auth.admin
       .from("push_campaigns")
       .select("*")
@@ -37,18 +40,25 @@ export async function GET(request: NextRequest) {
       .from("push_device_tokens")
       .select("id", { count: "exact", head: true })
       .eq("platform", "ios"),
+    auth.admin
+      .from("push_device_tokens")
+      .select("id", { count: "exact", head: true })
+      .eq("platform", "android"),
   ]);
 
-  if (error || tokenError) {
-    console.error("[admin/push-campaigns] load failed", error ?? tokenError);
-    return NextResponse.json({ error: (error ?? tokenError)?.message }, { status: 500 });
+  if (error || tokenError || androidTokenError) {
+    console.error("[admin/push-campaigns] load failed", error ?? tokenError ?? androidTokenError);
+    return NextResponse.json({ error: (error ?? tokenError ?? androidTokenError)?.message }, { status: 500 });
   }
 
   return NextResponse.json({
     campaigns: (data ?? []) as PushCampaignRow[],
     diagnostics: {
       apnsConfigured: isApnsConfigured(),
+      fcmConfigured: isFcmConfigured(),
+      nativePushConfigured: isNativePushConfigured(),
       iosTokenCount: iosTokenCount ?? 0,
+      androidTokenCount: androidTokenCount ?? 0,
     },
   });
 }
