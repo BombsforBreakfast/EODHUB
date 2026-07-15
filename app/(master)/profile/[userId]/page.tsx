@@ -6558,31 +6558,7 @@ export default function PublicProfilePage() {
                       </div>
                     )}
 
-                    {post.og_url && (() => {
-                      const ytId = getYouTubeVideoId(post.og_url);
-                      if (ytId) {
-                        return <YouTubeEmbed videoId={ytId} title="Wall post YouTube video" marginTop={10} maxWidth={520} />;
-                      }
-                      if (post.og_title || post.og_image) {
-                        const rumintStyle = post.user_id === RUMINT_USER_ID;
-                        return (
-                          <OgCard
-                            og={{
-                              url: post.og_url,
-                              title: post.og_title,
-                              description: rumintStyle
-                                ? sanitizeRumintOgDescription(post.og_description)
-                                : post.og_description,
-                              image: post.og_image,
-                              siteName: post.og_site_name,
-                            }}
-                          />
-                        );
-                      }
-                      return null;
-                    })()}
-
-                    {/* Post images (member profiles show inline; business shows in Photos/Videos sections) */}
+                    {/* Post images before link preview (e.g. job share flyers above OG card) */}
                     {post.image_urls.length > 0 && !isBusinessOrgProfile && (() => {
                       const attachments = attachmentsFromUrls(post.image_urls);
                       const visible = attachments.slice(0, 3);
@@ -6615,6 +6591,30 @@ export default function PublicProfilePage() {
                           ))}
                         </div>
                       );
+                    })()}
+
+                    {post.og_url && (() => {
+                      const ytId = getYouTubeVideoId(post.og_url);
+                      if (ytId) {
+                        return <YouTubeEmbed videoId={ytId} title="Wall post YouTube video" marginTop={10} maxWidth={520} />;
+                      }
+                      if (post.og_title || post.og_image) {
+                        const rumintStyle = post.user_id === RUMINT_USER_ID;
+                        return (
+                          <OgCard
+                            og={{
+                              url: post.og_url,
+                              title: post.og_title,
+                              description: rumintStyle
+                                ? sanitizeRumintOgDescription(post.og_description)
+                                : post.og_description,
+                              image: post.og_image,
+                              siteName: post.og_site_name,
+                            }}
+                          />
+                        );
+                      }
+                      return null;
                     })()}
 
                     {post.event_id && (

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { PostAsMode } from "@/app/lib/postAsIdentity";
 import { resolveListingSharePostAsUserId } from "@/app/lib/server/resolveListingSharePostAsUserId";
+import { sanitizeClientFeedImageUrls } from "@/app/lib/server/sanitizeClientFeedImageUrls";
 
 function getAdminClient() {
   return createClient(
@@ -44,6 +45,7 @@ export async function POST(
     body?.postAsMode === "admin" || body?.postAsMode === "self"
       ? (body.postAsMode as PostAsMode)
       : undefined;
+  const imageUrls = sanitizeClientFeedImageUrls(body?.imageUrls, user.id);
 
   const { id: jobId } = await params;
   const adminClient = getAdminClient();
@@ -86,6 +88,20 @@ export async function POST(
 
   if (insertErr || !inserted?.id) {
     return NextResponse.json({ error: insertErr?.message || "Failed to share job" }, { status: 500 });
+  }
+
+  if (imageUrls.length > 0) {
+    const postImageRows = imageUrls.map((image_url, sort_order) => ({
+      post_id: inserted.id,
+      image_url,
+      sort_order,
+    }));
+    const { error: imagesErr } = await userClient.from("post_images").insert(postImageRows);
+    if (imagesErr) {
+      return NextResponse.json({ error: imagesErr.message || "Failed to attach photo" }, { status: 500 });
+    }
+
+    await userClient.from("posts").update({ image_url: imageUrls[0] }).eq("id", inserted.id);
   }
 
   return NextResponse.json({

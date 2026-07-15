@@ -198,7 +198,12 @@ export default function JobsPage() {
     setShareComposerJob(job);
   }, [userId]);
 
-  const handleShareJob = useCallback(async (job: JobModalData, content: string, postAsMode?: PostAsMode) => {
+  const handleShareJob = useCallback(async (
+    job: JobModalData,
+    content: string,
+    postAsMode?: PostAsMode,
+    photoFile?: File | null,
+  ) => {
     if (!userId) {
       window.location.href = "/login";
       return;
@@ -207,7 +212,7 @@ export default function JobsPage() {
     setSharingJobId(job.id);
     setJobNotice(null);
     try {
-      const result = await shareJobToFeed(supabase, job.id, content, postAsMode);
+      const result = await shareJobToFeed(supabase, job.id, content, postAsMode, photoFile);
       if (!result.ok) {
         setJobNotice(result.error ?? "Could not share this job to the feed.");
         return;
@@ -345,12 +350,13 @@ export default function JobsPage() {
         key={shareComposerJob?.id ?? "closed"}
         listing={shareComposerJob ? jobSharePreview(shareComposerJob) : null}
         label="Job"
+        allowPhotoAttachment
         submitting={Boolean(shareComposerJob && sharingJobId === shareComposerJob.id)}
         onClose={() => {
           if (!sharingJobId) setShareComposerJob(null);
         }}
-        onSubmit={(content, postAsMode) => {
-          if (shareComposerJob) void handleShareJob(shareComposerJob, content, postAsMode);
+        onSubmit={(content, postAsMode, photoFile) => {
+          if (shareComposerJob) void handleShareJob(shareComposerJob, content, postAsMode, photoFile);
         }}
       />
 

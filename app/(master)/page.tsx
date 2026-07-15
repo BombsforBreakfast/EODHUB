@@ -8727,28 +8727,6 @@ export default function HomePage() {
                         return <YouTubeEmbed url={youtubeUrl} title="Post YouTube video" />;
                       })()}
 
-                      {post.og_url && (() => {
-                        const ytId = getYouTubeVideoId(post.og_url);
-                        if (ytId) return <YouTubeEmbed videoId={ytId} title="Post YouTube video" />;
-                        if (post.og_title || post.admin_manual_image_url || post.og_image) {
-                          const rumintStyle = post.content_type === "news" || post.user_id === RUMINT_USER_ID;
-                          return (
-                            <OgCard
-                              og={{
-                                url: post.og_url,
-                                title: post.og_title,
-                                description: rumintStyle
-                                  ? sanitizeRumintOgDescription(post.og_description)
-                                  : post.og_description,
-                                image: post.admin_manual_image_url || post.og_image,
-                                siteName: post.og_site_name,
-                              }}
-                            />
-                          );
-                        }
-                        return null;
-                      })()}
-
                       {post.image_urls.length > 0 &&
                         (() => {
                           const attachments = attachmentsFromUrls(post.image_urls);
@@ -8838,6 +8816,28 @@ export default function HomePage() {
                             </div>
                           );
                         })()}
+
+                      {post.og_url && (() => {
+                        const ytId = getYouTubeVideoId(post.og_url);
+                        if (ytId) return <YouTubeEmbed videoId={ytId} title="Post YouTube video" />;
+                        if (post.og_title || post.admin_manual_image_url || post.og_image) {
+                          const rumintStyle = post.content_type === "news" || post.user_id === RUMINT_USER_ID;
+                          return (
+                            <OgCard
+                              og={{
+                                url: post.og_url,
+                                title: post.og_title,
+                                description: rumintStyle
+                                  ? sanitizeRumintOgDescription(post.og_description)
+                                  : post.og_description,
+                                image: post.admin_manual_image_url || post.og_image,
+                                siteName: post.og_site_name,
+                              }}
+                            />
+                          );
+                        }
+                        return null;
+                      })()}
                     </>
                   )}
 

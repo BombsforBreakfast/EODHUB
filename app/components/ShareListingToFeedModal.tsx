@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import PostAsSelector from "./PostAsSelector";
 import { OgCard } from "./master/masterShared";
 import { useTheme } from "../lib/ThemeContext";
 import { supabase } from "../lib/lib/supabaseClient";
+import { isImageFile } from "../lib/uploadLimits";
 import {
   adminPostDisplayName,
   canUsePostAsSelector,
@@ -29,13 +30,25 @@ type Props = {
   listing: ShareListingPreview | null;
   label: string;
   submitting: boolean;
+  allowPhotoAttachment?: boolean;
   onClose: () => void;
-  onSubmit: (content: string, postAsMode?: PostAsMode) => void;
+  onSubmit: (content: string, postAsMode?: PostAsMode, photoFile?: File | null) => void;
 };
 
-export default function ShareListingToFeedModal({ listing, label, submitting, onClose, onSubmit }: Props) {
+export default function ShareListingToFeedModal({
+  listing,
+  label,
+  submitting,
+  allowPhotoAttachment = false,
+  onClose,
+  onSubmit,
+}: Props) {
   const { t } = useTheme();
   const [content, setContent] = useState("");
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
   const [postAsMode, setPostAsMode] = useState<PostAsMode>(() => loadStoredListingSharePostAsMode());
   const [canChoosePostAs, setCanChoosePostAs] = useState(false);
   const [selfLabel, setSelfLabel] = useState("You");
@@ -46,8 +59,20 @@ export default function ShareListingToFeedModal({ listing, label, submitting, on
   useEffect(() => {
     if (!listing) return;
     setContent("");
+    setPhotoFile(null);
+    setPhotoError(null);
     setPostAsMode(loadStoredListingSharePostAsMode());
   }, [listing?.id]);
+
+  useEffect(() => {
+    if (!photoFile) {
+      setPhotoPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(photoFile);
+    setPhotoPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [photoFile]);
 
   useEffect(() => {
     if (!listing) return;
@@ -149,7 +174,7 @@ export default function ShareListingToFeedModal({ listing, label, submitting, on
               Share to feed
             </div>
             <div style={{ marginTop: 4, color: t.textMuted, fontSize: 13 }}>
-              Add your own text, then post this {label.toLowerCase()} as a normal feed post.
+              Add your own text{allowPhotoAttachment ? ", an optional photo/flyer," : ""} then post this {label.toLowerCase()} as a normal feed post.
             </div>
           </div>
           <button
@@ -166,7 +191,7 @@ export default function ShareListingToFeedModal({ listing, label, submitting, on
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            if (!submitting) onSubmit(content, canChoosePostAs ? postAsMode : undefined);
+            if (!submitting) onSubmit(content, canChoosePostAs ? postAsMode : undefined, photoFile);
           }}
           style={{ padding: 16 }}
         >
@@ -204,6 +229,105 @@ export default function ShareListingToFeedModal({ listing, label, submitting, on
               resize: "vertical",
             }}
           />
+          {allowPhotoAttachment && (
+            <div style={{ marginTop: 10 }}>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  e.target.value = "";
+                  if (!file) return;
+                  if (!isImageFile(file)) {
+                    setPhotoError("Please choose a JPG, PNG, WEBP, or GIF image.");
+                    return;
+                  }
+                  setPhotoError(null);
+                  setPhotoFile(file);
+                }}
+              />
+              {photoPreviewUrl ? (
+                <div
+                  style={{
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    background: t.bg,
+                  }}
+                >
+                  <img
+                    src={photoPreviewUrl}
+                    alt="Flyer preview"
+                    style={{ width: "100%", maxHeight: 280, objectFit: "contain", display: "block", background: "#111827" }}
+                  />
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: 8 }}>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => photoInputRef.current?.click()}
+                      style={{
+                        background: "transparent",
+                        color: t.text,
+                        border: `1px solid ${t.border}`,
+                        borderRadius: 8,
+                        padding: "6px 10px",
+                        fontWeight: 700,
+                        cursor: submitting ? "default" : "pointer",
+                      }}
+                    >
+                      Replace
+                    </button>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => {
+                        setPhotoFile(null);
+                        setPhotoError(null);
+                      }}
+                      style={{
+                        background: "transparent",
+                        color: t.textMuted,
+                        border: "none",
+                        borderRadius: 8,
+                        padding: "6px 10px",
+                        fontWeight: 700,
+                        cursor: submitting ? "default" : "pointer",
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={submitting}
+                  onClick={() => photoInputRef.current?.click()}
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    background: t.bg,
+                    color: t.text,
+                    border: `1px dashed ${t.border}`,
+                    borderRadius: 10,
+                    padding: "10px 12px",
+                    fontWeight: 700,
+                    cursor: submitting ? "default" : "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  Add photo / flyer (optional)
+                </button>
+              )}
+              {photoError && (
+                <div style={{ marginTop: 6, color: "#ef4444", fontSize: 12, fontWeight: 600 }}>
+                  {photoError}
+                </div>
+              )}
+            </div>
+          )}
           <div style={{ marginTop: 10 }}>
             <OgCard
               og={{
