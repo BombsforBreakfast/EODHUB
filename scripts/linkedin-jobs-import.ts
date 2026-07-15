@@ -26,6 +26,7 @@ import {
   parseLinkedInJobIdFromUrl,
 } from "../app/lib/linkedin/linkedinJob";
 import { scoreLinkedInJob } from "../app/lib/linkedin/relevance";
+import { cleanLinkedInJobTitle, scrapeLinkedInJobDetailPage } from "../app/lib/linkedin/scrapeJobDetail";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
@@ -86,71 +87,6 @@ const SCRAPE_LINKEDIN_SEARCH_RESULTS = `(() => {
   return results;
 })()`;
 
-const SCRAPE_LINKEDIN_JOB_DETAIL = `(() => {
-  const parseJsonLd = () => {
-    for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
-      try {
-        const parsed = JSON.parse(script.textContent || 'null');
-        const nodes = Array.isArray(parsed) ? parsed : [parsed];
-        for (const node of nodes) {
-          if (!node || typeof node !== 'object') continue;
-          const type = node['@type'];
-          const isJobPosting =
-            type === 'JobPosting' ||
-            (Array.isArray(type) && type.includes('JobPosting')) ||
-            (typeof type === 'string' && type.includes('JobPosting'));
-          if (!isJobPosting) continue;
-
-          const hiringOrg = node.hiringOrganization;
-          const jobLocation = node.jobLocation;
-          const address = jobLocation && jobLocation.address;
-          const description = typeof node.description === 'string' ? node.description : '';
-
-          return {
-            description,
-            title: typeof node.title === 'string' ? node.title : undefined,
-            companyName:
-              hiringOrg && typeof hiringOrg.name === 'string' ? hiringOrg.name : undefined,
-            location:
-              address && typeof address.addressLocality === 'string'
-                ? address.addressLocality
-                : undefined,
-          };
-        }
-      } catch {
-        // Try the next JSON-LD block.
-      }
-    }
-    return null;
-  };
-
-  const parseDomDescription = () => {
-    const selectors = [
-      '.show-more-less-html__markup',
-      '.jobs-description__content',
-      '.jobs-description-content__text',
-      '.jobs-box__html-content',
-      '#job-details',
-      '.description__text',
-    ];
-    for (const selector of selectors) {
-      const el = document.querySelector(selector);
-      const text = el?.textContent?.replace(/\\s+/g, ' ').trim();
-      if (text && text.length > 40) return text;
-    }
-    return '';
-  };
-
-  const jsonLd = parseJsonLd();
-  if (jsonLd?.description) return jsonLd;
-
-  const domDescription = parseDomDescription();
-  if (jsonLd) {
-    return { ...jsonLd, description: domDescription || jsonLd.description };
-  }
-  return { description: domDescription };
-})()`;
-
 type ScrapedJob = {
   linkedinJobId: string;
   title: string;
@@ -161,58 +97,6 @@ type ScrapedJob = {
   searchQuery: string;
   relevanceScore: number;
 };
-
-type JobDetail = {
-  description: string;
-  title?: string;
-  companyName?: string;
-  location?: string;
-};
-
-function cleanJobTitle(title: string): string {
-  const normalized = title.replace(/\s+/g, " ").trim();
-  if (normalized.length > 10 && normalized.length % 2 === 0) {
-    const half = normalized.slice(0, normalized.length / 2);
-    if (half === normalized.slice(normalized.length / 2)) return half;
-  }
-  return normalized;
-}
-
-function htmlToPlainText(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>/gi, "\n\n")
-    .replace(/<li[^>]*>/gi, "\n• ")
-    .replace(/<[^>]+>/g, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/[ \t]+\n/g, "\n")
-    .trim();
-}
-
-async function scrapeJobDetail(page: Page, applyUrl: string): Promise<JobDetail> {
-  await page.goto(applyUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await page.waitForTimeout(1_500);
-
-  try {
-    const showMore = page
-      .locator('button.show-more-less-html__button, button[aria-label*="Show more"]')
-      .first();
-    if (await showMore.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await showMore.click();
-      await page.waitForTimeout(800);
-    }
-  } catch {
-    // Description may already be expanded.
-  }
-
-  return page.evaluate(SCRAPE_LINKEDIN_JOB_DETAIL).then((detail) => ({
-    ...detail,
-    description: detail.description.includes("<")
-      ? htmlToPlainText(detail.description)
-      : detail.description.replace(/\s+/g, " ").trim(),
-    title: detail.title ? cleanJobTitle(detail.title) : undefined,
-  }));
-}
 
 function randomDelayMs(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1));
@@ -381,14 +265,21 @@ async function scrapeSearchPage(
     await page.waitForTimeout(1_200);
   }
 
-  const raw = await page.evaluate(SCRAPE_LINKEDIN_SEARCH_RESULTS);
+  const raw = (await page.evaluate(SCRAPE_LINKEDIN_SEARCH_RESULTS)) as Array<{
+    linkedinJobId: string;
+    title: string;
+    companyName: string;
+    location: string;
+    description: string;
+    applyUrl: string;
+  }>;
 
   const jobs: ScrapedJob[] = [];
   for (const item of raw.slice(0, LINKEDIN_JOBS_PER_SEARCH)) {
     const jobId = parseLinkedInJobIdFromUrl(item.applyUrl) ?? item.linkedinJobId;
-    const title = cleanJobTitle(item.title);
+    const title = cleanLinkedInJobTitle(item.title);
 
-    const detail = await scrapeJobDetail(page, item.applyUrl);
+    const detail = await scrapeLinkedInJobDetailPage(page, item.applyUrl);
     const description = detail.description || item.description;
     const companyName = detail.companyName || item.companyName;
     const location = detail.location || item.location;

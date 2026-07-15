@@ -12,6 +12,8 @@
     "test:feed-ranking": "tsx scripts/verify-feed-ranking.ts",
     "test:mux-video": "tsx scripts/verify-mux-feed-video.ts",
     "test:news": "tsx app/lib/news/goldenLasd.verify.ts",
+    "test:linkedin-scraper": "tsx scripts/verify-linkedin-job-scraper.ts",
+    "linkedin:backfill-descriptions": "tsx scripts/backfill-linkedin-descriptions.ts",
     "linkedin:login": "tsx scripts/linkedin-jobs-import.ts --login",
     "linkedin:import": "tsx scripts/linkedin-jobs-import.ts",
     "linkedin:import:dry": "tsx scripts/linkedin-jobs-import.ts --dry-run --force",

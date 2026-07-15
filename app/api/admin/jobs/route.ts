@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const JOB_ADMIN_COLUMNS =
-  "id, created_at, title, company_name, location, category, description, apply_url, is_approved, applications_under_review, source_type, reliefweb_job_id, relevance_score, import_metadata";
+  "id, created_at, title, company_name, location, category, description, og_description, apply_url, pay_min, pay_max, clearance, is_approved, applications_under_review, source_type, reliefweb_job_id, relevance_score, import_metadata";
 const DEFAULT_LIMIT = 25;
 const MAX_LIMIT = 100;
 

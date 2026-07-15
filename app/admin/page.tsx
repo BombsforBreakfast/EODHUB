@@ -162,12 +162,29 @@ type Job = {
   location: string | null;
   category: string | null;
   description: string | null;
+  og_description?: string | null;
   apply_url: string | null;
+  pay_min?: number | null;
+  pay_max?: number | null;
+  clearance?: string | null;
   is_approved: boolean | null;
   source_type: string | null;
   reliefweb_job_id?: string | null;
   relevance_score?: number | null;
   import_metadata?: JobImportMetadata | null;
+};
+
+type JobEdit = {
+  id: string;
+  title: string;
+  company_name: string;
+  location: string;
+  category: string;
+  description: string;
+  apply_url: string;
+  pay_min: string;
+  pay_max: string;
+  clearance: string;
 };
 
 function formatJobSourceBadge(sourceType: string | null): string {
@@ -838,6 +855,7 @@ export default function AdminPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [editingBiz, setEditingBiz] = useState<BizEdit | null>(null);
+  const [editingJob, setEditingJob] = useState<JobEdit | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     title?: string;
@@ -2383,6 +2401,64 @@ export default function AdminPage() {
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
+  }
+
+  function startEditJob(job: Job) {
+    setEditingJob({
+      id: job.id,
+      title: job.title || "",
+      company_name: job.company_name || "",
+      location: job.location || "",
+      category: job.category || "",
+      description: job.description || job.og_description || "",
+      apply_url: job.apply_url || "",
+      pay_min: job.pay_min != null ? String(job.pay_min) : "",
+      pay_max: job.pay_max != null ? String(job.pay_max) : "",
+      clearance: job.clearance || "",
+    });
+  }
+
+  async function saveJobEdit() {
+    if (!editingJob) return;
+    setActionLoading(editingJob.id + "-edit");
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`/api/admin/jobs/${editingJob.id}`, {
+      method: "PATCH",
+      headers: {
+        Authorization: `Bearer ${session?.access_token ?? ""}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title: editingJob.title,
+        company_name: editingJob.company_name,
+        location: editingJob.location,
+        category: editingJob.category,
+        description: editingJob.description,
+        apply_url: editingJob.apply_url,
+        pay_min: editingJob.pay_min,
+        pay_max: editingJob.pay_max,
+        clearance: editingJob.clearance,
+      }),
+    });
+
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      job?: Job;
+    };
+
+    if (!res.ok) {
+      alert(body.error ?? "Failed to save job.");
+      setActionLoading(null);
+      return;
+    }
+
+    if (body.job) {
+      setJobs((prev) => prev.map((job) => (job.id === body.job!.id ? { ...job, ...body.job } : job)));
+    }
+    setEditingJob(null);
+    showToast("Job updated.");
+    setActionLoading(null);
   }
 
   async function deleteUser(user: UserProfile) {
@@ -4466,6 +4542,19 @@ export default function AdminPage() {
                             {job.description}
                           </div>
                         )}
+                        {(job.pay_min != null || job.pay_max != null || job.clearance) && (
+                          <div style={{ marginTop: 6, fontSize: 13, color: t.textMuted }}>
+                            {job.pay_min != null && job.pay_max != null
+                              ? `$${job.pay_min.toLocaleString()}–$${job.pay_max.toLocaleString()}`
+                              : job.pay_min != null
+                                ? `From $${job.pay_min.toLocaleString()}`
+                                : job.pay_max != null
+                                  ? `Up to $${job.pay_max.toLocaleString()}`
+                                  : null}
+                            {(job.pay_min != null || job.pay_max != null) && job.clearance ? " · " : ""}
+                            {job.clearance ? `Clearance: ${job.clearance}` : ""}
+                          </div>
+                        )}
                         <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint, display: "flex", gap: 12, flexWrap: "wrap" }}>
                           {job.apply_url && <a href={job.apply_url} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8" }}>View posting ↗</a>}
                           {job.source_type?.toLowerCase() === "reliefweb" && (job.import_metadata?.source_url || job.apply_url) && (
@@ -4502,6 +4591,12 @@ export default function AdminPage() {
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-start" }}>
+                      <button
+                        style={actionBtn(editingJob?.id === job.id ? "#6b7280" : "#374151")}
+                        onClick={() => editingJob?.id === job.id ? setEditingJob(null) : startEditJob(job)}
+                      >
+                        {editingJob?.id === job.id ? "Cancel" : "Edit"}
+                      </button>
                       {job.is_approved && (
                         <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 12, fontWeight: 700, padding: "4px 10px", borderRadius: 20 }}>Live</span>
                       )}
@@ -4517,6 +4612,102 @@ export default function AdminPage() {
                       </button>
                     </div>
                   </div>
+                  {editingJob?.id === job.id && (
+                    <div style={{ marginTop: 14, borderTop: `1px dashed ${t.border}`, paddingTop: 14, display: "grid", gap: 12 }}>
+                      <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+                        <label style={{ display: "grid", gap: 6, fontSize: 13, color: t.textMuted }}>
+                          Title
+                          <input
+                            value={editingJob.title}
+                            onChange={(e) => setEditingJob({ ...editingJob, title: e.target.value })}
+                            style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "8px 12px", background: t.input, color: t.text }}
+                          />
+                        </label>
+                        <label style={{ display: "grid", gap: 6, fontSize: 13, color: t.textMuted }}>
+                          Company
+                          <input
+                            value={editingJob.company_name}
+                            onChange={(e) => setEditingJob({ ...editingJob, company_name: e.target.value })}
+                            style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "8px 12px", background: t.input, color: t.text }}
+                          />
+                        </label>
+                        <label style={{ display: "grid", gap: 6, fontSize: 13, color: t.textMuted }}>
+                          Location
+                          <input
+                            value={editingJob.location}
+                            onChange={(e) => setEditingJob({ ...editingJob, location: e.target.value })}
+                            style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "8px 12px", background: t.input, color: t.text }}
+                          />
+                        </label>
+                        <label style={{ display: "grid", gap: 6, fontSize: 13, color: t.textMuted }}>
+                          Category
+                          <input
+                            value={editingJob.category}
+                            onChange={(e) => setEditingJob({ ...editingJob, category: e.target.value })}
+                            style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "8px 12px", background: t.input, color: t.text }}
+                          />
+                        </label>
+                        <label style={{ display: "grid", gap: 6, fontSize: 13, color: t.textMuted }}>
+                          Apply URL
+                          <input
+                            value={editingJob.apply_url}
+                            onChange={(e) => setEditingJob({ ...editingJob, apply_url: e.target.value })}
+                            style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "8px 12px", background: t.input, color: t.text }}
+                          />
+                        </label>
+                        <label style={{ display: "grid", gap: 6, fontSize: 13, color: t.textMuted }}>
+                          Clearance
+                          <input
+                            value={editingJob.clearance}
+                            onChange={(e) => setEditingJob({ ...editingJob, clearance: e.target.value })}
+                            placeholder="Secret, TS/SCI, Public Trust, etc."
+                            style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "8px 12px", background: t.input, color: t.text }}
+                          />
+                        </label>
+                        <label style={{ display: "grid", gap: 6, fontSize: 13, color: t.textMuted }}>
+                          Pay min (USD)
+                          <input
+                            type="number"
+                            min={0}
+                            value={editingJob.pay_min}
+                            onChange={(e) => setEditingJob({ ...editingJob, pay_min: e.target.value })}
+                            placeholder="80000"
+                            style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "8px 12px", background: t.input, color: t.text }}
+                          />
+                        </label>
+                        <label style={{ display: "grid", gap: 6, fontSize: 13, color: t.textMuted }}>
+                          Pay max (USD)
+                          <input
+                            type="number"
+                            min={0}
+                            value={editingJob.pay_max}
+                            onChange={(e) => setEditingJob({ ...editingJob, pay_max: e.target.value })}
+                            placeholder="120000"
+                            style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "8px 12px", background: t.input, color: t.text }}
+                          />
+                        </label>
+                      </div>
+                      <label style={{ display: "grid", gap: 6, fontSize: 13, color: t.textMuted }}>
+                        Description
+                        <textarea
+                          value={editingJob.description}
+                          onChange={(e) => setEditingJob({ ...editingJob, description: e.target.value })}
+                          rows={10}
+                          placeholder="Override imported description or add salary/details here."
+                          style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 10, padding: "10px 12px", background: t.input, color: t.text, resize: "vertical" }}
+                        />
+                      </label>
+                      <div>
+                        <button
+                          style={actionBtn("#111")}
+                          disabled={actionLoading === editingJob.id + "-edit"}
+                          onClick={() => void saveJobEdit()}
+                        >
+                          {actionLoading === editingJob.id + "-edit" ? "Saving..." : "Save Changes"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
