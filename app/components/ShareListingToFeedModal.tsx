@@ -127,8 +127,13 @@ export default function ShareListingToFeedModal({
     function onKeyDown(ev: KeyboardEvent) {
       if (ev.key === "Escape" && !submitting) onClose();
     }
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [listing, onClose, submitting]);
 
   if (!listing) return null;
@@ -150,7 +155,9 @@ export default function ShareListingToFeedModal({
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 16,
+        padding:
+          "max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))",
+        overflow: "hidden",
       }}
     >
       <div
@@ -160,15 +167,27 @@ export default function ShareListingToFeedModal({
         onClick={(e) => e.stopPropagation()}
         style={{
           width: "min(560px, 100%)",
-          maxHeight: "88vh",
-          overflowY: "auto",
+          maxHeight: "calc(100dvh - 24px)",
           borderRadius: 16,
           border: `1px solid ${t.border}`,
           background: t.surface,
           boxShadow: "0 24px 80px rgba(0,0,0,0.35)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          minHeight: 0,
         }}
       >
-        <div style={{ padding: 16, borderBottom: `1px solid ${t.border}`, display: "flex", justifyContent: "space-between", gap: 12 }}>
+        <div
+          style={{
+            padding: 16,
+            borderBottom: `1px solid ${t.border}`,
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            flexShrink: 0,
+          }}
+        >
           <div>
             <div id="share-listing-title" style={{ fontSize: 18, fontWeight: 900 }}>
               Share to feed
@@ -193,8 +212,23 @@ export default function ShareListingToFeedModal({
             e.preventDefault();
             if (!submitting) onSubmit(content, canChoosePostAs ? postAsMode : undefined, photoFile);
           }}
-          style={{ padding: 16 }}
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            flex: 1,
+            minHeight: 0,
+          }}
         >
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
+              padding: 16,
+            }}
+          >
           {canChoosePostAs && (
             <PostAsSelector
               mode={postAsMode}
@@ -260,7 +294,13 @@ export default function ShareListingToFeedModal({
                   <img
                     src={photoPreviewUrl}
                     alt="Flyer preview"
-                    style={{ width: "100%", maxHeight: 280, objectFit: "contain", display: "block", background: "#111827" }}
+                    style={{
+                      width: "100%",
+                      maxHeight: "min(200px, 28dvh)",
+                      objectFit: "contain",
+                      display: "block",
+                      background: "#111827",
+                    }}
                   />
                   <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: 8 }}>
                     <button
@@ -339,7 +379,20 @@ export default function ShareListingToFeedModal({
               }}
             />
           </div>
-          <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+          </div>
+
+          <div
+            style={{
+              flexShrink: 0,
+              marginTop: 0,
+              padding: "12px 16px max(16px, env(safe-area-inset-bottom))",
+              borderTop: `1px solid ${t.border}`,
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 10,
+              background: t.surface,
+            }}
+          >
             <button
               type="button"
               onClick={onClose}
