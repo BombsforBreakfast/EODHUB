@@ -9,6 +9,7 @@ type ApnsPayload = {
   title: string;
   body: string;
   link?: string | null;
+  badgeCount?: number;
 };
 
 type ApnsConfig = {
@@ -87,6 +88,9 @@ export async function sendApnsPush(
     alert: { title: payload.title, body: payload.body },
     // iOS falls back to the default alert tone if the bundled file is missing.
     sound: IOS_PUSH_NOTIFICATION_SOUND || APNS_SOUND_FALLBACK,
+    ...(typeof payload.badgeCount === "number"
+      ? { badge: Math.max(0, Math.floor(payload.badgeCount)) }
+      : {}),
   };
 
   const body = JSON.stringify({

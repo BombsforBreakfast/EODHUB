@@ -23,6 +23,10 @@ if (actual !== expected) {
   );
   process.exit(1);
 }
+if (cfg?.plugins?.Badge?.autoClear !== false || cfg?.plugins?.Badge?.persist !== true) {
+  console.error("Android Capacitor Badge config must persist counts and disable auto-clear.");
+  process.exit(1);
+}
 
 const notificationSoundPath = join(root, "android", "app", "src", "main", "res", "raw", "eod_click.wav");
 if (!existsSync(notificationSoundPath)) {
@@ -36,3 +40,4 @@ if (!existsSync(notificationSoundPath)) {
 
 console.log("OK: Android capacitor.config.json server.url =", actual);
 console.log("OK: Android push notification sound is bundled");
+console.log("OK: Android app icon badge persistence is configured");

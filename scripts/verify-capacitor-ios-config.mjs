@@ -24,6 +24,10 @@ if (actual !== expected) {
   console.error(`capacitor.config.json server.url mismatch: expected ${expected}, got ${actual ?? "(none)"}`);
   process.exit(1);
 }
+if (cfg?.plugins?.Badge?.autoClear !== false || cfg?.plugins?.Badge?.persist !== true) {
+  console.error("iOS Capacitor Badge config must persist counts and disable auto-clear.");
+  process.exit(1);
+}
 
 const requiredNativeFiles = [podfilePath, appDelegatePath, storyboardPath];
 for (const path of requiredNativeFiles) {
@@ -59,3 +63,4 @@ if (!existsSync(notificationSoundPath)) {
 console.log("OK: iOS capacitor.config.json server.url =", actual);
 console.log("OK: iOS native Mux video upload bridge is configured");
 console.log("OK: iOS push notification sound is bundled");
+console.log("OK: iOS app icon badge persistence is configured");

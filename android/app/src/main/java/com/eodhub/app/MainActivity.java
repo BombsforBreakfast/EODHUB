@@ -28,6 +28,7 @@ public class MainActivity extends BridgeActivity {
             NotificationManager.IMPORTANCE_DEFAULT
         );
         channel.setDescription("Messages and activity from EOD-Hub");
+        channel.setShowBadge(true);
 
         Uri soundUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.eod_click);
         AudioAttributes audioAttributes = new AudioAttributes.Builder()

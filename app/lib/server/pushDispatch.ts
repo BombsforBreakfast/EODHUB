@@ -3,6 +3,7 @@ import { isPushEligibleNotificationType } from "../pushEligibleTypes";
 import type { CreateNotificationInput } from "../notificationsServer";
 import { sendApnsPush, isApnsConfigured } from "./apnsSend";
 import { sendFcmPush, isFcmConfigured, isInvalidFcmToken } from "./fcmSend";
+import { unreadNotificationCount } from "./unreadNotificationCount";
 
 let warnedPushMissing = false;
 
@@ -31,7 +32,12 @@ function pushBody(input: CreateNotificationInput): string {
   return "You have a new notification";
 }
 
-type PushContent = { title: string; body: string; link: string | null };
+type PushContent = {
+  title: string;
+  body: string;
+  link: string | null;
+  badgeCount?: number;
+};
 
 type DeviceTokenRow = {
   id: string;
@@ -63,13 +69,17 @@ async function deliverPushToUser(
 
   if (tokenErr || !tokens?.length) return 0;
 
+  const payload = {
+    ...content,
+    badgeCount: await unreadNotificationCount(db, recipientUserId),
+  };
   const staleTokenIds: string[] = [];
   let sentCount = 0;
 
   for (const row of tokens as DeviceTokenRow[]) {
     if (row.platform === "ios") {
       if (!isApnsConfigured()) continue;
-      const result = await sendApnsPush(row.token, content);
+      const result = await sendApnsPush(row.token, payload);
       if (result.ok) {
         sentCount += 1;
         continue;
@@ -91,7 +101,7 @@ async function deliverPushToUser(
 
     if (row.platform === "android") {
       if (!isFcmConfigured()) continue;
-      const result = await sendFcmPush(row.token, content);
+      const result = await sendFcmPush(row.token, payload);
       if (result.ok) {
         sentCount += 1;
         continue;

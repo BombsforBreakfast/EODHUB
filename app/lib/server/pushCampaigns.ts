@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { isApnsConfigured, sendApnsPush } from "./apnsSend";
 import { isFcmConfigured, sendFcmPush, isInvalidFcmToken } from "./fcmSend";
 import { isNativePushConfigured } from "./pushDispatch";
+import { unreadNotificationCount } from "./unreadNotificationCount";
 
 export type PushCampaignRow = {
   id: string;
@@ -110,16 +111,23 @@ export async function dispatchPushCampaign(
     let sentCount = 0;
     let failedCount = 0;
     let cursor = 0;
+    const badgeCounts = new Map<string, Promise<number>>();
 
     async function worker() {
       while (cursor < tokens.length) {
         const row = tokens[cursor++];
         if (!row) return;
 
+        let badgeCountPromise = badgeCounts.get(row.user_id);
+        if (!badgeCountPromise) {
+          badgeCountPromise = unreadNotificationCount(db, row.user_id);
+          badgeCounts.set(row.user_id, badgeCountPromise);
+        }
         const payload = {
           title: campaign.title,
           body: campaign.body,
           link: campaign.link ?? "/",
+          badgeCount: await badgeCountPromise,
         };
 
         const result =

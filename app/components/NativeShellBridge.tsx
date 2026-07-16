@@ -7,6 +7,7 @@ import { isNativeOAuthCompleting, isNativeOAuthInProgress } from "../lib/auth/se
 import { handleNativeDeepLink, isHandledOAuthDeepLink } from "../lib/native/completeNativeOAuthCallback";
 import { oauthDebugLog } from "../lib/auth/oauthDebugLog";
 import { deliverRestoredCameraFiles, handleCameraRestoredResult } from "../lib/native/pickFeedMedia";
+import { syncNativeAppBadge } from "../lib/native/appIconBadge";
 import { getNotificationHref } from "../lib/notificationNavigation";
 import { supabase } from "../lib/lib/supabaseClient";
 
@@ -118,6 +119,7 @@ export default function NativeShellBridge() {
       App.addListener("appStateChange", ({ isActive }) => {
         if (!isActive) return;
         void closeInAppBrowser();
+        void syncNativeAppBadge(supabase);
         if (!isNativeOAuthInProgress() && !isNativeOAuthCompleting()) {
           window.setTimeout(recoverBlankWebView, 150);
         }
@@ -207,6 +209,11 @@ export default function NativeShellBridge() {
           console.warn("[NativeShellBridge] push registration error", err);
         });
 
+        PushNotifications.addListener("pushNotificationReceived", () => {
+          // Allow the notification row to commit before reading the authoritative count.
+          window.setTimeout(() => void syncNativeAppBadge(supabase), 500);
+        });
+
         PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
           const data = action.notification.data as Record<string, unknown> | undefined;
           const link = typeof data?.link === "string" ? data.link : null;
@@ -230,6 +237,7 @@ export default function NativeShellBridge() {
 
       const { data: { session } } = await supabase.auth.getSession();
       lastAccessTokenRef.current = session?.access_token ?? null;
+      void syncNativeAppBadge(supabase, session?.user?.id);
       if (session?.access_token && registeredTokenRef.current) {
         await registerToken(registeredTokenRef.current);
       }
@@ -238,6 +246,7 @@ export default function NativeShellBridge() {
     void bootNativeShell();
 
     const { data: authSub } = supabase.auth.onAuthStateChange((_event, session) => {
+      void syncNativeAppBadge(supabase, session?.user?.id);
       if (session?.access_token && registeredTokenRef.current) {
         lastAccessTokenRef.current = session.access_token;
         void fetch("/api/push/register", {

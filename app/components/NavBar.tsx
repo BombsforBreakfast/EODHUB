@@ -21,6 +21,7 @@ import { canClickArcadeNav } from "../lib/arcadeAccess";
 import { jobListingCutoffIso } from "../lib/jobRetention";
 import { clearAppAuthState } from "../lib/auth/sessionState";
 import { isNativeApp } from "../lib/native/isNativeApp";
+import { setNativeAppBadgeCount } from "../lib/native/appIconBadge";
 import {
   defaultMobileNavSpacerPx,
   setMobileNavSpacerPx,
@@ -108,6 +109,11 @@ export default function NavBar() {
   const unreadNotifCount = notificationsV2Enabled
     ? notifications.filter((n) => !n.read_at && !n.archived_at).length
     : notifications.length;
+
+  useEffect(() => {
+    void setNativeAppBadgeCount(unreadNotifCount);
+  }, [unreadNotifCount]);
+
   const canAccessRabbithole = isVerifiedRabbitholeViewer(verificationStatus);
   const canClickArcade = canClickArcadeNav(isFounder);
 

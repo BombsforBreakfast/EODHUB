@@ -8,6 +8,7 @@ type FcmPayload = {
   title: string;
   body: string;
   link?: string | null;
+  badgeCount?: number;
 };
 
 type FirebaseServiceAccount = {
@@ -112,6 +113,9 @@ export async function sendFcmPush(
       notification: {
         channel_id: ANDROID_NOTIFICATION_CHANNEL_ID,
         sound: ANDROID_PUSH_NOTIFICATION_SOUND,
+        ...(typeof payload.badgeCount === "number"
+          ? { notification_count: Math.max(0, Math.floor(payload.badgeCount)) }
+          : {}),
       },
     },
   };
