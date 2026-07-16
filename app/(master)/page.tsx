@@ -1156,7 +1156,6 @@ export default function HomePage() {
   const [discoverKnowToast, setDiscoverKnowToast] = useState<string | null>(null);
   const discoverKnowToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
-  const [openVouchPopoverFor, setOpenVouchPopoverFor] = useState<string | null>(null);
   const [hiddenPendingMemberIds, setHiddenPendingMemberIds] = useState<Set<string>>(() => new Set());
   const [isAdmin, setIsAdmin] = useState(false);
   const memberInteractionAllowedRef = useRef(true);
@@ -1353,7 +1352,6 @@ export default function HomePage() {
       next.add(memberId);
       return next;
     });
-    setOpenVouchPopoverFor((prev) => (prev === memberId ? null : prev));
     // Admins need recurring visibility on the vouch queue. Hide only for the
     // current page session; non-admin members persist dismissals.
     if (!userId || isAdmin) return;
@@ -7073,161 +7071,155 @@ export default function HomePage() {
           }}
         >
             <>
-          {/* Pending Members ΓÇö community vouching (deferred until after first feed paint) */}
+          {/* Pending Members — community vouching (deferred until after first feed paint) */}
           {feedAboveFoldExtrasReady && userId && pendingMembers.some((m) => !hiddenPendingMemberIds.has(m.user_id)) && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
-              {pendingMembers.filter((m) => !hiddenPendingMemberIds.has(m.user_id)).map((m) => {
-                const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
-                const initial = (name[0] || "?").toUpperCase();
-                const vouchPopoverOpen = openVouchPopoverFor === m.user_id;
-                return (
-                  <div key={m.user_id} style={{ position: "relative", border: `1px solid ${isDark ? "#2a2a00" : "#fef08a"}`, borderRadius: 14, padding: 16, background: isDark ? "#1a1a00" : "#fefce8", display: "flex", gap: 14, alignItems: "flex-start" }}>
-                    <button
-                      type="button"
-                      onClick={() => void hidePendingMember(m.user_id)}
-                      aria-label={`I don't know ${name}`}
-                      title="I don't know this person"
+            <section
+              aria-labelledby="requesting-access-heading"
+              style={{
+                marginBottom: 16,
+                border: `1px solid ${isDark ? "#2a2a00" : "#fef08a"}`,
+                borderRadius: 14,
+                padding: "12px 14px 14px",
+                background: isDark ? "#1a1a00" : "#fefce8",
+              }}
+            >
+              <div style={{ marginBottom: 10 }}>
+                <div
+                  id="requesting-access-heading"
+                  style={{ fontSize: 12, fontWeight: 800, color: t.text, textTransform: "uppercase", letterSpacing: 0.6 }}
+                >
+                  Requesting Access
+                </div>
+                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3 }}>
+                  Vouch for people you know. Three vouches verifies a member.
+                </div>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  overflowX: "auto",
+                  WebkitOverflowScrolling: "touch",
+                  scrollSnapType: "x proximity",
+                  paddingBottom: 4,
+                  scrollbarWidth: "thin",
+                }}
+              >
+                {pendingMembers.filter((m) => !hiddenPendingMemberIds.has(m.user_id)).map((m) => {
+                  const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
+                  const initial = (name[0] || "?").toUpperCase();
+                  const voucherNames = m.vouchers.slice(0, 3).map((voucher) => voucher.name).join(", ");
+                  return (
+                    <article
+                      key={m.user_id}
                       style={{
-                        position: "absolute",
-                        top: 8,
-                        right: 8,
-                        background: "transparent",
-                        border: "none",
-                        color: t.textMuted,
-                        fontSize: 22,
-                        lineHeight: 1,
-                        cursor: "pointer",
-                        padding: "2px 6px",
+                        position: "relative",
+                        flex: "0 0 138px",
+                        minHeight: 192,
+                        border: `1px solid ${t.border}`,
+                        borderRadius: 12,
+                        padding: "12px 10px 10px",
+                        background: t.surface,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        scrollSnapAlign: "start",
+                        boxSizing: "border-box",
                       }}
                     >
-                      ×
-                    </button>
-                    <div style={{ flexShrink: 0 }} aria-hidden>
-                      {m.photo_url
-                        ? <img src={m.photo_url} alt="" style={{ width: 42, height: 42, borderRadius: "50%", objectFit: "cover", display: "block" }} />
-                        : <div style={{ width: 42, height: 42, borderRadius: "50%", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 16, color: t.textMuted }}>{initial}</div>
-                      }
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0, paddingRight: 24 }}>
-                      <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{name} is requesting to join</div>
-                      {m.service && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{m.service}</div>}
-                      <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 1.5 }}>
-                        Once 3 members vouch, they&apos;re verified automatically. An admin can approve them directly.
+                      <button
+                        type="button"
+                        onClick={() => void hidePendingMember(m.user_id)}
+                        aria-label={`I don't know ${name}`}
+                        title="I don't know this person"
+                        style={{
+                          position: "absolute",
+                          top: 4,
+                          right: 5,
+                          width: 26,
+                          height: 26,
+                          borderRadius: "50%",
+                          background: "transparent",
+                          border: "none",
+                          color: t.textMuted,
+                          fontSize: 20,
+                          lineHeight: 1,
+                          cursor: "pointer",
+                          padding: 0,
+                        }}
+                      >
+                        ×
+                      </button>
+                      <a
+                        href={`/profile/${m.user_id}`}
+                        style={{ color: "inherit", textDecoration: "none", display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}
+                      >
+                        {m.photo_url ? (
+                          <img src={m.photo_url} alt={name} style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", display: "block" }} />
+                        ) : (
+                          <div style={{ width: 48, height: 48, borderRadius: "50%", background: t.badgeBg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 18, color: t.textMuted }}>
+                            {initial}
+                          </div>
+                        )}
+                        <div style={{ width: "100%", marginTop: 7, fontWeight: 700, fontSize: 12, lineHeight: 1.25, color: t.text, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {name}
+                        </div>
+                        <div style={{ width: "100%", minHeight: 14, marginTop: 2, fontSize: 10, color: t.textMuted, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {m.service || "EOD community"}
+                        </div>
+                      </a>
+                      <div
+                        title={voucherNames ? `Vouched by ${voucherNames}` : "No vouches yet"}
+                        aria-label={`${m.vouch_count} of 3 vouches`}
+                        style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 8 }}
+                      >
+                        {[0, 1, 2].map((i) => (
+                          <span key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: i < m.vouch_count ? "#22c55e" : (isDark ? "#2e2e2e" : "#e5e7eb") }} />
+                        ))}
+                        <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 2, fontWeight: 600 }}>{m.vouch_count}/3</span>
                       </div>
-                      <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          aria-label={m.vouch_count > 0 ? `Show ${m.vouch_count} voucher${m.vouch_count === 1 ? "" : "s"}` : "No vouches yet"}
-                          aria-expanded={vouchPopoverOpen}
-                          onClick={() => {
-                            if (!isMobile || m.vouch_count === 0) return;
-                            setOpenVouchPopoverFor((prev) => (prev === m.user_id ? null : m.user_id));
-                          }}
-                          onMouseEnter={() => {
-                            if (isMobile || m.vouch_count === 0) return;
-                            setOpenVouchPopoverFor(m.user_id);
-                          }}
-                          onMouseLeave={() => {
-                            if (isMobile) return;
-                            setOpenVouchPopoverFor((prev) => (prev === m.user_id ? null : prev));
-                          }}
-                          style={{
-                            position: "relative",
-                            display: "flex",
-                            gap: 4,
-                            alignItems: "center",
-                            background: "transparent",
-                            border: "none",
-                            padding: 0,
-                            cursor: m.vouch_count > 0 ? "pointer" : "default",
-                            color: "inherit",
-                          }}
-                        >
-                          {[0, 1, 2].map((i) => (
-                            <div key={i} style={{ width: 10, height: 10, borderRadius: "50%", background: i < m.vouch_count ? "#22c55e" : (isDark ? "#2e2e2e" : "#e5e7eb") }} />
-                          ))}
-                          <span style={{ fontSize: 12, color: t.textMuted, marginLeft: 4, fontWeight: 600 }}>{m.vouch_count}/3 approved</span>
-                          {vouchPopoverOpen && (
-                            <div
-                              style={{
-                                position: "absolute",
-                                left: 0,
-                                top: "calc(100% + 8px)",
-                                zIndex: 20,
-                                minWidth: 190,
-                                maxWidth: 260,
-                                border: `1px solid ${t.border}`,
-                                borderRadius: 12,
-                                padding: 10,
-                                background: t.surface,
-                                boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
-                                color: t.text,
-                              }}
-                            >
-                              <div style={{ fontSize: 11, color: t.textFaint, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>
-                                Vouched by
-                              </div>
-                              {m.vouchers.length > 0 ? (
-                                <div style={{ display: "grid", gap: 8 }}>
-                                  {m.vouchers.slice(0, 3).map((voucher) => (
-                                    <div key={voucher.user_id} style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                                      {voucher.photo_url ? (
-                                        <img src={voucher.photo_url} alt="" style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />
-                                      ) : (
-                                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: t.badgeBg, color: t.textMuted, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 800, flexShrink: 0 }}>
-                                          {(voucher.name[0] || "?").toUpperCase()}
-                                        </div>
-                                      )}
-                                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 13, fontWeight: 700 }}>
-                                        {voucher.name}
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <div style={{ fontSize: 12, color: t.textMuted }}>No vouches yet.</div>
-                              )}
-                            </div>
-                          )}
-                        </button>
+                      <div style={{ width: "100%", marginTop: "auto", paddingTop: 9, display: "grid", gap: 5 }}>
                         {!m.user_vouched ? (
                           <button
+                            type="button"
                             onClick={() => vouchForMember(m.user_id)}
                             disabled={vouchingFor === m.user_id}
-                            style={{ background: "#22c55e", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: vouchingFor === m.user_id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                            style={{ width: "100%", background: "#22c55e", color: "#fff", border: "none", borderRadius: 7, padding: "6px 8px", fontWeight: 800, fontSize: 11, cursor: vouchingFor === m.user_id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}
                           >
                             {vouchingFor === m.user_id && <span className="btn-spinner" />}
                             Vouch
                           </button>
                         ) : (
-                          <span style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>Vouched</span>
+                          <div style={{ width: "100%", color: "#16a34a", background: isDark ? "#12351d" : "#dcfce7", borderRadius: 7, padding: "6px 8px", fontWeight: 800, fontSize: 11, textAlign: "center", boxSizing: "border-box" }}>
+                            Vouched
+                          </div>
                         )}
                         {isAdmin && (
-                          <>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
                             <button
+                              type="button"
                               onClick={() => approveUser(m.user_id)}
                               disabled={actingOnUser === m.user_id}
-                              style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: actingOnUser === m.user_id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                              style={{ background: "#3b82f6", color: "#fff", border: "none", borderRadius: 6, padding: "4px", fontWeight: 800, fontSize: 9, cursor: actingOnUser === m.user_id ? "not-allowed" : "pointer" }}
                             >
-                              {actingOnUser === m.user_id && <span className="btn-spinner" />}
                               Approve
                             </button>
                             <button
+                              type="button"
                               onClick={() => denyUser(m.user_id)}
                               disabled={actingOnUser === m.user_id}
-                              style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 8, padding: "5px 12px", fontWeight: 800, fontSize: 12, cursor: actingOnUser === m.user_id ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 5 }}
+                              style={{ background: "#ef4444", color: "#fff", border: "none", borderRadius: 6, padding: "4px", fontWeight: 800, fontSize: 9, cursor: actingOnUser === m.user_id ? "not-allowed" : "pointer" }}
                             >
-                              {actingOnUser === m.user_id && <span className="btn-spinner" />}
                               Deny
                             </button>
-                          </>
+                          </div>
                         )}
                       </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
           )}
 
           {feedAboveFoldExtrasReady && showNavHelper && (
@@ -7835,7 +7827,7 @@ export default function HomePage() {
             <div style={{ marginTop: 16, marginBottom: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, minHeight: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 800, color: t.textFaint, textTransform: "uppercase", letterSpacing: 0.6 }}>
-                  People You May Know
+                  Connect with Verified Members
                 </div>
                 {discoverKnowToast && (
                   <div
