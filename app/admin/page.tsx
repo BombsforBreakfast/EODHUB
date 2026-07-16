@@ -218,6 +218,7 @@ type UserProfile = {
   created_at: string | null;
   community_flag_count?: number | null;
   signup_incomplete?: boolean;
+  onboarding_started_incomplete?: boolean;
 };
 
 function adminUserDisplayName(u: UserProfile): string {
@@ -237,8 +238,18 @@ function adminUserDisplayName(u: UserProfile): string {
 
 type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "unverified" | "denied";
 
-function isReadyForAdminVerify(u: UserProfile): boolean {
-  return u.verification_status !== "verified" && !blocksSignupApproval(u);
+function hasAdminVerification(u: UserProfile): boolean {
+  return (
+    u.verification_status === "verified" ||
+    u.admin_verified === true ||
+    u.is_approved === true ||
+    u.is_pure_admin === true ||
+    u.account_type === "business_org"
+  );
+}
+
+function isUnverifiedSignup(u: UserProfile): boolean {
+  return !hasAdminVerification(u) && u.verification_status !== "denied";
 }
 
 function isAtAdminReviewTier(u: UserProfile): boolean {
@@ -257,11 +268,13 @@ function userMatchesStatusFilter(u: UserProfile, filter: UserStatusFilter): bool
   if (filter === "denied") return u.verification_status === "denied";
   if (filter === "pending") return isAtAdminReviewTier(u);
   if (filter === "onboarding") {
-    if (u.verification_status === "verified") return false;
-    if (u.verification_status === "denied") return false;
-    return !isAtAdminReviewTier(u);
+    return (
+      isUnverifiedSignup(u) &&
+      u.onboarding_started_incomplete === true &&
+      u.signup_incomplete === true
+    );
   }
-  if (filter === "unverified") return isReadyForAdminVerify(u);
+  if (filter === "unverified") return isUnverifiedSignup(u);
   return false;
 }
 
@@ -846,6 +859,7 @@ export default function AdminPage() {
   const [usersShowAll, setUsersShowAll] = useState(false);
   const [usersTotalCount, setUsersTotalCount] = useState(0);
   const [usersLoading, setUsersLoading] = useState(false);
+  const usersRequestIdRef = useRef(0);
   const [usersExportLoading, setUsersExportLoading] = useState(false);
   const visibleUsers = useMemo(() => {
     const q = userSearch.trim();
@@ -1841,6 +1855,7 @@ export default function AdminPage() {
   }
 
   async function loadUsers() {
+    const requestId = ++usersRequestIdRef.current;
     const searchActive = !!userSearchDebounced.trim();
     const full = usersShowAll || searchActive;
     setUsersLoading(true);
@@ -1883,8 +1898,10 @@ export default function AdminPage() {
           if (searchActive) {
             rows = rows.filter((u) => matchesAdminUserSearch(u, userSearchDebounced));
           }
-          setUsers(rows);
-          setUsersTotalCount(searchActive ? rows.length : (fallback.count ?? rows.length));
+          if (requestId === usersRequestIdRef.current) {
+            setUsers(rows);
+            setUsersTotalCount(rows.length);
+          }
         }
         return;
       }
@@ -1894,10 +1911,14 @@ export default function AdminPage() {
         full?: boolean;
       };
       const rows = (json.users ?? []) as UserProfile[];
-      setUsers(rows);
-      setUsersTotalCount(json.totalCount ?? rows.length);
+      if (requestId === usersRequestIdRef.current) {
+        setUsers(rows);
+        setUsersTotalCount(json.totalCount ?? rows.length);
+      }
     } finally {
-      setUsersLoading(false);
+      if (requestId === usersRequestIdRef.current) {
+        setUsersLoading(false);
+      }
     }
   }
 

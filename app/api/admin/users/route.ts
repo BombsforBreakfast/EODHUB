@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
-  blocksSignupApproval,
   isSignupProfileComplete,
   resolveSignupNames,
   authMetadataDisplayName,
@@ -30,6 +29,7 @@ type AdminListUsersClient = {
             user_metadata?: unknown;
           }> | null;
         } | null;
+        error?: { message: string } | null;
       }>;
     };
   };
@@ -38,7 +38,14 @@ type AdminListUsersClient = {
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const FULL_LIST_LIMIT = 5000;
+const AUTH_USERS_PAGE_SIZE = 500;
+const PROFILE_ID_LOOKUP_CHUNK_SIZE = 200;
 const PENDING_REVIEW_STATUSES = ["awaiting_admin_review", "pending_admin_review", "pending"];
+const ONBOARDING_PROGRESS_STEPS = [
+  "onboarding_viewed",
+  "onboarding_account_type",
+  "onboarding_submit",
+];
 const PROFILE_SELECT_WITH_MIRRORS =
   "user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
 const PROFILE_SELECT_BASE =
@@ -91,20 +98,18 @@ function isAtAdminReviewTier(row: Record<string, unknown>) {
   );
 }
 
-function isReadyForAdminVerify(row: Record<string, unknown>) {
-  if (row.verification_status === "verified") return false;
-  return !blocksSignupApproval({
-    first_name: typeof row.first_name === "string" ? row.first_name : null,
-    last_name: typeof row.last_name === "string" ? row.last_name : null,
-    display_name: typeof row.display_name === "string" ? row.display_name : null,
-    name: typeof row.name === "string" ? row.name : null,
-    created_at: typeof row.created_at === "string" ? row.created_at : null,
-    verification_status: typeof row.verification_status === "string" ? row.verification_status : null,
-    email_verified: row.email_verified === true,
-    admin_verified: row.admin_verified === true,
-    is_approved: row.is_approved === true,
-    is_pure_admin: row.is_pure_admin === true,
-  });
+function hasAdminVerification(row: Record<string, unknown>) {
+  return (
+    row.verification_status === "verified" ||
+    row.admin_verified === true ||
+    row.is_approved === true ||
+    row.is_pure_admin === true ||
+    row.account_type === "business_org"
+  );
+}
+
+function isUnverifiedSignup(row: Record<string, unknown>) {
+  return !hasAdminVerification(row) && row.verification_status !== "denied";
 }
 
 function userMatchesStatus(row: Record<string, unknown>, status: UserStatusFilter) {
@@ -113,10 +118,13 @@ function userMatchesStatus(row: Record<string, unknown>, status: UserStatusFilte
   if (status === "denied") return row.verification_status === "denied";
   if (status === "pending") return isAtAdminReviewTier(row);
   if (status === "onboarding") {
-    if (row.verification_status === "verified" || row.verification_status === "denied") return false;
-    return row.signup_incomplete === true || !isSignupProfileComplete(row);
+    if (!isUnverifiedSignup(row)) return false;
+    return (
+      row.onboarding_started_incomplete === true &&
+      (row.signup_incomplete === true || !isSignupProfileComplete(row))
+    );
   }
-  if (status === "unverified") return isReadyForAdminVerify(row);
+  if (status === "unverified") return isUnverifiedSignup(row);
   return true;
 }
 
@@ -126,7 +134,7 @@ function statusNeedsPostFilter(status: UserStatusFilter): boolean {
 }
 
 function statusIncludesAuthOnlySignups(status: UserStatusFilter): boolean {
-  return status === "onboarding" || status === "unverified";
+  return status === "unverified";
 }
 
 async function loadAllAuthUsers(
@@ -136,7 +144,11 @@ async function loadAllAuthUsers(
   const authUserMap = new Map<string, { email: string; full_name: string | null }>();
   let page = 1;
   for (;;) {
-    const authUsersRes = await adminClient.auth.admin.listUsers({ page, perPage: 1000 });
+    const authUsersRes = await adminClient.auth.admin.listUsers({
+      page,
+      perPage: AUTH_USERS_PAGE_SIZE,
+    });
+    if (authUsersRes.error) break;
     for (const authUser of authUsersRes.data?.users ?? []) {
       authUserMap.set(authUser.id, {
         email: authUser.email ?? "",
@@ -145,7 +157,12 @@ async function loadAllAuthUsers(
         ),
       });
     }
-    if ((authUsersRes.data?.users ?? []).length < 1000 || authUserMap.size >= cap) break;
+    if (
+      (authUsersRes.data?.users ?? []).length < AUTH_USERS_PAGE_SIZE ||
+      authUserMap.size >= cap
+    ) {
+      break;
+    }
     page += 1;
   }
   return authUserMap;
@@ -225,6 +242,31 @@ export async function GET(req: NextRequest) {
   }
 
   const profileRows = profilesQuery.data ?? [];
+  const onboardingStartedIncompleteIds = new Set<string>();
+  if (status === "onboarding") {
+    const { data: onboardingEvents, error: onboardingEventsError } = await adminClient
+      .from("onboarding_events")
+      .select("user_id, step")
+      .in("step", [...ONBOARDING_PROGRESS_STEPS, "onboarding_saved"])
+      .not("user_id", "is", null)
+      .limit(100_000);
+
+    if (onboardingEventsError) {
+      return NextResponse.json({ error: onboardingEventsError.message }, { status: 500 });
+    }
+
+    const startedIds = new Set<string>();
+    const savedIds = new Set<string>();
+    for (const event of onboardingEvents ?? []) {
+      if (!event.user_id) continue;
+      if (event.step === "onboarding_saved") savedIds.add(event.user_id);
+      else startedIds.add(event.user_id);
+    }
+    for (const userId of startedIds) {
+      if (!savedIds.has(userId)) onboardingStartedIncompleteIds.add(userId);
+    }
+  }
+
   const referrerIds = [
     ...new Set(
       profileRows
@@ -298,9 +340,26 @@ export async function GET(req: NextRequest) {
   }
 
   // Merge profiles with auth users that have no profile row (incomplete signups).
-  const profileUserIds = new Set(
+  const profileUserIds = new Set<string>(
     (profilesQuery.data ?? []).map((p) => String((p as { user_id: string }).user_id)),
   );
+  if (includeAuthOnlySignups && authUserMap.size > 0) {
+    const authUserIds = [...authUserMap.keys()];
+    for (let index = 0; index < authUserIds.length; index += PROFILE_ID_LOOKUP_CHUNK_SIZE) {
+      const chunk = authUserIds.slice(index, index + PROFILE_ID_LOOKUP_CHUNK_SIZE);
+      const { data: existingProfiles, error: existingProfilesError } = await adminClient
+        .from("profiles")
+        .select("user_id")
+        .in("user_id", chunk);
+
+      if (existingProfilesError) {
+        return NextResponse.json({ error: existingProfilesError.message }, { status: 500 });
+      }
+      for (const profile of existingProfiles ?? []) {
+        profileUserIds.add(String(profile.user_id));
+      }
+    }
+  }
   const authUsersForIncomplete = includeAuthOnlySignups
     ? [...authUserMap.entries()].map(([id, meta]) => ({
         id,
@@ -394,6 +453,7 @@ export async function GET(req: NextRequest) {
           : null) ??
         null,
       signup_incomplete: !isSignupProfileComplete(signupFields),
+      onboarding_started_incomplete: onboardingStartedIncompleteIds.has(String(p.user_id)),
     };
   }),
   ].filter((row) => userMatchesStatus(row as Record<string, unknown>, status));
