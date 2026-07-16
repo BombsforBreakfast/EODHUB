@@ -76,7 +76,12 @@ import { postNotifyJson } from "../../../lib/postNotifyClient";
 import KangarooCourtFeedSection from "../../../components/KangarooCourtFeedSection";
 import { KangarooCourtVerdictBanner } from "../../../components/KangarooCourtVerdictBanner";
 import { Gem, Medal, Camera, FileText, Play, Check, ArrowRight, ChevronLeft, ChevronRight, Eye } from "lucide-react";
-import { FEED_MEDIA_FRAME_BG, feedContainedImageStyle } from "../../../lib/feedLayout";
+import {
+  FEED_MEDIA_FRAME_BG,
+  feedContainedImageStyle,
+  feedSingleImageStyle,
+  feedSingleMediaFrameStyle,
+} from "../../../lib/feedLayout";
 import { SkillBadgeValue } from "../../../lib/skillBadges";
 import type {
   FeedKangarooBundle,
@@ -6563,8 +6568,17 @@ export default function PublicProfilePage() {
                       const attachments = attachmentsFromUrls(post.image_urls);
                       const visible = attachments.slice(0, 3);
                       const remaining = attachments.length - 3;
+                      const isSingleImage = visible.length === 1;
                       return (
-                        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: visible.length === 1 ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: 8, maxWidth: 420 }}>
+                        <div
+                          style={{
+                            marginTop: 12,
+                            display: "grid",
+                            gridTemplateColumns: isSingleImage ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)",
+                            gap: 8,
+                            maxWidth: isSingleImage ? "100%" : 420,
+                          }}
+                        >
                           {visible.map((attachment, i) => (
                             <button
                               key={`${attachment.url}-${i}`}
@@ -6574,12 +6588,35 @@ export default function PublicProfilePage() {
                                   window.open(attachment.url, "_blank", "noopener,noreferrer");
                                 }
                               }}
-                              style={{ position: "relative", aspectRatio: "1/1", borderRadius: 12, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG, padding: 0, cursor: attachment.kind === "pdf" || attachment.kind === "cad3d" || attachment.kind === "other" ? "pointer" : "default" }}
+                              style={
+                                isSingleImage
+                                  ? {
+                                      ...feedSingleMediaFrameStyle,
+                                      padding: 0,
+                                      cursor:
+                                        attachment.kind === "pdf" || attachment.kind === "cad3d" || attachment.kind === "other"
+                                          ? "pointer"
+                                          : "default",
+                                    }
+                                  : {
+                                      position: "relative",
+                                      aspectRatio: "1/1",
+                                      borderRadius: 12,
+                                      overflow: "hidden",
+                                      border: `1px solid ${t.border}`,
+                                      background: FEED_MEDIA_FRAME_BG,
+                                      padding: 0,
+                                      cursor:
+                                        attachment.kind === "pdf" || attachment.kind === "cad3d" || attachment.kind === "other"
+                                          ? "pointer"
+                                          : "default",
+                                    }
+                              }
                             >
                               <FeedMediaAttachment
                                 attachment={attachment}
                                 alt={`Post image ${i + 1}`}
-                                style={feedContainedImageStyle}
+                                style={isSingleImage ? feedSingleImageStyle : feedContainedImageStyle}
                                 loading={postIndex === 0 ? "eager" : "lazy"}
                               />
                               {i === 2 && remaining > 0 && (

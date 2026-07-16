@@ -10,6 +10,7 @@ import {
   FEED_SECTION_GAP,
   feedContainedImageStyle,
   feedSingleImageStyle,
+  feedSingleMediaFrameStyle,
 } from "../lib/feedLayout";
 
 type Props = {
@@ -70,12 +71,16 @@ export default function FeedPostImageGrid({
               }
             }}
             style={{
-              position: "relative",
-              borderRadius: FEED_MEDIA_RADIUS,
-              overflow: "hidden",
+              ...(isSingleImage
+                ? feedSingleMediaFrameStyle
+                : {
+                    position: "relative",
+                    borderRadius: FEED_MEDIA_RADIUS,
+                    overflow: "hidden",
+                    background: FEED_MEDIA_FRAME_BG,
+                    aspectRatio: "1 / 1",
+                  }),
               border: isSingleImage ? "none" : `1px solid ${borderColor}`,
-              background: FEED_MEDIA_FRAME_BG,
-              aspectRatio: isSingleImage ? undefined : "1 / 1",
               padding: 0,
               cursor: "pointer",
               width: "100%",

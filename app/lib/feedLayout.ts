@@ -37,20 +37,20 @@ export const FEED_ACTION_ROW_PADDING = "clamp(4px, 1.2vw, 6px) 0" as const;
 export const FEED_POST_AVATAR_SIZE = 36 as const;
 
 /** Single-image max height — preserves aspect ratio without dominating the viewport. */
-export const FEED_SINGLE_IMAGE_MAX_HEIGHT = "min(580px, 78vh)" as const;
+export const FEED_SINGLE_IMAGE_MAX_HEIGHT = "min(720px, 85vh)" as const;
 
 /** Letterbox background behind contained feed / wall post media */
 export const FEED_MEDIA_FRAME_BG = "#111827" as const;
 
-/** Stable frame for single post media — contains full image/video without hard cropping. */
+/** Single post image shell — natural aspect ratio (portrait flyers fill width). */
 export const feedSingleMediaFrameStyle = {
   position: "relative",
+  display: "block",
   width: "100%",
-  aspectRatio: "16 / 9",
-  maxHeight: FEED_SINGLE_IMAGE_MAX_HEIGHT,
   overflow: "hidden",
   borderRadius: FEED_MEDIA_RADIUS,
   background: FEED_MEDIA_FRAME_BG,
+  lineHeight: 0,
 } as const;
 
 type FeedThemeLike = {
@@ -80,10 +80,11 @@ export const feedContainedImageStyle = {
   display: "block",
 } as const;
 
-/** Single full-width feed image inside a reserved frame — no square crop. */
+/** Single full-width feed image — natural height, capped for very tall assets. */
 export const feedSingleImageStyle = {
   width: "100%",
-  height: "100%",
+  height: "auto",
+  maxHeight: FEED_SINGLE_IMAGE_MAX_HEIGHT,
   objectFit: "contain",
   objectPosition: "center",
   display: "block",
