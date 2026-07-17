@@ -1,4 +1,5 @@
 # Register or remove the Windows Task Scheduler job for LinkedIn import.
+# Multiple morning triggers + restart-on-failure so a sleep/kill doesn't lose the day.
 #Requires -Version 5.1
 param(
     [switch]$Unregister
@@ -29,7 +30,7 @@ function Install-StartupLink {
 }
 
 if ($Unregister) {
-    schtasks /Delete /TN $TaskName /F 2>$null | Out-Null
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     Remove-StartupLink
     Write-Host "Removed daily task and startup shortcut."
     exit 0
@@ -39,25 +40,69 @@ if (-not (Test-Path $Wrapper)) {
     Write-Error "Missing wrapper script: $Wrapper"
 }
 
-$Command = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Wrapper`""
+Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
 
-schtasks /Delete /TN $TaskName /F 2>$null | Out-Null
+$Action = New-ScheduledTaskAction `
+    -Execute "powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Wrapper`"" `
+    -WorkingDirectory $RepoRoot
 
-$daily = schtasks /Create /TN $TaskName /TR $Command /SC DAILY /ST 05:30 /RL LIMITED /F 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Failed to create daily task: $daily"
-}
+# Redundant triggers inside the 4:30–8:00 window. Script no-ops after a successful day.
+$Triggers = @(
+    (New-ScheduledTaskTrigger -Daily -At "05:30"),
+    (New-ScheduledTaskTrigger -Daily -At "06:15"),
+    (New-ScheduledTaskTrigger -Daily -At "07:00")
+)
+
+$Settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -WakeToRun `
+    -RestartCount 3 `
+    -RestartInterval (New-TimeSpan -Minutes 10) `
+    -ExecutionTimeLimit (New-TimeSpan -Hours 2) `
+    -MultipleInstances IgnoreNew
+
+# Interactive: required so the task can use your user profile (LinkedIn session under ~/.eod-hub).
+# Stay logged in overnight (lock screen is fine). Wake timers must be allowed in Windows power settings.
+$Principal = New-ScheduledTaskPrincipal `
+    -UserId $env:USERNAME `
+    -LogonType Interactive `
+    -RunLevel Limited
+
+Register-ScheduledTask `
+    -TaskName $TaskName `
+    -Action $Action `
+    -Trigger $Triggers `
+    -Settings $Settings `
+    -Principal $Principal `
+    -Force | Out-Null
 
 Install-StartupLink
 
+# Best-effort: enable wake timers on the current power scheme (AC + DC).
+try {
+    powercfg /SETACVALUEINDEX SCHEME_CURRENT SUB_SLEEP RTCWAKE 1 | Out-Null
+    powercfg /SETDCVALUEINDEX SCHEME_CURRENT SUB_SLEEP RTCWAKE 1 | Out-Null
+    powercfg /SETACTIVE SCHEME_CURRENT | Out-Null
+} catch {}
+
 Write-Host ""
 Write-Host "Installed:"
-Write-Host "  - Scheduled task: $TaskName (daily at 5:30 AM)"
-Write-Host "  - Startup shortcut: $StartupLink (runs at log on; script guards skip wrong times)"
+Write-Host "  - Scheduled task: $TaskName"
+Write-Host "      triggers: 5:30 AM, 6:15 AM, 7:00 AM (script runs at most once/day)"
+Write-Host "      restart: up to 3 times, 10 min apart on failure"
+Write-Host "      wake + run on battery: enabled"
+Write-Host "  - Startup shortcut: $StartupLink (backup if you log in during 4:30-8 AM)"
 Write-Host ""
 Write-Host "Repo:  $RepoRoot"
 Write-Host "Log:   $env:USERPROFILE\.eod-hub\linkedin-import.log"
 Write-Host ""
-Write-Host "Guards: 4:30-8:00 AM only, once per day."
+Write-Host "Requirements for hands-off mornings:"
+Write-Host "  1. Stay signed in to Windows overnight (lock OK; full sign-out will skip Interactive tasks)"
+Write-Host "  2. Leave the laptop plugged in when possible"
+Write-Host "  3. LinkedIn session valid: npm run linkedin:login  (if scrapes start failing)"
+Write-Host ""
 Write-Host "Test:   powershell -ExecutionPolicy Bypass -File `"$Wrapper`""
 Write-Host "Remove: npm run linkedin:uninstall-task"

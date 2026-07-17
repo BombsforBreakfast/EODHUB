@@ -48,10 +48,14 @@ powershell -ExecutionPolicy Bypass -File scripts/register-linkedin-import-task.p
 
 This creates:
 
-- **EOD-HUB LinkedIn Import Daily** — scheduled task at **5:30 AM**
-- **Startup shortcut** — runs at log on (script guards skip runs outside 4:30–8 AM or after today's success)
+- **EOD-HUB LinkedIn Import Daily** — triggers at **5:30, 6:15, and 7:00 AM** (script still runs at most once/day)
+- **Restart on failure** — up to 3 retries, 10 minutes apart
+- **Wake + run on battery** — enabled; wrapper also holds a sleep lock while scraping
+- **Startup shortcut** — backup if you log in during 4:30–8 AM
 
 Guards inside the script prevent daytime or duplicate runs.
+
+**Hands-off checklist:** stay signed in overnight (lock screen is fine), leave the laptop plugged in when possible, and re-auth with `npm run linkedin:login` if scrapes start failing.
 
 Logs: `%USERPROFILE%\.eod-hub\linkedin-import.log`
 
