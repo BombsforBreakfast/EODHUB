@@ -11,7 +11,7 @@ import { useAuth } from "../lib/auth/AuthProvider";
 import { clearNativeOAuthCompleting } from "../lib/auth/sessionState";
 import { useTheme } from "../lib/ThemeContext";
 import MentionTextarea, { extractMentionIds } from "../components/MentionTextarea";
-import { PostLikersStack, type PostLikerBrief } from "../components/PostLikersStack";
+import { LikerAvatar, PostLikersStack, type PostLikerBrief } from "../components/PostLikersStack";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
 import { prepareFeedUploadFile } from "../lib/prepareUploadFile";
 import { attachMuxVideosFromUrls, cancelMuxVideosFromUrls, uploadMuxFeedVideo } from "../lib/muxFeedUpload";
@@ -1156,6 +1156,7 @@ export default function HomePage() {
   const [discoverKnowToast, setDiscoverKnowToast] = useState<string | null>(null);
   const discoverKnowToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
+  const [openVouchPopoverFor, setOpenVouchPopoverFor] = useState<string | null>(null);
   const [hiddenPendingMemberIds, setHiddenPendingMemberIds] = useState<Set<string>>(() => new Set());
   const [isAdmin, setIsAdmin] = useState(false);
   const memberInteractionAllowedRef = useRef(true);
@@ -1352,6 +1353,7 @@ export default function HomePage() {
       next.add(memberId);
       return next;
     });
+    setOpenVouchPopoverFor((prev) => (prev === memberId ? null : prev));
     // Admins need recurring visibility on the vouch queue. Hide only for the
     // current page session; non-admin members persist dismissals.
     if (!userId || isAdmin) return;
@@ -7108,7 +7110,7 @@ export default function HomePage() {
                 {pendingMembers.filter((m) => !hiddenPendingMemberIds.has(m.user_id)).map((m) => {
                   const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
                   const initial = (name[0] || "?").toUpperCase();
-                  const voucherNames = m.vouchers.slice(0, 3).map((voucher) => voucher.name).join(", ");
+                  const vouchPopoverOpen = openVouchPopoverFor === m.user_id;
                   return (
                     <article
                       key={m.user_id}
@@ -7168,16 +7170,88 @@ export default function HomePage() {
                           {m.service || "EOD community"}
                         </div>
                       </a>
-                      <div
-                        title={voucherNames ? `Vouched by ${voucherNames}` : "No vouches yet"}
-                        aria-label={`${m.vouch_count} of 3 vouches`}
-                        style={{ display: "flex", gap: 4, alignItems: "center", marginTop: 8 }}
+                      <button
+                        type="button"
+                        aria-label={m.vouch_count > 0 ? `Show ${m.vouch_count} voucher${m.vouch_count === 1 ? "" : "s"}` : `${m.vouch_count} of 3 vouches`}
+                        aria-expanded={vouchPopoverOpen}
+                        onClick={() => {
+                          if (m.vouch_count === 0) return;
+                          setOpenVouchPopoverFor((prev) => (prev === m.user_id ? null : m.user_id));
+                        }}
+                        onMouseEnter={() => {
+                          if (isMobile || m.vouch_count === 0) return;
+                          setOpenVouchPopoverFor(m.user_id);
+                        }}
+                        onMouseLeave={() => {
+                          if (isMobile) return;
+                          setOpenVouchPopoverFor((prev) => (prev === m.user_id ? null : prev));
+                        }}
+                        style={{
+                          position: "relative",
+                          display: "flex",
+                          gap: 4,
+                          alignItems: "center",
+                          marginTop: 8,
+                          background: "transparent",
+                          border: "none",
+                          padding: 0,
+                          cursor: m.vouch_count > 0 ? "pointer" : "default",
+                          color: "inherit",
+                        }}
                       >
                         {[0, 1, 2].map((i) => (
                           <span key={i} style={{ width: 8, height: 8, borderRadius: "50%", background: i < m.vouch_count ? "#22c55e" : (isDark ? "#2e2e2e" : "#e5e7eb") }} />
                         ))}
                         <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 2, fontWeight: 600 }}>{m.vouch_count}/3</span>
-                      </div>
+                        {vouchPopoverOpen && m.vouchers.length > 0 && (
+                          <div
+                            role="tooltip"
+                            style={{
+                              position: "absolute",
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              bottom: "calc(100% + 8px)",
+                              zIndex: 30,
+                              minWidth: 168,
+                              maxWidth: 220,
+                              border: `1px solid ${t.border}`,
+                              borderRadius: 10,
+                              padding: 8,
+                              background: t.surface,
+                              boxShadow: isDark ? "0 12px 32px rgba(0,0,0,0.45)" : "0 12px 32px rgba(0,0,0,0.18)",
+                              color: t.text,
+                            }}
+                          >
+                            <div style={{ fontSize: 9, color: t.textFaint, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>
+                              Vouched by
+                            </div>
+                            <div style={{ display: "grid", gap: 6 }}>
+                              {m.vouchers.slice(0, 3).map((voucher) => (
+                                <Link
+                                  key={voucher.user_id}
+                                  href={`/profile/${voucher.user_id}`}
+                                  onClick={(e) => e.stopPropagation()}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                    minWidth: 0,
+                                    textDecoration: "none",
+                                    color: t.text,
+                                    borderRadius: 6,
+                                    padding: "2px 4px",
+                                  }}
+                                >
+                                  <LikerAvatar photoUrl={voucher.photo_url} name={voucher.name} size={24} />
+                                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, fontWeight: 700 }}>
+                                    {voucher.name}
+                                  </span>
+                                </Link>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </button>
                       <div style={{ width: "100%", marginTop: "auto", paddingTop: 9, display: "grid", gap: 5 }}>
                         {!m.user_vouched ? (
                           <button

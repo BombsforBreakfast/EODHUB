@@ -70,6 +70,7 @@ import {
   createCadAttachmentToken,
   isPreviewImageForCad,
 } from "../../../lib/postAttachments";
+import { muxPosterUrl, parseMuxFeedVideoUrl } from "../../../lib/feedVideoUrl";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../../../lib/likeNotifyDelay";
 import { postNotifyJson } from "../../../lib/postNotifyClient";
@@ -331,6 +332,8 @@ type BusinessWallMediaItem = {
   url: string;
   postId: string;
   createdAt: string;
+  posterUrl?: string;
+  muxVideoId?: string;
 };
 
 type PhotoComment = {
@@ -637,6 +640,8 @@ export default function PublicProfilePage() {
 
   const [postContent, setPostContent] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  /** Uploader account type — drives video size limits (must match home feed / Mux API). */
+  const [currentUserAccountType, setCurrentUserAccountType] = useState<string | null>(null);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const [submittingPost, setSubmittingPost] = useState(false);
   const [ogPreview, setOgPreview] = useState<OgPreview | null>(null);
@@ -763,6 +768,7 @@ export default function PublicProfilePage() {
   const [togglingLikeFor, setTogglingLikeFor] = useState<string | null>(null);
   const [submittingCommentFor, setSubmittingCommentFor] = useState<string | null>(null);
   const [deletingPostId, setDeletingPostId] = useState<string | null>(null);
+  const [deletingWallMediaKey, setDeletingWallMediaKey] = useState<string | null>(null);
   const [editingPostId, setEditingPostId] = useState<string | null>(null);
   const [editingPostContent, setEditingPostContent] = useState("");
   const [editingPostAsMode, setEditingPostAsMode] = useState<PostAsMode>("self");
@@ -1356,12 +1362,23 @@ export default function PublicProfilePage() {
       }
     });
 
-    const { data: rawData, error } = await supabase
+    let rawQuery = await supabase
       .from("posts")
-      .select("id, user_id, wall_user_id, post_as_user_id, content, created_at, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
+      .select("id, user_id, wall_user_id, post_as_user_id, content, created_at, image_url, gif_url, event_id, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
       .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
       .order("created_at", { ascending: false })
       .limit(fetchLimit);
+
+    if (rawQuery.error && isMissingColumnError(rawQuery.error, "event_id")) {
+      rawQuery = await supabase
+        .from("posts")
+        .select("id, user_id, wall_user_id, post_as_user_id, content, created_at, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
+        .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
+        .order("created_at", { ascending: false })
+        .limit(fetchLimit);
+    }
+
+    const { data: rawData, error } = rawQuery;
 
     if (error) {
       console.error("Profile posts load error:", error);
@@ -1375,6 +1392,9 @@ export default function PublicProfilePage() {
       post_as_user_id?: string | null;
       content: string;
       created_at: string;
+      image_url?: string | null;
+      gif_url?: string | null;
+      event_id?: string | null;
       og_url?: string | null;
       og_title?: string | null;
       og_description?: string | null;
@@ -1392,37 +1412,10 @@ export default function PublicProfilePage() {
 
     const postIds = visibleRawPosts.map((p) => p.id);
 
-    // Legacy single image_url
-    const legacyWithEvent = await supabase
-      .from("posts")
-      .select("id, image_url, gif_url, event_id")
-      .in("id", postIds);
-    let legacyImgData = legacyWithEvent.data as Array<{
-      id: string;
-      image_url: string | null;
-      gif_url: string | null;
-      event_id?: string | null;
-    }> | null;
-    if (legacyWithEvent.error && isMissingColumnError(legacyWithEvent.error, "event_id")) {
-      const fallback = await supabase
-        .from("posts")
-        .select("id, image_url, gif_url")
-        .in("id", postIds);
-      if (fallback.error) {
-        console.error("Legacy post media load error:", fallback.error);
-      }
-      legacyImgData = ((fallback.data ?? []) as Array<{
-        id: string;
-        image_url: string | null;
-        gif_url: string | null;
-      }>).map((row) => ({ ...row, event_id: null }));
-    } else if (legacyWithEvent.error) {
-      console.error("Legacy post media load error:", legacyWithEvent.error);
-    }
     const legacyImageMap = new Map<string, string | null>();
     const gifUrlMap = new Map<string, string | null>();
     const eventIdByPostId = new Map<string, string | null>();
-    ((legacyImgData ?? []) as { id: string; image_url: string | null; gif_url: string | null; event_id?: string | null }[]).forEach((r) => {
+    visibleRawPosts.forEach((r) => {
       legacyImageMap.set(r.id, r.image_url ?? null);
       gifUrlMap.set(r.id, r.gif_url ?? null);
       eventIdByPostId.set(r.id, r.event_id ?? null);
@@ -1482,15 +1475,18 @@ export default function PublicProfilePage() {
     const enrichment = await fetchFeedPostEnrichment(supabase, postIds);
 
     const multiImageMap = enrichment?.multiPostImageMap ?? new Map<string, string[]>();
-    if (!enrichment) {
-      const { data: postImgData } = await supabase
-        .from("post_images")
-        .select("id, post_id, image_url, sort_order")
-        .in("post_id", postIds)
-        .order("sort_order", { ascending: true });
+    // Always merge post_images so wall cards still get media if enrichment is partial.
+    const { data: postImgData, error: postImgError } = await supabase
+      .from("post_images")
+      .select("id, post_id, image_url, sort_order")
+      .in("post_id", postIds)
+      .order("sort_order", { ascending: true });
+    if (postImgError) {
+      console.error("Profile post_images load error:", postImgError);
+    } else {
       ((postImgData ?? []) as { id: string; post_id: string; image_url: string; sort_order: number | null }[]).forEach((r) => {
         const arr = multiImageMap.get(r.post_id) || [];
-        arr.push(r.image_url);
+        if (!arr.includes(r.image_url)) arr.push(r.image_url);
         multiImageMap.set(r.post_id, arr);
       });
     }
@@ -2146,6 +2142,82 @@ export default function PublicProfilePage() {
     } finally { setDeletingPostId(null); }
   }
 
+  function wallMediaItemKey(item: BusinessWallMediaItem): string {
+    return `${item.postId}:${item.url}`;
+  }
+
+  function editWallMediaPost(item: BusinessWallMediaItem) {
+    const post = posts.find((p) => p.id === item.postId);
+    if (!post || !currentUserId || post.user_id !== currentUserId) return;
+    setShowAllModal(null);
+    startEditPost(post.id, post.content, post.post_as_user_id);
+    window.setTimeout(() => {
+      document.getElementById(`wall-post-${post.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 50);
+  }
+
+  async function removeWallMediaItem(item: BusinessWallMediaItem) {
+    if (!currentUserId) return;
+    const post = posts.find((p) => p.id === item.postId);
+    if (!post || post.user_id !== currentUserId) {
+      alert("You can only remove media from your own posts.");
+      return;
+    }
+    const isVideo = Boolean(item.muxVideoId || parseMuxFeedVideoUrl(item.url) || isVideoUrl(item.url));
+    if (!window.confirm(`Remove this ${isVideo ? "video" : "photo"} from your wall?`)) return;
+
+    const mediaKey = wallMediaItemKey(item);
+    try {
+      setDeletingWallMediaKey(mediaKey);
+      const remaining = post.image_urls.filter((url) => url !== item.url);
+      const hasText = Boolean(post.content?.trim() || post.gif_url);
+
+      if (remaining.length === 0 && !hasText) {
+        const token = await getAccessToken({ force: true, source: "removeWallMediaItem" });
+        const response = await fetch(`/api/feed/posts/${encodeURIComponent(post.id)}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token ?? ""}` },
+        });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({})) as { error?: string };
+          throw new Error(body.error ?? "Failed to delete post.");
+        }
+      } else {
+        const { error: imageError } = await supabase
+          .from("post_images")
+          .delete()
+          .eq("post_id", post.id)
+          .eq("image_url", item.url);
+        if (imageError) throw new Error(imageError.message);
+
+        const { error: postError } = await supabase
+          .from("posts")
+          .update({ image_url: remaining[0] ?? null })
+          .eq("id", post.id)
+          .eq("user_id", currentUserId);
+        if (postError) throw new Error(postError.message);
+
+        const muxId = item.muxVideoId ?? parseMuxFeedVideoUrl(item.url)?.id ?? null;
+        if (muxId) {
+          const token = await getAccessToken({ force: true, source: "removeWallMediaVideo" });
+          const response = await fetch(`/api/feed/video-uploads/${encodeURIComponent(muxId)}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token ?? ""}` },
+          });
+          if (!response.ok) {
+            const body = await response.json().catch(() => ({})) as { error?: string };
+            console.warn("Mux video cleanup failed:", body.error);
+          }
+        }
+      }
+      if (userId) await loadPosts(userId);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to remove media.");
+    } finally {
+      setDeletingWallMediaKey(null);
+    }
+  }
+
   function startEditPost(postId: string, currentContent: string, postAsUserId?: string | null) {
     setEditingPostId(postId);
     setEditingPostContent(currentContent);
@@ -2689,7 +2761,10 @@ export default function PublicProfilePage() {
   }
 
   async function uploadWallImage(file: File, postId: string, forcedFileName?: string): Promise<string> {
-    const prepared = await prepareFeedUploadFile(file, { accountType: profile?.account_type });
+    const uploaderAccountType =
+      currentUserAccountType
+      ?? (currentUserId && profile?.user_id === currentUserId ? profile.account_type : null);
+    const prepared = await prepareFeedUploadFile(file, { accountType: uploaderAccountType });
     if (!prepared.ok) throw new Error(prepared.error);
     file = prepared.file;
     if (isVideoFile(file)) {
@@ -2740,9 +2815,12 @@ export default function PublicProfilePage() {
         return prev;
       }
       const toAddFiles = filtered.slice(0, slots);
+      const uploaderAccountType =
+        currentUserAccountType
+        ?? (currentUserId && profile?.user_id === currentUserId ? profile.account_type : null);
       const pickError = validateFeedAttachmentPick(
         toAddFiles,
-        feedUploadLimitsForAccount(profile?.account_type),
+        feedUploadLimitsForAccount(uploaderAccountType),
       );
       if (pickError) {
         alert(pickError);
@@ -2902,7 +2980,7 @@ export default function PublicProfilePage() {
           uploadedUrls.push(url);
           uploadedForCleanup.push(url);
         }
-        await supabase.from("post_images").insert(
+        const { error: postImagesInsertError } = await supabase.from("post_images").insert(
           uploadedUrls.map((url, i) => ({
             post_id: postId,
             image_url: url,
@@ -2917,8 +2995,17 @@ export default function PublicProfilePage() {
                     : "image",
           }))
         );
+        if (postImagesInsertError) {
+          throw new Error(postImagesInsertError.message || "Failed to attach media to post.");
+        }
         await attachMuxVideosFromUrls(uploadedUrls, "post", postId);
-        await supabase.from("posts").update({ image_url: uploadedUrls[0] }).eq("id", postId);
+        const { error: legacyImageError } = await supabase
+          .from("posts")
+          .update({ image_url: uploadedUrls[0] })
+          .eq("id", postId);
+        if (legacyImageError) {
+          console.error("Wall post legacy image_url update failed:", legacyImageError);
+        }
       }
 
       // Notify wall owner when someone else posts on their wall
@@ -3175,7 +3262,7 @@ export default function PublicProfilePage() {
     async function loadViewerExtras(signedInUserId: string) {
       const { data: nameData } = await supabase
         .from("profiles")
-        .select("first_name, last_name, photo_url, email, is_employer, is_admin")
+        .select("first_name, last_name, photo_url, email, is_employer, is_admin, account_type")
         .eq("user_id", signedInUserId)
         .maybeSingle();
       if (cancelled) return;
@@ -3186,9 +3273,11 @@ export default function PublicProfilePage() {
         email: string | null;
         is_employer: boolean | null;
         is_admin?: boolean | null;
+        account_type?: string | null;
       } | null;
       setCurrentUserName(`${nd?.first_name || ""} ${nd?.last_name || ""}`.trim() || "Someone");
       setCurrentUserPhotoUrl(nd?.photo_url ?? null);
+      setCurrentUserAccountType(nd?.account_type ?? null);
       const viewerEmail = nd?.email?.trim().toLowerCase() ?? null;
       setCurrentUserEmail(viewerEmail);
       setViewerIsEmployer(!!nd?.is_employer);
@@ -3278,10 +3367,23 @@ export default function PublicProfilePage() {
       setPlankHolderChallenge(null);
 
       if (!signedInUserId) {
+        setCurrentUserAccountType(null);
         setViewerIsEmployer(false);
         setViewerIsAdmin(false);
         setDesktopSavedEvents([]);
         setDesktopSavedJobs([]);
+      } else {
+        // Load uploader limits before the wall composer is interactive (matches home feed).
+        const { data: uploaderProfile } = await supabase
+          .from("profiles")
+          .select("account_type")
+          .eq("user_id", signedInUserId)
+          .maybeSingle();
+        if (!cancelled) {
+          setCurrentUserAccountType(
+            (uploaderProfile as { account_type?: string | null } | null)?.account_type ?? null,
+          );
+        }
       }
 
       await Promise.all([
@@ -3474,19 +3576,27 @@ export default function PublicProfilePage() {
     for (const post of posts) {
       for (const attachment of attachmentsFromUrls(post.image_urls)) {
         const url = attachment.kind === "cad3d" ? attachment.renderUrl : attachment.url;
+        const mux = attachment.muxVideoId
+          ? { id: attachment.muxVideoId, playbackId: attachment.muxPlaybackId }
+          : parseMuxFeedVideoUrl(url);
+        const isVideo = attachment.kind === "video" || Boolean(mux) || isVideoUrl(url);
         const item: BusinessWallMediaItem = {
-          url,
+          url: attachment.url,
           postId: post.id,
           createdAt: post.created_at,
+          posterUrl:
+            attachment.posterUrl
+            ?? (mux?.playbackId ? muxPosterUrl(mux.playbackId) : undefined),
+          muxVideoId: mux?.id ?? attachment.muxVideoId,
         };
-        if (isVideoUrl(url)) {
-          if (seenVideos.has(url)) continue;
-          seenVideos.add(url);
+        if (isVideo) {
+          if (seenVideos.has(item.url)) continue;
+          seenVideos.add(item.url);
           videoItems.push(item);
-        } else {
+        } else if (attachment.kind === "image" || attachment.kind === "cad3d") {
           if (seenPhotos.has(url)) continue;
           seenPhotos.add(url);
-          photoItems.push(item);
+          photoItems.push({ ...item, url });
         }
       }
     }
@@ -3606,7 +3716,11 @@ export default function PublicProfilePage() {
   const isOwnWall = currentUserId === profile?.user_id;
   const isBusinessOrgProfile = profile?.account_type === "business_org";
   const wallAsOwner = isOwnWall && !(isBusinessOrgProfile && businessProfileVisitorPreview);
-  const wallFeedUploadLimits = feedUploadLimitsForAccount(profile?.account_type);
+  // Same rules as home feed /api/feed/video-uploads: limits follow the signed-in uploader.
+  const wallFeedUploadLimits = feedUploadLimitsForAccount(
+    currentUserAccountType
+      ?? (isOwnWall ? profile?.account_type : null),
+  );
   const showEmployerEmailOnCard = isEmployerProfile && (isOwnWall || viewerIsAdmin);
   const canViewEmployerBack =
     !isEmployerProfile &&
@@ -4016,15 +4130,39 @@ export default function PublicProfilePage() {
                 )}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: wallPhotoGridCols, gap: 8 }}>
-                {businessWallPhotoPreview.map((item, index) => (
-                  <div
-                    key={`${item.postId}-${item.url}`}
-                    onClick={() => setExpandedProfilePhotoUrl(item.url)}
-                    style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer", border: `1px solid ${t.border}` }}
-                  >
-                    <img src={item.url} alt={`Post photo ${index + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                  </div>
-                ))}
+                {businessWallPhotoPreview.map((item, index) => {
+                  const canManage = wallAsOwner && posts.some((p) => p.id === item.postId && p.user_id === currentUserId);
+                  const busy = deletingWallMediaKey === wallMediaItemKey(item);
+                  return (
+                    <div key={`${item.postId}-${item.url}`} style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                      <div
+                        onClick={() => setExpandedProfilePhotoUrl(item.url)}
+                        style={{ aspectRatio: "1 / 1", borderRadius: 10, overflow: "hidden", background: t.bg, cursor: "pointer", border: `1px solid ${t.border}` }}
+                      >
+                        <img src={item.url} alt={`Post photo ${index + 1}`} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      </div>
+                      {canManage && (
+                        <div style={{ display: "flex", flexDirection: "row", gap: 6, alignItems: "stretch" }}>
+                          <button
+                            type="button"
+                            onClick={() => editWallMediaPost(item)}
+                            style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: "pointer", color: t.text, minWidth: 0 }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void removeWallMediaItem(item)}
+                            disabled={busy}
+                            style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.7 : 1, color: t.text, minWidth: 0 }}
+                          >
+                            {busy ? "..." : "Del"}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -4092,20 +4230,68 @@ export default function PublicProfilePage() {
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: wallVideoGridCols, gap: 8 }}>
-              {businessWallVideoPreview.map((item, index) => (
-                <div
-                  key={`${item.postId}-${item.url}`}
-                  onClick={() => setLightboxVideoUrl(item.url)}
-                  style={{ position: "relative", aspectRatio: "16 / 9", borderRadius: 10, overflow: "hidden", background: FEED_MEDIA_FRAME_BG, cursor: "pointer", border: `1px solid ${t.border}` }}
-                >
-                  <video src={item.url} preload="metadata" muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                  <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                    <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Play size={18} color="white" fill="white" />
+              {businessWallVideoPreview.map((item) => {
+                const canManage = wallAsOwner && posts.some((p) => p.id === item.postId && p.user_id === currentUserId);
+                const busy = deletingWallMediaKey === wallMediaItemKey(item);
+                const poster =
+                  item.posterUrl
+                  ?? (parseMuxFeedVideoUrl(item.url)?.playbackId
+                    ? muxPosterUrl(parseMuxFeedVideoUrl(item.url)!.playbackId!)
+                    : undefined);
+                return (
+                  <div key={`${item.postId}-${item.url}`} style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+                    <div
+                      onClick={() => setLightboxVideoUrl(item.url)}
+                      style={{ position: "relative", aspectRatio: "16 / 9", borderRadius: 10, overflow: "hidden", background: FEED_MEDIA_FRAME_BG, cursor: "pointer", border: `1px solid ${t.border}` }}
+                    >
+                      {poster ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- Mux CDN poster
+                        <img src={poster} alt="Video preview" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      ) : (
+                        <video
+                          src={item.url}
+                          preload="metadata"
+                          muted
+                          playsInline
+                          onLoadedMetadata={(e) => {
+                            try {
+                              const el = e.currentTarget;
+                              if (el.currentTime < 0.05) el.currentTime = 0.1;
+                            } catch {
+                              /* ignore seek errors */
+                            }
+                          }}
+                          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                        />
+                      )}
+                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                        <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <Play size={18} color="white" fill="white" />
+                        </div>
+                      </div>
                     </div>
+                    {canManage && (
+                      <div style={{ display: "flex", flexDirection: "row", gap: 6, alignItems: "stretch" }}>
+                        <button
+                          type="button"
+                          onClick={() => editWallMediaPost(item)}
+                          style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: "pointer", color: t.text, minWidth: 0 }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void removeWallMediaItem(item)}
+                          disabled={busy}
+                          style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, borderRadius: 6, padding: "5px 4px", fontWeight: 700, fontSize: 10, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.7 : 1, color: t.text, minWidth: 0 }}
+                        >
+                          {busy ? "..." : "Del"}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -6069,32 +6255,104 @@ export default function PublicProfilePage() {
                 </div>
                 {showAllModal === "business-wall-photos" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
-                    {businessWallMedia.photos.map((item) => (
-                      <div
-                        key={`${item.postId}-${item.url}`}
-                        onClick={() => { setExpandedProfilePhotoUrl(item.url); setShowAllModal(null); }}
-                        style={{ aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", cursor: "pointer", background: t.bg }}
-                      >
-                        <img src={item.url} alt="Post photo" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                      </div>
-                    ))}
+                    {businessWallMedia.photos.map((item) => {
+                      const canManage = wallAsOwner && posts.some((p) => p.id === item.postId && p.user_id === currentUserId);
+                      const busy = deletingWallMediaKey === wallMediaItemKey(item);
+                      return (
+                        <div key={`${item.postId}-${item.url}`} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div
+                            onClick={() => { setExpandedProfilePhotoUrl(item.url); setShowAllModal(null); }}
+                            style={{ aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", cursor: "pointer", background: t.bg }}
+                          >
+                            <img src={item.url} alt="Post photo" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                          </div>
+                          {canManage && (
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button
+                                type="button"
+                                onClick={() => editWallMediaPost(item)}
+                                style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: "pointer" }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void removeWallMediaItem(item)}
+                                disabled={busy}
+                                style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.7 : 1 }}
+                              >
+                                {busy ? "..." : "Del"}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : showAllModal === "business-wall-videos" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 10 }}>
-                    {businessWallMedia.videos.map((item) => (
-                      <div
-                        key={`${item.postId}-${item.url}`}
-                        onClick={() => { setLightboxVideoUrl(item.url); setShowAllModal(null); }}
-                        style={{ position: "relative", aspectRatio: "16/9", borderRadius: 10, overflow: "hidden", cursor: "pointer", background: FEED_MEDIA_FRAME_BG }}
-                      >
-                        <video src={item.url} preload="metadata" muted playsInline style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-                        <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                          <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            <Play size={18} color="white" fill="white" />
+                    {businessWallMedia.videos.map((item) => {
+                      const canManage = wallAsOwner && posts.some((p) => p.id === item.postId && p.user_id === currentUserId);
+                      const busy = deletingWallMediaKey === wallMediaItemKey(item);
+                      const poster =
+                        item.posterUrl
+                        ?? (parseMuxFeedVideoUrl(item.url)?.playbackId
+                          ? muxPosterUrl(parseMuxFeedVideoUrl(item.url)!.playbackId!)
+                          : undefined);
+                      return (
+                        <div key={`${item.postId}-${item.url}`} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          <div
+                            onClick={() => { setLightboxVideoUrl(item.url); setShowAllModal(null); }}
+                            style={{ position: "relative", aspectRatio: "16/9", borderRadius: 10, overflow: "hidden", cursor: "pointer", background: FEED_MEDIA_FRAME_BG }}
+                          >
+                            {poster ? (
+                              // eslint-disable-next-line @next/next/no-img-element -- Mux CDN poster
+                              <img src={poster} alt="Video preview" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                            ) : (
+                              <video
+                                src={item.url}
+                                preload="metadata"
+                                muted
+                                playsInline
+                                onLoadedMetadata={(e) => {
+                                  try {
+                                    const el = e.currentTarget;
+                                    if (el.currentTime < 0.05) el.currentTime = 0.1;
+                                  } catch {
+                                    /* ignore */
+                                  }
+                                }}
+                                style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+                              />
+                            )}
+                            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                              <div style={{ background: "rgba(0,0,0,0.5)", borderRadius: "50%", width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                <Play size={18} color="white" fill="white" />
+                              </div>
+                            </div>
                           </div>
+                          {canManage && (
+                            <div style={{ display: "flex", gap: 4 }}>
+                              <button
+                                type="button"
+                                onClick={() => editWallMediaPost(item)}
+                                style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: "pointer" }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void removeWallMediaItem(item)}
+                                disabled={busy}
+                                style={{ flex: 1, border: `1px solid ${t.border}`, background: t.surface, color: t.text, borderRadius: 6, padding: "4px 0", fontWeight: 700, fontSize: 10, cursor: busy ? "not-allowed" : "pointer", opacity: busy ? 0.7 : 1 }}
+                              >
+                                {busy ? "..." : "Del"}
+                              </button>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 ) : showAllModal === "photos" ? (
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))", gap: 10 }}>
@@ -6318,8 +6576,12 @@ export default function PublicProfilePage() {
                   <p style={{ fontSize: 11, color: t.textMuted, margin: "8px 0 0", lineHeight: 1.45 }}>
                     Photos up to {formatUploadBytes(UPLOAD_LIMITS.image)} (large photos are compressed automatically).
                     {" "}
-                    Short videos up to {formatUploadBytes(wallFeedUploadLimits.video)} (
-                    {wallFeedUploadLimits.videoDurationHint}).
+                    Videos up to {formatUploadBytes(wallFeedUploadLimits.video)} (
+                    {wallFeedUploadLimits.videoDurationHint}
+                    {currentUserAccountType === "business_org" || isBusinessOrgProfile
+                      ? " — same as the home feed for business accounts"
+                      : ""}
+                    ).
                     {isBusinessOrgProfile
                       ? " Photos and videos appear in separate sections above your feed."
                       : ` PDFs/CAD files up to ${formatUploadBytes(UPLOAD_LIMITS.document)} are supported; CAD files need preview images.`}
@@ -6417,7 +6679,7 @@ export default function PublicProfilePage() {
                 const isEditingPost = editingPostId === post.id;
 
                 return (
-                  <div key={post.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                  <div id={`wall-post-${post.id}`} key={post.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
                     {/* Post header */}
                     {(() => {
                       const postAuthorPhoto = post.authorPhotoUrl ?? profile.photo_url;
@@ -6563,8 +6825,8 @@ export default function PublicProfilePage() {
                       </div>
                     )}
 
-                    {/* Post images before link preview (e.g. job share flyers above OG card) */}
-                    {post.image_urls.length > 0 && !isBusinessOrgProfile && (() => {
+                    {/* Post images/videos — same for member and business walls */}
+                    {post.image_urls.length > 0 && (() => {
                       const attachments = attachmentsFromUrls(post.image_urls);
                       const visible = attachments.slice(0, 3);
                       const remaining = attachments.length - 3;
