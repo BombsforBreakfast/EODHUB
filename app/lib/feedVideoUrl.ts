@@ -42,5 +42,6 @@ export function muxPlaybackUrl(playbackId: string): string {
 }
 
 export function muxPosterUrl(playbackId: string): string {
-  return `https://image.mux.com/${encodeURIComponent(playbackId)}/thumbnail.webp?time=0`;
+  // fit_mode=preserve keeps portrait/landscape video aspect instead of smart-cropping.
+  return `https://image.mux.com/${encodeURIComponent(playbackId)}/thumbnail.webp?time=0&fit_mode=preserve`;
 }

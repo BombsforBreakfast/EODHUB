@@ -48,7 +48,7 @@ import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
 import ExpandableText from "../components/ExpandableText";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
-import { FeedMediaAttachment } from "../components/FeedMediaAttachment";
+import { FeedMediaAttachment, SelectedVideoPlaceholder } from "../components/FeedMediaAttachment";
 import FeedPostHeader from "../components/FeedPostHeader";
 import HideBlockUserButton from "../components/HideBlockUserButton";
 import OptimizedAvatarImg from "../components/OptimizedAvatarImg";
@@ -7532,7 +7532,9 @@ export default function HomePage() {
                   gap: 10,
                 }}
               >
-                {selectedPostImages.map((item, index) => (
+                {selectedPostImages.map((item, index) => {
+                  const isVideoAttachment = item.kind === "video" || isVideoFile(item.file);
+                  return (
                   <div
                     key={`${item.previewUrl || item.file.name}-${index}`}
                     style={{
@@ -7544,13 +7546,10 @@ export default function HomePage() {
                       aspectRatio: "1 / 1",
                     }}
                   >
-                    {isVideoFile(item.file) && item.previewUrl ? (
-                      <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
-                    ) : isVideoFile(item.file) ? (
-                      <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 8, color: t.textMuted, textAlign: "center" }}>
-                        <div style={{ fontSize: 12, fontWeight: 800 }}>Video selected</div>
-                        <div style={{ fontSize: 10, wordBreak: "break-all" }}>{item.file.name}</div>
-                      </div>
+                    {isVideoAttachment && item.previewUrl ? (
+                      <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline preload="metadata" />
+                    ) : isVideoAttachment ? (
+                      <SelectedVideoPlaceholder fileName={item.file.name || "video"} />
                     ) : item.kind === "pdf" ? (
                       <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: t.textMuted, padding: 8, textAlign: "center", wordBreak: "break-all" }}>
                         {item.file.name}
@@ -7563,16 +7562,21 @@ export default function HomePage() {
                           <div style={{ color: "#f59e0b", fontWeight: 700 }}>Preview required</div>
                         )}
                       </div>
-                    ) : (
+                    ) : item.previewUrl ? (
                       <img
                         src={item.previewUrl}
                         alt={`Selected post attachment ${index + 1}`}
                         style={feedContainedImageStyle}
                       />
+                    ) : (
+                      <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontSize: 11, padding: 8, textAlign: "center" }}>
+                        {item.file.name || "Attachment"}
+                      </div>
                     )}
 
                     <button
                       type="button"
+                      aria-label="Remove attachment"
                       onClick={() => removeSelectedPostImage(index)}
                       style={{
                         position: "absolute",
@@ -7588,10 +7592,11 @@ export default function HomePage() {
                         cursor: "pointer",
                       }}
                     >
-                      x
+                      ×
                     </button>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 

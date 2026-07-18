@@ -34,7 +34,7 @@ import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib
 import { fetchBlockedUserIds, filterBlockedRows } from "../../../lib/userBlocks";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
 import { attachMuxVideosFromUrls, cancelMuxVideosFromUrls, uploadMuxFeedVideo } from "../../../lib/muxFeedUpload";
-import { FeedMediaAttachment } from "../../../components/FeedMediaAttachment";
+import { FeedMediaAttachment, SelectedVideoPlaceholder } from "../../../components/FeedMediaAttachment";
 import FeedImageGalleryModal from "../../../components/FeedImageGalleryModal";
 import OptimizedAvatarImg from "../../../components/OptimizedAvatarImg";
 import { galleryImageDisplayUrl } from "../../../lib/storageImageUrl";
@@ -2830,7 +2830,7 @@ export default function PublicProfilePage() {
         alert("Only the first files were added. Max is 10 attachments per post.");
       }
       const toAdd: typeof prev = toAddFiles.map((f) => {
-        const kind = attachmentRenderKindFromFile(f);
+        const kind = options?.videosOnly ? "video" : attachmentRenderKindFromFile(f);
         if (kind === "cad3d") {
           return {
             file: f,
@@ -6507,15 +6507,14 @@ export default function PublicProfilePage() {
                 {/* Image previews */}
                 {selectedPostImages.length > 0 && (
                   <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(100px, 1fr))", gap: 8 }}>
-                    {selectedPostImages.map((item, i) => (
-                      <div key={i} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
-                        {isVideoFile(item.file) && item.previewUrl ? (
-                          <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
-                        ) : isVideoFile(item.file) ? (
-                          <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 8, color: t.textMuted, textAlign: "center" }}>
-                            <div style={{ fontSize: 12, fontWeight: 800 }}>Video selected</div>
-                            <div style={{ fontSize: 10, wordBreak: "break-all" }}>{item.file.name}</div>
-                          </div>
+                    {selectedPostImages.map((item, i) => {
+                      const isVideoAttachment = item.kind === "video" || isVideoFile(item.file);
+                      return (
+                      <div key={`${item.file.name}-${i}`} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
+                        {isVideoAttachment && item.previewUrl ? (
+                          <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline preload="metadata" />
+                        ) : isVideoAttachment ? (
+                          <SelectedVideoPlaceholder fileName={item.file.name || "video"} />
                         ) : item.kind === "pdf" ? (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: t.textMuted }}>
                             <FileText size={28} color={t.textMuted} />
@@ -6529,11 +6528,16 @@ export default function PublicProfilePage() {
                               <span style={{ color: "#f59e0b", fontWeight: 700 }}>Preview required</span>
                             )}
                           </div>
-                        ) : (
+                        ) : item.previewUrl ? (
                           <img src={item.previewUrl} alt="" style={feedContainedImageStyle} />
+                        ) : (
+                          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: t.textMuted, fontSize: 11, padding: 8, textAlign: "center" }}>
+                            {item.file.name || "Attachment"}
+                          </div>
                         )}
                         <button
                           type="button"
+                          aria-label="Remove attachment"
                           onClick={() => setSelectedPostImages((prev) => {
                             const item = prev[i];
                             if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl);
@@ -6550,9 +6554,12 @@ export default function PublicProfilePage() {
                             return prev.filter((_, idx) => idx !== i);
                           })}
                           style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.65)", border: "none", borderRadius: "50%", width: 24, height: 24, color: "white", fontWeight: 800, cursor: "pointer", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}
-                        >�</button>
+                        >
+                          ×
+                        </button>
                       </div>
-                    ))}
+                    );
+                    })}
                   </div>
                 )}
 
