@@ -1362,30 +1362,7 @@ export default function PublicProfilePage() {
       }
     });
 
-    let rawQuery = await supabase
-      .from("posts")
-      .select("id, user_id, wall_user_id, post_as_user_id, content, created_at, image_url, gif_url, event_id, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
-      .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
-      .order("created_at", { ascending: false })
-      .limit(fetchLimit);
-
-    if (rawQuery.error && isMissingColumnError(rawQuery.error, "event_id")) {
-      rawQuery = await supabase
-        .from("posts")
-        .select("id, user_id, wall_user_id, post_as_user_id, content, created_at, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
-        .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
-        .order("created_at", { ascending: false })
-        .limit(fetchLimit);
-    }
-
-    const { data: rawData, error } = rawQuery;
-
-    if (error) {
-      console.error("Profile posts load error:", error);
-      return;
-    }
-
-    const allMatchedPosts = filterBlockedRows((rawData ?? []) as {
+    type ProfileWallPostRow = {
       id: string;
       user_id: string;
       wall_user_id?: string | null;
@@ -1401,7 +1378,42 @@ export default function PublicProfilePage() {
       og_image?: string | null;
       og_site_name?: string | null;
       rabbithole_contribution_id?: string | null;
-    }[], effectiveBlockedUserIds, (post) => post.post_as_user_id ?? post.user_id);
+    };
+
+    const rawQuery = await supabase
+      .from("posts")
+      .select("id, user_id, wall_user_id, post_as_user_id, content, created_at, image_url, gif_url, event_id, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
+      .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
+      .order("created_at", { ascending: false })
+      .limit(fetchLimit);
+
+    let rawData: ProfileWallPostRow[] | null = (rawQuery.data as ProfileWallPostRow[] | null) ?? null;
+    let error = rawQuery.error;
+
+    if (error && isMissingColumnError(error, "event_id")) {
+      const fallbackQuery = await supabase
+        .from("posts")
+        .select("id, user_id, wall_user_id, post_as_user_id, content, created_at, image_url, gif_url, og_url, og_title, og_description, og_image, og_site_name, rabbithole_contribution_id")
+        .or(`user_id.eq.${targetUserId},wall_user_id.eq.${targetUserId}`)
+        .order("created_at", { ascending: false })
+        .limit(fetchLimit);
+      rawData = ((fallbackQuery.data as Omit<ProfileWallPostRow, "event_id">[] | null) ?? []).map((row) => ({
+        ...row,
+        event_id: null,
+      }));
+      error = fallbackQuery.error;
+    }
+
+    if (error) {
+      console.error("Profile posts load error:", error);
+      return;
+    }
+
+    const allMatchedPosts = filterBlockedRows(
+      rawData ?? [],
+      effectiveBlockedUserIds,
+      (post) => post.post_as_user_id ?? post.user_id,
+    );
     const hasMorePosts = allMatchedPosts.length > visibleLimit;
     const visibleRawPosts = allMatchedPosts.slice(0, visibleLimit);
     setProfileWallHasMorePosts(hasMorePosts);
