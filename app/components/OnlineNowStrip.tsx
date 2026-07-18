@@ -8,6 +8,7 @@ import { LikerAvatar } from "./PostLikersStack";
 import { useOnlinePresence } from "./OnlinePresenceProvider";
 import { hasFullPlatformAccess, type VerificationProfile } from "../lib/verificationAccess";
 import { fetchBlockedUserIds } from "../lib/userBlocks";
+import { canAlwaysAccessChatroomQa, isChatroomEntryAvailable } from "../lib/chatroom";
 
 const AVATAR = 28; // 25% larger than the previous 22px strip avatars
 const AVATAR_OVERLAP = 6;
@@ -40,9 +41,15 @@ function widthForNStacked(n: number): number {
 
 type OnlineNowStripProps = {
   currentUserId: string | null;
+  onEnterChat?: () => void;
+  onChatAvailabilityChange?: (available: boolean, onlineCount: number) => void;
 };
 
-export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
+export default function OnlineNowStrip({
+  currentUserId,
+  onEnterChat,
+  onChatAvailabilityChange,
+}: OnlineNowStripProps) {
   const { t } = useTheme();
   const { onlineUserIds } = useOnlinePresence();
   const [profiles, setProfiles] = useState<Map<string, ProfileRow>>(new Map());
@@ -70,6 +77,23 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
       .sort((a, b) => displayName(a).localeCompare(displayName(b)));
     return ordered;
   }, [blockedUserIds, currentUserId, onlineUserIds, profiles]);
+
+  const selfCountedOnline = Boolean(
+    currentUserId
+    && onlineUserIds.includes(currentUserId)
+    && (() => {
+      const self = profiles.get(currentUserId);
+      // Self is in presence; count even before profile hydrate finishes.
+      if (!self) return true;
+      return !self.account_deleted_at && hasFullPlatformAccess(self);
+    })(),
+  );
+  const onlineCount = previewRows.length + (selfCountedOnline ? 1 : 0);
+  const chatAvailable = isChatroomEntryAvailable(onlineCount, currentUserId);
+
+  useEffect(() => {
+    onChatAvailabilityChange?.(chatAvailable, onlineCount);
+  }, [chatAvailable, onlineCount, onChatAvailabilityChange]);
 
   const syncProfiles = useCallback(async (ids: string[]) => {
     if (ids.length === 0) {
@@ -189,7 +213,8 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
     return () => cancelCloseTimer();
   }, [cancelCloseTimer]);
 
-  if (!currentUserId || previewRows.length === 0) return null;
+  if (!currentUserId) return null;
+  if (previewRows.length === 0 && !chatAvailable) return null;
 
   const visibleRows = previewRows.slice(0, visibleCount);
   const hiddenCount = Math.max(0, previewRows.length - visibleRows.length);
@@ -217,6 +242,7 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
         Online now
       </span>
       <div ref={measureRef} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
+          {previewRows.length > 0 ? (
           <div
             ref={popoverRef}
             style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
@@ -344,7 +370,30 @@ export default function OnlineNowStrip({ currentUserId }: OnlineNowStripProps) {
               </div>
             )}
           </div>
+          ) : canAlwaysAccessChatroomQa(currentUserId) ? (
+            <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>QA access</span>
+          ) : null}
         </div>
+      {chatAvailable && onEnterChat && (
+        <button
+          type="button"
+          onClick={onEnterChat}
+          style={{
+            flexShrink: 0,
+            border: `1px solid ${t.border}`,
+            background: t.surface,
+            color: t.text,
+            borderRadius: 999,
+            padding: "6px 12px",
+            fontWeight: 800,
+            fontSize: 12,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Enter chat
+        </button>
+      )}
     </div>
   );
 }
