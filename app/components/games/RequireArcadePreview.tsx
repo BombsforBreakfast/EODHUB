@@ -3,7 +3,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useTheme } from "@/app/lib/ThemeContext";
-import { nativeIosArcadeAccessHeaders } from "@/app/lib/arcadeAccess";
 import { getSupabaseSession } from "@/app/lib/lib/supabaseClient";
 
 type AccessState =
@@ -85,10 +84,7 @@ export function RequireArcadePreview({ children }: Props) {
       }
 
       const res = await fetch("/api/arcade/access", {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          ...nativeIosArcadeAccessHeaders(),
-        },
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
       if (!mounted) return;

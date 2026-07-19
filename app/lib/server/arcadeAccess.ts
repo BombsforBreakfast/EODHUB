@@ -1,13 +1,11 @@
-/** Server-only arcade preview / launch gate. Never import from client components. */
+/** Server-only arcade access gate. Never import from client components. */
 
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { NextRequest } from "next/server";
 import { isFounderUserId } from "./founderAccess";
 
 export const ARCADE_UNLOCK_COOKIE = "arcade_preview_unlock";
-export const EOD_NATIVE_PLATFORM_HEADER = "x-eod-native-platform";
 
-/** Cookie lifetime after a successful preview password (30 days). */
+/** Cookie lifetime after a successful preview password (30 days). Kept for rollback path. */
 const UNLOCK_MAX_AGE_SEC = 60 * 60 * 24 * 30;
 
 export function getArcadeAccessPassword(): string {
@@ -15,46 +13,33 @@ export function getArcadeAccessPassword(): string {
 }
 
 /**
- * Kill-switch for native iOS public unlock.
- * Default on; set ARCADE_PUBLIC_ON_NATIVE_IOS=false to force founder+password everywhere.
+ * Public arcade launch (web + mobile).
+ * Default on; set ARCADE_PUBLIC=false to revert to founder+password preview.
  */
-export function isArcadePublicOnNativeIosEnabled(): boolean {
-  const raw = (process.env.ARCADE_PUBLIC_ON_NATIVE_IOS ?? "true").trim().toLowerCase();
+export function isArcadePubliclyEnabled(): boolean {
+  const raw = (process.env.ARCADE_PUBLIC ?? "true").trim().toLowerCase();
   return raw !== "0" && raw !== "false" && raw !== "off" && raw !== "no";
 }
 
-export function isNativeIosArcadeRequest(req: NextRequest | Request): boolean {
-  const value = req.headers.get(EOD_NATIVE_PLATFORM_HEADER)?.trim().toLowerCase();
-  return value === "ios";
-}
-
 /** Who may open arcade routes at all (nav + API). */
-export function canUseArcadePreview(
-  userId: string | null | undefined,
-  options?: { nativeIos?: boolean },
-): boolean {
+export function canUseArcadePreview(userId: string | null | undefined): boolean {
   if (!userId) return false;
-  if (isFounderUserId(userId)) return true;
-  if (options?.nativeIos && isArcadePublicOnNativeIosEnabled()) return true;
-  return false;
+  if (isArcadePubliclyEnabled()) return true;
+  return isFounderUserId(userId);
 }
 
 /**
- * Founder web preview: password cookie (skipped in local development).
- * Native iOS public launch: unlocked without password when header is present.
+ * Public launch: any signed-in member is unlocked.
+ * Preview rollback: founder password cookie (skipped in local development).
  */
 export function hasArcadeRouteAccess(
   userId: string,
   unlockCookie: string | undefined,
-  options?: { nativeIos?: boolean },
 ): boolean {
-  if (!canUseArcadePreview(userId, options)) return false;
+  if (!canUseArcadePreview(userId)) return false;
 
-  if (options?.nativeIos && isArcadePublicOnNativeIosEnabled()) {
-    return true;
-  }
+  if (isArcadePubliclyEnabled()) return true;
 
-  // Local dev: skip the preview password gate so founders can test arcade routes.
   if (process.env.NODE_ENV === "development") return true;
 
   const password = getArcadeAccessPassword();

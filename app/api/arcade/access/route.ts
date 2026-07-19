@@ -6,7 +6,6 @@ import {
   canUseArcadePreview,
   getArcadeAccessPassword,
   hasArcadeRouteAccess,
-  isNativeIosArcadeRequest,
 } from "@/app/lib/server/arcadeAccess";
 
 export const dynamic = "force-dynamic";
@@ -34,12 +33,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ canClick: false, unlocked: false, requiresPassword: false }, { status: 401 });
   }
 
-  const nativeIos = isNativeIosArcadeRequest(req);
-  const canClick = canUseArcadePreview(user.id, { nativeIos });
+  const canClick = canUseArcadePreview(user.id);
   const cookieStore = await cookies();
   const unlockCookie = cookieStore.get(ARCADE_UNLOCK_COOKIE)?.value;
-  const unlocked = hasArcadeRouteAccess(user.id, unlockCookie, { nativeIos });
+  const unlocked = hasArcadeRouteAccess(user.id, unlockCookie);
   const requiresPassword = canClick && !unlocked && !!getArcadeAccessPassword();
 
-  return NextResponse.json({ canClick, unlocked, requiresPassword, nativeIos });
+  return NextResponse.json({ canClick, unlocked, requiresPassword });
 }

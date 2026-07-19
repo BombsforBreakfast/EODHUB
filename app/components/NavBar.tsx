@@ -983,7 +983,7 @@ export default function NavBar() {
                       emoji: "🕹️",
                       badge: 0,
                       onNav: null,
-                      comingSoon: !canClickArcade,
+                      comingSoon: false,
                       disabled: !canClickArcade,
                     },
                     { label: "Groups", href: "/units", emoji: "🪖", badge: groupPendingTotal, onNav: null },
