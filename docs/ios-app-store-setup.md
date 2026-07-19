@@ -106,6 +106,23 @@ Codemagic will:
 
 Install via TestFlight on a physical iPhone (push does not work in Simulator).
 
+### Version numbers
+
+Two values matter for App Store uploads:
+
+| Field | Where | Who bumps it |
+|-------|--------|--------------|
+| Marketing version (`MARKETING_VERSION` / `CFBundleShortVersionString`) | [`ios/App/App.xcodeproj/project.pbxproj`](../ios/App/App.xcodeproj/project.pbxproj) | You, before shipping |
+| Build number (`CFBundleVersion`) | Codemagic `agvtool` + `$BUILD_NUMBER` | Automatic each CI run |
+
+Apple requires the marketing version to be **higher than the last approved App Store version**. After a version is approved, that train is closed — bump marketing before the next upload.
+
+Convention for this app:
+
+- **Patch** (`1.0.2` → `1.0.3`) — bug fixes and polish
+- **Minor** (`1.0.x` → `1.1.0`) — noticeable new features (e.g. EOD Arcade unlock)
+- **Major** (`1.x` → `2.0.0`) — deliberate product-level relaunch
+
 ## 5a. Native app vs Safari home-screen icon
 
 The TestFlight app and a Safari **Add to Home Screen** shortcut can look similar but behave differently:
