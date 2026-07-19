@@ -34,7 +34,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!canUseArcadePreview(user.id)) {
+  // Password unlock is founder/web preview only — native iOS uses the access header path.
+  if (!canUseArcadePreview(user.id, { nativeIos: false })) {
     return NextResponse.json({ error: "Arcade preview is not available for this account." }, { status: 403 });
   }
 
