@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Theme } from "../lib/theme";
 import {
   DEFAULT_REACTION_ORDER,
@@ -14,6 +14,8 @@ const OPEN_DELAY_MS = 80;
 const HOVER_LEAVE_DELAY_MS = 220;
 const LEADERBOARD_POPOVER_OPEN_MS = 90;
 const LEADERBOARD_POPOVER_LEAVE_MS = 220;
+/** Keep reactor-name popovers this far from the viewport edges. */
+const LEADERBOARD_POPOVER_VIEWPORT_PAD_PX = 12;
 /** Default thumbs-up / chosen emoji on the main trigger. */
 const TRIGGER_EMOJI_FONT_PX = 20;
 
@@ -255,9 +257,12 @@ function ReactionLeaderboardWithNames({
 }) {
   const [openFor, setOpenFor] = useState<ReactionType | null>(null);
   const [finePointerHover, setFinePointerHover] = useState(false);
+  const [popoverShiftX, setPopoverShiftX] = useState(0);
   const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const triggerRefs = useRef<Partial<Record<ReactionType, HTMLDivElement | null>>>({});
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -274,6 +279,28 @@ function ReactionLeaderboardWithNames({
     hoverTimerRef.current = null;
     leaveTimerRef.current = null;
   }, []);
+
+  useLayoutEffect(() => {
+    if (!openFor) {
+      setPopoverShiftX(0);
+      return;
+    }
+    const popover = popoverRef.current;
+    const trigger = triggerRefs.current[openFor];
+    if (!popover || !trigger || typeof window === "undefined") return;
+
+    const popRect = popover.getBoundingClientRect();
+    const triggerRect = trigger.getBoundingClientRect();
+    const pad = LEADERBOARD_POPOVER_VIEWPORT_PAD_PX;
+    const viewportW = window.innerWidth;
+    // Prefer centering on the emoji chip, then nudge so the panel stays on-screen.
+    const centeredLeft = triggerRect.left + triggerRect.width / 2 - popRect.width / 2;
+    const clampedLeft = Math.min(
+      Math.max(centeredLeft, pad),
+      Math.max(pad, viewportW - pad - popRect.width),
+    );
+    setPopoverShiftX(clampedLeft - centeredLeft);
+  }, [openFor, reactorNamesByType]);
 
   useEffect(() => {
     if (!openFor) return;
@@ -325,6 +352,11 @@ function ReactionLeaderboardWithNames({
     })
     .join("; ");
 
+  const popoverMaxWidth =
+    typeof window !== "undefined"
+      ? Math.min(280, window.innerWidth - LEADERBOARD_POPOVER_VIEWPORT_PAD_PX * 2)
+      : 280;
+
   return (
     <div
       ref={wrapRef}
@@ -354,6 +386,9 @@ function ReactionLeaderboardWithNames({
         return (
           <div
             key={type}
+            ref={(el) => {
+              triggerRefs.current[type] = el;
+            }}
             style={{ position: "relative", display: "inline-flex", alignItems: "center" }}
             onMouseEnter={() => {
               if (!finePointerHover) return;
@@ -366,16 +401,18 @@ function ReactionLeaderboardWithNames({
           >
             {open ? (
               <div
+                ref={popoverRef}
                 role="tooltip"
                 id={`reaction-names-${type}`}
                 style={{
                   position: "absolute",
                   bottom: "100%",
-                  right: 0,
+                  left: "50%",
+                  transform: `translateX(calc(-50% + ${popoverShiftX}px))`,
                   marginBottom: 6,
                   zIndex: 60,
                   minWidth: 140,
-                  maxWidth: Math.min(280, typeof window !== "undefined" ? window.innerWidth - 24 : 280),
+                  maxWidth: popoverMaxWidth,
                   padding: "10px 12px",
                   borderRadius: 10,
                   border: `1px solid ${t.border}`,

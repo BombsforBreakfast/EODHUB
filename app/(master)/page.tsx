@@ -48,7 +48,7 @@ import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
 import ExpandableText from "../components/ExpandableText";
 import { fetchEventAttendeePreviews } from "../lib/fetchEventAttendeePreviews";
-import { FeedMediaAttachment, SelectedVideoPlaceholder } from "../components/FeedMediaAttachment";
+import { FeedMediaAttachment, SelectedVideoComposerPreview } from "../components/FeedMediaAttachment";
 import FeedPostHeader from "../components/FeedPostHeader";
 import HideBlockUserButton from "../components/HideBlockUserButton";
 import OptimizedAvatarImg from "../components/OptimizedAvatarImg";
@@ -7546,10 +7546,8 @@ export default function HomePage() {
                       aspectRatio: "1 / 1",
                     }}
                   >
-                    {isVideoAttachment && item.previewUrl ? (
-                      <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline preload="metadata" />
-                    ) : isVideoAttachment ? (
-                      <SelectedVideoPlaceholder fileName={item.file.name || "video"} />
+                    {isVideoAttachment ? (
+                      <SelectedVideoComposerPreview file={item.file} previewUrl={item.previewUrl} />
                     ) : item.kind === "pdf" ? (
                       <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: t.textMuted, padding: 8, textAlign: "center", wordBreak: "break-all" }}>
                         {item.file.name}

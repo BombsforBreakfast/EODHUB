@@ -34,7 +34,7 @@ import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../../../lib
 import { fetchBlockedUserIds, filterBlockedRows } from "../../../lib/userBlocks";
 import { prepareCroppedImageBlob, prepareFeedUploadFile, prepareEmployerDocumentUpload, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
 import { attachMuxVideosFromUrls, cancelMuxVideosFromUrls, uploadMuxFeedVideo } from "../../../lib/muxFeedUpload";
-import { FeedMediaAttachment, SelectedVideoPlaceholder } from "../../../components/FeedMediaAttachment";
+import { FeedMediaAttachment, SelectedVideoComposerPreview } from "../../../components/FeedMediaAttachment";
 import FeedImageGalleryModal from "../../../components/FeedImageGalleryModal";
 import OptimizedAvatarImg from "../../../components/OptimizedAvatarImg";
 import { galleryImageDisplayUrl } from "../../../lib/storageImageUrl";
@@ -6523,10 +6523,8 @@ export default function PublicProfilePage() {
                       const isVideoAttachment = item.kind === "video" || isVideoFile(item.file);
                       return (
                       <div key={`${item.file.name}-${i}`} style={{ position: "relative", aspectRatio: "1/1", borderRadius: 10, overflow: "hidden", border: `1px solid ${t.border}`, background: FEED_MEDIA_FRAME_BG }}>
-                        {isVideoAttachment && item.previewUrl ? (
-                          <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline preload="metadata" />
-                        ) : isVideoAttachment ? (
-                          <SelectedVideoPlaceholder fileName={item.file.name || "video"} />
+                        {isVideoAttachment ? (
+                          <SelectedVideoComposerPreview file={item.file} previewUrl={item.previewUrl} />
                         ) : item.kind === "pdf" ? (
                           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 4, fontSize: 11, color: t.textMuted }}>
                             <FileText size={28} color={t.textMuted} />

@@ -25,7 +25,7 @@ import {
 } from "../../../lib/native/pickFeedMedia";
 import { FEED_ACTION_ROW_GAP, FEED_ACTION_ROW_PADDING, FEED_MEDIA_FRAME_BG, FEED_MEDIA_RADIUS, FEED_POST_AVATAR_SIZE, FEED_POST_IMAGES_MAX_WIDTH, FEED_SECTION_GAP, feedContainedImageStyle, feedPostCardStyle } from "../../../lib/feedLayout";
 import FeedPostImageGrid from "../../../components/FeedPostImageGrid";
-import { FeedMediaAttachment } from "../../../components/FeedMediaAttachment";
+import { FeedMediaAttachment, SelectedVideoComposerPreview } from "../../../components/FeedMediaAttachment";
 import FeedImageGalleryModal from "../../../components/FeedImageGalleryModal";
 import { useFeedImageGallery } from "../../../hooks/useFeedImageGallery";
 import {
@@ -1793,13 +1793,8 @@ export default function UnitPage() {
                             aspectRatio: "1 / 1",
                           }}
                         >
-                          {isVideoFile(item.file) && item.previewUrl ? (
-                            <video src={item.previewUrl} style={feedContainedImageStyle} muted playsInline />
-                          ) : isVideoFile(item.file) ? (
-                            <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, padding: 8, color: "#fff", textAlign: "center" }}>
-                              <div style={{ fontSize: 12, fontWeight: 800 }}>Video selected</div>
-                              <div style={{ fontSize: 10, wordBreak: "break-all" }}>{item.file.name}</div>
-                            </div>
+                          {isVideoFile(item.file) ? (
+                            <SelectedVideoComposerPreview file={item.file} previewUrl={item.previewUrl} />
                           ) : item.kind === "pdf" ? (
                             <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 12, fontWeight: 700, padding: 8, textAlign: "center" }}>
                               PDF

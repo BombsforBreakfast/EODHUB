@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import MuxPlayer from "@mux/mux-player-react/lazy";
 import { AlertTriangle, File, FileArchive, FileText, LoaderCircle, Play } from "lucide-react";
 import { feedImageDisplayUrl } from "../lib/storageImageUrl";
@@ -9,6 +9,7 @@ import type { PostAttachment, PostAttachmentKind } from "../lib/postAttachments"
 import { getAccessToken } from "../lib/lib/supabaseClient";
 import { muxPosterUrl, type FeedVideoStatus } from "../lib/feedVideoUrl";
 import { FEED_SINGLE_IMAGE_MAX_HEIGHT } from "../lib/feedLayout";
+import { captureVideoFramePreviewUrl, videoPreviewSourceUrl } from "../lib/videoFramePreview";
 
 type Props = {
   attachment: Pick<
@@ -350,9 +351,11 @@ function FeedVideoAttachment({
 export function SelectedVideoPlaceholder({
   fileName,
   children,
+  statusLabel = "Video selected",
 }: {
   fileName: string;
   children?: ReactNode;
+  statusLabel?: string;
 }) {
   return (
     <div
@@ -383,9 +386,101 @@ export function SelectedVideoPlaceholder({
       >
         <Play size={18} color="white" fill="white" />
       </div>
-      <div style={{ fontSize: 12, fontWeight: 800 }}>Video selected</div>
+      <div style={{ fontSize: 12, fontWeight: 800 }}>{statusLabel}</div>
       <div style={{ fontSize: 10, opacity: 0.8, wordBreak: "break-all", maxWidth: "100%" }}>{fileName}</div>
       {children}
     </div>
+  );
+}
+
+/**
+ * Composer video tile: grabs a still frame so the user sees a photo preview
+ * before posting (works for blob URLs and native iOS path proxies).
+ */
+export function SelectedVideoComposerPreview({
+  file,
+  previewUrl,
+}: {
+  file: File;
+  previewUrl: string;
+}) {
+  const [posterUrl, setPosterUrl] = useState<string | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "failed">("loading");
+  const ownedUrlsRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatus("loading");
+    setPosterUrl(null);
+
+    const existingPreview = previewUrl || "";
+    const sourceUrl = videoPreviewSourceUrl(file, existingPreview || undefined);
+    if (!sourceUrl) {
+      setStatus("failed");
+      return;
+    }
+
+    // When we create a temporary blob URL (no existing preview), track it for revoke.
+    if (!existingPreview && sourceUrl.startsWith("blob:")) {
+      ownedUrlsRef.current.push(sourceUrl);
+    }
+
+    void captureVideoFramePreviewUrl(sourceUrl).then((frameUrl) => {
+      if (cancelled) {
+        if (frameUrl) URL.revokeObjectURL(frameUrl);
+        return;
+      }
+      if (frameUrl) {
+        ownedUrlsRef.current.push(frameUrl);
+        setPosterUrl(frameUrl);
+        setStatus("ready");
+        return;
+      }
+      setStatus("failed");
+    });
+
+    return () => {
+      cancelled = true;
+      for (const url of ownedUrlsRef.current) {
+        URL.revokeObjectURL(url);
+      }
+      ownedUrlsRef.current = [];
+    };
+  }, [file, previewUrl]);
+
+  if (posterUrl && status === "ready") {
+    return (
+      <div style={{ position: "relative", width: "100%", height: "100%", background: "#111" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- local object-URL poster */}
+        <img
+          src={posterUrl}
+          alt=""
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
+        <PlayOverlay size={36} iconSize={14} />
+      </div>
+    );
+  }
+
+  if (previewUrl && status !== "failed") {
+    return (
+      <div style={{ position: "relative", width: "100%", height: "100%", background: "#111" }}>
+        <video
+          src={previewUrl}
+          muted
+          playsInline
+          preload="metadata"
+          style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+        />
+        <PlayOverlay size={36} iconSize={14} />
+      </div>
+    );
+  }
+
+  return (
+    <SelectedVideoPlaceholder
+      fileName={file.name || "video"}
+      statusLabel={status === "loading" ? "Loading preview…" : "Video selected"}
+    />
   );
 }
