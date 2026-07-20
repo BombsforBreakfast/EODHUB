@@ -172,7 +172,7 @@ function videoShellStyle(style?: CSSProperties, aspectRatio = "16 / 9"): CSSProp
   };
 }
 
-const muxPlayerContainStyle: CSSProperties = {
+const muxPlayerContainStyle = {
   width: "100%",
   height: "100%",
   maxWidth: "100%",
@@ -180,8 +180,8 @@ const muxPlayerContainStyle: CSSProperties = {
   display: "block",
   objectFit: "contain",
   // Mux media chrome can otherwise size to intrinsic video pixels.
-  ["--media-object-fit" as string]: "contain",
-};
+  "--media-object-fit": "contain",
+} as const;
 
 function FeedVideoAttachment({
   attachment,
