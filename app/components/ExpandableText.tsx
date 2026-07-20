@@ -69,13 +69,16 @@ export default function ExpandableText({
       };
 
   return (
-    <div style={wrapperStyle}>
+    <div style={{ maxWidth: "100%", minWidth: 0, ...wrapperStyle }}>
       <div
         ref={contentRef}
         style={{
           lineHeight: 1.5,
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
+          overflowWrap: "anywhere",
+          maxWidth: "100%",
+          minWidth: 0,
           ...style,
           ...clampStyle,
         }}

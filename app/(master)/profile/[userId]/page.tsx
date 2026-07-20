@@ -4005,6 +4005,10 @@ export default function PublicProfilePage() {
       padding: 16,
       display: "grid",
       gap: 12,
+      width: "100%",
+      maxWidth: "100%",
+      minWidth: 0,
+      boxSizing: "border-box",
     };
 
     const sectionTitle: React.CSSProperties = {
@@ -4520,7 +4524,19 @@ export default function PublicProfilePage() {
   const renderProfileCenter = () => {
     if (!profile) return null;
     return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: isMobile ? 20 : 0 }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 20,
+        marginTop: isMobile ? 20 : 0,
+        width: "100%",
+        maxWidth: "100%",
+        minWidth: 0,
+        boxSizing: "border-box",
+        overflowX: "clip",
+      }}
+    >
 
         {renderBusinessProfilePreviewChrome()}
 
@@ -4717,6 +4733,11 @@ export default function PublicProfilePage() {
               borderRadius: 16,
               padding: isBusinessOrgProfile ? (isMobile ? "10px 16px" : "12px 24px") : 24,
               background: t.surface,
+              width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
+              boxSizing: "border-box",
+              overflow: "hidden",
             }}
           >
             {wallAsOwner && (
@@ -6401,10 +6422,10 @@ export default function PublicProfilePage() {
           )}
 
           {/* Wall */}
-          <div style={{ paddingTop: 4 }}>
+          <div style={{ paddingTop: 4, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
 
             {(wallAsOwner || isMutualConnection) && (
-              <div id="profile-wall-composer" style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+              <div id="profile-wall-composer" style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", overflow: "hidden" }}>
                 {wallAsOwner && canUsePostAsSelector(currentUserEmail) && postAsAdminProfile ? (
                   <PostAsSelector
                     mode={postAsMode}
@@ -6685,7 +6706,7 @@ export default function PublicProfilePage() {
               </div>
             )}
 
-            <div style={{ marginTop: 20, display: "grid", gap: 16 }}>
+            <div style={{ marginTop: 20, display: "grid", gap: 16, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
               {posts.length === 0 && <div style={{ color: t.textMuted }}>No wall posts yet.</div>}
 
               {posts.map((post, postIndex) => {
@@ -6696,7 +6717,7 @@ export default function PublicProfilePage() {
                 const isEditingPost = editingPostId === post.id;
 
                 return (
-                  <div id={`wall-post-${post.id}`} key={post.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface, minWidth: 0, maxWidth: "100%", overflow: "hidden", boxSizing: "border-box" }}>
+                  <div id={`wall-post-${post.id}`} key={post.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface, width: "100%", minWidth: 0, maxWidth: "100%", overflow: "hidden", boxSizing: "border-box" }}>
                     {/* Post header */}
                     {(() => {
                       const postAuthorPhoto = post.authorPhotoUrl ?? profile.photo_url;
@@ -6823,7 +6844,8 @@ export default function PublicProfilePage() {
                       ) && (
                       <ExpandableText
                         textLength={post.content.length}
-                        wrapperStyle={{ marginTop: 10 }}
+                        wrapperStyle={{ marginTop: 10, maxWidth: "100%", minWidth: 0, overflowWrap: "anywhere" }}
+                        style={{ maxWidth: "100%", minWidth: 0, overflowWrap: "anywhere", wordBreak: "break-word" }}
                         toggleColor={t.textMuted}
                       >
                         {renderContent(post.content)}
@@ -7085,15 +7107,15 @@ export default function PublicProfilePage() {
 
                     {/* Comments section */}
                     {(post.comments.length > 0 || commentsOpen) && (
-                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}` }}>
+                      <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.border}`, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
                         {post.comments.length > 0 && (
-                        <div style={{ display: "grid", gap: 4 }}>
+                        <div style={{ display: "grid", gap: 4, width: "100%", maxWidth: "100%", minWidth: 0 }}>
                           {(commentsOpen ? post.comments : post.comments.slice(0, 2)).map((comment) => {
                             const textExpanded = expandedCommentTexts[comment.id] || false;
                             const isLong = (comment.content?.length ?? 0) > 100;
                             return (
-                            <div key={comment.id} style={{ background: t.bg, borderRadius: 10, padding: 6 }}>
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                            <div key={comment.id} style={{ background: t.bg, borderRadius: 10, padding: 6, maxWidth: "100%", minWidth: 0, boxSizing: "border-box", overflow: "hidden" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, maxWidth: "100%", minWidth: 0 }}>
                                 <div style={{ display: "flex", gap: 10, alignItems: "center", flex: 1, minWidth: 0 }}>
                                   <div style={{ width: 24, height: 24, borderRadius: "50%", overflow: "hidden", background: t.border, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: getServiceRingColor(comment.authorService) ? `3px solid ${getServiceRingColor(comment.authorService)}` : undefined }}>
                                     {comment.authorPhotoUrl
@@ -7121,8 +7143,8 @@ export default function PublicProfilePage() {
                                 )}
                               </div>
                               {comment.content && (
-                                <div style={{ marginTop: 3 }}>
-                                  <div style={{ fontSize: 13, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2 }}>
+                                <div style={{ marginTop: 3, maxWidth: "100%", minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, lineHeight: 1.45, overflow: "hidden", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: textExpanded ? undefined : 2, maxWidth: "100%", overflowWrap: "anywhere", wordBreak: "break-word" }}>
                                     {renderContent(comment.content)}
                                   </div>
                                   {isLong && (
@@ -7631,7 +7653,9 @@ export default function PublicProfilePage() {
       />
     </div>
       ) : (
-        renderProfileCenterContent()
+        <div style={{ width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", overflowX: "clip" }}>
+          {renderProfileCenterContent()}
+        </div>
       )}
 
     {/* Photo Lightbox Modal */}

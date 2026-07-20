@@ -169,6 +169,8 @@ function videoShellStyle(style?: CSSProperties, aspectRatio = "16 / 9"): CSSProp
     background: "#111",
     borderRadius: style?.borderRadius,
     lineHeight: 0,
+    // Isolate intrinsic media size so flex/grid ancestors cannot grow from video min-content.
+    contain: "inline-size",
   };
 }
 

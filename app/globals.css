@@ -555,7 +555,14 @@ a.rabbithole-brand-link:focus-visible {
   .desktop-layout-center {
     min-width: 0;
     max-width: 100%;
-    overflow: visible;
+    width: 100%;
+    overflow-x: clip;
+    box-sizing: border-box;
+  }
+
+  .desktop-layout-center > * {
+    min-width: 0;
+    max-width: 100%;
   }
 }
 
