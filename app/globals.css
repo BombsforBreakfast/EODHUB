@@ -26,6 +26,25 @@ html.native-shell-ios body {
 }
 
 /*
+ * Mux feed players — custom elements keep an intrinsic min-width that can blow
+ * past card padding on iOS/Android WebViews. Force containment everywhere.
+ */
+mux-player,
+.feed-mux-player {
+  display: block !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+mux-player::part(video),
+.feed-mux-player::part(video) {
+  max-width: 100%;
+  object-fit: contain;
+}
+
+/*
  * iOS zooms the visual viewport when a focused form control renders below
  * 16px, and often keeps that zoom after submit. Keep native controls at the
  * threshold while leaving user pinch-to-zoom enabled.

@@ -58,6 +58,7 @@ export default function YouTubeEmbed({
         aspectRatio: "16 / 9",
         width: "100%",
         maxWidth,
+        minWidth: 0,
         background: "#0a0a0a",
         boxSizing: "border-box",
         ...style,

@@ -44,14 +44,29 @@ export const FEED_MEDIA_FRAME_BG = "#111827" as const;
 
 /** Single post image shell — natural aspect ratio (portrait flyers fill width). */
 export const feedSingleMediaFrameStyle = {
-  position: "relative",
-  display: "block",
-  width: "100%",
-  overflow: "hidden",
+  position: "relative" as const,
+  display: "block" as const,
+  width: "100%" as const,
+  maxWidth: "100%" as const,
+  minWidth: 0,
+  overflow: "hidden" as const,
   borderRadius: FEED_MEDIA_RADIUS,
   background: FEED_MEDIA_FRAME_BG,
   lineHeight: 0,
-} as const;
+  boxSizing: "border-box" as const,
+};
+
+/**
+ * Grid wrapper for post media — keeps Mux/video intrinsic min-width from
+ * expanding past the card on iOS WebView and CSS grid.
+ */
+export const feedMediaGridStyle = {
+  display: "grid" as const,
+  width: "100%" as const,
+  maxWidth: FEED_POST_IMAGES_MAX_WIDTH,
+  minWidth: 0,
+  boxSizing: "border-box" as const,
+};
 
 type FeedThemeLike = {
   borderLight: string;
@@ -67,6 +82,7 @@ export function feedPostCardStyle(t: FeedThemeLike) {
     background: "transparent" as const,
     minWidth: 0,
     maxWidth: "100%" as const,
+    overflow: "hidden" as const,
     boxSizing: "border-box" as const,
   };
 }
@@ -74,18 +90,34 @@ export function feedPostCardStyle(t: FeedThemeLike) {
 /** Image inside a fixed-ratio frame — preserves natural aspect ratio */
 export const feedContainedImageStyle = {
   width: "100%",
+  maxWidth: "100%",
+  minWidth: 0,
   height: "100%",
-  objectFit: "contain",
+  objectFit: "contain" as const,
   objectPosition: "center",
-  display: "block",
-} as const;
+  display: "block" as const,
+  boxSizing: "border-box" as const,
+};
 
 /** Single full-width feed image — natural height, capped for very tall assets. */
 export const feedSingleImageStyle = {
   width: "100%",
-  height: "auto",
+  maxWidth: "100%",
+  minWidth: 0,
+  height: "auto" as const,
   maxHeight: FEED_SINGLE_IMAGE_MAX_HEIGHT,
-  objectFit: "contain",
+  objectFit: "contain" as const,
   objectPosition: "center",
-  display: "block",
-} as const;
+  display: "block" as const,
+  boxSizing: "border-box" as const,
+};
+
+/** Shared containment for Mux / HTML5 video shells inside feed cards. */
+export const feedVideoShellContainStyle = {
+  width: "100%" as const,
+  maxWidth: "100%" as const,
+  minWidth: 0,
+  overflow: "hidden" as const,
+  boxSizing: "border-box" as const,
+  display: "block" as const,
+};

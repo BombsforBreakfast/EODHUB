@@ -8,7 +8,7 @@ import { attachmentRenderKindFromUrl, isVideoUrl } from "../lib/uploadLimits";
 import type { PostAttachment, PostAttachmentKind } from "../lib/postAttachments";
 import { getAccessToken } from "../lib/lib/supabaseClient";
 import { muxPosterUrl, type FeedVideoStatus } from "../lib/feedVideoUrl";
-import { FEED_SINGLE_IMAGE_MAX_HEIGHT } from "../lib/feedLayout";
+import { FEED_SINGLE_IMAGE_MAX_HEIGHT, feedVideoShellContainStyle } from "../lib/feedLayout";
 import { captureVideoFramePreviewUrl, videoPreviewSourceUrl } from "../lib/videoFramePreview";
 
 type Props = {
@@ -154,20 +154,34 @@ export function FeedMediaAttachment({
 }
 
 function videoShellStyle(style?: CSSProperties, aspectRatio = "16 / 9"): CSSProperties {
+  const maxHeight =
+    typeof style?.maxHeight === "string" || typeof style?.maxHeight === "number"
+      ? style.maxHeight
+      : FEED_SINGLE_IMAGE_MAX_HEIGHT;
+
   return {
+    ...feedVideoShellContainStyle,
     position: "relative",
-    width: "100%",
+    // Prefer width-driven sizing; never let aspect-ratio + max-height expand past the card.
     aspectRatio,
-    maxHeight:
-      typeof style?.maxHeight === "string" || typeof style?.maxHeight === "number"
-        ? style.maxHeight
-        : FEED_SINGLE_IMAGE_MAX_HEIGHT,
+    maxHeight,
+    height: "auto",
     background: "#111",
-    overflow: "hidden",
     borderRadius: style?.borderRadius,
     lineHeight: 0,
   };
 }
+
+const muxPlayerContainStyle: CSSProperties = {
+  width: "100%",
+  height: "100%",
+  maxWidth: "100%",
+  minWidth: 0,
+  display: "block",
+  objectFit: "contain",
+  // Mux media chrome can otherwise size to intrinsic video pixels.
+  ["--media-object-fit" as string]: "contain",
+};
 
 function FeedVideoAttachment({
   attachment,
@@ -266,13 +280,12 @@ function FeedVideoAttachment({
           role="presentation"
           onClick={handlePlayClick}
           style={{
+            ...feedVideoShellContainStyle,
             position: "relative",
-            width: "100%",
             cursor: "pointer",
             background: "#111",
             lineHeight: 0,
             borderRadius: style?.borderRadius,
-            overflow: "hidden",
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element -- Mux CDN poster */}
@@ -287,6 +300,8 @@ function FeedVideoAttachment({
             }}
             style={{
               width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
               height: "auto",
               maxHeight:
                 typeof style?.maxHeight === "string" || typeof style?.maxHeight === "number"
@@ -295,6 +310,7 @@ function FeedVideoAttachment({
               display: "block",
               objectFit: "contain",
               background: "#111",
+              boxSizing: "border-box",
             }}
           />
           <PlayOverlay />
@@ -319,7 +335,8 @@ function FeedVideoAttachment({
           playsInline
           poster={muxState.posterUrl}
           metadata={{ video_title: attachment.fileName || "Feed video" }}
-          style={{ width: "100%", height: "100%", objectFit: "contain" }}
+          style={muxPlayerContainStyle}
+          className="feed-mux-player"
         />
       </div>
     );
@@ -334,14 +351,14 @@ function FeedVideoAttachment({
       preload="metadata"
       onClick={(e) => e.stopPropagation()}
       style={{
-        width: "100%",
+        ...feedVideoShellContainStyle,
         height: "auto",
         maxHeight:
           typeof style?.maxHeight === "string" || typeof style?.maxHeight === "number"
             ? style.maxHeight
             : FEED_SINGLE_IMAGE_MAX_HEIGHT,
-        display: "block",
         background: "#111",
+        borderRadius: style?.borderRadius,
       }}
     />
   );

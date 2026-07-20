@@ -132,7 +132,16 @@ export default function FeedImageGalleryModal({
                 poster={muxPosterUrl(muxVideo.playbackId)}
                 autoPlay
                 playsInline
-                style={{ width: "100%", height: "100%", display: "block", background: "#000" }}
+                className="feed-mux-player"
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  maxWidth: "100%",
+                  minWidth: 0,
+                  display: "block",
+                  background: "#000",
+                  boxSizing: "border-box",
+                }}
               />
             ) : muxVideo ? (
               <div style={{ color: "#fff", fontWeight: 700, textAlign: "center", padding: 24 }}>

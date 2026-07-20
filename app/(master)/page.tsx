@@ -8812,13 +8812,14 @@ export default function HomePage() {
                                 display: "grid",
                                 gridTemplateColumns:
                                   visibleImages.length === 1
-                                    ? "1fr"
+                                    ? "minmax(0, 1fr)"
                                     : visibleImages.length === 2
                                     ? "repeat(2, minmax(0, 1fr))"
                                     : "repeat(3, minmax(0, 1fr))",
                                 gap: FEED_MEDIA_GRID_GAP,
                                 width: "100%",
                                 maxWidth: FEED_POST_IMAGES_MAX_WIDTH,
+                                minWidth: 0,
                                 boxSizing: "border-box",
                               }}
                             >
@@ -8852,6 +8853,9 @@ export default function HomePage() {
                                       padding: 0,
                                       cursor: "pointer",
                                       width: "100%",
+                                      maxWidth: "100%",
+                                      minWidth: 0,
+                                      boxSizing: "border-box",
                                     }}
                                   >
                                     <FeedMediaAttachment

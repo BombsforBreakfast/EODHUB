@@ -6696,7 +6696,7 @@ export default function PublicProfilePage() {
                 const isEditingPost = editingPostId === post.id;
 
                 return (
-                  <div id={`wall-post-${post.id}`} key={post.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface }}>
+                  <div id={`wall-post-${post.id}`} key={post.id} style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface, minWidth: 0, maxWidth: "100%", overflow: "hidden", boxSizing: "border-box" }}>
                     {/* Post header */}
                     {(() => {
                       const postAuthorPhoto = post.authorPhotoUrl ?? profile.photo_url;
@@ -6853,9 +6853,16 @@ export default function PublicProfilePage() {
                           style={{
                             marginTop: 12,
                             display: "grid",
-                            gridTemplateColumns: isSingleImage ? "1fr" : visible.length === 2 ? "repeat(2, 1fr)" : "repeat(3, 1fr)",
+                            gridTemplateColumns: isSingleImage
+                              ? "minmax(0, 1fr)"
+                              : visible.length === 2
+                                ? "repeat(2, minmax(0, 1fr))"
+                                : "repeat(3, minmax(0, 1fr))",
                             gap: 8,
+                            width: "100%",
                             maxWidth: isSingleImage ? "100%" : 420,
+                            minWidth: 0,
+                            boxSizing: "border-box",
                           }}
                         >
                           {visible.map((attachment, i) => (
@@ -6885,6 +6892,10 @@ export default function PublicProfilePage() {
                                       border: `1px solid ${t.border}`,
                                       background: FEED_MEDIA_FRAME_BG,
                                       padding: 0,
+                                      width: "100%",
+                                      maxWidth: "100%",
+                                      minWidth: 0,
+                                      boxSizing: "border-box",
                                       cursor:
                                         attachment.kind === "pdf" || attachment.kind === "cad3d" || attachment.kind === "other"
                                           ? "pointer"

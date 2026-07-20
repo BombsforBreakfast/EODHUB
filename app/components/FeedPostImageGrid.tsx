@@ -9,6 +9,7 @@ import {
   FEED_POST_IMAGES_MAX_WIDTH,
   FEED_SECTION_GAP,
   feedContainedImageStyle,
+  feedMediaGridStyle,
   feedSingleImageStyle,
   feedSingleMediaFrameStyle,
 } from "../lib/feedLayout";
@@ -35,18 +36,16 @@ export default function FeedPostImageGrid({
   return (
     <div
       style={{
+        ...feedMediaGridStyle,
         marginTop: FEED_SECTION_GAP,
-        display: "grid",
         gridTemplateColumns:
           visibleImages.length === 1
-            ? "1fr"
+            ? "minmax(0, 1fr)"
             : visibleImages.length === 2
               ? "repeat(2, minmax(0, 1fr))"
               : "repeat(3, minmax(0, 1fr))",
         gap: FEED_MEDIA_GRID_GAP,
-        width: "100%",
         maxWidth,
-        boxSizing: "border-box",
       }}
     >
       {visibleImages.map((attachment, index) => {
@@ -79,11 +78,17 @@ export default function FeedPostImageGrid({
                     overflow: "hidden",
                     background: FEED_MEDIA_FRAME_BG,
                     aspectRatio: "1 / 1",
+                    width: "100%",
+                    maxWidth: "100%",
+                    minWidth: 0,
+                    boxSizing: "border-box",
                   }),
               border: isSingleImage ? "none" : `1px solid ${borderColor}`,
               padding: 0,
               cursor: "pointer",
               width: "100%",
+              maxWidth: "100%",
+              minWidth: 0,
             }}
           >
             <FeedMediaAttachment
