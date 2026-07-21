@@ -51,6 +51,10 @@
     {
       "path": "/api/cron/mux-video-reconcile",
       "schedule": "17 * * * *"
+    },
+    {
+      "path": "/api/cron/arcade-credits-refill",
+      "schedule": "0 0 * * *"
     }
   ]
 }

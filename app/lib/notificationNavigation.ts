@@ -180,6 +180,10 @@ export function getNotificationHref(
     return `/profile/${nNorm.post_owner_id}`;
   }
 
+  if (nNorm.type === "arcade_credits_refilled") {
+    return "/games";
+  }
+
   if (nNorm.type === "mention_post" || nNorm.type === "mention_comment") {
     if (nNorm.post_id) {
       return feedDeepLink(
@@ -213,6 +217,7 @@ export function getNotificationIcon(n: NotificationNavInput): string {
   if (t === "kangaroo_court_opened" || t === "kangaroo_court_verdict") return "⚖️";
   if (t === "job_save" || (lower.includes("job") && lower.includes("saved"))) return "💼";
   if (lower.includes("message") || t === "connection_request") return "💬";
+  if (t === "arcade_credits_refilled" || lower.includes("game credit") || lower.includes("arcade")) return "🎮";
   if (lower.includes("verified") || lower.includes("vouch")) return "✅";
   if (lower.includes("bug report")) return "🐛";
   if (lower.includes("flag")) return "🚩";
