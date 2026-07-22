@@ -43,6 +43,7 @@ export async function blockUser(
   supabase: SupabaseClient,
   blockedId: string,
   reason?: string,
+  context?: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const {
     data: { session },
@@ -56,7 +57,7 @@ export async function blockUser(
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ blockedId, reason }),
+    body: JSON.stringify({ blockedId, reason, context }),
   });
 
   if (res.ok) return { ok: true };

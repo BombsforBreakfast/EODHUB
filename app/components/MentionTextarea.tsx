@@ -4,6 +4,8 @@ import { forwardRef, useEffect, useRef, useState } from "react";
 import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 
+export { extractMentionIds } from "../lib/mentions";
+
 type MentionUser = {
   user_id: string;
   first_name: string | null;
@@ -21,15 +23,6 @@ type Props = {
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onPaste?: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void;
 };
-
-// Parse stored @[Name](userId) syntax → extract userIds for notifications
-export function extractMentionIds(rawContent: string): string[] {
-  const re = /@\[([^\]]+)\]\(([^)]+)\)/g;
-  const ids: string[] = [];
-  let m;
-  while ((m = re.exec(rawContent)) !== null) ids.push(m[2]);
-  return [...new Set(ids)];
-}
 
 // Map a position in the display string (@Name) to the corresponding position in the raw string (@[Name](userId))
 function displayPosToRaw(raw: string, displayPos: number): number {

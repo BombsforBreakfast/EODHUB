@@ -1,14 +1,18 @@
-/** Ephemeral lobby chatroom helpers (24h messages, presence-gated entry). */
+/** Ephemeral lobby chatroom helpers (24h messages; room stays open for all members). */
 
 export const CHATROOM_ROOM_ID = "lobby";
+/** Max length of the visible message (after expanding mentions to @Name). */
 export const CHATROOM_MESSAGE_MAX_LEN = 500;
-export const CHATROOM_OPEN_MIN_PRESENCE = 3;
-export const CHATROOM_BANNER_DISMISS_KEY = "eod_chatroom_banner_dismissed";
-
-/** Owner account — always see chat entry on localhost for QA. */
-export const CHATROOM_LOCAL_QA_USER_IDS = new Set<string>([
-  "a28ddac8-dc3a-4ae1-83f5-b675e7b85871", // Michael Twigg
-]);
+/** Max length of stored body including `@[Name](userId)` tokens. */
+export const CHATROOM_MESSAGE_RAW_MAX_LEN = 2000;
+/** Session-only dismiss for the “chat’s live” prompt (X / Enter). */
+export const CHATROOM_LIVE_PROMPT_SESSION_KEY = "eod_chatroom_live_prompt_dismissed";
+/** Session-only collapse of the Team Room ephemeral warning banner. */
+export const CHATROOM_WARNING_BANNER_SESSION_KEY = "eod_chatroom_warning_banner_dismissed";
+/** Calendar-day mute for “Don’t show this again today”. */
+export const CHATROOM_LIVE_PROMPT_MUTE_DAY_KEY = "eod_chatroom_live_prompt_mute_day";
+/** Show the live prompt once at least this many members are online. */
+export const CHATROOM_LIVE_PROMPT_MIN_ONLINE = 3;
 
 export const CHATROOM_TAGS = ["general", "question", "looking", "hiring"] as const;
 export type ChatroomTag = (typeof CHATROOM_TAGS)[number];
@@ -24,25 +28,87 @@ export function isChatroomTag(v: string | null | undefined): v is ChatroomTag {
   return !!v && (CHATROOM_TAGS as readonly string[]).includes(v);
 }
 
-export function isLocalDevHost(): boolean {
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    return host === "localhost" || host === "127.0.0.1";
+/** Chat entry: signed-in members on native iOS only (web/desktop launch later). */
+export function isChatroomUiUnlocked(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const cap = (
+      window as Window & {
+        Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string };
+      }
+    ).Capacitor;
+    if (cap?.isNativePlatform?.()) return cap.getPlatform?.() === "ios";
+    if (!/Capacitor/i.test(window.navigator.userAgent)) return false;
+    return /iPhone|iPad|iPod/i.test(window.navigator.userAgent);
+  } catch {
+    return false;
   }
-  return process.env.NODE_ENV === "development";
 }
 
-/** Localhost-only QA: owner can always open the chatroom regardless of presence. */
-export function canAlwaysAccessChatroomQa(userId: string | null | undefined): boolean {
-  if (!userId || !CHATROOM_LOCAL_QA_USER_IDS.has(userId)) return false;
-  return isLocalDevHost();
+/** True when this client may open Team Room UI. */
+export function isChatroomEntryAvailable(userId: string | null | undefined): boolean {
+  return Boolean(userId) && isChatroomUiUnlocked();
 }
 
-export function isChatroomEntryAvailable(
-  onlineCount: number,
-  userId: string | null | undefined,
-): boolean {
-  return onlineCount >= CHATROOM_OPEN_MIN_PRESENCE || canAlwaysAccessChatroomQa(userId);
+function localDayKey(d = new Date()): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+export function isChatroomLivePromptSessionDismissed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return sessionStorage.getItem(CHATROOM_LIVE_PROMPT_SESSION_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function dismissChatroomLivePromptForSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(CHATROOM_LIVE_PROMPT_SESSION_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
+export function isChatroomLivePromptMutedToday(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(CHATROOM_LIVE_PROMPT_MUTE_DAY_KEY) === localDayKey();
+  } catch {
+    return false;
+  }
+}
+
+export function muteChatroomLivePromptForToday(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CHATROOM_LIVE_PROMPT_MUTE_DAY_KEY, localDayKey());
+  } catch {
+    /* ignore */
+  }
+}
+
+export function isChatroomWarningBannerDismissed(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return sessionStorage.getItem(CHATROOM_WARNING_BANNER_SESSION_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function dismissChatroomWarningBannerForSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.setItem(CHATROOM_WARNING_BANNER_SESSION_KEY, "1");
+  } catch {
+    /* ignore */
+  }
 }
 
 export type ChatroomMessageDto = {

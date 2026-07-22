@@ -2025,19 +2025,29 @@ export default function AdminPage() {
     const unitPostIds = rawFlags.filter((f) => f.content_type === "unit_post").map((f) => f.content_id);
     const commentIds = rawFlags.filter((f) => f.content_type === "comment").map((f) => f.content_id);
     const messageIds = rawFlags.filter((f) => f.content_type === "message").map((f) => f.content_id);
+    const chatroomMessageIds = rawFlags
+      .filter((f) => f.content_type === "chatroom_message")
+      .map((f) => f.content_id);
 
-    const [profilesRes, postsRes, unitPostsRes, commentsRes, msgsRes] = await Promise.all([
+    const [profilesRes, postsRes, unitPostsRes, commentsRes, msgsRes, chatroomSnapsRes] = await Promise.all([
       reporterIds.length > 0 ? supabase.from("profiles").select("user_id, first_name, last_name, display_name").in("user_id", reporterIds) : { data: [] },
       postIds.length > 0 ? supabase.from("posts").select("id, user_id, content").in("id", postIds) : { data: [] },
       unitPostIds.length > 0 ? supabase.from("unit_posts").select("id, user_id, content").in("id", unitPostIds) : { data: [] },
       commentIds.length > 0 ? supabase.from("post_comments").select("id, user_id, content").in("id", commentIds) : { data: [] },
       messageIds.length > 0 ? supabase.from("messages").select("id, sender_id, content, gif_url").in("id", messageIds) : { data: [] },
+      chatroomMessageIds.length > 0
+        ? supabase
+            .from("chatroom_flag_snapshots")
+            .select("message_id, author_id, body")
+            .in("message_id", chatroomMessageIds)
+        : { data: [] },
     ]);
 
     type ProfileRow = { user_id: string; first_name: string | null; last_name: string | null; display_name: string | null };
     type PostRow = { id: string; user_id: string; content: string | null };
     type CommentRow = { id: string; user_id: string; content: string | null };
     type MsgRow = { id: string; sender_id: string; content: string | null; gif_url: string | null };
+    type ChatroomSnapRow = { message_id: string; author_id: string; body: string };
 
     const profileMap = new Map<string, string>();
     ((profilesRes.data ?? []) as ProfileRow[]).forEach((p) => {
@@ -2061,6 +2071,13 @@ export default function AdminPage() {
     ((msgsRes.data ?? []) as MsgRow[]).forEach((m) => {
       contentMap.set(m.id, m.content || (m.gif_url ? "[GIF message]" : ""));
       authorByContentId.set(m.id, m.sender_id);
+    });
+    ((chatroomSnapsRes.data ?? []) as ChatroomSnapRow[]).forEach((s) => {
+      // Prefer first snapshot for a message id
+      if (!contentMap.has(s.message_id)) {
+        contentMap.set(s.message_id, s.body || "");
+        authorByContentId.set(s.message_id, s.author_id);
+      }
     });
 
     const authorIds = [...new Set(rawFlags.map((f) => authorByContentId.get(f.content_id)).filter(Boolean))] as string[];

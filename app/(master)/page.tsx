@@ -67,6 +67,7 @@ import { getFeatureAccess } from "../lib/featureAccess";
 import { extractFirstUrl, isEmailDomainMatch, URL_PATTERN_G } from "../lib/urlPreview";
 import { applyJobFilters, uniqueJobRegionOptions, type JobFilterState } from "../lib/jobFilters";
 import { jobListingCutoffIso } from "../lib/jobRetention";
+import { isChatroomUiUnlocked } from "../lib/chatroom";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
 import { postNotifyJson } from "../lib/postNotifyClient";
 import {
@@ -151,7 +152,6 @@ import { MemorialDisclaimer } from "../components/memorial/MemorialDisclaimer";
 import { memorialTheme } from "../components/memorial/memorialModalShared";
 import { getServiceRingColor } from "../lib/serviceBranchVisual";
 import { ensureWelcomeSidebarOnce } from "../lib/welcomeSidebarClient";
-import { CHATROOM_BANNER_DISMISS_KEY } from "../lib/chatroom";
 import {
   shouldRedirectToOnboarding,
 } from "../lib/onboardingGate";
@@ -186,7 +186,7 @@ const BTMF_DONATION_URL = "https://www.paypal.com/ncp/payment/SMU4NWRW55V6L";
 const EmojiPickerButton = dynamic(() => import("../components/EmojiPickerButton"), { ssr: false });
 const GifPickerButton = dynamic(() => import("../components/GifPickerButton"), { ssr: false });
 const OnlineNowStrip = dynamic(() => import("../components/OnlineNowStrip"), { ssr: false });
-const ChatroomOpenBanner = dynamic(() => import("../components/ChatroomOpenBanner"), { ssr: false });
+const ChatroomLivePrompt = dynamic(() => import("../components/ChatroomLivePrompt"), { ssr: false });
 const ChatroomModal = dynamic(() => import("../components/ChatroomModal"), { ssr: false });
 const MemberPaywallModal = dynamic(() => import("../components/MemberPaywallModal"), { ssr: false });
 const SidebarThreadDrawer = dynamic(() => import("../components/SidebarThreadDrawer"), { ssr: false });
@@ -1009,18 +1009,23 @@ export default function HomePage() {
   const [userId, setUserId] = useState<string | null>(null);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
   const [chatroomOpen, setChatroomOpen] = useState(false);
-  const [chatroomAvailable, setChatroomAvailable] = useState(false);
-  const [chatroomBannerDismissed, setChatroomBannerDismissed] = useState(false);
+  const [chatroomUiUnlocked, setChatroomUiUnlocked] = useState(false);
+
   useEffect(() => {
-    try {
-      setChatroomBannerDismissed(sessionStorage.getItem(CHATROOM_BANNER_DISMISS_KEY) === "1");
-    } catch {
-      /* ignore */
-    }
+    setChatroomUiUnlocked(isChatroomUiUnlocked());
   }, []);
-  const handleChatAvailabilityChange = useCallback((available: boolean) => {
-    setChatroomAvailable(available);
-  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !chatroomUiUnlocked) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("chatroom") !== "1") return;
+    setChatroomOpen(true);
+    params.delete("chatroom");
+    const qs = params.toString();
+    const next = `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`;
+    window.history.replaceState({}, "", next);
+  }, [chatroomUiUnlocked]);
+
   const savedJobsQuery = useQuery({
     queryKey: userId ? queryKeys.savedJobs(userId) : queryKeys.savedJobs("pending"),
     queryFn: () => fetchSavedJobs(supabase, userId as string),
@@ -7444,30 +7449,26 @@ export default function HomePage() {
             </div>
           )}
 
-          <ChatroomOpenBanner
-            visible={chatroomAvailable && !chatroomBannerDismissed}
-            onEnter={() => setChatroomOpen(true)}
-            onDismiss={() => {
-              setChatroomBannerDismissed(true);
-              try {
-                sessionStorage.setItem(CHATROOM_BANNER_DISMISS_KEY, "1");
-              } catch {
-                /* ignore */
-              }
-            }}
-          />
+          {chatroomUiUnlocked && (
+            <ChatroomLivePrompt
+              currentUserId={userId}
+              chatroomOpen={chatroomOpen}
+              onEnter={() => setChatroomOpen(true)}
+            />
+          )}
 
           <OnlineNowStrip
             currentUserId={userId}
-            onEnterChat={() => setChatroomOpen(true)}
-            onChatAvailabilityChange={handleChatAvailabilityChange}
+            onEnterChat={chatroomUiUnlocked ? () => setChatroomOpen(true) : undefined}
           />
 
-          <ChatroomModal
-            open={chatroomOpen}
-            currentUserId={userId}
-            onClose={() => setChatroomOpen(false)}
-          />
+          {chatroomUiUnlocked && (
+            <ChatroomModal
+              open={chatroomOpen}
+              currentUserId={userId}
+              onClose={() => setChatroomOpen(false)}
+            />
+          )}
 
           <div
             style={{

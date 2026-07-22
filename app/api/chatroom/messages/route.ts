@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
   CHATROOM_MESSAGE_MAX_LEN,
+  CHATROOM_MESSAGE_RAW_MAX_LEN,
   CHATROOM_ROOM_ID,
   isChatroomTag,
   type ChatroomMessageDto,
 } from "../../../lib/chatroom";
+import { extractMentionIds, mentionsToDisplayText } from "../../../lib/mentions";
+import { createNotification } from "../../../lib/notificationsServer";
 import { fetchBlockedUserIds } from "../../../lib/userBlocks";
 import { hasFullPlatformAccess, type VerificationProfile } from "../../../lib/verificationAccess";
 
@@ -160,8 +163,12 @@ export async function POST(req: NextRequest) {
   if (!text) {
     return NextResponse.json({ error: "Message cannot be empty." }, { status: 400 });
   }
-  if (text.length > CHATROOM_MESSAGE_MAX_LEN) {
+  const displayText = mentionsToDisplayText(text);
+  if (displayText.length > CHATROOM_MESSAGE_MAX_LEN) {
     return NextResponse.json({ error: `Message max ${CHATROOM_MESSAGE_MAX_LEN} characters.` }, { status: 400 });
+  }
+  if (text.length > CHATROOM_MESSAGE_RAW_MAX_LEN) {
+    return NextResponse.json({ error: "Message too long." }, { status: 400 });
   }
 
   const tag = body.tag && isChatroomTag(body.tag) ? body.tag : null;
@@ -185,10 +192,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error?.message || "Failed to send" }, { status: 500 });
   }
 
-  const name =
-    (profile as { display_name?: string }).display_name
-    || "Member";
-
   // Load display fields for response
   const { data: author } = await admin
     .from("profiles")
@@ -199,7 +202,7 @@ export async function POST(req: NextRequest) {
   const authorName =
     author?.display_name?.trim()
     || `${author?.first_name || ""} ${author?.last_name || ""}`.trim()
-    || name;
+    || "Member";
 
   const message: ChatroomMessageDto = {
     id: inserted.id,
@@ -216,6 +219,37 @@ export async function POST(req: NextRequest) {
     down_count: 0,
     my_reaction: null,
   };
+
+  // Tag → in-app notification + push (createNotification schedules push via after())
+  const mentionIds = extractMentionIds(text).filter((id) => id !== auth.user.id);
+  if (mentionIds.length > 0) {
+    const blockedBySender = await fetchBlockedUserIds(admin, auth.user.id);
+    await Promise.all(
+      mentionIds.map(async (recipientId) => {
+        if (blockedBySender.has(recipientId)) return;
+        try {
+          await createNotification(admin, {
+            recipientUserId: recipientId,
+            actorUserId: auth.user.id,
+            actorName: authorName,
+            type: "mention_chatroom",
+            category: "social",
+            entityType: "chatroom_message",
+            entityId: inserted.id,
+            message: `${authorName} tagged you in Team Room`,
+            title: "Team Room",
+            body: `${authorName} tagged you`,
+            link: "/?chatroom=1",
+            groupKey: `chatroom:lobby:mention:${recipientId}`,
+            dedupeKey: `mention_chatroom:${inserted.id}:${recipientId}`,
+            metadata: { chatroom: true, message_id: inserted.id },
+          });
+        } catch (notifyErr) {
+          console.error("[chatroom] mention notify failed", recipientId, notifyErr);
+        }
+      }),
+    );
+  }
 
   return NextResponse.json({ message });
 }

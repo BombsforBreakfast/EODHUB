@@ -8,12 +8,12 @@ import { LikerAvatar } from "./PostLikersStack";
 import { useOnlinePresence } from "./OnlinePresenceProvider";
 import { hasFullPlatformAccess, type VerificationProfile } from "../lib/verificationAccess";
 import { fetchBlockedUserIds } from "../lib/userBlocks";
-import { canAlwaysAccessChatroomQa, isChatroomEntryAvailable } from "../lib/chatroom";
 
 const AVATAR = 28; // 25% larger than the previous 22px strip avatars
 const AVATAR_OVERLAP = 6;
 const AVATAR_STEP = AVATAR - AVATAR_OVERLAP;
 const SEE_ALL_MIN_W = 96;
+const ENTER_CHAT_MIN_W = 100;
 const POPOVER_CLOSE_DELAY_MS = 120;
 
 type ProfileRow = VerificationProfile & {
@@ -42,13 +42,11 @@ function widthForNStacked(n: number): number {
 type OnlineNowStripProps = {
   currentUserId: string | null;
   onEnterChat?: () => void;
-  onChatAvailabilityChange?: (available: boolean, onlineCount: number) => void;
 };
 
 export default function OnlineNowStrip({
   currentUserId,
   onEnterChat,
-  onChatAvailabilityChange,
 }: OnlineNowStripProps) {
   const { t } = useTheme();
   const { onlineUserIds } = useOnlinePresence();
@@ -77,23 +75,6 @@ export default function OnlineNowStrip({
       .sort((a, b) => displayName(a).localeCompare(displayName(b)));
     return ordered;
   }, [blockedUserIds, currentUserId, onlineUserIds, profiles]);
-
-  const selfCountedOnline = Boolean(
-    currentUserId
-    && onlineUserIds.includes(currentUserId)
-    && (() => {
-      const self = profiles.get(currentUserId);
-      // Self is in presence; count even before profile hydrate finishes.
-      if (!self) return true;
-      return !self.account_deleted_at && hasFullPlatformAccess(self);
-    })(),
-  );
-  const onlineCount = previewRows.length + (selfCountedOnline ? 1 : 0);
-  const chatAvailable = isChatroomEntryAvailable(onlineCount, currentUserId);
-
-  useEffect(() => {
-    onChatAvailabilityChange?.(chatAvailable, onlineCount);
-  }, [chatAvailable, onlineCount, onChatAvailabilityChange]);
 
   const syncProfiles = useCallback(async (ids: string[]) => {
     if (ids.length === 0) {
@@ -144,32 +125,34 @@ export default function OnlineNowStrip({
       const w = el.clientWidth;
       if (w <= 0) return;
       const total = previewRows.length;
-      let fitWithoutBtn = 1;
+      const reservedForChat = onEnterChat ? ENTER_CHAT_MIN_W + 8 : 0;
+      const stackBudget = Math.max(0, w - reservedForChat);
+      let fitWithoutOverflow = 1;
       for (let n = total; n >= 1; n--) {
-        if (widthForNStacked(n) <= w) {
-          fitWithoutBtn = n;
+        if (widthForNStacked(n) <= stackBudget) {
+          fitWithoutOverflow = n;
           break;
         }
       }
-      if (fitWithoutBtn >= total) {
+      if (fitWithoutOverflow >= total) {
         setVisibleCount(total);
         return;
       }
-      const wBtn = Math.max(0, w - SEE_ALL_MIN_W);
-      let withBtn = 1;
+      const wWithOverflowChip = Math.max(0, stackBudget - SEE_ALL_MIN_W);
+      let withOverflow = 1;
       for (let n = total; n >= 1; n--) {
-        if (widthForNStacked(n) <= wBtn) {
-          withBtn = n;
+        if (widthForNStacked(n) <= wWithOverflowChip) {
+          withOverflow = n;
           break;
         }
       }
-      setVisibleCount(Math.max(1, Math.min(withBtn, total - 1)));
+      setVisibleCount(Math.max(1, Math.min(withOverflow, total - 1)));
     }
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [previewRows.length]);
+  }, [onEnterChat, previewRows.length]);
 
   const cancelCloseTimer = useCallback(() => {
     if (closeTimerRef.current) {
@@ -214,7 +197,7 @@ export default function OnlineNowStrip({
   }, [cancelCloseTimer]);
 
   if (!currentUserId) return null;
-  if (previewRows.length === 0 && !chatAvailable) return null;
+  if (previewRows.length === 0 && !onEnterChat) return null;
 
   const visibleRows = previewRows.slice(0, visibleCount);
   const hiddenCount = Math.max(0, previewRows.length - visibleRows.length);
@@ -241,7 +224,7 @@ export default function OnlineNowStrip({
       >
         Online now
       </span>
-      <div ref={measureRef} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center" }}>
+      <div ref={measureRef} style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
           {previewRows.length > 0 ? (
           <div
             ref={popoverRef}
@@ -370,30 +353,34 @@ export default function OnlineNowStrip({
               </div>
             )}
           </div>
-          ) : canAlwaysAccessChatroomQa(currentUserId) ? (
-            <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>QA access</span>
-          ) : null}
+          ) : (
+            <span style={{ fontSize: 12, color: t.textMuted, fontWeight: 600 }}>Just you for now</span>
+          )}
+          {onEnterChat && (
+            <button
+              type="button"
+              onClick={onEnterChat}
+              style={{
+                flexShrink: 0,
+                border: "1px solid #33ff66",
+                background: "#000",
+                color: "#33ff66",
+                borderRadius: 0,
+                padding: "6px 12px",
+                fontWeight: 700,
+                fontSize: 11,
+                fontFamily: 'var(--font-geist-mono), "Courier New", monospace',
+                letterSpacing: 0.8,
+                textTransform: "uppercase",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                boxShadow: "0 0 8px rgba(51,255,102,0.25)",
+              }}
+            >
+              Enter chat
+            </button>
+          )}
         </div>
-      {chatAvailable && onEnterChat && (
-        <button
-          type="button"
-          onClick={onEnterChat}
-          style={{
-            flexShrink: 0,
-            border: `1px solid ${t.border}`,
-            background: t.surface,
-            color: t.text,
-            borderRadius: 999,
-            padding: "6px 12px",
-            fontWeight: 800,
-            fontSize: 12,
-            cursor: "pointer",
-            whiteSpace: "nowrap",
-          }}
-        >
-          Enter chat
-        </button>
-      )}
     </div>
   );
 }

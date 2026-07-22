@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { FLAG_CATEGORY_LABELS, isFlagCategory, type FlagCategory } from "../../../lib/flagCategories";
+import { mentionsToDisplayText } from "../../../lib/mentions";
 import { createNotification } from "../../../lib/notificationsServer";
 
 function getUserClient(token: string) {
@@ -81,6 +82,16 @@ export async function POST(req: NextRequest) {
   await admin.from("chatroom_messages").delete().eq("id", message.id);
 
   const reasonLabel = FLAG_CATEGORY_LABELS[category as FlagCategory];
+
+  // Match feed flag behavior: bump author's community flag count
+  const { data: authorProfile } = await admin
+    .from("profiles")
+    .select("community_flag_count")
+    .eq("user_id", message.user_id)
+    .maybeSingle();
+  const nextCount = (authorProfile?.community_flag_count ?? 0) + 1;
+  await admin.from("profiles").update({ community_flag_count: nextCount }).eq("user_id", message.user_id);
+
   const { data: admins } = await admin.from("profiles").select("user_id").eq("is_admin", true);
   const { data: reporterProfile } = await admin
     .from("profiles")
@@ -93,6 +104,9 @@ export async function POST(req: NextRequest) {
     || "A member";
 
   if (admins && admins.length > 0) {
+    const preview = mentionsToDisplayText(message.body).slice(0, 80);
+    const ellipsis = message.body.length > 80 ? "…" : "";
+    const adminMessage = `Team Room message flagged (${reasonLabel}): “${preview}${ellipsis}”`;
     await Promise.all(
       admins.map((a: { user_id: string }) =>
         createNotification(admin, {
@@ -103,8 +117,10 @@ export async function POST(req: NextRequest) {
           category: "system",
           entityType: "chatroom_message",
           entityId: message.id,
-          message: `Chatroom message flagged (${reasonLabel}): “${message.body.slice(0, 80)}${message.body.length > 80 ? "…" : ""}”`,
-          link: "/admin",
+          message: adminMessage,
+          title: "Content flagged",
+          body: adminMessage,
+          link: "/admin?tab=flags",
           groupKey: `admin:flags:chatroom_message:${message.id}`,
           dedupeKey: `admin_flag:chatroom_message:${message.id}:${a.user_id}`,
           metadata: {

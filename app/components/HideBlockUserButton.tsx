@@ -19,6 +19,8 @@ type HideBlockUserButtonProps = {
   onBlocked?: (blockedUserId: string) => void;
   compact?: boolean;
   disabled?: boolean;
+  /** Optional surface label for admin alerts (e.g. "chatroom", "feed"). */
+  context?: string;
 };
 
 export default function HideBlockUserButton({
@@ -28,6 +30,7 @@ export default function HideBlockUserButton({
   onBlocked,
   compact = false,
   disabled = false,
+  context,
 }: HideBlockUserButtonProps) {
   const [blocking, setBlocking] = useState(false);
 
@@ -41,7 +44,7 @@ export default function HideBlockUserButton({
     if (!ok) return;
 
     setBlocking(true);
-    const result = await blockUser(supabase, targetUserId);
+    const result = await blockUser(supabase, targetUserId, undefined, context);
     setBlocking(false);
     if (!result.ok) {
       window.alert(result.error);
