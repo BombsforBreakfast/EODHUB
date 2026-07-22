@@ -28,21 +28,9 @@ export function isChatroomTag(v: string | null | undefined): v is ChatroomTag {
   return !!v && (CHATROOM_TAGS as readonly string[]).includes(v);
 }
 
-/** Chat entry: signed-in members on native iOS only (web/desktop launch later). */
+/** Chat entry: unlocked for all signed-in clients (web + native). */
 export function isChatroomUiUnlocked(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    const cap = (
-      window as Window & {
-        Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string };
-      }
-    ).Capacitor;
-    if (cap?.isNativePlatform?.()) return cap.getPlatform?.() === "ios";
-    if (!/Capacitor/i.test(window.navigator.userAgent)) return false;
-    return /iPhone|iPad|iPod/i.test(window.navigator.userAgent);
-  } catch {
-    return false;
-  }
+  return true;
 }
 
 /** True when this client may open Team Room UI. */

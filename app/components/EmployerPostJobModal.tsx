@@ -1,12 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { supabase } from "../lib/lib/supabaseClient";
-import NavBar from "../components/NavBar";
 import { useTheme } from "../lib/ThemeContext";
-import MemberPaywallModal from "../components/MemberPaywallModal";
-import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
-import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
+import { getAccessToken, supabase } from "../lib/lib/supabaseClient";
 import type { ScrapedJobData } from "../lib/metadata/extractJobMetadata";
 
 type ScrapeStatus = "idle" | "loading" | "success" | "error";
@@ -34,20 +30,43 @@ function fillIfBlank(current: string, next: string | undefined | null): string {
   return next.trim();
 }
 
-export default function PostJobPage() {
-  useRequireFullAccess("app/post-job/page.tsx");
+export type EmployerPostJobPayload = {
+  title: string;
+  company_name: string;
+  category: string;
+  location: string;
+  apply_url: string;
+  description: string;
+  og_title: string | null;
+  og_description: string | null;
+  og_image: string | null;
+  og_site_name: string | null;
+  pay_min: number | null;
+  pay_max: number | null;
+};
+
+type Props = {
+  open: boolean;
+  defaultCompanyName?: string | null;
+  onClose: () => void;
+  onSuccess?: (result: { jobId: string; postId: string }) => void;
+};
+
+export default function EmployerPostJobModal({
+  open,
+  defaultCompanyName,
+  onClose,
+  onSuccess,
+}: Props) {
   const { t } = useTheme();
-  const { blockIfNeeded, paywallOpen, setPaywallOpen } = useMemberSubscriptionGate();
   const [title, setTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [category, setCategory] = useState("EOD");
   const [location, setLocation] = useState("");
   const [applyUrl, setApplyUrl] = useState("");
   const [description, setDescription] = useState("");
-  const [anonymous, setAnonymous] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [isEmployer, setIsEmployer] = useState(false);
-  const [employerChecked, setEmployerChecked] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [ogTitle, setOgTitle] = useState<string | null>(null);
   const [ogDescription, setOgDescription] = useState<string | null>(null);
   const [ogImage, setOgImage] = useState<string | null>(null);
@@ -71,34 +90,29 @@ export default function PostJobPage() {
     boxSizing: "border-box",
   };
 
+  function resetForm() {
+    setTitle("");
+    setCompanyName(defaultCompanyName?.trim() || "");
+    setCategory("EOD");
+    setLocation("");
+    setApplyUrl("");
+    setDescription("");
+    setError(null);
+    setOgTitle(null);
+    setOgDescription(null);
+    setOgImage(null);
+    setOgSiteName(null);
+    setPayMin(null);
+    setPayMax(null);
+    setScrapeStatus("idle");
+    setLastScrapedUrl(null);
+  }
+
   useEffect(() => {
-    let cancelled = false;
-    async function loadEmployerFlag() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user || cancelled) {
-        if (!cancelled) setEmployerChecked(true);
-        return;
-      }
-      const { data } = await supabase
-        .from("profiles")
-        .select("is_employer, company_name")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (cancelled) return;
-      const employer = !!data?.is_employer;
-      setIsEmployer(employer);
-      if (employer && data?.company_name?.trim()) {
-        setCompanyName((prev) => prev || data.company_name!.trim());
-      }
-      setEmployerChecked(true);
-    }
-    void loadEmployerFlag();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (!open) return;
+    resetForm();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when modal opens
+  }, [open, defaultCompanyName]);
 
   function applyScrapedFields(data: ScrapedJobData) {
     setTitle((prev) => fillIfBlank(prev, data.title));
@@ -113,34 +127,24 @@ export default function PostJobPage() {
     setPayMax((prev) => prev ?? data.pay_max ?? null);
   }
 
-  function resetScrapeState() {
-    setScrapeStatus("idle");
-    setLastScrapedUrl(null);
-    setOgTitle(null);
-    setOgDescription(null);
-    setOgImage(null);
-    setOgSiteName(null);
-    setPayMin(null);
-    setPayMax(null);
-  }
-
   useEffect(() => {
+    if (!open) return;
+
     const normalized = applyUrl.trim() ? normalizeUrl(applyUrl.trim()) : "";
 
     if (!normalized || !isValidHttpUrl(normalized)) {
       if (scrapeDebounceRef.current) clearTimeout(scrapeDebounceRef.current);
       scrapeAbortRef.current?.abort();
       if (!applyUrl.trim()) {
-        resetScrapeState();
+        setScrapeStatus("idle");
+        setLastScrapedUrl(null);
       } else {
         setScrapeStatus("idle");
       }
       return;
     }
 
-    if (normalized === lastScrapedUrl) {
-      return;
-    }
+    if (normalized === lastScrapedUrl) return;
 
     if (scrapeDebounceRef.current) clearTimeout(scrapeDebounceRef.current);
     scrapeAbortRef.current?.abort();
@@ -162,11 +166,7 @@ export default function PostJobPage() {
 
       try {
         setScrapeStatus("loading");
-
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        const token = session?.access_token ?? "";
+        const token = await getAccessToken();
         if (!token) {
           if (scrapeRequestRef.current === requestId) setScrapeStatus("error");
           return;
@@ -205,124 +205,136 @@ export default function PostJobPage() {
     return () => {
       if (scrapeDebounceRef.current) clearTimeout(scrapeDebounceRef.current);
     };
-  }, [applyUrl, lastScrapedUrl]);
+  }, [applyUrl, lastScrapedUrl, open]);
 
   async function handleSubmit() {
-    if (!isEmployer && blockIfNeeded()) return;
-    try {
-      setSubmitting(true);
+    if (!title.trim() || submitting) return;
+    setSubmitting(true);
+    setError(null);
 
+    try {
       const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-      if (userError || !user) {
-        alert("You must be logged in to post a job.");
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token ?? (await getAccessToken());
+      if (!token) {
+        setError("You must be logged in to post a job.");
         return;
       }
 
-      const normalizedApplyUrl = normalizeUrl(applyUrl);
+      const payload: EmployerPostJobPayload = {
+        title: title.trim(),
+        company_name: companyName.trim(),
+        category,
+        location: location.trim(),
+        apply_url: applyUrl.trim() ? normalizeUrl(applyUrl.trim()) : "",
+        description: description.trim(),
+        og_title: ogTitle,
+        og_description: ogDescription,
+        og_image: ogImage,
+        og_site_name: ogSiteName,
+        pay_min: payMin,
+        pay_max: payMax,
+      };
 
-      if (isEmployer) {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-        const token = session?.access_token;
-        if (!token) {
-          alert("You must be logged in to post a job.");
-          return;
-        }
+      const res = await fetch("/api/employer/jobs", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
 
-        const res = await fetch("/api/employer/jobs", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            title,
-            company_name: companyName,
-            category,
-            location,
-            apply_url: normalizedApplyUrl,
-            description,
-            og_title: ogTitle,
-            og_description: ogDescription,
-            og_image: ogImage,
-            og_site_name: ogSiteName,
-            pay_min: payMin,
-            pay_max: payMax,
-          }),
-        });
+      const data = (await res.json().catch(() => null)) as
+        | { ok?: boolean; jobId?: string; postId?: string; error?: string }
+        | null;
 
-        const payload = (await res.json().catch(() => null)) as
-          | { ok?: boolean; error?: string }
-          | null;
-        if (!res.ok || !payload?.ok) {
-          alert(payload?.error || "Error posting job.");
-          return;
-        }
-
-        alert("Job is live on the board and in your feed.");
-      } else {
-        const { error } = await supabase.from("jobs").insert([
-          {
-            title,
-            company_name: companyName,
-            category,
-            location,
-            apply_url: normalizedApplyUrl,
-            description,
-            is_approved: false,
-            source_type: "community",
-            user_id: user.id,
-            anonymous,
-            og_title: ogTitle,
-            og_description: ogDescription,
-            og_image: ogImage,
-            og_site_name: ogSiteName,
-            pay_min: payMin,
-            pay_max: payMax,
-          },
-        ]);
-
-        if (error) {
-          alert("Error submitting job: " + error.message);
-          return;
-        }
-
-        alert("Job submitted! Pending approval.");
+      if (!res.ok || !data?.ok || !data.jobId || !data.postId) {
+        setError(data?.error || "Failed to post job.");
+        return;
       }
 
-      setTitle("");
-      setCompanyName("");
-      setCategory("EOD");
-      setLocation("");
-      setApplyUrl("");
-      setDescription("");
-      setAnonymous(false);
-      resetScrapeState();
+      onSuccess?.({ jobId: data.jobId, postId: data.postId });
+      onClose();
     } catch (err) {
-      alert("Error submitting job: " + (err instanceof Error ? err.message : "Something went wrong."));
+      setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setSubmitting(false);
     }
   }
 
-  return (
-    <div style={{ background: t.bg, minHeight: "100vh" }}>
-      <NavBar />
-      <div style={{ maxWidth: 640, margin: "0 auto", padding: "32px 16px" }}>
-        <h1 style={{ fontSize: 28, fontWeight: 900, margin: "0 0 6px", color: t.text }}>Post a Job</h1>
-        <p style={{ marginTop: 0, marginBottom: 24, color: t.textMuted, fontSize: 14 }}>
-          {!employerChecked
-            ? "Loading…"
-            : isEmployer
-              ? "Verified employers go live immediately on the job board and your feed."
-              : "Submissions go to an approval queue — not public until approved."}
-        </p>
+  if (!open) return null;
 
-        <div style={{ display: "grid", gap: 14 }}>
+  return (
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !submitting) onClose();
+      }}
+      style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.7)",
+        zIndex: 1300,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 16,
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Post a job"
+        style={{
+          background: t.surface,
+          border: `1px solid ${t.border}`,
+          borderRadius: 16,
+          width: "100%",
+          maxWidth: 560,
+          maxHeight: "90vh",
+          display: "flex",
+          flexDirection: "column",
+          boxShadow: "0 8px 40px rgba(0,0,0,0.35)",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "16px 20px",
+            borderBottom: `1px solid ${t.border}`,
+            flexShrink: 0,
+          }}
+        >
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: t.text }}>Post a job</div>
+            <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
+              Goes live on the job board and your feed right away.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (!submitting) onClose();
+            }}
+            aria-label="Close"
+            style={{
+              background: "none",
+              border: "none",
+              fontSize: 24,
+              lineHeight: 1,
+              cursor: submitting ? "not-allowed" : "pointer",
+              color: t.textMuted,
+              padding: 4,
+            }}
+          >
+            ×
+          </button>
+        </div>
+
+        <div style={{ overflowY: "auto", flex: 1, padding: 20, display: "grid", gap: 14 }}>
           <div>
             <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: t.text }}>Apply URL</div>
             <input
@@ -394,66 +406,71 @@ export default function PostJobPage() {
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              style={{ ...inputStyle, minHeight: 140, resize: "vertical" }}
+              style={{ ...inputStyle, minHeight: 120, resize: "vertical" }}
               placeholder="Describe the job, requirements, schedule, pay, clearance, etc."
             />
           </div>
 
-          {!isEmployer && (
-            <label
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                cursor: "pointer",
-                padding: "10px 14px",
-                border: `1px solid ${t.border}`,
-                borderRadius: 10,
-                background: t.surface,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={anonymous}
-                onChange={(e) => setAnonymous(e.target.checked)}
-                style={{ width: 16, height: 16, cursor: "pointer", flexShrink: 0 }}
-              />
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>Post anonymously</div>
-                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                  Your name won&apos;t appear on the listing. Your account is still associated with this submission.
-                </div>
-              </div>
-            </label>
+          {error && (
+            <div style={{ fontSize: 13, color: "#b91c1c", background: "#fef2f2", borderRadius: 10, padding: "10px 12px" }}>
+              {error}
+            </div>
           )}
+        </div>
 
+        <div
+          style={{
+            padding: "14px 20px",
+            borderTop: `1px solid ${t.border}`,
+            display: "flex",
+            justifyContent: "flex-end",
+            gap: 10,
+            flexShrink: 0,
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              if (!submitting) onClose();
+            }}
+            disabled={submitting}
+            style={{
+              padding: "10px 16px",
+              borderRadius: 10,
+              border: `1px solid ${t.border}`,
+              background: t.surface,
+              color: t.text,
+              fontWeight: 700,
+              fontSize: 14,
+              cursor: submitting ? "not-allowed" : "pointer",
+            }}
+          >
+            Cancel
+          </button>
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || !title.trim() || !employerChecked}
+            disabled={submitting || !title.trim()}
             style={{
-              marginTop: 4,
-              padding: 13,
-              borderRadius: 12,
+              padding: "10px 16px",
+              borderRadius: 10,
               border: "none",
               background: "#7c3aed",
               color: "white",
               fontWeight: 800,
-              fontSize: 15,
-              cursor: submitting || !title.trim() || !employerChecked ? "not-allowed" : "pointer",
-              opacity: submitting || !title.trim() || !employerChecked ? 0.6 : 1,
+              fontSize: 14,
+              cursor: submitting || !title.trim() ? "not-allowed" : "pointer",
+              opacity: submitting || !title.trim() ? 0.6 : 1,
               display: "flex",
               alignItems: "center",
-              justifyContent: "center",
               gap: 7,
             }}
           >
             {submitting && <span className="btn-spinner" />}
-            {isEmployer ? "Post Job" : "Submit Job"}
+            Post job
           </button>
         </div>
       </div>
-      <MemberPaywallModal open={paywallOpen} onClose={() => setPaywallOpen(false)} />
     </div>
   );
 }

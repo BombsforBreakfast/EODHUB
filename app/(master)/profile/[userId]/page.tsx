@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
@@ -129,6 +129,7 @@ import {
 } from "../../../lib/plankHolderChallengeClient";
 import { isEmployerAccount, MEMBER_STATUS_OPTIONS } from "../../../lib/profileCompleteness";
 import EmployerAccountCardDetails from "../../../components/profile/EmployerAccountCardDetails";
+import EmployerPostJobModal from "../../../components/EmployerPostJobModal";
 import { BUSINESS_ORG_PAGE_SELECT, type BusinessOrgPageRow } from "../../../lib/businessOrgPages";
 import {
   fetchFeedPostEnrichment,
@@ -639,6 +640,7 @@ export default function PublicProfilePage() {
   const [desktopConversations, setDesktopConversations] = useState<DesktopConversation[]>([]);
 
   const [postContent, setPostContent] = useState("");
+  const [employerPostJobOpen, setEmployerPostJobOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   /** Uploader account type — drives video size limits (must match home feed / Mux API). */
   const [currentUserAccountType, setCurrentUserAccountType] = useState<string | null>(null);
@@ -5082,6 +5084,25 @@ export default function PublicProfilePage() {
                           Edit Profile
                         </button>
                       )}
+                      {profile.is_employer && !editingProfile && !showDesktopProfileBack && (
+                        <button
+                          type="button"
+                          onClick={() => setEmployerPostJobOpen(true)}
+                          style={{
+                            background: "#7c3aed",
+                            color: "white",
+                            border: "none",
+                            borderRadius: 999,
+                            padding: "6px 12px",
+                            minWidth: 112,
+                            fontWeight: 700,
+                            fontSize: 11,
+                            cursor: "pointer",
+                          }}
+                        >
+                          Post a job
+                        </button>
+                      )}
                       {canViewEmployerBack && (
                         <button
                           type="button"
@@ -5529,6 +5550,25 @@ export default function PublicProfilePage() {
                         }}
                       >
                         Edit Profile
+                      </button>
+                    )}
+                    {wallAsOwner && profile.is_employer && !editingProfile && !showDesktopProfileBack && (
+                      <button
+                        type="button"
+                        onClick={() => setEmployerPostJobOpen(true)}
+                        style={{
+                          background: "#7c3aed",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 999,
+                          padding: "6px 12px",
+                          minWidth: 112,
+                          fontWeight: 700,
+                          fontSize: 11,
+                          cursor: "pointer",
+                        }}
+                      >
+                        Post a job
                       </button>
                     )}
                     {canViewEmployerBack && (
@@ -6423,6 +6463,22 @@ export default function PublicProfilePage() {
 
           {/* Wall */}
           <div style={{ paddingTop: 4, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box" }}>
+
+            {wallAsOwner && profile.is_employer && (
+              <div style={{ marginTop: 16, marginBottom: 0, border: `1px solid ${t.border}`, borderRadius: 14, padding: "14px 16px", background: t.surface, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>Hiring?</div>
+                  <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>Post a job to the board and your feed in one step.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEmployerPostJobOpen(true)}
+                  style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 10, padding: "8px 14px", fontWeight: 800, fontSize: 13, cursor: "pointer", flexShrink: 0 }}
+                >
+                  Post a job
+                </button>
+              </div>
+            )}
 
             {(wallAsOwner || isMutualConnection) && (
               <div id="profile-wall-composer" style={{ marginTop: 16, border: `1px solid ${t.border}`, borderRadius: 14, padding: 16, background: t.surface, width: "100%", maxWidth: "100%", minWidth: 0, boxSizing: "border-box", overflow: "hidden" }}>
@@ -7919,6 +7975,17 @@ export default function PublicProfilePage() {
         onClose={() => setReferralQrOpen(false)}
         referralUrl={buildLoginReferralUrl(profile.referral_code!)}
         onInviteAction={recordInviteForPlankHolder}
+      />
+    ) : null}
+    {wallAsOwner && profile?.is_employer ? (
+      <EmployerPostJobModal
+        open={employerPostJobOpen}
+        defaultCompanyName={profile?.company_name}
+        onClose={() => setEmployerPostJobOpen(false)}
+        onSuccess={() => {
+          if (userId) void loadPosts(userId);
+          alert("Job is live on the board and in your feed.");
+        }}
       />
     ) : null}
     {!isBusinessOrgProfile && (

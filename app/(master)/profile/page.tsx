@@ -13,6 +13,7 @@ import DeleteAccountSection from "../../components/account/DeleteAccountSection"
 import { fetchAdminPendingBreakdown, formatNavBadgeCount, sumAdminPending } from "../../lib/adminPendingCounts";
 import { hasPublicMemberProfile } from "../../lib/pureAdminAllowlist";
 import EmployerAccountCardDetails from "../../components/profile/EmployerAccountCardDetails";
+import EmployerPostJobModal from "../../components/EmployerPostJobModal";
 import { linkOAuthIdentity } from "../../lib/auth/oauthSignIn";
 
 type Profile = {
@@ -52,6 +53,7 @@ export default function MyAccountPage() {
   const [linkedSuccess, setLinkedSuccess] = useState<string | null>(null);
 
   const [employerJobs, setEmployerJobs] = useState<{ id: string; title: string | null; company_name: string | null; is_approved: boolean | null; created_at: string | null; saveCount: number }[]>([]);
+  const [employerPostJobOpen, setEmployerPostJobOpen] = useState(false);
 
   async function loadAdminPendingCount() {
     const b = await fetchAdminPendingBreakdown(supabase);
@@ -374,11 +376,26 @@ export default function MyAccountPage() {
             <div style={{ fontSize: 20, fontWeight: 900, color: t.text }}>Your Job Postings</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <a href="/employer" style={{ background: t.text, color: t.surface, borderRadius: 10, padding: "7px 14px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>Employer Dashboard →</a>
-              <a href="/post-job" style={{ background: "#7c3aed", color: "white", borderRadius: 10, padding: "7px 16px", fontWeight: 700, fontSize: 14, textDecoration: "none" }}>+ Post Job</a>
+              <button
+                type="button"
+                onClick={() => setEmployerPostJobOpen(true)}
+                style={{ background: "#7c3aed", color: "white", borderRadius: 10, padding: "7px 16px", fontWeight: 700, fontSize: 14, border: "none", cursor: "pointer" }}
+              >
+                + Post Job
+              </button>
             </div>
           </div>
           {employerJobs.length === 0 ? (
-            <div style={{ color: t.textMuted }}>No jobs posted yet. <a href="/post-job" style={{ color: "#1d4ed8" }}>Post your first listing →</a></div>
+            <div style={{ color: t.textMuted }}>
+              No jobs posted yet.{" "}
+              <button
+                type="button"
+                onClick={() => setEmployerPostJobOpen(true)}
+                style={{ color: "#1d4ed8", background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit" }}
+              >
+                Post your first listing →
+              </button>
+            </div>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {employerJobs.map((job) => (
@@ -407,6 +424,17 @@ export default function MyAccountPage() {
 
       <div style={{ marginBottom: 40 }} />
       </div>
+      {profile?.is_employer ? (
+        <EmployerPostJobModal
+          open={employerPostJobOpen}
+          defaultCompanyName={profile.company_name}
+          onClose={() => setEmployerPostJobOpen(false)}
+          onSuccess={() => {
+            if (currentUserId) void loadEmployerJobs(currentUserId);
+            alert("Job is live on the board and in your feed.");
+          }}
+        />
+      ) : null}
     </div>
   );
 }
