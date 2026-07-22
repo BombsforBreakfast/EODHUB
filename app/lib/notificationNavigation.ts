@@ -142,7 +142,7 @@ export function getNotificationHref(
     return "/units";
   }
 
-  if (ctx.isAdmin && (lower.includes("bug report") || lower.includes("flagged"))) {
+  if (ctx.isAdmin && (lower.includes("bug report") || lower.includes("flagged") || lower.includes("blocked"))) {
     return "/admin";
   }
 
@@ -161,6 +161,10 @@ export function getNotificationHref(
 
   if (nNorm.type?.startsWith("wall_") && nNorm.post_owner_id) {
     return `/profile/${nNorm.post_owner_id}`;
+  }
+
+  if (nNorm.type === "mention_chatroom" || (nNorm.metadata as { chatroom?: unknown } | null)?.chatroom === true) {
+    return "/?chatroom=1";
   }
 
   if (
@@ -220,7 +224,7 @@ export function getNotificationIcon(n: NotificationNavInput): string {
   if (t === "arcade_credits_refilled" || lower.includes("game credit") || lower.includes("arcade")) return "🎮";
   if (lower.includes("verified") || lower.includes("vouch")) return "✅";
   if (lower.includes("bug report")) return "🐛";
-  if (lower.includes("flag")) return "🚩";
+  if (lower.includes("flag") || lower.includes("blocked") || t === "user_block") return "🚩";
   if (lower.includes("join")) return "🪖";
   if (lower.includes("memorial")) return "🕊️";
   if (lower.includes("mention") || t.startsWith("mention")) return "@";

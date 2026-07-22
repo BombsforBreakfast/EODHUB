@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateRouteHandler } from "@/app/lib/server/createRouteHandlerClient";
 import { createSupabaseServiceRoleClient } from "@/app/lib/auth/adminAuthLookup";
+import { createNotification } from "@/app/lib/notificationsServer";
 import type { BlockedUserSummary } from "@/app/lib/userBlocks";
 
 type BlockRow = {
@@ -82,7 +83,7 @@ export async function POST(request: NextRequest) {
   const auth = await authenticateRouteHandler(request);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { blockedId?: unknown; reason?: unknown };
+  let body: { blockedId?: unknown; reason?: unknown; context?: unknown };
   try {
     body = await request.json();
   } catch {
@@ -103,6 +104,11 @@ export async function POST(request: NextRequest) {
   }
 
   const reason = typeof body.reason === "string" && body.reason.trim() ? body.reason.trim().slice(0, 500) : null;
+  const context =
+    typeof body.context === "string" && body.context.trim()
+      ? body.context.trim().slice(0, 40).toLowerCase()
+      : null;
+
   const { error } = await adminClient
     .from("user_blocks")
     .upsert(
@@ -115,6 +121,62 @@ export async function POST(request: NextRequest) {
     );
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Admin alert (same pattern as content flags)
+  try {
+    const [{ data: profiles }, { data: admins }] = await Promise.all([
+      adminClient
+        .from("profiles")
+        .select("user_id, display_name, first_name, last_name")
+        .in("user_id", [auth.user.id, blockedId]),
+      adminClient.from("profiles").select("user_id").eq("is_admin", true),
+    ]);
+
+    const byId = new Map<string, ProfileRow>();
+    for (const p of (profiles ?? []) as ProfileRow[]) byId.set(p.user_id, p);
+    const blockerName = displayName(byId.get(auth.user.id));
+    const blockedName = displayName(byId.get(blockedId));
+    const where =
+      context === "chatroom"
+        ? " in Team Room"
+        : context === "feed"
+          ? " on the feed"
+          : context
+            ? ` (${context})`
+            : "";
+    const message = `${blockerName} blocked ${blockedName}${where}`;
+
+    if (admins && admins.length > 0) {
+      await Promise.all(
+        admins.map((a: { user_id: string }) =>
+          createNotification(adminClient, {
+            recipientUserId: a.user_id,
+            actorUserId: auth.user.id,
+            actorName: blockerName,
+            type: "activity",
+            category: "system",
+            entityType: "user_block",
+            entityId: blockedId,
+            message,
+            title: "Member block",
+            body: message,
+            link: "/admin",
+            groupKey: `admin:blocks:${auth.user.id}:${blockedId}`,
+            dedupeKey: `admin_block:${auth.user.id}:${blockedId}:${a.user_id}`,
+            metadata: {
+              blocker_id: auth.user.id,
+              blocked_id: blockedId,
+              context,
+              reason,
+            },
+          }),
+        ),
+      );
+    }
+  } catch (notifyErr) {
+    console.error("[user-blocks] admin notify failed", notifyErr);
+  }
+
   return NextResponse.json({ ok: true });
 }
 

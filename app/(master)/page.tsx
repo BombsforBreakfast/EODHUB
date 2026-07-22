@@ -67,6 +67,7 @@ import { getFeatureAccess } from "../lib/featureAccess";
 import { extractFirstUrl, isEmailDomainMatch, URL_PATTERN_G } from "../lib/urlPreview";
 import { applyJobFilters, uniqueJobRegionOptions, type JobFilterState } from "../lib/jobFilters";
 import { jobListingCutoffIso } from "../lib/jobRetention";
+import { isChatroomUiUnlocked } from "../lib/chatroom";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
 import { postNotifyJson } from "../lib/postNotifyClient";
 import {
@@ -185,6 +186,8 @@ const BTMF_DONATION_URL = "https://www.paypal.com/ncp/payment/SMU4NWRW55V6L";
 const EmojiPickerButton = dynamic(() => import("../components/EmojiPickerButton"), { ssr: false });
 const GifPickerButton = dynamic(() => import("../components/GifPickerButton"), { ssr: false });
 const OnlineNowStrip = dynamic(() => import("../components/OnlineNowStrip"), { ssr: false });
+const ChatroomLivePrompt = dynamic(() => import("../components/ChatroomLivePrompt"), { ssr: false });
+const ChatroomModal = dynamic(() => import("../components/ChatroomModal"), { ssr: false });
 const MemberPaywallModal = dynamic(() => import("../components/MemberPaywallModal"), { ssr: false });
 const SidebarThreadDrawer = dynamic(() => import("../components/SidebarThreadDrawer"), { ssr: false });
 const UpgradePromptModal = dynamic(() => import("../components/UpgradePromptModal"), { ssr: false });
@@ -1005,6 +1008,24 @@ export default function HomePage() {
   const [bizLoaded, setBizLoaded] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
+  const [chatroomOpen, setChatroomOpen] = useState(false);
+  const [chatroomUiUnlocked, setChatroomUiUnlocked] = useState(false);
+
+  useEffect(() => {
+    setChatroomUiUnlocked(isChatroomUiUnlocked());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !chatroomUiUnlocked) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("chatroom") !== "1") return;
+    setChatroomOpen(true);
+    params.delete("chatroom");
+    const qs = params.toString();
+    const next = `${window.location.pathname}${qs ? `?${qs}` : ""}${window.location.hash}`;
+    window.history.replaceState({}, "", next);
+  }, [chatroomUiUnlocked]);
+
   const savedJobsQuery = useQuery({
     queryKey: userId ? queryKeys.savedJobs(userId) : queryKeys.savedJobs("pending"),
     queryFn: () => fetchSavedJobs(supabase, userId as string),
@@ -7428,7 +7449,26 @@ export default function HomePage() {
             </div>
           )}
 
-          <OnlineNowStrip currentUserId={userId} />
+          {chatroomUiUnlocked && (
+            <ChatroomLivePrompt
+              currentUserId={userId}
+              chatroomOpen={chatroomOpen}
+              onEnter={() => setChatroomOpen(true)}
+            />
+          )}
+
+          <OnlineNowStrip
+            currentUserId={userId}
+            onEnterChat={chatroomUiUnlocked ? () => setChatroomOpen(true) : undefined}
+          />
+
+          {chatroomUiUnlocked && (
+            <ChatroomModal
+              open={chatroomOpen}
+              currentUserId={userId}
+              onClose={() => setChatroomOpen(false)}
+            />
+          )}
 
           <div
             style={{
