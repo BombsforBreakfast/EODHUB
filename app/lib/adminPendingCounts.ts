@@ -11,6 +11,7 @@ export type AdminPendingBreakdown = {
   dir: number;
   locReq: number;
   scrapbook: number;
+  events: number;
   failedAuth: number;
   businessOrgPages: number;
 };
@@ -34,6 +35,7 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
     locRes,
     memorialScrapbookRes,
     eventScrapbookRes,
+    pendingEventsRes,
     failedAuthRes,
     businessOrgPagesRes,
     businessOrgClaimsRes,
@@ -55,6 +57,7 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
     client.from("location_requests").select("*", { count: "exact", head: true }).eq("reviewed", false),
     client.from("memorial_scrapbook_items").select("*", { count: "exact", head: true }).in("status", ["pending", "flagged"]),
     client.from("event_scrapbook_items").select("*", { count: "exact", head: true }).in("status", ["pending", "flagged"]),
+    client.from("events").select("*", { count: "exact", head: true }).eq("is_approved", false),
     // Failed auth reports: count distinct emails with unresolved attempts in
     // the last 30 days. The select returns plain rows (no count) so we can
     // dedupe by normalized_email client-side — Supabase has no DISTINCT count.
@@ -102,6 +105,7 @@ export async function fetchAdminPendingBreakdown(client: SupabaseClient): Promis
     scrapbook:
       (memorialScrapbookRes.error ? 0 : (memorialScrapbookRes.count ?? 0)) +
       (eventScrapbookRes.error ? 0 : (eventScrapbookRes.count ?? 0)),
+    events: pendingEventsRes.error ? 0 : (pendingEventsRes.count ?? 0),
     failedAuth,
     businessOrgPages:
       (businessOrgPagesRes.error ? 0 : (businessOrgPagesRes.count ?? 0)) +
@@ -120,6 +124,7 @@ export function sumAdminPending(b: AdminPendingBreakdown): number {
     b.dir +
     b.locReq +
     b.scrapbook +
+    b.events +
     b.failedAuth +
     b.businessOrgPages
   );

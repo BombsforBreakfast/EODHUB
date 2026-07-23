@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
 
   const { data: recentRows, error } = await admin
     .from("chatroom_messages")
-    .select("id, user_id, body, created_at")
+    .select("id, user_id, body, gif_url, created_at")
     .eq("room_id", CHATROOM_ROOM_ID)
     .gt("expires_at", nowIso)
     .order("created_at", { ascending: false })
@@ -96,7 +96,12 @@ export async function GET(req: NextRequest) {
       id: newest.id,
       user_id: newest.user_id,
       author_name: authorName(author ?? undefined),
-      body: mentionsToDisplayText(newest.body),
+      body: newest.body?.trim()
+        ? mentionsToDisplayText(newest.body)
+        : newest.gif_url
+          ? "[GIF]"
+          : "",
+      gif_url: newest.gif_url ?? null,
       created_at: newest.created_at,
     };
   }

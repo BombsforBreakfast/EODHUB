@@ -22,7 +22,9 @@ import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib
 import { useOnlinePresence } from "./OnlinePresenceProvider";
 import HideBlockUserButton from "./HideBlockUserButton";
 import MentionTextarea from "./MentionTextarea";
+import GifPickerButton from "./GifPickerButton";
 import { LikerAvatar } from "./PostLikersStack";
+import { isChatGifComposerEnabled } from "../lib/native/chatGifComposer";
 
 type Props = {
   open: boolean;
@@ -147,16 +149,23 @@ function renderChatBody(raw: string): ReactNode {
 }
 
 export default function ChatroomModal({ open, currentUserId, onClose, variant = "fullscreen" }: Props) {
+  const chatGifEnabled = isChatGifComposerEnabled();
   const { onlineUserIds } = useOnlinePresence();
   const [messages, setMessages] = useState<ChatroomMessageDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [draft, setDraft] = useState("");
   const draftRawRef = useRef("");
+  const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [menuForId, setMenuForId] = useState<string | null>(null);
   const [reportForId, setReportForId] = useState<string | null>(null);
   const [reporting, setReporting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
+  const editRawRef = useRef("");
+  const [editGifUrl, setEditGifUrl] = useState<string | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [warningBannerDismissed, setWarningBannerDismissed] = useState(false);
   const [onlineProfiles, setOnlineProfiles] = useState<Map<string, OnlineProfile>>(new Map());
@@ -313,7 +322,8 @@ export default function ChatroomModal({ open, currentUserId, onClose, variant = 
 
   async function sendMessage() {
     const text = (draftRawRef.current || draft).trim();
-    if (!text || sending) return;
+    const gif = chatGifEnabled ? selectedGifUrl : null;
+    if ((!text && !gif) || sending) return;
     const token = await getAccessToken({ source: "ChatroomModal.send" });
     if (!token) {
       setError("Please sign in again.");
@@ -328,7 +338,7 @@ export default function ChatroomModal({ open, currentUserId, onClose, variant = 
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ body: text }),
+        body: JSON.stringify({ body: text, gif_url: gif }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         message?: ChatroomMessageDto;
@@ -346,6 +356,7 @@ export default function ChatroomModal({ open, currentUserId, onClose, variant = 
       }
       setDraft("");
       draftRawRef.current = "";
+      setSelectedGifUrl(null);
     } finally {
       setSending(false);
     }
@@ -375,6 +386,88 @@ export default function ChatroomModal({ open, currentUserId, onClose, variant = 
       window.alert("Thanks — reported to admins and removed from the room.");
     } finally {
       setReporting(false);
+    }
+  }
+
+  function startEditMessage(m: ChatroomMessageDto) {
+    setEditingId(m.id);
+    setEditDraft(m.body || "");
+    editRawRef.current = m.body || "";
+    setEditGifUrl(m.gif_url);
+    setMenuForId(null);
+    setError(null);
+  }
+
+  function cancelEditMessage() {
+    setEditingId(null);
+    setEditDraft("");
+    editRawRef.current = "";
+    setEditGifUrl(null);
+  }
+
+  async function saveEditMessage() {
+    if (!editingId || editSaving) return;
+    const text = (editRawRef.current || editDraft).trim();
+    const gif = editGifUrl;
+    if (!text && !gif) {
+      setError("Message cannot be empty.");
+      return;
+    }
+    const token = await getAccessToken({ source: "ChatroomModal.edit" });
+    if (!token) {
+      setError("Please sign in again.");
+      return;
+    }
+    setEditSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/chatroom/messages", {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: editingId, body: text, gif_url: gif }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        message?: ChatroomMessageDto;
+        error?: string;
+      };
+      if (!res.ok) {
+        setError(body.error || "Could not update.");
+        return;
+      }
+      if (body.message) {
+        setMessages((prev) => prev.map((m) => (m.id === body.message!.id ? body.message! : m)));
+      }
+      cancelEditMessage();
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
+  async function deleteOwnMessage(messageId: string) {
+    if (!window.confirm("Delete this message? This cannot be undone.")) return;
+    const token = await getAccessToken({ source: "ChatroomModal.delete" });
+    if (!token) {
+      setError("Please sign in again.");
+      return;
+    }
+    setMenuForId(null);
+    try {
+      const res = await fetch(`/api/chatroom/messages?id=${encodeURIComponent(messageId)}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setError(body.error || "Could not delete.");
+        return;
+      }
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      if (editingId === messageId) cancelEditMessage();
+    } catch {
+      setError("Could not delete.");
     }
   }
 
@@ -683,6 +776,8 @@ export default function ChatroomModal({ open, currentUserId, onClose, variant = 
               {messages.map((m) => {
                 const color = handleColor(m.user_id);
                 const handle = terminalHandle(m.author_name);
+                const isMine = m.user_id === currentUserId;
+                const isEditing = editingId === m.id;
                 return (
                   <div
                     key={m.id}
@@ -696,26 +791,140 @@ export default function ChatroomModal({ open, currentUserId, onClose, variant = 
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "baseline" }}>
                       <span style={{ color: CRT.greenDim }}>[{formatTerminalTime(m.created_at)}]</span>
                       <span style={{ color, fontWeight: 700 }}>&lt;{handle}&gt;</span>
-                      <span style={{ color: CRT.text, whiteSpace: "pre-wrap", flex: "1 1 180px" }}>
-                        {renderChatBody(m.body)}
-                      </span>
-                      <button
-                        type="button"
-                        aria-label="Message actions"
-                        onClick={() => setMenuForId((id) => (id === m.id ? null : m.id))}
+                      {!isEditing && m.body?.trim() ? (
+                        <span style={{ color: CRT.text, whiteSpace: "pre-wrap", flex: "1 1 180px" }}>
+                          {renderChatBody(m.body)}
+                        </span>
+                      ) : null}
+                      {!isEditing && (
+                        <button
+                          type="button"
+                          aria-label="Message actions"
+                          onClick={() => setMenuForId((id) => (id === m.id ? null : m.id))}
+                          style={{
+                            ...btnBase,
+                            border: "none",
+                            color: CRT.greenMuted,
+                            padding: "0 4px",
+                            fontSize: 12,
+                          }}
+                        >
+                          ···
+                        </button>
+                      )}
+                    </div>
+                    {!isEditing && m.gif_url ? (
+                      <div style={{ marginTop: 6, marginLeft: 4 }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={m.gif_url}
+                          alt="GIF"
+                          style={{
+                            display: "block",
+                            maxWidth: "min(280px, 100%)",
+                            maxHeight: 220,
+                            borderRadius: 8,
+                            border: `1px solid ${CRT.greenMuted}`,
+                          }}
+                        />
+                      </div>
+                    ) : null}
+
+                    {isEditing && (
+                      <div
                         style={{
-                          ...btnBase,
-                          border: "none",
-                          color: CRT.greenMuted,
-                          padding: "0 4px",
-                          fontSize: 12,
+                          marginTop: 6,
+                          border: CRT.border,
+                          padding: 8,
+                          background: "#001000",
+                          display: "grid",
+                          gap: 8,
                         }}
                       >
-                        ···
-                      </button>
-                    </div>
+                        {editGifUrl && (
+                          <div style={{ position: "relative", display: "inline-block" }}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={editGifUrl}
+                              alt="GIF"
+                              style={{ maxHeight: 100, maxWidth: 180, borderRadius: 8, display: "block" }}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setEditGifUrl(null)}
+                              aria-label="Remove GIF"
+                              style={{
+                                position: "absolute",
+                                top: 4,
+                                right: 4,
+                                background: "rgba(0,0,0,0.75)",
+                                color: CRT.green,
+                                border: CRT.border,
+                                width: 22,
+                                height: 22,
+                                cursor: "pointer",
+                              }}
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )}
+                        <MentionTextarea
+                          value={editDraft}
+                          onChange={(display) => setEditDraft(display.slice(0, CHATROOM_MESSAGE_MAX_LEN))}
+                          onChangeRaw={(raw) => {
+                            editRawRef.current = raw;
+                          }}
+                          placeholder="Edit message…"
+                          style={{
+                            width: "100%",
+                            resize: "vertical",
+                            minHeight: 48,
+                            border: CRT.border,
+                            outline: "none",
+                            background: "#000",
+                            color: CRT.text,
+                            fontFamily: CRT.mono,
+                            fontSize: 13,
+                            lineHeight: 1.45,
+                            padding: 8,
+                            caretColor: CRT.green,
+                          }}
+                        />
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                          {chatGifEnabled ? (
+                            <GifPickerButton
+                              onSelect={(url) => setEditGifUrl(url)}
+                              theme="dark"
+                              variant="circle"
+                            />
+                          ) : null}
+                          <button
+                            type="button"
+                            disabled={editSaving || (!editDraft.trim() && !editGifUrl)}
+                            onClick={() => void saveEditMessage()}
+                            style={{
+                              ...btnBase,
+                              fontSize: 11,
+                              padding: "4px 10px",
+                              opacity: editSaving || (!editDraft.trim() && !editGifUrl) ? 0.4 : 1,
+                            }}
+                          >
+                            {editSaving ? "SAVING…" : "SAVE"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={editSaving}
+                            onClick={cancelEditMessage}
+                            style={{ ...btnBase, fontSize: 11, padding: "4px 10px", color: CRT.greenDim }}
+                          >
+                            CANCEL
+                          </button>
+                        </div>
+                      </div>
+                    )}
 
-                    {menuForId === m.id && (
+                    {menuForId === m.id && !isEditing && (
                       <div
                         style={{
                           display: "inline-flex",
@@ -728,7 +937,7 @@ export default function ChatroomModal({ open, currentUserId, onClose, variant = 
                           background: "#001400",
                         }}
                       >
-                        {m.user_id !== currentUserId ? (
+                        {!isMine ? (
                           <>
                             <button
                               type="button"
@@ -759,7 +968,22 @@ export default function ChatroomModal({ open, currentUserId, onClose, variant = 
                             />
                           </>
                         ) : (
-                          <span style={{ color: CRT.greenDim, fontSize: 11 }}>YOUR MSG</span>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => startEditMessage(m)}
+                              style={{ ...btnBase, border: "none", fontSize: 11, padding: 0 }}
+                            >
+                              EDIT
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void deleteOwnMessage(m.id)}
+                              style={{ ...btnBase, border: "none", fontSize: 11, padding: 0, color: CRT.danger }}
+                            >
+                              DELETE
+                            </button>
+                          </>
                         )}
                       </div>
                     )}
@@ -835,6 +1059,39 @@ export default function ChatroomModal({ open, currentUserId, onClose, variant = 
               !! {error}
             </div>
           )}
+          {chatGifEnabled && selectedGifUrl && (
+            <div style={{ position: "relative", display: "inline-block", marginBottom: 8 }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selectedGifUrl}
+                alt="GIF"
+                style={{ maxHeight: 100, maxWidth: 180, borderRadius: 8, display: "block", border: CRT.border }}
+              />
+              <button
+                type="button"
+                onClick={() => setSelectedGifUrl(null)}
+                aria-label="Remove GIF"
+                style={{
+                  position: "absolute",
+                  top: 4,
+                  right: 4,
+                  background: "rgba(0,0,0,0.75)",
+                  color: CRT.green,
+                  border: CRT.border,
+                  borderRadius: 0,
+                  width: 22,
+                  height: 22,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ×
+              </button>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
             <div
               style={{
@@ -881,23 +1138,35 @@ export default function ChatroomModal({ open, currentUserId, onClose, variant = 
                 />
               </div>
             </div>
-            <button
-              type="button"
-              disabled={sending || !draft.trim()}
-              onClick={() => void sendMessage()}
-              style={{
-                ...btnBase,
-                flexShrink: 0,
-                padding: "0 18px",
-                fontSize: 13,
-                fontWeight: 700,
-                opacity: sending || !draft.trim() ? 0.4 : 1,
-                cursor: sending || !draft.trim() ? "not-allowed" : "pointer",
-                boxShadow: sending || !draft.trim() ? "none" : `0 0 10px ${CRT.greenFaint}`,
-              }}
-            >
-              SEND
-            </button>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+              {chatGifEnabled ? (
+                <GifPickerButton
+                  onSelect={(url) => setSelectedGifUrl(url)}
+                  theme="dark"
+                  variant="circle"
+                />
+              ) : null}
+              <button
+                type="button"
+                disabled={sending || (!draft.trim() && !(chatGifEnabled && selectedGifUrl))}
+                onClick={() => void sendMessage()}
+                style={{
+                  ...btnBase,
+                  flex: 1,
+                  padding: "0 18px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  opacity: sending || (!draft.trim() && !(chatGifEnabled && selectedGifUrl)) ? 0.4 : 1,
+                  cursor: sending || (!draft.trim() && !(chatGifEnabled && selectedGifUrl)) ? "not-allowed" : "pointer",
+                  boxShadow:
+                    sending || (!draft.trim() && !(chatGifEnabled && selectedGifUrl))
+                      ? "none"
+                      : `0 0 10px ${CRT.greenFaint}`,
+                }}
+              >
+                SEND
+              </button>
+            </div>
           </div>
           <div style={{ fontSize: 10, color: CRT.greenMuted, marginTop: 6, textAlign: "right" }}>
             {draft.length}/{CHATROOM_MESSAGE_MAX_LEN}

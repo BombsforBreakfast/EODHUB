@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     .from("events")
     .select("id, user_id, title, date, location")
     .eq("visibility", "public")
+    .eq("is_approved", true)
     .is("unit_id", null)
     .lte("date", dayAfterIso);
   if (eventsErr) {

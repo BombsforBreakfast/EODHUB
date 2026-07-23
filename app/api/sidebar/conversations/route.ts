@@ -27,6 +27,7 @@ type PreviewRow = {
   conversation_id: string;
   content: string | null;
   image_url: string | null;
+  gif_url: string | null;
   created_at: string;
 };
 
@@ -93,7 +94,7 @@ async function loadPreviewRows(
     const previewScanLimit = Math.min(3000, Math.max(300, chunk.length * 25));
     const { data, error } = await adminClient
       .from("messages")
-      .select("conversation_id, content, image_url, created_at")
+      .select("conversation_id, content, image_url, gif_url, created_at")
       .in("conversation_id", chunk)
       .order("created_at", { ascending: false })
       .limit(previewScanLimit);
@@ -314,7 +315,10 @@ export async function GET(req: NextRequest) {
   const previewMap = new Map<string, string>();
   for (const row of previewRows) {
     if (!previewMap.has(row.conversation_id)) {
-      previewMap.set(row.conversation_id, row.content?.trim() || (row.image_url ? "[Photo]" : ""));
+      previewMap.set(
+        row.conversation_id,
+        row.content?.trim() || (row.gif_url ? "[GIF]" : row.image_url ? "[Photo]" : ""),
+      );
     }
   }
 

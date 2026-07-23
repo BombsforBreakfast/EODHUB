@@ -18,6 +18,8 @@ import { FLAG_CATEGORY_LABELS, type FlagCategory } from "../lib/flagCategories";
 import { BizListingTagsField } from "../components/biz/BizListingTagsField";
 import { BizListingTagChips } from "../components/biz/BizListingTagChips";
 import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
+import { EventCalendarCard } from "../components/events/EventCalendarCard";
+import { EventDetailPanel } from "../components/events/EventDetailPanel";
 import AdminPushCampaignsPanel from "../components/admin/AdminPushCampaignsPanel";
 import SupabaseUsagePanel from "../components/admin/SupabaseUsagePanel";
 import TrafficByHourChart from "../components/admin/TrafficByHourChart";
@@ -720,6 +722,9 @@ type AdminCalendarEvent = {
   created_at: string;
   unit_id?: string | null;
   visibility?: string | null;
+  is_approved?: boolean | null;
+  source_type?: string | null;
+  source_url?: string | null;
 };
 
 type EventEdit = {
@@ -1032,12 +1037,17 @@ export default function AdminPage() {
     dir: 0,
     locReq: 0,
     scrapbook: 0,
+    events: 0,
     failedAuth: 0,
     businessOrgPages: 0,
   });
 
   /** When true, Events tab shows the scrapbook moderation queue instead of calendars/memorials. */
   const [eventsAdminScrapbookReviewOpen, setEventsAdminScrapbookReviewOpen] = useState(false);
+  const [pendingImportEvents, setPendingImportEvents] = useState<AdminCalendarEvent[]>([]);
+  const [eodwfPulling, setEodwfPulling] = useState(false);
+  const [pendingEventPreviewId, setPendingEventPreviewId] = useState<string | null>(null);
+  const [pendingEventActionId, setPendingEventActionId] = useState<string | null>(null);
 
   const { t, isDark } = useTheme();
 
@@ -2162,6 +2172,7 @@ export default function AdminPage() {
     if (activeTab === "flags") loadFlags();
     if (activeTab === "events") {
       void loadAdminEvents();
+      void loadPendingImportEvents();
       void loadMemorials();
     }
     if (activeTab === "bugs") loadBugReports();
@@ -3103,14 +3114,120 @@ export default function AdminPage() {
   async function loadAdminEvents() {
     const { data, error } = await supabase
       .from("events")
-      .select("id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at, unit_id, visibility")
+      .select("id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at, unit_id, visibility, is_approved, source_type, source_url")
+      .eq("is_approved", true)
       .order("date", { ascending: false })
       .limit(500);
     if (error) {
-      console.error("Admin events load error:", error);
+      // Fallback if migration not applied yet
+      const legacy = await supabase
+        .from("events")
+        .select("id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at, unit_id, visibility")
+        .order("date", { ascending: false })
+        .limit(500);
+      if (legacy.error) {
+        console.error("Admin events load error:", legacy.error);
+        return;
+      }
+      setAdminEvents((legacy.data ?? []) as AdminCalendarEvent[]);
       return;
     }
     setAdminEvents((data ?? []) as AdminCalendarEvent[]);
+  }
+
+  async function loadPendingImportEvents() {
+    const { data, error } = await supabase
+      .from("events")
+      .select("id, user_id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, created_at, unit_id, visibility, is_approved, source_type, source_url")
+      .eq("is_approved", false)
+      .order("date", { ascending: true })
+      .limit(500);
+    if (error) {
+      console.error("Pending import events load error:", error);
+      setPendingImportEvents([]);
+      return;
+    }
+    setPendingImportEvents((data ?? []) as AdminCalendarEvent[]);
+  }
+
+  async function pullEodwfEventsNow() {
+    setEodwfPulling(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/import-eodwf-events", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(json.error || "EODWF import failed");
+        return;
+      }
+      const fetched = json.fetched?.total ?? 0;
+      showToast(
+        `EODWF pull: ${json.inserted ?? 0} new, ${json.updated ?? 0} updated, ${json.skippedApproved ?? 0} already live (${fetched} fetched)`,
+      );
+      if (Array.isArray(json.fetchErrors) && json.fetchErrors.length > 0) {
+        console.warn("EODWF fetch errors:", json.fetchErrors);
+      }
+      await Promise.all([loadPendingImportEvents(), loadPendingCounts()]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "EODWF import failed");
+    } finally {
+      setEodwfPulling(false);
+    }
+  }
+
+  async function approvePendingEvent(id: string) {
+    setPendingEventActionId(id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/approve-event?id=${encodeURIComponent(id)}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(json.error || "Approve failed");
+        return;
+      }
+      showToast("Event published to calendar");
+      setPendingEventPreviewId((prev) => (prev === id ? null : prev));
+      setPendingCounts((prev) => ({ ...prev, events: Math.max(0, prev.events - 1) }));
+      await Promise.all([loadPendingImportEvents(), loadAdminEvents(), loadPendingCounts()]);
+    } finally {
+      setPendingEventActionId(null);
+    }
+  }
+
+  async function rejectPendingEvent(id: string, title: string) {
+    askConfirm(`Reject and delete pending import “${title}”?`, async () => {
+      setPendingEventActionId(id);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`/api/admin/reject-event?id=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+        });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          alert(json.error || "Reject failed");
+          return;
+        }
+        showToast("Pending event rejected");
+        setPendingEventPreviewId((prev) => (prev === id ? null : prev));
+        await Promise.all([loadPendingImportEvents(), loadPendingCounts()]);
+      } finally {
+        setPendingEventActionId(null);
+      }
+    });
+  }
+
+  function sourceTypeLabel(sourceType: string | null | undefined) {
+    if (sourceType === "eodwf_calendar") return "EODWF calendar";
+    if (sourceType === "eodwf_gathering") return "EODWF monthly gathering";
+    if (sourceType === "eodwf_retreat") return "EODWF retreat";
+    return sourceType || "Import";
   }
 
   async function updateAdminEvent() {
@@ -3145,7 +3262,7 @@ export default function AdminPage() {
       }
       showToast("Event updated.");
       setEditingEvent(null);
-      await loadAdminEvents();
+      await Promise.all([loadAdminEvents(), loadPendingImportEvents()]);
     } catch (err) {
       alert(err instanceof Error ? err.message : "Update failed.");
     } finally {
@@ -3828,7 +3945,7 @@ export default function AdminPage() {
           </button>
           <button type="button" style={tabStyle("events")} onClick={() => setActiveTab("events")}>
             Events
-            {tabNotifyBadge(pendingCounts.scrapbook)}
+            {tabNotifyBadge(pendingCounts.events + pendingCounts.scrapbook)}
           </button>
           <button type="button" style={tabStyle("bugs")} onClick={() => setActiveTab("bugs")}>
             Bugs
@@ -7131,11 +7248,126 @@ export default function AdminPage() {
             </div>
 
             {!eventsAdminScrapbookReviewOpen && (
+              <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start", marginBottom: 16 }}>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>
+                      Pending EODWF imports
+                      {pendingCounts.events > 0 ? (
+                        <span style={{ marginLeft: 8, verticalAlign: "middle" }}>{tabNotifyBadge(pendingCounts.events)}</span>
+                      ) : null}
+                    </div>
+                    <div style={{ fontSize: 14, color: t.textMuted }}>
+                      Preview the calendar card as it will appear, then approve to publish or reject to delete.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void pullEodwfEventsNow()}
+                    disabled={eodwfPulling}
+                    style={{
+                      ...actionBtn("#1d4ed8"),
+                      fontSize: 13,
+                      padding: "10px 16px",
+                      opacity: eodwfPulling ? 0.7 : 1,
+                    }}
+                  >
+                    {eodwfPulling ? "Pulling…" : "Pull from EODWF now"}
+                  </button>
+                </div>
+
+                {pendingImportEvents.length === 0 ? (
+                  <div style={{ color: t.textFaint, fontSize: 14 }}>
+                    No pending imports. Use “Pull from EODWF now” or wait for the monthly cron.
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 16 }}>
+                    {pendingImportEvents.map((ev) => {
+                      const previewOpen = pendingEventPreviewId === ev.id;
+                      const busy = pendingEventActionId === ev.id;
+                      return (
+                        <div key={ev.id} style={{ display: "grid", gap: 10 }}>
+                          <EventCalendarCard
+                            event={ev}
+                            theme={t}
+                            sourceLabel={sourceTypeLabel(ev.source_type)}
+                            onOpen={() => setPendingEventPreviewId(previewOpen ? null : ev.id)}
+                          />
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              onClick={() => setPendingEventPreviewId(previewOpen ? null : ev.id)}
+                              style={{ ...actionBtn("#374151"), fontSize: 12, padding: "6px 12px" }}
+                            >
+                              {previewOpen ? "Hide full card" : "Preview full card"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingEvent({
+                                  id: ev.id,
+                                  title: ev.title,
+                                  description: ev.description ?? "",
+                                  date: ev.date,
+                                  organization: ev.organization ?? "",
+                                  signup_url: ev.signup_url ?? "",
+                                  image_url: ev.image_url ?? "",
+                                  location: ev.location ?? "",
+                                  event_time: ev.event_time ?? "",
+                                  poc_name: ev.poc_name ?? "",
+                                  poc_phone: ev.poc_phone ?? "",
+                                });
+                              }}
+                              style={{ ...actionBtn("#1d4ed8"), fontSize: 12, padding: "6px 12px" }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => void approvePendingEvent(ev.id)}
+                              style={{ ...actionBtn("#15803d"), fontSize: 12, padding: "6px 12px" }}
+                            >
+                              {busy ? "…" : "Approve"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={() => rejectPendingEvent(ev.id, ev.title)}
+                              style={{ ...actionBtn("#ef4444"), fontSize: 12, padding: "6px 12px" }}
+                            >
+                              Reject
+                            </button>
+                          </div>
+                          {previewOpen && (
+                            <div
+                              style={{
+                                border: `1px solid ${t.border}`,
+                                borderRadius: 12,
+                                padding: 16,
+                                background: t.bg,
+                              }}
+                            >
+                              <div style={{ fontSize: 12, fontWeight: 800, color: t.textMuted, marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                                Publish preview
+                              </div>
+                              <EventDetailPanel event={ev} theme={t} />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!eventsAdminScrapbookReviewOpen && (
             <>
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
               <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Manage Events</div>
               <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
-                Review, edit, or delete calendar events (same data as the Events page).
+                Review, edit, or delete published calendar events (same data as the Events page).
               </div>
 
               {adminEvents.length > 0 && (

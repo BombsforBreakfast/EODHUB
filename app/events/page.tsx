@@ -521,6 +521,7 @@ function EventsPageInner() {
       .lte("date", rangeEndStr)
       .is("unit_id", null)
       .eq("visibility", "public")
+      .eq("is_approved", true)
       .order("date", { ascending: true });
 
     if (error) { console.error("Events load error:", error); return []; }
@@ -677,6 +678,7 @@ function EventsPageInner() {
       .select(EVENT_COLUMNS)
       .is("unit_id", null)
       .eq("visibility", "public")
+      .eq("is_approved", true)
       .gte("date", upcomingStartStr)
       .lte("date", upcomingEndStr)
       .order("date", { ascending: true });
@@ -1416,6 +1418,7 @@ function EventsPageInner() {
         .eq("id", deepLinkEventId)
         .is("unit_id", null)
         .eq("visibility", "public")
+        .eq("is_approved", true)
         .maybeSingle();
       if (cancelled) return;
       if (!error && data) {

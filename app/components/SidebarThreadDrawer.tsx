@@ -9,6 +9,8 @@ import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import { mobileComposerBottomOffset, useVisualViewportKeyboardInset } from "../hooks/useVisualViewportKeyboardInset";
 import { scrollMessagesToBottom } from "../lib/messageScroll";
+import GifPickerButton from "./GifPickerButton";
+import { isChatGifComposerEnabled } from "../lib/native/chatGifComposer";
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -33,6 +35,7 @@ type Props = {
 
 export default function SidebarThreadDrawer({ open, onClose, currentUserId, peerUserId, modalOnDesktop = false }: Props) {
   const { t, isDark } = useTheme();
+  const chatGifEnabled = isChatGifComposerEnabled();
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [peerName, setPeerName] = useState("Member");
   const [messages, setMessages] = useState<MessageRow[]>([]);
@@ -41,6 +44,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
   const [loading, setLoading] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [selectedPhoto, setSelectedPhoto] = useState<{ file: File; previewUrl: string } | null>(null);
+  const [selectedGifUrl, setSelectedGifUrl] = useState<string | null>(null);
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
   const [urlPreviews, setUrlPreviews] = useState<Record<string, UrlPreview | null>>({});
   const previewFetchesRef = useRef<Set<string>>(new Set());
@@ -189,7 +193,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
     const ro = new ResizeObserver(syncHeight);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [isMobile, mobileComposerPinned, draft, selectedPhoto]);
+  }, [isMobile, mobileComposerPinned, draft, selectedPhoto, selectedGifUrl]);
 
   useLayoutEffect(() => {
     if (!open || !conversationId) return;
@@ -324,10 +328,12 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
   async function send() {
     const text = draft.trim();
     const photo = selectedPhoto;
-    if ((!text && !photo) || !conversationId || sending) return;
+    const gif = chatGifEnabled ? selectedGifUrl : null;
+    if ((!text && !photo && !gif) || !conversationId || sending) return;
     setSending(true);
     setDraft("");
     if (photo) clearMessagePhoto();
+    setSelectedGifUrl(null);
     try {
       const imageUrl = photo
         ? await uploadMessagePhoto(supabase, photo.file, { userId: currentUserId, conversationId })
@@ -339,7 +345,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
         sender_id: currentUserId,
         content: text,
         created_at: new Date().toISOString(),
-        gif_url: null,
+        gif_url: gif,
         image_url: imageUrl,
       };
       setMessages((prev) => [...prev, optimistic]);
@@ -349,7 +355,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
           conversation_id: conversationId,
           sender_id: currentUserId,
           content: text,
-          gif_url: null,
+          gif_url: gif,
           image_url: imageUrl,
         })
         .select("id, conversation_id, sender_id, content, created_at, gif_url, image_url, is_read")
@@ -362,6 +368,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
       alert(err instanceof Error ? err.message : "Could not send your message.");
       setDraft(text);
       if (photo) setMessagePhoto(photo.file);
+      if (gif) setSelectedGifUrl(gif);
     } finally {
       setSending(false);
     }
@@ -511,12 +518,23 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
               }}
             >
               {m.content ? <div>{renderMessageTextWithLinks(m.content)}</div> : null}
+              {m.gif_url ? (
+                <div style={{ marginTop: m.content ? 8 : 0 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={m.gif_url}
+                    alt="GIF"
+                    onLoad={handleMessageImageLoad}
+                    style={{ display: "block", maxWidth: 220, maxHeight: 280, borderRadius: 12 }}
+                  />
+                </div>
+              ) : null}
               {m.image_url ? (
                 <a
                   href={m.image_url}
                   target="_blank"
                   rel="noreferrer"
-                  style={{ display: "block", marginTop: m.content ? 8 : 0 }}
+                  style={{ display: "block", marginTop: m.content || m.gif_url ? 8 : 0 }}
                 >
                   <img
                     src={m.image_url}
@@ -588,6 +606,17 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
             >×</button>
           </div>
         )}
+        {chatGifEnabled && selectedGifUrl && (
+          <div style={{ position: "relative", display: "inline-block", marginBottom: 8, marginLeft: selectedPhoto ? 8 : 0 }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={selectedGifUrl} alt="GIF" style={{ maxHeight: 120, maxWidth: 200, borderRadius: 10, display: "block" }} />
+            <button
+              type="button"
+              onClick={() => setSelectedGifUrl(null)}
+              style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+            >×</button>
+          </div>
+        )}
         {isDraggingPhoto && !isMobile && (
           <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 10, border: "1px dashed #60a5fa", color: "#60a5fa", fontSize: 12, fontWeight: 800 }}>
             Drop photo to attach
@@ -621,6 +650,13 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
               color: t.text,
             }}
           />
+          {chatGifEnabled ? (
+            <GifPickerButton
+              onSelect={(url) => setSelectedGifUrl(url)}
+              theme={isDark ? "dark" : "light"}
+              variant="circle"
+            />
+          ) : null}
           <button
             type="button"
             onClick={() => photoInputRef.current?.click()}
@@ -642,7 +678,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
           <button
             type="button"
             onClick={() => void send()}
-            disabled={(!draft.trim() && !selectedPhoto) || !conversationId || sending || loading}
+            disabled={(!draft.trim() && !selectedPhoto && !(chatGifEnabled && selectedGifUrl)) || !conversationId || sending || loading}
             style={{
               border: "none",
               borderRadius: 10,

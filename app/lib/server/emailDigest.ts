@@ -372,6 +372,7 @@ async function buildCommunitySections(
       .from("events")
       .select("id, title, organization, date, created_at")
       .eq("visibility", "public")
+      .eq("is_approved", true)
       .gte("created_at", windowStart)
       .lte("created_at", windowEnd)
       .order("created_at", { ascending: false })

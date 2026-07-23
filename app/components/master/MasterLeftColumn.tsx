@@ -403,6 +403,7 @@ export default function MasterLeftColumn({
         .lte("date", endIso)
         .is("unit_id", null)
         .eq("visibility", "public")
+        .eq("is_approved", true)
         .order("date", { ascending: true }),
       supabase.from("memorials").select("id, name, death_date, source_url, photo_url, bio, category, service"),
     ]);
@@ -431,6 +432,7 @@ export default function MasterLeftColumn({
             .from("events")
             .select("id, title, description, date, organization, signup_url, image_url, location, event_time, poc_name, poc_phone, unit_id, visibility")
             .eq("id", eventId)
+            .eq("is_approved", true)
             .maybeSingle(),
           supabase
             .from("event_attendance")

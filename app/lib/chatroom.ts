@@ -131,6 +131,7 @@ export type ChatroomPeekLatest = {
   user_id: string;
   author_name: string;
   body: string;
+  gif_url: string | null;
   created_at: string;
 };
 
@@ -138,6 +139,7 @@ export type ChatroomMessageDto = {
   id: string;
   user_id: string;
   body: string;
+  gif_url: string | null;
   tag: string | null;
   created_at: string;
   expires_at: string;

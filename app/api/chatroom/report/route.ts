@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   const admin = getAdminClient();
   const { data: message } = await admin
     .from("chatroom_messages")
-    .select("id, user_id, body")
+    .select("id, user_id, body, gif_url")
     .eq("id", messageId)
     .maybeSingle();
 
@@ -56,11 +56,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "You cannot report your own message" }, { status: 400 });
   }
 
+  const snapshotBody =
+    message.body?.trim()
+      || (message.gif_url ? "[GIF]" : "");
+
   const { error: snapErr } = await admin.from("chatroom_flag_snapshots").insert({
     message_id: message.id,
     reporter_id: user.id,
     author_id: message.user_id,
-    body: message.body,
+    body: snapshotBody,
+    gif_url: message.gif_url ?? null,
     category,
   });
   if (snapErr) {
@@ -104,8 +109,14 @@ export async function POST(req: NextRequest) {
     || "A member";
 
   if (admins && admins.length > 0) {
-    const preview = mentionsToDisplayText(message.body).slice(0, 80);
-    const ellipsis = message.body.length > 80 ? "…" : "";
+    const previewSource =
+      message.body?.trim()
+        ? mentionsToDisplayText(message.body)
+        : message.gif_url
+          ? "[GIF]"
+          : "";
+    const preview = previewSource.slice(0, 80);
+    const ellipsis = previewSource.length > 80 ? "…" : "";
     const adminMessage = `Team Room message flagged (${reasonLabel}): “${preview}${ellipsis}”`;
     await Promise.all(
       admins.map((a: { user_id: string }) =>
@@ -128,7 +139,8 @@ export async function POST(req: NextRequest) {
             content_id: message.id,
             category,
             reporter_id: user.id,
-            body_snapshot: message.body,
+            body_snapshot: snapshotBody,
+            gif_url: message.gif_url ?? null,
             author_id: message.user_id,
           },
         }),
