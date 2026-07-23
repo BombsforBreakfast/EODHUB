@@ -88,7 +88,11 @@ export default function ExpandableText({
       {showToggle && (
         <button
           type="button"
-          onClick={() => setExpanded((v) => !v)}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setExpanded((v) => !v);
+          }}
           style={{
             background: "transparent",
             border: "none",

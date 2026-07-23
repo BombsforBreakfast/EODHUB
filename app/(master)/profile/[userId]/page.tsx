@@ -7073,9 +7073,18 @@ export default function PublicProfilePage() {
                               </div>
                             )}
                             {post.feed_event.description && (
-                              <div style={{ fontSize: 15, lineHeight: 1.45, color: t.textMuted, width: "100%" }}>
+                              <ExpandableText
+                                textLength={post.feed_event.description.length}
+                                maxLines={5}
+                                minCharsToToggle={160}
+                                expandLabel="...show more"
+                                collapseLabel="Show less"
+                                toggleColor={t.textMuted}
+                                wrapperStyle={{ width: "100%" }}
+                                style={{ fontSize: 15, lineHeight: 1.45, color: t.textMuted }}
+                              >
                                 {post.feed_event.description}
-                              </div>
+                              </ExpandableText>
                             )}
                           </button>
                         )}

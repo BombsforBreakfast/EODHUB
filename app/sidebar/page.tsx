@@ -15,6 +15,7 @@ import UrlPreviewCard from "../components/UrlPreviewCard";
 import { extractFirstUrl, type UrlPreview } from "../lib/urlPreview";
 import { ensureSavedEventForUser } from "../lib/ensureSavedEventForUser";
 import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
+import ExpandableText from "../components/ExpandableText";
 import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
@@ -1971,7 +1972,18 @@ export default function SidebarPage() {
             </div>
 
             {selectedInviteMeta.event.description ? (
-              <div style={{ marginTop: 18, color: t.textMuted, lineHeight: 1.6, fontSize: 14 }}>{selectedInviteMeta.event.description}</div>
+              <ExpandableText
+                textLength={selectedInviteMeta.event.description.length}
+                maxLines={5}
+                minCharsToToggle={160}
+                expandLabel="...show more"
+                collapseLabel="Show less"
+                toggleColor={t.textMuted}
+                wrapperStyle={{ marginTop: 18 }}
+                style={{ color: t.textMuted, lineHeight: 1.6, fontSize: 14 }}
+              >
+                {selectedInviteMeta.event.description}
+              </ExpandableText>
             ) : null}
 
             <div style={{ marginTop: 20, borderTop: `1px solid ${t.border}`, paddingTop: 16, display: "grid", gap: 10 }}>

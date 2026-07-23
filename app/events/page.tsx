@@ -37,6 +37,7 @@ import {
 } from "../lib/reactions";
 import { MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
 import { ExternalSiteEmbedModal, ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
+import ExpandableText from "../components/ExpandableText";
 import { useMasterShell } from "../components/master/masterShellContext";
 import { useCenterPaneRect, useViewportMobile } from "../hooks/useCenterPaneRect";
 
@@ -3565,16 +3566,18 @@ function EventsPageInner() {
             </div>
 
             {selectedEvent.description && (
-              <div
-                style={{
-                  marginTop: 18,
-                  color: t.textMuted,
-                  lineHeight: 1.6,
-                  fontSize: 14,
-                }}
+              <ExpandableText
+                textLength={selectedEvent.description.length}
+                maxLines={5}
+                minCharsToToggle={160}
+                expandLabel="...show more"
+                collapseLabel="Show less"
+                toggleColor={t.textMuted}
+                wrapperStyle={{ marginTop: 18 }}
+                style={{ color: t.textMuted, lineHeight: 1.6, fontSize: 14 }}
               >
                 {selectedEvent.description}
-              </div>
+              </ExpandableText>
             )}
 
             <div

@@ -2967,7 +2967,18 @@ export default function UnitPage() {
             </div>
 
             {selectedUnitEvent.description ? (
-              <div style={{ marginTop: 18, color: t.textMuted, lineHeight: 1.6, fontSize: 14, whiteSpace: "pre-wrap" }}>{selectedUnitEvent.description}</div>
+              <ExpandableText
+                textLength={selectedUnitEvent.description.length}
+                maxLines={5}
+                minCharsToToggle={160}
+                expandLabel="...show more"
+                collapseLabel="Show less"
+                toggleColor={t.textMuted}
+                wrapperStyle={{ marginTop: 18 }}
+                style={{ color: t.textMuted, lineHeight: 1.6, fontSize: 14 }}
+              >
+                {selectedUnitEvent.description}
+              </ExpandableText>
             ) : null}
 
             <div style={{ marginTop: 20, borderTop: `1px solid ${t.border}`, paddingTop: 16, display: "grid", gap: 8 }}>

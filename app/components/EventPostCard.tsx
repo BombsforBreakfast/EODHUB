@@ -5,6 +5,7 @@ import { supabase } from "../lib/lib/supabaseClient";
 import { useTheme } from "../lib/ThemeContext";
 import { FEED_MEDIA_RADIUS, FEED_SECTION_GAP } from "../lib/feedLayout";
 import { ExternalSiteEmbedModal } from "./ExternalSiteEmbedModal";
+import ExpandableText from "./ExpandableText";
 
 type FeedEventSnapshot = {
   id: string;
@@ -217,9 +218,17 @@ export default function EventPostCard({ event, onOpen, maxWidth = 720 }: EventPo
           <div style={{ fontSize: 14, color: t.text }}>{event.location ?? event.organization}</div>
         ) : null}
         {event.description ? (
-          <div style={{ fontSize: 14, lineHeight: 1.5, color: t.textMuted, whiteSpace: "pre-wrap" }}>
+          <ExpandableText
+            textLength={event.description.length}
+            maxLines={5}
+            minCharsToToggle={160}
+            expandLabel="...show more"
+            collapseLabel="Show less"
+            toggleColor={t.textMuted}
+            style={{ fontSize: 14, color: t.textMuted }}
+          >
             {event.description}
-          </div>
+          </ExpandableText>
         ) : null}
         {detailsHref ? (
           <div style={{ marginTop: 2 }}>

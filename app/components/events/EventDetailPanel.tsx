@@ -1,4 +1,5 @@
 import { httpsAssetUrl } from "@/app/lib/urlPreview";
+import ExpandableText from "../ExpandableText";
 import type { EventCardModel, EventCardTheme } from "./EventCalendarCard";
 
 type Props = {
@@ -75,9 +76,17 @@ export function EventDetailPanel({ event, theme: t }: Props) {
       </div>
 
       {event.description ? (
-        <div style={{ fontSize: 14, color: t.text, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+        <ExpandableText
+          textLength={event.description.length}
+          maxLines={5}
+          minCharsToToggle={160}
+          expandLabel="...show more"
+          collapseLabel="Show less"
+          toggleColor={t.textMuted}
+          style={{ fontSize: 14, color: t.text, lineHeight: 1.55 }}
+        >
           {event.description}
-        </div>
+        </ExpandableText>
       ) : null}
     </div>
   );
