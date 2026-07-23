@@ -292,7 +292,11 @@ async function scrapeSearchPage(
       },
       { searchQuery },
     );
-    if (!relevance.relevant) continue;
+    if (!relevance.relevant) {
+      const why = relevance.reasons[0] ?? "not relevant";
+      console.log(`  − skip: ${detail.title || title} (${why})`);
+      continue;
+    }
 
     jobs.push({
       linkedinJobId: jobId,

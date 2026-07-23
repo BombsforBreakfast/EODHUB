@@ -121,4 +121,6 @@ All scoped to United States, past week. Up to **4 jobs per search** (max **50** 
 | Empty scrape | LinkedIn DOM may have changed — check selectors in `scripts/linkedin-jobs-import.ts` |
 | Import API 401 | Verify `CRON_SECRET` matches production |
 
+Hard exclusions (LinkedIn only, see `app/lib/linkedin/relevance.ts`): counterintelligence, dive locker, air traffic control, personal protection, MQ-9 / Reaper, SERE, HUMINT. Other UAS roles still pass.
+
 Logs: `%USERPROFILE%\.eod-hub\linkedin-import.log` (Windows) or `~/.eod-hub/linkedin-import.log` (macOS)
