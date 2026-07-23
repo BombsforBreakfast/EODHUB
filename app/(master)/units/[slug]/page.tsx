@@ -13,6 +13,7 @@ import { useMasterShell } from "../../../components/master/masterShellContext";
 import AddToRabbitholeModal from "../../../rabbithole/components/AddToRabbitholeModal";
 import { MurphyRabbitholeBanner } from "../../../components/MurphyRabbitholeBanner";
 import FeedPostHeader from "../../../components/FeedPostHeader";
+import OptimizedAvatarImg from "../../../components/OptimizedAvatarImg";
 import ExpandableText from "../../../components/ExpandableText";
 import YouTubeEmbed, { firstYouTubeUrlFromText, getYouTubeVideoId, sameYouTubeVideo } from "../../../components/YouTubeEmbed";
 import { prepareFeedUploadFile, prepareImageUploadFile } from "../../../lib/prepareUploadFile";
@@ -137,6 +138,7 @@ type UnitPost = {
 
 type Comment = {
   id: string;
+  user_id: string;
   content: string;
   created_at: string;
   author_name: string;
@@ -278,6 +280,8 @@ export default function UnitPage() {
   const [membership, setMembership] = useState<Membership | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserAccountType, setCurrentUserAccountType] = useState<string | null>(null);
+  const [currentUserAuthorName, setCurrentUserAuthorName] = useState("Member");
+  const [currentUserAuthorPhoto, setCurrentUserAuthorPhoto] = useState<string | null>(null);
   const [isFounder, setIsFounder] = useState(false);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -307,8 +311,16 @@ export default function UnitPage() {
   const [editingPostContent, setEditingPostContent] = useState("");
   const [savingPostId, setSavingPostId] = useState<string | null>(null);
   const [flaggingId, setFlaggingId] = useState<string | null>(null);
-  const [flagModal, setFlagModal] = useState<{ contentType: "unit_post"; contentId: string } | null>(null);
+  const [flagModal, setFlagModal] = useState<{
+    contentType: "unit_post" | "unit_post_comment";
+    contentId: string;
+    postId?: string;
+  } | null>(null);
   const [flagCategoryChoice, setFlagCategoryChoice] = useState<FlagCategory>("general");
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editingCommentContent, setEditingCommentContent] = useState("");
+  const [savingCommentId, setSavingCommentId] = useState<string | null>(null);
+  const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
 
   // Members
   const [members, setMembers] = useState<Member[]>([]);
@@ -391,10 +403,16 @@ export default function UnitPage() {
       if (uid) {
         const { data: profileRow } = await supabase
           .from("profiles")
-          .select("account_type")
+          .select("account_type, display_name, first_name, last_name, photo_url")
           .eq("user_id", uid)
           .maybeSingle();
         setCurrentUserAccountType(profileRow?.account_type ?? null);
+        const name =
+          profileRow?.display_name?.trim() ||
+          `${profileRow?.first_name ?? ""} ${profileRow?.last_name ?? ""}`.trim() ||
+          "Member";
+        setCurrentUserAuthorName(name);
+        setCurrentUserAuthorPhoto(profileRow?.photo_url ?? null);
       }
 
       let founder = false;
@@ -1283,13 +1301,17 @@ export default function UnitPage() {
     }
   }
 
-  function openFlagModal(contentId: string) {
+  function openFlagModal(
+    contentType: "unit_post" | "unit_post_comment",
+    contentId: string,
+    postId?: string,
+  ) {
     if (!currentUserId) {
       window.location.href = "/login";
       return;
     }
     setFlagCategoryChoice("general");
-    setFlagModal({ contentType: "unit_post", contentId });
+    setFlagModal({ contentType, contentId, postId });
   }
 
   async function submitFlagFromModal() {
@@ -1312,10 +1334,94 @@ export default function UnitPage() {
         return;
       }
       alert("Flagged for review. Thank you.");
+      const flaggedPostId = flagModal.postId;
+      const flaggedContentType = flagModal.contentType;
+      const flaggedContentId = flagModal.contentId;
       setFlagModal(null);
-      await loadPosts();
+      if (flaggedContentType === "unit_post_comment" && flaggedPostId) {
+        setComments((prev) => ({
+          ...prev,
+          [flaggedPostId]: (prev[flaggedPostId] ?? []).filter((c) => c.id !== flaggedContentId),
+        }));
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === flaggedPostId
+              ? { ...p, comment_count: Math.max(0, p.comment_count - 1) }
+              : p,
+          ),
+        );
+      } else {
+        await loadPosts();
+      }
     } finally {
       setFlaggingId(null);
+    }
+  }
+
+  function startEditComment(commentId: string, currentContent: string) {
+    setEditingCommentId(commentId);
+    setEditingCommentContent(currentContent);
+  }
+
+  function cancelEditComment() {
+    setEditingCommentId(null);
+    setEditingCommentContent("");
+  }
+
+  async function saveCommentEdit(postId: string, commentId: string) {
+    if (!editingCommentContent.trim()) return;
+    setSavingCommentId(commentId);
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/units/${slug}/posts/${postId}/comments/${commentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ content: editingCommentContent.trim() }),
+      });
+      const json = await res.json().catch(() => ({} as { error?: string }));
+      if (!res.ok) {
+        alert(json.error ?? "Failed to update comment.");
+        return;
+      }
+      setComments((prev) => ({
+        ...prev,
+        [postId]: (prev[postId] ?? []).map((c) =>
+          c.id === commentId ? { ...c, content: editingCommentContent.trim() } : c,
+        ),
+      }));
+      setEditingCommentId(null);
+      setEditingCommentContent("");
+    } finally {
+      setSavingCommentId(null);
+    }
+  }
+
+  async function deleteComment(postId: string, commentId: string) {
+    if (!window.confirm("Delete this comment?")) return;
+    setDeletingCommentId(commentId);
+    try {
+      const token = await getToken();
+      const res = await fetch(`/api/units/${slug}/posts/${postId}/comments/${commentId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => ({} as { error?: string }));
+      if (!res.ok) {
+        alert(json.error ?? "Failed to delete comment.");
+        return;
+      }
+      setComments((prev) => ({
+        ...prev,
+        [postId]: (prev[postId] ?? []).filter((c) => c.id !== commentId),
+      }));
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === postId ? { ...p, comment_count: Math.max(0, p.comment_count - 1) } : p,
+        ),
+      );
+      if (editingCommentId === commentId) cancelEditComment();
+    } finally {
+      setDeletingCommentId(null);
     }
   }
 
@@ -1398,6 +1504,7 @@ export default function UnitPage() {
       const json = await res.json();
       const jc = json.comment as {
         id: string;
+        user_id?: string;
         content?: string;
         created_at: string;
         author_name?: string;
@@ -1407,10 +1514,11 @@ export default function UnitPage() {
       };
       const padded: Comment = {
         id: jc.id,
+        user_id: jc.user_id ?? currentUserId ?? "",
         content: jc.content ?? "",
         created_at: jc.created_at,
-        author_name: jc.author_name ?? "Member",
-        author_photo: jc.author_photo ?? null,
+        author_name: jc.author_name ?? currentUserAuthorName,
+        author_photo: jc.author_photo ?? currentUserAuthorPhoto,
         image_url: jc.image_url,
         gif_url: jc.gif_url,
         likeCount: 0,
@@ -1971,7 +2079,18 @@ export default function UnitPage() {
                       onEditContentChange={setEditingPostContent}
                       onSaveEdit={() => savePostEdit(post.id)}
                       onDelete={() => deletePost(post.id)}
-                      onFlag={() => openFlagModal(post.id)}
+                      onFlag={() => openFlagModal("unit_post", post.id)}
+                      editingCommentId={editingCommentId}
+                      editingCommentContent={editingCommentContent}
+                      savingCommentId={savingCommentId}
+                      deletingCommentId={deletingCommentId}
+                      flaggingCommentId={flaggingId}
+                      onEditComment={(commentId, content) => startEditComment(commentId, content)}
+                      onCancelEditComment={cancelEditComment}
+                      onEditCommentContentChange={setEditingCommentContent}
+                      onSaveEditComment={(commentId) => void saveCommentEdit(post.id, commentId)}
+                      onDeleteComment={(commentId) => void deleteComment(post.id, commentId)}
+                      onFlagComment={(commentId) => openFlagModal("unit_post_comment", commentId, post.id)}
                       onAddToRabbithole={
                         currentUserId &&
                         (RABBITHOLE_THRESHOLD_BYPASS || post.like_count >= 3 || post.comment_count >= 2) &&
@@ -2774,7 +2893,7 @@ export default function UnitPage() {
             style={{ width: "100%", maxWidth: 400, background: t.surface, borderRadius: 16, border: `1px solid ${t.border}`, padding: "20px 22px", boxShadow: isDark ? "0 12px 40px rgba(0,0,0,0.5)" : "0 12px 40px rgba(0,0,0,0.12)" }}
           >
             <h2 id="unit-flag-modal-title" style={{ margin: "0 0 14px", fontSize: 18, fontWeight: 800, color: t.text }}>
-              Flag this group post
+              {flagModal.contentType === "unit_post_comment" ? "Flag this group comment" : "Flag this group post"}
             </h2>
             <label htmlFor="unit-flag-reason" style={{ display: "block", fontSize: 13, fontWeight: 700, color: t.textMuted, marginBottom: 6 }}>
               Reason
@@ -2905,10 +3024,30 @@ type ThemeTokens = {
 };
 
 function Avatar({ photo, name, size = 38 }: { photo: string | null; name: string; size?: number }) {
-  if (photo) return <img src={photo} alt={name} style={{ width: size, height: size, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }} />;
+  const { t } = useTheme();
   return (
-    <div style={{ width: size, height: size, borderRadius: "50%", background: "#111", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: size * 0.4, flexShrink: 0 }}>
-      {(name[0] || "?").toUpperCase()}
+    <div
+      style={{
+        width: size,
+        height: size,
+        borderRadius: "50%",
+        overflow: "hidden",
+        background: t.badgeBg,
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontWeight: 700,
+        color: t.textMuted,
+        fontSize: size * 0.32,
+        boxSizing: "border-box",
+      }}
+    >
+      {photo ? (
+        <OptimizedAvatarImg photoUrl={photo} displayName={name} sizePx={size} />
+      ) : (
+        (name?.trim()?.[0] || "U").toUpperCase()
+      )}
     </div>
   );
 }
@@ -3010,6 +3149,17 @@ function PostCard({
   onSaveEdit,
   onDelete,
   onFlag,
+  editingCommentId,
+  editingCommentContent,
+  savingCommentId,
+  deletingCommentId,
+  flaggingCommentId,
+  onEditComment,
+  onCancelEditComment,
+  onEditCommentContentChange,
+  onSaveEditComment,
+  onDeleteComment,
+  onFlagComment,
   onAddToRabbithole,
   rabbitholeThreadId,
   onOpenGallery,
@@ -3040,6 +3190,17 @@ function PostCard({
   onSaveEdit: () => void;
   onDelete: () => void;
   onFlag: () => void;
+  editingCommentId: string | null;
+  editingCommentContent: string;
+  savingCommentId: string | null;
+  deletingCommentId: string | null;
+  flaggingCommentId: string | null;
+  onEditComment: (commentId: string, content: string) => void;
+  onCancelEditComment: () => void;
+  onEditCommentContentChange: (value: string) => void;
+  onSaveEditComment: (commentId: string) => void;
+  onDeleteComment: (commentId: string) => void;
+  onFlagComment: (commentId: string) => void;
   onAddToRabbithole?: (() => void) | undefined;
   rabbitholeThreadId?: string | null;
   onOpenGallery: (startIndex: number) => void;
@@ -3324,54 +3485,184 @@ function PostCard({
           {(comments ?? []).length === 0 && (
             <div style={{ color: t.textFaint, fontSize: 13, marginBottom: 10 }}>No comments yet.</div>
           )}
-          {(comments ?? []).map((c) => (
+          {(comments ?? []).map((c) => {
+            const isOwnComment = !!currentUserId && currentUserId === c.user_id;
+            const isEditingComment = editingCommentId === c.id;
+            return (
             <div key={c.id} id={`unit-comment-${c.id}`} style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-              <Avatar photo={c.author_photo} name={c.author_name} size={28} />
+              <Link href={`/profile/${c.user_id}`} style={{ textDecoration: "none", flexShrink: 0, lineHeight: 0 }}>
+                <Avatar photo={c.author_photo} name={c.author_name} size={28} />
+              </Link>
               <div style={{ background: t.badgeBg, borderRadius: 10, padding: "7px 12px", flex: 1 }}>
-                <div style={{ fontSize: 12, fontWeight: 800, marginBottom: 2 }}>{c.author_name}</div>
-                {c.content && (
-                  <>
-                    <div style={{ fontSize: 13, color: t.text, lineHeight: 1.45 }}>{renderUnitText(c.content)}</div>
-                    {(() => {
-                      const youtubeUrl = firstYouTubeUrlFromText(c.content);
-                      return youtubeUrl ? (
-                        <YouTubeEmbed
-                          url={youtubeUrl}
-                          title="Group comment YouTube video"
-                          maxWidth="min(360px, 100%)"
-                          marginTop={8}
-                        />
-                      ) : null;
-                    })()}
-                  </>
-                )}
-                {c.image_url && (
-                  <button
-                    type="button"
-                    onClick={() => setExpandedCommentImageUrl(c.image_url!)}
-                    aria-label="View comment image full size"
-                    style={{
-                      marginTop: 8,
-                      maxWidth: 180,
-                      height: 180,
-                      borderRadius: 10,
-                      overflow: "hidden",
-                      border: `1px solid ${t.border}`,
-                      background: FEED_MEDIA_FRAME_BG,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: 0,
-                      cursor: "pointer",
-                    }}
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <Link
+                    href={`/profile/${c.user_id}`}
+                    style={{ fontSize: 12, fontWeight: 800, marginBottom: 2, color: t.text, textDecoration: "none" }}
                   >
-                    <img src={c.image_url} alt="Comment image" style={feedContainedImageStyle} />
-                  </button>
-                )}
-                {c.gif_url && (
-                  <div style={{ marginTop: 8 }}>
-                    <img src={c.gif_url} alt="GIF" style={{ maxWidth: 180, borderRadius: 10, display: "block" }} />
+                    {c.author_name}
+                  </Link>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
+                    {!isOwnComment && currentUserId && canInteract ? (
+                      <button
+                        type="button"
+                        onClick={() => onFlagComment(c.id)}
+                        disabled={flaggingCommentId === c.id}
+                        title="Flag for review"
+                        style={{
+                          background: "transparent",
+                          border: "none",
+                          padding: "0 2px",
+                          cursor: flaggingCommentId === c.id ? "not-allowed" : "pointer",
+                          color: t.textFaint,
+                          fontSize: 12,
+                          lineHeight: 1,
+                        }}
+                      >
+                        Report Comment
+                      </button>
+                    ) : null}
+                    {isOwnComment && canInteract ? (
+                      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                        {!isEditingComment && (
+                          <button
+                            type="button"
+                            onClick={() => onEditComment(c.id, c.content)}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              padding: 0,
+                              cursor: "pointer",
+                              color: t.textMuted,
+                              fontWeight: 700,
+                              fontSize: 12,
+                            }}
+                          >
+                            Edit
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onDeleteComment(c.id)}
+                          disabled={deletingCommentId === c.id}
+                          style={{
+                            background: "transparent",
+                            border: "none",
+                            padding: 0,
+                            cursor: deletingCommentId === c.id ? "not-allowed" : "pointer",
+                            color: t.textMuted,
+                            fontWeight: 700,
+                            fontSize: 12,
+                            opacity: deletingCommentId === c.id ? 0.6 : 1,
+                          }}
+                        >
+                          {deletingCommentId === c.id ? "Deleting..." : "Delete"}
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
+                </div>
+                {isEditingComment ? (
+                  <div style={{ marginTop: 8 }}>
+                    <textarea
+                      value={editingCommentContent}
+                      onChange={(e) => onEditCommentContentChange(e.target.value)}
+                      style={{
+                        width: "100%",
+                        minHeight: 70,
+                        border: `1px solid ${t.inputBorder}`,
+                        borderRadius: 10,
+                        padding: 10,
+                        resize: "vertical",
+                        fontSize: 13,
+                        boxSizing: "border-box",
+                        background: t.input,
+                        color: t.text,
+                      }}
+                    />
+                    <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                      <button
+                        type="button"
+                        onClick={onCancelEditComment}
+                        style={{
+                          background: "transparent",
+                          border: `1px solid ${t.border}`,
+                          borderRadius: 10,
+                          padding: "8px 14px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          color: t.text,
+                          fontSize: 13,
+                        }}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onSaveEditComment(c.id)}
+                        disabled={savingCommentId === c.id}
+                        style={{
+                          background: "#111",
+                          color: "white",
+                          border: "none",
+                          borderRadius: 10,
+                          padding: "8px 14px",
+                          fontWeight: 700,
+                          cursor: savingCommentId === c.id ? "not-allowed" : "pointer",
+                          opacity: savingCommentId === c.id ? 0.7 : 1,
+                          fontSize: 13,
+                        }}
+                      >
+                        {savingCommentId === c.id ? "Saving..." : "Save"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {c.content && (
+                      <>
+                        <div style={{ fontSize: 13, color: t.text, lineHeight: 1.45 }}>{renderUnitText(c.content)}</div>
+                        {(() => {
+                          const youtubeUrl = firstYouTubeUrlFromText(c.content);
+                          return youtubeUrl ? (
+                            <YouTubeEmbed
+                              url={youtubeUrl}
+                              title="Group comment YouTube video"
+                              maxWidth="min(360px, 100%)"
+                              marginTop={8}
+                            />
+                          ) : null;
+                        })()}
+                      </>
+                    )}
+                    {c.image_url && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedCommentImageUrl(c.image_url!)}
+                        aria-label="View comment image full size"
+                        style={{
+                          marginTop: 8,
+                          maxWidth: 180,
+                          height: 180,
+                          borderRadius: 10,
+                          overflow: "hidden",
+                          border: `1px solid ${t.border}`,
+                          background: FEED_MEDIA_FRAME_BG,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          padding: 0,
+                          cursor: "pointer",
+                        }}
+                      >
+                        <img src={c.image_url} alt="Comment image" style={feedContainedImageStyle} />
+                      </button>
+                    )}
+                    {c.gif_url && (
+                      <div style={{ marginTop: 8 }}>
+                        <img src={c.gif_url} alt="GIF" style={{ maxWidth: 180, borderRadius: 10, display: "block" }} />
+                      </div>
+                    )}
+                  </>
                 )}
                 <div
                   style={{
@@ -3402,7 +3693,8 @@ function PostCard({
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
 
           {canInteract && (
           <div style={{ marginTop: 8 }}>

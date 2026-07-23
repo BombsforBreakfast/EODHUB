@@ -28,6 +28,24 @@ interface Profile {
   photo_url: string | null;
 }
 
+function isMissingColumnError(error: unknown, columnName: string) {
+  if (!error || typeof error !== "object") return false;
+  const maybe = error as { message?: unknown; details?: unknown; hint?: unknown; code?: unknown };
+  const haystack = `${String(maybe.message ?? "")} ${String(maybe.details ?? "")} ${String(maybe.hint ?? "")}`.toLowerCase();
+  return haystack.includes(columnName.toLowerCase()) && (haystack.includes("column") || maybe.code === "42703");
+}
+
+function authorFieldsFromProfile(profile: Profile | undefined) {
+  const authorName =
+    profile?.display_name ||
+    `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() ||
+    "Unknown";
+  return {
+    author_name: authorName,
+    author_photo: profile?.photo_url ?? null,
+  };
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string; postId: string }> }
@@ -72,17 +90,27 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data: commentRows, error: commentsError } = await adminClient
+  const commentSelect = "id, unit_post_id, user_id, content, image_url, gif_url, created_at";
+  let commentsResult = await adminClient
     .from("unit_post_comments")
-    .select("id, unit_post_id, user_id, content, image_url, gif_url, created_at")
+    .select(commentSelect)
     .eq("unit_post_id", postId)
+    .eq("hidden_for_review", false)
     .order("created_at", { ascending: true });
 
-  if (commentsError) {
-    return NextResponse.json({ error: commentsError.message }, { status: 500 });
+  if (commentsResult.error && isMissingColumnError(commentsResult.error, "hidden_for_review")) {
+    commentsResult = await adminClient
+      .from("unit_post_comments")
+      .select(commentSelect)
+      .eq("unit_post_id", postId)
+      .order("created_at", { ascending: true });
   }
 
-  const comments = commentRows ?? [];
+  if (commentsResult.error) {
+    return NextResponse.json({ error: commentsResult.error.message }, { status: 500 });
+  }
+
+  const comments = commentsResult.data ?? [];
 
   if (comments.length === 0) {
     return NextResponse.json({ comments: [] });
@@ -100,18 +128,10 @@ export async function GET(
     profileMap[p.user_id] = p;
   }
 
-  const enriched = comments.map((c: { user_id: string } & Record<string, unknown>) => {
-    const profile = profileMap[c.user_id];
-    const authorName =
-      profile?.display_name ||
-      `${profile?.first_name ?? ""} ${profile?.last_name ?? ""}`.trim() ||
-      "Unknown";
-    return {
-      ...c,
-      author_name: authorName,
-      author_photo: profile?.photo_url ?? null,
-    };
-  });
+  const enriched = comments.map((c: { user_id: string } & Record<string, unknown>) => ({
+    ...c,
+    ...authorFieldsFromProfile(profileMap[c.user_id]),
+  }));
 
   return NextResponse.json({ comments: enriched });
 }
@@ -219,5 +239,19 @@ export async function POST(
     actorUserId: user.id,
   });
 
-  return NextResponse.json({ comment }, { status: 201 });
+  const { data: authorProfile } = await adminClient
+    .from("profiles")
+    .select("user_id, first_name, last_name, display_name, photo_url")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  return NextResponse.json(
+    {
+      comment: {
+        ...comment,
+        ...authorFieldsFromProfile((authorProfile as Profile | null) ?? undefined),
+      },
+    },
+    { status: 201 },
+  );
 }

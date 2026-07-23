@@ -2023,16 +2023,20 @@ export default function AdminPage() {
     const reporterIds = [...new Set(rawFlags.map((f) => f.reporter_id).filter(Boolean))] as string[];
     const postIds = rawFlags.filter((f) => f.content_type === "post").map((f) => f.content_id);
     const unitPostIds = rawFlags.filter((f) => f.content_type === "unit_post").map((f) => f.content_id);
+    const unitCommentIds = rawFlags.filter((f) => f.content_type === "unit_post_comment").map((f) => f.content_id);
     const commentIds = rawFlags.filter((f) => f.content_type === "comment").map((f) => f.content_id);
     const messageIds = rawFlags.filter((f) => f.content_type === "message").map((f) => f.content_id);
     const chatroomMessageIds = rawFlags
       .filter((f) => f.content_type === "chatroom_message")
       .map((f) => f.content_id);
 
-    const [profilesRes, postsRes, unitPostsRes, commentsRes, msgsRes, chatroomSnapsRes] = await Promise.all([
+    const [profilesRes, postsRes, unitPostsRes, unitCommentsRes, commentsRes, msgsRes, chatroomSnapsRes] = await Promise.all([
       reporterIds.length > 0 ? supabase.from("profiles").select("user_id, first_name, last_name, display_name").in("user_id", reporterIds) : { data: [] },
       postIds.length > 0 ? supabase.from("posts").select("id, user_id, content").in("id", postIds) : { data: [] },
       unitPostIds.length > 0 ? supabase.from("unit_posts").select("id, user_id, content").in("id", unitPostIds) : { data: [] },
+      unitCommentIds.length > 0
+        ? supabase.from("unit_post_comments").select("id, user_id, content").in("id", unitCommentIds)
+        : { data: [] },
       commentIds.length > 0 ? supabase.from("post_comments").select("id, user_id, content").in("id", commentIds) : { data: [] },
       messageIds.length > 0 ? supabase.from("messages").select("id, sender_id, content, gif_url").in("id", messageIds) : { data: [] },
       chatroomMessageIds.length > 0
@@ -2061,6 +2065,10 @@ export default function AdminPage() {
       authorByContentId.set(c.id, c.user_id);
     });
     ((unitPostsRes.data ?? []) as PostRow[]).forEach((c) => {
+      contentMap.set(c.id, c.content || "");
+      authorByContentId.set(c.id, c.user_id);
+    });
+    ((unitCommentsRes.data ?? []) as CommentRow[]).forEach((c) => {
       contentMap.set(c.id, c.content || "");
       authorByContentId.set(c.id, c.user_id);
     });
@@ -2745,11 +2753,21 @@ export default function AdminPage() {
         ? "posts"
         : flag.content_type === "unit_post"
         ? "unit_posts"
+        : flag.content_type === "unit_post_comment"
+        ? "unit_post_comments"
         : "post_comments";
     const { error } = await supabase.from(table).delete().eq("id", flag.content_id);
     if (error) { alert(error.message); return; }
     await supabase.from("flags").update({ reviewed: true }).eq("id", flag.id);
-    showToast(`${flag.content_type === "unit_post" ? "Group post" : flag.content_type === "post" ? "Post" : "Comment"} removed.`);
+    showToast(
+      flag.content_type === "unit_post"
+        ? "Group post removed."
+        : flag.content_type === "unit_post_comment"
+          ? "Group comment removed."
+          : flag.content_type === "post"
+            ? "Post removed."
+            : "Comment removed.",
+    );
     await loadFlags();
     setActionLoading(null);
   }
@@ -4878,7 +4896,7 @@ export default function AdminPage() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-                        <span style={{ background: flag.content_type === "post" || flag.content_type === "unit_post" ? "#dbeafe" : flag.content_type === "message" ? "#ede9fe" : "#fef9c3", color: flag.content_type === "post" || flag.content_type === "unit_post" ? "#1d4ed8" : flag.content_type === "message" ? "#6d28d9" : "#854d0e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>
+                        <span style={{ background: flag.content_type === "post" || flag.content_type === "unit_post" ? "#dbeafe" : flag.content_type === "message" || flag.content_type === "chatroom_message" ? "#ede9fe" : "#fef9c3", color: flag.content_type === "post" || flag.content_type === "unit_post" ? "#1d4ed8" : flag.content_type === "message" || flag.content_type === "chatroom_message" ? "#6d28d9" : "#854d0e", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 20, textTransform: "uppercase" }}>
                           {flag.content_type}
                         </span>
                         {flag.reviewed && <span style={{ background: t.badgeBg, color: t.badgeText, fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Reviewed</span>}
@@ -5583,9 +5601,9 @@ export default function AdminPage() {
                     gap: 12,
                   }}
                 >
-                  <KpiCard t={t} label="Unique visitors today" value={engagement.kpis.dau.toLocaleString()} sub="DAU" subtle />
-                  <KpiCard t={t} label="Unique visitors (7d)" value={engagement.kpis.wau.toLocaleString()} sub="WAU" subtle />
-                  <KpiCard t={t} label="Unique visitors (30d)" value={engagement.kpis.mau.toLocaleString()} sub="MAU" subtle />
+                  <KpiCard t={t} label="Daily active users" value={engagement.kpis.dau.toLocaleString()} sub="Last 24 hours" subtle />
+                  <KpiCard t={t} label="Weekly active users" value={engagement.kpis.wau.toLocaleString()} sub="Last 7 days" subtle />
+                  <KpiCard t={t} label="Monthly active users" value={engagement.kpis.mau.toLocaleString()} sub="Last 30 days" subtle />
                 </div>
 
                 {engagement.traffic_by_hour && (

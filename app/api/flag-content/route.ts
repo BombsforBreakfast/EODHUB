@@ -21,6 +21,7 @@ function getAdminClient() {
 type FlaggableContentType =
   | "post"
   | "unit_post"
+  | "unit_post_comment"
   | "comment"
   | "message"
   | "rabbithole_contribution"
@@ -31,6 +32,7 @@ type FlaggableContentType =
 const FLAGGABLE_CONTENT_TYPES: FlaggableContentType[] = [
   "post",
   "unit_post",
+  "unit_post_comment",
   "comment",
   "message",
   "rabbithole_contribution",
@@ -49,6 +51,8 @@ function contentLabel(contentType: FlaggableContentType): string {
       return "post";
     case "unit_post":
       return "group post";
+    case "unit_post_comment":
+      return "group comment";
     case "comment":
       return "comment";
     case "message":
@@ -83,6 +87,7 @@ type ContentLookup = {
 const CONTENT_LOOKUP: Record<FlaggableContentType, ContentLookup> = {
   post: { table: "posts", authorColumn: "user_id", hidable: true },
   unit_post: { table: "unit_posts", authorColumn: "user_id", hidable: true },
+  unit_post_comment: { table: "unit_post_comments", authorColumn: "user_id", hidable: true },
   comment: { table: "post_comments", authorColumn: "user_id", hidable: true },
   message: { table: "messages", authorColumn: "sender_id", hidable: true },
   rabbithole_contribution: {

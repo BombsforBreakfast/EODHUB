@@ -11,7 +11,7 @@ import {
 // Engagement KPIs for the admin "Engagement" tab.
 //
 // Returns counts + top-pages + most-engaged-users for a given range.
-// Range is one of: "today" | "7d" | "30d" (default "7d"). The unique-visitor
+// Range is one of: "today" | "7d" | "30d" (default "7d"). Active-user
 // rollups (DAU/WAU/MAU) are computed independently and always returned.
 //
 // All queries run with service_role. Caller must be an admin profile.
@@ -38,30 +38,33 @@ function previousRangeStart(range: Range): Date {
   return new Date(start.getTime() - span);
 }
 
-async function countDistinct(
+async function countActiveUsers(
   supabase: any,
-  table: string,
-  column: string,
-  sinceCol: string,
   since: Date,
   excludedUserIds: Set<string>,
 ): Promise<number> {
-  // Postgres has no JS-friendly distinct-count via PostgREST; we page through
-  // ids and dedupe in JS. For our scale (<1M rows) this is fine; if traffic
-  // grows we'll move to a SQL view.
-  const { data, error } = await supabase
-    .from(table)
-    .select(column)
-    .gte(sinceCol, since.toISOString())
-    .not(column, "is", null)
-    .limit(50000);
-  if (error || !data) return 0;
+  const sinceIso = since.toISOString();
+  const [byStart, byHeartbeat] = await Promise.all([
+    supabase
+      .from("analytics_sessions")
+      .select("user_id")
+      .gte("started_at", sinceIso)
+      .not("user_id", "is", null)
+      .limit(50000),
+    supabase
+      .from("analytics_sessions")
+      .select("user_id")
+      .gte("last_heartbeat_at", sinceIso)
+      .not("user_id", "is", null)
+      .limit(50000),
+  ]);
+
   const seen = new Set<string>();
-  for (const row of data as Array<Record<string, unknown>>) {
-    const v = row[column];
-    if (typeof v !== "string") continue;
-    if (column === "user_id" && excludedUserIds.has(v)) continue;
-    seen.add(v);
+  for (const rows of [byStart.data, byHeartbeat.data]) {
+    for (const row of (rows ?? []) as Array<{ user_id: string | null }>) {
+      if (!row.user_id || excludedUserIds.has(row.user_id)) continue;
+      seen.add(row.user_id);
+    }
   }
   return seen.size;
 }
@@ -243,15 +246,17 @@ export async function GET(req: NextRequest) {
     }));
   }
 
-  // ── Unique visitors DAU / WAU / MAU (independent of selected range) ─────────
+  // ── Active users DAU / WAU / MAU (independent of selected range) ────────────
+  // Count users who started a session OR heartbeated in the window so overnight
+  // sessions that stay open still count as active.
   const now = Date.now();
   const dayAgo = new Date(now - 1 * 24 * 60 * 60 * 1000);
   const weekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);
   const monthAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
   const [dau, wau, mau] = await Promise.all([
-    countDistinct(supabase, "analytics_sessions", "user_id", "started_at", dayAgo, excludedUserIds),
-    countDistinct(supabase, "analytics_sessions", "user_id", "started_at", weekAgo, excludedUserIds),
-    countDistinct(supabase, "analytics_sessions", "user_id", "started_at", monthAgo, excludedUserIds),
+    countActiveUsers(supabase, dayAgo, excludedUserIds),
+    countActiveUsers(supabase, weekAgo, excludedUserIds),
+    countActiveUsers(supabase, monthAgo, excludedUserIds),
   ]);
 
   const trafficByHour = buildTrafficByHour(sessionsRows, {

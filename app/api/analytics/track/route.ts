@@ -5,6 +5,7 @@ import { normalizeAnalyticsPath, summarizeUserAgent } from "../../../lib/analyti
 
 // Single endpoint for all client-side analytics writes. Discriminated by `action`.
 //   - start:     create a session + first page_view              → returns { session_id, page_view_id }
+//   - identify:  attach authenticated user_id to an open session → returns { ok, attached }
 //   - navigate:  end current page_view, open a new one           → returns { page_view_id }
 //   - heartbeat: bump active_ms on session + current page_view   → returns { ok: true }
 //   - end:       close session + current page_view (final flush) → returns { ok: true }
@@ -26,7 +27,8 @@ type StartBody = { action: "start"; path: string; anonymous_visitor_id?: string 
 type NavigateBody = { action: "navigate"; session_id: string; page_view_id: string; delta_ms: number; path: string };
 type HeartbeatBody = { action: "heartbeat"; session_id: string; page_view_id: string; delta_ms: number };
 type EndBody = { action: "end"; session_id: string; page_view_id: string; delta_ms: number };
-type Body = StartBody | NavigateBody | HeartbeatBody | EndBody;
+type IdentifyBody = { action: "identify"; session_id: string; page_view_id?: string | null };
+type Body = StartBody | NavigateBody | HeartbeatBody | EndBody | IdentifyBody;
 
 function clampDelta(raw: unknown): number {
   const n = typeof raw === "number" ? raw : Number(raw);
@@ -120,6 +122,47 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ session_id: sess.id, page_view_id: pv.id });
+  }
+
+  if (body.action === "identify") {
+    const analyticsUser = await resolveAnalyticsUser(req);
+    if (!analyticsUser?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (isExcludedAnalyticsUser(analyticsUser)) {
+      return NextResponse.json({ skipped: true });
+    }
+    const sessionId = typeof body.session_id === "string" ? body.session_id : "";
+    if (!sessionId) {
+      return NextResponse.json({ error: "Missing session_id" }, { status: 400 });
+    }
+
+    // Attach auth only if the session is still anonymous (do not overwrite).
+    const { data: sess } = await supabase
+      .from("analytics_sessions")
+      .select("id, user_id")
+      .eq("id", sessionId)
+      .maybeSingle();
+    if (!sess) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+    }
+    if (!sess.user_id) {
+      await supabase
+        .from("analytics_sessions")
+        .update({ user_id: analyticsUser.id })
+        .eq("id", sessionId)
+        .is("user_id", null);
+    } else if (sess.user_id !== analyticsUser.id) {
+      return NextResponse.json({ ok: true, attached: false });
+    }
+
+    await supabase
+      .from("analytics_page_views")
+      .update({ user_id: analyticsUser.id })
+      .eq("session_id", sessionId)
+      .is("user_id", null);
+
+    return NextResponse.json({ ok: true, attached: true });
   }
 
   // For all other actions we need session_id + page_view_id.
