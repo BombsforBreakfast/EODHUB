@@ -145,7 +145,7 @@ body[data-dark="true"] textarea::placeholder { color: #9ca3af; }
 button, a.nav-btn, a[style*="cursor: pointer"] {
   transition: transform 0.08s ease, opacity 0.08s ease;
 }
-button:active, a.nav-btn:active {
+button:active:not(.chatroom-peek-bar), a.nav-btn:active {
   transform: scale(0.95) !important;
   opacity: 0.85;
 }

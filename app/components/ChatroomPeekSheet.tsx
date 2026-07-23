@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getAccessToken, supabase } from "../lib/lib/supabaseClient";
@@ -261,21 +261,13 @@ export default function ChatroomPeekSheet() {
     };
   }, [hidden, expanded]);
 
+  const [peekPressed, setPeekPressed] = useState(false);
+
   if (hidden) return null;
 
   const onlineCount = onlineUserIds.length;
   const handle = latest ? terminalHandle(latest.author_name) : null;
   const nameColor = latest ? handleColor(latest.user_id) : CRT.greenDim;
-
-  const shellStyle: CSSProperties = {
-    position: "fixed",
-    left: "50%",
-    transform: "translateX(-50%)",
-    width: `min(${SHEET_MAX_WIDTH}px, calc(100% - 16px))`,
-    zIndex: 11000,
-    fontFamily: CRT.mono,
-    boxSizing: "border-box",
-  };
 
   const panelFrame = frame ?? {
     top: 0,
@@ -290,16 +282,47 @@ export default function ChatroomPeekSheet() {
       {!expanded && (
         <button
           type="button"
-          onClick={openSheet}
+          className="chatroom-peek-bar"
           aria-label={
             unreadCount > 0
               ? `Open Team Room, ${unreadCount} unread`
               : "Open Team Room"
           }
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.currentTarget.setPointerCapture(e.pointerId);
+            setPeekPressed(true);
+          }}
+          onPointerUp={(e) => {
+            if (e.button !== 0) return;
+            const wasPressed = peekPressed;
+            setPeekPressed(false);
+            try {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            } catch {
+              /* already released */
+            }
+            if (!wasPressed) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            const { clientX: x, clientY: y } = e;
+            if (x < r.left || x > r.right || y < r.top || y > r.bottom) return;
+            openSheet();
+          }}
+          onPointerCancel={() => setPeekPressed(false)}
+          onLostPointerCapture={() => setPeekPressed(false)}
+          // Avoid duplicate open from synthetic click after pointerup.
+          onClick={(e) => e.preventDefault()}
           style={{
-            ...shellStyle,
             position: "fixed",
+            left: 0,
+            right: 0,
             bottom: "calc(10px + env(safe-area-inset-bottom))",
+            marginLeft: "auto",
+            marginRight: "auto",
+            width: `min(${SHEET_MAX_WIDTH}px, calc(100% - 16px))`,
+            zIndex: 11000,
+            fontFamily: CRT.mono,
+            boxSizing: "border-box",
             minHeight: PEEK_HEIGHT,
             display: "flex",
             alignItems: "center",
@@ -308,12 +331,21 @@ export default function ChatroomPeekSheet() {
             background: CRT.panel,
             color: CRT.green,
             border: `1px solid ${CRT.green}`,
-            boxShadow: `0 0 0 1px ${CRT.greenMuted}, 0 8px 28px rgba(0,0,0,0.45)`,
+            boxShadow: peekPressed
+              ? `0 0 0 1px ${CRT.greenMuted}, 0 2px 10px rgba(0,0,0,0.4)`
+              : `0 0 0 1px ${CRT.greenMuted}, 0 8px 28px rgba(0,0,0,0.45)`,
             cursor: "pointer",
             textAlign: "left",
+            // Center via margins (not translateX) so press scale doesn't shove the bar sideways.
+            transform: peekPressed ? "scale(0.985)" : "scale(1)",
+            transformOrigin: "center bottom",
+            transition: "transform 90ms ease-out, box-shadow 90ms ease-out",
+            WebkitTapHighlightColor: "transparent",
+            userSelect: "none",
+            touchAction: "manipulation",
           }}
         >
-          <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ minWidth: 0, flex: 1, pointerEvents: "none" }}>
             <div
               style={{
                 fontSize: 12,

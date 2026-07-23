@@ -125,14 +125,19 @@ Replace default Capacitor launcher icons in `android/app/src/main/res/mipmap-*` 
 
 ## 8. Compliance checklist
 
-Mirror [`ios-app-store-compliance.md`](ios-app-store-compliance.md):
+Full Play-vs-Apple nuances, Data safety answers, UGC, account deletion, AD_ID, WebView review notes, and testing gates: [`android-play-store-compliance.md`](android-play-store-compliance.md).
 
-- [ ] **Data safety** form completed (email, name, user content, push token, analytics)
-- [ ] **Content rating** questionnaire completed
-- [ ] **Target audience** declared
+Quick list before first upload:
+
+- [ ] **Data safety** form completed (email, name, user content, push token, analytics; no advertising ID)
+- [ ] **Content rating** questionnaire completed (do not opt into Families)
+- [ ] **User-generated content** declared; report/block paths work in-app
+- [ ] **Account deletion** path documented for reviewers (Profile → Close account)
 - [ ] Privacy policy live at `https://www.eod-hub.com/privacy`
 - [ ] No Stripe checkout inside native WebView
+- [ ] Review notes emphasize native shell value (deep links, push, media, share)
 - [ ] Restore Purchases UI when RevenueCat is live (required for store review)
+- [ ] `android/app/google-services.json` added as a Codemagic secure file before Android push (do not commit a placeholder)
 
 ## 9. First build
 

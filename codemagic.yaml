@@ -98,8 +98,10 @@ workflows:
           node scripts/verify-capacitor-android-config.mjs
       - name: Build Android App Bundle
         script: |
+          # Play requires monotonically increasing versionCode on every upload.
+          # Keep versionName in android/app/build.gradle; bump VERSION_CODE from Codemagic BUILD_NUMBER.
           cd android
-          ./gradlew bundleRelease
+          ./gradlew bundleRelease -PVERSION_CODE=$BUILD_NUMBER
     artifacts:
       - android/app/build/outputs/**/*.aab
       - android/app/build/outputs/**/*.apk
