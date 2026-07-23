@@ -23,7 +23,6 @@ import { clearAppAuthState } from "../lib/auth/sessionState";
 import { isNativeApp } from "../lib/native/isNativeApp";
 import { setNativeAppBadgeCount } from "../lib/native/appIconBadge";
 import {
-  defaultMobileNavSpacerPx,
   setMobileNavSpacerPx,
 } from "../lib/mobileNavOffset";
 import {
@@ -94,7 +93,8 @@ export default function NavBar() {
 
   /** Mobile: reserve vertical space so fixed nav does not cover page content (height tracks hub/search). */
   const navRootRef = useRef<HTMLDivElement>(null);
-  const [mobileNavSpacerPx, setMobileNavSpacerPxState] = useState(defaultMobileNavSpacerPx);
+  // Always start at 0 so SSR HTML matches the first client render; useLayoutEffect measures after mount.
+  const [mobileNavSpacerPx, setMobileNavSpacerPxState] = useState(0);
 
   /** Mobile breakpoint — fixed nav + layout. */
   const [isNarrowViewport, setIsNarrowViewport] = useState(false);

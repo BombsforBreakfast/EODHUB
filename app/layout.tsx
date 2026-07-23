@@ -13,6 +13,8 @@ import { MemorialNavModalProvider } from "./components/memorial/MemorialNavModal
 import BugReportGate from "./components/BugReportGate";
 import NativeShellBridge from "./components/NativeShellBridge";
 import { OnlinePresenceProvider } from "./components/OnlinePresenceProvider";
+import { ChatroomSheetProvider } from "./components/ChatroomSheetContext";
+import ChatroomPeekSheetHost from "./components/ChatroomPeekSheetHost";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -64,6 +66,7 @@ export default function RootLayout({
           <AuthProvider>
           <MemorialNavModalProvider>
             <OnlinePresenceProvider>
+              <ChatroomSheetProvider>
               <SessionGuard />
               <NativeShellBridge />
               <BugReportGate />
@@ -108,6 +111,7 @@ export default function RootLayout({
                 }}
               />
               {children}
+              <ChatroomPeekSheetHost />
               <footer
                 aria-label="Site footer"
                 style={{
@@ -128,6 +132,7 @@ export default function RootLayout({
                   <SpeedInsights />
                 </>
               ) : null}
+              </ChatroomSheetProvider>
             </OnlinePresenceProvider>
           </MemorialNavModalProvider>
           </AuthProvider>

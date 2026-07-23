@@ -28,6 +28,8 @@ type Props = {
   open: boolean;
   currentUserId: string | null;
   onClose: () => void;
+  /** fullscreen = legacy overlay; sheet = fill parent peek panel */
+  variant?: "fullscreen" | "sheet";
 };
 
 const MOBILE_AVATAR = 28;
@@ -144,7 +146,7 @@ function renderChatBody(raw: string): ReactNode {
   });
 }
 
-export default function ChatroomModal({ open, currentUserId, onClose }: Props) {
+export default function ChatroomModal({ open, currentUserId, onClose, variant = "fullscreen" }: Props) {
   const { onlineUserIds } = useOnlinePresence();
   const [messages, setMessages] = useState<ChatroomMessageDto[]>([]);
   const [loading, setLoading] = useState(false);
@@ -204,13 +206,6 @@ export default function ChatroomModal({ open, currentUserId, onClose }: Props) {
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "chatroom_messages" },
-        () => {
-          void loadMessages();
-        },
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "chatroom_reactions" },
         () => {
           void loadMessages();
         },
@@ -356,38 +351,6 @@ export default function ChatroomModal({ open, currentUserId, onClose }: Props) {
     }
   }
 
-  async function react(messageId: string, value: "up" | "down") {
-    const token = await getAccessToken({ source: "ChatroomModal.react" });
-    if (!token) return;
-    const res = await fetch("/api/chatroom/reactions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ messageId, value }),
-    });
-    if (!res.ok) return;
-    const body = (await res.json()) as { my_reaction: "up" | "down" | null };
-    setMessages((prev) =>
-      prev.map((m) => {
-        if (m.id !== messageId) return m;
-        let up = m.up_count;
-        let down = m.down_count;
-        if (m.my_reaction === "up") up -= 1;
-        if (m.my_reaction === "down") down -= 1;
-        if (body.my_reaction === "up") up += 1;
-        if (body.my_reaction === "down") down += 1;
-        return {
-          ...m,
-          up_count: Math.max(0, up),
-          down_count: Math.max(0, down),
-          my_reaction: body.my_reaction,
-        };
-      }),
-    );
-  }
-
   async function reportMessage(messageId: string, category: FlagCategory) {
     const token = await getAccessToken({ source: "ChatroomModal.report" });
     if (!token) return;
@@ -428,22 +391,30 @@ export default function ChatroomModal({ open, currentUserId, onClose }: Props) {
     letterSpacing: 0.6,
   };
 
+  const isSheet = variant === "sheet";
+
   return (
     <div
       role="dialog"
       aria-modal="true"
       aria-label="EOD Hub Team Room"
       style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 12000,
+        position: isSheet ? "relative" : "fixed",
+        inset: isSheet ? undefined : 0,
+        width: isSheet ? "100%" : undefined,
+        height: isSheet ? "100%" : undefined,
+        zIndex: isSheet ? 1 : 12000,
         background: CRT.bg,
         color: CRT.text,
         fontFamily: CRT.mono,
         display: "flex",
         flexDirection: "column",
-        padding: "10px 10px calc(10px + env(safe-area-inset-bottom))",
+        padding: isSheet
+          ? "calc(8px + env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom))"
+          : "10px 10px calc(10px + env(safe-area-inset-bottom))",
         gap: 8,
+        boxSizing: "border-box",
+        minHeight: 0,
       }}
     >
       {/* CRT scanlines */}
@@ -517,7 +488,7 @@ export default function ChatroomModal({ open, currentUserId, onClose }: Props) {
               <div>USERS ONLINE: {onlineUserIds.length}</div>
               <button
                 type="button"
-                aria-label="Close team room"
+                aria-label={isSheet ? "Collapse team room" : "Close team room"}
                 onClick={onClose}
                 style={{
                   ...btnBase,
@@ -528,7 +499,7 @@ export default function ChatroomModal({ open, currentUserId, onClose }: Props) {
                   borderColor: CRT.greenMuted,
                 }}
               >
-                [ ESC / EXIT ]
+                {isSheet ? "[ COLLAPSE ]" : "[ ESC / EXIT ]"}
               </button>
             </div>
           </div>
@@ -744,81 +715,54 @@ export default function ChatroomModal({ open, currentUserId, onClose }: Props) {
                       </button>
                     </div>
 
-                    <div style={{ display: "flex", gap: 10, marginTop: 4, alignItems: "center" }}>
-                      <button
-                        type="button"
-                        onClick={() => void react(m.id, "up")}
+                    {menuForId === m.id && (
+                      <div
                         style={{
-                          ...btnBase,
-                          border: `1px solid ${m.my_reaction === "up" ? CRT.green : CRT.greenMuted}`,
-                          color: m.my_reaction === "up" ? CRT.green : CRT.greenDim,
-                          padding: "1px 8px",
-                          fontSize: 11,
+                          display: "inline-flex",
+                          gap: 6,
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                          border: CRT.border,
+                          padding: "4px 8px",
+                          marginTop: 4,
+                          background: "#001400",
                         }}
                       >
-                        +{m.up_count}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void react(m.id, "down")}
-                        style={{
-                          ...btnBase,
-                          border: `1px solid ${m.my_reaction === "down" ? CRT.amber : CRT.greenMuted}`,
-                          color: m.my_reaction === "down" ? CRT.amber : CRT.greenDim,
-                          padding: "1px 8px",
-                          fontSize: 11,
-                        }}
-                      >
-                        -{m.down_count}
-                      </button>
-                      {menuForId === m.id && (
-                        <div
-                          style={{
-                            display: "inline-flex",
-                            gap: 6,
-                            flexWrap: "wrap",
-                            alignItems: "center",
-                            border: CRT.border,
-                            padding: "4px 8px",
-                            background: "#001400",
-                          }}
-                        >
-                          {m.user_id !== currentUserId ? (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReportForId(m.id);
-                                  setMenuForId(null);
-                                }}
-                                style={{ ...btnBase, border: "none", fontSize: 11, padding: 0 }}
-                              >
-                                REPORT
-                              </button>
-                              <HideBlockUserButton
-                                targetUserId={m.user_id}
-                                currentUserId={currentUserId}
-                                context="chatroom"
-                                t={{
-                                  text: CRT.green,
-                                  textMuted: CRT.greenDim,
-                                  textFaint: CRT.greenMuted,
-                                  border: CRT.green,
-                                  surface: "#001400",
-                                }}
-                                compact
-                                onBlocked={(blockedId) => {
-                                  setMessages((prev) => prev.filter((row) => row.user_id !== blockedId));
-                                  setMenuForId(null);
-                                }}
-                              />
-                            </>
-                          ) : (
-                            <span style={{ color: CRT.greenDim, fontSize: 11 }}>YOUR MSG</span>
-                          )}
-                        </div>
-                      )}
-                    </div>
+                        {m.user_id !== currentUserId ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReportForId(m.id);
+                                setMenuForId(null);
+                              }}
+                              style={{ ...btnBase, border: "none", fontSize: 11, padding: 0 }}
+                            >
+                              REPORT
+                            </button>
+                            <HideBlockUserButton
+                              targetUserId={m.user_id}
+                              currentUserId={currentUserId}
+                              context="chatroom"
+                              t={{
+                                text: CRT.green,
+                                textMuted: CRT.greenDim,
+                                textFaint: CRT.greenMuted,
+                                border: CRT.green,
+                                surface: "#001400",
+                              }}
+                              compact
+                              onBlocked={(blockedId) => {
+                                setMessages((prev) => prev.filter((row) => row.user_id !== blockedId));
+                                setMenuForId(null);
+                              }}
+                            />
+                          </>
+                        ) : (
+                          <span style={{ color: CRT.greenDim, fontSize: 11 }}>YOUR MSG</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}

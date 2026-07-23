@@ -68,7 +68,6 @@ export async function GET(req: NextRequest) {
   }
 
   const visible = (rows ?? []).filter((row) => !blocked.has(row.user_id));
-  const messageIds = visible.map((r) => r.id);
   const authorIds = [...new Set(visible.map((r) => r.user_id))];
 
   const profilesById = new Map<string, {
@@ -90,33 +89,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const reactionCounts = new Map<string, { up: number; down: number }>();
-  const myReaction = new Map<string, "up" | "down">();
-
-  if (messageIds.length > 0) {
-    const { data: reactions } = await admin
-      .from("chatroom_reactions")
-      .select("message_id, user_id, value")
-      .in("message_id", messageIds);
-
-    for (const r of reactions ?? []) {
-      const bucket = reactionCounts.get(r.message_id) ?? { up: 0, down: 0 };
-      if (r.value === "up") bucket.up += 1;
-      else if (r.value === "down") bucket.down += 1;
-      reactionCounts.set(r.message_id, bucket);
-      if (r.user_id === auth.user.id && (r.value === "up" || r.value === "down")) {
-        myReaction.set(r.message_id, r.value);
-      }
-    }
-  }
-
   const messages: ChatroomMessageDto[] = visible.map((row) => {
     const p = profilesById.get(row.user_id);
     const name =
       p?.display_name?.trim()
       || `${p?.first_name || ""} ${p?.last_name || ""}`.trim()
       || "Member";
-    const counts = reactionCounts.get(row.id) ?? { up: 0, down: 0 };
     return {
       id: row.id,
       user_id: row.user_id,
@@ -128,9 +106,6 @@ export async function GET(req: NextRequest) {
       author_photo_url: p?.photo_url ?? null,
       author_service: p?.service ?? null,
       author_is_employer: p?.is_employer ?? null,
-      up_count: counts.up,
-      down_count: counts.down,
-      my_reaction: myReaction.get(row.id) ?? null,
     };
   });
 
@@ -215,9 +190,6 @@ export async function POST(req: NextRequest) {
     author_photo_url: author?.photo_url ?? null,
     author_service: author?.service ?? null,
     author_is_employer: author?.is_employer ?? null,
-    up_count: 0,
-    down_count: 0,
-    my_reaction: null,
   };
 
   // Tag → in-app notification + push (createNotification schedules push via after())

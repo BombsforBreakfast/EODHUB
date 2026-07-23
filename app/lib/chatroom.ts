@@ -13,6 +13,8 @@ export const CHATROOM_WARNING_BANNER_SESSION_KEY = "eod_chatroom_warning_banner_
 export const CHATROOM_LIVE_PROMPT_MUTE_DAY_KEY = "eod_chatroom_live_prompt_mute_day";
 /** Show the live prompt once at least this many members are online. */
 export const CHATROOM_LIVE_PROMPT_MIN_ONLINE = 3;
+/** Per-user ISO timestamp of last Team Room open (unread baseline). */
+export const CHATROOM_LAST_OPENED_KEY_PREFIX = "eod_chatroom_last_opened:";
 
 export const CHATROOM_TAGS = ["general", "question", "looking", "hiring"] as const;
 export type ChatroomTag = (typeof CHATROOM_TAGS)[number];
@@ -99,6 +101,39 @@ export function dismissChatroomWarningBannerForSession(): void {
   }
 }
 
+function chatroomLastOpenedKey(userId: string): string {
+  return `${CHATROOM_LAST_OPENED_KEY_PREFIX}${userId}`;
+}
+
+/** ISO timestamp of when this user last opened Team Room, or null if never. */
+export function getChatroomLastOpenedAt(userId: string | null | undefined): string | null {
+  if (typeof window === "undefined" || !userId) return null;
+  try {
+    const v = localStorage.getItem(chatroomLastOpenedKey(userId));
+    return v && v.length > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Mark Team Room as read/opened now (clears peek unread badge). */
+export function markChatroomOpened(userId: string | null | undefined): void {
+  if (typeof window === "undefined" || !userId) return;
+  try {
+    localStorage.setItem(chatroomLastOpenedKey(userId), new Date().toISOString());
+  } catch {
+    /* ignore */
+  }
+}
+
+export type ChatroomPeekLatest = {
+  id: string;
+  user_id: string;
+  author_name: string;
+  body: string;
+  created_at: string;
+};
+
 export type ChatroomMessageDto = {
   id: string;
   user_id: string;
@@ -110,7 +145,4 @@ export type ChatroomMessageDto = {
   author_photo_url: string | null;
   author_service: string | null;
   author_is_employer: boolean | null;
-  up_count: number;
-  down_count: number;
-  my_reaction: "up" | "down" | null;
 };
