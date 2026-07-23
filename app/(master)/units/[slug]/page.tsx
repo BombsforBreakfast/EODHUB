@@ -125,6 +125,16 @@ type UnitPost = {
   author_photo: string | null;
   like_count: number;
   comment_count: number;
+  comment_preview?: {
+    id: string;
+    user_id: string;
+    content: string;
+    created_at: string;
+    author_name: string;
+    author_photo: string | null;
+    image_url?: string | null;
+    gif_url?: string | null;
+  }[];
   user_liked: boolean;
   myReaction: ReactionType | null;
   reactionCountsByType: Partial<Record<ReactionType, number>>;
@@ -3412,7 +3422,13 @@ function PostCard({
           onClick={onToggleComments}
           style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", fontWeight: 700, color: t.textMuted, fontSize: 14 }}
         >
-          {expanded ? "Hide Comments" : canInteract ? "Comment" : "View Comments"}
+          {expanded
+            ? "Hide Comments"
+            : post.comment_count > 0
+              ? "Show more"
+              : canInteract
+                ? "Comment"
+                : "View Comments"}
         </button>
         <ReactionLeaderboard
           t={t as Theme}
@@ -3479,6 +3495,92 @@ function PostCard({
         </>
       )}
 
+      {/* Collapsed preview: first couple comments so the wall isn't empty until expand */}
+      {!expanded && (() => {
+        const previewSource =
+          comments && comments.length > 0
+            ? comments
+            : (post.comment_preview ?? []).map((c) => ({
+                id: c.id,
+                user_id: c.user_id,
+                content: c.content,
+                created_at: c.created_at,
+                author_name: c.author_name,
+                author_photo: c.author_photo,
+                image_url: c.image_url ?? null,
+                gif_url: c.gif_url ?? null,
+              }));
+        const previewRows = previewSource.slice(0, 2);
+        if (previewRows.length === 0) return null;
+        const remaining = Math.max(0, post.comment_count - previewRows.length);
+        return (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.borderLight}` }}>
+            {previewRows.map((c) => (
+              <div key={c.id} style={{ marginBottom: 10 }}>
+                <div style={{ background: t.badgeBg, borderRadius: 10, padding: "7px 12px" }}>
+                  <Link
+                    href={`/profile/${c.user_id}`}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      minWidth: 0,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      marginBottom: 4,
+                      color: t.text,
+                      textDecoration: "none",
+                    }}
+                  >
+                    <Avatar photo={c.author_photo} name={c.author_name} size={28} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.author_name}
+                    </span>
+                  </Link>
+                  {c.content ? (
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: t.text,
+                        lineHeight: 1.45,
+                        display: "-webkit-box",
+                        WebkitBoxOrient: "vertical",
+                        WebkitLineClamp: 3,
+                        overflow: "hidden",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {renderUnitText(c.content)}
+                    </div>
+                  ) : null}
+                  {(c.image_url || c.gif_url) && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: t.textFaint }}>Photo attached</div>
+                  )}
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={onToggleComments}
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: 0,
+                cursor: "pointer",
+                fontWeight: 700,
+                color: t.textMuted,
+                fontSize: 13,
+              }}
+            >
+              {remaining > 0
+                ? `…Show more (${remaining} more comment${remaining === 1 ? "" : "s"})`
+                : "…Show more"}
+            </button>
+          </div>
+        );
+      })()}
+
       {/* Comments section */}
       {expanded && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${t.borderLight}` }}>
@@ -3489,17 +3591,27 @@ function PostCard({
             const isOwnComment = !!currentUserId && currentUserId === c.user_id;
             const isEditingComment = editingCommentId === c.id;
             return (
-            <div key={c.id} id={`unit-comment-${c.id}`} style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-              <Link href={`/profile/${c.user_id}`} style={{ textDecoration: "none", flexShrink: 0, lineHeight: 0 }}>
-                <Avatar photo={c.author_photo} name={c.author_name} size={28} />
-              </Link>
-              <div style={{ background: t.badgeBg, borderRadius: 10, padding: "7px 12px", flex: 1 }}>
+            <div key={c.id} id={`unit-comment-${c.id}`} style={{ marginBottom: 10 }}>
+              <div style={{ background: t.badgeBg, borderRadius: 10, padding: "7px 12px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
                   <Link
                     href={`/profile/${c.user_id}`}
-                    style={{ fontSize: 12, fontWeight: 800, marginBottom: 2, color: t.text, textDecoration: "none" }}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      minWidth: 0,
+                      fontSize: 12,
+                      fontWeight: 800,
+                      marginBottom: 2,
+                      color: t.text,
+                      textDecoration: "none",
+                    }}
                   >
-                    {c.author_name}
+                    <Avatar photo={c.author_photo} name={c.author_name} size={28} />
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {c.author_name}
+                    </span>
                   </Link>
                   <div style={{ display: "flex", gap: 10, alignItems: "center", flexShrink: 0 }}>
                     {!isOwnComment && currentUserId && canInteract ? (

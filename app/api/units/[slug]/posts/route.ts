@@ -161,15 +161,67 @@ export async function GET(
     }
   }
 
-  // Get comment counts
-  const { data: comments } = await adminClient
+  // Comment counts + first-two preview for collapsed wall cards
+  const commentSelect = "id, unit_post_id, user_id, content, image_url, gif_url, created_at";
+  let commentsResult = await adminClient
     .from("unit_post_comments")
-    .select("unit_post_id")
-    .in("unit_post_id", postIds);
+    .select(commentSelect)
+    .in("unit_post_id", postIds)
+    .eq("hidden_for_review", false)
+    .order("created_at", { ascending: true });
+
+  if (commentsResult.error && isMissingColumnError(commentsResult.error, "hidden_for_review")) {
+    commentsResult = await adminClient
+      .from("unit_post_comments")
+      .select(commentSelect)
+      .in("unit_post_id", postIds)
+      .order("created_at", { ascending: true });
+  }
+
+  if (commentsResult.error) {
+    console.error("[units/posts] comment preview load failed", commentsResult.error.message);
+  }
 
   const commentCountMap: Record<string, number> = {};
-  for (const c of comments ?? []) {
+  const commentPreviewMap: Record<
+    string,
+    {
+      id: string;
+      user_id: string;
+      content: string;
+      image_url: string | null;
+      gif_url: string | null;
+      created_at: string;
+    }[]
+  > = {};
+  const commentAuthorIds = new Set<string>();
+
+  for (const c of commentsResult.data ?? []) {
     commentCountMap[c.unit_post_id] = (commentCountMap[c.unit_post_id] ?? 0) + 1;
+    const bucket = commentPreviewMap[c.unit_post_id] ?? [];
+    if (bucket.length < 2) {
+      bucket.push({
+        id: c.id,
+        user_id: c.user_id,
+        content: c.content ?? "",
+        image_url: c.image_url ?? null,
+        gif_url: c.gif_url ?? null,
+        created_at: c.created_at,
+      });
+      commentPreviewMap[c.unit_post_id] = bucket;
+      commentAuthorIds.add(c.user_id);
+    }
+  }
+
+  const commentAuthorIdsMissing = [...commentAuthorIds].filter((id) => !profileMap[id]);
+  if (commentAuthorIdsMissing.length > 0) {
+    const { data: commentProfiles } = await adminClient
+      .from("profiles")
+      .select("user_id, first_name, last_name, display_name, photo_url")
+      .in("user_id", commentAuthorIdsMissing);
+    for (const p of commentProfiles ?? []) {
+      profileMap[p.user_id] = p;
+    }
   }
 
   // Handle join_request approval data
@@ -218,6 +270,18 @@ export async function GET(
       like_count: likeCountMap[post.id] ?? 0,
       comment_count: commentCountMap[post.id] ?? 0,
       user_liked: userLikedSet.has(post.id),
+      comment_preview: (commentPreviewMap[post.id] ?? []).map((c) => {
+        const cp = profileMap[c.user_id];
+        const commentAuthorName =
+          cp?.display_name ||
+          `${cp?.first_name ?? ""} ${cp?.last_name ?? ""}`.trim() ||
+          "Member";
+        return {
+          ...c,
+          author_name: commentAuthorName,
+          author_photo: cp?.photo_url ?? null,
+        };
+      }),
     };
 
     if (post.post_type === "join_request") {
