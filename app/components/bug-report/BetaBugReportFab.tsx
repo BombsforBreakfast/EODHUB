@@ -18,7 +18,7 @@ export default function BetaBugReportFab() {
           position: "fixed",
           zIndex: 1050,
           right: "max(16px, env(safe-area-inset-right))",
-          bottom: "max(20px, env(safe-area-inset-bottom))",
+          bottom: "var(--bug-report-fab-bottom, max(20px, env(safe-area-inset-bottom)))",
           display: "flex",
           flexDirection: "column",
           alignItems: "flex-end",

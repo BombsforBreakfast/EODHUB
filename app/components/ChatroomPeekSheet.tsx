@@ -239,14 +239,24 @@ export default function ChatroomPeekSheet() {
     };
   }, [expanded, pathname]);
 
-  // Reserve space so page content isn't covered by the fixed peek bar.
+  // Reserve space so page content isn't covered by the fixed peek bar,
+  // and lift the bug-report FAB above the peek on mobile/desktop.
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const pad = !hidden && !expanded ? `calc(${PEEK_HEIGHT}px + 18px + env(safe-area-inset-bottom))` : "";
-    document.body.style.setProperty("--chatroom-peek-pad", pad);
-    document.body.style.paddingBottom = pad || "";
+    if (!hidden && !expanded) {
+      const pad = `calc(${PEEK_HEIGHT}px + 18px + env(safe-area-inset-bottom))`;
+      const fabBottom = `calc(10px + env(safe-area-inset-bottom) + ${PEEK_HEIGHT}px + 12px)`;
+      document.body.style.setProperty("--chatroom-peek-pad", pad);
+      document.body.style.setProperty("--bug-report-fab-bottom", fabBottom);
+      document.body.style.paddingBottom = pad;
+    } else {
+      document.body.style.removeProperty("--chatroom-peek-pad");
+      document.body.style.removeProperty("--bug-report-fab-bottom");
+      document.body.style.paddingBottom = "";
+    }
     return () => {
       document.body.style.removeProperty("--chatroom-peek-pad");
+      document.body.style.removeProperty("--bug-report-fab-bottom");
       document.body.style.paddingBottom = "";
     };
   }, [hidden, expanded]);
