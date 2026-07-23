@@ -25,6 +25,10 @@ Admin → Events → **Pending imports** → **Pull from EODWF now** (Bearer ses
 
 ## Approval
 
-Pending rows are hidden from the public calendar (RLS + client filters). Approving sets `is_approved = true`, which fires the linked feed-post trigger. Reject deletes the pending row.
+Pending rows are hidden from the public calendar (RLS + client filters). Approving sets `is_approved = true` (no immediate feed blast). Reject deletes the pending row.
 
-Requires `hello@eod-hub.com` profile for the import author / auto-post attribution.
+Public events get feed posts from cron instead:
+- **T-30 / T-7:** `GET /api/cron/event-reminder-posts` (`15 9 * * *`)
+- **Day after (scrapbook):** `GET /api/cron/event-scrapbook-posts` (`0 9 * * *`)
+
+Requires `hello@eod-hub.com` profile for the import author / reminder attribution.

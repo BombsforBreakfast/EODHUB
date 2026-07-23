@@ -8796,7 +8796,12 @@ export default function HomePage() {
                       )}
                       {post.content &&
                         !isOnlyPreviewUrl(post.content, post.og_url) &&
-                        !(post.event_id && post.feed_event) &&
+                        !(
+                          post.event_id &&
+                          post.feed_event &&
+                          post.content_type !== "event_t30" &&
+                          post.content_type !== "event_t7"
+                        ) &&
                         !(
                           (post.content_type === "news" || post.user_id === RUMINT_USER_ID) &&
                           post.og_url &&

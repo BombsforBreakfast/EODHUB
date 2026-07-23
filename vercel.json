@@ -25,6 +25,10 @@
       "schedule": "0 9 * * *"
     },
     {
+      "path": "/api/cron/event-reminder-posts",
+      "schedule": "15 9 * * *"
+    },
+    {
       "path": "/api/cron/failed-auth-alert",
       "schedule": "0 13 * * *"
     },

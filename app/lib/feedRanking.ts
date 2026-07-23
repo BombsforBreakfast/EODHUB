@@ -125,7 +125,7 @@ export function feedContentTypeMultiplier(post: Pick<
   const contentType = post.content_type ?? "user_post";
   if (contentType === "memorial" || contentType === "memorial_scrapbook") return 1.5;
   if (contentType === "job" || contentType === "job_post") return 1.25;
-  if (post.event_id || contentType === "event_publish" || contentType === "event_scrapbook") return 1.2;
+  if (post.event_id || contentType === "event_publish" || contentType === "event_t30" || contentType === "event_t7" || contentType === "event_scrapbook") return 1.2;
   if (contentType === "resource" || contentType === "rabbithole_resource" || post.rabbithole_contribution_id || post.rabbithole_thread_id) {
     return 1.15;
   }
@@ -209,7 +209,7 @@ export function compareFeedPosts(
 export function postDiversityType(post: FeedSortPost): string {
   if (post.content_type === "memorial" || post.content_type === "memorial_scrapbook") return "memorial";
   if (post.content_type === "job" || post.content_type === "job_post") return "job";
-  if (post.event_id || post.content_type === "event_publish" || post.content_type === "event_scrapbook") return "event";
+  if (post.event_id || post.content_type === "event_publish" || post.content_type === "event_t30" || post.content_type === "event_t7" || post.content_type === "event_scrapbook") return "event";
   if (post.content_type === "resource" || post.content_type === "rabbithole_resource" || post.rabbithole_thread_id || post.rabbithole_contribution_id) {
     return "resource";
   }
