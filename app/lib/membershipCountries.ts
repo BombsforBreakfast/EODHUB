@@ -74,3 +74,13 @@ export function normalizeMembershipCountryCode(code: string | null | undefined):
 export function isUnitedStatesCountry(code: string | null | undefined): boolean {
   return normalizeMembershipCountryCode(code) === "US";
 }
+
+/**
+ * ATLW Hotline is US-only. Null/unknown country (legacy + interim before
+ * country collection) still sees it; explicit non-US membership hides it.
+ */
+export function canAccessAtlwHotline(country: string | null | undefined): boolean {
+  const normalized = typeof country === "string" ? country.trim().toUpperCase() : "";
+  if (!normalized) return true;
+  return normalized === "US";
+}

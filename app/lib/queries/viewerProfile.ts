@@ -14,6 +14,10 @@ import type { OnboardingGateProfile } from "../onboardingGate";
  * cache missing the field.
  */
 export const VIEWER_PROFILE_SELECT =
+  "user_id, first_name, last_name, service, company_name, account_type, is_pure_admin, must_complete_onboarding, created_at, email_verified, admin_verified, verification_status, is_approved, email, display_name, photo_url, status, professional_tags, unit_history_tags, subscription_status, referral_code, is_admin, show_memorial_feed_cards, nav_helper_seen, is_employer, privacy_show_online, country";
+
+/** Pre-migration fallback when `profiles.country` is not yet available. */
+const VIEWER_PROFILE_SELECT_LEGACY =
   "user_id, first_name, last_name, service, company_name, account_type, is_pure_admin, must_complete_onboarding, created_at, email_verified, admin_verified, verification_status, is_approved, email, display_name, photo_url, status, professional_tags, unit_history_tags, subscription_status, referral_code, is_admin, show_memorial_feed_cards, nav_helper_seen, is_employer, privacy_show_online";
 
 export const VIEWER_PROFILE_STALE_MS = 5 * 60_000;
@@ -32,6 +36,7 @@ export type ViewerProfile = OnboardingGateProfile & {
   nav_helper_seen?: boolean | null;
   is_employer?: boolean | null;
   privacy_show_online?: boolean | null;
+  country?: string | null;
 };
 
 async function rawFetchViewerProfile(
@@ -46,7 +51,18 @@ async function rawFetchViewerProfile(
   // Throw on a real error so React Query does not cache a transient failure as a
   // null result (which would otherwise pin the viewer into a redirect for the
   // whole stale window). A genuine "no row" returns null and is safe to cache.
-  if (error) throw error;
+  if (error) {
+    if (/country|column/i.test(error.message)) {
+      const legacy = await supabase
+        .from("profiles")
+        .select(VIEWER_PROFILE_SELECT_LEGACY)
+        .eq("user_id", userId)
+        .maybeSingle();
+      if (legacy.error) throw legacy.error;
+      return (legacy.data ?? null) as ViewerProfile | null;
+    }
+    throw error;
+  }
   return (data ?? null) as ViewerProfile | null;
 }
 
