@@ -1,3 +1,5 @@
+import { isMembershipCountry } from "./membershipCountries";
+
 /** Allowed member service values — keep in sync with onboarding UI. */
 export const MEMBER_SERVICE_OPTIONS = [
   "Army",
@@ -193,6 +195,7 @@ export function validateMemberOnboardingInput(input: {
   lastName: string;
   service: string;
   status: string;
+  country?: string;
 }): string | null {
   if (!input.firstName.trim()) return "First name is required.";
   if (!input.lastName.trim()) return "Last name is required.";
@@ -205,6 +208,11 @@ export function validateMemberOnboardingInput(input: {
   if (!(MEMBER_STATUS_OPTIONS as readonly string[]).includes(input.status)) {
     return "Invalid status selection.";
   }
+  // Country is required for new member onboarding only. Legacy profiles may keep null
+  // and are not blocked by signupProfileMissingFields / isSignupProfileComplete.
+  const country = typeof input.country === "string" ? input.country.trim() : "";
+  if (!country) return "Country is required.";
+  if (!isMembershipCountry(country)) return "Please select a valid membership country.";
   return null;
 }
 
