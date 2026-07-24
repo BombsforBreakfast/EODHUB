@@ -1,4 +1,5 @@
 import { isMembershipCountry } from "./membershipCountries";
+import { MEMBERSHIP_FEATURE_FLAGS } from "./membershipFeatureFlags";
 
 /** Allowed member service values — keep in sync with onboarding UI. */
 export const MEMBER_SERVICE_OPTIONS = [
@@ -208,11 +209,12 @@ export function validateMemberOnboardingInput(input: {
   if (!(MEMBER_STATUS_OPTIONS as readonly string[]).includes(input.status)) {
     return "Invalid status selection.";
   }
-  // Country is required for new member onboarding only. Legacy profiles may keep null
-  // and are not blocked by signupProfileMissingFields / isSignupProfileComplete.
-  const country = typeof input.country === "string" ? input.country.trim() : "";
-  if (!country) return "Country is required.";
-  if (!isMembershipCountry(country)) return "Please select a valid membership country.";
+  // Country required only when collection is enabled. Legacy / interim null is OK.
+  if (MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled) {
+    const country = typeof input.country === "string" ? input.country.trim() : "";
+    if (!country) return "Country is required.";
+    if (!isMembershipCountry(country)) return "Please select a valid membership country.";
+  }
   return null;
 }
 

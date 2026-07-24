@@ -1,6 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizeLinkedInUrl } from "@/app/lib/linkedInUrl";
 import { isEmployerAccount } from "@/app/lib/profileCompleteness";
+import { normalizeMembershipCountryCode } from "@/app/lib/membershipCountries";
+import { MEMBERSHIP_FEATURE_FLAGS } from "@/app/lib/membershipFeatureFlags";
 
 export type SaveProfileBody = {
   accountKind?: unknown;
@@ -12,6 +14,7 @@ export type SaveProfileBody = {
   bio?: unknown;
   service?: unknown;
   status?: unknown;
+  country?: unknown;
   years_experience?: unknown;
   skill_badge?: unknown;
   company_website?: unknown;
@@ -103,12 +106,27 @@ export async function saveProfileUpdate(
       return { ok: false, error: linkedInResult.error, status: 400 };
     }
 
+    let countryUpdate: { country: string | null } | Record<string, never> = {};
+    if (MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled && "country" in body) {
+      const raw = typeof body.country === "string" ? body.country.trim() : "";
+      if (!raw) {
+        countryUpdate = { country: null };
+      } else {
+        const normalized = normalizeMembershipCountryCode(raw);
+        if (!normalized) {
+          return { ok: false, error: "Please select a valid membership country.", status: 400 };
+        }
+        countryUpdate = { country: normalized };
+      }
+    }
+
     updates = {
       display_name: asTrimmedString(body.display_name),
       role: asTrimmedString(body.role),
       bio: asTrimmedString(body.bio),
       service: asTrimmedString(body.service),
       status: asTrimmedString(body.status),
+      ...countryUpdate,
       years_experience: asTrimmedString(body.years_experience),
       skill_badge: asTrimmedString(body.skill_badge),
       company_website: asTrimmedString(body.company_website),

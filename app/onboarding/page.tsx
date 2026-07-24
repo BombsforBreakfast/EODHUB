@@ -36,6 +36,8 @@ import {
   NON_US_CERT_ENCOURAGEMENT,
   isUnitedStatesCountry,
 } from "../lib/membershipCountries";
+import { MEMBERSHIP_FEATURE_FLAGS } from "../lib/membershipFeatureFlags";
+import { isNativeApp } from "../lib/native/isNativeApp";
 import {
   clearStoredReferral,
   readStoredReferral,
@@ -46,9 +48,13 @@ const SERVICE_OPTIONS = [...MEMBER_SERVICE_OPTIONS];
 const STATUS_OPTIONS = [...MEMBER_STATUS_OPTIONS];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "LEO/FED", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
+const COUNTRY_COLLECT_ENABLED = MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled;
 
 export default function OnboardingPage() {
   const [userId, setUserId] = useState<string | null>(null);
+  const [showEodCertUpload, setShowEodCertUpload] = useState(
+    !MEMBERSHIP_FEATURE_FLAGS.eodCertOnboardingNativeOnly,
+  );
   const [accountType, setAccountType] = useState<"member" | "employer" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -85,6 +91,14 @@ export default function OnboardingPage() {
   const sessionRecoveryAttemptedRef = useRef(false);
 
   useOnboardingStepTracking("onboarding_viewed", !checking);
+
+  useEffect(() => {
+    if (!MEMBERSHIP_FEATURE_FLAGS.eodCertOnboardingNativeOnly) {
+      setShowEodCertUpload(true);
+      return;
+    }
+    setShowEodCertUpload(isNativeApp());
+  }, []);
 
   useEffect(() => {
     if (accountType) {
@@ -452,7 +466,7 @@ export default function OnboardingPage() {
     if (accountType === "member") {
       if (!service) return markMissingField("field-member-service");
       if (!status) return markMissingField("field-member-status");
-      if (!country) return markMissingField("field-member-country");
+      if (COUNTRY_COLLECT_ENABLED && !country) return markMissingField("field-member-country");
     } else {
       if (!companyName.trim()) return markMissingField("field-employer-company");
     }
@@ -487,7 +501,7 @@ export default function OnboardingPage() {
 
       let uploadedEodCertPath: string | null = null;
       let uploadedEodCertFileName: string | null = null;
-      if (accountType === "member" && eodCertFile) {
+      if (accountType === "member" && showEodCertUpload && eodCertFile) {
         try {
           const uploaded = await uploadOnboardingEodCert(eodCertFile, userId);
           uploadedEodCertPath = uploaded.path;
@@ -515,7 +529,7 @@ export default function OnboardingPage() {
           skillBadge,
           yearsExperience,
           companyName,
-          country,
+          ...(COUNTRY_COLLECT_ENABLED ? { country } : {}),
           referralInput: readStoredReferral() ?? "",
           photoUrl: uploadedProfilePhotoUrl,
           eodCertPath: uploadedEodCertPath,
@@ -799,6 +813,7 @@ export default function OnboardingPage() {
                     {isMissing("field-member-status") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
 
+                  {COUNTRY_COLLECT_ENABLED && (
                   <div
                     id="field-member-country"
                     style={isMissing("field-member-country") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
@@ -831,6 +846,7 @@ export default function OnboardingPage() {
                     )}
                     {isMissing("field-member-country") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
+                  )}
 
                   <div className="onboarding-two-col">
                     <div className="onboarding-field">
@@ -887,6 +903,7 @@ export default function OnboardingPage() {
                     )}
                   </div>
 
+                  {showEodCertUpload && (
                   <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#f9fafb" }}>
                     <label style={{ fontWeight: 800, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>
                       Include EOD certificate <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
@@ -920,6 +937,7 @@ export default function OnboardingPage() {
                       </div>
                     )}
                   </div>
+                  )}
 
                 </>
               )}

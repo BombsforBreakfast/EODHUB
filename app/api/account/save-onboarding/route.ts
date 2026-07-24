@@ -10,6 +10,7 @@ import {
   validateMemberOnboardingInput,
 } from "@/app/lib/profileCompleteness";
 import { normalizeMembershipCountryCode } from "@/app/lib/membershipCountries";
+import { MEMBERSHIP_FEATURE_FLAGS } from "@/app/lib/membershipFeatureFlags";
 import { createNotification } from "@/app/lib/notificationsServer";
 import {
   lookupReferrerByCode,
@@ -98,15 +99,25 @@ export async function POST(req: NextRequest) {
 
   const validationError =
     accountType === "member"
-      ? validateMemberOnboardingInput({ firstName, lastName, service, status, country: countryRaw })
+      ? validateMemberOnboardingInput({
+          firstName,
+          lastName,
+          service,
+          status,
+          country: MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled ? countryRaw : undefined,
+        })
       : validateEmployerOnboardingInput({ firstName, lastName, companyName });
 
   if (validationError) {
     return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
-  const country = accountType === "member" ? normalizeMembershipCountryCode(countryRaw) : null;
-  if (accountType === "member" && !country) {
+  // Interim: keep country null for all new signups until countryCollectEnabled flips on.
+  const country =
+    accountType === "member" && MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled
+      ? normalizeMembershipCountryCode(countryRaw)
+      : null;
+  if (accountType === "member" && MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled && !country) {
     return NextResponse.json({ error: "Please select a valid membership country." }, { status: 400 });
   }
 
@@ -185,7 +196,7 @@ export async function POST(req: NextRequest) {
           status,
           skill_badge: skillBadge || null,
           years_experience: yearsExperience || null,
-          country,
+          ...(MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled ? { country } : {}),
           ...(photoUrl ? { photo_url: photoUrl } : {}),
           ...(eodCertPath
             ? {
