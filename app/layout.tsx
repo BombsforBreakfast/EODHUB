@@ -107,7 +107,7 @@ export default function RootLayout({
                         },
                       },
                     ],
-                  }),
+                  }).replace(/</g, "\\u003c"),
                 }}
               />
               {children}
