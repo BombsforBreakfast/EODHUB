@@ -833,7 +833,9 @@ export default function OnboardingPage() {
                       ))}
                     </select>
                     <div style={{ marginTop: 8, fontSize: 12, color: "#4b5563", lineHeight: 1.45 }}>
-                      Membership is currently only available to NATO countries, Australia and New Zealand. If you would like your country to be considered for nomination please contact{" "}
+                      Membership is currently only available to the United States, United Kingdom, Canada,
+                      Australia, New Zealand, Germany, France, and Italy. If you would like your country to
+                      be considered for nomination please contact{" "}
                       <a href="mailto:murphy@eod-hub.com" style={{ color: "#047857", fontWeight: 700 }}>
                         murphy@eod-hub.com
                       </a>{" "}

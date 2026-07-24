@@ -7,7 +7,7 @@ alter table public.profiles
   add column if not exists eod_cert_uploaded_at timestamptz;
 
 comment on column public.profiles.country is
-  'ISO 3166-1 alpha-2 membership country (NATO + AU/NZ allowlist). Nullable for legacy users.';
+  'ISO 3166-1 alpha-2 membership country (allowlisted partners). Nullable for legacy users.';
 
 comment on column public.profiles.eod_cert_path is
   'Private storage object path in verification-docs bucket for EOD certificate.';
