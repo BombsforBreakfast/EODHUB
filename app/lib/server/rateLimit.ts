@@ -24,20 +24,33 @@ export function getClientIp(req: NextRequest): string {
 }
 
 export function checkRateLimit(key: string, opts: RateLimitOptions): RateLimitResult {
+  return checkRateLimitCost(key, 1, opts);
+}
+
+/** Like checkRateLimit, but consumes `cost` units in one step (e.g. N mentions). */
+export function checkRateLimitCost(
+  key: string,
+  cost: number,
+  opts: RateLimitOptions,
+): RateLimitResult {
+  const amount = Math.max(1, Math.floor(cost));
   const now = Date.now();
   const bucket = store.get(key);
 
   if (!bucket || now - bucket.windowStartMs >= opts.windowMs) {
-    store.set(key, { count: 1, windowStartMs: now });
+    if (amount > opts.limit) {
+      return { allowed: false, retryAfterSec: Math.ceil(opts.windowMs / 1000) };
+    }
+    store.set(key, { count: amount, windowStartMs: now });
     return { allowed: true };
   }
 
-  if (bucket.count >= opts.limit) {
+  if (bucket.count + amount > opts.limit) {
     const retryAfterSec = Math.ceil((opts.windowMs - (now - bucket.windowStartMs)) / 1000);
     return { allowed: false, retryAfterSec: Math.max(1, retryAfterSec) };
   }
 
-  bucket.count += 1;
+  bucket.count += amount;
   return { allowed: true };
 }
 

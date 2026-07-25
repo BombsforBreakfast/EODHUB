@@ -5,6 +5,14 @@ export const CHATROOM_ROOM_ID = "lobby";
 export const CHATROOM_MESSAGE_MAX_LEN = 500;
 /** Max length of stored body including `@[Name](userId)` tokens. */
 export const CHATROOM_MESSAGE_RAW_MAX_LEN = 2000;
+/** Soft send throttle (per verified user, per server instance). */
+export const CHATROOM_SEND_RATE_LIMIT = 20;
+export const CHATROOM_SEND_RATE_WINDOW_MS = 5 * 60 * 1000;
+/** Unique @mentions allowed in a single message. */
+export const CHATROOM_MENTIONS_PER_MESSAGE = 5;
+/** Soft mention-notify throttle (unique recipients notified per hour). */
+export const CHATROOM_MENTION_RATE_LIMIT = 30;
+export const CHATROOM_MENTION_RATE_WINDOW_MS = 60 * 60 * 1000;
 /** Session-only dismiss for the “chat’s live” prompt (X / Enter). */
 export const CHATROOM_LIVE_PROMPT_SESSION_KEY = "eod_chatroom_live_prompt_dismissed";
 /** Session-only collapse of the Team Room ephemeral warning banner. */

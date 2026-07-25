@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
+  CHATROOM_MENTIONS_PER_MESSAGE,
+  CHATROOM_MENTION_RATE_LIMIT,
+  CHATROOM_MENTION_RATE_WINDOW_MS,
   CHATROOM_MESSAGE_MAX_LEN,
   CHATROOM_MESSAGE_RAW_MAX_LEN,
   CHATROOM_ROOM_ID,
+  CHATROOM_SEND_RATE_LIMIT,
+  CHATROOM_SEND_RATE_WINDOW_MS,
   isChatroomTag,
   type ChatroomMessageDto,
 } from "../../../lib/chatroom";
 import { extractMentionIds, mentionsToDisplayText } from "../../../lib/mentions";
 import { createNotification } from "../../../lib/notificationsServer";
+import { checkRateLimit, checkRateLimitCost } from "../../../lib/server/rateLimit";
 import { fetchBlockedUserIds } from "../../../lib/userBlocks";
 import { hasFullPlatformAccess, type VerificationProfile } from "../../../lib/verificationAccess";
 
@@ -150,6 +156,59 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Message too long." }, { status: 400 });
   }
 
+  const mentionIds = extractMentionIds(text).filter((id) => id !== auth.user.id);
+  if (mentionIds.length > CHATROOM_MENTIONS_PER_MESSAGE) {
+    return NextResponse.json(
+      { error: `You can tag at most ${CHATROOM_MENTIONS_PER_MESSAGE} people per message.` },
+      { status: 400 },
+    );
+  }
+
+  // Soft flood brakes — before insert so rejected traffic never lands in the room.
+  const sendLimit = checkRateLimit(`chatroom:send:${auth.user.id}`, {
+    limit: CHATROOM_SEND_RATE_LIMIT,
+    windowMs: CHATROOM_SEND_RATE_WINDOW_MS,
+  });
+  if (!sendLimit.allowed) {
+    return NextResponse.json(
+      {
+        error: "You're sending messages too quickly. Please wait a moment and try again.",
+        retryAfterSec: sendLimit.retryAfterSec,
+      },
+      {
+        status: 429,
+        headers: sendLimit.retryAfterSec
+          ? { "Retry-After": String(sendLimit.retryAfterSec) }
+          : undefined,
+      },
+    );
+  }
+
+  if (mentionIds.length > 0) {
+    const mentionLimit = checkRateLimitCost(
+      `chatroom:mention:${auth.user.id}`,
+      mentionIds.length,
+      {
+        limit: CHATROOM_MENTION_RATE_LIMIT,
+        windowMs: CHATROOM_MENTION_RATE_WINDOW_MS,
+      },
+    );
+    if (!mentionLimit.allowed) {
+      return NextResponse.json(
+        {
+          error: "You've tagged too many people recently. Please wait before tagging again.",
+          retryAfterSec: mentionLimit.retryAfterSec,
+        },
+        {
+          status: 429,
+          headers: mentionLimit.retryAfterSec
+            ? { "Retry-After": String(mentionLimit.retryAfterSec) }
+            : undefined,
+        },
+      );
+    }
+  }
+
   const tag = body.tag && isChatroomTag(body.tag) ? body.tag : null;
   const createdAt = new Date();
   const expiresAt = new Date(createdAt.getTime() + 24 * 60 * 60 * 1000);
@@ -199,7 +258,6 @@ export async function POST(req: NextRequest) {
   };
 
   // Tag → in-app notification + push (createNotification schedules push via after())
-  const mentionIds = extractMentionIds(text).filter((id) => id !== auth.user.id);
   if (mentionIds.length > 0) {
     const blockedBySender = await fetchBlockedUserIds(admin, auth.user.id);
     await Promise.all(
