@@ -24,8 +24,20 @@ import {
   splitFullName,
 } from "../lib/profileCompleteness";
 import { ONBOARDING_REQUIRED_FIELDS_MESSAGE } from "../lib/onboardingGate";
-import { validateImagePick } from "../lib/uploadLimits";
-import { prepareAvatarUploadFile } from "../lib/prepareUploadFile";
+import {
+  EMPLOYER_DOCUMENT_ACCEPT,
+  validateEmployerDocumentPick,
+  validateImagePick,
+  inferEmployerDocumentContentType,
+} from "../lib/uploadLimits";
+import { prepareAvatarUploadFile, prepareEmployerDocumentUpload } from "../lib/prepareUploadFile";
+import {
+  MEMBERSHIP_COUNTRIES,
+  NON_US_CERT_REQUIRED_MESSAGE,
+  requiresEodCertForCountry,
+} from "../lib/membershipCountries";
+import { MEMBERSHIP_FEATURE_FLAGS } from "../lib/membershipFeatureFlags";
+import { isNativeApp } from "../lib/native/isNativeApp";
 import {
   clearStoredReferral,
   readStoredReferral,
@@ -36,9 +48,13 @@ const SERVICE_OPTIONS = [...MEMBER_SERVICE_OPTIONS];
 const STATUS_OPTIONS = [...MEMBER_STATUS_OPTIONS];
 const SKILL_BADGE_OPTIONS = ["Basic", "Senior", "Master", "LEO/FED", "Civil Service"];
 const YEARS_OPTIONS = [...Array.from({ length: 39 }, (_, i) => String(i + 1)), "40+"];
+const COUNTRY_COLLECT_ENABLED = MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled;
 
 export default function OnboardingPage() {
   const [userId, setUserId] = useState<string | null>(null);
+  const [showEodCertUpload, setShowEodCertUpload] = useState(
+    !MEMBERSHIP_FEATURE_FLAGS.eodCertOnboardingNativeOnly,
+  );
   const [accountType, setAccountType] = useState<"member" | "employer" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -53,6 +69,9 @@ export default function OnboardingPage() {
   const [profilePhotoFile, setProfilePhotoFile] = useState<File | null>(null);
   const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
   const [profilePhotoError, setProfilePhotoError] = useState<string | null>(null);
+  const [country, setCountry] = useState("");
+  const [eodCertFile, setEodCertFile] = useState<File | null>(null);
+  const [eodCertError, setEodCertError] = useState<string | null>(null);
 
   // Employer fields
   const [companyName, setCompanyName] = useState("");
@@ -70,8 +89,18 @@ export default function OnboardingPage() {
   // Guards the one-time post-OAuth session recovery so we don't spin up the
   // retry loop on every render while waiting for AuthProvider to hydrate.
   const sessionRecoveryAttemptedRef = useRef(false);
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null);
+  const eodCertInputRef = useRef<HTMLInputElement>(null);
 
   useOnboardingStepTracking("onboarding_viewed", !checking);
+
+  useEffect(() => {
+    if (!MEMBERSHIP_FEATURE_FLAGS.eodCertOnboardingNativeOnly) {
+      setShowEodCertUpload(true);
+      return;
+    }
+    setShowEodCertUpload(isNativeApp());
+  }, []);
 
   useEffect(() => {
     if (accountType) {
@@ -168,6 +197,46 @@ export default function OnboardingPage() {
     });
     if (error) throw error;
     return supabase.storage.from("profile-photos").getPublicUrl(filePath).data.publicUrl;
+  }
+
+  function handleEodCertPick(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    if (!file) return;
+    const validationError = validateEmployerDocumentPick(file);
+    if (validationError) {
+      setEodCertError(validationError);
+      setEodCertFile(null);
+      e.target.value = "";
+      return;
+    }
+    setEodCertError(null);
+    setEodCertFile(file);
+  }
+
+  function clearEodCertPick() {
+    setEodCertFile(null);
+    setEodCertError(null);
+  }
+
+  async function uploadOnboardingEodCert(
+    file: File,
+    ownerUserId: string,
+  ): Promise<{ path: string; fileName: string }> {
+    const prepared = await prepareEmployerDocumentUpload(file);
+    if (!prepared.ok) throw new Error(prepared.error);
+    const uploadFile = prepared.file;
+    const ext = uploadFile.name.includes(".")
+      ? uploadFile.name.split(".").pop()?.toLowerCase()
+      : "bin";
+    const safeExt = ext && /^[a-z0-9]+$/.test(ext) ? ext : "bin";
+    const filePath = `${ownerUserId}/eod-cert/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${safeExt}`;
+    const contentType = inferEmployerDocumentContentType(uploadFile);
+    const { error } = await supabase.storage.from("verification-docs").upload(filePath, uploadFile, {
+      upsert: true,
+      contentType,
+    });
+    if (error) throw error;
+    return { path: filePath, fileName: file.name };
   }
 
   useEffect(() => {
@@ -399,6 +468,15 @@ export default function OnboardingPage() {
     if (accountType === "member") {
       if (!service) return markMissingField("field-member-service");
       if (!status) return markMissingField("field-member-status");
+      if (COUNTRY_COLLECT_ENABLED && !country) return markMissingField("field-member-country");
+      if (
+        COUNTRY_COLLECT_ENABLED &&
+        requiresEodCertForCountry(country) &&
+        showEodCertUpload &&
+        !eodCertFile
+      ) {
+        return markMissingField("field-member-eod-cert");
+      }
     } else {
       if (!companyName.trim()) return markMissingField("field-employer-company");
     }
@@ -431,6 +509,21 @@ export default function OnboardingPage() {
         }
       }
 
+      let uploadedEodCertPath: string | null = null;
+      let uploadedEodCertFileName: string | null = null;
+      if (accountType === "member" && showEodCertUpload && eodCertFile) {
+        try {
+          const uploaded = await uploadOnboardingEodCert(eodCertFile, userId);
+          uploadedEodCertPath = uploaded.path;
+          uploadedEodCertFileName = uploaded.fileName;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          setEodCertError(message);
+          alert(`EOD certificate upload failed: ${message}`);
+          return;
+        }
+      }
+
       const saveRes = await fetch("/api/account/save-onboarding", {
         method: "POST",
         headers: {
@@ -446,13 +539,17 @@ export default function OnboardingPage() {
           skillBadge,
           yearsExperience,
           companyName,
+          ...(COUNTRY_COLLECT_ENABLED ? { country } : {}),
           referralInput: readStoredReferral() ?? "",
           photoUrl: uploadedProfilePhotoUrl,
+          eodCertPath: uploadedEodCertPath,
+          eodCertFileName: uploadedEodCertFileName,
         }),
       });
 
       const saveJson = (await saveRes.json().catch(() => ({}))) as {
         error?: string;
+        detail?: string;
         verification_status?: string;
         wasProvisioned?: boolean;
         isTrustedOAuth?: boolean;
@@ -461,7 +558,8 @@ export default function OnboardingPage() {
 
       if (!saveRes.ok) {
         devAuthLog("onboarding", { step: "profile_update_failed", userId, status: saveRes.status });
-        alert(saveJson.error ?? "Error saving profile.");
+        const saveMsg = [saveJson.error, saveJson.detail].filter(Boolean).join(" — ");
+        alert(saveMsg || "Error saving profile.");
         return;
       }
 
@@ -727,6 +825,46 @@ export default function OnboardingPage() {
                     {isMissing("field-member-status") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
 
+                  {COUNTRY_COLLECT_ENABLED && (
+                  <div
+                    id="field-member-country"
+                    style={isMissing("field-member-country") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                  >
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Country *</label>
+                    <select
+                      value={country}
+                      onChange={(e) => {
+                        setCountry(e.target.value);
+                        if (e.target.value) clearMissingFieldIfMatch("field-member-country");
+                        if (!requiresEodCertForCountry(e.target.value)) {
+                          clearMissingFieldIfMatch("field-member-eod-cert");
+                        }
+                      }}
+                      style={selectStyle}
+                    >
+                      <option value="">Select country...</option>
+                      {MEMBERSHIP_COUNTRIES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.name}</option>
+                      ))}
+                    </select>
+                    <div style={{ marginTop: 8, fontSize: 12, color: "#4b5563", lineHeight: 1.45 }}>
+                      Membership is currently only available to the United States, United Kingdom, Canada,
+                      Australia, New Zealand, Germany, France, and Italy. If you would like your country to
+                      be considered for nomination please contact{" "}
+                      <a href="mailto:murphy@eod-hub.com" style={{ color: "#047857", fontWeight: 700 }}>
+                        murphy@eod-hub.com
+                      </a>{" "}
+                      to submit for an addition.
+                    </div>
+                    {requiresEodCertForCountry(country) && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: "#92400e", fontWeight: 700, lineHeight: 1.45, background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: "8px 10px" }}>
+                        {NON_US_CERT_REQUIRED_MESSAGE}
+                      </div>
+                    )}
+                    {isMissing("field-member-country") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
+                  </div>
+                  )}
+
                   <div className="onboarding-two-col">
                     <div className="onboarding-field">
                       <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Skill Badge</label>
@@ -751,36 +889,124 @@ export default function OnboardingPage() {
                     <div style={{ fontSize: 12, color: "#047857", fontWeight: 800, marginBottom: 10 }}>
                       *users who include a profile picture get vouched 50% faster.
                     </div>
-                    <div className="onboarding-photo-row">
+                    <input
+                      ref={profilePhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleProfilePhotoPick}
+                      className="onboarding-file-input-hidden"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                    />
+                    <button
+                      type="button"
+                      className="onboarding-upload-area"
+                      onClick={() => profilePhotoInputRef.current?.click()}
+                    >
                       {profilePhotoPreviewUrl && (
                         <img
                           src={profilePhotoPreviewUrl}
-                          alt="Selected profile preview"
-                          style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "2px solid #d1d5db" }}
+                          alt=""
+                          style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", border: "2px solid #d1d5db", flexShrink: 0 }}
                         />
                       )}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleProfilePhotoPick}
-                        className="onboarding-file-input"
-                      />
+                      <span className="onboarding-upload-fake-btn">
+                        {profilePhotoFile ? "Change photo" : "Add photo"}
+                      </span>
                       {profilePhotoFile && (
-                        <button
-                          type="button"
-                          onClick={clearProfilePhotoPick}
-                          style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
-                        >
-                          Remove
-                        </button>
+                        <span style={{ fontSize: 12, color: "#374151", fontWeight: 600, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {profilePhotoFile.name}
+                        </span>
                       )}
-                    </div>
+                    </button>
+                    {profilePhotoFile && (
+                      <button
+                        type="button"
+                        onClick={clearProfilePhotoPick}
+                        style={{ marginTop: 8, border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
+                      >
+                        Remove
+                      </button>
+                    )}
                     {profilePhotoError && (
                       <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 12, fontWeight: 700 }}>
                         {profilePhotoError}
                       </div>
                     )}
                   </div>
+
+                  {showEodCertUpload && (
+                  <div
+                    id="field-member-eod-cert"
+                    style={{
+                      border: isMissing("field-member-eod-cert") ? "1px solid #10b981" : "1px solid #e5e7eb",
+                      borderRadius: 12,
+                      padding: 12,
+                      background: isMissing("field-member-eod-cert") ? "#ecfdf5" : "#f9fafb",
+                    }}
+                  >
+                    <label style={{ fontWeight: 800, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>
+                      {requiresEodCertForCountry(country) ? (
+                        <>EOD certificate *</>
+                      ) : (
+                        <>
+                          Include EOD certificate{" "}
+                          <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
+                        </>
+                      )}
+                    </label>
+                    <div style={{ fontSize: 12, color: "#047857", fontWeight: 800, marginBottom: 10 }}>
+                      {requiresEodCertForCountry(country)
+                        ? "*required outside the United States — proof of EOD certification."
+                        : "*users who add their EOD cert get verified 90% faster."}
+                    </div>
+                    <input
+                      ref={eodCertInputRef}
+                      type="file"
+                      accept={EMPLOYER_DOCUMENT_ACCEPT}
+                      onChange={(e) => {
+                        handleEodCertPick(e);
+                        clearMissingFieldIfMatch("field-member-eod-cert");
+                      }}
+                      className="onboarding-file-input-hidden"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                    />
+                    <button
+                      type="button"
+                      className="onboarding-upload-area"
+                      onClick={() => eodCertInputRef.current?.click()}
+                    >
+                      <span className="onboarding-upload-fake-btn">
+                        {eodCertFile ? "Change cert" : "Add cert"}
+                      </span>
+                      {eodCertFile && (
+                        <span style={{ fontSize: 12, color: "#374151", fontWeight: 600, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {eodCertFile.name}
+                        </span>
+                      )}
+                    </button>
+                    {eodCertFile && (
+                      <button
+                        type="button"
+                        onClick={clearEodCertPick}
+                        style={{ marginTop: 8, border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                    {isMissing("field-member-eod-cert") && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: "#047857", fontWeight: 700 }}>
+                        Please upload your EOD certificate.
+                      </div>
+                    )}
+                    {eodCertError && (
+                      <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 12, fontWeight: 700 }}>
+                        {eodCertError}
+                      </div>
+                    )}
+                  </div>
+                  )}
 
                 </>
               )}

@@ -9,6 +9,11 @@ import {
   validateEmployerOnboardingInput,
   validateMemberOnboardingInput,
 } from "@/app/lib/profileCompleteness";
+import {
+  normalizeMembershipCountryCode,
+  requiresEodCertForCountry,
+} from "@/app/lib/membershipCountries";
+import { MEMBERSHIP_FEATURE_FLAGS } from "@/app/lib/membershipFeatureFlags";
 import { createNotification } from "@/app/lib/notificationsServer";
 import {
   lookupReferrerByCode,
@@ -31,7 +36,19 @@ type OnboardingBody = {
   companyName?: unknown;
   referralInput?: unknown;
   photoUrl?: unknown;
+  country?: unknown;
+  eodCertPath?: unknown;
+  eodCertFileName?: unknown;
 };
+
+function normalizeOwnStoragePath(path: unknown, userId: string): string | null {
+  if (typeof path !== "string") return null;
+  const trimmed = path.trim();
+  if (!trimmed) return null;
+  if (trimmed.includes("..") || trimmed.startsWith("/")) return null;
+  if (!trimmed.startsWith(`${userId}/`)) return null;
+  return trimmed;
+}
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
@@ -79,14 +96,31 @@ export async function POST(req: NextRequest) {
   const companyName = typeof body.companyName === "string" ? body.companyName : "";
   const referralInput = typeof body.referralInput === "string" ? body.referralInput.trim().toUpperCase() : "";
   const photoUrl = typeof body.photoUrl === "string" ? body.photoUrl.trim() : "";
+  const countryRaw = typeof body.country === "string" ? body.country : "";
+  const eodCertFileName =
+    typeof body.eodCertFileName === "string" ? body.eodCertFileName.trim().slice(0, 255) : "";
 
   const validationError =
     accountType === "member"
-      ? validateMemberOnboardingInput({ firstName, lastName, service, status })
+      ? validateMemberOnboardingInput({
+          firstName,
+          lastName,
+          service,
+          status,
+          country: MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled ? countryRaw : undefined,
+        })
       : validateEmployerOnboardingInput({ firstName, lastName, companyName });
 
   if (validationError) {
     return NextResponse.json({ error: validationError }, { status: 400 });
+  }
+
+  const country =
+    accountType === "member" && MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled
+      ? normalizeMembershipCountryCode(countryRaw)
+      : null;
+  if (accountType === "member" && MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled && !country) {
+    return NextResponse.json({ error: "Please select a valid membership country." }, { status: 400 });
   }
 
   const token = authHeader.slice(7);
@@ -104,6 +138,19 @@ export async function POST(req: NextRequest) {
   const userId = authData.user.id;
   const isTrustedOAuth = isOAuthOnlyTrustedProvider(authData.user);
   const authEmail = authData.user.email?.trim().toLowerCase() ?? "";
+  const eodCertPath = normalizeOwnStoragePath(body.eodCertPath, userId);
+
+  if (
+    accountType === "member" &&
+    MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled &&
+    requiresEodCertForCountry(country) &&
+    !eodCertPath
+  ) {
+    return NextResponse.json(
+      { error: "EOD certificate is required outside the United States." },
+      { status: 400 },
+    );
+  }
 
   const adminClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -163,7 +210,15 @@ export async function POST(req: NextRequest) {
           status,
           skill_badge: skillBadge || null,
           years_experience: yearsExperience || null,
+          ...(MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled ? { country } : {}),
           ...(photoUrl ? { photo_url: photoUrl } : {}),
+          ...(eodCertPath
+            ? {
+                eod_cert_path: eodCertPath,
+                eod_cert_file_name: eodCertFileName || eodCertPath.split("/").pop() || "eod-cert",
+                eod_cert_uploaded_at: new Date().toISOString(),
+              }
+            : {}),
           ...verificationFields,
         }
       : {

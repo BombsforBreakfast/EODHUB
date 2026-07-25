@@ -122,6 +122,8 @@ export default function CandidateResumeModal({
   const trainingDocs = detail?.specialized_training_docs ?? null;
   const resumeHref = candidateDocumentViewHref(candidate.user_id, "resume");
   const educationHref = candidateDocumentViewHref(candidate.user_id, "education");
+  const eodCertHref = candidateDocumentViewHref(candidate.user_id, "eod_cert");
+  const hasEodCert = !!detail?.eod_cert_path?.trim();
 
   if (!mounted) return null;
 
@@ -308,6 +310,20 @@ export default function CandidateResumeModal({
                     style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}
                   >
                     View →
+                  </a>
+                ) : (
+                  "Not provided"
+                ),
+              )}
+              {field(
+                "EOD Certificate",
+                hasEodCert ? (
+                  <a
+                    href={eodCertHref}
+                    onClick={(event) => openDocumentLink(event, eodCertHref)}
+                    style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}
+                  >
+                    View cert →
                   </a>
                 ) : (
                   "Not provided"

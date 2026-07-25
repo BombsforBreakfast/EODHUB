@@ -128,6 +128,8 @@ import {
   type PlankHolderToastState,
 } from "../../../lib/plankHolderChallengeClient";
 import { isEmployerAccount, MEMBER_STATUS_OPTIONS } from "../../../lib/profileCompleteness";
+import { MEMBERSHIP_COUNTRIES, membershipCountryName } from "../../../lib/membershipCountries";
+import { MEMBERSHIP_FEATURE_FLAGS } from "../../../lib/membershipFeatureFlags";
 import EmployerAccountCardDetails from "../../../components/profile/EmployerAccountCardDetails";
 import EmployerPostJobModal from "../../../components/EmployerPostJobModal";
 import { BUSINESS_ORG_PAGE_SELECT, type BusinessOrgPageRow } from "../../../lib/businessOrgPages";
@@ -149,6 +151,7 @@ type Profile = {
   verification_status: string | null;
   service: string | null;
   status: string | null;
+  country: string | null;
   years_experience: string | null;
   skill_badge: string | null;
   referral_code: string | null;
@@ -702,6 +705,7 @@ export default function PublicProfilePage() {
   const [editBio, setEditBio] = useState("");
   const [editService, setEditService] = useState("");
   const [editStatus, setEditStatus] = useState("");
+  const [editCountry, setEditCountry] = useState("");
   const [editYearsExp, setEditYearsExp] = useState("");
   const [editSkillBadge, setEditSkillBadge] = useState("");
   const [editCompanyWebsite, setEditCompanyWebsite] = useState("");
@@ -1116,6 +1120,7 @@ export default function PublicProfilePage() {
     setEditBio(profile.bio ?? "");
     setEditService(profile.service ?? "");
     setEditStatus(profile.status === "Active" ? "Active Duty" : (profile.status ?? ""));
+    setEditCountry(profile.country ?? "");
     setEditYearsExp(profile.years_experience ?? "");
     setEditSkillBadge(profile.skill_badge ?? "");
     setEditCompanyWebsite(profile.company_website ?? "");
@@ -1210,6 +1215,7 @@ export default function PublicProfilePage() {
             bio: editBio || null,
             service: editService || null,
             status: editStatus || null,
+            ...(MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled ? { country: editCountry || null } : {}),
             years_experience: editYearsExp || null,
             skill_badge: editSkillBadge || null,
             company_website: editCompanyWebsite || null,
@@ -5712,6 +5718,22 @@ export default function PublicProfilePage() {
                     {STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 </div>
+                {MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled && (
+                <div>
+                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Country</label>
+                  <select value={editCountry} onChange={(e) => setEditCountry(e.target.value)} style={wallEditSelectStyle}>
+                    <option value="">Select country...</option>
+                    {MEMBERSHIP_COUNTRIES.map((c) => (
+                      <option key={c.code} value={c.code}>{c.name}</option>
+                    ))}
+                  </select>
+                  {profile.country && !editCountry && (
+                    <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted }}>
+                      Current: {membershipCountryName(profile.country) ?? profile.country}
+                    </div>
+                  )}
+                </div>
+                )}
                 <div>
                   <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Skill Badge</label>
                   <select value={editSkillBadge} onChange={(e) => setEditSkillBadge(e.target.value)} style={wallEditSelectStyle}>

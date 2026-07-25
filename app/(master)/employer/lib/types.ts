@@ -39,6 +39,8 @@ export const EMPLOYER_CANDIDATE_COLUMNS = [
   "education_url",
   "specialized_training",
   "specialized_training_docs",
+  "eod_cert_path",
+  "eod_cert_file_name",
   "availability_type",
   "availability_date",
   "willing_to_relocate",
@@ -83,6 +85,8 @@ export type EmployerCandidate = PublicCandidate & {
   education_url: string | null;
   specialized_training: string[] | null;
   specialized_training_docs: Record<string, string> | null;
+  eod_cert_path: string | null;
+  eod_cert_file_name: string | null;
   availability_type: string | null;
   availability_date: string | null;
   willing_to_relocate: boolean | null;

@@ -11,13 +11,16 @@ import { openDocumentLink } from "@/app/lib/native/nativeFileOpen";
 import CandidateDocumentPreview from "../components/CandidateDocumentPreview";
 
 function parseKind(value: string | null): CandidateDocumentKind | null {
-  if (value === "resume" || value === "education" || value === "training") return value;
+  if (value === "resume" || value === "education" || value === "training" || value === "eod_cert") {
+    return value;
+  }
   return null;
 }
 
 function kindLabel(kind: CandidateDocumentKind): string {
   if (kind === "resume") return "Resume";
   if (kind === "education") return "Education document";
+  if (kind === "eod_cert") return "EOD certificate";
   return "Training document";
 }
 

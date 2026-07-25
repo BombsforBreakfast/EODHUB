@@ -1,4 +1,4 @@
-export type CandidateDocumentKind = "resume" | "education" | "training";
+export type CandidateDocumentKind = "resume" | "education" | "training" | "eod_cert";
 
 export function candidateDocumentViewHref(
   userId: string,

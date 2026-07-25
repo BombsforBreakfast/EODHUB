@@ -14,6 +14,7 @@ import { isVerifiedRabbitholeViewer } from "../lib/rabbitholeAccess";
 import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import AtlwHotlineModal from "./AtlwHotlineModal";
+import { canAccessAtlwHotline } from "../lib/membershipCountries";
 import NotificationCenter from "./NotificationCenter";
 import { useMemorialNavModal } from "./memorial/MemorialNavModalProvider";
 import { fetchViewerProfileCached } from "../lib/queries/viewerProfile";
@@ -88,6 +89,7 @@ export default function NavBar() {
   const [isFounder, setIsFounder] = useState(false);
   const [isEmployer, setIsEmployer] = useState(false);
   const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
+  const [membershipCountry, setMembershipCountry] = useState<string | null>(null);
   const [adminPendingTotal, setAdminPendingTotal] = useState(0);
   const [groupPendingTotal, setGroupPendingTotal] = useState(0);
 
@@ -116,6 +118,7 @@ export default function NavBar() {
 
   const canAccessRabbithole = isVerifiedRabbitholeViewer(verificationStatus);
   const canClickArcade = canClickArcadeNav(isFounder);
+  const showAtlwHotlineNav = canAccessAtlwHotline(membershipCountry);
 
   const NOTIFICATION_SELECT =
     "id, message, is_read, read_at, archived_at, created_at, actor_name, post_owner_id, link, group_key, type, actor_id, post_id, unit_id, unit_post_id, metadata";
@@ -200,6 +203,7 @@ export default function NavBar() {
       setIsFounder(false);
       setIsEmployer(false);
       setVerificationStatus(null);
+      setMembershipCountry(null);
       setAdminPendingTotal(0);
       setGroupPendingTotal(0);
     }
@@ -228,6 +232,7 @@ export default function NavBar() {
       setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
       setIsEmployer(row?.account_type === "employer");
       setVerificationStatus(row?.verification_status ?? null);
+      setMembershipCountry(typeof row?.country === "string" ? row.country : null);
       if (row?.is_admin) {
         setIsAdmin(true);
         await refreshAdminPendingBadge();
@@ -999,7 +1004,9 @@ export default function NavBar() {
                       ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),
                     { label: "Sidebars", href: "/sidebar", emoji: "💬", badge: 0, onNav: null },
-                    { label: "ATLW Hotline", href: "", emoji: "📞", badge: 0, onNav: null, hotline: true },
+                    ...(showAtlwHotlineNav
+                      ? [{ label: "ATLW Hotline", href: "", emoji: "📞", badge: 0, onNav: null as (() => Promise<void>) | null, hotline: true as const }]
+                      : []),
                   ].map((item) => {
                     const comingSoonBadge = "comingSoon" in item && item.comingSoon ? (
                       <span

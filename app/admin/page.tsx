@@ -35,6 +35,7 @@ import {
   isGrandfatheredSignupProfile,
   signupProfileMissingFields,
 } from "@/app/lib/profileCompleteness";
+import { membershipCountryName } from "@/app/lib/membershipCountries";
 import {
   MEMORIAL_LEO_COLOR,
   MEMORIAL_MILITARY_COLOR,
@@ -210,6 +211,9 @@ type UserProfile = {
   is_pure_admin?: boolean | null;
   role: string | null;
   service: string | null;
+  country?: string | null;
+  has_eod_cert?: boolean;
+  eod_cert_file_name?: string | null;
   verification_status: string | null;
   email_verified?: boolean | null;
   admin_verified?: boolean | null;
@@ -2631,6 +2635,28 @@ export default function AdminPage() {
     try {
       const { error } = await supabase.from("profiles").update({ verification_status: "denied" }).eq("user_id", userId);
       if (error) { alert(error.message); } else { showToast("User denied."); await Promise.all([loadUsers(), loadPendingCounts()]); }
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  async function viewEodCert(userId: string) {
+    setActionLoading(userId + "-cert");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        alert("Session expired. Please sign in again.");
+        return;
+      }
+      const res = await fetch(`/api/admin/verification-cert?userId=${encodeURIComponent(userId)}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      const json = (await res.json().catch(() => ({}))) as { url?: string; error?: string };
+      if (!res.ok || !json.url) {
+        alert(json.error ?? "Could not open EOD certificate.");
+        return;
+      }
+      window.open(json.url, "_blank", "noopener,noreferrer");
     } finally {
       setActionLoading(null);
     }
@@ -5225,11 +5251,12 @@ export default function AdminPage() {
                         {isVerified && <span style={{ background: "#dcfce7", color: "#15803d", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Verified</span>}
                         {isPending && <span style={{ background: "#fef9c3", color: "#854d0e", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Pending</span>}
                         {isDenied && <span style={{ background: "#fee2e2", color: "#b91c1c", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Denied</span>}
+                        {u.has_eod_cert && <span style={{ background: "#dbeafe", color: "#1e40af", fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20 }}>Cert on file</span>}
                       </div>
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 3 }}>
                         {(u.is_employer || u.account_type === "employer")
                           ? [u.company_name, u.email].filter(Boolean).join(" · ")
-                          : [u.role, u.service, u.email].filter(Boolean).join(" · ")}
+                          : [u.role, u.service, membershipCountryName(u.country) ?? null, u.email].filter(Boolean).join(" · ")}
                       </div>
                       {missingSignupFields.length > 0 && (
                         <div style={{ fontSize: 12, color: isGrandfathered ? t.textMuted : "#c2410c", marginTop: 4, fontWeight: 600 }}>
@@ -5305,6 +5332,17 @@ export default function AdminPage() {
                       <a href={`/profile/${u.user_id}`} target="_blank" rel="noreferrer" style={{ ...actionBtn("#374151"), textDecoration: "none", display: "inline-block" }}>
                         View
                       </a>
+
+                      {u.has_eod_cert && (
+                        <button
+                          style={actionBtn("#1d4ed8")}
+                          disabled={actionLoading === u.user_id + "-cert"}
+                          title={u.eod_cert_file_name || "View EOD certificate"}
+                          onClick={() => void viewEodCert(u.user_id)}
+                        >
+                          {actionLoading === u.user_id + "-cert" ? "..." : "View cert"}
+                        </button>
+                      )}
 
                       {/* Delete user */}
                       <button

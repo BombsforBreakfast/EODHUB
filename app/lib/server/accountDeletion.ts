@@ -1,6 +1,46 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const REASON_MAX = 500;
+const VERIFICATION_DOCS_BUCKET = "verification-docs";
+
+async function removeVerificationDocs(
+  admin: SupabaseClient,
+  userId: string,
+): Promise<{ error?: string }> {
+  const { data: profile } = await admin
+    .from("profiles")
+    .select("eod_cert_path")
+    .eq("user_id", userId)
+    .maybeSingle<{ eod_cert_path: string | null }>();
+
+  const paths = new Set<string>();
+  if (profile?.eod_cert_path?.trim()) {
+    paths.add(profile.eod_cert_path.trim());
+  }
+
+  const { data: listed, error: listError } = await admin.storage
+    .from(VERIFICATION_DOCS_BUCKET)
+    .list(`${userId}/eod-cert`, { limit: 100 });
+
+  if (listError && !/not found|Bucket not found/i.test(listError.message)) {
+    return { error: `Failed listing verification docs: ${listError.message}` };
+  }
+
+  for (const file of listed ?? []) {
+    if (file?.name) paths.add(`${userId}/eod-cert/${file.name}`);
+  }
+
+  if (paths.size > 0) {
+    const { error: removeError } = await admin.storage
+      .from(VERIFICATION_DOCS_BUCKET)
+      .remove([...paths]);
+    if (removeError && !/not found|Bucket not found/i.test(removeError.message)) {
+      return { error: `Failed removing verification docs: ${removeError.message}` };
+    }
+  }
+
+  return {};
+}
 
 export function normalizeDeletionReason(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -14,6 +54,9 @@ export async function purgePersonalAccountData(
   admin: SupabaseClient,
   userId: string,
 ): Promise<{ error?: string }> {
+  const verificationCleanup = await removeVerificationDocs(admin, userId);
+  if (verificationCleanup.error) return verificationCleanup;
+
   const tablesByUserId: { table: string; column: string }[] = [
     { table: "cert_uploads", column: "user_id" },
     { table: "notifications", column: "user_id" },
@@ -37,6 +80,8 @@ export async function purgePersonalAccountData(
   for (const { table, column } of tablesByUserId) {
     const { error } = await admin.from(table).delete().eq(column, userId);
     if (error) {
+      // Legacy/orphan tables (e.g. cert_uploads) may not exist in every environment.
+      if (/does not exist|Could not find the table/i.test(error.message)) continue;
       return { error: `Failed clearing ${table}: ${error.message}` };
     }
   }
@@ -72,6 +117,10 @@ export async function anonymizeProfileForDeletion(
       company_website: null,
       linkedin_url: null,
       referral_code: null,
+      country: null,
+      eod_cert_path: null,
+      eod_cert_file_name: null,
+      eod_cert_uploaded_at: null,
       privacy_discoverable: false,
       privacy_show_online: false,
       must_complete_onboarding: false,

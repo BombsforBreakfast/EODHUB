@@ -47,9 +47,9 @@ const ONBOARDING_PROGRESS_STEPS = [
   "onboarding_submit",
 ];
 const PROFILE_SELECT_WITH_MIRRORS =
-  "user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
+  "user_id, first_name, last_name, display_name, name, email, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id, country, eod_cert_path, eod_cert_file_name";
 const PROFILE_SELECT_BASE =
-  "user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
+  "user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id, country, eod_cert_path, eod_cert_file_name";
 
 type UserStatusFilter = "all" | "pending" | "onboarding" | "verified" | "unverified" | "denied";
 
@@ -222,6 +222,9 @@ export async function GET(req: NextRequest) {
     profileQuery = profileQuery.range(offset, offset + limit - 1);
   }
 
+  const PROFILE_SELECT_LEGACY =
+    "user_id, first_name, last_name, display_name, photo_url, role, service, status, skill_badge, years_experience, company_name, account_type, is_pure_admin, verification_status, email_verified, admin_verified, is_approved, is_admin, is_employer, employer_verified, created_at, community_flag_count, referred_by, referrer_user_id";
+
   let profilesQuery = (await profileQuery) as ProfilesQueryResult;
   if (profilesQuery.error) {
     let fallbackQuery = adminClient
@@ -235,6 +238,20 @@ export async function GET(req: NextRequest) {
       fallbackQuery = fallbackQuery.range(offset, offset + limit - 1);
     }
     profilesQuery = (await fallbackQuery) as ProfilesQueryResult;
+  }
+  if (profilesQuery.error) {
+    // Pre-migration environments may lack country / eod_cert_* columns.
+    let legacyQuery = adminClient
+      .from("profiles")
+      .select(PROFILE_SELECT_LEGACY, { count: "exact" })
+      .order("created_at", { ascending: false });
+    legacyQuery = applyProfileStatusFilter(legacyQuery, status);
+    if (full || searchActive || needsPostFilter) {
+      legacyQuery = legacyQuery.limit(FULL_LIST_LIMIT);
+    } else {
+      legacyQuery = legacyQuery.range(offset, offset + limit - 1);
+    }
+    profilesQuery = (await legacyQuery) as ProfilesQueryResult;
   }
 
   if (profilesQuery.error) {
@@ -438,12 +455,21 @@ export async function GET(req: NextRequest) {
       created_at: typeof row.created_at === "string" ? row.created_at : null,
     };
 
+    const eodCertPath = typeof row.eod_cert_path === "string" ? row.eod_cert_path.trim() : "";
+    const { eod_cert_path: _eodCertPath, ...profileWithoutPath } = p as Record<string, unknown> & {
+      eod_cert_path?: string | null;
+    };
+
     return {
-      ...p,
+      ...profileWithoutPath,
       first_name,
       last_name,
       email: row.email ?? authMeta?.email ?? null,
       name: row.name ?? authMeta?.full_name ?? null,
+      country: typeof row.country === "string" ? row.country : null,
+      eod_cert_file_name:
+        typeof row.eod_cert_file_name === "string" ? row.eod_cert_file_name : null,
+      has_eod_cert: eodCertPath.length > 0,
       referred_by_name:
         (typeof row.referrer_user_id === "string"
           ? referrerNameByUserId.get(row.referrer_user_id)
