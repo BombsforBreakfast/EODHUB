@@ -21,8 +21,37 @@ Panel **News** tab and clicks **Approve to feed** or **Reject**. Only
 `status = 'published'` rows are visible to anon/authenticated readers (RLS
 enforced).
 
-This gate exists so we can validate the relevance scoring + filtering before
-external content starts showing up to users.
+## Pipeline
+
+1. **Discovery** — curated RSS + GDELT phrase queries (worldwide recall)
+2. **Keyword score** — cheap first filter (`config/keywords.ts`)
+3. **Body enrich** — fetch article text for borderline hits
+4. **AI judge** — Vercel AI Gateway LLM requires *explicit* bomb-tech / EOD /
+   UXO / IED / bomb squad / bomb threat framing (`aiJudge.ts`)
+5. **Dedupe + caps** — insert survivors as `pending`
+
+Job imports (USAJobs / Adzuna / ReliefWeb / LinkedIn) never use AI Gateway —
+they are deterministic API/scrapes. Rumint news uses Gateway only for the
+LLM relevance step.
+
+## AI Gateway setup
+
+On Vercel (production/preview), enable **AI Gateway** for the project, then
+deploy. OIDC auth is automatic (`VERCEL=1`).
+
+Locally:
+
+```bash
+vercel link
+vercel env pull .env.local --yes
+```
+
+Or set a static `AI_GATEWAY_API_KEY` from the Vercel AI Gateway dashboard.
+
+Optional: `NEWS_AI_MODEL` (default `google/gemini-2.5-flash`).
+
+If Gateway auth is missing, ingestion falls back to keyword-only and records
+`aiSkippedReason` in the run stats.
 
 ## Operations
 
@@ -40,7 +69,7 @@ curl -X POST -H "Authorization: Bearer $NEWS_CRON_SECRET" \
   https://www.eod-hub.com/api/cron/news-ingest
 ```
 
-The endpoint returns `{ ok, stats: { fetched, scored, belowThreshold, duplicates, inserted, capped, errors } }`.
+The endpoint returns stats including `aiJudged`, `aiAccepted`, `aiRejected`.
 
 The hourly Supabase pg_cron job was removed in migration
 `20260605120000_unschedule_news_ingest_cron.sql`.
@@ -52,6 +81,7 @@ The hourly Supabase pg_cron job was removed in migration
 | Add/remove an RSS source | `config/sources.ts` |
 | Edit GDELT search queries | `config/queries.ts` |
 | Add positive/negative keywords or score weights | `config/keywords.ts` |
+| AI relevance prompt / model | `aiJudge.ts` |
 | Per-run / per-day caps | `runner.ts` (`MAX_PER_RUN`, `MAX_PER_DAY`) |
 | Discovery API provider | `providers/discovery.ts` (swap behind `NewsProvider` interface) |
 
@@ -60,6 +90,8 @@ The hourly Supabase pg_cron job was removed in migration
 | Var | Where | Purpose |
 | --- | --- | --- |
 | `NEWS_CRON_SECRET` | Vercel (optional) | Bearer auth for `/api/cron/news-ingest` if invoked manually via curl |
+| `AI_GATEWAY_API_KEY` or OIDC | Vercel / `vercel env pull` | Auth for the LLM relevance judge |
+| `NEWS_AI_MODEL` | Optional | Override judge model slug |
 | `NEXT_PUBLIC_SUPABASE_URL` | Already set | Used by both client + service-role server code |
 | `SUPABASE_SERVICE_ROLE_KEY` | Already set | Service-role inserts into `news_items` |
 

@@ -3,11 +3,13 @@
 
 /** Strong EOD signals — high score when found in the headline. */
 export const POSITIVE_TITLE: string[] = [
+  "bomb disposal",
   "bomb squad",
   "bomb squad callout",
   "bomb squad called",
   "bomb technician",
   "bomb tech",
+  "bomb threat",
   "explosive ordnance disposal",
   "eod technician",
   "eod team",
@@ -16,12 +18,12 @@ export const POSITIVE_TITLE: string[] = [
   "uxo",
   "ied",
   "improvised explosive",
+  "improvised explosive device",
   "render safe",
   "controlled detonation",
   "controlled blast",
   "suspicious package",
   "suspicious device",
-  "bomb threat",
   "threat causes evacuation",
   "evacuated after bomb threat",
   "pipe bomb",

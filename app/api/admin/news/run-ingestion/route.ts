@@ -9,7 +9,7 @@ import { runNewsIngestion } from "../../../../lib/news/runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");

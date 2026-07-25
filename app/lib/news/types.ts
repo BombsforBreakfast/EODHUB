@@ -72,5 +72,13 @@ export type IngestionStats = {
   bodyFetched: number;
   /** Of those, how many crossed threshold thanks to the body content. */
   bodyEnrichedPasses: number;
+  /** Candidates passed to the LLM relevance judge. */
+  aiJudged: number;
+  /** LLM accepted as explicit bomb-tech / EOD news. */
+  aiAccepted: number;
+  /** LLM rejected (metaphor, off-topic, weak signal). */
+  aiRejected: number;
+  /** Set when AI Gateway auth is missing and keyword-only fallback ran. */
+  aiSkippedReason: string | null;
   errors: string[];
 };

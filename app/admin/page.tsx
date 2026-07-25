@@ -513,7 +513,9 @@ type PreviewStatus =
   | "no_positive_hits"
   | "negative_in_title"
   | "duplicate_in_db"
-  | "duplicate_in_batch";
+  | "duplicate_in_batch"
+  | "ai_rejected"
+  | "ai_unavailable";
 
 type PreviewBreakdown = {
   score: number;
@@ -562,6 +564,8 @@ type NewsQueryLaneStat = {
   negative_in_title: number;
   duplicate_in_db: number;
   duplicate_in_batch: number;
+  ai_rejected?: number;
+  ai_unavailable?: number;
 };
 
 type PreviewResult = {
@@ -6134,7 +6138,7 @@ export default function AdminPage() {
             </div>
 
             <div style={{ fontSize: 12, color: t.textMuted, lineHeight: 1.5 }}>
-              External stories are pulled only when you click <strong>Run ingestion now</strong> below. Nothing reaches the public feed until you approve it here. Items below the relevance threshold are dropped before they ever land in this queue. Use <strong>Preview pipeline</strong> to inspect every candidate the scorer saw and surface false negatives.
+              External stories are pulled only when you click <strong>Run ingestion now</strong> below. Nothing reaches the public feed until you approve it here. Keyword scoring is a first pass; an <strong>AI relevance judge</strong> (Vercel AI Gateway) keeps only stories that explicitly involve bomb tech / EOD / UXO / IED / bomb squad work. Use <strong>Preview pipeline</strong> to inspect every candidate.
             </div>
 
             <div
@@ -6497,12 +6501,14 @@ export default function AdminPage() {
                 </div>
 
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {(["all", "would_insert", "below_threshold", "no_positive_hits", "negative_in_title", "duplicate_in_db", "duplicate_in_batch"] as const).map((s) => {
+                  {(["all", "would_insert", "ai_rejected", "ai_unavailable", "below_threshold", "no_positive_hits", "negative_in_title", "duplicate_in_db", "duplicate_in_batch"] as const).map((s) => {
                     const active = previewStatusFilter === s;
                     const count = s === "all" ? previewResult.candidates.length : (previewResult.byStatus[s] ?? 0);
                     const label =
                       s === "all" ? "All"
                       : s === "would_insert" ? "Would insert"
+                      : s === "ai_rejected" ? "AI rejected"
+                      : s === "ai_unavailable" ? "AI unavailable"
                       : s === "below_threshold" ? "Below threshold"
                       : s === "no_positive_hits" ? "No EOD keyword"
                       : s === "negative_in_title" ? "Negative phrase"
@@ -6616,6 +6622,8 @@ export default function AdminPage() {
                       const isDismissing = previewDismissingKey === c.dedupe_key;
                       const statusColor: Record<PreviewStatus, { bg: string; fg: string }> = {
                         would_insert: { bg: isDark ? "#0c3a1f" : "#dcfce7", fg: isDark ? "#86efac" : "#166534" },
+                        ai_rejected: { bg: isDark ? "#3a2a00" : "#ffedd5", fg: isDark ? "#fdba74" : "#9a3412" },
+                        ai_unavailable: { bg: isDark ? "#1e293b" : "#e2e8f0", fg: isDark ? "#94a3b8" : "#475569" },
                         below_threshold: { bg: isDark ? "#3a2a00" : "#fef9c3", fg: isDark ? "#fde68a" : "#854d0e" },
                         no_positive_hits: { bg: isDark ? "#3a0c0c" : "#fee2e2", fg: isDark ? "#fca5a5" : "#991b1b" },
                         negative_in_title: { bg: isDark ? "#3a0c0c" : "#fee2e2", fg: isDark ? "#fca5a5" : "#991b1b" },
@@ -6625,6 +6633,8 @@ export default function AdminPage() {
                       const sc = statusColor[c.status];
                       const statusLabel: Record<PreviewStatus, string> = {
                         would_insert: "would insert",
+                        ai_rejected: "AI rejected",
+                        ai_unavailable: "AI unavailable",
                         below_threshold: "below threshold",
                         no_positive_hits: "no EOD keyword",
                         negative_in_title: "negative phrase",

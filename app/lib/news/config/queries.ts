@@ -7,15 +7,18 @@
 // GDELT supports quoted phrases, OR, and parens. Keep queries tight.
 
 export const DISCOVERY_QUERIES: string[] = [
-  // Core EOD / UXO
+  // Core EOD / UXO / bomb tech (explicit phrase families)
+  '"bomb disposal"',
   '"bomb squad"',
   '"explosive ordnance disposal"',
   '"suspicious package" police',
   '"controlled detonation"',
-  '"IED" OR "UXO"',
+  '"IED" OR "improvised explosive device"',
+  '"UXO" OR "unexploded ordnance"',
   '"grenade found" police',
   '"render safe" explosive',
   '"bomb technician"',
+  '"bomb threat"',
   '"ATF" "explosive device"',
   '"unexploded ordnance"',
   '"pipe bomb" police',
@@ -32,6 +35,7 @@ export const DISCOVERY_QUERIES: string[] = [
   '"ordnance" evacuated',
   '"military munition" discovered',
   '"bomb technician" police',
+  '"bomb disposal" police',
   // Law-enforcement explosives units & incident patterns
   '"arson explosives detail"',
   '"arson/explosives detail"',

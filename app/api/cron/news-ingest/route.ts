@@ -15,7 +15,7 @@ import { runNewsIngestion } from "../../../lib/news/runner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 function constantTimeEquals(a: string, b: string): boolean {
   if (a.length !== b.length) return false;

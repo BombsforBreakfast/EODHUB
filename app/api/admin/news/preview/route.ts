@@ -15,7 +15,7 @@ import { previewNewsIngestion, insertManualCandidate, type PreviewCandidate } fr
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 async function authorizeAdmin(req: NextRequest) {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");

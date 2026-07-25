@@ -12,6 +12,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { SupabaseClient as SupaClient } from "@supabase/supabase-js";
 
+import { filterCandidatesWithAiJudge } from "./aiJudge";
 import { feedsProvider } from "./providers/feeds";
 import { discoveryProvider } from "./providers/discovery";
 import {
@@ -53,7 +54,9 @@ export type PreviewCandidate = {
     | "no_positive_hits"
     | "negative_in_title"
     | "duplicate_in_db"
-    | "duplicate_in_batch";
+    | "duplicate_in_batch"
+    | "ai_rejected"
+    | "ai_unavailable";
 };
 
 /** Per GDELT query string (or `feed:Name`) — how many raw rows and how each disposition landed. */
@@ -66,6 +69,8 @@ export type NewsQueryLaneStat = {
   negative_in_title: number;
   duplicate_in_db: number;
   duplicate_in_batch: number;
+  ai_rejected: number;
+  ai_unavailable: number;
 };
 
 export type PreviewResult = {
@@ -123,6 +128,8 @@ function bumpLaneStat(
         negative_in_title: 0,
         duplicate_in_db: 0,
         duplicate_in_batch: 0,
+        ai_rejected: 0,
+        ai_unavailable: 0,
       };
       map.set(lane, row);
     }
@@ -133,6 +140,8 @@ function bumpLaneStat(
     else if (status === "negative_in_title") row.negative_in_title += 1;
     else if (status === "duplicate_in_db") row.duplicate_in_db += 1;
     else if (status === "duplicate_in_batch") row.duplicate_in_batch += 1;
+    else if (status === "ai_rejected") row.ai_rejected += 1;
+    else if (status === "ai_unavailable") row.ai_unavailable += 1;
   }
 }
 
@@ -225,6 +234,10 @@ export async function runNewsIngestion(supabase: SupabaseClient): Promise<Ingest
     capped: 0,
     bodyFetched: 0,
     bodyEnrichedPasses: 0,
+    aiJudged: 0,
+    aiAccepted: 0,
+    aiRejected: 0,
+    aiSkippedReason: null,
     errors: [],
   };
 
@@ -296,7 +309,7 @@ export async function runNewsIngestion(supabase: SupabaseClient): Promise<Ingest
   // 5. Sort survivors by score desc → highest signal first.
   keep.sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0));
 
-  // 6. Daily cap. We count today's PENDING + PUBLISHED inserts, not rejected.
+  // 6. Daily / per-run budget (pending + published today).
   const startOfDayIso = new Date(new Date().setUTCHours(0, 0, 0, 0)).toISOString();
   const { count: insertedToday } = await supabase
     .from("news_items")
@@ -306,8 +319,32 @@ export async function runNewsIngestion(supabase: SupabaseClient): Promise<Ingest
   const remainingTodayBudget = Math.max(0, MAX_PER_DAY - (insertedToday ?? 0));
   const perRunBudget = Math.min(MAX_PER_RUN, remainingTodayBudget);
 
-  const toInsert = keep.slice(0, perRunBudget);
-  stats.capped = keep.length - toInsert.length;
+  // 6b. AI relevance gate — precision filter before insert. Judge a small
+  //     surplus over the budget so rejects don't leave the queue empty.
+  const aiPool = keep.slice(0, Math.min(keep.length, Math.max(perRunBudget * 3, 12)));
+  let aiKept = aiPool;
+  try {
+    const judged = await filterCandidatesWithAiJudge(aiPool);
+    if (!judged) {
+      stats.aiSkippedReason =
+        "AI Gateway not configured (set AI_GATEWAY_API_KEY or vercel env pull / deploy on Vercel). Fell back to keyword-only.";
+      stats.errors.push(stats.aiSkippedReason);
+    } else {
+      stats.aiJudged = judged.stats.judged;
+      stats.aiAccepted = judged.stats.accepted;
+      stats.aiRejected = judged.stats.rejected;
+      if (judged.stats.errors.length) {
+        stats.errors.push(...judged.stats.errors.slice(0, 5).map((e) => `ai-judge: ${e}`));
+      }
+      aiKept = judged.kept;
+    }
+  } catch (err) {
+    stats.errors.push(`ai-judge: ${(err as Error).message}`);
+    stats.aiSkippedReason = "AI judge failed; fell back to keyword-only.";
+  }
+
+  const toInsert = aiKept.slice(0, perRunBudget);
+  stats.capped = Math.max(0, keep.length - toInsert.length);
 
   // 7. Insert. Pending status, awaiting admin approval.
   if (toInsert.length > 0) {
@@ -448,14 +485,35 @@ export async function previewNewsIngestion(supabase: SupaClient): Promise<Previe
     });
   }
 
+  // AI gate on keyword survivors (same as live ingestion) — caps cost in preview.
+  const wouldInsert = candidates.filter((c) => c.status === "would_insert").slice(0, 12);
+  if (wouldInsert.length > 0) {
+    const byKey = new Map(fetched.map((c) => [c.dedupe_key!, c]));
+    const judgePool = wouldInsert
+      .map((c) => byKey.get(c.dedupe_key) ?? null)
+      .filter((c): c is NewsCandidate => !!c);
+
+    const judged = await filterCandidatesWithAiJudge(judgePool).catch(() => null);
+    if (!judged) {
+      for (const c of wouldInsert) c.status = "ai_unavailable";
+    } else {
+      const acceptedKeys = new Set(judged.kept.map((c) => c.dedupe_key!));
+      for (const c of wouldInsert) {
+        if (!acceptedKeys.has(c.dedupe_key)) c.status = "ai_rejected";
+      }
+    }
+  }
+
   // Sort: would_insert first (highest score), then by score desc within group.
   const groupRank: Record<PreviewCandidate["status"], number> = {
     would_insert: 0,
-    below_threshold: 1,
-    duplicate_in_batch: 2,
-    duplicate_in_db: 3,
-    negative_in_title: 4,
-    no_positive_hits: 5,
+    ai_rejected: 1,
+    ai_unavailable: 2,
+    below_threshold: 3,
+    duplicate_in_batch: 4,
+    duplicate_in_db: 5,
+    negative_in_title: 6,
+    no_positive_hits: 7,
   };
   candidates.sort((a, b) => {
     const g = groupRank[a.status] - groupRank[b.status];
@@ -470,8 +528,22 @@ export async function previewNewsIngestion(supabase: SupaClient): Promise<Previe
     negative_in_title: 0,
     duplicate_in_db: 0,
     duplicate_in_batch: 0,
+    ai_rejected: 0,
+    ai_unavailable: 0,
   };
   for (const c of candidates) byStatus[c.status] += 1;
+
+  // Rebuild lane stats after AI dispositions.
+  queryLaneStatsMap.clear();
+  const fetchedByKey = new Map(fetched.map((c) => [c.dedupe_key!, c]));
+  for (const c of candidates) {
+    const src = fetchedByKey.get(c.dedupe_key);
+    bumpLaneStat(
+      queryLaneStatsMap,
+      src ? laneKeysForCandidate(src) : ["(unknown lane)"],
+      c.status,
+    );
+  }
 
   const queryLaneStats = [...queryLaneStatsMap.values()].sort((a, b) => b.fetched - a.fetched);
 
