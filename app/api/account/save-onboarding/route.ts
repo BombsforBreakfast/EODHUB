@@ -9,7 +9,10 @@ import {
   validateEmployerOnboardingInput,
   validateMemberOnboardingInput,
 } from "@/app/lib/profileCompleteness";
-import { normalizeMembershipCountryCode } from "@/app/lib/membershipCountries";
+import {
+  normalizeMembershipCountryCode,
+  requiresEodCertForCountry,
+} from "@/app/lib/membershipCountries";
 import { MEMBERSHIP_FEATURE_FLAGS } from "@/app/lib/membershipFeatureFlags";
 import { createNotification } from "@/app/lib/notificationsServer";
 import {
@@ -137,6 +140,18 @@ export async function POST(req: NextRequest) {
   const isTrustedOAuth = isOAuthOnlyTrustedProvider(authData.user);
   const authEmail = authData.user.email?.trim().toLowerCase() ?? "";
   const eodCertPath = normalizeOwnStoragePath(body.eodCertPath, userId);
+
+  if (
+    accountType === "member" &&
+    MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled &&
+    requiresEodCertForCountry(country) &&
+    !eodCertPath
+  ) {
+    return NextResponse.json(
+      { error: "EOD certificate is required outside the United States." },
+      { status: 400 },
+    );
+  }
 
   const adminClient = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,

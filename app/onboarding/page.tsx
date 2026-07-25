@@ -33,8 +33,8 @@ import {
 import { prepareAvatarUploadFile, prepareEmployerDocumentUpload } from "../lib/prepareUploadFile";
 import {
   MEMBERSHIP_COUNTRIES,
-  NON_US_CERT_ENCOURAGEMENT,
-  isUnitedStatesCountry,
+  NON_US_CERT_REQUIRED_MESSAGE,
+  requiresEodCertForCountry,
 } from "../lib/membershipCountries";
 import { MEMBERSHIP_FEATURE_FLAGS } from "../lib/membershipFeatureFlags";
 import { isNativeApp } from "../lib/native/isNativeApp";
@@ -467,6 +467,14 @@ export default function OnboardingPage() {
       if (!service) return markMissingField("field-member-service");
       if (!status) return markMissingField("field-member-status");
       if (COUNTRY_COLLECT_ENABLED && !country) return markMissingField("field-member-country");
+      if (
+        COUNTRY_COLLECT_ENABLED &&
+        requiresEodCertForCountry(country) &&
+        showEodCertUpload &&
+        !eodCertFile
+      ) {
+        return markMissingField("field-member-eod-cert");
+      }
     } else {
       if (!companyName.trim()) return markMissingField("field-employer-company");
     }
@@ -824,6 +832,9 @@ export default function OnboardingPage() {
                       onChange={(e) => {
                         setCountry(e.target.value);
                         if (e.target.value) clearMissingFieldIfMatch("field-member-country");
+                        if (!requiresEodCertForCountry(e.target.value)) {
+                          clearMissingFieldIfMatch("field-member-eod-cert");
+                        }
                       }}
                       style={selectStyle}
                     >
@@ -841,9 +852,9 @@ export default function OnboardingPage() {
                       </a>{" "}
                       to submit for an addition.
                     </div>
-                    {country && !isUnitedStatesCountry(country) && (
+                    {requiresEodCertForCountry(country) && (
                       <div style={{ marginTop: 8, fontSize: 12, color: "#92400e", fontWeight: 700, lineHeight: 1.45, background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: "8px 10px" }}>
-                        {NON_US_CERT_ENCOURAGEMENT}
+                        {NON_US_CERT_REQUIRED_MESSAGE}
                       </div>
                     )}
                     {isMissing("field-member-country") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
@@ -906,18 +917,38 @@ export default function OnboardingPage() {
                   </div>
 
                   {showEodCertUpload && (
-                  <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#f9fafb" }}>
+                  <div
+                    id="field-member-eod-cert"
+                    style={{
+                      border: isMissing("field-member-eod-cert") ? "1px solid #10b981" : "1px solid #e5e7eb",
+                      borderRadius: 12,
+                      padding: 12,
+                      background: isMissing("field-member-eod-cert") ? "#ecfdf5" : "#f9fafb",
+                    }}
+                  >
                     <label style={{ fontWeight: 800, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>
-                      Include EOD certificate <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
+                      {requiresEodCertForCountry(country) ? (
+                        <>EOD certificate *</>
+                      ) : (
+                        <>
+                          Include EOD certificate{" "}
+                          <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
+                        </>
+                      )}
                     </label>
                     <div style={{ fontSize: 12, color: "#047857", fontWeight: 800, marginBottom: 10 }}>
-                      *users who add their EOD cert get verified 90% faster.
+                      {requiresEodCertForCountry(country)
+                        ? "*required outside the United States — proof of EOD certification."
+                        : "*users who add their EOD cert get verified 90% faster."}
                     </div>
                     <div className="onboarding-photo-row">
                       <input
                         type="file"
                         accept={EMPLOYER_DOCUMENT_ACCEPT}
-                        onChange={handleEodCertPick}
+                        onChange={(e) => {
+                          handleEodCertPick(e);
+                          clearMissingFieldIfMatch("field-member-eod-cert");
+                        }}
                         className="onboarding-file-input"
                       />
                       {eodCertFile && (
@@ -933,6 +964,11 @@ export default function OnboardingPage() {
                         </>
                       )}
                     </div>
+                    {isMissing("field-member-eod-cert") && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: "#047857", fontWeight: 700 }}>
+                        Please upload your EOD certificate.
+                      </div>
+                    )}
                     {eodCertError && (
                       <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 12, fontWeight: 700 }}>
                         {eodCertError}
