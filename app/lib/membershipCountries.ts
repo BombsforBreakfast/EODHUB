@@ -26,7 +26,7 @@ export const MEMBERSHIP_COUNTRY_HELPER =
   "Membership is currently only available to the United States, United Kingdom, Canada, Australia, New Zealand, Germany, France, and Italy. If you would like your country to be considered for nomination please contact murphy@eod-hub.com to submit for an addition.";
 
 export const NON_US_CERT_REQUIRED_MESSAGE =
-  "Outside the United States: proof of EOD certification is required for verification — community vouching may be more difficult.";
+  "Outside the United States: proof of EOD certification is required for verification.";
 
 /** Non-US membership countries must upload EOD cert at onboarding. */
 export function requiresEodCertForCountry(code: string | null | undefined): boolean {
