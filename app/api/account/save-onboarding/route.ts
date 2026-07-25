@@ -115,7 +115,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
-  // Interim: keep country null for all new signups until countryCollectEnabled flips on.
   const country =
     accountType === "member" && MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled
       ? normalizeMembershipCountryCode(countryRaw)
