@@ -8,11 +8,13 @@ export type MembershipCountry = {
 const MEMBERSHIP_COUNTRIES_UNSORTED: MembershipCountry[] = [
   { code: "AU", name: "Australia" },
   { code: "CA", name: "Canada" },
+  { code: "DK", name: "Denmark" },
   { code: "FR", name: "France" },
   { code: "DE", name: "Germany" },
   { code: "IT", name: "Italy" },
   { code: "NL", name: "Netherlands" },
   { code: "NZ", name: "New Zealand" },
+  { code: "NO", name: "Norway" },
   { code: "GB", name: "United Kingdom" },
   { code: "US", name: "United States" },
 ];
@@ -24,7 +26,7 @@ export const MEMBERSHIP_COUNTRIES: MembershipCountry[] = [...MEMBERSHIP_COUNTRIE
 const MEMBERSHIP_COUNTRY_CODES = new Set(MEMBERSHIP_COUNTRIES.map((c) => c.code));
 
 export const MEMBERSHIP_COUNTRY_HELPER =
-  "Membership is currently only available to the United States, United Kingdom, Canada, Australia, New Zealand, Germany, France, Italy, and the Netherlands. If you would like your country to be considered for nomination please contact murphy@eod-hub.com to submit for an addition.";
+  "Membership is currently only available to the United States, United Kingdom, Canada, Australia, New Zealand, Germany, France, Italy, the Netherlands, Norway, and Denmark. If you would like your country to be considered for nomination please contact murphy@eod-hub.com to submit for an addition.";
 
 export const NON_US_CERT_REQUIRED_MESSAGE =
   "Outside the United States: proof of EOD certification is required for verification.";
