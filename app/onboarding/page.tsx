@@ -549,6 +549,7 @@ export default function OnboardingPage() {
 
       const saveJson = (await saveRes.json().catch(() => ({}))) as {
         error?: string;
+        detail?: string;
         verification_status?: string;
         wasProvisioned?: boolean;
         isTrustedOAuth?: boolean;
@@ -557,7 +558,8 @@ export default function OnboardingPage() {
 
       if (!saveRes.ok) {
         devAuthLog("onboarding", { step: "profile_update_failed", userId, status: saveRes.status });
-        alert(saveJson.error ?? "Error saving profile.");
+        const saveMsg = [saveJson.error, saveJson.detail].filter(Boolean).join(" — ");
+        alert(saveMsg || "Error saving profile.");
         return;
       }
 

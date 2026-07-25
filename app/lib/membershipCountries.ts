@@ -28,12 +28,6 @@ export const MEMBERSHIP_COUNTRY_HELPER =
 export const NON_US_CERT_REQUIRED_MESSAGE =
   "Outside the United States: proof of EOD certification is required for verification.";
 
-/** Non-US membership countries must upload EOD cert at onboarding. */
-export function requiresEodCertForCountry(code: string | null | undefined): boolean {
-  const normalized = normalizeMembershipCountryCode(code);
-  return !!normalized && normalized !== "US";
-}
-
 export function isMembershipCountry(code: string | null | undefined): boolean {
   if (!code) return false;
   return MEMBERSHIP_COUNTRY_CODES.has(code.trim().toUpperCase());
@@ -53,6 +47,14 @@ export function normalizeMembershipCountryCode(code: string | null | undefined):
 
 export function isUnitedStatesCountry(code: string | null | undefined): boolean {
   return normalizeMembershipCountryCode(code) === "US";
+}
+
+/** Non-US membership countries must upload EOD cert at onboarding. */
+export function requiresEodCertForCountry(code: string | null | undefined): boolean {
+  if (!code || typeof code !== "string") return false;
+  const normalized = code.trim().toUpperCase();
+  if (!MEMBERSHIP_COUNTRY_CODES.has(normalized)) return false;
+  return normalized !== "US";
 }
 
 /**
