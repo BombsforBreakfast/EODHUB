@@ -887,44 +887,44 @@ export default function OnboardingPage() {
                     <div style={{ fontSize: 12, color: "#047857", fontWeight: 800, marginBottom: 10 }}>
                       *users who include a profile picture get vouched 50% faster.
                     </div>
-                    <div className="onboarding-photo-row">
+                    <input
+                      ref={profilePhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleProfilePhotoPick}
+                      className="onboarding-file-input-hidden"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                    />
+                    <button
+                      type="button"
+                      className="onboarding-upload-area"
+                      onClick={() => profilePhotoInputRef.current?.click()}
+                    >
                       {profilePhotoPreviewUrl && (
                         <img
                           src={profilePhotoPreviewUrl}
-                          alt="Selected profile preview"
-                          style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "2px solid #d1d5db", flexShrink: 0 }}
+                          alt=""
+                          style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", border: "2px solid #d1d5db", flexShrink: 0 }}
                         />
                       )}
-                      <input
-                        ref={profilePhotoInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleProfilePhotoPick}
-                        className="onboarding-file-input-hidden"
-                        tabIndex={-1}
-                        aria-hidden="true"
-                      />
+                      <span className="onboarding-upload-fake-btn">
+                        {profilePhotoFile ? "Change photo" : "Add photo"}
+                      </span>
+                      {profilePhotoFile && (
+                        <span style={{ fontSize: 12, color: "#374151", fontWeight: 600, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {profilePhotoFile.name}
+                        </span>
+                      )}
+                    </button>
+                    {profilePhotoFile && (
                       <button
                         type="button"
-                        className="onboarding-upload-btn"
-                        onClick={() => profilePhotoInputRef.current?.click()}
+                        onClick={clearProfilePhotoPick}
+                        style={{ marginTop: 8, border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
                       >
-                        {profilePhotoFile ? "Change photo" : "Choose profile photo"}
+                        Remove
                       </button>
-                      {profilePhotoFile && (
-                        <button
-                          type="button"
-                          onClick={clearProfilePhotoPick}
-                          style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "10px 12px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                    {profilePhotoFile && (
-                      <div style={{ marginTop: 8, fontSize: 12, color: "#374151", fontWeight: 600 }}>
-                        {profilePhotoFile.name}
-                      </div>
                     )}
                     {profilePhotoError && (
                       <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 12, fontWeight: 700 }}>
@@ -958,40 +958,40 @@ export default function OnboardingPage() {
                         ? "*required outside the United States — proof of EOD certification."
                         : "*users who add their EOD cert get verified 90% faster."}
                     </div>
-                    <div className="onboarding-photo-row">
-                      <input
-                        ref={eodCertInputRef}
-                        type="file"
-                        accept={EMPLOYER_DOCUMENT_ACCEPT}
-                        onChange={(e) => {
-                          handleEodCertPick(e);
-                          clearMissingFieldIfMatch("field-member-eod-cert");
-                        }}
-                        className="onboarding-file-input-hidden"
-                        tabIndex={-1}
-                        aria-hidden="true"
-                      />
+                    <input
+                      ref={eodCertInputRef}
+                      type="file"
+                      accept={EMPLOYER_DOCUMENT_ACCEPT}
+                      onChange={(e) => {
+                        handleEodCertPick(e);
+                        clearMissingFieldIfMatch("field-member-eod-cert");
+                      }}
+                      className="onboarding-file-input-hidden"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                    />
+                    <button
+                      type="button"
+                      className="onboarding-upload-area"
+                      onClick={() => eodCertInputRef.current?.click()}
+                    >
+                      <span className="onboarding-upload-fake-btn">
+                        {eodCertFile ? "Change cert" : "Add cert"}
+                      </span>
+                      {eodCertFile && (
+                        <span style={{ fontSize: 12, color: "#374151", fontWeight: 600, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {eodCertFile.name}
+                        </span>
+                      )}
+                    </button>
+                    {eodCertFile && (
                       <button
                         type="button"
-                        className="onboarding-upload-btn"
-                        onClick={() => eodCertInputRef.current?.click()}
+                        onClick={clearEodCertPick}
+                        style={{ marginTop: 8, border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
                       >
-                        {eodCertFile ? "Change certificate" : "Choose EOD certificate"}
+                        Remove
                       </button>
-                      {eodCertFile && (
-                        <button
-                          type="button"
-                          onClick={clearEodCertPick}
-                          style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "10px 12px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
-                        >
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                    {eodCertFile && (
-                      <div style={{ marginTop: 8, fontSize: 12, color: "#374151", fontWeight: 600 }}>
-                        {eodCertFile.name}
-                      </div>
                     )}
                     {isMissing("field-member-eod-cert") && (
                       <div style={{ marginTop: 8, fontSize: 12, color: "#047857", fontWeight: 700 }}>
