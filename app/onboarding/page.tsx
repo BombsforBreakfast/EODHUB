@@ -89,6 +89,8 @@ export default function OnboardingPage() {
   // Guards the one-time post-OAuth session recovery so we don't spin up the
   // retry loop on every render while waiting for AuthProvider to hydrate.
   const sessionRecoveryAttemptedRef = useRef(false);
+  const profilePhotoInputRef = useRef<HTMLInputElement>(null);
+  const eodCertInputRef = useRef<HTMLInputElement>(null);
 
   useOnboardingStepTracking("onboarding_viewed", !checking);
 
@@ -890,25 +892,40 @@ export default function OnboardingPage() {
                         <img
                           src={profilePhotoPreviewUrl}
                           alt="Selected profile preview"
-                          style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "2px solid #d1d5db" }}
+                          style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", border: "2px solid #d1d5db", flexShrink: 0 }}
                         />
                       )}
                       <input
+                        ref={profilePhotoInputRef}
                         type="file"
                         accept="image/*"
                         onChange={handleProfilePhotoPick}
-                        className="onboarding-file-input"
+                        className="onboarding-file-input-hidden"
+                        tabIndex={-1}
+                        aria-hidden="true"
                       />
+                      <button
+                        type="button"
+                        className="onboarding-upload-btn"
+                        onClick={() => profilePhotoInputRef.current?.click()}
+                      >
+                        {profilePhotoFile ? "Change photo" : "Choose profile photo"}
+                      </button>
                       {profilePhotoFile && (
                         <button
                           type="button"
                           onClick={clearProfilePhotoPick}
-                          style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
+                          style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "10px 12px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
                         >
                           Remove
                         </button>
                       )}
                     </div>
+                    {profilePhotoFile && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: "#374151", fontWeight: 600 }}>
+                        {profilePhotoFile.name}
+                      </div>
+                    )}
                     {profilePhotoError && (
                       <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 12, fontWeight: 700 }}>
                         {profilePhotoError}
@@ -943,27 +960,39 @@ export default function OnboardingPage() {
                     </div>
                     <div className="onboarding-photo-row">
                       <input
+                        ref={eodCertInputRef}
                         type="file"
                         accept={EMPLOYER_DOCUMENT_ACCEPT}
                         onChange={(e) => {
                           handleEodCertPick(e);
                           clearMissingFieldIfMatch("field-member-eod-cert");
                         }}
-                        className="onboarding-file-input"
+                        className="onboarding-file-input-hidden"
+                        tabIndex={-1}
+                        aria-hidden="true"
                       />
+                      <button
+                        type="button"
+                        className="onboarding-upload-btn"
+                        onClick={() => eodCertInputRef.current?.click()}
+                      >
+                        {eodCertFile ? "Change certificate" : "Choose EOD certificate"}
+                      </button>
                       {eodCertFile && (
-                        <>
-                          <span style={{ fontSize: 12, color: "#374151", fontWeight: 600 }}>{eodCertFile.name}</span>
-                          <button
-                            type="button"
-                            onClick={clearEodCertPick}
-                            style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "6px 10px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
-                          >
-                            Remove
-                          </button>
-                        </>
+                        <button
+                          type="button"
+                          onClick={clearEodCertPick}
+                          style={{ border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "10px 12px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
+                        >
+                          Remove
+                        </button>
                       )}
                     </div>
+                    {eodCertFile && (
+                      <div style={{ marginTop: 8, fontSize: 12, color: "#374151", fontWeight: 600 }}>
+                        {eodCertFile.name}
+                      </div>
+                    )}
                     {isMissing("field-member-eod-cert") && (
                       <div style={{ marginTop: 8, fontSize: 12, color: "#047857", fontWeight: 700 }}>
                         Please upload your EOD certificate.
