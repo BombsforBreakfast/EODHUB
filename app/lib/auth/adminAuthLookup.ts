@@ -31,10 +31,11 @@ export function collectIdentityProviders(user: User): string[] {
 export async function findAuthUsersByEmail(
   admin: SupabaseClient,
   normalizedEmail: string,
-  opts?: { maxPages?: number; perPage?: number }
+  opts?: { maxPages?: number; perPage?: number; findAll?: boolean }
 ): Promise<{ users: User[]; listError: string | null }> {
   const perPage = opts?.perPage ?? DEFAULT_PER_PAGE;
   const maxPages = opts?.maxPages ?? DEFAULT_MAX_PAGES;
+  const findAll = opts?.findAll === true;
   const matches: User[] = [];
 
   for (let page = 1; page <= maxPages; page++) {
@@ -48,7 +49,8 @@ export async function findAuthUsersByEmail(
     }
     // One matching row is enough for provider checks; continuing would mean
     // paginating through the entire project (very slow) on every hint lookup.
-    if (matches.length > 0) {
+    // Account switcher passes findAll to collect legacy same-email duplicates.
+    if (!findAll && matches.length > 0) {
       return { users: matches, listError: null };
     }
     if (batch.length < perPage) break;

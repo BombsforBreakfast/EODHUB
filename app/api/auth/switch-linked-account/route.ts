@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createSupabaseServiceRoleClient } from "../../../lib/auth/adminAuthLookup";
+import { areAccountsOwnershipLinked } from "../../../lib/auth/linkedAccountOwnership";
 
 /**
- * Switches the browser session to another auth.users row that shares the same
- * email as the currently signed-in user (legacy duplicate accounts).
+ * Switches the browser session to another linked auth.users row:
+ * - same email (legacy duplicate accounts), or
+ * - ownership-linked business_organization_pages (owner ↔ business login)
+ *
  * Uses admin generateLink + client verifyOtp(magiclink) — no email is sent when
  * only the hash is consumed in-app.
  */
@@ -33,7 +36,7 @@ export async function POST(req: NextRequest) {
   );
 
   const { data: { user: current } } = await userClient.auth.getUser();
-  if (!current?.email) {
+  if (!current) {
     return NextResponse.json({ error: "Not signed in" }, { status: 401 });
   }
 
@@ -52,13 +55,26 @@ export async function POST(req: NextRequest) {
   }
 
   const target = targetData.user;
-  if (target.email?.toLowerCase() !== current.email.toLowerCase()) {
-    return NextResponse.json({ error: "Accounts are not linked by email" }, { status: 403 });
+  const sameEmail =
+    !!current.email &&
+    !!target.email &&
+    current.email.toLowerCase() === target.email.toLowerCase();
+  const ownershipLinked = sameEmail
+    ? false
+    : await areAccountsOwnershipLinked(admin!, current.id, targetUserId);
+
+  if (!sameEmail && !ownershipLinked) {
+    return NextResponse.json({ error: "Accounts are not linked" }, { status: 403 });
+  }
+
+  const linkEmail = target.email;
+  if (!linkEmail) {
+    return NextResponse.json({ error: "Target account has no email" }, { status: 400 });
   }
 
   const { data: linkData, error: linkErr } = await admin!.auth.admin.generateLink({
     type: "magiclink",
-    email: current.email,
+    email: linkEmail,
   });
 
   if (linkErr || !linkData?.properties?.hashed_token || !linkData.user) {

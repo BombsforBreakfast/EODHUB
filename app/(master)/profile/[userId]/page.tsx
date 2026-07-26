@@ -15,6 +15,7 @@ import GifPickerButton from "../../../components/GifPickerButton";
 import { PostLikersStack, type PostLikerBrief } from "../../../components/PostLikersStack";
 import SidebarThreadDrawer from "../../../components/SidebarThreadDrawer";
 import { useMasterShell } from "../../../components/master/masterShellContext";
+import AccountSwitcherMenu from "../../../components/AccountSwitcherMenu";
 import EventFeedActions from "../../../components/EventFeedActions";
 import { ExternalSiteLink } from "../../../components/ExternalSiteEmbedModal";
 import FeedPostHeader from "../../../components/FeedPostHeader";
@@ -5646,6 +5647,7 @@ export default function PublicProfilePage() {
                 </div>
               </div>
             )}
+            {wallAsOwner ? <AccountSwitcherMenu /> : null}
           </div>
 
           {/* Edit profile (own wall) ΓÇö same fields as My Account */}
