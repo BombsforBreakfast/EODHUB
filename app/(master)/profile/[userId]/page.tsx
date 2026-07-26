@@ -4818,7 +4818,7 @@ export default function PublicProfilePage() {
                       }
                     }}
                     title={profile.photo_url ? "View full photo" : wallAsOwner ? (profile.is_employer ? "Add logo" : "Add photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `3px solid ${getServiceRingColor(profile.service)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || wallAsOwner ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    style={{ position: "relative", width: profile.is_employer ? 120 : 76, height: profile.is_employer ? 56 : 76, borderRadius: profile.is_employer ? 10 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, flexShrink: 0, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service, profile.country) ? `3px solid ${getServiceRingColor(profile.service, profile.country)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || wallAsOwner ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url
                       ? (
@@ -5016,7 +5016,7 @@ export default function PublicProfilePage() {
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "2px 16px" }}>
                         <div><strong>Current Position:</strong> {profile.role || "Not added yet"}</div>
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
-                          <strong>Service:</strong> <ServiceSealValue service={profile.service} size={50} />
+                          <strong>Service:</strong> <ServiceSealValue service={profile.service} country={profile.country} size={50} />
                         </div>
                         <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
                         <div><strong>Experience:</strong> {profile.years_experience || "Not added yet"}</div>
@@ -5191,7 +5191,7 @@ export default function PublicProfilePage() {
                       }
                     }}
                     title={profile.photo_url ? "View full photo" : wallAsOwner ? (profile.is_employer ? "Add logo" : "Add photo") : undefined}
-                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service) ? `4px solid ${getServiceRingColor(profile.service)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || wallAsOwner ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
+                    style={{ position: "relative", width: profile.is_employer ? 160 : 120, height: profile.is_employer ? 72 : 120, borderRadius: profile.is_employer ? 12 : "50%", overflow: "hidden", background: profile.is_employer ? "#f8f8f8" : t.bg, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, color: t.textMuted, boxSizing: "border-box", border: profile.is_employer ? "3px solid #d97706" : getServiceRingColor(profile.service, profile.country) ? `4px solid ${getServiceRingColor(profile.service, profile.country)}` : `1px solid ${t.border}`, padding: 0, cursor: profile.photo_url || wallAsOwner ? (uploadingAvatar ? "not-allowed" : "pointer") : undefined }}
                   >
                     {profile.photo_url ? (
                       <OptimizedAvatarImg
@@ -5374,7 +5374,7 @@ export default function PublicProfilePage() {
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 24px" }}>
                         <div><strong>Current Position:</strong> {profile.role || "Not added yet"}</div>
                         <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "6px 10px" }}>
-                          <strong>Service:</strong> <ServiceSealValue service={profile.service} size={60} />
+                          <strong>Service:</strong> <ServiceSealValue service={profile.service} country={profile.country} size={60} />
                         </div>
                         <div><strong>Status:</strong> {displayMilitaryStatus(profile.status) || "Not added yet"}</div>
                         <div><strong>Years Experience:</strong> {profile.years_experience || "Not added yet"}</div>

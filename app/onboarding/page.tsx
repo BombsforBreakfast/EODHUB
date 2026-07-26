@@ -805,6 +805,9 @@ export default function OnboardingPage() {
                       <option value="">Select service...</option>
                       {SERVICE_OPTIONS.map((o) => <option key={o} value={o}>{o}</option>)}
                     </select>
+                    <div style={{ marginTop: 6, fontSize: 12, color: "#4b5563", lineHeight: 1.45 }}>
+                      Choose the closest match. U.S. branch crests show for United States members; other countries show service as text for now.
+                    </div>
                     {isMissing("field-member-service") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
 

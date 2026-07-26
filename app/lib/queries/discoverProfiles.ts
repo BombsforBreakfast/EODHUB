@@ -18,6 +18,7 @@ export type DiscoverProfile = {
   last_name: string | null;
   photo_url: string | null;
   service: string | null;
+  country: string | null;
   status: string | null;
   professional_tags: string[] | null;
   unit_history_tags: string[] | null;
@@ -159,7 +160,7 @@ export async function fetchDiscoverProfiles(
       supabase
         .from("profiles")
         .select(
-          "user_id, first_name, last_name, photo_url, service, status, professional_tags, unit_history_tags",
+          "user_id, first_name, last_name, photo_url, service, country, status, professional_tags, unit_history_tags",
         )
         .eq("verification_status", "verified")
         .neq("user_id", viewerId)

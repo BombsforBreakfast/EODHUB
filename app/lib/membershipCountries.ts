@@ -234,6 +234,16 @@ export function isUnitedStatesCountry(code: string | null | undefined): boolean 
   return normalizeMembershipCountryCode(code) === "US";
 }
 
+/**
+ * US branch crests / avatar rings. Legacy null country keeps US visuals;
+ * explicit non-US membership shows service as text only (no crest/ring).
+ */
+export function shouldShowUsServiceVisuals(code: string | null | undefined): boolean {
+  const normalized = typeof code === "string" ? code.trim().toUpperCase() : "";
+  if (!normalized) return true;
+  return normalized === "US";
+}
+
 /** Non-US members must upload EOD cert at onboarding. */
 export function requiresEodCertForCountry(code: string | null | undefined): boolean {
   if (!code || typeof code !== "string") return false;

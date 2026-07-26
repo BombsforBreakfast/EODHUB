@@ -23,6 +23,7 @@ export type UserDirectoryMember = {
   display_name: string | null;
   photo_url: string | null;
   service: string | null;
+  country: string | null;
   skill_badge: string | null;
   knowStatus: KnowStatus;
 };

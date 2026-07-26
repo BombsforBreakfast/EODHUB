@@ -1,3 +1,5 @@
+import { shouldShowUsServiceVisuals } from "./membershipCountries";
+
 /**
  * Avatar ring colors — keep in sync with PostLikersStack / profile wall (`getServiceRingColor` callers).
  */
@@ -16,7 +18,11 @@ export function isMarinesService(service: string | null | undefined): boolean {
   );
 }
 
-export function getServiceRingColor(service: string | null | undefined): string | null {
+export function getServiceRingColor(
+  service: string | null | undefined,
+  country?: string | null,
+): string | null {
+  if (!shouldShowUsServiceVisuals(country)) return null;
   const s = typeof service === "string" ? service.trim() : "";
   if (!s) return null;
   if (isMarinesService(s)) return "#e01010";

@@ -32,6 +32,7 @@ import {
   loadBusinessOrgPageTypesById,
   resolveBusinessListingLinkTarget,
 } from "../lib/businessListingLinks";
+import AccountSwitcherMenu from "./AccountSwitcherMenu";
 import type { User } from "@supabase/supabase-js";
 
 type Notification = {
@@ -74,9 +75,11 @@ export default function NavBar() {
   const [avatarPhotoUrl, setAvatarPhotoUrl] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showHub, setShowHub] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showAtlwHotline, setShowAtlwHotline] = useState(false);
   const hubBtnRef = useRef<HTMLButtonElement>(null);
   const hubPanelRef = useRef<HTMLDivElement>(null);
+  const accountMenuRef = useRef<HTMLDivElement>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -495,13 +498,28 @@ export default function NavBar() {
   }, [showHub]);
 
   useEffect(() => {
-    if (!showHub) return;
+    if (!showHub && !showAccountMenu) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setShowHub(false);
+      if (e.key === "Escape") {
+        setShowHub(false);
+        setShowAccountMenu(false);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [showHub]);
+  }, [showHub, showAccountMenu]);
+
+  useEffect(() => {
+    if (!showAccountMenu) return;
+    function onPointerDown(e: MouseEvent) {
+      const target = e.target as Node | null;
+      if (!target) return;
+      if (accountMenuRef.current?.contains(target)) return;
+      setShowAccountMenu(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, [showAccountMenu]);
 
   async function handleLogout() {
     clearAppAuthState();
@@ -621,7 +639,7 @@ export default function NavBar() {
 
       {/* Desktop: centered cluster — avatar | [ row: bell+crab+hub+account; row: search ]; mobile: flattened via display:contents */}
       <div className="nav-desktop-cluster">
-        <div className="nav-primary-avatar" style={{ position: "relative", flexShrink: 0 }}>
+        <div className="nav-primary-avatar" ref={accountMenuRef} style={{ position: "relative", flexShrink: 0 }}>
           {(() => {
             const navAvatarCircleStyle = {
               width: 81,
@@ -649,12 +667,6 @@ export default function NavBar() {
             ) : (
               userInitial
             );
-            const openProfile = (e: { preventDefault: () => void }) => {
-              setShowHub(false);
-              if (!authLoaded) {
-                e.preventDefault();
-              }
-            };
             if (!currentUserId) {
               return (
                 <Link
@@ -662,7 +674,7 @@ export default function NavBar() {
                   className="nav-avatar"
                   aria-label="Sign in"
                   title="Sign in"
-                  onClick={() => { setShowHub(false); }}
+                  onClick={() => { setShowHub(false); setShowAccountMenu(false); }}
                   style={{ ...navAvatarCircleStyle, cursor: "pointer" }}
                 >
                   {inner}
@@ -670,16 +682,31 @@ export default function NavBar() {
               );
             }
             return (
-              <Link
-                href={`/profile/${currentUserId}`}
-                className="nav-avatar"
-                aria-label="My profile"
-                title="My profile"
-                onClick={openProfile}
-                style={{ ...navAvatarCircleStyle, cursor: "pointer" }}
-              >
-                {inner}
-              </Link>
+              <>
+                <button
+                  type="button"
+                  className="nav-avatar"
+                  aria-label="Account menu"
+                  title="Switch account or view profile"
+                  aria-expanded={showAccountMenu}
+                  aria-haspopup="menu"
+                  onClick={() => {
+                    setShowHub(false);
+                    setShowSearchDropdown(false);
+                    setShowNotifPanel(false);
+                    if (!authLoaded) return;
+                    setShowAccountMenu((v) => !v);
+                  }}
+                  style={{ ...navAvatarCircleStyle, cursor: "pointer" }}
+                >
+                  {inner}
+                </button>
+                <AccountSwitcherMenu
+                  variant="menu"
+                  open={showAccountMenu}
+                  onClose={() => setShowAccountMenu(false)}
+                />
+              </>
             );
           })()}
         </div>

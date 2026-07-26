@@ -16,7 +16,7 @@ import { fetchBlockedUserIds, filterBlockedRows } from "../userBlocks";
 export const USER_DIRECTORY_STALE_MS = 5 * 60_000;
 
 const PROFILE_COLUMNS =
-  "user_id, first_name, last_name, display_name, photo_url, service, skill_badge";
+  "user_id, first_name, last_name, display_name, photo_url, service, country, skill_badge";
 
 function optimisticKnowStatus(action: ConnectionAction, current: KnowStatus): KnowStatus {
   if (action === "know") return current === "pending_incoming" ? "accepted" : "pending_outgoing";

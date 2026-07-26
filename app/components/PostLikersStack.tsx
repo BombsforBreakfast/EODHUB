@@ -12,6 +12,7 @@ export type PostLikerBrief = {
   name: string;
   photoUrl: string | null;
   service: string | null;
+  country?: string | null;
   isEmployer: boolean | null;
 };
 
@@ -20,16 +21,18 @@ export function LikerAvatar({
   name,
   size = 44,
   service,
+  country,
   isEmployer,
 }: {
   photoUrl: string | null;
   name: string;
   size?: number;
   service?: string | null;
+  country?: string | null;
   isEmployer?: boolean | null;
 }) {
   const { t } = useTheme();
-  const ringColor = isEmployer ? null : getServiceRingColor(service);
+  const ringColor = isEmployer ? null : getServiceRingColor(service, country);
   const borderRadius = isEmployer ? Math.max(4, size * 0.18) : "50%";
   const bgColor = isEmployer ? "#f0f0f0" : t.badgeBg;
   return (
@@ -104,6 +107,7 @@ function LikerPopoverList({
             name={liker.name}
             size={32}
             service={liker.service}
+            country={liker.country}
             isEmployer={liker.isEmployer}
           />
           <span style={{ fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>{liker.name}</span>
@@ -247,6 +251,7 @@ function MobileLikersPopover({
               name={liker.name}
               size={TOOLBAR_AVATAR_SIZE}
               service={liker.service}
+              country={liker.country}
               isEmployer={liker.isEmployer}
             />
           </span>
@@ -374,6 +379,7 @@ export function PostLikersStack({ likers }: { likers: PostLikerBrief[] }) {
               name={liker.name}
               size={TOOLBAR_AVATAR_SIZE}
               service={liker.service}
+              country={liker.country}
               isEmployer={liker.isEmployer}
             />
           </Link>

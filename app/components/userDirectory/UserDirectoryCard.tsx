@@ -39,7 +39,7 @@ export default function UserDirectoryCard({
   const { t } = useTheme();
   const name = memberDisplayName(member);
   const initial = memberInitial(member);
-  const ringColor = getServiceRingColor(member.service);
+  const ringColor = getServiceRingColor(member.service, member.country);
   const profileHref = `/profile/${member.user_id}`;
 
   const btnBase: React.CSSProperties = {
@@ -230,7 +230,7 @@ export default function UserDirectoryCard({
               >
                 Service
               </span>
-              <ServiceSealValue service={member.service} size={40} notSetLabel="—" />
+              <ServiceSealValue service={member.service} country={member.country} size={40} notSetLabel="—" />
             </div>
 
             {member.skill_badge?.trim() && (

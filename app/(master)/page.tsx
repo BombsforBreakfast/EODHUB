@@ -418,6 +418,7 @@ type InitialFeedBatchCache = {
   profileNameMap: Map<string, string>;
   profilePhotoMap: Map<string, string | null>;
   profileServiceMap: Map<string, string | null>;
+  profileCountryMap: Map<string, string | null>;
   profileEmployerMap: Map<string, boolean | null>;
   profilePureAdminMap: Map<string, boolean | null>;
   profilePublicMemberMap: Map<string, boolean>;
@@ -452,6 +453,7 @@ type ProfileName = {
   last_name: string | null;
   photo_url: string | null;
   service: string | null;
+  country: string | null;
   is_employer: boolean | null;
   is_pure_admin: boolean | null;
   email: string | null;
@@ -499,6 +501,7 @@ type FeedComment = Comment & {
   authorName: string;
   authorPhotoUrl: string | null;
   authorService: string | null;
+  authorCountry: string | null;
   authorIsEmployer: boolean | null;
   likeCount: number;
   myReaction: ReactionType | null;
@@ -565,6 +568,7 @@ type FeedPost = RankedPostRow & {
   authorName: string;
   authorPhotoUrl: string | null;
   authorService: string | null;
+  authorCountry: string | null;
   authorIsEmployer: boolean | null;
   authorIsPureAdmin: boolean | null;
   authorHasPublicMemberProfile: boolean;
@@ -900,6 +904,7 @@ function Avatar({
   name,
   size = 44,
   service,
+  country,
   isEmployer,
   isPureAdmin,
   imageLoading = "lazy",
@@ -909,6 +914,7 @@ function Avatar({
   name: string;
   size?: number;
   service?: string | null;
+  country?: string | null;
   isEmployer?: boolean | null;
   isPureAdmin?: boolean | null;
   imageLoading?: "lazy" | "eager";
@@ -916,7 +922,7 @@ function Avatar({
 }) {
   const { t } = useTheme();
   const useLogoTile = Boolean(isEmployer || isPureAdmin);
-  const ringColor = useLogoTile ? null : getServiceRingColor(service);
+  const ringColor = useLogoTile ? null : getServiceRingColor(service, country);
   // Employers + pure-admin logos get a rounded-rect tile so logos aren't squished into a circle.
   const borderRadius = useLogoTile ? Math.max(4, size * 0.18) : "50%";
   const bgColor = useLogoTile ? "#f0f0f0" : t.badgeBg;
@@ -2829,6 +2835,7 @@ export default function HomePage() {
       authorName: "User",
       authorPhotoUrl: null,
       authorService: null,
+      authorCountry: null,
       authorIsEmployer: null,
       authorIsPureAdmin: null,
       authorHasPublicMemberProfile: true,
@@ -2896,7 +2903,7 @@ export default function HomePage() {
       authorUserIds.length > 0
         ? await supabase
             .from("profiles")
-            .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, is_pure_admin, email")
+            .select("user_id, display_name, first_name, last_name, photo_url, service, country, is_employer, is_pure_admin, email")
             .in("user_id", authorUserIds)
         : { data: [], error: null };
 
@@ -3012,6 +3019,7 @@ export default function HomePage() {
     const profileNameMap = new Map<string, string>();
     const profilePhotoMap = new Map<string, string | null>();
     const profileServiceMap = new Map<string, string | null>();
+    const profileCountryMap = new Map<string, string | null>();
     const profileEmployerMap = new Map<string, boolean | null>();
     const profilePureAdminMap = new Map<string, boolean | null>();
     const profilePublicMemberMap = new Map<string, boolean>();
@@ -3024,6 +3032,7 @@ export default function HomePage() {
       profileNameMap.set(profile.user_id, fullName);
       profilePhotoMap.set(profile.user_id, profile.photo_url ?? null);
       profileServiceMap.set(profile.user_id, profile.service ?? null);
+      profileCountryMap.set(profile.user_id, profile.country ?? null);
       profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
       profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
       profilePublicMemberMap.set(
@@ -3065,6 +3074,7 @@ export default function HomePage() {
         authorName: profileNameMap.get(authorUserId) || "User",
         authorPhotoUrl: profilePhotoMap.get(authorUserId) || null,
         authorService: profileServiceMap.get(authorUserId) ?? null,
+        authorCountry: profileCountryMap.get(authorUserId) ?? null,
         authorIsEmployer: profileEmployerMap.get(authorUserId) ?? null,
         authorIsPureAdmin: profilePureAdminMap.get(authorUserId) ?? null,
         authorHasPublicMemberProfile: profilePublicMemberMap.get(authorUserId) ?? true,
@@ -3112,6 +3122,7 @@ export default function HomePage() {
       profileNameMap,
       profilePhotoMap,
       profileServiceMap,
+      profileCountryMap,
       profileEmployerMap,
       profilePureAdminMap,
       profilePublicMemberMap,
@@ -3146,6 +3157,7 @@ export default function HomePage() {
     const profileNameMap = new Map(cache.profileNameMap);
     const profilePhotoMap = new Map(cache.profilePhotoMap);
     const profileServiceMap = new Map(cache.profileServiceMap);
+    const profileCountryMap = new Map(cache.profileCountryMap);
     const profileEmployerMap = new Map(cache.profileEmployerMap);
     const profilePureAdminMap = new Map(cache.profilePureAdminMap);
     const profilePublicMemberMap = new Map(cache.profilePublicMemberMap);
@@ -3164,6 +3176,9 @@ export default function HomePage() {
         }
         if (!profileServiceMap.has(profile.user_id)) {
           profileServiceMap.set(profile.user_id, profile.service ?? null);
+        }
+        if (!profileCountryMap.has(profile.user_id)) {
+          profileCountryMap.set(profile.user_id, profile.country ?? null);
         }
         if (!profileEmployerMap.has(profile.user_id)) {
           profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
@@ -3303,7 +3318,7 @@ export default function HomePage() {
     if (missingProfileIds.length > 0) {
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
-        .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, is_pure_admin, email")
+        .select("user_id, display_name, first_name, last_name, photo_url, service, country, is_employer, is_pure_admin, email")
         .in("user_id", missingProfileIds);
       if (profileError) {
         console.error("Profile name load error:", profileError);
@@ -3320,6 +3335,7 @@ export default function HomePage() {
         authorName: profileNameMap.get(comment.user_id) || "User",
         authorPhotoUrl: profilePhotoMap.get(comment.user_id) || null,
         authorService: profileServiceMap.get(comment.user_id) ?? null,
+        authorCountry: profileCountryMap.get(comment.user_id) ?? null,
         authorIsEmployer: profileEmployerMap.get(comment.user_id) ?? null,
         likeCount: agg.totalCount,
         myReaction: agg.myReaction,
@@ -3575,6 +3591,7 @@ export default function HomePage() {
         name: profileNameMap.get(uid) || "User",
         photoUrl: profilePhotoMap.get(uid) ?? null,
         service: profileServiceMap.get(uid) ?? null,
+        country: profileCountryMap.get(uid) ?? null,
         isEmployer: profileEmployerMap.get(uid) ?? null,
       }));
       const commentsForPost = commentsByPost.get(post.id) || [];
@@ -3605,6 +3622,7 @@ export default function HomePage() {
         authorName: profileNameMap.get(authorUserId) || "User",
         authorPhotoUrl: profilePhotoMap.get(authorUserId) || null,
         authorService: profileServiceMap.get(authorUserId) ?? null,
+        authorCountry: profileCountryMap.get(authorUserId) ?? null,
         authorIsEmployer: profileEmployerMap.get(authorUserId) ?? null,
         authorIsPureAdmin: profilePureAdminMap.get(authorUserId) ?? null,
         authorHasPublicMemberProfile: profilePublicMemberMap.get(authorUserId) ?? true,
@@ -4114,7 +4132,7 @@ export default function HomePage() {
       allProfileUserIds.length > 0
         ? await supabase
             .from("profiles")
-            .select("user_id, display_name, first_name, last_name, photo_url, service, is_employer, is_pure_admin, email")
+            .select("user_id, display_name, first_name, last_name, photo_url, service, country, is_employer, is_pure_admin, email")
             .in("user_id", allProfileUserIds)
         : { data: [], error: null };
 
@@ -4125,6 +4143,7 @@ export default function HomePage() {
     const profileNameMap = new Map<string, string>();
     const profilePhotoMap = new Map<string, string | null>();
     const profileServiceMap = new Map<string, string | null>();
+    const profileCountryMap = new Map<string, string | null>();
     const profileEmployerMap = new Map<string, boolean | null>();
     const profilePureAdminMap = new Map<string, boolean | null>();
     const profilePublicMemberMap = new Map<string, boolean>();
@@ -4141,6 +4160,7 @@ export default function HomePage() {
       profileNameMap.set(profile.user_id, fullName);
       profilePhotoMap.set(profile.user_id, profile.photo_url ?? null);
       profileServiceMap.set(profile.user_id, profile.service ?? null);
+      profileCountryMap.set(profile.user_id, profile.country ?? null);
       profileEmployerMap.set(profile.user_id, profile.is_employer ?? null);
       profilePureAdminMap.set(profile.user_id, profile.is_pure_admin ?? null);
       profilePublicMemberMap.set(
@@ -4162,6 +4182,7 @@ export default function HomePage() {
         authorName: profileNameMap.get(comment.user_id) || "User",
         authorPhotoUrl: profilePhotoMap.get(comment.user_id) || null,
         authorService: profileServiceMap.get(comment.user_id) ?? null,
+        authorCountry: profileCountryMap.get(comment.user_id) ?? null,
         authorIsEmployer: profileEmployerMap.get(comment.user_id) ?? null,
         likeCount: agg.totalCount,
         myReaction: agg.myReaction,
@@ -4485,6 +4506,7 @@ export default function HomePage() {
         name: profileNameMap.get(uid) || "User",
         photoUrl: profilePhotoMap.get(uid) ?? null,
         service: profileServiceMap.get(uid) ?? null,
+        country: profileCountryMap.get(uid) ?? null,
         isEmployer: profileEmployerMap.get(uid) ?? null,
       }));
       const commentsForPost = commentsByPost.get(post.id) || [];
@@ -4515,6 +4537,7 @@ export default function HomePage() {
         authorName: profileNameMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) || "User",
         authorPhotoUrl: profilePhotoMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) || null,
         authorService: profileServiceMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
+        authorCountry: profileCountryMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
         authorIsEmployer: profileEmployerMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
         authorIsPureAdmin: profilePureAdminMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? null,
         authorHasPublicMemberProfile: profilePublicMemberMap.get(postAsUserIdByPostId.get(post.id) ?? post.user_id) ?? true,
@@ -6683,6 +6706,7 @@ export default function HomePage() {
                 name={comment.authorName}
                 size={avatarSize}
                 service={comment.authorService}
+                country={comment.authorCountry}
                 isEmployer={comment.authorIsEmployer}
               />
             </Link>
@@ -7996,7 +8020,7 @@ export default function HomePage() {
                 >
                 {discoverVisible.map((p) => {
                   const fullName = `${p.first_name || ""} ${p.last_name || ""}`.trim() || "Member";
-                  const ringColor = getServiceRingColor(p.service);
+                  const ringColor = getServiceRingColor(p.service, p.country);
                   const isPendingKnow = p.knowStatus === "pending_outgoing";
                   const isIncomingKnow = p.knowStatus === "pending_incoming";
                   const affinityHint = p.affinityReasons[0] || (p.service ? `Service: ${p.service}` : "Community member");
@@ -8669,6 +8693,7 @@ export default function HomePage() {
                         name={post.authorName}
                         size={FEED_POST_AVATAR_SIZE}
                         service={post.authorService}
+                        country={post.authorCountry}
                         isEmployer={post.authorIsEmployer}
                         isPureAdmin={isInternalPureAdminPost}
                         imageLoading={eagerFeedAvatar ? "eager" : "lazy"}
