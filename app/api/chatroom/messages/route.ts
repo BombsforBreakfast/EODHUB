@@ -63,7 +63,7 @@ export async function GET(req: NextRequest) {
 
   const { data: rows, error } = await admin
     .from("chatroom_messages")
-    .select("id, user_id, body, gif_url, tag, created_at, expires_at")
+    .select("id, user_id, body, gif_url, image_url, tag, created_at, expires_at")
     .eq("room_id", CHATROOM_ROOM_ID)
     .gt("expires_at", nowIso)
     .order("created_at", { ascending: true })
@@ -106,6 +106,7 @@ export async function GET(req: NextRequest) {
       user_id: row.user_id,
       body: row.body,
       gif_url: row.gif_url ?? null,
+      image_url: row.image_url ?? null,
       tag: row.tag,
       created_at: row.created_at,
       expires_at: row.expires_at,
@@ -134,7 +135,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  let body: { body?: string; tag?: string | null; gif_url?: string | null };
+  let body: { body?: string; tag?: string | null; gif_url?: string | null; image_url?: string | null };
   try {
     body = await req.json();
   } catch {
@@ -144,8 +145,10 @@ export async function POST(req: NextRequest) {
   const text = typeof body.body === "string" ? body.body.trim() : "";
   const gifUrlRaw = typeof body.gif_url === "string" ? body.gif_url.trim() : "";
   const gif_url = gifUrlRaw && /^https:\/\//i.test(gifUrlRaw) ? gifUrlRaw : null;
+  const imageUrlRaw = typeof body.image_url === "string" ? body.image_url.trim() : "";
+  const image_url = imageUrlRaw && /^https:\/\//i.test(imageUrlRaw) ? imageUrlRaw : null;
 
-  if (!text && !gif_url) {
+  if (!text && !gif_url && !image_url) {
     return NextResponse.json({ error: "Message cannot be empty." }, { status: 400 });
   }
   const displayText = text ? mentionsToDisplayText(text) : "";
@@ -220,11 +223,12 @@ export async function POST(req: NextRequest) {
       user_id: auth.user.id,
       body: text || "",
       gif_url,
+      image_url,
       tag,
       created_at: createdAt.toISOString(),
       expires_at: expiresAt.toISOString(),
     })
-    .select("id, user_id, body, gif_url, tag, created_at, expires_at")
+    .select("id, user_id, body, gif_url, image_url, tag, created_at, expires_at")
     .single();
 
   if (error || !inserted) {
@@ -248,6 +252,7 @@ export async function POST(req: NextRequest) {
     user_id: inserted.user_id,
     body: inserted.body,
     gif_url: inserted.gif_url ?? null,
+    image_url: inserted.image_url ?? null,
     tag: inserted.tag,
     created_at: inserted.created_at,
     expires_at: inserted.expires_at,
@@ -307,11 +312,17 @@ async function requireChatroomUser(req: NextRequest) {
   return { auth, admin, profile };
 }
 
-function parseMessagePayload(raw: { body?: string; gif_url?: string | null }) {
+function parseMessagePayload(raw: {
+  body?: string;
+  gif_url?: string | null;
+  image_url?: string | null;
+}) {
   const text = typeof raw.body === "string" ? raw.body.trim() : "";
   const gifUrlRaw = typeof raw.gif_url === "string" ? raw.gif_url.trim() : "";
   const gif_url = gifUrlRaw && /^https:\/\//i.test(gifUrlRaw) ? gifUrlRaw : null;
-  return { text, gif_url };
+  const imageUrlRaw = typeof raw.image_url === "string" ? raw.image_url.trim() : "";
+  const image_url = imageUrlRaw && /^https:\/\//i.test(imageUrlRaw) ? imageUrlRaw : null;
+  return { text, gif_url, image_url };
 }
 
 export async function PATCH(req: NextRequest) {
@@ -319,7 +330,7 @@ export async function PATCH(req: NextRequest) {
   if ("error" in gate && gate.error) return gate.error;
   const { auth, admin } = gate;
 
-  let payload: { id?: string; body?: string; gif_url?: string | null };
+  let payload: { id?: string; body?: string; gif_url?: string | null; image_url?: string | null };
   try {
     payload = await req.json();
   } catch {
@@ -329,8 +340,8 @@ export async function PATCH(req: NextRequest) {
   const id = typeof payload.id === "string" ? payload.id.trim() : "";
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-  const { text, gif_url } = parseMessagePayload(payload);
-  if (!text && !gif_url) {
+  const { text, gif_url, image_url } = parseMessagePayload(payload);
+  if (!text && !gif_url && !image_url) {
     return NextResponse.json({ error: "Message cannot be empty." }, { status: 400 });
   }
   const displayText = text ? mentionsToDisplayText(text) : "";
@@ -358,10 +369,10 @@ export async function PATCH(req: NextRequest) {
 
   const { data: updated, error } = await auth.userClient
     .from("chatroom_messages")
-    .update({ body: text || "", gif_url })
+    .update({ body: text || "", gif_url, image_url })
     .eq("id", id)
     .eq("user_id", auth.user.id)
-    .select("id, user_id, body, gif_url, tag, created_at, expires_at")
+    .select("id, user_id, body, gif_url, image_url, tag, created_at, expires_at")
     .single();
 
   if (error || !updated) {
@@ -384,6 +395,7 @@ export async function PATCH(req: NextRequest) {
     user_id: updated.user_id,
     body: updated.body,
     gif_url: updated.gif_url ?? null,
+    image_url: updated.image_url ?? null,
     tag: updated.tag,
     created_at: updated.created_at,
     expires_at: updated.expires_at,

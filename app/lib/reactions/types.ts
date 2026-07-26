@@ -30,7 +30,8 @@ export type ReactionSubjectKind =
   | "event"
   | "event_comment"
   | "memorial"
-  | "memorial_comment";
+  | "memorial_comment"
+  | "circuit_post";
 
 export type ReactionMeta = {
   emoji: string;

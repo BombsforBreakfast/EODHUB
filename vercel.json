@@ -67,6 +67,10 @@
     {
       "path": "/api/cron/purge-chatroom-messages",
       "schedule": "7 * * * *"
+    },
+    {
+      "path": "/api/cron/purge-circuit-posts",
+      "schedule": "37 * * * *"
     }
   ]
 }

@@ -1142,6 +1142,24 @@ function EventsPageInner() {
 
       // Feed post creation is handled centrally in DB trigger so all
       // event-publish paths stay consistent and deduped by event_id.
+      // Collapsing Circuit: immediate 24h tile (local/dev gated server-side).
+      if (newEventId) {
+        try {
+          const token = (await supabase.auth.getSession()).data.session?.access_token;
+          if (token) {
+            await fetch("/api/circuit/events/publish", {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ event_id: newEventId }),
+            });
+          }
+        } catch (circuitErr) {
+          console.error("Circuit event push after publish failed:", circuitErr);
+        }
+      }
 
       if (newEventId && pendingEventInvites.size > 0) {
         try {

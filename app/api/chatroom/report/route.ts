@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
   const admin = getAdminClient();
   const { data: message } = await admin
     .from("chatroom_messages")
-    .select("id, user_id, body, gif_url")
+    .select("id, user_id, body, gif_url, image_url")
     .eq("id", messageId)
     .maybeSingle();
 
@@ -58,7 +58,8 @@ export async function POST(req: NextRequest) {
 
   const snapshotBody =
     message.body?.trim()
-      || (message.gif_url ? "[GIF]" : "");
+      || (message.gif_url ? "[GIF]" : "")
+      || (message.image_url ? "[Photo]" : "");
 
   const { error: snapErr } = await admin.from("chatroom_flag_snapshots").insert({
     message_id: message.id,
@@ -66,6 +67,7 @@ export async function POST(req: NextRequest) {
     author_id: message.user_id,
     body: snapshotBody,
     gif_url: message.gif_url ?? null,
+    image_url: message.image_url ?? null,
     category,
   });
   if (snapErr) {
@@ -114,7 +116,9 @@ export async function POST(req: NextRequest) {
         ? mentionsToDisplayText(message.body)
         : message.gif_url
           ? "[GIF]"
-          : "";
+          : message.image_url
+            ? "[Photo]"
+            : "";
     const preview = previewSource.slice(0, 80);
     const ellipsis = previewSource.length > 80 ? "…" : "";
     const adminMessage = `Team Room message flagged (${reasonLabel}): “${preview}${ellipsis}”`;
@@ -141,6 +145,7 @@ export async function POST(req: NextRequest) {
             reporter_id: user.id,
             body_snapshot: snapshotBody,
             gif_url: message.gif_url ?? null,
+            image_url: message.image_url ?? null,
             author_id: message.user_id,
           },
         }),

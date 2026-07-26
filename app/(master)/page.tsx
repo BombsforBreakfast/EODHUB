@@ -191,6 +191,10 @@ const EmojiPickerButton = dynamic(() => import("../components/EmojiPickerButton"
 const GifPickerButton = dynamic(() => import("../components/GifPickerButton"), { ssr: false });
 const OnlineNowStrip = dynamic(() => import("../components/OnlineNowStrip"), { ssr: false });
 const ChatroomLivePrompt = dynamic(() => import("../components/ChatroomLivePrompt"), { ssr: false });
+const CollapsingCircuitStrip = dynamic(
+  () => import("../components/circuit/CollapsingCircuitStrip"),
+  { ssr: false },
+);
 const MemberPaywallModal = dynamic(() => import("../components/MemberPaywallModal"), { ssr: false });
 const SidebarThreadDrawer = dynamic(() => import("../components/SidebarThreadDrawer"), { ssr: false });
 const UpgradePromptModal = dynamic(() => import("../components/UpgradePromptModal"), { ssr: false });
@@ -1195,6 +1199,7 @@ export default function HomePage() {
   const [pendingMembers, setPendingMembers] = useState<PendingMember[]>([]);
   const [openVouchPopoverFor, setOpenVouchPopoverFor] = useState<string | null>(null);
   const [hiddenPendingMemberIds, setHiddenPendingMemberIds] = useState<Set<string>>(() => new Set());
+  const [requestingAccessHidden, setRequestingAccessHidden] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const memberInteractionAllowedRef = useRef(true);
   const activeProfileLoadSeqRef = useRef(0);
@@ -1384,6 +1389,31 @@ export default function HomePage() {
     }
   }, [recruiterNudgeHiddenKey, userId]);
 
+  const requestingAccessHiddenKey = useCallback(
+    (uid: string | null) => (uid ? `eod_requesting_access_hidden:${uid}` : null),
+    [],
+  );
+
+  const readRequestingAccessHidden = useCallback((uid: string | null) => {
+    if (typeof window === "undefined") return false;
+    const key = requestingAccessHiddenKey(uid);
+    if (!key) return false;
+    try {
+      return window.sessionStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  }, [requestingAccessHiddenKey]);
+
+  const hideRequestingAccess = useCallback(() => {
+    setRequestingAccessHidden(true);
+    if (typeof window === "undefined") return;
+    const key = requestingAccessHiddenKey(userId);
+    if (key) {
+      try { window.sessionStorage.setItem(key, "1"); } catch {}
+    }
+  }, [requestingAccessHiddenKey, userId]);
+
   const hidePendingMember = useCallback(async (memberId: string) => {
     setHiddenPendingMemberIds((prev) => {
       const next = new Set(prev);
@@ -1459,6 +1489,10 @@ export default function HomePage() {
   useEffect(() => {
     setRecruiterNudgeHidden(readRecruiterNudgeHidden(userId));
   }, [userId, readRecruiterNudgeHidden]);
+
+  useEffect(() => {
+    setRequestingAccessHidden(readRequestingAccessHidden(userId));
+  }, [userId, readRequestingAccessHidden]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !userId) {
@@ -3723,8 +3757,15 @@ export default function HomePage() {
     }
 
     const feedSortOpts = { nowMs: Date.now(), authorAffinityBoost };
-    mergedPosts.sort((a, b) => compareFeedPosts(a, b, feedSortOpts));
-    const diversifiedPosts = diversifyFeedPosts(mergedPosts);
+    // Hide event promo cards (Circuit handles publish/T-30/T-7). Keep scrapbook + memorials.
+    const feedOnlyPosts = mergedPosts.filter((p) => {
+      const ct = typeof p.content_type === "string" ? p.content_type : "";
+      if (ct === "event_scrapbook") return true;
+      if (p.event_id) return false;
+      return !ct.startsWith("event_");
+    });
+    feedOnlyPosts.sort((a, b) => compareFeedPosts(a, b, feedSortOpts));
+    const diversifiedPosts = diversifyFeedPosts(feedOnlyPosts);
 
     setPosts(diversifiedPosts);
     logPerf("home.loadPosts.interactionHydrate", perfStart, {
@@ -4643,8 +4684,15 @@ export default function HomePage() {
 
     // Rank: fresh posts float to top; staff posts soft-pin ~2h; RUMINT news ~3h.
     const feedSortOpts = { nowMs: Date.now(), authorAffinityBoost };
-    mergedPosts.sort((a, b) => compareFeedPosts(a, b, feedSortOpts));
-    const diversifiedPosts = diversifyFeedPosts(mergedPosts);
+    // Event promos → Circuit. Scrapbook day-of CTA stays in feed. Memorials untouched.
+    const feedOnlyPosts = mergedPosts.filter((p) => {
+      const ct = typeof p.content_type === "string" ? p.content_type : "";
+      if (ct === "event_scrapbook") return true;
+      if (p.event_id) return false;
+      return !ct.startsWith("event_");
+    });
+    feedOnlyPosts.sort((a, b) => compareFeedPosts(a, b, feedSortOpts));
+    const diversifiedPosts = diversifyFeedPosts(feedOnlyPosts);
 
     setPosts(diversifiedPosts);
     postsLoadedRef.current = true;
@@ -6121,6 +6169,7 @@ export default function HomePage() {
         setUserId(currentUserId);
         setPlankHolderCardHidden(readPlankHolderCardHidden(currentUserId));
         setRecruiterNudgeHidden(readRecruiterNudgeHidden(currentUserId));
+        setRequestingAccessHidden(readRequestingAccessHidden(currentUserId));
 
         const nd = profileCheck as { first_name: string | null; last_name: string | null; photo_url: string | null; referral_code: string | null; is_admin: boolean | null } | null;
 
@@ -6223,6 +6272,7 @@ export default function HomePage() {
     resetActiveProfileState();
     setPlankHolderCardHidden(readPlankHolderCardHidden(authUser.id));
     setRecruiterNudgeHidden(readRecruiterNudgeHidden(authUser.id));
+    setRequestingAccessHidden(readRequestingAccessHidden(authUser.id));
     setHiddenPendingMemberIds(new Set());
     setLoading(true);
     void init();
@@ -7135,10 +7185,14 @@ export default function HomePage() {
         >
             <>
           {/* Pending Members — community vouching (deferred until after first feed paint) */}
-          {feedAboveFoldExtrasReady && userId && pendingMembers.some((m) => !hiddenPendingMemberIds.has(m.user_id)) && (
+          {feedAboveFoldExtrasReady &&
+            userId &&
+            !requestingAccessHidden &&
+            pendingMembers.some((m) => !hiddenPendingMemberIds.has(m.user_id)) && (
             <section
               aria-labelledby="requesting-access-heading"
               style={{
+                position: "relative",
                 marginBottom: 16,
                 border: `1px solid ${isDark ? "#2a2a00" : "#fef08a"}`,
                 borderRadius: 14,
@@ -7146,16 +7200,45 @@ export default function HomePage() {
                 background: isDark ? "#1a1a00" : "#fefce8",
               }}
             >
-              <div style={{ marginBottom: 10 }}>
-                <div
-                  id="requesting-access-heading"
-                  style={{ fontSize: 12, fontWeight: 800, color: t.text, textTransform: "uppercase", letterSpacing: 0.6 }}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  marginBottom: 10,
+                }}
+              >
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    id="requesting-access-heading"
+                    style={{ fontSize: 12, fontWeight: 800, color: t.text, textTransform: "uppercase", letterSpacing: 0.6 }}
+                  >
+                    Requesting Access
+                  </div>
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3 }}>
+                    Vouch for people you know. Three vouches verifies a member.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={hideRequestingAccess}
+                  aria-label="Hide requesting access for this session"
+                  title="Hide for this session"
+                  style={{
+                    flex: "0 0 auto",
+                    border: `1px solid ${t.border}`,
+                    background: t.surface,
+                    color: t.textMuted,
+                    borderRadius: 8,
+                    padding: "4px 10px",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                  }}
                 >
-                  Requesting Access
-                </div>
-                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3 }}>
-                  Vouch for people you know. Three vouches verifies a member.
-                </div>
+                  Hide
+                </button>
               </div>
               <div
                 style={{
@@ -7502,6 +7585,8 @@ export default function HomePage() {
               onEnter={expandChatroom}
             />
           )}
+
+          {chatroomUiUnlocked ? <CollapsingCircuitStrip currentUserId={userId} /> : null}
 
           <OnlineNowStrip
             currentUserId={userId}

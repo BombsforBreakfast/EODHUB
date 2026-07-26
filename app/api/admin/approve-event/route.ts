@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { isCollapsingCircuitEnabled } from "@/app/lib/circuit";
+import {
+  insertCircuitEventTiles,
+  isCircuitEligibleEvent,
+  resolveCircuitAdminUserId,
+} from "@/app/lib/circuitEventTiles";
+import { POST_AS_ADMIN_EMAIL } from "@/app/lib/postAsIdentity";
 
 function adminClients(token: string) {
   const userClient = createClient(
@@ -50,5 +57,26 @@ export async function POST(req: NextRequest) {
     .eq("id", id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Immediate Circuit tile (local/dev gated). Memorials / unit events never enter.
+  if (isCollapsingCircuitEnabled()) {
+    const { data: event } = await auth.adminClient!
+      .from("events")
+      .select("id, title, visibility, is_approved, unit_id")
+      .eq("id", id)
+      .maybeSingle();
+    if (event && isCircuitEligibleEvent(event)) {
+      const adminUserId = await resolveCircuitAdminUserId(auth.adminClient!, POST_AS_ADMIN_EMAIL);
+      if (adminUserId) {
+        await insertCircuitEventTiles(auth.adminClient!, {
+          adminUserId,
+          kind: "event_publish",
+          events: [{ id: event.id, title: event.title }],
+          refreshExisting: true,
+        });
+      }
+    }
+  }
+
   return NextResponse.json({ ok: true });
 }

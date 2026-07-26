@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { POST_AS_ADMIN_EMAIL } from "@/app/lib/postAsIdentity";
 
+/**
+ * Day-of (and day-after catch-up) scrapbook CTA posts into the main feed.
+ * Memorials are never touched. Circuit event promos are separate.
+ */
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("Authorization") ?? req.headers.get("authorization");
   const querySecret = req.nextUrl.searchParams.get("secret");
@@ -15,12 +19,11 @@ export async function GET(req: NextRequest) {
 
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
-  const dayAfterIso = new Date(Date.now() - 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const yesterdayIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const { data: events, error: eventsErr } = await supabase
     .from("events")
@@ -28,7 +31,7 @@ export async function GET(req: NextRequest) {
     .eq("visibility", "public")
     .eq("is_approved", true)
     .is("unit_id", null)
-    .lte("date", dayAfterIso);
+    .in("date", [todayIso, yesterdayIso]);
   if (eventsErr) {
     return NextResponse.json({ error: eventsErr.message }, { status: 500 });
   }
@@ -41,7 +44,7 @@ export async function GET(req: NextRequest) {
     location: string | null;
   }>;
   if (eventRows.length === 0) {
-    return NextResponse.json({ ok: true, inserted: 0, scanned: 0 });
+    return NextResponse.json({ ok: true, inserted: 0, scanned: 0, destination: "feed" });
   }
 
   const { data: adminProfile, error: adminProfileErr } = await supabase
@@ -69,7 +72,7 @@ export async function GET(req: NextRequest) {
   const existingSet = new Set(
     ((existing ?? []) as Array<{ event_id: string | null }>)
       .map((r) => r.event_id)
-      .filter((id): id is string => Boolean(id))
+      .filter((id): id is string => Boolean(id)),
   );
 
   const inserts = eventRows
@@ -78,7 +81,10 @@ export async function GET(req: NextRequest) {
       user_id: adminUserId,
       event_id: e.id,
       content_type: "event_scrapbook",
-      content: `Share memories from ${e.title ?? "this event"}`,
+      content:
+        e.date === todayIso
+          ? `It's event day — share memories from ${e.title ?? "this event"}`
+          : `Share memories from ${e.title ?? "this event"}`,
       created_at: new Date().toISOString(),
     }));
 
@@ -89,5 +95,10 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true, inserted: inserts.length, scanned: eventRows.length });
+  return NextResponse.json({
+    ok: true,
+    inserted: inserts.length,
+    scanned: eventRows.length,
+    destination: "feed",
+  });
 }

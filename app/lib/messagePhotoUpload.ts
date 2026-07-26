@@ -6,6 +6,23 @@ export async function uploadMessagePhoto(
   file: File,
   args: { userId: string; conversationId: string },
 ): Promise<string> {
+  return uploadChatImage(supabase, file, `${args.userId}/messages/${args.conversationId}`);
+}
+
+/** Team Room photo — same storage bucket, chatroom path prefix. */
+export async function uploadChatroomPhoto(
+  supabase: SupabaseClient,
+  file: File,
+  userId: string,
+): Promise<string> {
+  return uploadChatImage(supabase, file, `${userId}/chatroom`);
+}
+
+async function uploadChatImage(
+  supabase: SupabaseClient,
+  file: File,
+  pathPrefix: string,
+): Promise<string> {
   const prepared = await prepareMessagePhotoUploadFile(file);
   if (!prepared.ok) throw new Error(prepared.error);
 
@@ -14,7 +31,7 @@ export async function uploadMessagePhoto(
     ? imageFile.name.split(".").pop()?.toLowerCase()
     : "jpg";
   const safeExt = ext && /^[a-z0-9]+$/.test(ext) ? ext : "jpg";
-  const filePath = `${args.userId}/messages/${args.conversationId}/${Date.now()}-${Math.random()
+  const filePath = `${pathPrefix}/${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 8)}.${safeExt}`;
 

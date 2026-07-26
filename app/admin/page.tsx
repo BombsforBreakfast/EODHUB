@@ -21,6 +21,7 @@ import { AdminScrapbookReview } from "../components/admin/AdminScrapbookReview";
 import { EventCalendarCard } from "../components/events/EventCalendarCard";
 import { EventDetailPanel } from "../components/events/EventDetailPanel";
 import AdminPushCampaignsPanel from "../components/admin/AdminPushCampaignsPanel";
+import AdminCircuitPanel from "../components/admin/AdminCircuitPanel";
 import SupabaseUsagePanel from "../components/admin/SupabaseUsagePanel";
 import TrafficByHourChart from "../components/admin/TrafficByHourChart";
 import type { TrafficByHourSummary } from "../lib/analyticsTrafficByHour";
@@ -7529,6 +7530,10 @@ export default function AdminPage() {
 
             {!eventsAdminScrapbookReviewOpen && (
             <>
+            <AdminCircuitPanel
+              theme={t}
+              eventIds={adminEvents.map((ev) => ({ id: ev.id, title: ev.title || "Untitled Event" }))}
+            />
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
               <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Manage Events</div>
               <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
