@@ -133,6 +133,7 @@ import {
   feedSingleMediaFrameStyle,
   feedSingleImageStyle,
 } from "../lib/feedLayout";
+import { membershipCountryName } from "../lib/membershipCountries";
 import {
   compareFeedPosts,
   diversifyFeedPosts,
@@ -469,6 +470,7 @@ type PendingMember = {
   display_name: string | null;
   photo_url: string | null;
   service: string | null;
+  country: string | null;
   vouch_count: number;
   user_vouched: boolean;
   vouchers: PendingMemberVoucher[];
@@ -7120,6 +7122,7 @@ export default function HomePage() {
                 {pendingMembers.filter((m) => !hiddenPendingMemberIds.has(m.user_id)).map((m) => {
                   const name = m.display_name || `${m.first_name || ""} ${m.last_name || ""}`.trim() || "New Member";
                   const initial = (name[0] || "?").toUpperCase();
+                  const countryLabel = membershipCountryName(m.country);
                   const vouchPopoverOpen = openVouchPopoverFor === m.user_id;
                   return (
                     <article
@@ -7176,6 +7179,11 @@ export default function HomePage() {
                         <div style={{ width: "100%", marginTop: 7, fontWeight: 700, fontSize: 12, lineHeight: 1.25, color: t.text, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {name}
                         </div>
+                        {countryLabel ? (
+                          <div style={{ width: "100%", marginTop: 2, fontSize: 11, fontWeight: 700, color: t.text, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {countryLabel}
+                          </div>
+                        ) : null}
                         <div style={{ width: "100%", minHeight: 14, marginTop: 2, fontSize: 10, color: t.textMuted, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {m.service || "EOD community"}
                         </div>

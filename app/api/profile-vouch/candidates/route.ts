@@ -24,6 +24,7 @@ type PendingProfileRow = {
   verification_status: string | null;
   created_at: string | null;
   is_pure_admin?: boolean | null;
+  country: string | null;
 };
 
 type VouchRow = {
@@ -109,7 +110,7 @@ export async function GET(req: NextRequest) {
   const { data: pendingRows, error: pendingError } = await adminClient
     .from("profiles")
     .select(
-      "user_id, first_name, last_name, display_name, name, photo_url, service, company_name, account_type, email_verified, verification_status, created_at, is_pure_admin",
+      "user_id, first_name, last_name, display_name, name, photo_url, service, company_name, account_type, email_verified, verification_status, created_at, is_pure_admin, country",
     )
     .eq("email_verified", true)
     .in("verification_status", VOUCHABLE_STATUSES)
@@ -196,6 +197,7 @@ export async function GET(req: NextRequest) {
       display_name: candidate.display_name ?? candidate.name ?? null,
       photo_url: candidate.photo_url,
       service: candidate.service,
+      country: candidate.country,
       vouch_count: vouchCountMap.get(candidate.user_id) ?? 0,
       user_vouched: myVouchedSet.has(candidate.user_id),
       vouchers: voucherMap.get(candidate.user_id) ?? [],

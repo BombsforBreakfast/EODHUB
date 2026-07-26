@@ -3728,6 +3728,7 @@ export default function PublicProfilePage() {
   const profileHeadlineName =
     isEmployerProfile && employerCompanyName ? employerCompanyName : fullName;
   const profileAvatarInitial = (profileHeadlineName[0] || fullName[0] || "?").toUpperCase();
+  const profileCountryLabel = membershipCountryName(profile?.country);
 
   const techTypesText = profile
     ? Array.isArray(profile.tech_types) ? profile.tech_types.join(", ") : profile.tech_types || "Not added yet"
@@ -4807,6 +4808,9 @@ export default function PublicProfilePage() {
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h1 style={{ margin: 0, fontSize: 19, fontWeight: 900, lineHeight: 1.2 }}>{profileHeadlineName}</h1>
+                    {profileCountryLabel ? (
+                      <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginTop: 3 }}>{profileCountryLabel}</div>
+                    ) : null}
                     {isEmployerProfile && employerContactName && employerCompanyName && (
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{employerContactName}</div>
                     )}
@@ -5176,6 +5180,9 @@ export default function PublicProfilePage() {
 
                   <div style={{ textAlign: "center" }}>
                     <h1 style={{ margin: 0, fontSize: 22, fontWeight: 900, lineHeight: 1.2 }}>{profileHeadlineName}</h1>
+                    {profileCountryLabel ? (
+                      <div style={{ fontSize: 15, fontWeight: 700, color: t.text, marginTop: 4 }}>{profileCountryLabel}</div>
+                    ) : null}
                     {isEmployerProfile && employerContactName && employerCompanyName && (
                       <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>{employerContactName}</div>
                     )}
