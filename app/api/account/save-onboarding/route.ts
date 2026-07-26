@@ -109,18 +109,22 @@ export async function POST(req: NextRequest) {
           status,
           country: MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled ? countryRaw : undefined,
         })
-      : validateEmployerOnboardingInput({ firstName, lastName, companyName });
+      : validateEmployerOnboardingInput({
+          firstName,
+          lastName,
+          companyName,
+          country: MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled ? countryRaw : undefined,
+        });
 
   if (validationError) {
     return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
-  const country =
-    accountType === "member" && MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled
-      ? normalizeMembershipCountryCode(countryRaw)
-      : null;
-  if (accountType === "member" && MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled && !country) {
-    return NextResponse.json({ error: "Please select a valid membership country." }, { status: 400 });
+  const country = MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled
+    ? normalizeMembershipCountryCode(countryRaw)
+    : null;
+  if (MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled && !country) {
+    return NextResponse.json({ error: "Please select a valid country." }, { status: 400 });
   }
 
   const token = authHeader.slice(7);
@@ -227,6 +231,7 @@ export async function POST(req: NextRequest) {
           first_name: firstName.trim(),
           last_name: lastName.trim(),
           company_name: companyName.trim(),
+          ...(MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled ? { country } : {}),
           ...(photoUrl ? { photo_url: photoUrl } : {}),
           ...verificationFields,
         };

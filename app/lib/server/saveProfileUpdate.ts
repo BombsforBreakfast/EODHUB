@@ -114,7 +114,7 @@ export async function saveProfileUpdate(
       } else {
         const normalized = normalizeMembershipCountryCode(raw);
         if (!normalized) {
-          return { ok: false, error: "Please select a valid membership country.", status: 400 };
+          return { ok: false, error: "Please select a valid country.", status: 400 };
         }
         countryUpdate = { country: normalized };
       }

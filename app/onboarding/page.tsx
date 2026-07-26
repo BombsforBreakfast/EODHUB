@@ -33,6 +33,7 @@ import {
 import { prepareAvatarUploadFile, prepareEmployerDocumentUpload } from "../lib/prepareUploadFile";
 import {
   MEMBERSHIP_COUNTRIES,
+  MEMBERSHIP_COUNTRY_HELPER,
   NON_US_CERT_REQUIRED_MESSAGE,
   requiresEodCertForCountry,
 } from "../lib/membershipCountries";
@@ -479,6 +480,7 @@ export default function OnboardingPage() {
       }
     } else {
       if (!companyName.trim()) return markMissingField("field-employer-company");
+      if (COUNTRY_COLLECT_ENABLED && !country) return markMissingField("field-employer-country");
     }
 
     if (!agreedLegal) return markMissingField("field-legal-agreement");
@@ -848,13 +850,7 @@ export default function OnboardingPage() {
                       ))}
                     </select>
                     <div style={{ marginTop: 8, fontSize: 12, color: "#4b5563", lineHeight: 1.45 }}>
-                      Membership is currently only available to the United States, United Kingdom, Canada,
-                      Australia, New Zealand, Germany, France, and Italy. If you would like your country to
-                      be considered for nomination please contact{" "}
-                      <a href="mailto:murphy@eod-hub.com" style={{ color: "#047857", fontWeight: 700 }}>
-                        murphy@eod-hub.com
-                      </a>{" "}
-                      to submit for an addition.
+                      {MEMBERSHIP_COUNTRY_HELPER}
                     </div>
                     {requiresEodCertForCountry(country) && (
                       <div style={{ marginTop: 8, fontSize: 12, color: "#92400e", fontWeight: 700, lineHeight: 1.45, background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 8, padding: "8px 10px" }}>
@@ -1030,6 +1026,32 @@ export default function OnboardingPage() {
                     />
                     {isMissing("field-employer-company") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
+
+                  {COUNTRY_COLLECT_ENABLED && (
+                  <div
+                    id="field-employer-country"
+                    style={isMissing("field-employer-country") ? { border: "1px solid #10b981", background: "#ecfdf5", borderRadius: 10, padding: 8 } : undefined}
+                  >
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>Country *</label>
+                    <select
+                      value={country}
+                      onChange={(e) => {
+                        setCountry(e.target.value);
+                        if (e.target.value) clearMissingFieldIfMatch("field-employer-country");
+                      }}
+                      style={selectStyle}
+                    >
+                      <option value="">Select country...</option>
+                      {MEMBERSHIP_COUNTRIES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.name}</option>
+                      ))}
+                    </select>
+                    <div style={{ marginTop: 8, fontSize: 12, color: "#4b5563", lineHeight: 1.45 }}>
+                      {MEMBERSHIP_COUNTRY_HELPER}
+                    </div>
+                    {isMissing("field-employer-country") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
+                  </div>
+                  )}
 
                   <div style={{ padding: "12px 14px", borderRadius: 10, background: "#fef9c3", fontSize: 13, color: "#78350f", lineHeight: 1.5 }}>
                     Employer accounts are manually reviewed. Once approved, you can post jobs and search candidates who are open to new opportunities.

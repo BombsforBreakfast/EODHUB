@@ -5697,6 +5697,22 @@ export default function PublicProfilePage() {
                       <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>About the Organization</label>
                       <textarea ref={bioTextareaRef} value={editBio} onChange={(e) => setEditBio(e.target.value)} placeholder="Brief description of your organization for reviewers and candidates..." rows={4} style={{ ...wallEditInputStyle, resize: "vertical", fontSize: 14, fontFamily: "inherit" }} />
                     </div>
+                    {MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Country</label>
+                      <select value={editCountry} onChange={(e) => setEditCountry(e.target.value)} style={wallEditSelectStyle}>
+                        <option value="">Select country...</option>
+                        {MEMBERSHIP_COUNTRIES.map((c) => (
+                          <option key={c.code} value={c.code}>{c.name}</option>
+                        ))}
+                      </select>
+                      {profile.country && !editCountry && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted }}>
+                          Current: {membershipCountryName(profile.country) ?? profile.country}
+                        </div>
+                      )}
+                    </div>
+                    )}
                   </>
                 ) : (
                   <>

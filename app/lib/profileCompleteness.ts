@@ -209,11 +209,11 @@ export function validateMemberOnboardingInput(input: {
   if (!(MEMBER_STATUS_OPTIONS as readonly string[]).includes(input.status)) {
     return "Invalid status selection.";
   }
-  // Country required only when collection is enabled. Legacy / interim null is OK.
+  // Country required only when collection is enabled. Legacy null is OK for older profiles.
   if (MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled) {
     const country = typeof input.country === "string" ? input.country.trim() : "";
     if (!country) return "Country is required.";
-    if (!isMembershipCountry(country)) return "Please select a valid membership country.";
+    if (!isMembershipCountry(country)) return "Please select a valid country.";
   }
   return null;
 }
@@ -222,10 +222,16 @@ export function validateEmployerOnboardingInput(input: {
   firstName: string;
   lastName: string;
   companyName: string;
+  country?: string;
 }): string | null {
   if (!input.firstName.trim()) return "First name is required.";
   if (!input.lastName.trim()) return "Last name is required.";
   if (!hasFullLastName(input.lastName)) return SIGNUP_LAST_NAME_REQUIRED_MESSAGE;
   if (!input.companyName.trim()) return "Company name is required.";
+  if (MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled) {
+    const country = typeof input.country === "string" ? input.country.trim() : "";
+    if (!country) return "Country is required.";
+    if (!isMembershipCountry(country)) return "Please select a valid country.";
+  }
   return null;
 }
