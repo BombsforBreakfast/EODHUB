@@ -82,7 +82,8 @@ export async function listOwnershipLinkedPages(
       business_auth_user_id: row.business_auth_user_id,
       business_name: row.business_name,
       logo_url: row.logo_url,
-      is_active: row.is_active !== false,
+      // Inactive rows were filtered above; null/true both count as active.
+      is_active: true,
     });
   }
   return [...byId.values()];
