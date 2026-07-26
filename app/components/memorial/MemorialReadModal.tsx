@@ -5,7 +5,8 @@ import { ServiceSealValue } from "@/app/lib/serviceSeals";
 import { MemorialScrapbookPreview } from "./scrapbook";
 import type { Memorial } from "./memorialModalShared";
 import { MemorialDisclaimer } from "./MemorialDisclaimer";
-import { memorialTheme } from "./memorialModalShared";
+import { memorialTheme, memorialThemeOpts } from "./memorialModalShared";
+import { memorialAffiliationText } from "../../lib/memorialInternational";
 
 type Props = {
   memorial: Memorial;
@@ -27,7 +28,8 @@ export function MemorialReadModal({
   scrapbookActorIsAdmin = false,
 }: Props) {
   const { t, isDark } = useTheme();
-  const theme = memorialTheme(memorial.category, memorial.service);
+  const theme = memorialTheme(memorial.category, memorial.service, memorialThemeOpts(memorial));
+  const affiliation = memorialAffiliationText(memorial);
   const currentYear = new Date().getFullYear();
 
   return (
@@ -86,13 +88,24 @@ export function MemorialReadModal({
                 <div style={{ fontSize: 12, color: theme.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>
                   {theme.label}
                 </div>
-                {memorial.category !== "leo_fed" && memorial.service?.trim() ? (
-                  <ServiceSealValue service={memorial.service} size={28} />
+                {!memorial.is_international &&
+                memorial.category !== "leo_fed" &&
+                memorial.service?.trim() ? (
+                  <ServiceSealValue
+                    service={memorial.service}
+                    country={memorial.country}
+                    size={28}
+                  />
                 ) : null}
               </div>
               <div style={{ fontSize: 22, fontWeight: 900, marginTop: 2, lineHeight: 1.2 }}>
                 {memorial.name}
               </div>
+              {memorial.is_international && affiliation ? (
+                <div style={{ fontSize: 12, color: theme.color, fontWeight: 700, marginTop: 4 }}>
+                  {affiliation}
+                </div>
+              ) : null}
               <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
                 {new Date(`${memorial.death_date}T12:00:00`).toLocaleDateString("en-US", {
                   month: "long",
@@ -139,7 +152,12 @@ export function MemorialReadModal({
             scrapbookActorIsAdmin={scrapbookActorIsAdmin}
           />
           <div style={{ marginTop: 16, fontSize: 11, lineHeight: 1.5, color: t.textFaint, fontStyle: "italic" }}>
-            <MemorialDisclaimer category={memorial.category} sourceUrl={memorial.source_url} linkColor={theme.color} />
+            <MemorialDisclaimer
+              category={memorial.category}
+              sourceUrl={memorial.source_url}
+              linkColor={theme.color}
+              isInternational={memorial.is_international}
+            />
           </div>
         </div>
       </div>

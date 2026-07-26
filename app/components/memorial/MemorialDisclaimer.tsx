@@ -24,15 +24,41 @@ type Props = {
   sourceUrl?: string | null;
   /** Memorial accent color so links stay readable on tinted footers. */
   linkColor: string;
+  isInternational?: boolean | null;
 };
 
 /**
  * Attribution footer with outbound links: specific memorial page when `sourceUrl`
- * is stored, plus the foundation / digital-wall sites.
+ * is stored, plus the foundation / digital-wall sites. International memorials
+ * use community-submission copy instead of U.S. foundation attribution.
  */
-export function MemorialDisclaimer({ category, sourceUrl, linkColor }: Props) {
+export function MemorialDisclaimer({
+  category,
+  sourceUrl,
+  linkColor,
+  isInternational,
+}: Props) {
   const specific = memorialSourceHref(sourceUrl);
   const lc = { ...linkBase, color: linkColor };
+
+  if (isInternational) {
+    return (
+      <span>
+        * This memorial was submitted by an EOD-HUB community member and reviewed by admins
+        {specific ? (
+          <>
+            . Source:{" "}
+            <a href={specific} target="_blank" rel="noopener noreferrer" style={lc}>
+              {specific.replace(/^https?:\/\//i, "").replace(/\/$/, "")}
+            </a>
+          </>
+        ) : (
+          "."
+        )}{" "}
+        If anything appears inaccurate, please contact our admin.
+      </span>
+    );
+  }
 
   if (category === "leo_fed") {
     const primaryHref = specific ?? BTMF_HOME;

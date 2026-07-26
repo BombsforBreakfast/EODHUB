@@ -151,7 +151,9 @@ import {
   type ReactionType,
 } from "../lib/reactions";
 import { MemorialDisclaimer } from "../components/memorial/MemorialDisclaimer";
-import { memorialTheme } from "../components/memorial/memorialModalShared";
+import { memorialTheme, memorialThemeOpts } from "../components/memorial/memorialModalShared";
+import type { MemorialCategory as MemorialCategoryValue } from "../lib/memorialInternational";
+import { memorialAffiliationText } from "../lib/memorialInternational";
 import { getServiceRingColor } from "../lib/serviceBranchVisual";
 import { ensureWelcomeSidebarOnce } from "../lib/welcomeSidebarClient";
 import {
@@ -240,11 +242,16 @@ const StarRatingInput = dynamic(
   { ssr: false },
 );
 
-type MemorialCategory = "military" | "leo_fed" | null | undefined;
+type MemorialCategory = MemorialCategoryValue | null | undefined;
 
-function memorialDonationConfig(category: MemorialCategory, service?: string | null) {
+function memorialDonationConfig(
+  category: MemorialCategory,
+  service?: string | null,
+  opts?: { isInternational?: boolean | null; country?: string | null },
+) {
+  if (opts?.isInternational) return null;
   const isLeoFed = category === "leo_fed";
-  const theme = memorialTheme(category, service);
+  const theme = memorialTheme(category, service, opts);
   return {
     url: isLeoFed ? BTMF_DONATION_URL : EODWF_DONATION_URL,
     color: theme.color,
@@ -1150,7 +1157,19 @@ export default function HomePage() {
   const [feedEventAttendeesListModal, setFeedEventAttendeesListModal] = useState<"interested" | "going" | null>(null);
 
   const [todayMemorials, setTodayMemorials] = useState<
-    { id: string; name: string; bio: string | null; photo_url: string | null; death_date: string; category?: "military" | "leo_fed" | null; service?: string | null; source_url?: string | null }[]
+    {
+      id: string;
+      name: string;
+      bio: string | null;
+      photo_url: string | null;
+      death_date: string;
+      category?: MemorialCategory;
+      service?: string | null;
+      source_url?: string | null;
+      is_international?: boolean | null;
+      country?: string | null;
+      organization?: string | null;
+    }[]
   >([]);
   const [dismissedMemorialIds, setDismissedMemorialIds] = useState<Set<string>>(new Set());
   const dismissedMemorialIdsRef = useRef<Set<string>>(new Set());
@@ -1959,7 +1978,10 @@ export default function HomePage() {
 
     const { data, error } = await supabase
       .from("memorials")
-      .select("id, name, bio, photo_url, death_date, category, service, source_url");
+      .select(
+        "id, name, bio, photo_url, death_date, category, service, source_url, is_international, country, organization, verification_status",
+      )
+      .eq("verification_status", "approved");
 
     if (error) { console.error("Memorials load error:", error); return; }
 
@@ -1974,9 +1996,12 @@ export default function HomePage() {
       bio: string | null;
       photo_url: string | null;
       death_date: string;
-      category?: "military" | "leo_fed" | null;
+      category?: MemorialCategory;
       service?: string | null;
       source_url?: string | null;
+      is_international?: boolean | null;
+      country?: string | null;
+      organization?: string | null;
     }[];
     setTodayMemorials(anniversaryList);
     void loadMemorialInteractions(anniversaryList.map(m => m.id));
@@ -8194,7 +8219,9 @@ export default function HomePage() {
                 reactionCountsByType: {},
                 reactorNamesByType: {},
               };
-              const theme = memorialTheme(m.category, m.service);
+              const theme = memorialTheme(m.category, m.service, memorialThemeOpts(m));
+              const donation = memorialDonationConfig(m.category, m.service, memorialThemeOpts(m));
+              const affiliation = m.is_international ? memorialAffiliationText(m) : null;
               return (
                 <div key={`memorial-${m.id}`} style={{ border: `2px solid ${theme.outlineColor}`, borderRadius: 14, overflow: "hidden" }}>
                   {/* Header banner */}
@@ -8249,6 +8276,9 @@ export default function HomePage() {
                     )}
                     <div style={{ flex: 1, minWidth: 0, width: "100%", textAlign: isMobile ? "center" : "left" }}>
                       <div style={{ fontSize: isMobile ? 22 : 20, fontWeight: 900, color: isDark ? "#fce8d9" : "#1a1a1a", lineHeight: 1.2 }}>{m.name}</div>
+                      {affiliation ? (
+                        <div style={{ fontSize: 12, color: theme.color, fontWeight: 700, marginTop: 4 }}>{affiliation}</div>
+                      ) : null}
                       <div style={{ fontSize: 13, color: theme.color, marginTop: 2 }}>
                         {new Date(m.death_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
                         {" - "}
@@ -8289,11 +8319,13 @@ export default function HomePage() {
                           >
                             See less
                           </button>
-                          <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}` }}>
-                            <button type="button" onClick={() => setDonateModal(memorialDonationConfig(m.category, m.service))} style={{ background: theme.color, border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
-                              {memorialDonationConfig(m.category, m.service).title}
-                            </button>
-                          </div>
+                          {donation ? (
+                            <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${isDark ? theme.darkBorder : theme.lightBorder}` }}>
+                              <button type="button" onClick={() => setDonateModal(donation)} style={{ background: theme.color, border: "none", borderRadius: 8, color: "white", fontWeight: 700, fontSize: 13, padding: "7px 18px", cursor: "pointer", width: "100%" }}>
+                                {donation.title}
+                              </button>
+                            </div>
+                          ) : null}
                           <div style={{ textAlign: "left", width: "100%" }}>
                             <MemorialScrapbookPreview
                               memorialId={m.id}
@@ -8660,7 +8692,12 @@ export default function HomePage() {
                       fontStyle: "italic",
                     }}
                   >
-                    <MemorialDisclaimer category={m.category} sourceUrl={m.source_url} linkColor={theme.color} />
+                    <MemorialDisclaimer
+                      category={m.category}
+                      sourceUrl={m.source_url}
+                      linkColor={theme.color}
+                      isInternational={m.is_international}
+                    />
                   </div>
                 </div>
               );

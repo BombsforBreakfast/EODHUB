@@ -10,10 +10,21 @@ import { MemorialReadModal } from "../components/memorial/MemorialReadModal";
 import type { Memorial } from "../components/memorial/memorialModalShared";
 import {
   MEMORIAL_COLUMNS,
+  MEMORIAL_HMA_COLOR,
+  MEMORIAL_JOINT_PURPLE,
   MEMORIAL_LEO_COLOR,
   MEMORIAL_MILITARY_COLOR,
   memorialTheme,
+  memorialThemeOpts,
 } from "../components/memorial/memorialModalShared";
+import {
+  INTERNATIONAL_MEMORIAL_CATEGORIES,
+  INTERNATIONAL_MEMORIAL_COUNTRIES,
+  US_MEMORIAL_CATEGORIES,
+  validateInternationalMemorialInput,
+  type MemorialCategory,
+  type MemorialPath,
+} from "../lib/memorialInternational";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
 import { EventAttendeesListModal } from "../components/events/EventAttendeesListModal";
 import EventScrapbookPreview from "../components/events/EventScrapbookPreview";
@@ -293,18 +304,35 @@ function EventsPageInner() {
   const inviteLoadedRef = useRef(false);
 
   const [showMemorialForm, setShowMemorialForm] = useState(false);
+  const [memWizPath, setMemWizPath] = useState<MemorialPath>("us");
   const [memWizUrl, setMemWizUrl] = useState("");
   const [memWizName, setMemWizName] = useState("");
   const [memWizDate, setMemWizDate] = useState("");
   const [memWizBio, setMemWizBio] = useState("");
   const [memWizImage, setMemWizImage] = useState("");
-  const [memWizCategory, setMemWizCategory] = useState<"military" | "leo_fed">("military");
-  /** Military branch — matches profile service seals (only used when category is military). */
+  const [memWizCategory, setMemWizCategory] = useState<MemorialCategory>("military");
+  /** Military branch — US select or international free text when category is military. */
   const [memWizService, setMemWizService] = useState("");
+  const [memWizCountry, setMemWizCountry] = useState("");
+  const [memWizOrganization, setMemWizOrganization] = useState("");
   const [memWizPhotoUploading, setMemWizPhotoUploading] = useState(false);
   const [memWizFetching, setMemWizFetching] = useState(false);
   const [memWizSaving, setMemWizSaving] = useState(false);
   const [memWizMsg, setMemWizMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  function resetMemorialWizard() {
+    setMemWizPath("us");
+    setMemWizUrl("");
+    setMemWizName("");
+    setMemWizDate("");
+    setMemWizBio("");
+    setMemWizImage("");
+    setMemWizCategory("military");
+    setMemWizService("");
+    setMemWizCountry("");
+    setMemWizOrganization("");
+    setMemWizMsg(null);
+  }
 
   const { t, isDark } = useTheme();
   const { isDesktopShell } = useMasterShell();
@@ -313,8 +341,12 @@ function EventsPageInner() {
   const eventModalCenterPaneRect = useCenterPaneRect(fillEventModalCenterPane);
 
   const memorialWizTheme = useMemo(
-    () => memorialTheme(memWizCategory, memWizService),
-    [memWizCategory, memWizService],
+    () =>
+      memorialTheme(memWizCategory, memWizService, {
+        isInternational: memWizPath === "international",
+        country: memWizPath === "international" ? memWizCountry || null : "US",
+      }),
+    [memWizCategory, memWizService, memWizPath, memWizCountry],
   );
 
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -815,6 +847,7 @@ function EventsPageInner() {
     const { data, error } = await supabase
       .from("memorials")
       .select(MEMORIAL_COLUMNS)
+      .eq("verification_status", "approved")
       .order("death_date", { ascending: true });
 
     if (error) {
@@ -1175,6 +1208,21 @@ function EventsPageInner() {
   async function saveMemorial() {
     if (!userId) { window.location.href = "/login"; return; }
     if (!memWizName.trim() || !memWizDate) return;
+    const isIntl = memWizPath === "international";
+    if (isIntl) {
+      const validationError = validateInternationalMemorialInput({
+        country: memWizCountry,
+        category: memWizCategory,
+        service: memWizService,
+        name: memWizName,
+        deathDate: memWizDate,
+        bio: memWizBio,
+      });
+      if (validationError) {
+        setMemWizMsg({ type: "err", text: validationError });
+        return;
+      }
+    }
     setMemWizSaving(true);
     setMemWizMsg(null);
     try {
@@ -1191,11 +1239,21 @@ function EventsPageInner() {
         bio: memWizBio.trim() || null,
         photo_url: memWizImage.trim() || null,
         category: memWizCategory,
-        service: memWizCategory === "military" && memWizService.trim() ? memWizService.trim() : null,
+        service:
+          memWizCategory === "military" && memWizService.trim()
+            ? memWizService.trim()
+            : null,
+        is_international: isIntl,
+        country: isIntl ? memWizCountry.trim().toUpperCase() : null,
+        organization: isIntl && memWizOrganization.trim() ? memWizOrganization.trim() : null,
+        verification_status: isIntl ? "pending" : "approved",
       }]);
       if (error) throw new Error(error.message);
-      setMemWizMsg({ type: "ok", text: `${memWizName.trim()} added.` });
-      setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military"); setMemWizService("");
+      const okText = isIntl
+        ? `${memWizName.trim()} submitted for review. It will appear on the calendar after admin approval.`
+        : `${memWizName.trim()} added.`;
+      resetMemorialWizard();
+      setMemWizMsg({ type: "ok", text: okText });
       await loadMemorials();
     } catch (err) {
       setMemWizMsg({ type: "err", text: err instanceof Error ? err.message : String(err) });
@@ -1449,6 +1507,7 @@ function EventsPageInner() {
         .from("memorials")
         .select(MEMORIAL_COLUMNS)
         .eq("id", deepLinkMemorialId)
+        .eq("verification_status", "approved")
         .maybeSingle();
       if (cancelled) return;
       if (!error && data) {
@@ -2007,36 +2066,42 @@ function EventsPageInner() {
             <div style={{ fontSize: 18, fontWeight: 900 }}>Add Memorial</div>
             <button
               type="button"
-              onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military"); setMemWizService(""); setMemWizMsg(null); }}
+              onClick={() => { setShowMemorialForm(false); resetMemorialWizard(); }}
               style={{ background: "transparent", border: "none", fontSize: 20, cursor: "pointer", color: t.textMuted }}
             >×</button>
           </div>
           <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
-            Paste an EOD Warrior Foundation memorial URL, then click Get info — name and date auto-fill. Or skip the URL and fill in manually.
+            {memWizPath === "us"
+              ? "Paste an EOD Warrior Foundation or Bomb Tech Memorial URL, then click Get info — name and date auto-fill. Or skip the URL and fill in manually."
+              : "International memorials are reviewed by admins before they appear on the calendar. Bio is required. No U.S. service crests — affiliation shows as text."}
           </div>
 
           <div style={{ display: "grid", gap: 12 }}>
             <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Memorial type</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Path</div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
                 {([
-                  { value: "military", label: "Military", color: MEMORIAL_MILITARY_COLOR },
-                  { value: "leo_fed", label: "LEO/FED", color: MEMORIAL_LEO_COLOR },
-                ] as const).map((option) => {
-                  const selected = memWizCategory === option.value;
+                  { value: "us" as const, label: "United States" },
+                  { value: "international" as const, label: "International" },
+                ]).map((option) => {
+                  const selected = memWizPath === option.value;
                   return (
                     <button
                       key={option.value}
                       type="button"
                       onClick={() => {
-                        setMemWizCategory(option.value);
-                        if (option.value === "leo_fed") setMemWizService("");
+                        setMemWizPath(option.value);
+                        setMemWizCategory("military");
+                        setMemWizService("");
+                        setMemWizCountry("");
+                        setMemWizOrganization("");
+                        setMemWizMsg(null);
                       }}
                       style={{
-                        border: `2px solid ${selected ? option.color : t.border}`,
+                        border: `2px solid ${selected ? memorialWizTheme.color : t.border}`,
                         borderRadius: 12,
                         padding: "10px 12px",
-                        background: selected ? option.color : t.surface,
+                        background: selected ? memorialWizTheme.color : t.surface,
                         color: selected ? "white" : t.text,
                         cursor: "pointer",
                         textAlign: "left",
@@ -2049,7 +2114,69 @@ function EventsPageInner() {
               </div>
             </div>
 
-            {memWizCategory === "military" && (
+            {memWizPath === "international" && (
+              <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Country *</label>
+                <select
+                  value={memWizCountry}
+                  onChange={(e) => setMemWizCountry(e.target.value)}
+                  style={{
+                    border: `1px solid ${t.border}`,
+                    borderRadius: 8,
+                    padding: "8px 10px",
+                    fontSize: 14,
+                    background: t.input,
+                    color: t.text,
+                    fontWeight: 600,
+                  }}
+                >
+                  <option value="">Select country</option>
+                  {INTERNATIONAL_MEMORIAL_COUNTRIES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={{ display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Memorial type</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                {(memWizPath === "us" ? US_MEMORIAL_CATEGORIES : INTERNATIONAL_MEMORIAL_CATEGORIES).map((option) => {
+                  const color =
+                    memWizPath === "international"
+                      ? MEMORIAL_JOINT_PURPLE
+                      : option.value === "leo_fed" || option.value === "law_enforcement" || option.value === "federal" || option.value === "civil_service"
+                        ? MEMORIAL_LEO_COLOR
+                        : option.value === "humanitarian_mine_action"
+                          ? MEMORIAL_HMA_COLOR
+                          : MEMORIAL_MILITARY_COLOR;
+                  const selected = memWizCategory === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => {
+                        setMemWizCategory(option.value);
+                        if (option.value !== "military") setMemWizService("");
+                      }}
+                      style={{
+                        border: `2px solid ${selected ? color : t.border}`,
+                        borderRadius: 12,
+                        padding: "10px 12px",
+                        background: selected ? color : t.surface,
+                        color: selected ? "white" : t.text,
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <div style={{ fontWeight: 900, fontSize: 14 }}>{option.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {memWizCategory === "military" && memWizPath === "us" && (
               <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
                 <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Service (optional)</label>
                 <select
@@ -2073,13 +2200,37 @@ function EventsPageInner() {
               </div>
             )}
 
+            {memWizCategory === "military" && memWizPath === "international" && (
+              <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Service / branch *</label>
+                <input
+                  value={memWizService}
+                  onChange={(e) => setMemWizService(e.target.value)}
+                  placeholder="e.g. Royal Engineers, IDF Combat Engineering"
+                  style={inputStyle}
+                />
+              </div>
+            )}
+
+            {memWizPath === "international" && (
+              <div style={{ display: "grid", gap: 6 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Unit / organization (optional)</label>
+                <input
+                  value={memWizOrganization}
+                  onChange={(e) => setMemWizOrganization(e.target.value)}
+                  placeholder="Unit, agency, or NGO"
+                  style={inputStyle}
+                />
+              </div>
+            )}
+
             {/* URL + get info */}
             <div style={{ display: "flex", gap: 8 }}>
               <input
                 value={memWizUrl}
                 onChange={(e) => setMemWizUrl(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && fetchMemorialMeta()}
-                placeholder="https://eod-wf.org/virtual-memorial/... (optional)"
+                placeholder={memWizPath === "us" ? "https://eod-wf.org/virtual-memorial/... (optional)" : "Source URL (optional)"}
                 style={inputStyle}
               />
               <button
@@ -2112,7 +2263,11 @@ function EventsPageInner() {
             <textarea
               value={memWizBio}
               onChange={(e) => setMemWizBio(e.target.value)}
-              placeholder="Bio / about (auto-filled from URL if available, or enter manually)"
+              placeholder={
+                memWizPath === "international"
+                  ? "Bio / about * (required for international memorials)"
+                  : "Bio / about (auto-filled from URL if available, or enter manually)"
+              }
               style={{ ...inputStyle, minHeight: 90, resize: "vertical" }}
             />
 
@@ -2187,14 +2342,50 @@ function EventsPageInner() {
               <button
                 type="button"
                 onClick={saveMemorial}
-                disabled={memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate}
-                style={{ background: memorialWizTheme.color, color: "white", border: "none", borderRadius: 8, padding: "9px 20px", fontWeight: 800, fontSize: 14, cursor: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer", opacity: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? 0.5 : 1 }}
+                disabled={
+                  memWizSaving ||
+                  memWizPhotoUploading ||
+                  !memWizName.trim() ||
+                  !memWizDate ||
+                  (memWizPath === "international" && (!memWizCountry || !memWizBio.trim() || (memWizCategory === "military" && !memWizService.trim())))
+                }
+                style={{
+                  background: memorialWizTheme.color,
+                  color: "white",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "9px 20px",
+                  fontWeight: 800,
+                  fontSize: 14,
+                  cursor:
+                    memWizSaving ||
+                    memWizPhotoUploading ||
+                    !memWizName.trim() ||
+                    !memWizDate ||
+                    (memWizPath === "international" && (!memWizCountry || !memWizBio.trim() || (memWizCategory === "military" && !memWizService.trim())))
+                      ? "not-allowed"
+                      : "pointer",
+                  opacity:
+                    memWizSaving ||
+                    memWizPhotoUploading ||
+                    !memWizName.trim() ||
+                    !memWizDate ||
+                    (memWizPath === "international" && (!memWizCountry || !memWizBio.trim() || (memWizCategory === "military" && !memWizService.trim())))
+                      ? 0.5
+                      : 1,
+                }}
               >
-                {memWizSaving ? "Publishing..." : "Publish Memorial"}
+                {memWizSaving
+                  ? memWizPath === "international"
+                    ? "Submitting..."
+                    : "Publishing..."
+                  : memWizPath === "international"
+                    ? "Submit for Review"
+                    : "Publish Memorial"}
               </button>
               <button
                 type="button"
-                onClick={() => { setShowMemorialForm(false); setMemWizUrl(""); setMemWizName(""); setMemWizDate(""); setMemWizBio(""); setMemWizImage(""); setMemWizCategory("military"); setMemWizService(""); setMemWizMsg(null); }}
+                onClick={() => { setShowMemorialForm(false); resetMemorialWizard(); }}
                 style={{ border: `1px solid ${t.border}`, borderRadius: 8, padding: "9px 16px", fontWeight: 700, background: "transparent", color: t.text, cursor: "pointer" }}
               >
                 Cancel
@@ -2364,7 +2555,7 @@ function EventsPageInner() {
 
             {dayViewMemorials.map((m) => (
               (() => {
-                const theme = memorialTheme(m.category, m.service);
+                const theme = memorialTheme(m.category, m.service, memorialThemeOpts(m));
                 return (
               <button
                 key={m.id}
@@ -2629,7 +2820,7 @@ function EventsPageInner() {
                   )}
 
                   {visibleMemorials.map((m) => {
-                    const mt = memorialTheme(m.category, m.service);
+                    const mt = memorialTheme(m.category, m.service, memorialThemeOpts(m));
                     return (
                       <button
                         key={m.id}
@@ -2753,7 +2944,7 @@ function EventsPageInner() {
 
             <div style={{ padding: "4px 24px 24px", overflowY: "auto", flex: 1, minHeight: 0 }}>
               {memorialOnSelectedDay.map((m) => {
-                const theme = memorialTheme(m.category, m.service);
+                const theme = memorialTheme(m.category, m.service, memorialThemeOpts(m));
                 return (
                 <button
                   key={m.id}

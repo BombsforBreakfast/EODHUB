@@ -21,7 +21,11 @@ import type { PostLikerBrief } from "../PostLikersStack";
 import { dedupeSavedEventRowsByEventId, ensureSavedEventForUser } from "../../lib/ensureSavedEventForUser";
 import { collapsedRailTitleLinkZoom, httpsAssetUrl, sectionTitleLinkZoom, type JobRow } from "./masterShared";
 import { MemorialDisclaimer } from "../memorial/MemorialDisclaimer";
-import { memorialTheme } from "../memorial/memorialModalShared";
+import { memorialTheme, memorialThemeOpts } from "../memorial/memorialModalShared";
+import {
+  memorialAffiliationText,
+  type MemorialCategory,
+} from "../../lib/memorialInternational";
 import { ExternalSiteLink } from "../ExternalSiteEmbedModal";
 import { fetchViewerProfileCached } from "../../lib/queries/viewerProfile";
 import {
@@ -91,8 +95,12 @@ type DesktopMemorial = {
   source_url: string | null;
   photo_url: string | null;
   bio: string | null;
-  category?: "military" | "leo_fed" | null;
+  category?: MemorialCategory | null;
   service?: string | null;
+  is_international?: boolean | null;
+  country?: string | null;
+  organization?: string | null;
+  verification_status?: string | null;
 };
 
 const EVENT_INVITE_BRANCHES = ["Army", "Navy", "Marines", "Air Force", "Civil Service", "Federal"];
@@ -405,7 +413,12 @@ export default function MasterLeftColumn({
         .eq("visibility", "public")
         .eq("is_approved", true)
         .order("date", { ascending: true }),
-      supabase.from("memorials").select("id, name, death_date, source_url, photo_url, bio, category, service"),
+      supabase
+        .from("memorials")
+        .select(
+          "id, name, death_date, source_url, photo_url, bio, category, service, is_international, country, organization, verification_status",
+        )
+        .eq("verification_status", "approved"),
     ]);
 
     setDesktopCalendarEvents((eventsData ?? []) as DesktopCalendarEvent[]);
@@ -1167,7 +1180,7 @@ export default function MasterLeftColumn({
                   eventId: null as string | null,
                   thumbAlt: `Open memorial for ${m.name}`,
                   thumb: m.photo_url?.trim() ? m.photo_url : null,
-                  thumbBorder: `2px solid ${memorialTheme(m.category, m.service).outlineColor}`,
+                  thumbBorder: `2px solid ${memorialTheme(m.category, m.service, memorialThemeOpts(m)).outlineColor}`,
                   memorial: m,
                 })),
             ]
@@ -1178,7 +1191,7 @@ export default function MasterLeftColumn({
                 // both trigger this so the user can stay on the current page
                 // (feed, jobs, rabbithole) instead of being force-navigated
                 // to /events. "Website" is a separate external link.
-                const memorialCardTheme = item.memorial ? memorialTheme(item.memorial.category, item.memorial.service) : null;
+                const memorialCardTheme = item.memorial ? memorialTheme(item.memorial.category, item.memorial.service, memorialThemeOpts(item.memorial)) : null;
                 const openModal: (() => void) | null =
                   item.kind === "memorial" && item.memorial
                     ? () => setSelectedMemorial(item.memorial)
@@ -1728,7 +1741,11 @@ export default function MasterLeftColumn({
           composer or other high-z page chrome. */}
       {selectedMemorial && typeof document !== "undefined" && createPortal(
         (() => {
-          const theme = memorialTheme(selectedMemorial.category, selectedMemorial.service);
+          const theme = memorialTheme(
+            selectedMemorial.category,
+            selectedMemorial.service,
+            memorialThemeOpts(selectedMemorial),
+          );
           return (
         <div
           onClick={() => setSelectedMemorial(null)}
@@ -1786,6 +1803,11 @@ export default function MasterLeftColumn({
                   <div style={{ fontSize: 22, fontWeight: 900, marginTop: 2, lineHeight: 1.2 }}>
                     {selectedMemorial.name}
                   </div>
+                  {selectedMemorial.is_international ? (
+                    <div style={{ fontSize: 12, color: theme.color, fontWeight: 700, marginTop: 4 }}>
+                      {memorialAffiliationText(selectedMemorial)}
+                    </div>
+                  ) : null}
                   <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
                     {new Date(`${selectedMemorial.death_date}T12:00:00`).toLocaleDateString("en-US", {
                       month: "long",
@@ -1831,6 +1853,7 @@ export default function MasterLeftColumn({
                   category={selectedMemorial.category}
                   sourceUrl={selectedMemorial.source_url}
                   linkColor={theme.color}
+                  isInternational={selectedMemorial.is_international}
                 />
               </div>
             </div>

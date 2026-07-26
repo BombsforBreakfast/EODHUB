@@ -337,7 +337,12 @@ export default function NavBar() {
           .neq("is_rejected", true)
           .gte("created_at", jobListingCutoffIso())
           .or(`title.ilike.%${q}%,company_name.ilike.%${q}%,location.ilike.%${q}%`).limit(5),
-        supabase.from("memorials").select("id, name, death_date, category").ilike("name", `%${q}%`).limit(5),
+        supabase
+          .from("memorials")
+          .select("id, name, death_date, category")
+          .eq("verification_status", "approved")
+          .ilike("name", `%${q}%`)
+          .limit(5),
         supabase.from("units").select("id, name, slug, type, description, visibility").eq("visibility", "public").ilike("name", `%${q}%`).limit(5),
         supabase.from("unit_directory").select("id, name, org_type, state, unit_slug, base_city")
           .or(`name.ilike.%${q}%,org_type.ilike.%${q}%,state.ilike.%${q}%,base_city.ilike.%${q}%`).limit(5),

@@ -37,11 +37,26 @@ import {
 } from "@/app/lib/profileCompleteness";
 import { membershipCountryName } from "@/app/lib/membershipCountries";
 import {
+  MEMORIAL_HMA_COLOR,
+  MEMORIAL_JOINT_PURPLE,
   MEMORIAL_LEO_COLOR,
   MEMORIAL_MILITARY_COLOR,
   memorialTheme,
+  memorialThemeOpts,
 } from "../components/memorial/memorialModalShared";
-import { isMarinesService, MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
+import {
+  INTERNATIONAL_MEMORIAL_CATEGORIES,
+  INTERNATIONAL_MEMORIAL_COUNTRIES,
+  US_MEMORIAL_CATEGORIES,
+  memorialAffiliationText,
+  memorialCategoryLabel,
+  normalizeMemorialCategory,
+  validateInternationalMemorialInput,
+  type MemorialCategory,
+  type MemorialPath,
+  type MemorialVerificationStatus,
+} from "../lib/memorialInternational";
+import { MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
 import { displayListingTitle, LEMON_LOT_CATEGORIES, type MarketplaceListingRow } from "../lib/lemonLot";
 import { prepareImageUploadFile, prepareNewsThumbnailUploadFile } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
@@ -686,12 +701,6 @@ type BizEdit = {
   tags: string[];
 };
 
-type MemorialCategory = "military" | "leo_fed";
-
-function normalizeMemorialCategory(category?: string | null): MemorialCategory {
-  return category === "leo_fed" ? "leo_fed" : "military";
-}
-
 type Memorial = {
   id: string;
   name: string;
@@ -701,6 +710,10 @@ type Memorial = {
   source_url: string | null;
   category?: MemorialCategory | null;
   service?: string | null;
+  is_international?: boolean | null;
+  country?: string | null;
+  organization?: string | null;
+  verification_status?: MemorialVerificationStatus | null;
 };
 
 type MemorialEdit = {
@@ -712,6 +725,9 @@ type MemorialEdit = {
   source_url: string;
   category: MemorialCategory;
   service: string;
+  is_international: boolean;
+  country: string;
+  organization: string;
 };
 
 type AdminCalendarEvent = {
@@ -893,6 +909,7 @@ export default function AdminPage() {
   } | null>(null);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
   const [batchActing, setBatchActing] = useState(false);
+  const [memWizPath, setMemWizPath] = useState<MemorialPath>("us");
   const [memWizUrl, setMemWizUrl] = useState("");
   const [memWizName, setMemWizName] = useState("");
   const [memWizDate, setMemWizDate] = useState("");
@@ -900,10 +917,28 @@ export default function AdminPage() {
   const [memWizBio, setMemWizBio] = useState("");
   const [memWizCategory, setMemWizCategory] = useState<MemorialCategory>("military");
   const [memWizService, setMemWizService] = useState("");
+  const [memWizCountry, setMemWizCountry] = useState("");
+  const [memWizOrganization, setMemWizOrganization] = useState("");
   const [memWizFetching, setMemWizFetching] = useState(false);
   const [memWizSaving, setMemWizSaving] = useState(false);
   const [memWizPhotoUploading, setMemWizPhotoUploading] = useState(false);
   const [memWizMsg, setMemWizMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+  const [pendingIntlMemorials, setPendingIntlMemorials] = useState<Memorial[]>([]);
+  const [pendingMemorialActionId, setPendingMemorialActionId] = useState<string | null>(null);
+
+  function resetMemorialWizard() {
+    setMemWizPath("us");
+    setMemWizUrl("");
+    setMemWizName("");
+    setMemWizDate("");
+    setMemWizImage("");
+    setMemWizBio("");
+    setMemWizCategory("military");
+    setMemWizService("");
+    setMemWizCountry("");
+    setMemWizOrganization("");
+    setMemWizMsg(null);
+  }
 
   const [memorials, setMemorials] = useState<Memorial[]>([]);
   const [editingMemorial, setEditingMemorial] = useState<MemorialEdit | null>(null);
@@ -954,8 +989,12 @@ export default function AdminPage() {
   }, [memorials, memorialSearch]);
 
   const memorialAddWizTheme = useMemo(
-    () => memorialTheme(memWizCategory, memWizService),
-    [memWizCategory, memWizService],
+    () =>
+      memorialTheme(memWizCategory, memWizService, {
+        isInternational: memWizPath === "international",
+        country: memWizPath === "international" ? memWizCountry || null : "US",
+      }),
+    [memWizCategory, memWizService, memWizPath, memWizCountry],
   );
 
   const [bugReports, setBugReports] = useState<BugReport[]>([]);
@@ -1046,6 +1085,7 @@ export default function AdminPage() {
     locReq: 0,
     scrapbook: 0,
     events: 0,
+    memorialsIntl: 0,
     failedAuth: 0,
     businessOrgPages: 0,
   });
@@ -2182,6 +2222,7 @@ export default function AdminPage() {
       void loadAdminEvents();
       void loadPendingImportEvents();
       void loadMemorials();
+      void loadPendingIntlMemorials();
     }
     if (activeTab === "bugs") loadBugReports();
     if (activeTab === "directory") loadDirectory();
@@ -2844,6 +2885,21 @@ export default function AdminPage() {
 
   async function saveMemorial() {
     if (!memWizName.trim() || !memWizDate) return;
+    const isIntl = memWizPath === "international";
+    if (isIntl) {
+      const validationError = validateInternationalMemorialInput({
+        country: memWizCountry,
+        category: memWizCategory,
+        service: memWizService,
+        name: memWizName,
+        deathDate: memWizDate,
+        bio: memWizBio,
+      });
+      if (validationError) {
+        setMemWizMsg({ type: "err", text: validationError });
+        return;
+      }
+    }
     setMemWizSaving(true);
     setMemWizMsg(null);
     try {
@@ -2864,17 +2920,17 @@ export default function AdminPage() {
         photo_url: memWizImage.trim() || null,
         category: memWizCategory,
         service: memWizCategory === "military" && memWizService.trim() ? memWizService.trim() : null,
+        is_international: isIntl,
+        country: isIntl ? memWizCountry.trim().toUpperCase() : null,
+        organization: isIntl && memWizOrganization.trim() ? memWizOrganization.trim() : null,
+        // Admins publish international memorials immediately (trigger allows).
+        verification_status: "approved",
       }]);
       if (error) throw new Error(error.message);
-      setMemWizMsg({ type: "ok", text: `${memWizName.trim()} added.` });
-      setMemWizUrl("");
-      setMemWizName("");
-      setMemWizDate("");
-      setMemWizImage("");
-      setMemWizBio("");
-      setMemWizCategory("military");
-      setMemWizService("");
-      await loadMemorials();
+      const okText = `${memWizName.trim()} added.`;
+      resetMemorialWizard();
+      setMemWizMsg({ type: "ok", text: okText });
+      await Promise.all([loadMemorials(), loadPendingIntlMemorials(), loadPendingCounts()]);
     } catch (err) {
       setMemWizMsg({ type: "err", text: err instanceof Error ? err.message : String(err) });
     } finally {
@@ -3135,10 +3191,63 @@ export default function AdminPage() {
   async function loadMemorials() {
     const { data, error } = await supabase
       .from("memorials")
-      .select("id, name, death_date, photo_url, bio, source_url, category, service")
+      .select(
+        "id, name, death_date, photo_url, bio, source_url, category, service, is_international, country, organization, verification_status",
+      )
       .order("death_date", { ascending: false });
     if (error) { console.error(error); return; }
     setMemorials((data ?? []) as Memorial[]);
+  }
+
+  async function loadPendingIntlMemorials() {
+    const { data, error } = await supabase
+      .from("memorials")
+      .select(
+        "id, name, death_date, photo_url, bio, source_url, category, service, is_international, country, organization, verification_status",
+      )
+      .eq("is_international", true)
+      .eq("verification_status", "pending")
+      .order("death_date", { ascending: false });
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setPendingIntlMemorials((data ?? []) as Memorial[]);
+  }
+
+  async function approveIntlMemorial(id: string) {
+    setPendingMemorialActionId(id);
+    try {
+      const { data, error } = await supabase
+        .from("memorials")
+        .update({ verification_status: "approved" })
+        .eq("id", id)
+        .select("id");
+      if (error) throw new Error(error.message);
+      if (!data?.length) throw new Error("No rows were updated.");
+      showToast("International memorial approved.");
+      await Promise.all([loadMemorials(), loadPendingIntlMemorials(), loadPendingCounts()]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Approve failed.");
+    } finally {
+      setPendingMemorialActionId(null);
+    }
+  }
+
+  async function rejectIntlMemorial(id: string, name: string) {
+    askConfirm(`Reject memorial “${name}”? This deletes the pending submission.`, async () => {
+      setPendingMemorialActionId(id);
+      try {
+        const { error } = await supabase.from("memorials").delete().eq("id", id);
+        if (error) throw new Error(error.message);
+        showToast("Pending memorial rejected.");
+        await Promise.all([loadMemorials(), loadPendingIntlMemorials(), loadPendingCounts()]);
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "Reject failed.");
+      } finally {
+        setPendingMemorialActionId(null);
+      }
+    });
   }
 
   async function loadAdminEvents() {
@@ -3326,6 +3435,14 @@ export default function AdminPage() {
         service:
           editingMemorial.category === "military" && editingMemorial.service.trim()
             ? editingMemorial.service.trim()
+            : null,
+        is_international: editingMemorial.is_international,
+        country: editingMemorial.is_international
+          ? editingMemorial.country.trim().toUpperCase() || null
+          : null,
+        organization:
+          editingMemorial.is_international && editingMemorial.organization.trim()
+            ? editingMemorial.organization.trim()
             : null,
       }).eq("id", editingMemorial.id).select("id");
       if (error) throw new Error(error.message);
@@ -3599,7 +3716,7 @@ export default function AdminPage() {
               padding: 0,
               border: "none",
               background: "none",
-              color: memorialTheme(mem.category, mem.service).color,
+              color: memorialTheme(mem.category, mem.service, memorialThemeOpts(mem)).color,
               fontWeight: 700,
               fontSize: 12,
               cursor: "pointer",
@@ -3975,7 +4092,7 @@ export default function AdminPage() {
           </button>
           <button type="button" style={tabStyle("events")} onClick={() => setActiveTab("events")}>
             Events
-            {tabNotifyBadge(pendingCounts.events + pendingCounts.scrapbook)}
+            {tabNotifyBadge(pendingCounts.events + pendingCounts.scrapbook + pendingCounts.memorialsIntl)}
           </button>
           <button type="button" style={tabStyle("bugs")} onClick={() => setActiveTab("bugs")}>
             Bugs
@@ -7736,30 +7853,36 @@ export default function AdminPage() {
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
               <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Add Memorial</div>
               <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16, lineHeight: 1.6 }}>
-                Paste an EOD Warrior Foundation memorial URL and click Get info, or fill in manually. Choose Military or LEO/Fed; for Military you can set service for branch-themed cards.
+                {memWizPath === "us"
+                  ? "Paste an EODWF or Bomb Tech Memorial URL and click Get info, or fill in manually. Admin adds publish immediately."
+                  : "International path: country + bio required. Admin adds publish immediately (no review queue)."}
               </div>
               <div style={{ display: "grid", gap: 12 }}>
                 <div style={{ display: "grid", gap: 8 }}>
-                  <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Memorial type</div>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Path</div>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
                     {([
-                      { value: "military" as const, label: "Military", color: MEMORIAL_MILITARY_COLOR },
-                      { value: "leo_fed" as const, label: "LEO/FED", color: MEMORIAL_LEO_COLOR },
+                      { value: "us" as const, label: "United States" },
+                      { value: "international" as const, label: "International" },
                     ]).map((option) => {
-                      const selected = memWizCategory === option.value;
+                      const selected = memWizPath === option.value;
                       return (
                         <button
                           key={option.value}
                           type="button"
                           onClick={() => {
-                            setMemWizCategory(option.value);
-                            if (option.value === "leo_fed") setMemWizService("");
+                            setMemWizPath(option.value);
+                            setMemWizCategory("military");
+                            setMemWizService("");
+                            setMemWizCountry("");
+                            setMemWizOrganization("");
+                            setMemWizMsg(null);
                           }}
                           style={{
-                            border: `2px solid ${selected ? option.color : t.border}`,
+                            border: `2px solid ${selected ? memorialAddWizTheme.color : t.border}`,
                             borderRadius: 12,
                             padding: "10px 12px",
-                            background: selected ? option.color : t.surface,
+                            background: selected ? memorialAddWizTheme.color : t.surface,
                             color: selected ? "white" : t.text,
                             cursor: "pointer",
                             textAlign: "left",
@@ -7771,7 +7894,67 @@ export default function AdminPage() {
                     })}
                   </div>
                 </div>
-                {memWizCategory === "military" && (
+                {memWizPath === "international" && (
+                  <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Country *</label>
+                    <select
+                      value={memWizCountry}
+                      onChange={(e) => setMemWizCountry(e.target.value)}
+                      style={{
+                        border: `1px solid ${t.inputBorder}`,
+                        borderRadius: 8,
+                        padding: "8px 10px",
+                        fontSize: 14,
+                        background: t.input,
+                        color: t.text,
+                        fontWeight: 600,
+                      }}
+                    >
+                      <option value="">Select country</option>
+                      {INTERNATIONAL_MEMORIAL_COUNTRIES.map((c) => (
+                        <option key={c.code} value={c.code}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div style={{ display: "grid", gap: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 800, color: t.text }}>Memorial type</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                    {(memWizPath === "us" ? US_MEMORIAL_CATEGORIES : INTERNATIONAL_MEMORIAL_CATEGORIES).map((option) => {
+                      const color =
+                        memWizPath === "international"
+                          ? MEMORIAL_JOINT_PURPLE
+                          : option.value === "leo_fed" || option.value === "law_enforcement" || option.value === "federal" || option.value === "civil_service"
+                            ? MEMORIAL_LEO_COLOR
+                            : option.value === "humanitarian_mine_action"
+                              ? MEMORIAL_HMA_COLOR
+                              : MEMORIAL_MILITARY_COLOR;
+                      const selected = memWizCategory === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => {
+                            setMemWizCategory(option.value);
+                            if (option.value !== "military") setMemWizService("");
+                          }}
+                          style={{
+                            border: `2px solid ${selected ? color : t.border}`,
+                            borderRadius: 12,
+                            padding: "10px 12px",
+                            background: selected ? color : t.surface,
+                            color: selected ? "white" : t.text,
+                            cursor: "pointer",
+                            textAlign: "left",
+                          }}
+                        >
+                          <div style={{ fontWeight: 900, fontSize: 14 }}>{option.label}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {memWizCategory === "military" && memWizPath === "us" && (
                   <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
                     <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Service (optional)</label>
                     <select
@@ -7794,12 +7977,48 @@ export default function AdminPage() {
                     </select>
                   </div>
                 )}
+                {memWizCategory === "military" && memWizPath === "international" && (
+                  <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Service / branch *</label>
+                    <input
+                      value={memWizService}
+                      onChange={(e) => setMemWizService(e.target.value)}
+                      placeholder="e.g. Royal Engineers"
+                      style={{
+                        border: `1px solid ${t.inputBorder}`,
+                        borderRadius: 8,
+                        padding: "8px 12px",
+                        fontSize: 14,
+                        background: t.input,
+                        color: t.text,
+                      }}
+                    />
+                  </div>
+                )}
+                {memWizPath === "international" && (
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Unit / organization (optional)</label>
+                    <input
+                      value={memWizOrganization}
+                      onChange={(e) => setMemWizOrganization(e.target.value)}
+                      placeholder="Unit, agency, or NGO"
+                      style={{
+                        border: `1px solid ${t.inputBorder}`,
+                        borderRadius: 8,
+                        padding: "8px 12px",
+                        fontSize: 14,
+                        background: t.input,
+                        color: t.text,
+                      }}
+                    />
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <input
                     value={memWizUrl}
                     onChange={(e) => setMemWizUrl(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && void fetchMemorialMeta()}
-                    placeholder="https://eod-wf.org/virtual-memorial/... (optional)"
+                    placeholder={memWizPath === "us" ? "https://eod-wf.org/virtual-memorial/... (optional)" : "Source URL (optional)"}
                     style={{
                       flex: 1,
                       minWidth: 200,
@@ -7862,7 +8081,7 @@ export default function AdminPage() {
                 <textarea
                   value={memWizBio}
                   onChange={(e) => setMemWizBio(e.target.value)}
-                  placeholder="Bio / about (optional)"
+                  placeholder={memWizPath === "international" ? "Bio / about * (required)" : "Bio / about (optional)"}
                   rows={4}
                   style={{
                     border: `1px solid ${t.inputBorder}`,
@@ -7952,7 +8171,14 @@ export default function AdminPage() {
                   <button
                     type="button"
                     onClick={() => void saveMemorial()}
-                    disabled={memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate}
+                    disabled={
+                      memWizSaving ||
+                      memWizPhotoUploading ||
+                      !memWizName.trim() ||
+                      !memWizDate ||
+                      (memWizPath === "international" &&
+                        (!memWizCountry || !memWizBio.trim() || (memWizCategory === "military" && !memWizService.trim())))
+                    }
                     style={{
                       background: memorialAddWizTheme.color,
                       color: "white",
@@ -7961,24 +8187,31 @@ export default function AdminPage() {
                       padding: "9px 20px",
                       fontWeight: 800,
                       fontSize: 14,
-                      cursor: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? "not-allowed" : "pointer",
-                      opacity: memWizSaving || memWizPhotoUploading || !memWizName.trim() || !memWizDate ? 0.5 : 1,
+                      cursor:
+                        memWizSaving ||
+                        memWizPhotoUploading ||
+                        !memWizName.trim() ||
+                        !memWizDate ||
+                        (memWizPath === "international" &&
+                          (!memWizCountry || !memWizBio.trim() || (memWizCategory === "military" && !memWizService.trim())))
+                          ? "not-allowed"
+                          : "pointer",
+                      opacity:
+                        memWizSaving ||
+                        memWizPhotoUploading ||
+                        !memWizName.trim() ||
+                        !memWizDate ||
+                        (memWizPath === "international" &&
+                          (!memWizCountry || !memWizBio.trim() || (memWizCategory === "military" && !memWizService.trim())))
+                          ? 0.5
+                          : 1,
                     }}
                   >
                     {memWizSaving ? "Publishing..." : "Publish Memorial"}
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setMemWizUrl("");
-                      setMemWizName("");
-                      setMemWizDate("");
-                      setMemWizBio("");
-                      setMemWizImage("");
-                      setMemWizCategory("military");
-                      setMemWizService("");
-                      setMemWizMsg(null);
-                    }}
+                    onClick={() => resetMemorialWizard()}
                     style={{
                       border: `1px solid ${t.border}`,
                       borderRadius: 8,
@@ -8000,11 +8233,110 @@ export default function AdminPage() {
               </div>
             </div>
 
+            {/* Pending international memorials */}
+            <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
+              <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>
+                Pending international memorials
+                {pendingCounts.memorialsIntl > 0 ? (
+                  <span style={{ marginLeft: 8, verticalAlign: "middle" }}>{tabNotifyBadge(pendingCounts.memorialsIntl)}</span>
+                ) : null}
+              </div>
+              <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
+                Community submissions await approval before they appear on the anniversary calendar.
+              </div>
+              {pendingIntlMemorials.length === 0 ? (
+                <div style={{ color: t.textFaint, fontSize: 14 }}>No pending international memorials.</div>
+              ) : (
+                <div style={{ display: "grid", gap: 12 }}>
+                  {pendingIntlMemorials.map((mem) => {
+                    const pal = memorialTheme(mem.category, mem.service, memorialThemeOpts(mem));
+                    const busy = pendingMemorialActionId === mem.id;
+                    return (
+                      <div
+                        key={mem.id}
+                        style={{
+                          border: `2px solid ${pal.outlineColor}`,
+                          borderRadius: 12,
+                          padding: 14,
+                          background: isDark ? pal.darkBg : pal.lightBg,
+                          display: "grid",
+                          gap: 10,
+                        }}
+                      >
+                        <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                          {mem.photo_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={mem.photo_url}
+                              alt=""
+                              style={{
+                                width: 56,
+                                height: 70,
+                                objectFit: "cover",
+                                borderRadius: 8,
+                                border: `2px solid ${pal.outlineColor}`,
+                                flexShrink: 0,
+                              }}
+                            />
+                          ) : null}
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ color: pal.color, fontSize: 11, fontWeight: 900, textTransform: "uppercase" }}>
+                              {memorialAffiliationText(mem)}
+                            </div>
+                            <div style={{ fontWeight: 800, fontSize: 16 }}>{mem.name}</div>
+                            <div style={{ fontSize: 13, color: t.textMuted, marginTop: 2 }}>
+                              {mem.death_date
+                                ? new Date(`${mem.death_date}T00:00:00`).toLocaleDateString("en-US", {
+                                    year: "numeric",
+                                    month: "long",
+                                    day: "numeric",
+                                  })
+                                : "No date"}
+                            </div>
+                            {mem.bio ? (
+                              <div style={{ fontSize: 13, color: t.textMuted, marginTop: 8, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>
+                                {mem.bio}
+                              </div>
+                            ) : null}
+                            {mem.source_url ? (
+                              <div style={{ fontSize: 12, marginTop: 6 }}>
+                                <a href={mem.source_url} target="_blank" rel="noopener noreferrer" style={{ color: pal.color }}>
+                                  Source
+                                </a>
+                              </div>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void approveIntlMemorial(mem.id)}
+                            style={{ ...actionBtn("#166534"), opacity: busy ? 0.7 : 1 }}
+                          >
+                            {busy ? "…" : "Approve"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void rejectIntlMemorial(mem.id, mem.name)}
+                            style={{ ...actionBtn("#ef4444"), opacity: busy ? 0.7 : 1 }}
+                          >
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             {/* Manage Memorials */}
             <div style={{ border: `1px solid ${t.border}`, borderRadius: 14, padding: 24, background: t.surface }}>
               <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 6 }}>Manage Memorials</div>
               <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 16 }}>
-                Edit or delete memorial entries (same data as the Events page). Service applies when category is Military (EODWF).
+                Edit or delete memorial entries (same data as the Events page). International rows show country + text affiliation.
               </div>
 
               {memorials.length > 0 && (
@@ -8042,14 +8374,23 @@ export default function AdminPage() {
 
               <div style={{ display: "grid", gap: 12, minWidth: 0, width: "100%" }}>
                 {filteredMemorials.map((mem) => {
-                  const listPal = memorialTheme(mem.category, mem.service);
+                  const listPal = memorialTheme(mem.category, mem.service, memorialThemeOpts(mem));
                   const accent = listPal.color;
                   const outlineAccent = listPal.outlineColor;
                   const cardBg = isDark ? listPal.darkBg : listPal.lightBg;
-                  const kindLabel = mem.category === "leo_fed" ? "LEO / Fed" : "Military";
+                  const kindLabel = mem.is_international
+                    ? memorialAffiliationText(mem)
+                    : memorialCategoryLabel(mem.category);
                   const editPal =
                     editingMemorial?.id === mem.id && editingMemorial
-                      ? memorialTheme(editingMemorial.category, editingMemorial.service)
+                      ? memorialTheme(
+                          editingMemorial.category,
+                          editingMemorial.service,
+                          {
+                            isInternational: editingMemorial.is_international,
+                            country: editingMemorial.country || null,
+                          },
+                        )
                       : null;
                   return (
                   <div key={mem.id}>
@@ -8080,7 +8421,7 @@ export default function AdminPage() {
                                   ? {
                                       ...p,
                                       category: e.target.value as MemorialCategory,
-                                      service: e.target.value === "leo_fed" ? "" : p.service,
+                                      service: e.target.value === "military" ? p.service : "",
                                     }
                                   : p
                               )
@@ -8095,11 +8436,49 @@ export default function AdminPage() {
                               fontWeight: 600,
                             }}
                           >
-                            <option value="military">Military (EODWF)</option>
-                            <option value="leo_fed">LEO / Fed (Bomb Tech Memorial)</option>
+                            {(editingMemorial.is_international
+                              ? INTERNATIONAL_MEMORIAL_CATEGORIES
+                              : US_MEMORIAL_CATEGORIES
+                            ).map((opt) => (
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
+                            ))}
                           </select>
                         </div>
-                        {editingMemorial.category === "military" && (
+                        {editingMemorial.is_international && (
+                          <>
+                            <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+                              <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Country</label>
+                              <select
+                                value={editingMemorial.country}
+                                onChange={(e) => setEditingMemorial((p) => (p ? { ...p, country: e.target.value } : p))}
+                                style={{
+                                  border: `1px solid ${t.inputBorder}`,
+                                  borderRadius: 8,
+                                  padding: "8px 10px",
+                                  fontSize: 14,
+                                  background: t.input,
+                                  color: t.text,
+                                  fontWeight: 600,
+                                }}
+                              >
+                                <option value="">Select country</option>
+                                {INTERNATIONAL_MEMORIAL_COUNTRIES.map((c) => (
+                                  <option key={c.code} value={c.code}>{c.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div style={{ display: "grid", gap: 6 }}>
+                              <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Unit / organization</label>
+                              <input
+                                value={editingMemorial.organization}
+                                onChange={(e) => setEditingMemorial((p) => (p ? { ...p, organization: e.target.value } : p))}
+                                placeholder="Unit, agency, or NGO"
+                                style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                              />
+                            </div>
+                          </>
+                        )}
+                        {editingMemorial.category === "military" && !editingMemorial.is_international && (
                           <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
                             <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Service</label>
                             <select
@@ -8120,6 +8499,17 @@ export default function AdminPage() {
                                 <option key={opt} value={opt}>{opt}</option>
                               ))}
                             </select>
+                          </div>
+                        )}
+                        {editingMemorial.category === "military" && editingMemorial.is_international && (
+                          <div style={{ display: "grid", gap: 6, maxWidth: 360 }}>
+                            <label style={{ fontSize: 11, fontWeight: 700, color: t.textMuted }}>Service / branch</label>
+                            <input
+                              value={editingMemorial.service}
+                              onChange={(e) => setEditingMemorial((p) => (p ? { ...p, service: e.target.value } : p))}
+                              placeholder="Service or branch"
+                              style={{ border: `1px solid ${t.inputBorder}`, borderRadius: 8, padding: "8px 12px", fontSize: 14, background: t.input, color: t.text }}
+                            />
                           </div>
                         )}
                         <input
@@ -8293,7 +8683,12 @@ export default function AdminPage() {
                             </div>
                           )}
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: accent, fontSize: 10, fontWeight: 900, letterSpacing: "0.06em", textTransform: "uppercase" }}>{kindLabel}</div>
+                            <div style={{ color: accent, fontSize: 10, fontWeight: 900, letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                              {kindLabel}
+                              {mem.verification_status && mem.verification_status !== "approved"
+                                ? ` · ${mem.verification_status}`
+                                : ""}
+                            </div>
                             <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.25 }}>{mem.name}</div>
                             <div style={{ fontSize: 13, color: t.textMuted, marginTop: 4 }}>
                               {mem.death_date
@@ -8320,6 +8715,9 @@ export default function AdminPage() {
                                 source_url: mem.source_url ?? "",
                                 category: normalizeMemorialCategory(mem.category),
                                 service: mem.service ?? "",
+                                is_international: !!mem.is_international,
+                                country: mem.country ?? "",
+                                organization: mem.organization ?? "",
                               })
                             }
                             style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "8px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}
@@ -8374,7 +8772,12 @@ export default function AdminPage() {
                             : <div style={{ width: 44, height: 56, borderRadius: 6, background: t.badgeBg, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>{mem.category === "leo_fed" ? "🛡️" : "🪖"}</div>
                           }
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ color: accent, fontSize: 10, fontWeight: 900, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>{kindLabel}</div>
+                            <div style={{ color: accent, fontSize: 10, fontWeight: 900, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>
+                              {kindLabel}
+                              {mem.verification_status && mem.verification_status !== "approved"
+                                ? ` · ${mem.verification_status}`
+                                : ""}
+                            </div>
                             <div style={{ fontWeight: 800, fontSize: 14, wordBreak: "break-word" }}>{mem.name}</div>
                             <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
                               {mem.death_date ? new Date(mem.death_date + "T00:00:00").toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" }) : "No date"}
@@ -8394,6 +8797,9 @@ export default function AdminPage() {
                                   source_url: mem.source_url ?? "",
                                   category: normalizeMemorialCategory(mem.category),
                                   service: mem.service ?? "",
+                                  is_international: !!mem.is_international,
+                                  country: mem.country ?? "",
+                                  organization: mem.organization ?? "",
                                 })
                               }
                               style={{ background: "#1e3a5f", color: "white", border: "none", borderRadius: 8, padding: "6px 14px", fontWeight: 700, fontSize: 13, cursor: "pointer" }}

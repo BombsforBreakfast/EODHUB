@@ -274,8 +274,12 @@ type DesktopMemorial = {
   source_url: string | null;
   photo_url?: string | null;
   bio?: string | null;
-  category?: "military" | "leo_fed" | null;
+  category?: string | null;
   service?: string | null;
+  is_international?: boolean | null;
+  country?: string | null;
+  organization?: string | null;
+  verification_status?: string | null;
 };
 
 type DesktopConversation = {
@@ -2577,7 +2581,10 @@ export default function PublicProfilePage() {
         .order("date", { ascending: true }),
       supabase
         .from("memorials")
-        .select("id, name, death_date, source_url, photo_url, bio, category, service"),
+        .select(
+          "id, name, death_date, source_url, photo_url, bio, category, service, is_international, country, organization, verification_status",
+        )
+        .eq("verification_status", "approved"),
     ]);
 
     setDesktopCalendarEvents((eventsData ?? []) as DesktopCalendarEvent[]);
