@@ -11,7 +11,10 @@
  * so DMs, comments, likes, mentions, connections, unit activity, kangaroo court,
  * verifications, moderation notices, etc. all mirror to push.
  */
-export const PUSH_EXCLUDED_NOTIFICATION_TYPES = new Set<string>([]);
+export const PUSH_EXCLUDED_NOTIFICATION_TYPES = new Set<string>([
+  // Soft profile-completeness nudge — in-app + page banner only.
+  "profile_country_needed",
+]);
 
 export function isPushEligibleNotificationType(type: string | null | undefined): boolean {
   if (!type) return false;

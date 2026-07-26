@@ -1,8 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Link from "next/link";
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { User } from "@supabase/supabase-js";
 import { useQueryClient } from "@tanstack/react-query";
 import { fetchViewerProfileCached } from "../../lib/queries/viewerProfile";
 import { useTheme } from "../../lib/ThemeContext";
@@ -22,6 +22,13 @@ import {
 } from "../../lib/onboardingGate";
 import { hasFullPlatformAccess } from "../../lib/verificationAccess";
 import { ensureWelcomeSidebarOnce } from "../../lib/welcomeSidebarClient";
+import { ensureCountryPromptOnce } from "../../lib/ensureCountryPromptClient";
+import {
+  PROFILE_COUNTRY_NEEDED_MESSAGE,
+  PROFILE_COUNTRY_NEEDED_TITLE,
+  profileCountryChallengeHref,
+  viewerNeedsCountryPrompt,
+} from "../../lib/membershipCountryPrompt";
 
 const MasterLeftColumn = dynamic(() => import("./MasterLeftColumn"), { ssr: true });
 const MasterRightColumn = dynamic(() => import("./MasterRightColumn"), { ssr: true });
@@ -37,7 +44,7 @@ function getSavedRailState(key: string): "expanded" | "collapsed" {
 }
 
 export default function MasterShell({ children }: { children: React.ReactNode }) {
-  const { t } = useTheme();
+  const { t, isDark } = useTheme();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
   // Must match server first paint: never read `window` / `localStorage` in useState initializers,
@@ -56,6 +63,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   const [sideRailsReady, setSideRailsReady] = useState(false);
   const [showMemorialFeedCards, setShowMemorialFeedCards] = useState(true);
   const [isBusinessOrgAccount, setIsBusinessOrgAccount] = useState(false);
+  const [countryPromptHref, setCountryPromptHref] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     const mq = window.matchMedia("(min-width: 901px)");
@@ -73,6 +81,19 @@ export default function MasterShell({ children }: { children: React.ReactNode })
   }, []);
 
   useEffect(() => {
+    function onViewerCountryUpdated(event: Event) {
+      const detail = (event as CustomEvent<{ userId?: string; country?: string | null }>).detail;
+      if (!detail?.userId || detail.userId !== userId) return;
+      const country = typeof detail.country === "string" ? detail.country.trim() : "";
+      setCountryPromptHref(country ? null : profileCountryChallengeHref(detail.userId));
+    }
+    window.addEventListener("eod:viewer-country-updated", onViewerCountryUpdated as EventListener);
+    return () => {
+      window.removeEventListener("eod:viewer-country-updated", onViewerCountryUpdated as EventListener);
+    };
+  }, [userId]);
+
+  useEffect(() => {
     if (authLoading) return;
 
     let cancelled = false;
@@ -83,6 +104,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       setIsBusinessOrgAccount(false);
       if (!user) {
         setShowMemorialFeedCards(true);
+        setCountryPromptHref(null);
         memberInteractionAllowedRef.current = false;
         return;
       }
@@ -94,6 +116,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
       }
       if (!profileCheck) {
         setShowMemorialFeedCards(true);
+        setCountryPromptHref(null);
         memberInteractionAllowedRef.current = false;
         return;
       }
@@ -115,6 +138,13 @@ export default function MasterShell({ children }: { children: React.ReactNode })
 
       if (hasFullPlatformAccess(profileCheck) && !isBusinessOrg) {
         ensureWelcomeSidebarOnce(supabase);
+      }
+
+      if (viewerNeedsCountryPrompt(profileCheck)) {
+        setCountryPromptHref(profileCountryChallengeHref(user.id));
+        ensureCountryPromptOnce(supabase);
+      } else {
+        setCountryPromptHref(null);
       }
 
       if (
@@ -184,6 +214,50 @@ export default function MasterShell({ children }: { children: React.ReactNode })
     [isDesktop, openSidebarPeer, showMemorialFeedCards, isBusinessOrgAccount]
   );
 
+  const countryPromptBanner = countryPromptHref ? (
+    <div
+      role="status"
+      style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 12,
+        border: `1px solid ${isDark ? "#ca8a04" : "#b45309"}`,
+        borderLeft: `4px solid ${isDark ? "#facc15" : "#d97706"}`,
+        borderRadius: 12,
+        background: isDark ? "#4a3f0f" : "#fef3c7",
+        padding: "14px 16px",
+        margin: isDesktop ? "0 0 14px" : "12px 12px 0",
+        boxShadow: isDark ? "0 2px 8px rgba(0,0,0,0.35)" : "0 2px 8px rgba(180, 83, 9, 0.18)",
+      }}
+    >
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 800, fontSize: 15, color: isDark ? "#fef9c3" : "#422006", marginBottom: 4 }}>
+          {PROFILE_COUNTRY_NEEDED_TITLE}
+        </div>
+        <div style={{ fontSize: 14, color: isDark ? "#fde68a" : "#451a03", lineHeight: 1.5 }}>
+          {PROFILE_COUNTRY_NEEDED_MESSAGE}
+        </div>
+      </div>
+      <Link
+        href={countryPromptHref}
+        style={{
+          flexShrink: 0,
+          background: isDark ? "#292524" : "#422006",
+          color: "#fef9c3",
+          border: "1px solid rgba(255,255,255,0.2)",
+          borderRadius: 8,
+          padding: "8px 14px",
+          fontWeight: 700,
+          fontSize: 13,
+          textDecoration: "none",
+          whiteSpace: "nowrap",
+        }}
+      >
+        Add country
+      </Link>
+    </div>
+  ) : null;
+
   if (!isDesktop) {
     return (
       <MasterShellProvider value={ctxValue}>
@@ -198,6 +272,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
           }}
         >
           <NavBar />
+          {countryPromptBanner}
           {children}
         </div>
       </MasterShellProvider>
@@ -237,6 +312,7 @@ export default function MasterShell({ children }: { children: React.ReactNode })
           center={
             <main className="master-shell-main" style={{ minWidth: 0 }}>
               <NavBar />
+              {countryPromptBanner}
               {children}
             </main>
           }

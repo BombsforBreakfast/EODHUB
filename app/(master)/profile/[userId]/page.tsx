@@ -3,7 +3,9 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useQueryClient } from "@tanstack/react-query";
 import { getAccessToken, supabase } from "../../../lib/lib/supabaseClient";
+import { invalidateViewerProfile } from "../../../lib/queries/viewerProfile";
 import DesktopLayout from "../../../components/DesktopLayout";
 import ImageCropDialog from "../../../components/ImageCropDialog";
 import { useTheme } from "../../../lib/ThemeContext";
@@ -602,6 +604,7 @@ export default function PublicProfilePage() {
   usePageTracking(PAGE_TRACKING.profile);
   const params = useParams();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
 
   const rawUserId = params?.userId;
   const userId =
@@ -789,6 +792,7 @@ export default function PublicProfilePage() {
   const [wallAvatarCropSrc, setWallAvatarCropSrc] = useState<string | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
   const bioTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const countrySelectRef = useRef<HTMLSelectElement | null>(null);
   const resumeFileInputRef = useRef<HTMLInputElement | null>(null);
   const educationFileInputRef = useRef<HTMLInputElement | null>(null);
   const trainingFileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1209,6 +1213,7 @@ export default function PublicProfilePage() {
             last_name: editLastName.trim() || null,
             company_website: editCompanyWebsite.trim() || null,
             bio: editBio.trim() || null,
+            ...(MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled ? { country: editCountry || null } : {}),
           }
         : {
             role: editRole || null,
@@ -1250,6 +1255,19 @@ export default function PublicProfilePage() {
         return;
       }
       await loadProfile(userId);
+      invalidateViewerProfile(queryClient, currentUserId);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("eod:viewer-country-updated", {
+            detail: {
+              userId: currentUserId,
+              country: MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled
+                ? editCountry || null
+                : undefined,
+            },
+          }),
+        );
+      }
       void refreshPlankHolderChallenge();
       setEditingProfile(false);
     } finally {
@@ -3473,6 +3491,27 @@ export default function PublicProfilePage() {
     if (challengeTarget === "bio") {
       openWallEditProfile();
       window.setTimeout(() => bioTextareaRef.current?.focus(), 150);
+      return;
+    }
+
+    if (challengeTarget === "country") {
+      openWallEditProfile();
+      window.setTimeout(() => {
+        const el =
+          countrySelectRef.current ??
+          (document.getElementById("edit-profile-country") as HTMLSelectElement | null);
+        if (!el) return;
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.focus();
+        const picker = el as HTMLSelectElement & { showPicker?: () => void };
+        if (typeof picker.showPicker === "function") {
+          try {
+            picker.showPicker();
+          } catch {
+            /* ignore unsupported / gesture-gated showPicker */
+          }
+        }
+      }, 220);
       return;
     }
 
@@ -5706,8 +5745,14 @@ export default function PublicProfilePage() {
                     </div>
                     {MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled && (
                     <div style={{ gridColumn: "1 / -1" }}>
-                      <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Country</label>
-                      <select value={editCountry} onChange={(e) => setEditCountry(e.target.value)} style={wallEditSelectStyle}>
+                      <label htmlFor="edit-profile-country" style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Country</label>
+                      <select
+                        id="edit-profile-country"
+                        ref={countrySelectRef}
+                        value={editCountry}
+                        onChange={(e) => setEditCountry(e.target.value)}
+                        style={wallEditSelectStyle}
+                      >
                         <option value="">Select country...</option>
                         {MEMBERSHIP_COUNTRIES.map((c) => (
                           <option key={c.code} value={c.code}>{c.name}</option>
@@ -5743,8 +5788,14 @@ export default function PublicProfilePage() {
                 </div>
                 {MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled && (
                 <div>
-                  <label style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Country</label>
-                  <select value={editCountry} onChange={(e) => setEditCountry(e.target.value)} style={wallEditSelectStyle}>
+                  <label htmlFor="edit-profile-country" style={{ fontWeight: 700, display: "block", marginBottom: 5, color: t.text }}>Country</label>
+                  <select
+                    id="edit-profile-country"
+                    ref={countrySelectRef}
+                    value={editCountry}
+                    onChange={(e) => setEditCountry(e.target.value)}
+                    style={wallEditSelectStyle}
+                  >
                     <option value="">Select country...</option>
                     {MEMBERSHIP_COUNTRIES.map((c) => (
                       <option key={c.code} value={c.code}>{c.name}</option>
