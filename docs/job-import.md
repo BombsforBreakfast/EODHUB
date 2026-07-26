@@ -2,6 +2,8 @@
 
 External job listings are ingested via cron-backed API routes. All imported jobs default to `is_approved: false` until an admin approves them in the Admin → Jobs tab.
 
+International EOD/HMA coverage (US vs ReliefWeb-only gap): see [`intl-job-coverage-audit.md`](intl-job-coverage-audit.md).
+
 ## Sources
 
 | Source | Route | Cron (UTC) | Env vars |
@@ -48,15 +50,22 @@ curl "https://www.eod-hub.com/api/import-usajobs?secret=$CRON_SECRET"
 
 ## Adzuna
 
-Adzuna uses the US jobs API (`/v1/api/jobs/us/search/{page}`). Credentials: `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`.
+Adzuna uses country-scoped APIs (`/v1/api/jobs/{country}/search/{page}`). Credentials: `ADZUNA_APP_ID`, `ADZUNA_APP_KEY`.
+
+### Countries
+
+Configured in [`app/lib/adzuna/intakeConfig.ts`](app/lib/adzuna/intakeConfig.ts) as `ADZUNA_COUNTRIES`:
+
+- **`us`** — full keyword + company + category channels
+- **`gb`, `au`, `ca`, `za`** — lean HMA/EOD keyword subset only (`ADZUNA_INTL_KEYWORD_CHANNELS`)
+
+`import_metadata` stores `adzuna_country` and `intake_channel` (e.g. `kw:demining@gb`).
 
 ### Intake channels (parallel strategies)
 
-Configured in [`app/lib/adzuna/intakeConfig.ts`](app/lib/adzuna/intakeConfig.ts):
-
-1. **Keyword channels** — expanded `what` queries (EOD, UXO, C-IED, demining, UAS, etc.) with `max_days_old=90` and enlistment terms excluded at the API layer.
-2. **Company channels** — `company=` filter for PAE, Amentum, Leidos, Parsons, Tetra Tech, KBR, Constellis, Valiant, Cape Fox. Catches generic titles from known ordnance employers.
-3. **Category channels** — `engineering-jobs` and `trade-construction-jobs` crossed with ordnance keywords.
+1. **Keyword channels** — EOD, UXO, C-IED, demining/HMA, UAS, etc. with `max_days_old=90` and enlistment terms excluded at the API layer.
+2. **Company channels** (US only) — Amentum, Leidos, KBR with ordnance keyword narrowing.
+3. **Category channels** (US only) — `engineering-jobs` and `trade-construction-jobs` crossed with ordnance keywords.
 
 ### Relevance (title + description, not title-only)
 

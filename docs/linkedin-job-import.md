@@ -78,17 +78,13 @@ Install the launchd agent:
 
 Configured in [`app/lib/linkedin/intakeConfig.ts`](../app/lib/linkedin/intakeConfig.ts). Each category runs as its own LinkedIn keyword search (acronym + expanded forms where applicable):
 
-| Category | Search terms |
-|----------|--------------|
-| EOD | EOD, Explosive Ordnance Disposal, Direct Action EOD |
-| UXO | UXO, Unexploded Ordnance |
-| C-IED | C-IED, CIED, Counter IED, Improvised Explosive Device |
-| UAS | UAS, Unmanned Aerial Systems |
-| C-UAS | C-UAS, Counter UAS |
-| CWMD / WMD | CWMD, C-WMD, Counter Weapons of Mass Destruction, WMD, Weapons of Mass Destruction |
-| Explosive Safety | Explosive Safety, Explosives Specialist |
+| Category | Search terms | Locations |
+|----------|--------------|-----------|
+| EOD / UXO / C-IED / UAS / C-UAS / CWMD / safety | Full US core set (see intakeConfig) | United States |
+| HMA | demining, mine action, humanitarian mine action, UXO clearance | US, UK, Australia, Canada, South Africa, Ukraine, Germany |
+| EOD / UXO (lean intl) | EOD, UXO, Explosive Ordnance Disposal | Same intl list (non-US) |
 
-All scoped to United States, past week. Up to **4 jobs per search** (max **50** total per run) so every category gets representation. Each listing opens the job detail page to capture the full description (JSON-LD or page body). Relevance scoring reuses Adzuna EOD keyword weights.
+Past week only (`f_TPR=r604800`). Up to **3 jobs per search** (max **60** total per run) so US core and intl HMA can both land. Each listing opens the job detail page for the full description. Relevance scoring reuses Adzuna EOD keyword weights (plus LinkedIn hard excludes).
 
 ## API
 

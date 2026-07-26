@@ -1,7 +1,8 @@
 import {
-  ADZUNA_COUNTRY,
+  ADZUNA_PRIMARY_COUNTRY,
   ADZUNA_RESULTS_PER_PAGE,
   ADZUNA_WHAT_EXCLUDE,
+  type AdzunaCountryCode,
 } from "./intakeConfig";
 
 export type AdzunaApiJob = {
@@ -18,6 +19,7 @@ export type AdzunaApiJob = {
 };
 
 export type AdzunaSearchParams = {
+  country?: AdzunaCountryCode;
   what?: string;
   company?: string;
   category?: string;
@@ -42,6 +44,7 @@ export async function fetchAdzunaJobs(
     return { jobs: [], error: "ADZUNA_APP_ID and ADZUNA_APP_KEY are required" };
   }
 
+  const country = params.country ?? ADZUNA_PRIMARY_COUNTRY;
   const searchParams = new URLSearchParams({
     app_id: creds.appId,
     app_key: creds.appKey,
@@ -55,7 +58,7 @@ export async function fetchAdzunaJobs(
   if (params.whatExclude) searchParams.set("what_exclude", params.whatExclude);
 
   const res = await fetch(
-    `https://api.adzuna.com/v1/api/jobs/${ADZUNA_COUNTRY}/search/${params.page}?${searchParams.toString()}`
+    `https://api.adzuna.com/v1/api/jobs/${country}/search/${params.page}?${searchParams.toString()}`
   );
 
   if (!res.ok) {
@@ -70,9 +73,11 @@ export async function fetchAdzunaJobs(
 export async function fetchAdzunaKeywordPage(
   what: string,
   page: number,
-  maxDaysOld: number
+  maxDaysOld: number,
+  country: AdzunaCountryCode = ADZUNA_PRIMARY_COUNTRY
 ): Promise<{ jobs: AdzunaApiJob[]; error?: string }> {
   return fetchAdzunaJobs({
+    country,
     what,
     page,
     maxDaysOld,
@@ -84,9 +89,11 @@ export async function fetchAdzunaCompanyPage(
   company: string,
   what: string | undefined,
   page: number,
-  maxDaysOld: number
+  maxDaysOld: number,
+  country: AdzunaCountryCode = ADZUNA_PRIMARY_COUNTRY
 ): Promise<{ jobs: AdzunaApiJob[]; error?: string }> {
   return fetchAdzunaJobs({
+    country,
     company,
     what,
     page,
@@ -98,9 +105,11 @@ export async function fetchAdzunaCategoryPage(
   category: string,
   what: string,
   page: number,
-  maxDaysOld: number
+  maxDaysOld: number,
+  country: AdzunaCountryCode = ADZUNA_PRIMARY_COUNTRY
 ): Promise<{ jobs: AdzunaApiJob[]; error?: string }> {
   return fetchAdzunaJobs({
+    country,
     category,
     what,
     page,

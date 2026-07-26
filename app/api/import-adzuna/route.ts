@@ -10,8 +10,10 @@ import {
 import {
   ADZUNA_CATEGORY_CHANNELS,
   ADZUNA_COMPANY_CHANNELS,
-  ADZUNA_KEYWORD_CHANNELS,
+  ADZUNA_COUNTRIES,
+  ADZUNA_PRIMARY_COUNTRY,
   ADZUNA_RESULTS_PER_PAGE,
+  adzunaKeywordChannelsForCountry,
 } from "../../lib/adzuna/intakeConfig";
 import { detectAdzunaCategory, scoreAdzunaJob } from "../../lib/adzuna/relevance";
 import { canonicalAdzunaDetailsUrl, parseAdzunaAdIdFromUrl } from "../../lib/adzunaJob";
@@ -38,10 +40,16 @@ type AdzunaCandidate = {
   payMin: number | null;
   payMax: number | null;
   intakeChannel: string;
+  adzunaCountry: string;
   relevanceScore: number;
 };
 
-function toCandidate(job: AdzunaApiJob, intakeChannel: string, relevanceScore: number): AdzunaCandidate | null {
+function toCandidate(
+  job: AdzunaApiJob,
+  intakeChannel: string,
+  adzunaCountry: string,
+  relevanceScore: number,
+): AdzunaCandidate | null {
   const adId = parseAdzunaAdIdFromUrl(job.redirect_url) ?? String(job.id);
   if (!/^\d+$/.test(adId)) return null;
 
@@ -55,6 +63,7 @@ function toCandidate(job: AdzunaApiJob, intakeChannel: string, relevanceScore: n
     payMin: roundAdzunaSalary(job.salary_min),
     payMax: roundAdzunaSalary(job.salary_max),
     intakeChannel,
+    adzunaCountry,
     relevanceScore,
   };
 }
@@ -62,6 +71,7 @@ function toCandidate(job: AdzunaApiJob, intakeChannel: string, relevanceScore: n
 function considerJob(
   job: AdzunaApiJob,
   intakeChannel: string,
+  adzunaCountry: string,
   seenAdzunaIds: Set<string>,
   candidates: AdzunaCandidate[]
 ): "added" | "duplicate" | "skipped" {
@@ -82,7 +92,7 @@ function considerJob(
 
   if (!relevance.relevant) return "skipped";
 
-  const candidate = toCandidate(job, intakeChannel, relevance.score);
+  const candidate = toCandidate(job, intakeChannel, adzunaCountry, relevance.score);
   if (!candidate) return "skipped";
 
   candidates.push(candidate);
@@ -128,77 +138,89 @@ export async function GET(req: NextRequest) {
   let skipped = 0;
   let apiCalls = 0;
 
-  for (const channel of ADZUNA_KEYWORD_CHANNELS) {
-    for (let page = 1; page <= channel.maxPages; page++) {
-      const { jobs: items, error } = await fetchAdzunaKeywordPage(
-        channel.what,
-        page,
-        channel.maxDaysOld
-      );
-      apiCalls++;
-      if (error) {
-        errors.push(`[${channel.id} p${page}] ${error}`);
-        break;
-      }
-      if (items.length === 0) break;
+  for (const country of ADZUNA_COUNTRIES) {
+    const keywordChannels = adzunaKeywordChannelsForCountry(country);
+    for (const channel of keywordChannels) {
+      const channelKey = `${channel.id}@${country}`;
+      for (let page = 1; page <= channel.maxPages; page++) {
+        const { jobs: items, error } = await fetchAdzunaKeywordPage(
+          channel.what,
+          page,
+          channel.maxDaysOld,
+          country,
+        );
+        apiCalls++;
+        if (error) {
+          errors.push(`[${channelKey} p${page}] ${error}`);
+          break;
+        }
+        if (items.length === 0) break;
 
-      for (const job of items) {
-        const result = considerJob(job, channel.id, seenAdzunaIds, candidates);
-        if (result === "skipped") skipped++;
-        else if (result === "duplicate") skipped++;
-      }
+        for (const job of items) {
+          const result = considerJob(job, channelKey, country, seenAdzunaIds, candidates);
+          if (result === "skipped") skipped++;
+          else if (result === "duplicate") skipped++;
+        }
 
-      if (items.length < ADZUNA_RESULTS_PER_PAGE) break;
+        if (items.length < ADZUNA_RESULTS_PER_PAGE) break;
+      }
     }
-  }
 
-  for (const channel of ADZUNA_COMPANY_CHANNELS) {
-    for (let page = 1; page <= channel.maxPages; page++) {
-      const { jobs: items, error } = await fetchAdzunaCompanyPage(
-        channel.company,
-        channel.what,
-        page,
-        channel.maxDaysOld
-      );
-      apiCalls++;
-      if (error) {
-        errors.push(`[${channel.id} p${page}] ${error}`);
-        break;
+    // Company + category channels are US taxonomy / employer names only.
+    if (country !== ADZUNA_PRIMARY_COUNTRY) continue;
+
+    for (const channel of ADZUNA_COMPANY_CHANNELS) {
+      const channelKey = `${channel.id}@${country}`;
+      for (let page = 1; page <= channel.maxPages; page++) {
+        const { jobs: items, error } = await fetchAdzunaCompanyPage(
+          channel.company,
+          channel.what,
+          page,
+          channel.maxDaysOld,
+          country,
+        );
+        apiCalls++;
+        if (error) {
+          errors.push(`[${channelKey} p${page}] ${error}`);
+          break;
+        }
+        if (items.length === 0) break;
+
+        for (const job of items) {
+          const result = considerJob(job, channelKey, country, seenAdzunaIds, candidates);
+          if (result === "skipped") skipped++;
+          else if (result === "duplicate") skipped++;
+        }
+
+        if (items.length < ADZUNA_RESULTS_PER_PAGE) break;
       }
-      if (items.length === 0) break;
-
-      for (const job of items) {
-        const result = considerJob(job, channel.id, seenAdzunaIds, candidates);
-        if (result === "skipped") skipped++;
-        else if (result === "duplicate") skipped++;
-      }
-
-      if (items.length < ADZUNA_RESULTS_PER_PAGE) break;
     }
-  }
 
-  for (const channel of ADZUNA_CATEGORY_CHANNELS) {
-    for (let page = 1; page <= channel.maxPages; page++) {
-      const { jobs: items, error } = await fetchAdzunaCategoryPage(
-        channel.category,
-        channel.what,
-        page,
-        channel.maxDaysOld
-      );
-      apiCalls++;
-      if (error) {
-        errors.push(`[${channel.id} p${page}] ${error}`);
-        break;
+    for (const channel of ADZUNA_CATEGORY_CHANNELS) {
+      const channelKey = `${channel.id}@${country}`;
+      for (let page = 1; page <= channel.maxPages; page++) {
+        const { jobs: items, error } = await fetchAdzunaCategoryPage(
+          channel.category,
+          channel.what,
+          page,
+          channel.maxDaysOld,
+          country,
+        );
+        apiCalls++;
+        if (error) {
+          errors.push(`[${channelKey} p${page}] ${error}`);
+          break;
+        }
+        if (items.length === 0) break;
+
+        for (const job of items) {
+          const result = considerJob(job, channelKey, country, seenAdzunaIds, candidates);
+          if (result === "skipped") skipped++;
+          else if (result === "duplicate") skipped++;
+        }
+
+        if (items.length < ADZUNA_RESULTS_PER_PAGE) break;
       }
-      if (items.length === 0) break;
-
-      for (const job of items) {
-        const result = considerJob(job, channel.id, seenAdzunaIds, candidates);
-        if (result === "skipped") skipped++;
-        else if (result === "duplicate") skipped++;
-      }
-
-      if (items.length < ADZUNA_RESULTS_PER_PAGE) break;
     }
   }
 
@@ -258,6 +280,7 @@ export async function GET(req: NextRequest) {
       relevance_score: candidate.relevanceScore,
       import_metadata: {
         intake_channel: candidate.intakeChannel,
+        adzuna_country: candidate.adzunaCountry,
         relevance_score: candidate.relevanceScore,
       },
       last_seen_at: now,
@@ -303,7 +326,7 @@ export async function GET(req: NextRequest) {
     skipped,
     candidates: candidates.length,
     apiCalls,
-    keywordChannels: ADZUNA_KEYWORD_CHANNELS.length,
+    countries: [...ADZUNA_COUNTRIES],
     companyChannels: ADZUNA_COMPANY_CHANNELS.length,
     categoryChannels: ADZUNA_CATEGORY_CHANNELS.length,
     sample: importedTitles.slice(0, 10),

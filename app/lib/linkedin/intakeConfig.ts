@@ -4,6 +4,10 @@
  * Aligned with USAJobs / Adzuna keyword channels. Each query runs once per
  * import; results are deduped by LinkedIn job ID. Per-query caps keep every
  * category represented even when early searches return many hits.
+ *
+ * International HMA: demining / mine-action keywords across a short country
+ * allowlist (plus US). Core EOD/UXO/C-IED stay US-focused so scrape time stays
+ * bounded; expand locations later if daily runs have headroom.
  */
 
 export type LinkedInSearchQuery = {
@@ -12,7 +16,41 @@ export type LinkedInSearchQuery = {
   location: string;
 };
 
-export const LINKEDIN_SEARCH_QUERIES: LinkedInSearchQuery[] = [
+/** US + high-signal markets for HMA / demining LinkedIn searches. */
+export const LINKEDIN_HMA_LOCATIONS = [
+  "United States",
+  "United Kingdom",
+  "Australia",
+  "Canada",
+  "South Africa",
+  "Ukraine",
+  "Germany",
+] as const;
+
+const LINKEDIN_HMA_KEYWORD_SEEDS: ReadonlyArray<{ id: string; keywords: string }> = [
+  { id: "hma-demining", keywords: "demining" },
+  { id: "hma-mine-action", keywords: "mine action" },
+  { id: "hma-humanitarian", keywords: "humanitarian mine action" },
+  { id: "hma-uxo-clearance", keywords: "UXO clearance" },
+];
+
+function hmaQueriesForLocations(): LinkedInSearchQuery[] {
+  const out: LinkedInSearchQuery[] = [];
+  for (const loc of LINKEDIN_HMA_LOCATIONS) {
+    const locSlug = loc.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    for (const seed of LINKEDIN_HMA_KEYWORD_SEEDS) {
+      out.push({
+        id: `${seed.id}@${locSlug}`,
+        keywords: seed.keywords,
+        location: loc,
+      });
+    }
+  }
+  return out;
+}
+
+/** Core US contractor / federal-adjacent LinkedIn searches. */
+const LINKEDIN_US_CORE_QUERIES: LinkedInSearchQuery[] = [
   // EOD
   { id: "eod", keywords: "EOD", location: "United States" },
   { id: "eod-full", keywords: "Explosive Ordnance Disposal", location: "United States" },
@@ -48,11 +86,46 @@ export const LINKEDIN_SEARCH_QUERIES: LinkedInSearchQuery[] = [
   { id: "explosives-specialist", keywords: "Explosives Specialist", location: "United States" },
 ];
 
-/** Max unique listings imported per calendar run (API accepts up to 50). */
-export const LINKEDIN_MAX_JOBS_PER_RUN = 50;
+/**
+ * Lean EOD/UXO searches for the same intl markets as HMA (not the full US set).
+ * Keeps multi-country coverage without exploding scrape time.
+ */
+const LINKEDIN_INTL_CORE_KEYWORD_SEEDS: ReadonlyArray<{ id: string; keywords: string }> = [
+  { id: "eod", keywords: "EOD" },
+  { id: "uxo", keywords: "UXO" },
+  { id: "explosive-ordnance", keywords: "Explosive Ordnance Disposal" },
+];
+
+function intlCoreQueries(): LinkedInSearchQuery[] {
+  const out: LinkedInSearchQuery[] = [];
+  for (const loc of LINKEDIN_HMA_LOCATIONS) {
+    if (loc === "United States") continue;
+    const locSlug = loc.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    for (const seed of LINKEDIN_INTL_CORE_KEYWORD_SEEDS) {
+      out.push({
+        id: `${seed.id}@${locSlug}`,
+        keywords: seed.keywords,
+        location: loc,
+      });
+    }
+  }
+  return out;
+}
+
+export const LINKEDIN_SEARCH_QUERIES: LinkedInSearchQuery[] = [
+  ...LINKEDIN_US_CORE_QUERIES,
+  ...hmaQueriesForLocations(),
+  ...intlCoreQueries(),
+];
+
+/**
+ * Max unique listings imported per calendar run (API accepts up to 50 by default
+ * on the import route; raised slightly so intl HMA can land alongside US core).
+ */
+export const LINKEDIN_MAX_JOBS_PER_RUN = 60;
 
 /** Max relevant jobs kept from each search query (ensures category coverage). */
-export const LINKEDIN_MAX_JOBS_PER_QUERY = 4;
+export const LINKEDIN_MAX_JOBS_PER_QUERY = 3;
 
 /** Max job cards scraped per search before relevance filtering. */
 export const LINKEDIN_JOBS_PER_SEARCH = 15;
