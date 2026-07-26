@@ -67,11 +67,9 @@ export type CircuitStripItem =
   /** Blank + tile — open composer with no prebuilt prompt/title. */
   | { kind: "blank" };
 
-/** v1: only on local/dev unless explicitly enabled. */
+/** Temporarily disabled while mobile display issues are fixed. */
 export function isCollapsingCircuitEnabled(): boolean {
-  if (process.env.NEXT_PUBLIC_COLLAPSING_CIRCUIT_ENABLED === "true") return true;
-  if (process.env.NEXT_PUBLIC_COLLAPSING_CIRCUIT_ENABLED === "false") return false;
-  return process.env.NODE_ENV === "development";
+  return false;
 }
 
 export function circuitExpiresAt(from = new Date()): Date {
