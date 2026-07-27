@@ -71,9 +71,9 @@ export type CircuitStripItem =
 
 /**
  * Dev: always on.
- * Prod: on by default for founder preview (email-gated via canAccessCollapsingCircuit).
+ * Prod: on by default for all members.
  * Set NEXT_PUBLIC_COLLAPSING_CIRCUIT_PREVIEW=false to hide completely.
- * Set NEXT_PUBLIC_COLLAPSING_CIRCUIT_PUBLIC=true to open to all verified members.
+ * Set NEXT_PUBLIC_COLLAPSING_CIRCUIT_PREVIEW=true to re-lock to the founder allowlist.
  */
 export function isCollapsingCircuitEnabled(): boolean {
   if (process.env.NODE_ENV === "development") return true;
@@ -83,14 +83,16 @@ export function isCollapsingCircuitEnabled(): boolean {
 }
 
 /**
- * Preview allowlist — while Circuit is not fully public, only these accounts see it in prod.
- * Open to everyone with NEXT_PUBLIC_COLLAPSING_CIRCUIT_PUBLIC=true.
+ * Allowlist gate — off by default so Circuit is public.
+ * Re-enable founder-only with NEXT_PUBLIC_COLLAPSING_CIRCUIT_PREVIEW=true
+ * (and without NEXT_PUBLIC_COLLAPSING_CIRCUIT_PUBLIC=true).
  */
 export const CIRCUIT_PREVIEW_EMAILS = ["micheal.p.twigg@gmail.com"] as const;
 
 export function isCollapsingCircuitPreviewOnly(): boolean {
   if (process.env.NODE_ENV === "development") return false;
-  return process.env.NEXT_PUBLIC_COLLAPSING_CIRCUIT_PUBLIC !== "true";
+  if (process.env.NEXT_PUBLIC_COLLAPSING_CIRCUIT_PUBLIC === "true") return false;
+  return process.env.NEXT_PUBLIC_COLLAPSING_CIRCUIT_PREVIEW === "true";
 }
 
 export function canAccessCollapsingCircuit(email: string | null | undefined): boolean {

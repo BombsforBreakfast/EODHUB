@@ -48,7 +48,7 @@ import {
   Shield,
   ShoppingBag,
   Target,
-  User,
+  User as UserIcon,
   Users,
   UsersRound,
 } from "lucide-react";
@@ -1026,7 +1026,7 @@ export default function NavBar() {
                 <div className="nav-hub-modal-grid">
                   {[
                     { label: "Feed", href: "/", icon: Home, badge: 0, onNav: null },
-                    { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", icon: User, badge: 0, onNav: null },
+                    { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", icon: UserIcon, badge: 0, onNav: null },
                     { label: "Jobs", href: "/jobs", icon: Briefcase, badge: 0, onNav: null },
                     { label: "Businesses/Orgs", href: "/businesses", icon: Building2, badge: 0, onNav: null },
                     { label: "Resources", href: "/resources", icon: BookOpen, badge: 0, onNav: null },
