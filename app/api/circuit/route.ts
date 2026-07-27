@@ -9,12 +9,15 @@ import {
   CIRCUIT_TITLE_MAX_LEN,
   circuitExpiresAt,
   isCollapsingCircuitEnabled,
+  canAccessCollapsingCircuit,
   mixCircuitStrip,
   type CircuitMediaDto,
   type CircuitPostDto,
   type CircuitPostType,
   type CircuitPromptDto,
 } from "../../lib/circuit";
+import type { PostAsMode } from "../../lib/postAsIdentity";
+import { resolveOptionalAdminPostAsUserId } from "../../lib/server/resolveListingSharePostAsUserId";
 import { checkRateLimit } from "../../lib/server/rateLimit";
 import { fetchBlockedUserIds } from "../../lib/userBlocks";
 import { hasFullPlatformAccess, type VerificationProfile } from "../../lib/verificationAccess";
@@ -46,14 +49,16 @@ async function requireUser(req: NextRequest) {
   return { user, userClient, token };
 }
 
-async function requireCircuitAccess(userId: string) {
+async function requireCircuitAccess(user: { id: string; email?: string | null }) {
+  if (!canAccessCollapsingCircuit(user.email)) return null;
+
   const admin = getAdminClient();
   const { data: profile } = await admin
     .from("profiles")
     .select(
       "user_id, verification_status, account_type, email_verified, admin_verified, is_pure_admin, account_deleted_at",
     )
-    .eq("user_id", userId)
+    .eq("user_id", user.id)
     .maybeSingle();
 
   if (!profile || profile.account_deleted_at || !hasFullPlatformAccess(profile as VerificationProfile)) {
@@ -77,7 +82,7 @@ export async function GET(req: NextRequest) {
   const auth = await requireUser(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const access = await requireCircuitAccess(auth.user.id);
+  const access = await requireCircuitAccess(auth.user);
   if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const { admin } = access;
@@ -93,7 +98,7 @@ export async function GET(req: NextRequest) {
         .order("sort_hint", { ascending: true }),
       admin
         .from("circuit_posts")
-        .select("id, user_id, prompt_id, post_type, title, body, event_id, created_at, expires_at")
+        .select("id, user_id, post_as_user_id, prompt_id, post_type, title, body, event_id, created_at, expires_at")
         .gt("expires_at", nowIso)
         .order("created_at", { ascending: false })
         .limit(200),
@@ -104,7 +109,15 @@ export async function GET(req: NextRequest) {
 
   const visiblePosts = (postRows ?? []).filter((row) => !blocked.has(row.user_id));
   const postIds = visiblePosts.map((p) => p.id);
-  const authorIds = [...new Set(visiblePosts.map((p) => p.user_id))];
+  const authorIds = [
+    ...new Set(
+      visiblePosts.flatMap((p) => {
+        const ids = [p.user_id];
+        if (p.post_as_user_id) ids.push(p.post_as_user_id);
+        return ids;
+      }),
+    ),
+  ];
   const promptIds = [
     ...new Set(visiblePosts.map((p) => p.prompt_id).filter((id): id is string => !!id)),
   ];
@@ -244,7 +257,8 @@ export async function GET(req: NextRequest) {
   }
 
   const posts: CircuitPostDto[] = visiblePosts.map((row) => {
-    const p = profilesById.get(row.user_id);
+    const displayUserId = row.post_as_user_id ?? row.user_id;
+    const p = profilesById.get(displayUserId);
     const name =
       p?.display_name?.trim() ||
       `${p?.first_name || ""} ${p?.last_name || ""}`.trim() ||
@@ -254,6 +268,7 @@ export async function GET(req: NextRequest) {
     return {
       id: row.id,
       user_id: row.user_id,
+      post_as_user_id: row.post_as_user_id ?? null,
       prompt_id: row.prompt_id,
       prompt_label: row.prompt_id ? (promptLabelById.get(row.prompt_id) ?? null) : null,
       post_type: row.post_type as CircuitPostType,
@@ -293,7 +308,7 @@ export async function POST(req: NextRequest) {
   const auth = await requireUser(req);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const access = await requireCircuitAccess(auth.user.id);
+  const access = await requireCircuitAccess(auth.user);
   if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const rate = checkRateLimit(`circuit-send:${auth.user.id}`, {
@@ -310,11 +325,16 @@ export async function POST(req: NextRequest) {
     body?: string | null;
     prompt_id?: string | null;
     media?: MediaInput[];
+    postAsMode?: PostAsMode;
   } | null;
 
   if (!body || (body.post_type !== "media" && body.post_type !== "thought")) {
     return NextResponse.json({ error: "Invalid post_type." }, { status: 400 });
   }
+
+  const postAsMode: PostAsMode | undefined =
+    body.postAsMode === "admin" || body.postAsMode === "self" ? body.postAsMode : undefined;
+  const postAsUserId = await resolveOptionalAdminPostAsUserId(access.admin, auth.user, postAsMode);
 
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (title.length > CIRCUIT_TITLE_MAX_LEN) {
@@ -387,13 +407,14 @@ export async function POST(req: NextRequest) {
     .from("circuit_posts")
     .insert({
       user_id: auth.user.id,
+      post_as_user_id: postAsUserId,
       prompt_id: promptId,
       post_type: body.post_type,
       title: title || null,
       body: text || null,
       expires_at: expiresAt,
     })
-    .select("id, user_id, prompt_id, post_type, title, body, created_at, expires_at")
+    .select("id, user_id, post_as_user_id, prompt_id, post_type, title, body, created_at, expires_at")
     .single();
 
   if (insertError || !post) {

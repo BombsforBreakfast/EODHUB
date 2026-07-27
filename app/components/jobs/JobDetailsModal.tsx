@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { useTheme } from "../../lib/ThemeContext";
+import { useSuppressChatroomPeek } from "../../hooks/useSuppressChatroomPeek";
 import JobImage from "./JobImage";
 import JobAdminDeleteButton from "./JobAdminDeleteButton";
 import JobAdminApplicationsUnderReviewButton from "./JobAdminApplicationsUnderReviewButton";
@@ -68,6 +69,7 @@ export default function JobDetailsModal({
   onApplicationsUnderReviewChanged,
 }: Props) {
   const { t } = useTheme();
+  useSuppressChatroomPeek(open && Boolean(job), "job-details-modal");
 
   useEffect(() => {
     if (!open) return;
@@ -109,7 +111,7 @@ export default function JobDetailsModal({
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 10100,
+        zIndex: 12000,
         background: "rgba(0,0,0,0.55)",
         display: "flex",
         alignItems: "center",

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "../lib/ThemeContext";
+import { useSuppressChatroomPeek } from "../hooks/useSuppressChatroomPeek";
 import { getAccessToken, supabase } from "../lib/lib/supabaseClient";
 import type { ScrapedJobData } from "../lib/metadata/extractJobMetadata";
 
@@ -59,6 +60,7 @@ export default function EmployerPostJobModal({
   onSuccess,
 }: Props) {
   const { t } = useTheme();
+  useSuppressChatroomPeek(open, "employer-post-job-modal");
   const [title, setTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [category, setCategory] = useState("EOD");

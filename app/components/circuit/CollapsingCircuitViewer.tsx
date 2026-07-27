@@ -1,7 +1,9 @@
 "use client";
 
 import MuxPlayer from "@mux/mux-player-react/lazy";
+import { MessageCircle, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type TouchEvent } from "react";
+import { useSuppressChatroomPeek } from "../../hooks/useSuppressChatroomPeek";
 import { thoughtFontSizePx, type CircuitPostDto } from "../../lib/circuit";
 import { muxPosterUrl, parseMuxFeedVideoUrl, type FeedVideoStatus } from "../../lib/feedVideoUrl";
 import { FLAG_CATEGORIES, FLAG_CATEGORY_LABELS, type FlagCategory } from "../../lib/flagCategories";
@@ -25,6 +27,23 @@ type Props = {
 const IMAGE_DWELL_MS = 5200;
 const THOUGHT_DWELL_MS = 6500;
 const EVENT_DWELL_MS = 7000;
+const LONG_PRESS_MS = 200;
+const SHEET_DISMISS_DY = 80;
+const DESKTOP_MQ = "(min-width: 900px)";
+
+function useIsDesktop(): boolean {
+  const [desktop, setDesktop] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(DESKTOP_MQ).matches : false,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_MQ);
+    const sync = () => setDesktop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return desktop;
+}
 
 export default function CollapsingCircuitViewer({
   posts,
@@ -38,17 +57,27 @@ export default function CollapsingCircuitViewer({
   onSeen,
 }: Props) {
   const post = posts[index] ?? null;
+  const isDesktop = useIsDesktop();
+  useSuppressChatroomPeek(Boolean(post), "circuit-viewer");
   const [mediaIndex, setMediaIndex] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [engageOpen, setEngageOpen] = useState(true);
+  const [engageOpen, setEngageOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
   const [muxPlaybackId, setMuxPlaybackId] = useState<string | null>(null);
   const [muxStatus, setMuxStatus] = useState<FeedVideoStatus | null>(null);
+  const [sheetDragY, setSheetDragY] = useState(0);
+  const [sheetDragging, setSheetDragging] = useState(false);
   const touchStart = useRef<{ x: number; y: number } | null>(null);
   const progressRaf = useRef<number | null>(null);
+  const advanceRef = useRef<() => void>(() => {});
+  const progressElapsedRef = useRef(0);
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sheetTouchStartY = useRef<number | null>(null);
+  const isDesktopRef = useRef(isDesktop);
+  isDesktopRef.current = isDesktop;
 
   const media = post?.media ?? [];
   const mediaCount = media.length;
@@ -58,11 +87,7 @@ export default function CollapsingCircuitViewer({
   const videoProcessing = Boolean(
     activeMedia?.media_type === "video" && muxRef && !effectivePlaybackId,
   );
-  const pauseAdvance =
-    paused ||
-    reportOpen ||
-    videoProcessing ||
-    (engageOpen && post?.post_type !== "event");
+  const pauseAdvance = paused || reportOpen || videoProcessing || engageOpen;
 
   const goPeer = useCallback(
     (delta: number) => {
@@ -84,6 +109,14 @@ export default function CollapsingCircuitViewer({
     [mediaCount, mediaIndex, post],
   );
 
+  const goPrev = useCallback(() => {
+    if (post?.post_type === "media" && mediaIndex > 0) {
+      goMedia(-1);
+      return;
+    }
+    goPeer(-1);
+  }, [goMedia, goPeer, mediaIndex, post?.post_type]);
+
   const advance = useCallback(() => {
     if (post?.post_type === "media" && mediaCount > 1 && mediaIndex < mediaCount - 1) {
       setMediaIndex((m) => m + 1);
@@ -93,15 +126,23 @@ export default function CollapsingCircuitViewer({
     else onClose();
   }, [index, mediaCount, mediaIndex, onClose, onIndexChange, post?.post_type, posts.length]);
 
+  advanceRef.current = advance;
+
   useEffect(() => {
     setMediaIndex(0);
     setError(null);
-    setEngageOpen(true);
+    setEngageOpen(isDesktopRef.current);
     setReportOpen(false);
     setProgress(0);
+    progressElapsedRef.current = 0;
     setMuxPlaybackId(null);
     setMuxStatus(null);
   }, [post?.id]);
+
+  useEffect(() => {
+    setProgress(0);
+    progressElapsedRef.current = 0;
+  }, [mediaIndex]);
 
   useEffect(() => {
     setMuxPlaybackId(muxRef?.playbackId ?? null);
@@ -153,13 +194,30 @@ export default function CollapsingCircuitViewer({
     return () => {
       cancelled = true;
     };
-  }, [onSeen, post]);
+  }, [onSeen, post?.id]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-      if (e.key === "ArrowRight") goPeer(1);
-      if (e.key === "ArrowLeft") goPeer(-1);
+      const target = e.target;
+      const typingInField =
+        target instanceof HTMLElement &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
+
+      if (e.key === "Escape") {
+        if (engageOpen) {
+          setEngageOpen(false);
+          return;
+        }
+        if (!typingInField) onClose();
+        return;
+      }
+
+      if (typingInField) return;
+
+      if (e.key === "ArrowRight") advance();
+      if (e.key === "ArrowLeft") goPrev();
       if (e.key === "ArrowDown") goMedia(1);
       if (e.key === "ArrowUp") goMedia(-1);
       if (e.key === " ") {
@@ -169,16 +227,20 @@ export default function CollapsingCircuitViewer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [goMedia, goPeer, onClose]);
+  }, [advance, engageOpen, goMedia, goPrev, onClose]);
 
   useEffect(() => {
     if (!post || pauseAdvance) {
-      if (progressRaf.current != null) cancelAnimationFrame(progressRaf.current);
+      if (progressRaf.current != null) {
+        cancelAnimationFrame(progressRaf.current);
+        progressRaf.current = null;
+      }
       return;
     }
     // Videos advance on ended (Mux / native).
     if (post.post_type === "media" && activeMedia?.media_type === "video") {
       setProgress(0);
+      progressElapsedRef.current = 0;
       return;
     }
 
@@ -189,33 +251,93 @@ export default function CollapsingCircuitViewer({
           ? EVENT_DWELL_MS
           : IMAGE_DWELL_MS;
 
-    const started = performance.now();
+    const startedAt = performance.now() - progressElapsedRef.current;
+    let lastPct = progressElapsedRef.current / dwell;
+
     const tick = (now: number) => {
-      const pct = Math.min(1, (now - started) / dwell);
-      setProgress(pct);
+      const elapsed = Math.min(dwell, now - startedAt);
+      progressElapsedRef.current = elapsed;
+      const pct = elapsed / dwell;
+      // Avoid re-render spam for tiny floats; ~30fps is enough for the bar.
+      if (pct - lastPct >= 0.02 || pct >= 1) {
+        lastPct = pct;
+        setProgress(pct);
+      }
       if (pct >= 1) {
-        advance();
+        progressElapsedRef.current = 0;
+        advanceRef.current();
         return;
       }
       progressRaf.current = requestAnimationFrame(tick);
     };
     progressRaf.current = requestAnimationFrame(tick);
     return () => {
-      if (progressRaf.current != null) cancelAnimationFrame(progressRaf.current);
+      if (progressRaf.current != null) {
+        cancelAnimationFrame(progressRaf.current);
+        progressRaf.current = null;
+      }
     };
-  }, [activeMedia?.media_type, advance, pauseAdvance, post]);
+  }, [activeMedia?.media_type, mediaIndex, pauseAdvance, post?.id, post?.post_type]);
+
+  useEffect(() => {
+    if (!engageOpen) {
+      setSheetDragY(0);
+      setSheetDragging(false);
+      sheetTouchStartY.current = null;
+    }
+  }, [engageOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (longPressTimer.current != null) clearTimeout(longPressTimer.current);
+    };
+  }, []);
 
   if (!post) return null;
 
+  const clearLongPress = () => {
+    if (longPressTimer.current != null) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const startLongPressPause = () => {
+    if (engageOpen) return;
+    clearLongPress();
+    longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null;
+      setPaused(true);
+    }, LONG_PRESS_MS);
+  };
+
+  const endLongPressPause = () => {
+    clearLongPress();
+    setPaused(false);
+  };
+
   const onTouchStart = (e: TouchEvent) => {
+    if (engageOpen) return;
     const t = e.changedTouches[0];
     if (!t) return;
     touchStart.current = { x: t.clientX, y: t.clientY };
-    setPaused(true);
+    startLongPressPause();
+  };
+
+  const onTouchMove = (e: TouchEvent) => {
+    if (engageOpen) return;
+    const start = touchStart.current;
+    const t = e.changedTouches[0];
+    if (!start || !t) return;
+    // Cancel pending pause once the finger clearly moves (swipe / tap flick).
+    if (Math.abs(t.clientX - start.x) > 12 || Math.abs(t.clientY - start.y) > 12) {
+      clearLongPress();
+    }
   };
 
   const onTouchEnd = (e: TouchEvent) => {
-    setPaused(false);
+    endLongPressPause();
+    if (engageOpen) return;
     const start = touchStart.current;
     const t = e.changedTouches[0];
     touchStart.current = null;
@@ -225,16 +347,44 @@ export default function CollapsingCircuitViewer({
     if (Math.abs(dx) < 40 && Math.abs(dy) < 40) return;
 
     if (Math.abs(dx) > Math.abs(dy)) {
-      if (post.post_type === "media" && mediaCount > 1) {
-        if (dx < 0) {
-          if (mediaIndex < mediaCount - 1) goMedia(1);
-          else goPeer(1);
-        } else if (mediaIndex > 0) goMedia(-1);
-        else goPeer(-1);
-      } else {
-        goPeer(dx < 0 ? 1 : -1);
-      }
+      if (dx < 0) advance();
+      else goPrev();
     }
+  };
+
+  const onSheetGrabStart = (e: TouchEvent<HTMLDivElement>) => {
+    const t = e.changedTouches[0];
+    if (!t) return;
+    sheetTouchStartY.current = t.clientY;
+    setSheetDragging(true);
+  };
+
+  const onSheetGrabMove = (e: TouchEvent<HTMLDivElement>) => {
+    if (sheetTouchStartY.current == null) return;
+    const t = e.changedTouches[0];
+    if (!t) return;
+    const dy = Math.max(0, t.clientY - sheetTouchStartY.current);
+    setSheetDragY(dy);
+  };
+
+  const onSheetGrabEnd = (e: TouchEvent<HTMLDivElement>) => {
+    if (sheetTouchStartY.current == null) return;
+    const t = e.changedTouches[0];
+    const dy = t ? Math.max(0, t.clientY - sheetTouchStartY.current) : sheetDragY;
+    sheetTouchStartY.current = null;
+    setSheetDragging(false);
+    if (dy >= SHEET_DISMISS_DY) {
+      setSheetDragY(0);
+      setEngageOpen(false);
+      return;
+    }
+    setSheetDragY(0);
+  };
+
+  const onSheetGrabCancel = () => {
+    sheetTouchStartY.current = null;
+    setSheetDragging(false);
+    setSheetDragY(0);
   };
 
   const deleteOwn = async () => {
@@ -279,7 +429,7 @@ export default function CollapsingCircuitViewer({
       }
       setReportOpen(false);
       await onFlagged?.();
-      if (!onFlagged) goPeer(1);
+      if (!onFlagged) advance();
     } finally {
       setBusy(false);
     }
@@ -288,6 +438,28 @@ export default function CollapsingCircuitViewer({
   const segmentCount =
     post.post_type === "media" && mediaCount > 0 ? mediaCount : 1;
   const activeSegment = post.post_type === "media" ? mediaIndex : 0;
+  const isOwner = post.user_id === currentUserId;
+  const isEvent = post.post_type === "event" && Boolean(post.event_id);
+  const showEngageRail = isDesktop && engageOpen;
+  const showEngageSheet = !isDesktop && engageOpen;
+
+  const engagePanel = isEvent ? (
+    post.event_id ? (
+      <div className="circuit-event-actions">
+        <EventFeedActions
+          eventId={post.event_id}
+          signupUrl={post.event?.signup_url ?? null}
+          initialInterested={post.event_interested_count}
+          initialGoing={post.event_going_count}
+          initialMyAttendance={post.event_my_attendance}
+          initialSaved={post.event_saved}
+          userId={currentUserId}
+        />
+      </div>
+    ) : null
+  ) : (
+    <CircuitEngagePanel postId={post.id} currentUserId={currentUserId} />
+  );
 
   return (
     <div className="circuit-viewer" role="dialog" aria-modal="true" aria-label="Collapsing Circuit viewer">
@@ -310,9 +482,6 @@ export default function CollapsingCircuitViewer({
       </div>
 
       <div className="circuit-viewer-chrome">
-        <button type="button" onClick={onClose} className="circuit-viewer-close">
-          Close
-        </button>
         <div className="circuit-viewer-author">
           {post.author_photo_url ? (
             // eslint-disable-next-line @next/next/no-img-element
@@ -327,57 +496,38 @@ export default function CollapsingCircuitViewer({
             ) : null}
           </div>
         </div>
-        <div className="circuit-viewer-actions">
-          {post.post_type !== "event" ? (
-            <button type="button" onClick={() => setEngageOpen((v) => !v)}>
-              {engageOpen ? "Hide chat" : "React"}
-            </button>
-          ) : null}
-          {post.user_id === currentUserId ? (
-            <>
-              {post.post_type !== "event" && onEdit ? (
-                <button type="button" disabled={busy} onClick={() => onEdit(post)}>
-                  Edit
-                </button>
-              ) : null}
-              <button type="button" disabled={busy} onClick={() => void deleteOwn()}>
-                Delete
-              </button>
-            </>
-          ) : (
-            <button type="button" disabled={busy} onClick={() => setReportOpen(true)}>
-              Flag
-            </button>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="circuit-viewer-close"
+          aria-label="Close"
+        >
+          <X size={18} strokeWidth={2.5} />
+        </button>
       </div>
 
       <div className="circuit-viewer-body">
         <div
           className="circuit-viewer-stage"
           onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
-          onMouseDown={() => setPaused(true)}
-          onMouseUp={() => setPaused(false)}
-          onMouseLeave={() => setPaused(false)}
+          onTouchCancel={endLongPressPause}
+          onMouseDown={() => startLongPressPause()}
+          onMouseUp={endLongPressPause}
+          onMouseLeave={endLongPressPause}
         >
           <button
             type="button"
             className="circuit-viewer-nav circuit-viewer-nav-prev"
             aria-label="Previous"
-            onClick={() => {
-              if (post.post_type === "media" && mediaIndex > 0) goMedia(-1);
-              else goPeer(-1);
-            }}
+            onClick={goPrev}
           />
           <button
             type="button"
             className="circuit-viewer-nav circuit-viewer-nav-next"
             aria-label="Next"
-            onClick={() => {
-              if (post.post_type === "media" && mediaIndex < mediaCount - 1) goMedia(1);
-              else goPeer(1);
-            }}
+            onClick={() => advance()}
           />
 
           {post.post_type === "thought" ? (
@@ -467,23 +617,54 @@ export default function CollapsingCircuitViewer({
               <p>No media</p>
             </div>
           )}
+
+          <div className="circuit-viewer-overlay-actions">
+            {isOwner ? (
+              <>
+                {post.post_type !== "event" && onEdit ? (
+                  <button
+                    type="button"
+                    className="circuit-viewer-overlay-btn"
+                    disabled={busy}
+                    onClick={() => onEdit(post)}
+                  >
+                    Edit
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="circuit-viewer-overlay-btn circuit-viewer-overlay-danger"
+                  disabled={busy}
+                  onClick={() => void deleteOwn()}
+                >
+                  Delete
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="circuit-viewer-overlay-btn"
+                disabled={busy}
+                onClick={() => setReportOpen(true)}
+              >
+                Flag
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className={`circuit-viewer-react-fab${engageOpen ? " active" : ""}`}
+            aria-label={isEvent ? (engageOpen ? "Hide event actions" : "Event actions") : engageOpen ? "Hide reactions and comments" : "React and comment"}
+            aria-expanded={engageOpen}
+            onClick={() => setEngageOpen((v) => !v)}
+          >
+            <MessageCircle size={20} strokeWidth={2.25} />
+            <span>{isEvent ? "RSVP" : "React"}</span>
+          </button>
         </div>
 
-        {post.post_type === "event" && post.event_id ? (
-          <div className="circuit-event-actions">
-            <EventFeedActions
-              eventId={post.event_id}
-              signupUrl={post.event?.signup_url ?? null}
-              initialInterested={post.event_interested_count}
-              initialGoing={post.event_going_count}
-              initialMyAttendance={post.event_my_attendance}
-              initialSaved={post.event_saved}
-              userId={currentUserId}
-            />
-          </div>
-        ) : engageOpen ? (
-          <CircuitEngagePanel postId={post.id} currentUserId={currentUserId} />
-        ) : null}
+        {showEngageRail ? engagePanel : null}
       </div>
 
       {post.post_type === "media" && mediaCount > 1 ? (
@@ -504,6 +685,55 @@ export default function CollapsingCircuitViewer({
         {index + 1} / {posts.length}
       </div>
       {error ? <div className="circuit-strip-error circuit-viewer-error">{error}</div> : null}
+
+      {showEngageSheet ? (
+        <div
+          className="circuit-engage-sheet-backdrop"
+          role="presentation"
+          onClick={() => {
+            setSheetDragY(0);
+            setEngageOpen(false);
+          }}
+        >
+          <div
+            className={`circuit-engage-sheet${sheetDragging ? " dragging" : ""}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={isEvent ? "Event actions" : "Reactions and comments"}
+            onClick={(e) => e.stopPropagation()}
+            style={
+              sheetDragY > 0
+                ? { transform: `translateY(${sheetDragY}px)` }
+                : undefined
+            }
+          >
+            <div
+              className="circuit-engage-sheet-grab"
+              onTouchStart={onSheetGrabStart}
+              onTouchMove={onSheetGrabMove}
+              onTouchEnd={onSheetGrabEnd}
+              onTouchCancel={onSheetGrabCancel}
+            >
+              <div className="circuit-engage-sheet-handle" aria-hidden="true" />
+              <div className="circuit-engage-sheet-top">
+                <strong>{isEvent ? "Event" : "React & comment"}</strong>
+                <button
+                  type="button"
+                  className="circuit-engage-sheet-close"
+                  aria-label="Close"
+                  onClick={() => {
+                    setSheetDragY(0);
+                    setEngageOpen(false);
+                  }}
+                >
+                  <X size={18} strokeWidth={2.5} />
+                </button>
+              </div>
+            </div>
+            {engagePanel}
+          </div>
+        </div>
+      ) : null}
 
       {reportOpen ? (
         <div className="circuit-flag-backdrop" role="dialog" aria-modal="true" aria-label="Flag content">

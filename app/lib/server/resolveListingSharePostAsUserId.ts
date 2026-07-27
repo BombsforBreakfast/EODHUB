@@ -6,16 +6,15 @@ import {
   type PostAsMode,
 } from "../postAsIdentity";
 
-export async function resolveListingSharePostAsUserId(
+/** Returns admin profile user_id when mode is admin and caller is allowed; otherwise null. */
+export async function resolveOptionalAdminPostAsUserId(
   adminClient: SupabaseClient,
   user: User,
   postAsMode?: PostAsMode | null,
 ): Promise<string | null> {
   const email = user.email?.trim().toLowerCase() ?? null;
   if (!canUsePostAsSelector(email)) return null;
-
-  const mode: PostAsMode = postAsMode ?? LISTING_SHARE_DEFAULT_POST_AS_MODE;
-  if (mode !== "admin") return null;
+  if (postAsMode !== "admin") return null;
 
   const { data: adminProfile } = await adminClient
     .from("profiles")
@@ -24,4 +23,13 @@ export async function resolveListingSharePostAsUserId(
     .maybeSingle();
 
   return adminProfile?.user_id ?? null;
+}
+
+export async function resolveListingSharePostAsUserId(
+  adminClient: SupabaseClient,
+  user: User,
+  postAsMode?: PostAsMode | null,
+): Promise<string | null> {
+  const mode: PostAsMode = postAsMode ?? LISTING_SHARE_DEFAULT_POST_AS_MODE;
+  return resolveOptionalAdminPostAsUserId(adminClient, user, mode);
 }

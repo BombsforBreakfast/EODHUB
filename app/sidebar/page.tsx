@@ -20,6 +20,7 @@ import { uploadMessagePhoto } from "../lib/messagePhotoUpload";
 import { handlePasteImageFromClipboard } from "../lib/pasteImageFromClipboard";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import { scrollMessagesToBottom } from "../lib/messageScroll";
+import { releaseChatroomPeek, suppressChatroomPeek } from "../lib/chatroomPeekSuppress";
 import {
   displayListingDescription,
   displayListingImage,
@@ -303,12 +304,14 @@ export default function SidebarPage() {
   }
 
   function handleMobileComposerFocus() {
+    suppressChatroomPeek("sidebar-page-compose");
     if (!isMobile) return;
     setMobileComposerPinned(true);
     scrollMessagesToBottom(messagesContainerRef.current, { force: true });
   }
 
   function handleMobileComposerBlur() {
+    window.setTimeout(() => releaseChatroomPeek("sidebar-page-compose"), 150);
     if (!isMobile) return;
     window.setTimeout(() => setMobileComposerPinned(false), 150);
   }

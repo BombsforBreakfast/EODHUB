@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { isCollapsingCircuitEnabled } from "../../../../lib/circuit";
+import { canAccessCollapsingCircuit, isCollapsingCircuitEnabled } from "../../../../lib/circuit";
 import { hasFullPlatformAccess, type VerificationProfile } from "../../../../lib/verificationAccess";
 
 function getUserClient(token: string) {
@@ -37,6 +37,9 @@ export async function POST(
     data: { user },
   } = await userClient.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (!canAccessCollapsingCircuit(user.email)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const admin = getAdminClient();
   const { data: profile } = await admin

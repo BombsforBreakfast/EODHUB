@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import PostAsSelector from "./PostAsSelector";
 import { OgCard } from "./master/masterShared";
 import { useTheme } from "../lib/ThemeContext";
+import { useSuppressChatroomPeek } from "../hooks/useSuppressChatroomPeek";
 import { supabase } from "../lib/lib/supabaseClient";
 import { isImageFile } from "../lib/uploadLimits";
 import {
@@ -44,6 +45,7 @@ export default function ShareListingToFeedModal({
   onSubmit,
 }: Props) {
   const { t } = useTheme();
+  useSuppressChatroomPeek(Boolean(listing), "share-listing-to-feed-modal");
   const [content, setContent] = useState("");
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);

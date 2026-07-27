@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTheme } from "../lib/ThemeContext";
+import { useSuppressChatroomPeek } from "../hooks/useSuppressChatroomPeek";
 
 type Props = {
   open: boolean;
@@ -31,6 +32,7 @@ export default function MemberPaywallModal({
   const { t } = useTheme();
   const [onboardingChecked, setOnboardingChecked] = useState(false);
   const [continuing, setContinuing] = useState(false);
+  useSuppressChatroomPeek(open, "member-paywall-modal");
 
   const isOnboarding = !!onboardingAck;
   const blocking = requireSubscription && !isOnboarding;

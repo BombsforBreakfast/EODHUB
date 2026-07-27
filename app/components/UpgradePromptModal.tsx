@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useTheme } from "../lib/ThemeContext";
+import { useSuppressChatroomPeek } from "../hooks/useSuppressChatroomPeek";
 
 type Props = {
   open: boolean;
@@ -17,6 +18,7 @@ export default function UpgradePromptModal({
   onUpgradeClick,
 }: Props) {
   const { t } = useTheme();
+  useSuppressChatroomPeek(open, "upgrade-prompt-modal");
 
   useEffect(() => {
     if (!open) return;

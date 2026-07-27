@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { isCollapsingCircuitEnabled } from "../../../../lib/circuit";
+import { canAccessCollapsingCircuit, isCollapsingCircuitEnabled } from "../../../../lib/circuit";
 import { createNotification } from "../../../../lib/notificationsServer";
 import {
   DEFAULT_REACTION_ORDER,
@@ -32,7 +32,7 @@ async function requireAccess(req: NextRequest) {
   const {
     data: { user },
   } = await userClient.auth.getUser();
-  if (!user) return null;
+  if (!user || !canAccessCollapsingCircuit(user.email)) return null;
 
   const admin = getAdminClient();
   const { data: profile } = await admin

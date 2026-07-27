@@ -126,6 +126,7 @@ export default function ChatroomPeekSheet() {
   const { onlineUserIds } = useOnlinePresence();
   const { expanded, expand, collapse } = useChatroomSheet();
   const [gamePlaying, setGamePlaying] = useState(false);
+  const [peekSuppressed, setPeekSuppressed] = useState(false);
   const [latest, setLatest] = useState<ChatroomPeekLatest | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [frame, setFrame] = useState<ExpandedFrame | null>(null);
@@ -133,7 +134,7 @@ export default function ChatroomPeekSheet() {
   const currentUserId = user?.id ?? null;
   const unlocked = isChatroomEntryAvailable(currentUserId);
   const pathHidden = shouldHideSheet(pathname);
-  const hidden = !unlocked || pathHidden || gamePlaying;
+  const hidden = !unlocked || pathHidden || gamePlaying || peekSuppressed;
 
   const refreshPeek = useCallback(async () => {
     if (!currentUserId) return;
@@ -165,7 +166,10 @@ export default function ChatroomPeekSheet() {
 
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const sync = () => setGamePlaying(document.body.classList.contains("game-playing-active"));
+    const sync = () => {
+      setGamePlaying(document.body.classList.contains("game-playing-active"));
+      setPeekSuppressed(document.body.classList.contains("chatroom-peek-suppressed"));
+    };
     sync();
     const observer = new MutationObserver(sync);
     observer.observe(document.body, { attributes: true, attributeFilter: ["class"] });

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CIRCUIT_THOUGHT_MAX_LEN,
   CIRCUIT_TITLE_MAX_LEN,
+  canAccessCollapsingCircuit,
   isCollapsingCircuitEnabled,
   thoughtFontSizePx,
   type CircuitPostDto,
@@ -12,11 +13,23 @@ import {
 } from "../../lib/circuit";
 import { uploadCircuitMedia } from "../../lib/circuitUpload";
 import { muxPosterUrl, parseMuxFeedVideoUrl } from "../../lib/feedVideoUrl";
+import { useSuppressChatroomPeek } from "../../hooks/useSuppressChatroomPeek";
 import { getAccessToken, supabase } from "../../lib/lib/supabaseClient";
+import {
+  adminPostDisplayName,
+  canUsePostAsSelector,
+  loadStoredPostAsMode,
+  POST_AS_ADMIN_EMAIL,
+  resolvePostAsModeFromPost,
+  storePostAsMode,
+  type PostAsMode,
+} from "../../lib/postAsIdentity";
+import PostAsSelector from "../PostAsSelector";
 import CollapsingCircuitViewer from "./CollapsingCircuitViewer";
 
 type Props = {
   currentUserId: string | null;
+  currentUserEmail?: string | null;
 };
 
 type ComposerMode = "media" | "thought";
@@ -26,8 +39,8 @@ type PendingMedia = {
   file: File;
 };
 
-export default function CollapsingCircuitStrip({ currentUserId }: Props) {
-  const enabled = isCollapsingCircuitEnabled();
+export default function CollapsingCircuitStrip({ currentUserId, currentUserEmail = null }: Props) {
+  const enabled = canAccessCollapsingCircuit(currentUserEmail);
   const deepLinkHandled = useRef<string | null>(null);
   const [items, setItems] = useState<CircuitStripItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -42,6 +55,14 @@ export default function CollapsingCircuitStrip({ currentUserId }: Props) {
   const [pendingMedia, setPendingMedia] = useState<PendingMedia[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [postAsMode, setPostAsMode] = useState<PostAsMode>(() => loadStoredPostAsMode());
+  const [canChoosePostAs, setCanChoosePostAs] = useState(false);
+  const [selfLabel, setSelfLabel] = useState("You");
+  const [selfPhotoUrl, setSelfPhotoUrl] = useState<string | null>(null);
+  const [adminLabel, setAdminLabel] = useState("EOD HUB Admin");
+  const [adminPhotoUrl, setAdminPhotoUrl] = useState<string | null>(null);
+  const [adminUserId, setAdminUserId] = useState<string | null>(null);
+  useSuppressChatroomPeek(composerOpen, "circuit-composer");
 
   const posts = useMemo(
     () => items.filter((i): i is { kind: "post"; post: CircuitPostDto } => i.kind === "post").map((i) => i.post),
@@ -95,6 +116,56 @@ export default function CollapsingCircuitStrip({ currentUserId }: Props) {
     };
   }, [pendingMedia]);
 
+  useEffect(() => {
+    if (!currentUserId) return;
+    let cancelled = false;
+
+    async function loadPostAsOptions() {
+      const { data: authData } = await supabase.auth.getUser();
+      const authUser = authData.user;
+      if (!authUser || cancelled) return;
+
+      const viewerEmail = authUser.email?.trim().toLowerCase() ?? null;
+      if (!canUsePostAsSelector(viewerEmail)) {
+        if (!cancelled) {
+          setCanChoosePostAs(false);
+          setAdminUserId(null);
+        }
+        return;
+      }
+
+      const [{ data: viewerProfile }, { data: adminProfile }] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("display_name, first_name, last_name, photo_url")
+          .eq("user_id", authUser.id)
+          .maybeSingle(),
+        supabase
+          .from("profiles")
+          .select("user_id, display_name, first_name, last_name, photo_url")
+          .ilike("email", POST_AS_ADMIN_EMAIL)
+          .maybeSingle(),
+      ]);
+
+      if (cancelled) return;
+      setCanChoosePostAs(Boolean(adminProfile?.user_id));
+      setAdminUserId(adminProfile?.user_id ?? null);
+      if (viewerProfile) {
+        setSelfLabel(adminPostDisplayName(viewerProfile) || "You");
+        setSelfPhotoUrl(viewerProfile.photo_url ?? null);
+      }
+      if (adminProfile) {
+        setAdminLabel(adminPostDisplayName(adminProfile));
+        setAdminPhotoUrl(adminProfile.photo_url ?? null);
+      }
+    }
+
+    void loadPostAsOptions();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId]);
+
   if (!enabled || !currentUserId) return null;
 
   const openComposer = (mode: ComposerMode, p: CircuitPromptDto | null = null) => {
@@ -105,6 +176,7 @@ export default function CollapsingCircuitStrip({ currentUserId }: Props) {
     setDraft("");
     setPendingMedia([]);
     setComposerError(null);
+    setPostAsMode(loadStoredPostAsMode());
     setComposerOpen(true);
   };
 
@@ -118,6 +190,7 @@ export default function CollapsingCircuitStrip({ currentUserId }: Props) {
     setDraft(post.body ?? "");
     setPendingMedia([]);
     setComposerError(null);
+    setPostAsMode(resolvePostAsModeFromPost(post.post_as_user_id, adminUserId));
     setComposerOpen(true);
   };
 
@@ -152,10 +225,15 @@ export default function CollapsingCircuitStrip({ currentUserId }: Props) {
           },
           body: JSON.stringify(
             isThought
-              ? { title: null, body: thoughtText }
+              ? {
+                  title: null,
+                  body: thoughtText,
+                  ...(canChoosePostAs ? { postAsMode } : {}),
+                }
               : {
                   title: titleDraft.trim() || null,
                   body: draft.trim() || null,
+                  ...(canChoosePostAs ? { postAsMode } : {}),
                 },
           ),
         });
@@ -205,6 +283,7 @@ export default function CollapsingCircuitStrip({ currentUserId }: Props) {
           body: draft.trim() || null,
           prompt_id: prompt?.id ?? null,
           media: mediaPayload,
+          ...(canChoosePostAs ? { postAsMode } : {}),
         }),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -389,6 +468,20 @@ export default function CollapsingCircuitStrip({ currentUserId }: Props) {
             <p className="circuit-composer-guidelines">
               No injury, death, or similar content. Keep it appropriate for the community.
             </p>
+            {canChoosePostAs ? (
+              <PostAsSelector
+                mode={postAsMode}
+                onChange={(mode) => {
+                  setPostAsMode(mode);
+                  storePostAsMode(mode);
+                }}
+                selfLabel={selfLabel}
+                selfPhotoUrl={selfPhotoUrl}
+                adminLabel={adminLabel}
+                adminPhotoUrl={adminPhotoUrl}
+                disabled={submitting}
+              />
+            ) : null}
             {prompt ? <div className="circuit-composer-prompt">Prompt: {prompt.label}</div> : null}
             {!editingPostId ? (
               <div className="circuit-composer-modes">

@@ -4,8 +4,11 @@ import {
   CIRCUIT_CAPTION_MAX_LEN,
   CIRCUIT_THOUGHT_MAX_LEN,
   CIRCUIT_TITLE_MAX_LEN,
+  canAccessCollapsingCircuit,
   isCollapsingCircuitEnabled,
 } from "../../../lib/circuit";
+import type { PostAsMode } from "../../../lib/postAsIdentity";
+import { resolveOptionalAdminPostAsUserId } from "../../../lib/server/resolveListingSharePostAsUserId";
 import { hasFullPlatformAccess, type VerificationProfile } from "../../../lib/verificationAccess";
 
 function getUserClient(token: string) {
@@ -31,7 +34,7 @@ async function requireCircuitUser(req: NextRequest) {
   const {
     data: { user },
   } = await userClient.auth.getUser();
-  if (!user) return null;
+  if (!user || !canAccessCollapsingCircuit(user.email)) return null;
 
   const admin = getAdminClient();
   const { data: profile } = await admin
@@ -79,12 +82,17 @@ export async function PATCH(
   const payload = (await req.json().catch(() => null)) as {
     title?: string | null;
     body?: string | null;
+    postAsMode?: PostAsMode;
   } | null;
   if (!payload) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const updates: { title?: string | null; body?: string | null } = {};
+  const updates: {
+    title?: string | null;
+    body?: string | null;
+    post_as_user_id?: string | null;
+  } = {};
 
   if ("title" in payload) {
     const title = typeof payload.title === "string" ? payload.title.trim() : "";
@@ -121,6 +129,14 @@ export async function PATCH(
     }
   }
 
+  if (payload.postAsMode === "admin" || payload.postAsMode === "self") {
+    updates.post_as_user_id = await resolveOptionalAdminPostAsUserId(
+      access.admin,
+      access.user,
+      payload.postAsMode,
+    );
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
   }
@@ -130,7 +146,7 @@ export async function PATCH(
     .update(updates)
     .eq("id", id)
     .eq("user_id", access.user.id)
-    .select("id, title, body")
+    .select("id, title, body, post_as_user_id")
     .single();
 
   if (error || !updated) {

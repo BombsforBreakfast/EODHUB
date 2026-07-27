@@ -7586,7 +7586,9 @@ export default function HomePage() {
             />
           )}
 
-          {chatroomUiUnlocked ? <CollapsingCircuitStrip currentUserId={userId} /> : null}
+          {chatroomUiUnlocked ? (
+            <CollapsingCircuitStrip currentUserId={userId} currentUserEmail={currentUserEmail} />
+          ) : null}
 
           <OnlineNowStrip
             currentUserId={userId}

@@ -41,6 +41,8 @@ export type CircuitMediaDto = {
 export type CircuitPostDto = {
   id: string;
   user_id: string;
+  /** Display author override when posting as EOD HUB admin (creator remains user_id). */
+  post_as_user_id?: string | null;
   prompt_id: string | null;
   prompt_label: string | null;
   post_type: CircuitPostType;
@@ -67,9 +69,36 @@ export type CircuitStripItem =
   /** Blank + tile — open composer with no prebuilt prompt/title. */
   | { kind: "blank" };
 
-/** Temporarily disabled while mobile display issues are fixed. */
+/**
+ * Dev: always on.
+ * Prod: on by default for founder preview (email-gated via canAccessCollapsingCircuit).
+ * Set NEXT_PUBLIC_COLLAPSING_CIRCUIT_PREVIEW=false to hide completely.
+ * Set NEXT_PUBLIC_COLLAPSING_CIRCUIT_PUBLIC=true to open to all verified members.
+ */
 export function isCollapsingCircuitEnabled(): boolean {
-  return false;
+  if (process.env.NODE_ENV === "development") return true;
+  if (process.env.NEXT_PUBLIC_COLLAPSING_CIRCUIT_PUBLIC === "true") return true;
+  if (process.env.NEXT_PUBLIC_COLLAPSING_CIRCUIT_PREVIEW === "false") return false;
+  return true;
+}
+
+/**
+ * Preview allowlist — while Circuit is not fully public, only these accounts see it in prod.
+ * Open to everyone with NEXT_PUBLIC_COLLAPSING_CIRCUIT_PUBLIC=true.
+ */
+export const CIRCUIT_PREVIEW_EMAILS = ["micheal.p.twigg@gmail.com"] as const;
+
+export function isCollapsingCircuitPreviewOnly(): boolean {
+  if (process.env.NODE_ENV === "development") return false;
+  return process.env.NEXT_PUBLIC_COLLAPSING_CIRCUIT_PUBLIC !== "true";
+}
+
+export function canAccessCollapsingCircuit(email: string | null | undefined): boolean {
+  if (!isCollapsingCircuitEnabled()) return false;
+  if (!isCollapsingCircuitPreviewOnly()) return true;
+  if (!email) return false;
+  const normalized = email.trim().toLowerCase();
+  return CIRCUIT_PREVIEW_EMAILS.some((allowed) => allowed.toLowerCase() === normalized);
 }
 
 export function circuitExpiresAt(from = new Date()): Date {

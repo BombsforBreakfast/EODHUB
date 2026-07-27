@@ -11,6 +11,8 @@ import { mobileComposerBottomOffset, useVisualViewportKeyboardInset } from "../h
 import { scrollMessagesToBottom } from "../lib/messageScroll";
 import GifPickerButton from "./GifPickerButton";
 import { isChatGifComposerEnabled } from "../lib/native/chatGifComposer";
+import { useSuppressChatroomPeek } from "../hooks/useSuppressChatroomPeek";
+import { releaseChatroomPeek, suppressChatroomPeek } from "../lib/chatroomPeekSuppress";
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -36,6 +38,7 @@ type Props = {
 export default function SidebarThreadDrawer({ open, onClose, currentUserId, peerUserId, modalOnDesktop = false }: Props) {
   const { t, isDark } = useTheme();
   const chatGifEnabled = isChatGifComposerEnabled();
+  useSuppressChatroomPeek(open, "sidebar-thread-drawer");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [peerName, setPeerName] = useState("Member");
   const [messages, setMessages] = useState<MessageRow[]>([]);
@@ -212,12 +215,14 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
   }
 
   function handleMobileComposerFocus() {
+    suppressChatroomPeek("sidebar-drawer-compose");
     if (!isMobile) return;
     setMobileComposerPinned(true);
     scrollMessagesToBottom(listRef.current, { force: true });
   }
 
   function handleMobileComposerBlur() {
+    window.setTimeout(() => releaseChatroomPeek("sidebar-drawer-compose"), 150);
     if (!isMobile) return;
     window.setTimeout(() => setMobileComposerPinned(false), 150);
   }
@@ -409,7 +414,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
       style={{
         position: "fixed",
         inset: 0,
-        zIndex: 2000,
+        zIndex: 12000,
         background: isMobile ? t.bg : "rgba(0,0,0,0.35)",
       }}
     />
@@ -423,7 +428,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
       onClick={(e) => e.stopPropagation()}
       style={{
         position: "fixed",
-        zIndex: 2001,
+        zIndex: 12001,
         ...(isMobile
           ? { inset: 0, display: "flex", flexDirection: "column", background: t.surface }
           : modalOnDesktop
