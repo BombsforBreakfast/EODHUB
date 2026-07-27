@@ -18,6 +18,7 @@ import {
 import type { RabbitholeContentType, RabbitholeContribution, RabbitholeThread, RabbitholeTopic } from "./lib/types";
 import { httpsAssetUrl } from "../lib/urlPreview";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
+import EmptyState from "../components/EmptyState";
 
 type FilterState = {
   keyword: string;
@@ -389,18 +390,34 @@ export default function RabbitholeHomePageClient() {
       {loading ? (
         <div style={{ fontSize: 14, color: t.textMuted }}>Loading Rabbithole...</div>
       ) : visibleItems.length === 0 ? (
-        <div style={{ fontSize: 14, color: t.textMuted }}>
-          No content found.{" "}
-          {(filters.keyword || filters.topicSlug || activeTag || filters.contentType) && (
-            <button
-              type="button"
-              onClick={() => { setFilters(DEFAULT_FILTERS); router.push("/rabbithole"); }}
-              style={{ background: "none", border: "none", color: t.textMuted, textDecoration: "underline", cursor: "pointer", padding: 0, fontSize: 14 }}
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
+        <EmptyState
+          icon={
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src="/rabbithole-mascot.png" alt="" style={{ width: 36, height: 36, objectFit: "contain" }} />
+          }
+          title={
+            filters.keyword || filters.topicSlug || activeTag || filters.contentType
+              ? "Nothing matches these filters"
+              : "Rabbithole is ready for the first file"
+          }
+          description={
+            filters.keyword || filters.topicSlug || activeTag || filters.contentType
+              ? "Clear filters to browse the full archive, or contribute something new."
+              : "Deep dives, archived posts, and field knowledge live here. File the first contribution for the shop."
+          }
+          action={{ label: "Contribute", onClick: () => setContributeOpen(true) }}
+          secondaryAction={
+            filters.keyword || filters.topicSlug || activeTag || filters.contentType
+              ? {
+                  label: "Clear filters",
+                  onClick: () => {
+                    setFilters(DEFAULT_FILTERS);
+                    router.push("/rabbithole");
+                  },
+                }
+              : undefined
+          }
+        />
       ) : (
         <div
           style={{

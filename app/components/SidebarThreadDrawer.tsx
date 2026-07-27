@@ -13,6 +13,8 @@ import GifPickerButton from "./GifPickerButton";
 import { isChatGifComposerEnabled } from "../lib/native/chatGifComposer";
 import { useSuppressChatroomPeek } from "../hooks/useSuppressChatroomPeek";
 import { releaseChatroomPeek, suppressChatroomPeek } from "../lib/chatroomPeekSuppress";
+import EmptyState from "./EmptyState";
+import { useToast } from "./toast/ToastProvider";
 
 const URL_RENDER_RE = /https?:\/\/[^\s]+|\b(?:www\.)?[a-zA-Z0-9](?:[a-zA-Z0-9-]*[a-zA-Z0-9])?\.(?:com|org|net|gov|mil|edu|io|co|info|biz|us|uk|ca|au|de|fr|app|dev|tech)[^\s,.)>]*/g;
 
@@ -37,6 +39,7 @@ type Props = {
 
 export default function SidebarThreadDrawer({ open, onClose, currentUserId, peerUserId, modalOnDesktop = false }: Props) {
   const { t, isDark } = useTheme();
+  const toast = useToast();
   const chatGifEnabled = isChatGifComposerEnabled();
   useSuppressChatroomPeek(open, "sidebar-thread-drawer");
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -240,7 +243,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
 
   function setMessagePhoto(file: File) {
     if (!file.type.startsWith("image/")) {
-      alert("Please choose a photo.");
+      toast.error("Please choose a photo.");
       return;
     }
     setSelectedPhoto((prev) => {
@@ -370,7 +373,7 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
       }
       await supabase.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conversationId);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Could not send your message.");
+      toast.error(err instanceof Error ? err.message : "Could not send your message.");
       setDraft(text);
       if (photo) setMessagePhoto(photo.file);
       if (gif) setSelectedGifUrl(gif);
@@ -504,7 +507,13 @@ export default function SidebarThreadDrawer({ open, onClose, currentUserId, peer
       >
         {loading && <div style={{ color: t.textMuted, fontSize: 14 }}>Loading…</div>}
         {!loading && messages.length === 0 && (
-          <div style={{ color: t.textFaint, fontSize: 14 }}>No messages yet. Say hi below.</div>
+          <EmptyState
+            compact
+            icon="💬"
+            title="Start the Sidebar"
+            description="Send the first note — it shows up here for both of you."
+            style={{ border: "none", background: "transparent", padding: "28px 8px" }}
+          />
         )}
         {messages.map((m) => {
           const mine = m.sender_id === currentUserId;

@@ -2,7 +2,7 @@ import type { RefObject } from "react";
 import type { GalleryPhoto, Photo } from "@capacitor/camera";
 import type { PickedFile } from "@capawesome/capacitor-file-picker";
 import { Capacitor } from "@capacitor/core";
-import { isNativeIosApp } from "./isNativeApp";
+import { isNativeApp, isNativeIosApp } from "./isNativeApp";
 
 /** Video and file types — avoids iOS WKWebView camera crash from image/* file inputs. */
 export const FEED_VIDEO_PDF_ACCEPT =
@@ -288,7 +288,27 @@ async function pickNativeDocumentFiles(limit: number): Promise<File[]> {
   }
 }
 
-type IosFeedMediaChoice = "camera" | "photos" | "videos" | "file" | "cancel";
+async function pickNativeBrowseImages(limit: number): Promise<File[]> {
+  const { FilePicker } = await import("@capawesome/capacitor-file-picker");
+  try {
+    // Document picker / SAF chooser — on Android this often lists Google Photos;
+    // on iOS it opens Files "Browse" where Google Drive / Photos providers can appear.
+    const result = await FilePicker.pickFiles({
+      types: ["image/jpeg", "image/png", "image/heic", "image/heif", "image/webp", "image/gif"],
+      limit: limit > 0 ? limit : undefined,
+      readData: true,
+    });
+    return Promise.all(result.files.map((file, index) => pickedFileToFile(file, index, "image")));
+  } catch (err) {
+    if (!isUserCancel(err)) {
+      console.error("pickNativeBrowseImages failed:", err);
+      alert("Could not open Browse. Please try again.");
+    }
+    return [];
+  }
+}
+
+type IosFeedMediaChoice = "camera" | "photos" | "browse" | "videos" | "file" | "cancel";
 
 let pendingCameraFilesCallback: ((files: File[]) => void) | null = null;
 
@@ -333,6 +353,7 @@ async function showIosFeedMediaActionSheet(): Promise<IosFeedMediaChoice> {
     options: [
       { title: "Take Photo" },
       { title: "Photo Library" },
+      { title: "Browse / Google Photos" },
       { title: "Video Library" },
       { title: "File" },
       { title: "Cancel", style: ActionSheetButtonStyle.Cancel },
@@ -340,61 +361,108 @@ async function showIosFeedMediaActionSheet(): Promise<IosFeedMediaChoice> {
   });
   if (index === 0) return "camera";
   if (index === 1) return "photos";
-  if (index === 2) return "videos";
-  if (index === 3) return "file";
+  if (index === 2) return "browse";
+  if (index === 3) return "videos";
+  if (index === 4) return "file";
   return "cancel";
 }
 
-/** Opens feed media picker — native iOS uses Capacitor Camera to avoid WKWebView camera crash. */
+type AndroidFeedMediaChoice = "camera" | "photos" | "browse" | "cancel";
+
+async function showAndroidFeedMediaActionSheet(): Promise<AndroidFeedMediaChoice> {
+  const { ActionSheet, ActionSheetButtonStyle } = await import("@capacitor/action-sheet");
+  const { index } = await ActionSheet.showActions({
+    title: "Add photo",
+    options: [
+      { title: "Take Photo" },
+      { title: "Photo Library" },
+      { title: "Browse / Google Photos" },
+      { title: "Cancel", style: ActionSheetButtonStyle.Cancel },
+    ],
+  });
+  if (index === 0) return "camera";
+  if (index === 1) return "photos";
+  if (index === 2) return "browse";
+  return "cancel";
+}
+
+/** Opens feed media picker — native shells avoid WKWebView camera crashes and surface cloud browse. */
 export async function openFeedMediaPicker({
   mediaInputRef,
   videoPdfInputRef,
   onFiles,
   remainingSlots = 10,
 }: OpenFeedMediaPickerOptions): Promise<void> {
-  if (!isNativeIosApp()) {
-    mediaInputRef.current?.click();
+  if (isNativeIosApp()) {
+    const choice = await showIosFeedMediaActionSheet();
+    if (choice === "cancel") return;
+
+    if (choice === "camera") {
+      setPendingCameraFilesCallback(onFiles);
+      try {
+        const file = await takeNativePhoto();
+        if (file) onFiles([file]);
+      } finally {
+        setPendingCameraFilesCallback(null);
+      }
+      return;
+    }
+
+    if (choice === "photos") {
+      setPendingCameraFilesCallback(onFiles);
+      try {
+        const files = await pickNativePhotosFromLibrary(remainingSlots);
+        if (files.length > 0) onFiles(files);
+      } finally {
+        setPendingCameraFilesCallback(null);
+      }
+      return;
+    }
+
+    if (choice === "browse") {
+      const files = await pickNativeBrowseImages(remainingSlots);
+      if (files.length > 0) onFiles(files);
+      return;
+    }
+
+    if (choice === "videos") {
+      const files = await pickNativeVideosFromLibrary();
+      if (files.length > 0) onFiles(files);
+      return;
+    }
+
+    if (choice === "file") {
+      const files = await pickNativeDocumentFiles(remainingSlots);
+      if (files.length > 0) onFiles(files);
+      return;
+    }
+
+    videoPdfInputRef?.current?.click();
     return;
   }
 
-  const choice = await showIosFeedMediaActionSheet();
-  if (choice === "cancel") return;
+  if (isNativeApp()) {
+    const choice = await showAndroidFeedMediaActionSheet();
+    if (choice === "cancel") return;
 
-  if (choice === "camera") {
-    setPendingCameraFilesCallback(onFiles);
-    try {
+    if (choice === "camera") {
       const file = await takeNativePhoto();
       if (file) onFiles([file]);
-    } finally {
-      setPendingCameraFilesCallback(null);
+      return;
     }
-    return;
-  }
-
-  if (choice === "photos") {
-    setPendingCameraFilesCallback(onFiles);
-    try {
+    if (choice === "photos") {
       const files = await pickNativePhotosFromLibrary(remainingSlots);
       if (files.length > 0) onFiles(files);
-    } finally {
-      setPendingCameraFilesCallback(null);
+      return;
     }
-    return;
+    if (choice === "browse") {
+      const files = await pickNativeBrowseImages(remainingSlots);
+      if (files.length > 0) onFiles(files);
+      return;
+    }
   }
 
-  if (choice === "videos") {
-    const files = await pickNativeVideosFromLibrary();
-    if (files.length > 0) onFiles(files);
-    return;
-  }
-
-  if (choice === "file") {
-    const files = await pickNativeDocumentFiles(remainingSlots);
-    if (files.length > 0) onFiles(files);
-    return;
-  }
-
-  videoPdfInputRef?.current?.click();
+  mediaInputRef.current?.click();
 }
 
 /** Opens a video-only picker, using the native iOS library instead of WKWebView input. */

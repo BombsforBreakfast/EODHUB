@@ -10,6 +10,8 @@ import { getAccessToken, getSupabaseSession, supabase } from "../lib/lib/supabas
 import { useAuth } from "../lib/auth/AuthProvider";
 import { clearNativeOAuthCompleting } from "../lib/auth/sessionState";
 import { useTheme } from "../lib/ThemeContext";
+import { useToast } from "../components/toast/ToastProvider";
+import { useConfirm } from "../components/confirm/ConfirmProvider";
 import MentionTextarea, { extractMentionIds } from "../components/MentionTextarea";
 import { LikerAvatar, PostLikersStack, type PostLikerBrief } from "../components/PostLikersStack";
 import { getSidebarNudgePeer, sidebarNudgeDismissStorageKey } from "../lib/commentSidebarEligibility";
@@ -979,6 +981,8 @@ function Avatar({
 export default function HomePage() {
   usePageTracking(PAGE_TRACKING.feed);
   const { t, isDark } = useTheme();
+  const toast = useToast();
+  const confirmDialog = useConfirm();
   const queryClient = useQueryClient();
   const { user: authUser, isLoading: authLoading } = useAuth();
   /** Stable key — OAuth/token refresh must not re-run feed init when the user id is unchanged. */
@@ -1838,7 +1842,7 @@ export default function HomePage() {
         void refreshPlankHolderChallenge();
       } catch (err) {
         console.error("feed event RSVP failed:", err);
-        alert(err instanceof Error ? err.message : "Could not update your RSVP.");
+        toast.error(err instanceof Error ? err.message : "Could not update your RSVP.");
       } finally {
         setSelectedFeedEventBusy(false);
       }
@@ -2170,7 +2174,7 @@ export default function HomePage() {
       await loadMemorialInteractions([memorialId]);
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Could not save reaction");
+      toast.error(err instanceof Error ? err.message : "Could not save reaction");
     } finally {
       setTogglingMemorialReactionFor(null);
     }
@@ -2194,7 +2198,7 @@ export default function HomePage() {
       await loadMemorialInteractions([memorialId]);
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Could not save reaction");
+      toast.error(err instanceof Error ? err.message : "Could not save reaction");
     } finally {
       setTogglingMemorialCommentReactionFor(null);
     }
@@ -2493,7 +2497,7 @@ export default function HomePage() {
     } catch (err) {
       console.error("[know] unexpected error:", err);
       setDiscoverPageIndex(prevDiscoverPageIndex);
-      alert(err instanceof Error ? err.message : "Failed to send Know request. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Failed to send Know request. Please try again.");
     }
   }
 
@@ -4737,14 +4741,14 @@ export default function HomePage() {
       const remainingSlots = 10 - prev.length;
 
       if (remainingSlots <= 0) {
-        alert("You can attach up to 10 files per post.");
+        toast.info("You can attach up to 10 files per post.");
         return prev;
       }
 
       const filesToAdd = files.slice(0, remainingSlots);
 
       if (files.length > remainingSlots) {
-        alert("Only the first files were added. Max is 10 files per post.");
+        toast.info("Only the first files were added. Max is 10 files per post.");
       }
 
       const pickError = validateFeedAttachmentPick(
@@ -4752,7 +4756,7 @@ export default function HomePage() {
         currentFeedUploadLimits,
       );
       if (pickError) {
-        alert(pickError);
+        toast.error(pickError);
         return prev;
       }
 
@@ -4784,13 +4788,13 @@ export default function HomePage() {
     setSelectedPostImages((prev) => {
       const missingTokens = missingCadPreviewTokens(prev);
       if (missingTokens.length === 0) {
-        alert("All CAD/3D files already have previews.");
+        toast.info("All CAD/3D files already have previews.");
         return prev;
       }
 
       const validImages = files.filter((file) => isPreviewImageForCad(file));
       if (validImages.length === 0) {
-        alert("Please choose a JPG, PNG, or WEBP preview image.");
+        toast.error("Please choose a JPG, PNG, or WEBP preview image.");
         return prev;
       }
 
@@ -4801,7 +4805,7 @@ export default function HomePage() {
         const token = missingTokens[index];
         const pickError = validateImagePick(file);
         if (pickError) {
-          alert(pickError);
+          toast.error(pickError);
           return;
         }
         next.push({
@@ -4814,7 +4818,7 @@ export default function HomePage() {
       });
 
       if (validImages.length > missingTokens.length) {
-        alert("Only required CAD preview images were added.");
+        toast.info("Only required CAD preview images were added.");
       }
 
       return next;
@@ -4903,7 +4907,7 @@ export default function HomePage() {
   function attachCommentImage(postId: string, file: File) {
     const pickError = validateImagePick(file);
     if (pickError) {
-      alert(pickError);
+      toast.error(pickError);
       if (commentImageInputRefs.current[postId]) {
         commentImageInputRefs.current[postId]!.value = "";
       }
@@ -5007,12 +5011,12 @@ export default function HomePage() {
 
     const labelsForKc = [kcOpt1, kcOpt2, kcOpt3, kcOpt4].map((s) => s.trim()).filter(Boolean);
     if (kcComposerPhase === "confirm") {
-      alert('Use "Start Court" to add poll options, or click the judge again to cancel Kangaroo Court.');
+      toast.info('Use "Start Court" to add poll options, or click the judge again to cancel Kangaroo Court.');
       return;
     }
     if (kcComposerPhase === "builder") {
       if (labelsForKc.length < 2 || labelsForKc.length > 4) {
-        alert("Enter between 2 and 4 options for Kangaroo Court.");
+        toast.error("Enter between 2 and 4 options for Kangaroo Court.");
         return;
       }
     }
@@ -5033,7 +5037,7 @@ export default function HomePage() {
       const gifToPost = selectedPostGif;
       const missingCadTokens = missingCadPreviewTokens(imagesToUpload);
       if (missingCadTokens.length > 0) {
-        alert("Each CAD/3D file needs a preview image (JPG, PNG, or WEBP) before posting.");
+        toast.error("Each CAD/3D file needs a preview image (JPG, PNG, or WEBP) before posting.");
         setSubmittingPost(false);
         return;
       }
@@ -5075,7 +5079,7 @@ export default function HomePage() {
         if (kcRpcError || kcRpcData == null) {
           await cancelMuxVideosFromUrls(uploadedUrls);
           console.error("create_feed_post_with_kangaroo_court:", kcRpcError);
-          alert(kcRpcError?.message || "Failed to create post with Kangaroo Court.");
+          toast.error(kcRpcError?.message || "Failed to create post with Kangaroo Court.");
           setSubmittingPost(false);
           return;
         }
@@ -5139,7 +5143,7 @@ export default function HomePage() {
       if (insertError || !insertedPost?.id) {
         await cancelMuxVideosFromUrls(uploadedUrls);
         console.error("INSERT ERROR:", insertError);
-        alert(insertError?.message || "Failed to create post.");
+        toast.error(insertError?.message || "Failed to create post.");
         setSubmittingPost(false);
         return;
       }
@@ -5180,7 +5184,7 @@ export default function HomePage() {
 
         if (postImagesInsertError) {
           console.error("POST IMAGES INSERT ERROR:", postImagesInsertError);
-          alert(postImagesInsertError.message);
+          toast.error(postImagesInsertError.message);
           setSubmittingPost(false);
           return;
         }
@@ -5208,11 +5212,7 @@ export default function HomePage() {
       void refreshPlankHolderChallenge();
     } catch (err) {
       console.error("submitPost crashed:", err);
-      alert(
-        err instanceof Error
-          ? err.message
-          : "Something went wrong while posting."
-      );
+      toast.error(err instanceof Error ? err.message : "Something went wrong while posting.");
       setSubmittingPost(false);
     }
   }
@@ -5283,8 +5283,8 @@ export default function HomePage() {
           const r3 = await supabase.from("business_listings").insert([noTags]);
           error = r3.error;
         }
-      } else if (error) { alert(error.message); return; }
-      if (error) { alert(error.message); return; }
+      } else if (error) { toast.error(error.message); return; }
+      if (error) { toast.error(error.message); return; }
       setBizSubmitSuccess(true);
       setBizUrl(""); setBizName(""); setBizBlurb(""); setBizType("business"); setBizTags([]); setBizOgPreview(null);
       setTimeout(() => { setBizSubmitSuccess(false); setShowBizForm(false); }, 3000);
@@ -5375,7 +5375,7 @@ export default function HomePage() {
       void refreshPlankHolderChallenge();
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Could not save reaction");
+      toast.error(err instanceof Error ? err.message : "Could not save reaction");
     } finally {
       setTogglingLikeFor(null);
     }
@@ -5435,7 +5435,7 @@ export default function HomePage() {
       void refreshPlankHolderChallenge();
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Could not save reaction");
+      toast.error(err instanceof Error ? err.message : "Could not save reaction");
     } finally {
       setTogglingCommentLikeFor(null);
     }
@@ -5513,15 +5513,13 @@ export default function HomePage() {
         }
 
         if (!insertError && selectedCommentImage) {
-          alert(
-            "Your comment posted, but the database is not fully set up for comment images yet."
-          );
+          toast.info("Your comment posted, but the database is not fully set up for comment images yet.");
         }
       }
 
       if (insertError) {
         console.error("Comment insert error:", insertError);
-        alert(insertError.message || "Failed to post comment.");
+        toast.error(insertError.message || "Failed to post comment.");
         return;
       }
 
@@ -5600,7 +5598,7 @@ export default function HomePage() {
       void refreshPlankHolderChallenge();
     } catch (err) {
       console.error("submitComment crashed:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "Something went wrong while posting your comment."
@@ -5664,7 +5662,7 @@ export default function HomePage() {
 
       if (insert.error) {
         console.error("Reply insert error:", insert.error);
-        alert(insert.error.message || "Failed to post reply.");
+        toast.error(insert.error.message || "Failed to post reply.");
         return;
       }
 
@@ -5779,7 +5777,7 @@ export default function HomePage() {
       void refreshPlankHolderChallenge();
     } catch (err) {
       console.error("submitReply crashed:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "Something went wrong while posting your reply.",
@@ -5800,7 +5798,13 @@ export default function HomePage() {
           ? "Delete this news post from the feed? It will move back to rejected status."
           : "Delete this post from the feed as admin?"
         : "Delete this post?";
-    if (!window.confirm(confirmMessage)) return;
+    const ok = await confirmDialog({
+      title: "Delete post",
+      message: confirmMessage,
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
 
     try {
       setDeletingPostId(postId);
@@ -5831,7 +5835,7 @@ export default function HomePage() {
       }
 
       if (errorMessage) {
-        alert(errorMessage);
+        toast.error(errorMessage);
         return;
       }
 
@@ -5844,7 +5848,13 @@ export default function HomePage() {
   async function deleteComment(commentId: string) {
     if (!userId) return;
     if (blockMemberInteraction()) return;
-    if (!window.confirm("Delete this comment?")) return;
+    const ok = await confirmDialog({
+      title: "Delete comment",
+      message: "Delete this comment?",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
 
     try {
       setDeletingCommentId(commentId);
@@ -5855,7 +5865,7 @@ export default function HomePage() {
         .eq("id", commentId);
 
       if (error) {
-        alert(error.message);
+        toast.error(error.message);
         return;
       }
 
@@ -5900,7 +5910,7 @@ export default function HomePage() {
         .eq("id", postId);
 
       if (error) {
-        alert(error.message);
+        toast.error(error.message);
         return;
       }
 
@@ -5936,7 +5946,7 @@ export default function HomePage() {
         .eq("id", commentId);
 
       if (error) {
-        alert(error.message);
+        toast.error(error.message);
         return;
       }
 
@@ -5980,10 +5990,10 @@ export default function HomePage() {
         /* ignore */
       }
       if (!res.ok) {
-        alert(json.error ?? "Could not submit flag");
+        toast.error(json.error ?? "Could not submit flag");
         return;
       }
-      alert("Flagged for review. Thank you.");
+      toast.success("Flagged for review. Thank you.");
       setFlagModal(null);
       await loadPosts();
     } finally {

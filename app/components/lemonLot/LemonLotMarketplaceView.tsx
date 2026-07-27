@@ -20,6 +20,8 @@ import {
 import { useViewerGate } from "@/app/hooks/useRequireFullAccess";
 import { postNotifyJson } from "@/app/lib/postNotifyClient";
 import FeedImageGalleryModal from "@/app/components/FeedImageGalleryModal";
+import EmptyState from "@/app/components/EmptyState";
+import { useToast } from "@/app/components/toast/ToastProvider";
 
 const LemonLotComposer = dynamic(() => import("@/app/components/lemonLot/LemonLotComposer"), {
   ssr: false,
@@ -51,6 +53,7 @@ type Props = { variant?: LemonLotMarketplaceVariant };
 
 export function LemonLotMarketplaceView({ variant = "page" }: Props) {
   const { t, isDark } = useTheme();
+  const toast = useToast();
   const viewerGate = useViewerGate();
   const [listLoading, setListLoading] = useState(true);
   const [rows, setRows] = useState<MarketplaceListingRow[]>([]);
@@ -180,6 +183,19 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
     return list;
   }, [rows, keyword, filterCategory, locationQ, priceMin, priceMax, sort]);
 
+  const hasActiveFilters = Boolean(
+    keyword.trim() || filterCategory || locationQ.trim() || priceMin.trim() || priceMax.trim(),
+  );
+
+  function clearFilters() {
+    setKeyword("");
+    setFilterCategory("");
+    setLocationQ("");
+    setPriceMin("");
+    setPriceMax("");
+    setSort("newest");
+  }
+
   function closeComposer() {
     setShowComposer(false);
     setComposerEditRow(null);
@@ -248,7 +264,7 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
       }
       window.location.href = "/sidebar";
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Contact failed");
+      toast.error(e instanceof Error ? e.message : "Contact failed");
     } finally {
       setContactingId(null);
     }
@@ -267,7 +283,7 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
       await loadRows(userId);
       setDetail(null);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Relist failed");
+      toast.error(e instanceof Error ? e.message : "Relist failed");
     } finally {
       setRelistingId(null);
     }
@@ -283,7 +299,7 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
       await loadRows(userId);
       setDetail(null);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Delete failed");
+      toast.error(e instanceof Error ? e.message : "Delete failed");
     } finally {
       setRemovingId(null);
     }
@@ -478,9 +494,30 @@ export function LemonLotMarketplaceView({ variant = "page" }: Props) {
           Loading Lemon Lot listings…
         </div>
       ) : filtered.length === 0 ? (
-        <div style={{ padding: 28, textAlign: "center", color: t.textMuted, border: `1px dashed ${t.border}`, borderRadius: 14 }}>
-          No listings match these filters yet. Be the first to post.
-        </div>
+        <EmptyState
+          icon="🍋"
+          title={hasActiveFilters ? "No listings match these filters" : "The lot is empty"}
+          description={
+            hasActiveFilters
+              ? "Widen the search, clear filters, or post something the community can use."
+              : "PCS gear, housing, vehicles, services — list it for the shop. Listings expire after 30 days."
+          }
+          action={{
+            label: userId ? "Post listing" : "Sign in to post",
+            onClick: () => {
+              if (!userId) {
+                window.location.href = "/login";
+                return;
+              }
+              openComposer(null);
+            },
+          }}
+          secondaryAction={
+            hasActiveFilters
+              ? { label: "Clear filters", onClick: clearFilters }
+              : undefined
+          }
+        />
       ) : (
         <div style={{ display: "grid", gap: 16, gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
           {filtered.map((row) => (

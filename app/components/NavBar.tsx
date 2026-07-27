@@ -10,7 +10,6 @@ import EodCrabLogo from "./EodCrabLogo";
 import OptimizedAvatarImg from "./OptimizedAvatarImg";
 import { useTheme } from "../lib/ThemeContext";
 import { fetchAdminPendingBreakdown, sumAdminPending } from "../lib/adminPendingCounts";
-import { isVerifiedRabbitholeViewer } from "../lib/rabbitholeAccess";
 import { getNotificationsV2Enabled } from "../lib/notificationFlags";
 import { searchRabbitholeThreads } from "../rabbithole/lib/dataClient";
 import AtlwHotlineModal from "./AtlwHotlineModal";
@@ -34,6 +33,36 @@ import {
 } from "../lib/businessListingLinks";
 import AccountSwitcherMenu from "./AccountSwitcherMenu";
 import type { User } from "@supabase/supabase-js";
+import type { LucideIcon } from "lucide-react";
+import {
+  BookOpen,
+  Briefcase,
+  Building2,
+  Calendar,
+  ClipboardList,
+  Gamepad2,
+  Home,
+  MessageSquare,
+  Phone,
+  Rabbit,
+  Shield,
+  ShoppingBag,
+  Target,
+  User,
+  Users,
+  UsersRound,
+} from "lucide-react";
+
+function HubNavIcon({ icon: Icon }: { icon: LucideIcon }) {
+  return (
+    <Icon
+      size={18}
+      strokeWidth={2}
+      aria-hidden
+      style={{ flexShrink: 0, opacity: 0.92 }}
+    />
+  );
+}
 
 type Notification = {
   id: string;
@@ -91,7 +120,6 @@ export default function NavBar() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isFounder, setIsFounder] = useState(false);
   const [isEmployer, setIsEmployer] = useState(false);
-  const [verificationStatus, setVerificationStatus] = useState<string | null>(null);
   const [membershipCountry, setMembershipCountry] = useState<string | null>(null);
   const [adminPendingTotal, setAdminPendingTotal] = useState(0);
   const [groupPendingTotal, setGroupPendingTotal] = useState(0);
@@ -119,7 +147,6 @@ export default function NavBar() {
     void setNativeAppBadgeCount(unreadNotifCount);
   }, [unreadNotifCount]);
 
-  const canAccessRabbithole = isVerifiedRabbitholeViewer(verificationStatus);
   const canClickArcade = canClickArcadeNav(isFounder);
   const showAtlwHotlineNav = canAccessAtlwHotline(membershipCountry);
 
@@ -205,7 +232,6 @@ export default function NavBar() {
       setIsAdmin(false);
       setIsFounder(false);
       setIsEmployer(false);
-      setVerificationStatus(null);
       setMembershipCountry(null);
       setAdminPendingTotal(0);
       setGroupPendingTotal(0);
@@ -234,7 +260,6 @@ export default function NavBar() {
       setUserInitial((row?.first_name?.[0] || row?.display_name?.[0] || "?").toUpperCase());
       setAvatarPhotoUrl(row?.photo_url?.trim() ? row.photo_url : null);
       setIsEmployer(row?.account_type === "employer");
-      setVerificationStatus(row?.verification_status ?? null);
       setMembershipCountry(typeof row?.country === "string" ? row.country : null);
       if (row?.is_admin) {
         setIsAdmin(true);
@@ -347,9 +372,7 @@ export default function NavBar() {
         supabase.from("unit_directory").select("id, name, org_type, state, unit_slug, base_city")
           .or(`name.ilike.%${q}%,org_type.ilike.%${q}%,state.ilike.%${q}%,base_city.ilike.%${q}%`).limit(5),
       ]);
-      const rabbitholeMatches = canAccessRabbithole
-        ? await searchRabbitholeThreads(supabase, q, 5)
-        : [];
+      const rabbitholeMatches = await searchRabbitholeThreads(supabase, q, 5);
 
       const businessRows = (businessesRes.data ?? []) as {
         id: string;
@@ -828,9 +851,7 @@ export default function NavBar() {
                     value={searchQuery}
                     onChange={(e) => handleSearchChange(e.target.value)}
                     onFocus={() => searchQuery.trim().length >= 2 && setShowSearchDropdown(true)}
-                    placeholder={canAccessRabbithole
-                      ? "Search people, jobs, memorials, groups, businesses, directory, Rabbithole…"
-                      : "Search people, jobs, memorials, groups, businesses, directory…"}
+                    placeholder="Search people, jobs, memorials, groups, businesses, directory, Rabbithole…"
                     style={{ border: "none", outline: "none", fontSize: 13, flex: "1 1 0", minWidth: 0, width: "100%", background: "transparent", color: t.text, height: 36, lineHeight: "36px", padding: 0 }}
                   />
                   {searching && <span style={{ fontSize: 12, color: "#999", flexShrink: 0 }}>...</span>}
@@ -856,10 +877,7 @@ export default function NavBar() {
                       </div>
                     )}
 
-                    {(canAccessRabbithole
-                      ? (["user", "unit", "job", "memorial", "business", "directory", "rabbithole"] as const)
-                      : (["user", "unit", "job", "memorial", "business", "directory"] as const)
-                    ).map((type) => {
+                    {(["user", "unit", "job", "memorial", "business", "directory", "rabbithole"] as const).map((type) => {
                       const group = searchResults.filter((r) => r.type === type);
                       if (group.length === 0) return null;
                       const label =
@@ -1007,37 +1025,35 @@ export default function NavBar() {
                 </div>
                 <div className="nav-hub-modal-grid">
                   {[
-                    { label: "Feed", href: "/", emoji: "🏠", badge: 0, onNav: null },
-                    { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", emoji: "👤", badge: 0, onNav: null },
-                    { label: "Jobs", href: "/jobs", emoji: "💼", badge: 0, onNav: null },
-                    { label: "Businesses/Orgs", href: "/businesses", emoji: "🏢", badge: 0, onNav: null },
-                    { label: "Resources", href: "/resources", emoji: "📚", badge: 0, onNav: null },
-                    { label: "Events", href: "/events", emoji: "📅", badge: 0, onNav: null },
-                    { label: "Lemon Lot", href: "/lemon-lot", emoji: "🍋", badge: 0, onNav: null },
+                    { label: "Feed", href: "/", icon: Home, badge: 0, onNav: null },
+                    { label: "My Profile", href: currentUserId ? `/profile/${currentUserId}` : "/profile", icon: User, badge: 0, onNav: null },
+                    { label: "Jobs", href: "/jobs", icon: Briefcase, badge: 0, onNav: null },
+                    { label: "Businesses/Orgs", href: "/businesses", icon: Building2, badge: 0, onNav: null },
+                    { label: "Resources", href: "/resources", icon: BookOpen, badge: 0, onNav: null },
+                    { label: "Events", href: "/events", icon: Calendar, badge: 0, onNav: null },
+                    { label: "Lemon Lot", href: "/lemon-lot", icon: ShoppingBag, badge: 0, onNav: null },
                     {
                       label: "EOD Arcade",
                       href: "/games",
-                      emoji: "🕹️",
+                      icon: Gamepad2,
                       badge: 0,
                       onNav: null,
                       comingSoon: false,
                       disabled: !canClickArcade,
                     },
-                    { label: "Groups", href: "/units", emoji: "🪖", badge: groupPendingTotal, onNav: null },
-                    { label: "Unit Directory", href: "/directory", emoji: "📋", badge: 0, onNav: null },
-                    { label: "Users", href: "/user-directory", emoji: "👥", badge: 0, onNav: null },
-                    ...(canAccessRabbithole
-                      ? [{ label: "Rabbithole", href: "/rabbithole", emoji: "🐇", badge: 0, onNav: null as (() => Promise<void>) | null }]
-                      : []),
+                    { label: "Groups", href: "/units", icon: UsersRound, badge: groupPendingTotal, onNav: null },
+                    { label: "Unit Directory", href: "/directory", icon: ClipboardList, badge: 0, onNav: null },
+                    { label: "Users", href: "/user-directory", icon: Users, badge: 0, onNav: null },
+                    { label: "Rabbithole", href: "/rabbithole", icon: Rabbit, badge: 0, onNav: null },
                     ...(!hideDesktopOnlyHubLinks && (isEmployer || isAdmin)
-                      ? [{ label: "Employer Dashboard", href: "/employer", emoji: "🎯", badge: 0, onNav: null as (() => Promise<void>) | null }]
+                      ? [{ label: "Employer Dashboard", href: "/employer", icon: Target, badge: 0, onNav: null as (() => Promise<void>) | null }]
                       : []),
                     ...(!hideDesktopOnlyHubLinks && isAdmin
-                      ? [{ label: "Admin", href: "/admin", emoji: "🛡️", badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
+                      ? [{ label: "Admin", href: "/admin", icon: Shield, badge: adminPendingTotal, onNav: null as (() => Promise<void>) | null }]
                       : []),
-                    { label: "Sidebars", href: "/sidebar", emoji: "💬", badge: 0, onNav: null },
+                    { label: "Sidebars", href: "/sidebar", icon: MessageSquare, badge: 0, onNav: null },
                     ...(showAtlwHotlineNav
-                      ? [{ label: "ATLW Hotline", href: "", emoji: "📞", badge: 0, onNav: null as (() => Promise<void>) | null, hotline: true as const }]
+                      ? [{ label: "ATLW Hotline", href: "", icon: Phone, badge: 0, onNav: null as (() => Promise<void>) | null, hotline: true as const }]
                       : []),
                   ].map((item) => {
                     const comingSoonBadge = "comingSoon" in item && item.comingSoon ? (
@@ -1079,7 +1095,7 @@ export default function NavBar() {
                           aria-disabled="true"
                           style={{ ...rowStyle, opacity: 0.42, cursor: "not-allowed" }}
                         >
-                          <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
+                          <HubNavIcon icon={item.icon} />
                           <span style={{ flex: 1 }}>{item.label}</span>
                           {comingSoonBadge}
                         </div>
@@ -1103,7 +1119,7 @@ export default function NavBar() {
                             cursor: "pointer",
                           }}
                         >
-                          <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
+                          <HubNavIcon icon={item.icon} />
                           <span style={{ flex: 1, textAlign: "left" }}>{item.label}</span>
                         </button>
                       );
@@ -1121,7 +1137,7 @@ export default function NavBar() {
                         }}
                         style={rowStyle}
                       >
-                        <span style={{ fontSize: 20, lineHeight: 1 }}>{item.emoji}</span>
+                        <HubNavIcon icon={item.icon} />
                         <span style={{ flex: 1 }}>{item.label}</span>
                         {comingSoonBadge}
                         {item.badge > 0 && badge(item.badge)}

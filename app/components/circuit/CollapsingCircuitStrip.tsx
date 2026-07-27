@@ -5,7 +5,6 @@ import {
   CIRCUIT_THOUGHT_MAX_LEN,
   CIRCUIT_TITLE_MAX_LEN,
   canAccessCollapsingCircuit,
-  isCollapsingCircuitEnabled,
   thoughtFontSizePx,
   type CircuitPostDto,
   type CircuitPromptDto,
@@ -15,6 +14,7 @@ import { uploadCircuitMedia } from "../../lib/circuitUpload";
 import { muxPosterUrl, parseMuxFeedVideoUrl } from "../../lib/feedVideoUrl";
 import { useSuppressChatroomPeek } from "../../hooks/useSuppressChatroomPeek";
 import { getAccessToken, supabase } from "../../lib/lib/supabaseClient";
+import { openFeedMediaPicker } from "../../lib/native/pickFeedMedia";
 import {
   adminPostDisplayName,
   canUsePostAsSelector,
@@ -42,6 +42,7 @@ type PendingMedia = {
 export default function CollapsingCircuitStrip({ currentUserId, currentUserEmail = null }: Props) {
   const enabled = canAccessCollapsingCircuit(currentUserEmail);
   const deepLinkHandled = useRef<string | null>(null);
+  const mediaInputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<CircuitStripItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -194,14 +195,24 @@ export default function CollapsingCircuitStrip({ currentUserId, currentUserEmail
     setComposerOpen(true);
   };
 
-  const onPickFiles = (files: FileList | null) => {
-    if (!files?.length) return;
+  const onPickFiles = (files: FileList | File[] | null) => {
+    if (!files || (Array.isArray(files) ? files.length === 0 : files.length === 0)) return;
+    const list = Array.isArray(files) ? files : Array.from(files);
     const next: PendingMedia[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of list) {
+      if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) continue;
       if (pendingMedia.length + next.length >= 10) break;
       next.push({ file, localUrl: URL.createObjectURL(file) });
     }
-    setPendingMedia((prev) => [...prev, ...next]);
+    if (next.length > 0) setPendingMedia((prev) => [...prev, ...next]);
+  };
+
+  const openMediaPicker = () => {
+    void openFeedMediaPicker({
+      mediaInputRef,
+      onFiles: (files) => onPickFiles(files),
+      remainingSlots: Math.max(0, 10 - pendingMedia.length),
+    });
   };
 
   const submit = async () => {
@@ -316,9 +327,6 @@ export default function CollapsingCircuitStrip({ currentUserId, currentUserEmail
         <div className="circuit-strip-heading">
           <div className="circuit-strip-title">Collapsing Circuit</div>
           <div className="circuit-strip-sub">24h tiles</div>
-        </div>
-        <div className="circuit-strip-beta" aria-label="Beta feature">
-          *beta feature
         </div>
       </div>
 
@@ -516,18 +524,26 @@ export default function CollapsingCircuitStrip({ currentUserId, currentUserEmail
                   {titleDraft.length}/{CIRCUIT_TITLE_MAX_LEN}
                 </div>
                 {!editingPostId ? (
-                  <label className="circuit-composer-file">
+                  <>
                     <input
+                      ref={mediaInputRef}
                       type="file"
                       accept="image/*,video/*"
                       multiple
+                      style={{ display: "none" }}
                       onChange={(e) => {
                         onPickFiles(e.target.files);
                         e.target.value = "";
                       }}
                     />
-                    Add photos or videos
-                  </label>
+                    <button
+                      type="button"
+                      className="circuit-composer-file"
+                      onClick={openMediaPicker}
+                    >
+                      Add photos or videos
+                    </button>
+                  </>
                 ) : (
                   <div className="circuit-composer-prompt">Media stays the same — you can edit title and caption.</div>
                 )}

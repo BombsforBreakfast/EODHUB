@@ -15,6 +15,8 @@ import NativeShellBridge from "./components/NativeShellBridge";
 import { OnlinePresenceProvider } from "./components/OnlinePresenceProvider";
 import { ChatroomSheetProvider } from "./components/ChatroomSheetContext";
 import ChatroomPeekSheetHost from "./components/ChatroomPeekSheetHost";
+import { ToastProvider } from "./components/toast/ToastProvider";
+import { ConfirmProvider } from "./components/confirm/ConfirmProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -64,6 +66,8 @@ export default function RootLayout({
         <ThemeProvider>
           <QueryProvider>
           <AuthProvider>
+          <ToastProvider>
+          <ConfirmProvider>
           <MemorialNavModalProvider>
             <OnlinePresenceProvider>
               <ChatroomSheetProvider>
@@ -135,6 +139,8 @@ export default function RootLayout({
               </ChatroomSheetProvider>
             </OnlinePresenceProvider>
           </MemorialNavModalProvider>
+          </ConfirmProvider>
+          </ToastProvider>
           </AuthProvider>
           </QueryProvider>
         </ThemeProvider>

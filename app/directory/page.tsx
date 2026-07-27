@@ -9,6 +9,8 @@ const ImageCropDialog = dynamic(() => import("../components/ImageCropDialog"), {
 import { ASPECT_AVATAR } from "../lib/imageCropTargets";
 import { prepareCroppedImageBlob } from "../lib/prepareUploadFile";
 import { validateImagePick } from "../lib/uploadLimits";
+import EmptyState from "../components/EmptyState";
+import { useToast } from "../components/toast/ToastProvider";
 
 const US_STATES = [
   "Alabama","Alaska","Arizona","Arkansas","California","Colorado","Connecticut",
@@ -62,6 +64,7 @@ function isValidPhone(phone: string): boolean {
 
 function DirectoryPageContent() {
   const { t } = useTheme();
+  const toast = useToast();
   const [entries, setEntries] = useState<DirectoryEntry[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(true);
   const [stateFilter, setStateFilter] = useState("all");
@@ -169,7 +172,7 @@ function DirectoryPageContent() {
       setDirectoryPhotoUrl(data.publicUrl);
       setDirectoryPhotoPreview(data.publicUrl);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Photo upload failed");
+      toast.error(err instanceof Error ? err.message : "Photo upload failed");
     } finally {
       setPhotoUploading(false);
     }
@@ -181,7 +184,7 @@ function DirectoryPageContent() {
     if (!f) return;
     const pickError = validateImagePick(f);
     if (pickError) {
-      alert(pickError);
+      toast.error(pickError);
       return;
     }
     if (dirCropSrc) URL.revokeObjectURL(dirCropSrc);
@@ -206,7 +209,7 @@ function DirectoryPageContent() {
       is_approved: false,
     });
     setSubmitting(false);
-    if (error) { alert(error.message); return; }
+    if (error) { toast.error(error.message); return; }
     setSubmitDone(true);
   }
 
@@ -345,11 +348,27 @@ function DirectoryPageContent() {
         {loadingEntries ? (
           <div style={{ textAlign: "center", padding: 48, color: t.textFaint }}>Loading...</div>
         ) : filtered.length === 0 ? (
-          <div style={{ textAlign: "center", padding: 48, color: t.textFaint, border: `1px solid ${t.border}`, borderRadius: 14, background: t.surface }}>
-            {entries.length === 0
-              ? "No units listed yet. Be the first to submit one!"
-              : "No units match these filters."}
-          </div>
+          <EmptyState
+            icon="📋"
+            title={entries.length === 0 ? "No units listed yet" : "No units match these filters"}
+            description={
+              entries.length === 0
+                ? "Claim your shop so the community can find the right duty phone and location."
+                : "Try another state or org type, or submit a unit that is missing."
+            }
+            action={{ label: "Submit a unit", onClick: openSubmitModal }}
+            secondaryAction={
+              entries.length > 0
+                ? {
+                    label: "Clear filters",
+                    onClick: () => {
+                      setStateFilter("all");
+                      setOrgFilter("all");
+                    },
+                  }
+                : undefined
+            }
+          />
         ) : (
           <div style={{ display: "grid", gap: 10 }}>
             {filtered.map((entry) => {

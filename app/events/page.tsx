@@ -48,6 +48,8 @@ import {
 } from "../lib/reactions";
 import { MEMORIAL_MILITARY_SERVICE_OPTIONS } from "../lib/serviceBranchVisual";
 import { ExternalSiteEmbedModal, ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
+import EmptyState from "../components/EmptyState";
+import { useToast } from "../components/toast/ToastProvider";
 import ExpandableText from "../components/ExpandableText";
 import { useMasterShell } from "../components/master/masterShellContext";
 import { useCenterPaneRect, useViewportMobile } from "../hooks/useCenterPaneRect";
@@ -213,6 +215,7 @@ export default function EventsPage() {
 
 function EventsPageInner() {
   useRequireFullAccess("app/events/page.tsx");
+  const toast = useToast();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -689,7 +692,7 @@ function EventsPageInner() {
       }
     } catch (err) {
       console.error("toggleAttendance failed:", err);
-      alert(err instanceof Error ? err.message : "Could not update your RSVP. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Could not update your RSVP. Please try again.");
     }
 
     // Always pull fresh truth from the DB so the counts shown on screen
@@ -760,7 +763,7 @@ function EventsPageInner() {
       await loadEventReactionsForEvents([eventId]);
     } catch (err) {
       console.error(err);
-      alert(errorMessage(err, "Could not save reaction."));
+      toast.error(errorMessage(err, "Could not save reaction."));
     } finally {
       setTogglingEventReactionFor(null);
     }
@@ -774,7 +777,7 @@ function EventsPageInner() {
     const text = (eventCommentInputs[eventId] ?? "").trim();
     if (!text) return;
     if (text.length > MAX_EVENT_COMMENT_CHARS) {
-      alert(`Comment must be ${MAX_EVENT_COMMENT_CHARS} characters or fewer.`);
+      toast.error(`Comment must be ${MAX_EVENT_COMMENT_CHARS} characters or fewer.`);
       return;
     }
     try {
@@ -790,7 +793,7 @@ function EventsPageInner() {
       await loadEventCommentsForEvents([eventId]);
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Could not post comment.");
+      toast.error(err instanceof Error ? err.message : "Could not post comment.");
     } finally {
       setSubmittingEventCommentFor(null);
     }
@@ -817,7 +820,7 @@ function EventsPageInner() {
       await loadEventCommentsForEvents([eventId]);
     } catch (err) {
       console.error(err);
-      alert(errorMessage(err, "Could not save reaction."));
+      toast.error(errorMessage(err, "Could not save reaction."));
     } finally {
       setTogglingEventCommentReactionFor(null);
     }
@@ -837,7 +840,7 @@ function EventsPageInner() {
       await loadEventCommentsForEvents([eventId]);
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Could not delete.");
+      toast.error(err instanceof Error ? err.message : "Could not delete.");
     } finally {
       setDeletingEventCommentId(null);
     }
@@ -999,7 +1002,7 @@ function EventsPageInner() {
       const { data } = supabase.storage.from("feed-images").getPublicUrl(path);
       setEventCoverUrl(data.publicUrl);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Upload failed");
+      toast.error(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploadingEventCover(false);
     }
@@ -1068,7 +1071,7 @@ function EventsPageInner() {
     if (!file) return;
     const pickError = validateImagePick(file);
     if (pickError) {
-      alert(pickError);
+      toast.error(pickError);
       return;
     }
     setMemWizPhotoUploading(true);
@@ -1076,7 +1079,7 @@ function EventsPageInner() {
       const publicUrl = await uploadMemorialPhoto(file);
       setMemWizImage(publicUrl);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to upload photo.");
+      toast.error(err instanceof Error ? err.message : "Failed to upload photo.");
     } finally {
       setMemWizPhotoUploading(false);
       if (memorialPhotoInputRef.current) {
@@ -1134,7 +1137,7 @@ function EventsPageInner() {
       }
 
       if (error) {
-        alert(error.message);
+        toast.error(error.message);
         return;
       }
 
@@ -1181,7 +1184,7 @@ function EventsPageInner() {
           setPendingEventInvites(new Set());
         } catch (inviteErr) {
           console.error("Event invite send after publish failed:", inviteErr);
-          alert(inviteErr instanceof Error ? inviteErr.message : "Event was published, but invites could not be sent.");
+          toast.error(inviteErr instanceof Error ? inviteErr.message : "Event was published, but invites could not be sent.");
         }
       }
 
@@ -2557,18 +2560,26 @@ function EventsPageInner() {
         {calendarView === "day" ? (
           <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
             {dayViewMemorials.length === 0 && dayViewEvents.length === 0 && (
-              <div
-                style={{
-                  border: `1px dashed ${t.border}`,
-                  borderRadius: 14,
-                  padding: 18,
-                  color: t.textMuted,
-                  textAlign: "center",
-                  fontWeight: 700,
+              <EmptyState
+                compact
+                icon="📅"
+                title="Nothing on this day"
+                description="Add a community event or memorial so the calendar stays useful for the shop."
+                action={{
+                  label: "Add event",
+                  onClick: () => {
+                    setShowEventForm(true);
+                    setShowMemorialForm(false);
+                  },
                 }}
-              >
-                No events or memorials for this day.
-              </div>
+                secondaryAction={{
+                  label: "Add memorial",
+                  onClick: () => {
+                    setShowMemorialForm(true);
+                    setShowEventForm(false);
+                  },
+                }}
+              />
             )}
 
             {dayViewMemorials.map((m) => (
@@ -3083,8 +3094,19 @@ function EventsPageInner() {
             Loading upcoming events...
           </div>
         ) : allUpcomingEvents.length === 0 ? (
-          <div style={{ padding: "32px 20px", textAlign: "center", color: t.textFaint, fontSize: 14 }}>
-            No events in the next {UPCOMING_EVENTS_WINDOW_DAYS} days. Be the first to add one!
+          <div style={{ padding: 20 }}>
+            <EmptyState
+              icon="📅"
+              title="No upcoming events"
+              description={`Nothing on the board for the next ${UPCOMING_EVENTS_WINDOW_DAYS} days. Post the next muster, training, or hangout.`}
+              action={{
+                label: "Add event",
+                onClick: () => {
+                  setShowEventForm(true);
+                  setShowMemorialForm(false);
+                },
+              }}
+            />
           </div>
         ) : (
           <div style={{ display: "grid", gap: 0 }}>

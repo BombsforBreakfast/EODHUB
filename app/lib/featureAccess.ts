@@ -18,6 +18,7 @@ export function getFeatureAccess(input: MemberAccessInput): FeatureAccess {
     canUseJobFilters: hasFullAccess,
     canViewFullBusinessDirectory: hasFullAccess,
     canUseDMs: hasFullAccess,
-    canUseRabbitHole: hasFullAccess,
+    // Rabbithole is open to all verified members (useRequireFullAccess), not paywalled.
+    canUseRabbitHole: true,
   };
 }

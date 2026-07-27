@@ -29,6 +29,8 @@ import {
   stripLemonLotListingUrl,
   type MarketplaceListingRow,
 } from "../lib/lemonLot";
+import EmptyState from "../components/EmptyState";
+import { useToast } from "../components/toast/ToastProvider";
 
 type LemonLotShareSnapshot = {
   id: string;
@@ -221,6 +223,7 @@ function sidebarSendButtonStyle(disabled: boolean, isMobile: boolean): CSSProper
 export default function SidebarPage() {
   useRequireFullAccess("app/sidebar/page.tsx");
   usePageTracking(PAGE_TRACKING.sidebar);
+  const toast = useToast();
   const [userId, setUserId] = useState<string | null>(null);
   const [myName, setMyName] = useState("");
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -500,12 +503,12 @@ export default function SidebarPage() {
         .select("id")
         .single();
       if (convErr || !created?.id) {
-        alert("Failed to send message request. Please try again.");
+        toast.error("Failed to send message request. Please try again.");
         return;
       }
       const { error: msgErr } = await supabase.from("messages").insert({ conversation_id: created.id, sender_id: userId, content: requestDraft.trim() });
       if (msgErr) {
-        alert("Message failed to send. Please try again.");
+        toast.error("Message failed to send. Please try again.");
         return;
       }
       await postNotifyJson(supabase, {
@@ -534,7 +537,7 @@ export default function SidebarPage() {
   async function acceptRequest(convId: string) {
     if (blockIfNeeded()) return;
     const { error } = await supabase.from("conversations").update({ status: "accepted" }).eq("id", convId);
-    if (error) { alert("Failed to accept request. Please try again."); return; }
+    if (error) { toast.error("Failed to accept request. Please try again."); return; }
     if (userId) await loadConversations(userId);
     selectConversation(convId);
     setInboxTab("messages");
@@ -544,7 +547,7 @@ export default function SidebarPage() {
   async function declineRequest(convId: string) {
     if (blockIfNeeded()) return;
     const { error } = await supabase.from("conversations").update({ status: "declined" }).eq("id", convId);
-    if (error) { alert("Failed to decline request. Please try again."); return; }
+    if (error) { toast.error("Failed to decline request. Please try again."); return; }
     if (userId) await loadConversations(userId);
   }
 
@@ -725,7 +728,7 @@ export default function SidebarPage() {
 
   function setMessagePhoto(file: File) {
     if (!file.type.startsWith("image/")) {
-      alert("Please choose a photo.");
+      toast.error("Please choose a photo.");
       return;
     }
     setSelectedPhoto((prev) => {
@@ -915,7 +918,7 @@ export default function SidebarPage() {
       setEventInviteMeta((prev) => prev[eventId] ? { ...prev, [eventId]: { ...prev[eventId], interested, going, myStatus } } : prev);
     } catch (err) {
       console.error("Event invite RSVP failed:", err);
-      alert(err instanceof Error ? err.message : "Could not update your RSVP.");
+      toast.error(err instanceof Error ? err.message : "Could not update your RSVP.");
     }
   }
 
@@ -987,7 +990,7 @@ export default function SidebarPage() {
         });
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Could not send your message.");
+      toast.error(err instanceof Error ? err.message : "Could not send your message.");
       setNewMessage(content);
       if (photo) setMessagePhoto(photo.file);
     } finally {
@@ -1103,18 +1106,35 @@ export default function SidebarPage() {
               </button>
             )}
             {acceptedConvs.length === 0 && sentPending.length === 0 && receivedRequests.length === 0 && (
-              <div style={{ padding: 32, textAlign: "center", color: t.textFaint, fontSize: 14 }}>
-                No conversations yet. Visit someone&apos;s profile or use Sidebar from a comment thread.
+              <div style={{ padding: 20 }}>
+                <EmptyState
+                  icon="💬"
+                  title="No Sidebars yet"
+                  description="Start a conversation from someone's profile, or reply from a comment thread. Your messages will land here."
+                  action={{ label: "Browse members", href: "/user-directory" }}
+                  secondaryAction={{ label: "Open feed", href: "/" }}
+                />
               </div>
             )}
             {acceptedConvs.length === 0 && sentPending.length === 0 && receivedRequests.length > 0 && (
-              <div style={{ padding: 32, textAlign: "center", color: t.textFaint, fontSize: 14 }}>
-                Your accepted conversations will appear here.
+              <div style={{ padding: 20 }}>
+                <EmptyState
+                  compact
+                  icon="📬"
+                  title="Requests are waiting"
+                  description="Accept a message request above to start the Sidebar. Accepted threads show up here."
+                  action={{ label: "View requests", onClick: () => setInboxTab("requests") }}
+                />
               </div>
             )}
             {inboxSearch.trim() && filteredAcceptedConvs.length === 0 && filteredSentPending.length === 0 && (acceptedConvs.length > 0 || sentPending.length > 0) && (
-              <div style={{ padding: 24, textAlign: "center", color: t.textFaint, fontSize: 14 }}>
-                No matches for &ldquo;{inboxSearch.trim()}&rdquo;
+              <div style={{ padding: 20 }}>
+                <EmptyState
+                  compact
+                  title={`No matches for "${inboxSearch.trim()}"`}
+                  description="Try another name, or clear the search to see your full inbox."
+                  action={{ label: "Clear search", onClick: () => setInboxSearch("") }}
+                />
               </div>
             )}
             {/* Accepted conversations */}
@@ -1353,13 +1373,13 @@ export default function SidebarPage() {
           ),
         );
         const anyOk = results.some((r) => r.ok);
-        alert(
+        toast.success(
           anyOk
             ? "Message flagged. Admins have been notified."
             : "Message flagged, but notifications could not be delivered. Check your connection.",
         );
       } else {
-        alert("Message flagged.");
+        toast.success("Message flagged.");
       }
     } finally { setFlaggingId(null); }
   }

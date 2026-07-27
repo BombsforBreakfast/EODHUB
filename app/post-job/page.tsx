@@ -8,6 +8,7 @@ import MemberPaywallModal from "../components/MemberPaywallModal";
 import { useMemberSubscriptionGate } from "../hooks/useMemberSubscriptionGate";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
 import type { ScrapedJobData } from "../lib/metadata/extractJobMetadata";
+import { useToast } from "../components/toast/ToastProvider";
 
 type ScrapeStatus = "idle" | "loading" | "success" | "error";
 
@@ -37,6 +38,7 @@ function fillIfBlank(current: string, next: string | undefined | null): string {
 export default function PostJobPage() {
   useRequireFullAccess("app/post-job/page.tsx");
   const { t } = useTheme();
+  const toast = useToast();
   const { blockIfNeeded, paywallOpen, setPaywallOpen } = useMemberSubscriptionGate();
   const [title, setTitle] = useState("");
   const [companyName, setCompanyName] = useState("");
@@ -217,7 +219,7 @@ export default function PostJobPage() {
         error: userError,
       } = await supabase.auth.getUser();
       if (userError || !user) {
-        alert("You must be logged in to post a job.");
+        toast.error("You must be logged in to post a job.");
         return;
       }
 
@@ -229,7 +231,7 @@ export default function PostJobPage() {
         } = await supabase.auth.getSession();
         const token = session?.access_token;
         if (!token) {
-          alert("You must be logged in to post a job.");
+          toast.error("You must be logged in to post a job.");
           return;
         }
 
@@ -259,11 +261,11 @@ export default function PostJobPage() {
           | { ok?: boolean; error?: string }
           | null;
         if (!res.ok || !payload?.ok) {
-          alert(payload?.error || "Error posting job.");
+          toast.error(payload?.error || "Error posting job.");
           return;
         }
 
-        alert("Job is live on the board and in your feed.");
+        toast.success("Job is live on the board and in your feed.");
       } else {
         const { error } = await supabase.from("jobs").insert([
           {
@@ -287,11 +289,11 @@ export default function PostJobPage() {
         ]);
 
         if (error) {
-          alert("Error submitting job: " + error.message);
+          toast.error("Error submitting job: " + error.message);
           return;
         }
 
-        alert("Job submitted! Pending approval.");
+        toast.success("Job submitted! Pending approval.");
       }
 
       setTitle("");
@@ -303,7 +305,7 @@ export default function PostJobPage() {
       setAnonymous(false);
       resetScrapeState();
     } catch (err) {
-      alert("Error submitting job: " + (err instanceof Error ? err.message : "Something went wrong."));
+      toast.error("Error submitting job: " + (err instanceof Error ? err.message : "Something went wrong."));
     } finally {
       setSubmitting(false);
     }

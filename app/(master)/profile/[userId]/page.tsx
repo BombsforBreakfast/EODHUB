@@ -9,6 +9,8 @@ import { invalidateViewerProfile } from "../../../lib/queries/viewerProfile";
 import DesktopLayout from "../../../components/DesktopLayout";
 import ImageCropDialog from "../../../components/ImageCropDialog";
 import { useTheme } from "../../../lib/ThemeContext";
+import { useToast } from "../../../components/toast/ToastProvider";
+import { useConfirm } from "../../../components/confirm/ConfirmProvider";
 import { ASPECT_AVATAR, ASPECT_EMPLOYER_LOGO } from "../../../lib/imageCropTargets";
 import MentionTextarea, { extractMentionIds } from "../../../components/MentionTextarea";
 import GifPickerButton from "../../../components/GifPickerButton";
@@ -620,6 +622,8 @@ export default function PublicProfilePage() {
       : null;
 
   const { t, isDark } = useTheme();
+  const toast = useToast();
+  const confirmDialog = useConfirm();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [businessOrgPage, setBusinessOrgPage] = useState<BusinessOrgPageRow | null>(null);
@@ -1007,7 +1011,7 @@ export default function PublicProfilePage() {
       setUploadingAvatar(true);
       const prepared = await prepareCroppedImageBlob(blob, "avatar.jpg");
       if (!prepared.ok) {
-        alert(prepared.error);
+        toast.error(prepared.error);
         return;
       }
       const file = prepared.file;
@@ -1022,7 +1026,7 @@ export default function PublicProfilePage() {
       void refreshPlankHolderChallenge();
     } catch (err) {
       console.error(err);
-      alert(`Photo upload failed: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Photo upload failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setUploadingAvatar(false);
     }
@@ -1035,7 +1039,7 @@ export default function PublicProfilePage() {
     if (!file) return;
     const pickError = validateImagePick(file);
     if (pickError) {
-      alert(pickError);
+      toast.error(pickError);
       return;
     }
     if (wallAvatarCropSrc) URL.revokeObjectURL(wallAvatarCropSrc);
@@ -1070,7 +1074,7 @@ export default function PublicProfilePage() {
       const url = await uploadEmployerDocument(file, "resume");
       setEditResumeUrl(url);
     } catch (err) {
-      alert(`Resume upload failed: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Resume upload failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setUploadingResumeDoc(false);
     }
@@ -1085,7 +1089,7 @@ export default function PublicProfilePage() {
       const url = await uploadEmployerDocument(file, "education");
       setEditEducationUrl(url);
     } catch (err) {
-      alert(`Education upload failed: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Education upload failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setUploadingEducationDoc(false);
     }
@@ -1100,7 +1104,7 @@ export default function PublicProfilePage() {
       const url = await uploadEmployerDocument(file, "training");
       setEditSpecializedTrainingDocs((prev) => ({ ...prev, [trainingUploadTargetTag]: url }));
     } catch (err) {
-      alert(`Training document upload failed: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error(`Training document upload failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setUploadingTrainingTag(null);
       setTrainingUploadTargetTag(null);
@@ -1164,7 +1168,7 @@ export default function PublicProfilePage() {
     if (!currentUserId || !profile || currentUserId !== profile.user_id || !userId) return;
     if (profile.account_type === "business_org") {
       if (!businessOrgPage) {
-        alert("Business profile details are not available yet.");
+        toast.error("Business profile details are not available yet.");
         return;
       }
       try {
@@ -1172,7 +1176,7 @@ export default function PublicProfilePage() {
         const { data: sessionData } = await supabase.auth.getSession();
         const accessToken = sessionData.session?.access_token;
         if (!accessToken) {
-          alert("Please sign in again to save changes.");
+          toast.error("Please sign in again to save changes.");
           return;
         }
         const res = await fetch(`/api/business-org-pages/${encodeURIComponent(businessOrgPage.id)}`, {
@@ -1197,7 +1201,7 @@ export default function PublicProfilePage() {
         });
         const data = (await res.json().catch(() => ({}))) as { page?: BusinessOrgPageRow; error?: string };
         if (!res.ok || !data.page) {
-          alert(data.error ?? "Could not save business profile.");
+          toast.error(data.error ?? "Could not save business profile.");
           return;
         }
         setBusinessOrgPage(data.page);
@@ -1256,7 +1260,7 @@ export default function PublicProfilePage() {
         .update(payload)
         .eq("user_id", currentUserId);
       if (error) {
-        alert(error.message);
+        toast.error(error.message);
         return;
       }
       await loadProfile(userId);
@@ -2069,7 +2073,7 @@ export default function PublicProfilePage() {
       if (userId) await loadPosts(userId);
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Could not save reaction");
+      toast.error(err instanceof Error ? err.message : "Could not save reaction");
     } finally {
       setTogglingLikeFor(null);
     }
@@ -2117,7 +2121,7 @@ export default function PublicProfilePage() {
       if (userId) await loadPosts(userId);
     } catch (err) {
       console.error(err);
-      alert(err instanceof Error ? err.message : "Could not save reaction");
+      toast.error(err instanceof Error ? err.message : "Could not save reaction");
     } finally {
       setTogglingCommentLikeFor(null);
     }
@@ -2169,7 +2173,13 @@ export default function PublicProfilePage() {
 
   async function deleteWallPost(postId: string) {
     if (!currentUserId) return;
-    if (!window.confirm("Delete this post?")) return;
+    const ok = await confirmDialog({
+      title: "Delete post",
+      message: "Delete this post?",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       setDeletingPostId(postId);
       const token = await getAccessToken({ force: true, source: "deleteWallPost" });
@@ -2203,11 +2213,17 @@ export default function PublicProfilePage() {
     if (!currentUserId) return;
     const post = posts.find((p) => p.id === item.postId);
     if (!post || post.user_id !== currentUserId) {
-      alert("You can only remove media from your own posts.");
+      toast.error("You can only remove media from your own posts.");
       return;
     }
     const isVideo = Boolean(item.muxVideoId || parseMuxFeedVideoUrl(item.url) || isVideoUrl(item.url));
-    if (!window.confirm(`Remove this ${isVideo ? "video" : "photo"} from your wall?`)) return;
+    const ok = await confirmDialog({
+      title: isVideo ? "Remove video" : "Remove photo",
+      message: `Remove this ${isVideo ? "video" : "photo"} from your wall?`,
+      confirmLabel: "Remove",
+      danger: true,
+    });
+    if (!ok) return;
 
     const mediaKey = wallMediaItemKey(item);
     try {
@@ -2255,7 +2271,7 @@ export default function PublicProfilePage() {
       }
       if (userId) await loadPosts(userId);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to remove media.");
+      toast.error(err instanceof Error ? err.message : "Failed to remove media.");
     } finally {
       setDeletingWallMediaKey(null);
     }
@@ -2294,7 +2310,7 @@ export default function PublicProfilePage() {
         .eq("id", postId);
 
       if (error) {
-        alert(error.message);
+        toast.error(error.message);
         return;
       }
 
@@ -2335,10 +2351,10 @@ export default function PublicProfilePage() {
       });
       const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        alert(json.error ?? "Could not submit flag");
+        toast.error(json.error ?? "Could not submit flag");
         return;
       }
-      alert("Flagged for review. Thank you.");
+      toast.success("Flagged for review. Thank you.");
       setFlagModal(null);
     } finally {
       setFlaggingId(null);
@@ -2347,7 +2363,13 @@ export default function PublicProfilePage() {
 
   async function deleteWallComment(commentId: string) {
     if (!currentUserId) return;
-    if (!window.confirm("Delete this comment?")) return;
+    const ok = await confirmDialog({
+      title: "Delete comment",
+      message: "Delete this comment?",
+      confirmLabel: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     try {
       setDeletingCommentId(commentId);
       await supabase.from("post_comments").delete().eq("id", commentId);
@@ -2850,14 +2872,14 @@ export default function PublicProfilePage() {
       return true;
     });
     if (filtered.length === 0) {
-      if (options?.videosOnly) alert("Please choose a video file.");
-      else if (options?.photosOnly) alert("Please choose a photo.");
+      if (options?.videosOnly) toast.error("Please choose a video file.");
+      else if (options?.photosOnly) toast.error("Please choose a photo.");
       return;
     }
     setSelectedPostImages((prev) => {
       const slots = 10 - prev.length;
       if (slots <= 0) {
-        alert("You can attach up to 10 files per post.");
+        toast.info("You can attach up to 10 files per post.");
         return prev;
       }
       const toAddFiles = filtered.slice(0, slots);
@@ -2869,11 +2891,11 @@ export default function PublicProfilePage() {
         feedUploadLimitsForAccount(uploaderAccountType),
       );
       if (pickError) {
-        alert(pickError);
+        toast.error(pickError);
         return prev;
       }
       if (filtered.length > slots) {
-        alert("Only the first files were added. Max is 10 attachments per post.");
+        toast.info("Only the first files were added. Max is 10 attachments per post.");
       }
       const toAdd: typeof prev = toAddFiles.map((f) => {
         const kind = options?.videosOnly ? "video" : attachmentRenderKindFromFile(f);
@@ -2904,13 +2926,13 @@ export default function PublicProfilePage() {
     setSelectedPostImages((prev) => {
       const missingTokens = missingCadPreviewTokens(prev);
       if (missingTokens.length === 0) {
-        alert("All CAD/3D files already have previews.");
+        toast.info("All CAD/3D files already have previews.");
         return prev;
       }
 
       const validImages = files.filter((file) => isPreviewImageForCad(file));
       if (validImages.length === 0) {
-        alert("Please choose a JPG, PNG, or WEBP preview image.");
+        toast.error("Please choose a JPG, PNG, or WEBP preview image.");
         return prev;
       }
 
@@ -2920,7 +2942,7 @@ export default function PublicProfilePage() {
         const token = missingTokens[index];
         const pickError = validateImagePick(file);
         if (pickError) {
-          alert(pickError);
+          toast.error(pickError);
           return;
         }
         next.push({
@@ -2953,7 +2975,7 @@ export default function PublicProfilePage() {
       setSubmittingPost(true);
       const missingCadTokens = missingCadPreviewTokens(selectedPostImages);
       if (missingCadTokens.length > 0) {
-        alert("Each CAD/3D file needs a preview image (JPG, PNG, or WEBP) before posting.");
+        toast.error("Each CAD/3D file needs a preview image (JPG, PNG, or WEBP) before posting.");
         setSubmittingPost(false);
         return;
       }
@@ -2986,7 +3008,7 @@ export default function PublicProfilePage() {
         .single();
 
       if (insertError || !inserted?.id) {
-        alert(insertError?.message || "Failed to create post.");
+        toast.error(insertError?.message || "Failed to create post.");
         return;
       }
 
@@ -3080,7 +3102,7 @@ export default function PublicProfilePage() {
           headers: { Authorization: `Bearer ${token ?? ""}` },
         });
       }
-      alert(err instanceof Error ? err.message : "Failed to create post");
+      toast.error(err instanceof Error ? err.message : "Failed to create post");
     } finally {
       setSubmittingPost(false);
     }
@@ -3096,13 +3118,13 @@ export default function PublicProfilePage() {
       setTogglingConnection("know");
       const result = await postConnectionAction("know");
       if (!result.ok) {
-        alert(result.error || "Failed to update connection");
+        toast.error(result.error || "Failed to update connection");
         return;
       }
       await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Request know error:", err);
-      alert("Failed to update connection");
+      toast.error("Failed to update connection");
     } finally {
       setTogglingConnection(null);
     }
@@ -3137,13 +3159,13 @@ export default function PublicProfilePage() {
       setTogglingConnection("know");
       const result = await postConnectionAction("cancel");
       if (!result.ok) {
-        alert(result.error || "Failed to update connection");
+        toast.error(result.error || "Failed to update connection");
         return;
       }
       await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Cancel know request error:", err);
-      alert("Failed to update connection");
+      toast.error("Failed to update connection");
     } finally {
       setTogglingConnection(null);
     }
@@ -3155,13 +3177,13 @@ export default function PublicProfilePage() {
       setTogglingConnection(accept ? "confirm" : "deny");
       const result = await postConnectionAction(accept ? "confirm" : "deny");
       if (!result.ok) {
-        alert(result.error || "Failed to update connection");
+        toast.error(result.error || "Failed to update connection");
         return;
       }
       await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Respond know request error:", err);
-      alert("Failed to update connection");
+      toast.error("Failed to update connection");
     } finally {
       setTogglingConnection(null);
     }
@@ -3175,13 +3197,13 @@ export default function PublicProfilePage() {
       const turningOn = !currentUserWorkedWith;
       const result = await postConnectionAction("worked_with", turningOn);
       if (!result.ok) {
-        alert(result.error || "Failed to update connection");
+        toast.error(result.error || "Failed to update connection");
         return;
       }
       await loadConnections(userId, currentUserId);
     } catch (err) {
       console.error("Toggle worked_with error:", err);
-      alert("Failed to update connection");
+      toast.error("Failed to update connection");
     } finally {
       setTogglingConnection(null);
     }
@@ -3198,7 +3220,7 @@ export default function PublicProfilePage() {
 
       const prepared = await prepareImageUploadFile(file);
       if (!prepared.ok) {
-        alert(prepared.error);
+        toast.error(prepared.error);
         return;
       }
 
@@ -3231,7 +3253,7 @@ export default function PublicProfilePage() {
       await loadPhotos(currentUserId);
     } catch (err) {
       console.error("Gallery upload failed:", err);
-      alert("Gallery upload failed");
+      toast.error("Gallery upload failed");
     } finally {
       setUploadingGallery(false);
       e.target.value = "";
@@ -3248,7 +3270,7 @@ export default function PublicProfilePage() {
         const pinnedCount = photos.filter((p) => p.is_pinned).length;
 
         if (pinnedCount >= 4) {
-          alert("You can only pin up to 4 photos");
+          toast.error("You can only pin up to 4 photos");
           return;
         }
       }
@@ -3263,7 +3285,7 @@ export default function PublicProfilePage() {
       await loadPhotos(currentUserId);
     } catch (err) {
       console.error("Toggle pinned failed:", err);
-      alert("Failed to update pinned photo");
+      toast.error("Failed to update pinned photo");
     } finally {
       setTogglingPinnedId(null);
     }
@@ -3271,7 +3293,8 @@ export default function PublicProfilePage() {
 
   async function deletePhoto(photo: ProfilePhoto) {
     if (!currentUserId || currentUserId !== photo.user_id) return;
-    if (!window.confirm("Delete this photo?")) return;
+    const ok = await confirmDialog({ title: "Please confirm", message: "Delete this photo?", confirmLabel: "Confirm", danger: true });
+    if (!ok) return;
 
     try {
       setDeletingPhotoId(photo.id);
@@ -3286,7 +3309,7 @@ export default function PublicProfilePage() {
       await loadPhotos(currentUserId);
     } catch (err) {
       console.error("Delete photo failed:", err);
-      alert("Failed to delete photo");
+      toast.error("Failed to delete photo");
     } finally {
       setDeletingPhotoId(null);
     }
@@ -8098,7 +8121,7 @@ export default function PublicProfilePage() {
         onClose={() => setEmployerPostJobOpen(false)}
         onSuccess={() => {
           if (userId) void loadPosts(userId);
-          alert("Job is live on the board and in your feed.");
+          toast.success("Job is live on the board and in your feed.");
         }}
       />
     ) : null}

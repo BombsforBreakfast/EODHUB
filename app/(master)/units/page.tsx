@@ -15,6 +15,7 @@ import { prepareCroppedImageBlob } from "../../lib/prepareUploadFile";
 import { validateImagePick } from "../../lib/uploadLimits";
 import { usePageTracking } from "../../hooks/usePageTracking";
 import { PAGE_TRACKING } from "../../lib/pageTrackingPaths";
+import EmptyState from "../../components/EmptyState";
 
 type UnitMemberPreview = {
   user_id: string;
@@ -632,9 +633,12 @@ function UnitsPageContent() {
 
         {/* Empty directory (no units in system) */}
         {emptyDirectory && (
-          <div style={{ color: t.textMuted, textAlign: "center", padding: 36, fontSize: 15 }}>
-            No public groups yet. Create one, or browse groups you belong to above.
-          </div>
+          <EmptyState
+            icon="🪖"
+            title="No public groups yet"
+            description="Start a group for your shop, or browse groups you already belong to above."
+            action={{ label: "Create a group", onClick: () => setShowCreate(true) }}
+          />
         )}
 
         {/* Main groups directory — same 4-column template as hero (900px+) */}

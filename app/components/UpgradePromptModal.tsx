@@ -78,7 +78,6 @@ export default function UpgradePromptModal({
           <li>Advanced job filtering</li>
           <li>Full business directory</li>
           <li>Direct messaging</li>
-          <li>Rabbithole access (coming soon)</li>
         </ul>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 20, flexWrap: "wrap" }}>

@@ -2145,16 +2145,15 @@ html.game-portrait-active .arcade-game-play-surface {
 /* -- Collapsing Circuit (local v1) -- */
 .circuit-strip {
   margin: 10px 0 14px;
-  padding: 12px 12px 10px;
-  border-radius: 14px;
-  border: 1px solid rgba(120, 140, 120, 0.28);
-  background:
-    radial-gradient(120% 80% at 0% 0%, rgba(70, 110, 80, 0.18), transparent 55%),
-    linear-gradient(160deg, rgba(18, 24, 20, 0.04), rgba(40, 48, 36, 0.08));
+  padding: 0;
+  border-radius: 0;
+  border: none;
+  background: transparent;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  overflow: visible;
 }
 .circuit-strip-guidelines {
   margin: 0 0 10px;
@@ -2174,16 +2173,7 @@ html.game-portrait-active .arcade-game-play-surface {
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 8px;
-}
-.circuit-strip-beta {
-  flex: 0 0 auto;
-  margin-left: auto;
-  font-size: 11px;
-  font-weight: 600;
-  font-style: italic;
-  opacity: 0.65;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
+  padding: 0;
 }
 .circuit-strip-heading {
   display: flex;
