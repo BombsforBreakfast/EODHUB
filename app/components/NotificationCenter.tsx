@@ -40,7 +40,7 @@ type Props = {
   unreadCount: number;
   currentUserId: string | null;
   isAdmin: boolean;
-  onDismiss: (id: string) => void;
+  onDismiss: (id: string, groupKey?: string | null) => void;
   onOpenItem: (id: string, href: string) => void;
   onMarkAllRead?: () => void;
 };
@@ -291,11 +291,11 @@ export default function NotificationCenter({
                     </button>
                     <button
                       type="button"
-                      aria-label="Dismiss notification"
-                      title="Dismiss"
+                      aria-label={item.count > 1 ? "Dismiss this notification stack" : "Dismiss notification"}
+                      title={item.count > 1 ? "Dismiss all in this stack" : "Dismiss"}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onDismiss(n.id);
+                        onDismiss(n.id, n.group_key ?? null);
                       }}
                       style={{
                         width: 44,

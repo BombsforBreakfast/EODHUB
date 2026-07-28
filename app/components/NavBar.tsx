@@ -175,15 +175,60 @@ export default function NavBar() {
     setNotifications((data ?? []) as Notification[]);
   }
 
-  async function dismissNotification(id: string) {
+  async function dismissNotification(id: string, groupKey?: string | null) {
+    const stackKey = groupKey?.trim() || null;
+
     if (!notificationsV2Enabled) {
-      await supabase.from("notifications").delete().eq("id", id);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      if (stackKey && currentUserId) {
+        await supabase
+          .from("notifications")
+          .delete()
+          .eq("user_id", currentUserId)
+          .eq("group_key", stackKey);
+        setNotifications((prev) => prev.filter((n) => n.group_key !== stackKey));
+      } else {
+        await supabase.from("notifications").delete().eq("id", id);
+        setNotifications((prev) => prev.filter((n) => n.id !== id));
+      }
       return;
     }
+
+    if (!currentUserId) return;
     const now = new Date().toISOString();
-    await supabase.from("notifications").update({ archived_at: now, is_read: true, read_at: now }).eq("id", id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, archived_at: now, read_at: now, is_read: true } : n)));
+    const patch = { archived_at: now, is_read: true, read_at: now };
+
+    if (stackKey) {
+      // Clear the whole stack so "+N more" siblings don't resurface as the next lead.
+      const { error } = await supabase
+        .from("notifications")
+        .update(patch)
+        .eq("recipient_user_id", currentUserId)
+        .eq("group_key", stackKey)
+        .is("archived_at", null);
+      if (error) {
+        console.error("Dismiss notification stack failed:", error);
+        return;
+      }
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.group_key === stackKey ? { ...n, ...patch } : n,
+        ),
+      );
+      return;
+    }
+
+    const { error } = await supabase
+      .from("notifications")
+      .update(patch)
+      .eq("id", id)
+      .eq("recipient_user_id", currentUserId);
+    if (error) {
+      console.error("Dismiss notification failed:", error);
+      return;
+    }
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+    );
   }
 
   async function openNotification(id: string, href: string) {
