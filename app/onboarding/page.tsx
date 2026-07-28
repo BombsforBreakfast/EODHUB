@@ -373,6 +373,13 @@ export default function OnboardingPage() {
         select: "user_id, email, display_name, first_name, last_name, photo_url, service, company_name, account_type, verification_status, email_verified, admin_verified, must_complete_onboarding, is_pure_admin",
       });
 
+      // Admin verification overrides incomplete signup — send them into the app
+      // even if service/company is missing or must_complete_onboarding is stale.
+      if (profile && hasFullPlatformAccess(profile)) {
+        window.location.href = "/";
+        return;
+      }
+
       if (profile?.must_complete_onboarding) {
         const prefilled = [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim();
         if (prefilled) setNameFieldsFromFullName(prefilled);
@@ -381,15 +388,6 @@ export default function OnboardingPage() {
           setShowRequiredHelper(true);
         }
         setChecking(false);
-        return;
-      }
-
-      if (
-        profile &&
-        hasFullPlatformAccess(profile) &&
-        (profile.service || profile.company_name)
-      ) {
-        window.location.href = "/";
         return;
       }
 

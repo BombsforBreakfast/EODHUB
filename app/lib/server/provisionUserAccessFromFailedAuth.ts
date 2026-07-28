@@ -361,6 +361,9 @@ export async function provisionUserAccessFromFailedAuth(
       throw new Error("Profile upsert failed: " + profileReadError.message);
     }
 
+    // Sparse profiles (no service/company) are fine — admin provision grants
+    // full verification. Do not set must_complete_onboarding or the user gets
+    // looped through /onboarding despite already having platform access.
     const forceOnboarding =
       !existingProfile || (!existingProfile.service && !existingProfile.company_name);
 
@@ -377,7 +380,7 @@ export async function provisionUserAccessFromFailedAuth(
           is_approved: true,
           admin_approved_at: now,
           must_change_password: true,
-          must_complete_onboarding: forceOnboarding,
+          must_complete_onboarding: false,
           admin_provisioned_at: now,
         },
         { onConflict: "user_id" },

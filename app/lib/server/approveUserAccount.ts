@@ -106,6 +106,9 @@ export async function approveUserAccount(
     nameBackfill.last_name = resolvedLastName;
   }
 
+  // Admin/vouch approval is full platform trust. Clear must_complete_onboarding
+  // so incomplete signup fields (e.g. missing service/company) cannot bounce
+  // the user through /onboarding after they have been verified.
   const { error: updateError } = await adminClient
     .from("profiles")
     .update({
@@ -114,6 +117,7 @@ export async function approveUserAccount(
       email_verified: true,
       admin_verified: true,
       admin_approved_at: profile.admin_approved_at ?? now,
+      must_complete_onboarding: false,
       ...nameBackfill,
     })
     .eq("user_id", userId);

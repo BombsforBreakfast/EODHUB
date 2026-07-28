@@ -79,6 +79,13 @@ export default function PendingPage() {
         return;
       }
 
+      // Admin-verified users keep access even with sparse profiles / a stale
+      // must_complete_onboarding flag — never dump them back into onboarding.
+      if (hasFullPlatformAccess(profileRow)) {
+        window.location.href = "/";
+        return;
+      }
+
       if (profileRow.must_complete_onboarding) {
         window.location.href = "/onboarding";
         return;

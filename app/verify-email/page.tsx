@@ -59,13 +59,13 @@ function VerifyEmailContent() {
         select: "user_id, service, company_name, verification_status, email_verified, admin_verified, is_pure_admin",
       });
 
-      if (!profile?.service && !profile?.company_name) {
-        window.location.href = "/onboarding?notice=required";
+      if (profile && hasFullPlatformAccess(profile)) {
+        window.location.href = "/";
         return;
       }
 
-      if (hasFullPlatformAccess(profile)) {
-        window.location.href = "/";
+      if (!profile?.service && !profile?.company_name) {
+        window.location.href = "/onboarding?notice=required";
         return;
       }
 
