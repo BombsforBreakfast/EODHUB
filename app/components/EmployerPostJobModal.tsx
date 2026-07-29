@@ -5,6 +5,8 @@ import { useTheme } from "../lib/ThemeContext";
 import { useSuppressChatroomPeek } from "../hooks/useSuppressChatroomPeek";
 import { getAccessToken, supabase } from "../lib/lib/supabaseClient";
 import type { ScrapedJobData } from "../lib/metadata/extractJobMetadata";
+import { validateImagePick } from "../lib/uploadLimits";
+import { uploadJobCoverImage } from "../lib/uploadJobCoverImage";
 
 type ScrapeStatus = "idle" | "loading" | "success" | "error";
 
@@ -78,6 +80,8 @@ export default function EmployerPostJobModal({
   const [ogTitle, setOgTitle] = useState<string | null>(null);
   const [ogDescription, setOgDescription] = useState<string | null>(null);
   const [ogImage, setOgImage] = useState<string | null>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
   const [ogSiteName, setOgSiteName] = useState<string | null>(null);
   const [payMin, setPayMin] = useState<number | null>(null);
   const [payMax, setPayMax] = useState<number | null>(null);
@@ -86,6 +90,8 @@ export default function EmployerPostJobModal({
   const scrapeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scrapeRequestRef = useRef(0);
   const scrapeAbortRef = useRef<AbortController | null>(null);
+  const photoInputRef = useRef<HTMLInputElement | null>(null);
+  const manualPhotoRef = useRef(false);
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -97,6 +103,13 @@ export default function EmployerPostJobModal({
     fontSize: 14,
     boxSizing: "border-box",
   };
+
+  function clearPhotoPreview() {
+    setPhotoPreviewUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }
 
   function resetForm() {
     setTitle("");
@@ -112,11 +125,15 @@ export default function EmployerPostJobModal({
     setOgTitle(null);
     setOgDescription(null);
     setOgImage(null);
+    manualPhotoRef.current = false;
+    clearPhotoPreview();
+    setPhotoUploading(false);
     setOgSiteName(null);
     setPayMin(null);
     setPayMax(null);
     setScrapeStatus("idle");
     setLastScrapedUrl(null);
+    if (photoInputRef.current) photoInputRef.current.value = "";
   }
 
   useEffect(() => {
@@ -125,6 +142,12 @@ export default function EmployerPostJobModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reset only when modal opens
   }, [open, defaultCompanyName]);
 
+  useEffect(() => {
+    return () => {
+      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    };
+  }, [photoPreviewUrl]);
+
   function applyScrapedFields(data: ScrapedJobData) {
     setTitle((prev) => fillIfBlank(prev, data.title));
     setCompanyName((prev) => fillIfBlank(prev, data.company));
@@ -132,10 +155,50 @@ export default function EmployerPostJobModal({
     setDescription((prev) => fillIfBlank(prev, data.description));
     setOgTitle((prev) => prev ?? data.og_title ?? data.title ?? null);
     setOgDescription((prev) => prev ?? data.og_description ?? data.description ?? null);
-    setOgImage((prev) => prev ?? data.og_image ?? null);
+    if (!manualPhotoRef.current) {
+      setOgImage((prev) => prev ?? data.og_image ?? null);
+    }
     setOgSiteName((prev) => prev ?? data.og_site_name ?? data.source_site ?? data.company ?? null);
     setPayMin((prev) => prev ?? data.pay_min ?? null);
     setPayMax((prev) => prev ?? data.pay_max ?? null);
+  }
+
+  async function handlePhotoPick(file: File | null) {
+    if (!file) return;
+    const pickError = validateImagePick(file);
+    if (pickError) {
+      setError(pickError);
+      return;
+    }
+
+    setError(null);
+    setPhotoUploading(true);
+    const localPreview = URL.createObjectURL(file);
+    clearPhotoPreview();
+    setPhotoPreviewUrl(localPreview);
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user?.id) throw new Error("You must be logged in to upload a photo.");
+      const publicUrl = await uploadJobCoverImage(file, user.id);
+      setOgImage(publicUrl);
+      manualPhotoRef.current = true;
+    } catch (err) {
+      clearPhotoPreview();
+      setError(err instanceof Error ? err.message : "Failed to upload photo.");
+    } finally {
+      setPhotoUploading(false);
+      if (photoInputRef.current) photoInputRef.current.value = "";
+    }
+  }
+
+  function clearManualPhoto() {
+    setOgImage(null);
+    manualPhotoRef.current = false;
+    clearPhotoPreview();
+    if (photoInputRef.current) photoInputRef.current.value = "";
   }
 
   useEffect(() => {
@@ -170,7 +233,7 @@ export default function EmployerPostJobModal({
 
       setOgTitle(null);
       setOgDescription(null);
-      setOgImage(null);
+      if (!manualPhotoRef.current) setOgImage(null);
       setOgSiteName(null);
       setPayMin(null);
       setPayMax(null);
@@ -454,6 +517,76 @@ export default function EmployerPostJobModal({
           </div>
 
           <div>
+            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: t.text }}>
+              Job photo <span style={{ fontWeight: 500, color: t.textMuted }}>(optional)</span>
+            </div>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              onChange={(e) => {
+                void handlePhotoPick(e.target.files?.[0] ?? null);
+              }}
+              style={{ display: "none" }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              {(photoPreviewUrl || ogImage) && (
+                <img
+                  src={photoPreviewUrl || ogImage || ""}
+                  alt=""
+                  style={{
+                    width: 96,
+                    height: 72,
+                    objectFit: "cover",
+                    borderRadius: 10,
+                    border: `1px solid ${t.border}`,
+                    background: t.bg,
+                  }}
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={submitting || photoUploading}
+                style={{
+                  padding: "9px 14px",
+                  borderRadius: 10,
+                  border: `1px solid ${t.border}`,
+                  background: t.bg,
+                  color: t.text,
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: submitting || photoUploading ? "not-allowed" : "pointer",
+                }}
+              >
+                {photoUploading ? "Uploading…" : ogImage || photoPreviewUrl ? "Change photo" : "Add photo"}
+              </button>
+              {(ogImage || photoPreviewUrl) && (
+                <button
+                  type="button"
+                  onClick={clearManualPhoto}
+                  disabled={submitting || photoUploading}
+                  style={{
+                    padding: "9px 14px",
+                    borderRadius: 10,
+                    border: `1px solid ${t.border}`,
+                    background: t.surface,
+                    color: t.textMuted,
+                    fontWeight: 700,
+                    fontSize: 13,
+                    cursor: submitting || photoUploading ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted }}>
+              Flyer or team photo for the job card. URL scrape can fill this automatically when available.
+            </div>
+          </div>
+
+          <div>
             <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: t.text }}>Description</div>
             <textarea
               value={description}
@@ -502,7 +635,7 @@ export default function EmployerPostJobModal({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={submitting || !title.trim()}
+            disabled={submitting || photoUploading || !title.trim()}
             style={{
               padding: "10px 16px",
               borderRadius: 10,
@@ -511,8 +644,8 @@ export default function EmployerPostJobModal({
               color: "white",
               fontWeight: 800,
               fontSize: 14,
-              cursor: submitting || !title.trim() ? "not-allowed" : "pointer",
-              opacity: submitting || !title.trim() ? 0.6 : 1,
+              cursor: submitting || photoUploading || !title.trim() ? "not-allowed" : "pointer",
+              opacity: submitting || photoUploading || !title.trim() ? 0.6 : 1,
               display: "flex",
               alignItems: "center",
               gap: 7,
