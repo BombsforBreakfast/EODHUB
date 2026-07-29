@@ -231,17 +231,68 @@ export default function NavBar() {
     );
   }
 
-  async function openNotification(id: string, href: string) {
+  async function openNotification(id: string, href: string, groupKey?: string | null) {
+    const stackKey =
+      groupKey?.trim() ||
+      notifications.find((n) => n.id === id)?.group_key?.trim() ||
+      null;
+
     if (!notificationsV2Enabled) {
-      await supabase.from("notifications").delete().eq("id", id);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      if (stackKey && currentUserId) {
+        await supabase
+          .from("notifications")
+          .delete()
+          .eq("user_id", currentUserId)
+          .eq("group_key", stackKey);
+        setNotifications((prev) => prev.filter((n) => n.group_key !== stackKey));
+      } else {
+        await supabase.from("notifications").delete().eq("id", id);
+        setNotifications((prev) => prev.filter((n) => n.id !== id));
+      }
       setShowNotifPanel(false);
       window.location.href = href;
       return;
     }
+
+    if (!currentUserId) {
+      setShowNotifPanel(false);
+      window.location.href = href;
+      return;
+    }
+
+    // Interact → archive → gone (same as dismiss; clear whole stack when grouped).
     const now = new Date().toISOString();
-    await supabase.from("notifications").update({ is_read: true, read_at: now }).eq("id", id);
-    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read_at: now, is_read: true } : n)));
+    const patch = { archived_at: now, is_read: true, read_at: now };
+
+    if (stackKey) {
+      const { error } = await supabase
+        .from("notifications")
+        .update(patch)
+        .eq("recipient_user_id", currentUserId)
+        .eq("group_key", stackKey)
+        .is("archived_at", null);
+      if (error) {
+        console.error("Open-clear notification stack failed:", error);
+      } else {
+        setNotifications((prev) =>
+          prev.map((n) => (n.group_key === stackKey ? { ...n, ...patch } : n)),
+        );
+      }
+    } else {
+      const { error } = await supabase
+        .from("notifications")
+        .update(patch)
+        .eq("id", id)
+        .eq("recipient_user_id", currentUserId);
+      if (error) {
+        console.error("Open-clear notification failed:", error);
+      } else {
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === id ? { ...n, ...patch } : n)),
+        );
+      }
+    }
+
     setShowNotifPanel(false);
     window.location.href = href;
   }
@@ -257,6 +308,33 @@ export default function NavBar() {
       .is("read_at", null)
       .is("archived_at", null);
     setNotifications((prev) => prev.map((n) => (n.archived_at || n.read_at ? n : { ...n, is_read: true, read_at: now })));
+  }
+
+  async function clearAllNotifications() {
+    if (!currentUserId) return;
+    const now = new Date().toISOString();
+
+    if (!notificationsV2Enabled) {
+      const { error } = await supabase.from("notifications").delete().eq("user_id", currentUserId);
+      if (error) {
+        console.error("Clear all notifications failed:", error);
+        return;
+      }
+      setNotifications([]);
+      return;
+    }
+
+    const patch = { archived_at: now, is_read: true, read_at: now };
+    const { error } = await supabase
+      .from("notifications")
+      .update(patch)
+      .eq("recipient_user_id", currentUserId)
+      .is("archived_at", null);
+    if (error) {
+      console.error("Clear all notifications failed:", error);
+      return;
+    }
+    setNotifications((prev) => prev.map((n) => (n.archived_at ? n : { ...n, ...patch })));
   }
 
   useEffect(() => {
@@ -1208,6 +1286,7 @@ export default function NavBar() {
         onDismiss={dismissNotification}
         onOpenItem={openNotification}
         onMarkAllRead={notificationsV2Enabled ? markAllNotificationsRead : undefined}
+        onClearAll={clearAllNotifications}
       />
     </>
   );

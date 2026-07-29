@@ -41,8 +41,9 @@ type Props = {
   currentUserId: string | null;
   isAdmin: boolean;
   onDismiss: (id: string, groupKey?: string | null) => void;
-  onOpenItem: (id: string, href: string) => void;
+  onOpenItem: (id: string, href: string, groupKey?: string | null) => void;
   onMarkAllRead?: () => void;
+  onClearAll?: () => void;
 };
 
 export default function NotificationCenter({
@@ -55,6 +56,7 @@ export default function NotificationCenter({
   onDismiss,
   onOpenItem,
   onMarkAllRead,
+  onClearAll,
 }: Props) {
   const { t, isDark } = useTheme();
 
@@ -166,6 +168,25 @@ export default function NotificationCenter({
                 Mark all read
               </button>
             )}
+            {groupedItems.length > 0 && onClearAll && (
+              <button
+                type="button"
+                onClick={onClearAll}
+                style={{
+                  border: `1px solid ${t.border}`,
+                  background: t.bg,
+                  color: t.text,
+                  fontSize: 12,
+                  lineHeight: 1,
+                  cursor: "pointer",
+                  borderRadius: 999,
+                  padding: "7px 10px",
+                  fontWeight: 700,
+                }}
+              >
+                Clear all
+              </button>
+            )}
             <button
               type="button"
               aria-label="Close"
@@ -241,7 +262,7 @@ export default function NotificationCenter({
                   <div style={{ display: "flex", alignItems: "stretch", gap: 0 }}>
                     <button
                       type="button"
-                      onClick={() => onOpenItem(n.id, href)}
+                      onClick={() => onOpenItem(n.id, href, n.group_key ?? null)}
                       style={{
                         flex: 1,
                         minWidth: 0,
