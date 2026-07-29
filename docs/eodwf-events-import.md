@@ -12,7 +12,12 @@ Monthly (and on-demand) import of EOD Warrior Foundation events into the EOD-HUB
 
 Imports land in `events` with `is_approved = false`, `source_type` in `eodwf_calendar` | `eodwf_gathering` | `eodwf_retreat`, and dedupe on `(source_type, source_url)`.
 
-Flyers (when present) download into Supabase Storage `feed-images/event-covers/…` and set `image_url`.
+Flyers download into Supabase Storage `feed-images/event-covers/…` and set `image_url`.
+
+Photo sources (best effort):
+- **Calendar:** largest Tribe featured image; skip shared/generic defaults (e.g. reused `Bishop.webp`); fall back to description / event-page uploads on eod-wf.org
+- **Gatherings:** city flyer from the monthly gatherings page
+- **Retreats:** retreats-calendar page hero / og:image
 
 ## Schedule
 

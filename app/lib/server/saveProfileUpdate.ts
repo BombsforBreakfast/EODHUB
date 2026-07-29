@@ -18,6 +18,7 @@ export type SaveProfileBody = {
   years_experience?: unknown;
   skill_badge?: unknown;
   company_website?: unknown;
+  company_phone?: unknown;
   linkedin_url?: unknown;
   open_to_opportunities?: unknown;
   employer_summary?: unknown;
@@ -98,6 +99,7 @@ export async function saveProfileUpdate(
       first_name: asTrimmedString(body.first_name),
       last_name: asTrimmedString(body.last_name),
       company_website: asTrimmedString(body.company_website),
+      company_phone: asTrimmedString(body.company_phone),
       bio: asTrimmedString(body.bio),
     };
   } else {

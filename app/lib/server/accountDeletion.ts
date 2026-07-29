@@ -115,6 +115,7 @@ export async function anonymizeProfileForDeletion(
       bio: null,
       company_name: null,
       company_website: null,
+      company_phone: null,
       linkedin_url: null,
       referral_code: null,
       country: null,

@@ -38,6 +38,9 @@ export type EmployerPostJobPayload = {
   location: string;
   apply_url: string;
   description: string;
+  poc_name: string;
+  poc_email: string;
+  poc_phone: string;
   og_title: string | null;
   og_description: string | null;
   og_image: string | null;
@@ -67,6 +70,9 @@ export default function EmployerPostJobModal({
   const [location, setLocation] = useState("");
   const [applyUrl, setApplyUrl] = useState("");
   const [description, setDescription] = useState("");
+  const [pocName, setPocName] = useState("");
+  const [pocEmail, setPocEmail] = useState("");
+  const [pocPhone, setPocPhone] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ogTitle, setOgTitle] = useState<string | null>(null);
@@ -99,6 +105,9 @@ export default function EmployerPostJobModal({
     setLocation("");
     setApplyUrl("");
     setDescription("");
+    setPocName("");
+    setPocEmail("");
+    setPocPhone("");
     setError(null);
     setOgTitle(null);
     setOgDescription(null);
@@ -231,6 +240,9 @@ export default function EmployerPostJobModal({
         location: location.trim(),
         apply_url: applyUrl.trim() ? normalizeUrl(applyUrl.trim()) : "",
         description: description.trim(),
+        poc_name: pocName.trim(),
+        poc_email: pocEmail.trim(),
+        poc_phone: pocPhone.trim(),
         og_title: ogTitle,
         og_description: ogDescription,
         og_image: ogImage,
@@ -338,7 +350,10 @@ export default function EmployerPostJobModal({
 
         <div style={{ overflowY: "auto", flex: 1, padding: 20, display: "grid", gap: 14 }}>
           <div>
-            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: t.text }}>Apply URL</div>
+            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: t.text }}>
+              Apply URL{" "}
+              <span style={{ fontWeight: 500, color: t.textMuted }}>(optional)</span>
+            </div>
             <input
               value={applyUrl}
               onChange={(e) => setApplyUrl(e.target.value)}
@@ -346,8 +361,11 @@ export default function EmployerPostJobModal({
                 if (e.target.value.trim()) setApplyUrl(normalizeUrl(e.target.value));
               }}
               style={inputStyle}
-              placeholder="https://..."
+              placeholder="https://… leave blank if hiring through EOD-HUB"
             />
+            <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted }}>
+              Not required for jobs you&apos;re promoting inside the hub — add a point of contact below instead.
+            </div>
             {scrapeStatus === "loading" && (
               <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted }}>Pulling job details…</div>
             )}
@@ -401,6 +419,38 @@ export default function EmployerPostJobModal({
               style={inputStyle}
               placeholder="Fort Liberty, NC / CONUS / OCONUS"
             />
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: t.text }}>
+              Point of contact{" "}
+              <span style={{ fontWeight: 500, color: t.textMuted }}>(optional)</span>
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              <input
+                value={pocName}
+                onChange={(e) => setPocName(e.target.value)}
+                style={inputStyle}
+                placeholder="Name"
+                autoComplete="name"
+              />
+              <input
+                value={pocEmail}
+                onChange={(e) => setPocEmail(e.target.value)}
+                style={inputStyle}
+                placeholder="Email"
+                type="email"
+                autoComplete="email"
+              />
+              <input
+                value={pocPhone}
+                onChange={(e) => setPocPhone(e.target.value)}
+                style={inputStyle}
+                placeholder="Phone"
+                type="tel"
+                autoComplete="tel"
+              />
+            </div>
           </div>
 
           <div>

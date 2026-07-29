@@ -288,6 +288,9 @@ type Job = {
   og_image: string | null;
   og_site_name: string | null;
   anonymous: boolean | null;
+  poc_name?: string | null;
+  poc_email?: string | null;
+  poc_phone?: string | null;
 };
 
 type SelectedPostImage = {
@@ -383,7 +386,7 @@ type BizListingComment = BizListingCommentRow & {
 };
 
 const JOB_COLUMNS =
-  "id, created_at, title, category, location, pay_min, pay_max, clearance, description, apply_url, company_name, is_approved, source_type, user_id, og_title, og_description, og_image, og_site_name, anonymous";
+  "id, created_at, title, category, location, pay_min, pay_max, clearance, description, apply_url, company_name, is_approved, source_type, user_id, og_title, og_description, og_image, og_site_name, anonymous, poc_name, poc_email, poc_phone";
 const BUSINESS_LISTING_COLUMNS =
   "id, created_at, business_name, website_url, custom_blurb, poc_name, phone_number, contact_email, city_state, og_title, og_description, og_image, og_site_name, is_approved, is_featured, like_count, listing_type, tags";
 const PERF_DEBUG = process.env.NODE_ENV !== "production";

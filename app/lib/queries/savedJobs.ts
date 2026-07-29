@@ -22,6 +22,9 @@ export type SavedJobRow = {
   og_description: string | null;
   og_image: string | null;
   og_site_name: string | null;
+  poc_name: string | null;
+  poc_email: string | null;
+  poc_phone: string | null;
 };
 
 type RawSavedJob = {
@@ -40,6 +43,9 @@ type RawSavedJob = {
   og_description: string | null;
   og_image: string | null;
   og_site_name: string | null;
+  poc_name: string | null;
+  poc_email: string | null;
+  poc_phone: string | null;
 };
 
 type RawSavedJobRow = {
@@ -68,6 +74,9 @@ export function mapSavedJobRow(row: RawSavedJobRow): SavedJobRow {
     og_description: job?.og_description ?? null,
     og_image: job?.og_image ?? null,
     og_site_name: job?.og_site_name ?? null,
+    poc_name: job?.poc_name ?? null,
+    poc_email: job?.poc_email ?? null,
+    poc_phone: job?.poc_phone ?? null,
   };
 }
 
@@ -78,7 +87,7 @@ export async function fetchSavedJobs(
   const { data, error } = await supabase
     .from("saved_jobs")
     .select(
-      "id, job_id, jobs(title, company_name, location, category, description, apply_url, pay_min, pay_max, clearance, source_type, created_at, og_title, og_description, og_image, og_site_name)",
+      "id, job_id, jobs(title, company_name, location, category, description, apply_url, pay_min, pay_max, clearance, source_type, created_at, og_title, og_description, og_image, og_site_name, poc_name, poc_email, poc_phone)",
     )
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
@@ -108,6 +117,9 @@ export function savedJobRowFromJob(job: {
   og_description?: string | null;
   og_image?: string | null;
   og_site_name?: string | null;
+  poc_name?: string | null;
+  poc_email?: string | null;
+  poc_phone?: string | null;
 }): SavedJobRow {
   return {
     id: `optimistic:${job.id}`,
@@ -127,6 +139,9 @@ export function savedJobRowFromJob(job: {
     og_description: job.og_description ?? null,
     og_image: job.og_image ?? null,
     og_site_name: job.og_site_name ?? null,
+    poc_name: job.poc_name ?? null,
+    poc_email: job.poc_email ?? null,
+    poc_phone: job.poc_phone ?? null,
   };
 }
 

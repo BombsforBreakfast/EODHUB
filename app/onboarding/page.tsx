@@ -76,6 +76,8 @@ export default function OnboardingPage() {
 
   // Employer fields
   const [companyName, setCompanyName] = useState("");
+  const [companyWebsite, setCompanyWebsite] = useState("");
+  const [companyPhone, setCompanyPhone] = useState("");
 
   const [agreedLegal, setAgreedLegal] = useState(false);
   const [missingFieldId, setMissingFieldId] = useState<string | null>(null);
@@ -539,6 +541,8 @@ export default function OnboardingPage() {
           skillBadge,
           yearsExperience,
           companyName,
+          companyWebsite: companyWebsite.trim() || null,
+          companyPhone: companyPhone.trim() || null,
           ...(COUNTRY_COLLECT_ENABLED ? { country } : {}),
           referralInput: readStoredReferral() ?? "",
           photoUrl: uploadedProfilePhotoUrl,
@@ -1053,6 +1057,87 @@ export default function OnboardingPage() {
                     {isMissing("field-employer-country") && <div style={{ marginTop: 6, fontSize: 12, color: "#047857", fontWeight: 700 }}>Please fill out all required fields.</div>}
                   </div>
                   )}
+
+                  <div className="onboarding-field">
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>
+                      Company website <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
+                    </label>
+                    <input
+                      value={companyWebsite}
+                      onChange={(e) => setCompanyWebsite(e.target.value)}
+                      style={inputStyle}
+                      placeholder="https://example.com"
+                      inputMode="url"
+                      autoComplete="url"
+                    />
+                  </div>
+
+                  <div className="onboarding-field">
+                    <label style={{ fontWeight: 700, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>
+                      Company phone <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
+                    </label>
+                    <input
+                      value={companyPhone}
+                      onChange={(e) => setCompanyPhone(e.target.value)}
+                      style={inputStyle}
+                      placeholder="(555) 555-5555"
+                      type="tel"
+                      autoComplete="tel"
+                    />
+                  </div>
+
+                  <div style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, background: "#f9fafb" }}>
+                    <label style={{ fontWeight: 800, fontSize: 13, display: "block", marginBottom: 5, color: "#111827" }}>
+                      Company / profile photo <span style={{ fontWeight: 400, color: "#4b5563" }}>(optional)</span>
+                    </label>
+                    <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 10 }}>
+                      Logo or headshot — you can add this later from your profile.
+                    </div>
+                    <input
+                      ref={profilePhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleProfilePhotoPick}
+                      className="onboarding-file-input-hidden"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                    />
+                    <button
+                      type="button"
+                      className="onboarding-upload-area"
+                      onClick={() => profilePhotoInputRef.current?.click()}
+                    >
+                      {profilePhotoPreviewUrl && (
+                        <img
+                          src={profilePhotoPreviewUrl}
+                          alt=""
+                          style={{ width: 48, height: 48, borderRadius: "50%", objectFit: "cover", border: "2px solid #d1d5db", flexShrink: 0 }}
+                        />
+                      )}
+                      <span className="onboarding-upload-fake-btn">
+                        {profilePhotoFile ? "Change photo" : "Add photo"}
+                      </span>
+                      {profilePhotoFile && (
+                        <span style={{ fontSize: 12, color: "#374151", fontWeight: 600, maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          {profilePhotoFile.name}
+                        </span>
+                      )}
+                    </button>
+                    {profilePhotoFile && (
+                      <button
+                        type="button"
+                        onClick={clearProfilePhotoPick}
+                        style={{ marginTop: 8, border: "1px solid #d1d5db", background: "white", borderRadius: 8, padding: "8px 12px", fontWeight: 700, cursor: "pointer", color: "#374151" }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                    {profilePhotoError && (
+                      <div style={{ marginTop: 8, color: "#b91c1c", fontSize: 12, fontWeight: 700 }}>
+                        {profilePhotoError}
+                      </div>
+                    )}
+                  </div>
 
                   <div style={{ padding: "12px 14px", borderRadius: 10, background: "#fef9c3", fontSize: 13, color: "#78350f", lineHeight: 1.5 }}>
                     Employer accounts are manually reviewed. Once approved, you can post jobs and search candidates who are open to new opportunities.

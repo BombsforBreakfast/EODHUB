@@ -34,6 +34,8 @@ type OnboardingBody = {
   skillBadge?: unknown;
   yearsExperience?: unknown;
   companyName?: unknown;
+  companyWebsite?: unknown;
+  companyPhone?: unknown;
   referralInput?: unknown;
   photoUrl?: unknown;
   country?: unknown;
@@ -94,11 +96,31 @@ export async function POST(req: NextRequest) {
   const skillBadge = typeof body.skillBadge === "string" ? body.skillBadge : "";
   const yearsExperience = typeof body.yearsExperience === "string" ? body.yearsExperience : "";
   const companyName = typeof body.companyName === "string" ? body.companyName : "";
+  const companyWebsiteRaw =
+    typeof body.companyWebsite === "string" ? body.companyWebsite.trim() : "";
+  const companyPhone =
+    typeof body.companyPhone === "string" ? body.companyPhone.trim().slice(0, 40) : "";
   const referralInput = typeof body.referralInput === "string" ? body.referralInput.trim().toUpperCase() : "";
   const photoUrl = typeof body.photoUrl === "string" ? body.photoUrl.trim() : "";
   const countryRaw = typeof body.country === "string" ? body.country : "";
   const eodCertFileName =
     typeof body.eodCertFileName === "string" ? body.eodCertFileName.trim().slice(0, 255) : "";
+
+  let companyWebsite: string | null = null;
+  if (companyWebsiteRaw) {
+    const normalized = /^https?:\/\//i.test(companyWebsiteRaw)
+      ? companyWebsiteRaw
+      : `https://${companyWebsiteRaw}`;
+    try {
+      const parsed = new URL(normalized);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return NextResponse.json({ error: "Company website must be a valid http(s) link." }, { status: 400 });
+      }
+      companyWebsite = parsed.toString().slice(0, 500);
+    } catch {
+      return NextResponse.json({ error: "Company website must be a valid URL." }, { status: 400 });
+    }
+  }
 
   const validationError =
     accountType === "member"
@@ -231,6 +253,8 @@ export async function POST(req: NextRequest) {
           first_name: firstName.trim(),
           last_name: lastName.trim(),
           company_name: companyName.trim(),
+          company_website: companyWebsite,
+          company_phone: companyPhone || null,
           ...(MEMBERSHIP_FEATURE_FLAGS.countryCollectEnabled ? { country } : {}),
           ...(photoUrl ? { photo_url: photoUrl } : {}),
           ...verificationFields,

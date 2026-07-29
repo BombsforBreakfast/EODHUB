@@ -1,4 +1,8 @@
 import {
+  extractUploadImageUrlsFromHtml,
+  pickBestEventCoverUrl,
+} from "./eventImages";
+import {
   decodeHtmlEntities,
   EODWF_BASE,
   EODWF_ORG,
@@ -14,6 +18,8 @@ const GATHERINGS_URL = `${EODWF_BASE}/eod-monthly-gatherings/`;
 type CityBlock = {
   city: string;
   html: string;
+  /** City flyer from the gatherings page (image above/near the h3). */
+  image_remote_url: string | null;
 };
 
 function extractCityBlocks(html: string): CityBlock[] {
@@ -30,7 +36,15 @@ function extractCityBlocks(html: string): CityBlock[] {
     let body = part.slice(close + 5);
     const h2 = body.search(/<h2[\s>]/i);
     if (h2 >= 0) body = body.slice(0, h2);
-    blocks.push({ city, html: body });
+
+    // City flyers usually sit just above the h3 — search the tail of the previous chunk.
+    const prevTail = (parts[i - 1] ?? "").slice(-4000);
+    const imageWindow = `${prevTail}\n${body.slice(0, 2500)}`;
+    const image_remote_url = pickBestEventCoverUrl(
+      extractUploadImageUrlsFromHtml(imageWindow, GATHERINGS_URL),
+    );
+
+    blocks.push({ city, html: body, image_remote_url });
   }
   return blocks;
 }
@@ -51,6 +65,7 @@ function parseGatheringLine(
   city: string,
   pocEmail: string | null,
   now: Date,
+  cityImageUrl: string | null,
 ): NormalizedEodwfEvent | null {
   let line = decodeHtmlEntities(rawLine).replace(/\u00a0/g, " ").trim();
   line = line.replace(/\s*[–—−]\s*/g, " – ").replace(/\s+/g, " ").trim();
@@ -120,7 +135,7 @@ function parseGatheringLine(
     signup_url: GATHERINGS_URL,
     poc_name: pocEmail,
     poc_phone: null,
-    image_remote_url: null,
+    image_remote_url: cityImageUrl,
     source_type: "eodwf_gathering",
     source_url,
     source_event_id: null,
@@ -130,6 +145,7 @@ function parseGatheringLine(
       year_assumed: yearAssumed,
       date_uncertain: uncertain,
       page_url: GATHERINGS_URL,
+      image_source: cityImageUrl ? "city_flyer" : "none",
     },
   };
 }
@@ -168,7 +184,7 @@ export async function fetchMonthlyGatherings(now = new Date()): Promise<Normaliz
   for (const block of blocks) {
     const poc = firstMailto(block.html);
     for (const line of listItemTexts(block.html)) {
-      const ev = parseGatheringLine(line, block.city, poc, now);
+      const ev = parseGatheringLine(line, block.city, poc, now, block.image_remote_url);
       if (!ev) continue;
       if (seen.has(ev.source_url)) continue;
       seen.add(ev.source_url);

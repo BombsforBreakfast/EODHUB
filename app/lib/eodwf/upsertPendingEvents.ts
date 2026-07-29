@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { downloadEventImage } from "./downloadEventImage";
+import { isWeakEventCoverUrl } from "./eventImages";
 import type { NormalizedEodwfEvent } from "./types";
 
 export type UpsertPendingResult = {
@@ -19,6 +20,30 @@ async function resolveImportAuthorId(admin: SupabaseClient): Promise<string | nu
     .limit(1)
     .maybeSingle();
   return data?.user_id ?? null;
+}
+
+function priorRemoteImage(meta: unknown): string | null {
+  if (!meta || typeof meta !== "object") return null;
+  const remote = (meta as Record<string, unknown>).image_remote_url;
+  return typeof remote === "string" && remote.trim() ? remote.trim() : null;
+}
+
+function shouldRefreshPendingImage(args: {
+  existingImageUrl: string | null;
+  priorRemote: string | null;
+  nextRemote: string | null;
+  /** True when enricher rejected a weak/shared featured image and has no replacement. */
+  clearRejectedCover: boolean;
+}): boolean {
+  const { existingImageUrl, priorRemote, nextRemote, clearRejectedCover } = args;
+  if (!nextRemote) {
+    if (clearRejectedCover && existingImageUrl) return true;
+    return Boolean(existingImageUrl && priorRemote && isWeakEventCoverUrl(priorRemote));
+  }
+  if (!existingImageUrl) return true;
+  if (priorRemote && isWeakEventCoverUrl(priorRemote)) return true;
+  if (priorRemote && priorRemote !== nextRemote) return true;
+  return false;
 }
 
 /**
@@ -49,14 +74,20 @@ export async function upsertPendingEodwfEvents(
   const sourceUrls = events.map((e) => e.source_url);
   const existingByUrl = new Map<
     string,
-    { id: string; is_approved: boolean; image_url: string | null; source_type: string | null }
+    {
+      id: string;
+      is_approved: boolean;
+      image_url: string | null;
+      source_type: string | null;
+      import_metadata: unknown;
+    }
   >();
 
   for (let i = 0; i < sourceUrls.length; i += 100) {
     const chunk = sourceUrls.slice(i, i + 100);
     const { data, error } = await admin
       .from("events")
-      .select("id, source_url, source_type, is_approved, image_url")
+      .select("id, source_url, source_type, is_approved, image_url, import_metadata")
       .in("source_url", chunk);
     if (error) {
       result.errors.push(`Lookup failed: ${error.message}`);
@@ -69,6 +100,7 @@ export async function upsertPendingEodwfEvents(
           is_approved: row.is_approved !== false,
           image_url: row.image_url ?? null,
           source_type: row.source_type ?? null,
+          import_metadata: row.import_metadata ?? null,
         });
       }
     }
@@ -82,21 +114,43 @@ export async function upsertPendingEodwfEvents(
         continue;
       }
 
+      const priorRemote = priorRemoteImage(existing?.import_metadata);
+      const nextRemote = ev.image_remote_url?.trim() || null;
+      const clearRejectedCover =
+        ev.import_metadata?.image_source === "none" &&
+        Boolean(ev.import_metadata?.rejected_featured_image);
       let image_url: string | null = existing?.image_url ?? null;
-      if (!image_url && ev.image_remote_url) {
-        const downloaded = await downloadEventImage(
-          admin,
-          ev.image_remote_url,
-          ev.source_event_id || ev.title.slice(0, 24),
-        );
-        if (downloaded) {
-          image_url = downloaded;
-          result.imageDownloads += 1;
+
+      if (
+        shouldRefreshPendingImage({
+          existingImageUrl: image_url,
+          priorRemote,
+          nextRemote,
+          clearRejectedCover,
+        })
+      ) {
+        if (nextRemote) {
+          const downloaded = await downloadEventImage(
+            admin,
+            nextRemote,
+            ev.source_event_id || ev.title.slice(0, 24),
+          );
+          if (downloaded) {
+            image_url = downloaded;
+            result.imageDownloads += 1;
+          } else {
+            // Fall back to remote URL so admin still sees a flyer preview
+            image_url = nextRemote;
+          }
         } else {
-          // Fall back to remote URL so admin still sees a flyer preview
-          image_url = ev.image_remote_url;
+          image_url = null;
         }
       }
+
+      const import_metadata = {
+        ...ev.import_metadata,
+        image_remote_url: nextRemote,
+      };
 
       const row = {
         user_id: authorId,
@@ -116,7 +170,7 @@ export async function upsertPendingEodwfEvents(
         source_type: ev.source_type,
         source_url: ev.source_url,
         source_event_id: ev.source_event_id,
-        import_metadata: ev.import_metadata,
+        import_metadata,
       };
 
       if (existing) {

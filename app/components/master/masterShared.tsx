@@ -24,6 +24,9 @@ export type JobRow = {
   og_image: string | null;
   og_site_name: string | null;
   anonymous: boolean | null;
+  poc_name?: string | null;
+  poc_email?: string | null;
+  poc_phone?: string | null;
 };
 
 export type BusinessListingRow = {

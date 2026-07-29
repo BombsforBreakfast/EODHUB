@@ -101,6 +101,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Apply URL must be a valid http(s) link." }, { status: 400 });
   }
 
+  const pocName = asOptionalString(body.poc_name ?? body.pocName, 120);
+  const pocEmail = asOptionalString(body.poc_email ?? body.pocEmail, 254);
+  const pocPhone = asOptionalString(body.poc_phone ?? body.pocPhone, 40);
+  if (pocEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pocEmail)) {
+    return NextResponse.json({ error: "POC email must be a valid email address." }, { status: 400 });
+  }
+
   const ogTitle = asOptionalString(body.og_title ?? body.ogTitle, 300);
   const ogDescription = asOptionalString(body.og_description ?? body.ogDescription, 2000);
   const ogImage = asOptionalString(body.og_image ?? body.ogImage, 2000);
@@ -117,6 +124,9 @@ export async function POST(req: NextRequest) {
       location,
       apply_url: applyUrl || null,
       description,
+      poc_name: pocName,
+      poc_email: pocEmail,
+      poc_phone: pocPhone,
       is_approved: true,
       is_rejected: false,
       source_type: "community",
@@ -129,7 +139,9 @@ export async function POST(req: NextRequest) {
       pay_min: payMin,
       pay_max: payMax,
     })
-    .select("id, title, company_name, location, category, description, apply_url, og_title, og_description, og_image, og_site_name")
+    .select(
+      "id, title, company_name, location, category, description, apply_url, poc_name, poc_email, poc_phone, og_title, og_description, og_image, og_site_name",
+    )
     .maybeSingle();
 
   if (jobErr || !job?.id) {

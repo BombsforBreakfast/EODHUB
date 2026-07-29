@@ -1533,6 +1533,9 @@ export default function MasterLeftColumn({
                     og_description: job.og_description,
                     og_image: job.og_image,
                     og_site_name: job.og_site_name,
+                    poc_name: job.poc_name,
+                    poc_email: job.poc_email,
+                    poc_phone: job.poc_phone,
                   };
                   return (
                     <div key={job.id} style={{ border: `1px solid ${t.border}`, borderRadius: 10, background: t.surface, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>

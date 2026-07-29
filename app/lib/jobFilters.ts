@@ -18,6 +18,9 @@ export type JobListItem = {
   og_description: string | null;
   og_image: string | null;
   og_site_name: string | null;
+  poc_name?: string | null;
+  poc_email?: string | null;
+  poc_phone?: string | null;
 };
 
 export type SalaryMin = 25000 | 50000 | 75000 | 100000 | 125000 | 150000;

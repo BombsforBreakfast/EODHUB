@@ -19,6 +19,9 @@ export type JobModalData = {
   category: string | null;
   description: string | null;
   apply_url: string | null;
+  poc_name?: string | null;
+  poc_email?: string | null;
+  poc_phone?: string | null;
   pay_min: number | null;
   pay_max: number | null;
   clearance: string | null;
@@ -91,6 +94,7 @@ export default function JobDetailsModal({
   const company = job.company_name || job.og_site_name || "Unknown Company";
   const description = job.description || job.og_description || "";
   const applyUrl = formatExternalUrl(job.apply_url);
+  const hasPoc = Boolean(job.poc_name?.trim() || job.poc_email?.trim() || job.poc_phone?.trim());
   const metaParts: string[] = [];
   if (job.location) metaParts.push(job.location);
   if (job.category) metaParts.push(job.category);
@@ -103,6 +107,12 @@ export default function JobDetailsModal({
         : job.pay_max != null
           ? `Up to $${job.pay_max}`
           : null;
+
+  const emptyDescriptionHint = applyUrl
+    ? "No description available. Use “Visit site” to view the full listing at the source."
+    : hasPoc
+      ? "No description available. Reach out to the point of contact below."
+      : "No description available.";
 
   return createPortal(
     <div
@@ -224,8 +234,44 @@ export default function JobDetailsModal({
                 whiteSpace: "pre-wrap",
               }}
             >
-              {description.trim().length > 0 ? description : "No description available. Use “Visit site” to view the full listing at the source."}
+              {description.trim().length > 0 ? description : emptyDescriptionHint}
             </div>
+
+            {hasPoc && (
+              <div
+                style={{
+                  marginTop: 16,
+                  padding: 12,
+                  borderRadius: 10,
+                  border: `1px solid ${t.border}`,
+                  background: t.bg,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 900, color: t.text, marginBottom: 6 }}>
+                  Point of contact
+                </div>
+                {job.poc_name?.trim() && (
+                  <div style={{ fontSize: 14, color: t.text, marginBottom: 4 }}>{job.poc_name.trim()}</div>
+                )}
+                {job.poc_email?.trim() && (
+                  <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 2 }}>
+                    <a href={`mailto:${job.poc_email.trim()}`} style={{ color: t.text, fontWeight: 700 }}>
+                      {job.poc_email.trim()}
+                    </a>
+                  </div>
+                )}
+                {job.poc_phone?.trim() && (
+                  <div style={{ fontSize: 13, color: t.textMuted }}>
+                    <a
+                      href={`tel:${job.poc_phone.trim().replace(/\s+/g, "")}`}
+                      style={{ color: t.text, fontWeight: 700 }}
+                    >
+                      {job.poc_phone.trim()}
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div style={{ marginTop: 18, borderTop: `1px dashed ${t.border}`, paddingTop: 12 }}>
               <JobStaleReportControl jobId={job.id} variant="inline" />

@@ -1,4 +1,8 @@
 import {
+  extractUploadImageUrlsFromHtml,
+  pickBestEventCoverUrl,
+} from "./eventImages";
+import {
   decodeHtmlEntities,
   EODWF_BASE,
   EODWF_ORG,
@@ -16,7 +20,11 @@ const RETREATS_URL = `${EODWF_BASE}/retreats-calendar/`;
  * "EOD Veterans Track Heroes – Spartanburg, SC; May 17 – 20 – Registration Closed"
  * "SongwritingWith:Soldiers (Gold Star Parents & Spouses) – Smithville, TN; October 23 – 25 Application Open"
  */
-function parseRetreatLine(raw: string, now: Date): NormalizedEodwfEvent | null {
+function parseRetreatLine(
+  raw: string,
+  now: Date,
+  pageImageUrl: string | null,
+): NormalizedEodwfEvent | null {
   let line = decodeHtmlEntities(raw).replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
   if (!line || line.length < 12) return null;
   if (/types of retreats|please follow us|foundation provides/i.test(line)) return null;
@@ -88,7 +96,7 @@ function parseRetreatLine(raw: string, now: Date): NormalizedEodwfEvent | null {
     signup_url: RETREATS_URL,
     poc_name: null,
     poc_phone: null,
-    image_remote_url: null,
+    image_remote_url: pageImageUrl,
     source_type: "eodwf_retreat",
     source_url,
     source_event_id: null,
@@ -98,6 +106,7 @@ function parseRetreatLine(raw: string, now: Date): NormalizedEodwfEvent | null {
       date_uncertain: uncertain,
       registration,
       page_url: RETREATS_URL,
+      image_source: pageImageUrl ? "page_hero" : "none",
     },
   };
 }
@@ -112,6 +121,9 @@ export async function fetchRetreats(now = new Date()): Promise<NormalizedEodwfEv
   });
   if (!res.ok) throw new Error(`Retreats page HTTP ${res.status}`);
   const html = await res.text();
+  const pageImageUrl = pickBestEventCoverUrl(
+    extractUploadImageUrlsFromHtml(html, RETREATS_URL),
+  );
 
   const candidates: string[] = [];
   const pRe = /<(?:p|li|h3|h4)[^>]*>([\s\S]*?)<\/(?:p|li|h3|h4)>/gi;
@@ -124,7 +136,7 @@ export async function fetchRetreats(now = new Date()): Promise<NormalizedEodwfEv
   const out: NormalizedEodwfEvent[] = [];
   const seen = new Set<string>();
   for (const line of candidates) {
-    const ev = parseRetreatLine(line, now);
+    const ev = parseRetreatLine(line, now, pageImageUrl);
     if (!ev) continue;
     if (seen.has(ev.source_url)) continue;
     seen.add(ev.source_url);

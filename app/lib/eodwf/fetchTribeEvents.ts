@@ -1,4 +1,13 @@
 import {
+  extractUploadImageUrlsFromHtml,
+  fetchPageCoverCandidate,
+  isWeakEventCoverUrl,
+  pickBestEventCoverUrl,
+  pickLargestTribeImageUrl,
+  preferUnsizedUploadUrl,
+  sharedImageUrls,
+} from "./eventImages";
+import {
   decodeHtmlEntities,
   EODWF_BASE,
   EODWF_ORG,
@@ -20,6 +29,9 @@ type TribeVenue = {
 
 type TribeImage = {
   url?: string;
+  width?: number;
+  height?: number;
+  sizes?: Record<string, { url?: string; width?: number; height?: number }>;
 };
 
 type TribeEvent = {
@@ -61,11 +73,9 @@ function venueOf(ev: TribeEvent): TribeVenue | null {
   return v;
 }
 
-function imageUrlOf(ev: TribeEvent): string | null {
-  const img = ev.image;
-  if (!img || typeof img !== "object") return null;
-  const url = img.url?.trim();
-  return url || null;
+function featuredImageUrlOf(ev: TribeEvent): string | null {
+  if (!ev.image || typeof ev.image !== "object") return null;
+  return pickLargestTribeImageUrl(ev.image);
 }
 
 function normalizeTribeEvent(ev: TribeEvent): NormalizedEodwfEvent | null {
@@ -90,6 +100,7 @@ function normalizeTribeEvent(ev: TribeEvent): NormalizedEodwfEvent | null {
   const website = ev.website?.trim() || null;
   const pageUrl = ev.url?.trim() || `${EODWF_BASE}/event/${ev.id}/`;
   const signup_url = website || signupFromHtml || pageUrl;
+  const featured = featuredImageUrlOf(ev);
 
   return {
     title,
@@ -101,7 +112,7 @@ function normalizeTribeEvent(ev: TribeEvent): NormalizedEodwfEvent | null {
     signup_url,
     poc_name: null,
     poc_phone: null,
-    image_remote_url: imageUrlOf(ev),
+    image_remote_url: featured,
     source_type: "eodwf_calendar",
     source_url: pageUrl,
     source_event_id: String(ev.id),
@@ -109,8 +120,70 @@ function normalizeTribeEvent(ev: TribeEvent): NormalizedEodwfEvent | null {
       categories: (ev.categories ?? []).map((c) => c.slug ?? c.name).filter(Boolean),
       start_date: ev.start_date,
       end_date: ev.end_date,
+      tribe_featured_image: featured,
     },
   };
+}
+
+/**
+ * Drop shared/generic Tribe featured images and try description + event-page
+ * uploads for a real flyer. External registration hosts (Bishop Events, etc.)
+ * are often captcha-walled, so we only scrape eod-wf.org pages here.
+ */
+async function enrichCalendarEventImages(
+  events: NormalizedEodwfEvent[],
+  tribeByUrl: Map<string, TribeEvent>,
+): Promise<void> {
+  const shared = sharedImageUrls(events.map((e) => e.image_remote_url));
+
+  for (const ev of events) {
+    const featured = ev.image_remote_url;
+    const featuredKey = featured ? preferUnsizedUploadUrl(featured).toLowerCase() : "";
+    const featuredIsWeak =
+      !featured || isWeakEventCoverUrl(featured) || shared.has(featuredKey);
+
+    if (!featuredIsWeak) {
+      ev.import_metadata = {
+        ...ev.import_metadata,
+        image_source: "tribe_featured",
+      };
+      continue;
+    }
+
+    const tribe = tribeByUrl.get(ev.source_url);
+    const html = tribe?.description ?? "";
+    const fromDescription = pickBestEventCoverUrl(
+      extractUploadImageUrlsFromHtml(html, ev.source_url),
+    );
+    if (fromDescription) {
+      ev.image_remote_url = fromDescription;
+      ev.import_metadata = {
+        ...ev.import_metadata,
+        image_source: "description",
+        rejected_featured_image: featured,
+      };
+      continue;
+    }
+
+    const fromPage = await fetchPageCoverCandidate(ev.source_url);
+    if (fromPage && !isWeakEventCoverUrl(fromPage) && !shared.has(preferUnsizedUploadUrl(fromPage).toLowerCase())) {
+      ev.image_remote_url = fromPage;
+      ev.import_metadata = {
+        ...ev.import_metadata,
+        image_source: "event_page",
+        rejected_featured_image: featured,
+      };
+      continue;
+    }
+
+    // Better blank than a reused stock/default portrait on the wrong event.
+    ev.image_remote_url = null;
+    ev.import_metadata = {
+      ...ev.import_metadata,
+      image_source: "none",
+      rejected_featured_image: featured,
+    };
+  }
 }
 
 /**
@@ -126,6 +199,7 @@ export async function fetchTribeCalendarEvents(now = new Date()): Promise<Normal
   let page = 1;
   const out: NormalizedEodwfEvent[] = [];
   const seen = new Set<string>();
+  const tribeByUrl = new Map<string, TribeEvent>();
 
   while (page <= 20) {
     const url =
@@ -143,6 +217,7 @@ export async function fetchTribeCalendarEvents(now = new Date()): Promise<Normal
       if (!normalized) continue;
       if (seen.has(normalized.source_url)) continue;
       seen.add(normalized.source_url);
+      tribeByUrl.set(normalized.source_url, ev);
       out.push(normalized);
     }
 
@@ -151,5 +226,6 @@ export async function fetchTribeCalendarEvents(now = new Date()): Promise<Normal
     page += 1;
   }
 
+  await enrichCalendarEventImages(out, tribeByUrl);
   return out;
 }

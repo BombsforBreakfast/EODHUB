@@ -46,6 +46,9 @@ export default function PostJobPage() {
   const [location, setLocation] = useState("");
   const [applyUrl, setApplyUrl] = useState("");
   const [description, setDescription] = useState("");
+  const [pocName, setPocName] = useState("");
+  const [pocEmail, setPocEmail] = useState("");
+  const [pocPhone, setPocPhone] = useState("");
   const [anonymous, setAnonymous] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [isEmployer, setIsEmployer] = useState(false);
@@ -223,7 +226,12 @@ export default function PostJobPage() {
         return;
       }
 
-      const normalizedApplyUrl = normalizeUrl(applyUrl);
+      const normalizedApplyUrl = applyUrl.trim() ? normalizeUrl(applyUrl.trim()) : "";
+      const pocPayload = {
+        poc_name: pocName.trim() || null,
+        poc_email: pocEmail.trim() || null,
+        poc_phone: pocPhone.trim() || null,
+      };
 
       if (isEmployer) {
         const {
@@ -248,6 +256,7 @@ export default function PostJobPage() {
             location,
             apply_url: normalizedApplyUrl,
             description,
+            ...pocPayload,
             og_title: ogTitle,
             og_description: ogDescription,
             og_image: ogImage,
@@ -273,8 +282,9 @@ export default function PostJobPage() {
             company_name: companyName,
             category,
             location,
-            apply_url: normalizedApplyUrl,
+            apply_url: normalizedApplyUrl || null,
             description,
+            ...pocPayload,
             is_approved: false,
             source_type: "community",
             user_id: user.id,
@@ -302,6 +312,9 @@ export default function PostJobPage() {
       setLocation("");
       setApplyUrl("");
       setDescription("");
+      setPocName("");
+      setPocEmail("");
+      setPocPhone("");
       setAnonymous(false);
       resetScrapeState();
     } catch (err) {
@@ -326,7 +339,9 @@ export default function PostJobPage() {
 
         <div style={{ display: "grid", gap: 14 }}>
           <div>
-            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: t.text }}>Apply URL</div>
+            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: t.text }}>
+              Apply URL <span style={{ fontWeight: 500, color: t.textMuted }}>(optional)</span>
+            </div>
             <input
               value={applyUrl}
               onChange={(e) => setApplyUrl(e.target.value)}
@@ -334,8 +349,11 @@ export default function PostJobPage() {
                 if (e.target.value.trim()) setApplyUrl(normalizeUrl(e.target.value));
               }}
               style={inputStyle}
-              placeholder="https://..."
+              placeholder="https://… leave blank if hiring through EOD-HUB"
             />
+            <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted }}>
+              Not required for jobs you&apos;re promoting inside the hub — add a point of contact below instead.
+            </div>
             {scrapeStatus === "loading" && (
               <div style={{ marginTop: 6, fontSize: 12, color: t.textMuted }}>Pulling job details…</div>
             )}
@@ -389,6 +407,37 @@ export default function PostJobPage() {
               style={inputStyle}
               placeholder="Fort Liberty, NC / CONUS / OCONUS"
             />
+          </div>
+
+          <div>
+            <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 14, color: t.text }}>
+              Point of contact <span style={{ fontWeight: 500, color: t.textMuted }}>(optional)</span>
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              <input
+                value={pocName}
+                onChange={(e) => setPocName(e.target.value)}
+                style={inputStyle}
+                placeholder="Name"
+                autoComplete="name"
+              />
+              <input
+                value={pocEmail}
+                onChange={(e) => setPocEmail(e.target.value)}
+                style={inputStyle}
+                placeholder="Email"
+                type="email"
+                autoComplete="email"
+              />
+              <input
+                value={pocPhone}
+                onChange={(e) => setPocPhone(e.target.value)}
+                style={inputStyle}
+                placeholder="Phone"
+                type="tel"
+                autoComplete="tel"
+              />
+            </div>
           </div>
 
           <div>
