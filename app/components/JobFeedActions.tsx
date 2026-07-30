@@ -20,6 +20,22 @@ import {
 } from "../lib/queries/savedJobs";
 import JobDetailsModal, { type JobModalData } from "./jobs/JobDetailsModal";
 
+const DESKTOP_MQ = "(min-width: 900px)";
+
+function useIsDesktop(): boolean {
+  const [desktop, setDesktop] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(DESKTOP_MQ).matches : false,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(DESKTOP_MQ);
+    const sync = () => setDesktop(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return desktop;
+}
+
 export type JobFeedActionsProps = {
   /** Shared post og_url — usually jobs.apply_url, or /job/{id}. */
   applyUrl: string | null;
@@ -98,6 +114,7 @@ export default function JobFeedActions({
   onOpenFlyer,
 }: JobFeedActionsProps) {
   const { t, isDark } = useTheme();
+  const isDesktop = useIsDesktop();
   const queryClient = useQueryClient();
   const [job, setJob] = useState<JobModalData | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -180,19 +197,33 @@ export default function JobFeedActions({
     [queryClient, savedJobIds, userId],
   );
 
-  const overlayBtn: CSSProperties = {
-    border: "none",
-    borderRadius: 999,
-    padding: "14px 22px",
-    fontSize: 16,
-    fontWeight: 800,
-    minHeight: 48,
-    minWidth: 108,
-    cursor: "pointer",
-    background: isDark ? "rgba(20,24,22,0.92)" : "rgba(255,255,255,0.94)",
-    color: t.text,
-    boxShadow: "0 2px 10px rgba(0,0,0,0.28)",
-  };
+  const overlayBtn: CSSProperties = isDesktop
+    ? {
+        border: "none",
+        borderRadius: 999,
+        padding: "10px 16px",
+        fontSize: 12,
+        fontWeight: 800,
+        minHeight: 36,
+        minWidth: 81,
+        cursor: "pointer",
+        background: isDark ? "rgba(20,24,22,0.92)" : "rgba(255,255,255,0.94)",
+        color: t.text,
+        boxShadow: "0 2px 10px rgba(0,0,0,0.28)",
+      }
+    : {
+        border: "none",
+        borderRadius: 999,
+        padding: "14px 22px",
+        fontSize: 16,
+        fontWeight: 800,
+        minHeight: 48,
+        minWidth: 108,
+        cursor: "pointer",
+        background: isDark ? "rgba(20,24,22,0.92)" : "rgba(255,255,255,0.94)",
+        color: t.text,
+        boxShadow: "0 2px 10px rgba(0,0,0,0.28)",
+      };
 
   return (
     <div
@@ -234,8 +265,8 @@ export default function JobFeedActions({
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
-            gap: 10,
-            padding: "32px 14px 14px",
+            gap: isDesktop ? 8 : 10,
+            padding: isDesktop ? "24px 12px 12px" : "32px 14px 14px",
             background: "linear-gradient(to top, rgba(0,0,0,0.55), transparent)",
             pointerEvents: "auto",
           }}

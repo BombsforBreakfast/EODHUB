@@ -73,7 +73,7 @@ import { jobListingCutoffIso } from "../lib/jobRetention";
 import { isChatroomUiUnlocked } from "../lib/chatroom";
 import { useChatroomSheet } from "../components/ChatroomSheetContext";
 import { cancelDelayedLikeNotify, scheduleDelayedLikeNotify } from "../lib/likeNotifyDelay";
-import { postNotifyJson } from "../lib/postNotifyClient";
+import { notifyConnectionActivityClient, postNotifyJson } from "../lib/postNotifyClient";
 import {
   fetchSavedJobs,
   savedJobIdsFromRows,
@@ -5113,6 +5113,14 @@ export default function HomePage() {
           );
         }
 
+        if (!postAsUserId || postAsUserId === userId) {
+          notifyConnectionActivityClient(supabase, {
+            postId,
+            kind: "posted",
+            actorName: currentUserName ?? "Someone",
+          });
+        }
+
         setContent("");
         contentRawRef.current = "";
         setOgPreview(null);
@@ -5175,6 +5183,15 @@ export default function HomePage() {
           ),
         );
       }
+
+      if (!postAsUserId || postAsUserId === userId) {
+        notifyConnectionActivityClient(supabase, {
+          postId,
+          kind: "posted",
+          actorName: currentUserName ?? "Someone",
+        });
+      }
+
       if (uploadedUrls.length > 0) {
         const postImageRows = uploadedUrls.map((url, index) => ({
           post_id: postId,

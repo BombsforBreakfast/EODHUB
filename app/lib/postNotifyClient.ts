@@ -37,6 +37,29 @@ export async function resolveAccessTokenForNotify(_supabase: SupabaseClient): Pr
   return null;
 }
 
+/** Fire-and-forget Know-graph fan-out after a feed post. */
+export function notifyConnectionActivityClient(
+  supabase: SupabaseClient,
+  args: { postId: string; kind?: "posted" | "job_share"; actorName?: string },
+): void {
+  void (async () => {
+    const token = await resolveAccessTokenForNotify(supabase);
+    if (!token) return;
+    try {
+      await fetch("/api/notify/connection-activity", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(args),
+      });
+    } catch (err) {
+      console.error("[notifyConnectionActivityClient]", err);
+    }
+  })();
+}
+
 /**
  * POST /api/notify and confirm success. No silent failures: failures are logged.
  * At most one extra attempt after a network error, or one retry after 401 + refresh.

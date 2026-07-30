@@ -113,6 +113,30 @@ export async function POST(
     await userClient.from("posts").update({ image_url: imageUrls[0] }).eq("id", inserted.id);
   }
 
+  // Know-graph alerts: only when posting as the real member (not brand/admin-as).
+  if (!postAsUserId || postAsUserId === user.id) {
+    try {
+      const { notifyConnectionActivity } = await import("@/app/lib/server/notifyConnectionActivity");
+      const { data: profile } = await adminClient
+        .from("profiles")
+        .select("display_name, first_name, last_name")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const actorName =
+        profile?.display_name?.trim() ||
+        `${profile?.first_name || ""} ${profile?.last_name || ""}`.trim() ||
+        "Someone";
+      await notifyConnectionActivity(adminClient, {
+        actorUserId: user.id,
+        actorName,
+        kind: "job_share",
+        postId: inserted.id,
+      });
+    } catch (err) {
+      console.error("[jobs/share] connection activity notify failed", err);
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     postId: inserted.id,

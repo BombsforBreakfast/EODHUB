@@ -10,6 +10,7 @@ type DigestFrequency = "twice_daily" | "daily" | "off";
 type NotificationPreferenceState = {
   email_notifications: boolean;
   push_notifications: boolean;
+  know_activity_notifications: boolean;
   morning_digest: boolean;
   evening_digest: boolean;
   timezone: string;
@@ -19,6 +20,7 @@ type NotificationPreferenceState = {
 const DEFAULTS: NotificationPreferenceState = {
   email_notifications: true,
   push_notifications: true,
+  know_activity_notifications: true,
   morning_digest: true,
   evening_digest: true,
   timezone: "America/New_York",
@@ -41,18 +43,49 @@ export default function NotificationPreferencesCard({ userId }: { userId: string
 
       const { data, error: err } = await supabase
         .from("notification_preferences")
-        .select("email_notifications, push_notifications, morning_digest, evening_digest, timezone, digest_frequency")
+        .select(
+          "email_notifications, push_notifications, know_activity_notifications, morning_digest, evening_digest, timezone, digest_frequency",
+        )
         .eq("user_id", userId)
         .maybeSingle();
 
       if (cancelled) return;
       if (err) {
-        console.error("Notification preferences load error:", err);
-        setError("Couldn't load notification preferences.");
+        // Migration may not be applied yet — fall back without the new column.
+        if (err.message?.includes("know_activity_notifications")) {
+          const { data: fallback, error: fallbackErr } = await supabase
+            .from("notification_preferences")
+            .select(
+              "email_notifications, push_notifications, morning_digest, evening_digest, timezone, digest_frequency",
+            )
+            .eq("user_id", userId)
+            .maybeSingle();
+          if (cancelled) return;
+          if (fallbackErr) {
+            console.error("Notification preferences load error:", fallbackErr);
+            setError("Couldn't load notification preferences.");
+          } else if (fallback) {
+            setState({
+              email_notifications: fallback.email_notifications ?? DEFAULTS.email_notifications,
+              push_notifications: fallback.push_notifications ?? DEFAULTS.push_notifications,
+              know_activity_notifications: DEFAULTS.know_activity_notifications,
+              morning_digest: fallback.morning_digest ?? DEFAULTS.morning_digest,
+              evening_digest: fallback.evening_digest ?? DEFAULTS.evening_digest,
+              timezone: fallback.timezone ?? DEFAULTS.timezone,
+              digest_frequency:
+                (fallback.digest_frequency as DigestFrequency) ?? DEFAULTS.digest_frequency,
+            });
+          }
+        } else {
+          console.error("Notification preferences load error:", err);
+          setError("Couldn't load notification preferences.");
+        }
       } else if (data) {
         setState({
           email_notifications: data.email_notifications ?? DEFAULTS.email_notifications,
           push_notifications: data.push_notifications ?? DEFAULTS.push_notifications,
+          know_activity_notifications:
+            data.know_activity_notifications ?? DEFAULTS.know_activity_notifications,
           morning_digest: data.morning_digest ?? DEFAULTS.morning_digest,
           evening_digest: data.evening_digest ?? DEFAULTS.evening_digest,
           timezone: data.timezone ?? DEFAULTS.timezone,
@@ -149,6 +182,15 @@ export default function NotificationPreferencesCard({ userId }: { userId: string
         value={state.push_notifications}
         onChange={(value) => update("push_notifications", value)}
         saving={saving === "push_notifications"}
+      />
+
+      <ToggleRow
+        t={t}
+        label="Know activity"
+        description="When people you know (or worked with) post or share a job. Batched to about once an hour per person."
+        value={state.know_activity_notifications}
+        onChange={(value) => update("know_activity_notifications", value)}
+        saving={saving === "know_activity_notifications"}
       />
 
       <ChoiceRow

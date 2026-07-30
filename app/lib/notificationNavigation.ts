@@ -154,6 +154,13 @@ export function getNotificationHref(
     return "/";
   }
 
+  if (nNorm.type === "connection_posted" || nNorm.type === "connection_job_share") {
+    if (nNorm.post_id) return feedDeepLink(nNorm.post_id);
+    const fromLink = linkPostId(nNorm.link);
+    if (fromLink) return feedDeepLink(fromLink);
+    return "/";
+  }
+
   if (nNorm.type?.startsWith("connection_") || nNorm.type === "worked_with") {
     if (nNorm.post_owner_id) return `/profile/${nNorm.post_owner_id}`;
     return ctx.currentUserId ? `/profile/${ctx.currentUserId}` : "/";
@@ -229,6 +236,8 @@ export function getNotificationIcon(n: NotificationNavInput): string {
   if (lower.includes("memorial")) return "🕊️";
   if (lower.includes("mention") || t.startsWith("mention")) return "@";
   if (t === "feed_comment_reply" || lower.includes("replied to your comment")) return "↩️";
+  if (t === "connection_job_share") return "💼";
+  if (t === "connection_posted") return "📝";
   if (t.startsWith("connection_") || t === "worked_with") return "🤝";
   if (n.post_owner_id) return "👤";
   return "🔔";
