@@ -98,10 +98,36 @@ async function enrichAuthContext(normalizedEmailValue: string | null): Promise<E
     return { userExistsInAuth: null, userExistsInProfiles: null, verificationStatus: null };
   }
   try {
-    const { users } = await findAuthUsersByEmail(client, normalizedEmailValue);
+    // Profile-by-email first (reliable). Auth listUsers is newest-first and can
+    // fail mid-pagination on large projects, which previously mislabeled existing
+    // users as EMAIL_NOT_FOUND.
+    const { data: profileByEmail } = await client
+      .from("profiles")
+      .select("user_id, verification_status")
+      .ilike("email", normalizedEmailValue)
+      .limit(1)
+      .maybeSingle();
+
+    if (profileByEmail?.user_id) {
+      const { data: authData } = await client.auth.admin.getUserById(profileByEmail.user_id);
+      return {
+        userExistsInAuth: !!authData?.user,
+        userExistsInProfiles: true,
+        verificationStatus:
+          typeof profileByEmail.verification_status === "string"
+            ? profileByEmail.verification_status
+            : null,
+      };
+    }
+
+    const { users, listError } = await findAuthUsersByEmail(client, normalizedEmailValue);
     const authUser = users[0] ?? null;
     if (!authUser) {
-      return { userExistsInAuth: false, userExistsInProfiles: false, verificationStatus: null };
+      return {
+        userExistsInAuth: listError ? null : false,
+        userExistsInProfiles: false,
+        verificationStatus: null,
+      };
     }
     const { data: profile } = await client
       .from("profiles")
