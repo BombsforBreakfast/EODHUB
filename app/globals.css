@@ -2703,10 +2703,19 @@ html.game-portrait-active .arcade-game-play-surface {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  transition: background 180ms ease-out;
+}
+.circuit-engage-sheet-backdrop.snap-peek {
+  background: transparent;
+  pointer-events: none;
+}
+.circuit-engage-sheet-backdrop.snap-half,
+.circuit-engage-sheet-backdrop.snap-full {
+  pointer-events: auto;
 }
 .circuit-engage-sheet {
   width: 100%;
-  max-height: min(70vh, 640px);
+  max-height: min(72vh, 640px);
   display: flex;
   flex-direction: column;
   background: #121814;
@@ -2715,11 +2724,17 @@ html.game-portrait-active .arcade-game-play-surface {
   border-bottom: none;
   padding-bottom: env(safe-area-inset-bottom, 0px);
   box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
-  transition: transform 180ms ease-out;
-  will-change: transform;
+  transition: height 200ms ease-out;
+  will-change: height;
+  overflow: hidden;
+  pointer-events: auto;
 }
-.circuit-engage-sheet.dragging {
+.circuit-engage-sheet.dragging,
+.circuit-engage-sheet-backdrop.dragging .circuit-engage-sheet {
   transition: none;
+}
+.circuit-engage-sheet.snap-peek {
+  box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.35);
 }
 .circuit-engage-sheet-grab {
   flex-shrink: 0;
@@ -2746,17 +2761,26 @@ html.game-portrait-active .arcade-game-play-surface {
 .circuit-engage-sheet-top strong {
   font-size: 14px;
 }
-.circuit-engage-sheet-close {
+.circuit-engage-sheet-close,
+.circuit-engage-sheet-expand {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
   border: none;
-  border-radius: 50%;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.1);
   color: inherit;
   cursor: pointer;
+}
+.circuit-engage-sheet-close {
+  width: 32px;
+  height: 32px;
+}
+.circuit-engage-sheet-expand {
+  height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 700;
 }
 .circuit-engage-sheet .circuit-engage,
 .circuit-engage-sheet .circuit-event-actions {
@@ -2766,6 +2790,11 @@ html.game-portrait-active .arcade-game-play-surface {
   border: none;
   background: transparent;
   width: auto;
+  overflow: hidden;
+}
+.circuit-engage-sheet .circuit-engage-comments {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .circuit-viewer-event {
   position: relative;
@@ -2964,6 +2993,10 @@ html.game-portrait-active .arcade-game-play-surface {
   background: #d7e5d2;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
   pointer-events: auto;
+  transition: bottom 180ms ease-out;
+}
+.circuit-viewer-react-fab.with-peek {
+  bottom: calc(118px + env(safe-area-inset-bottom, 0px));
 }
 .circuit-viewer-react-fab.active {
   background: #f4f7f3;

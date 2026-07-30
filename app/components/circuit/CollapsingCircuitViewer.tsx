@@ -28,8 +28,31 @@ const IMAGE_DWELL_MS = 5200;
 const THOUGHT_DWELL_MS = 6500;
 const EVENT_DWELL_MS = 7000;
 const LONG_PRESS_MS = 200;
-const SHEET_DISMISS_DY = 80;
 const DESKTOP_MQ = "(min-width: 900px)";
+
+/** Mobile engage sheet snaps — Maps/Music-style peek → mid → expanded. */
+type MobileSheetSnap = "closed" | "peek" | "half" | "full";
+const SHEET_PEEK_PX = 100;
+const SHEET_HALF_VH = 0.4;
+const SHEET_FULL_VH = 0.72;
+const SHEET_SNAP_DY = 56;
+
+function sheetHeightPx(snap: Exclude<MobileSheetSnap, "closed">, vh: number): number {
+  if (snap === "peek") return SHEET_PEEK_PX;
+  if (snap === "half") return Math.round(vh * SHEET_HALF_VH);
+  return Math.min(Math.round(vh * SHEET_FULL_VH), 640);
+}
+
+function snapFromHeight(height: number, vh: number, preferPeek: boolean): MobileSheetSnap {
+  const peek = SHEET_PEEK_PX;
+  const half = Math.round(vh * SHEET_HALF_VH);
+  const full = Math.min(Math.round(vh * SHEET_FULL_VH), 640);
+  const midPeekHalf = (peek + half) / 2;
+  const midHalfFull = (half + full) / 2;
+  if (height < midPeekHalf) return preferPeek ? "peek" : "closed";
+  if (height < midHalfFull) return "half";
+  return "full";
+}
 
 function useIsDesktop(): boolean {
   const [desktop, setDesktop] = useState(() =>
@@ -63,6 +86,8 @@ export default function CollapsingCircuitViewer({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [engageOpen, setEngageOpen] = useState(false);
+  const [mobileSnap, setMobileSnap] = useState<MobileSheetSnap>("closed");
+  const [commentCount, setCommentCount] = useState(0);
   const [reportOpen, setReportOpen] = useState(false);
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -76,6 +101,7 @@ export default function CollapsingCircuitViewer({
   const progressElapsedRef = useRef(0);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sheetTouchStartY = useRef<number | null>(null);
+  const sheetDragYRef = useRef(0);
   const isDesktopRef = useRef(isDesktop);
   isDesktopRef.current = isDesktop;
 
@@ -87,7 +113,9 @@ export default function CollapsingCircuitViewer({
   const videoProcessing = Boolean(
     activeMedia?.media_type === "video" && muxRef && !effectivePlaybackId,
   );
-  const pauseAdvance = paused || reportOpen || videoProcessing || engageOpen;
+  const sheetBlocksStage = !isDesktop && (mobileSnap === "half" || mobileSnap === "full");
+  const pauseAdvance =
+    paused || reportOpen || videoProcessing || (isDesktop ? engageOpen : sheetBlocksStage);
 
   const goPeer = useCallback(
     (delta: number) => {
@@ -131,13 +159,27 @@ export default function CollapsingCircuitViewer({
   useEffect(() => {
     setMediaIndex(0);
     setError(null);
-    setEngageOpen(isDesktopRef.current);
     setReportOpen(false);
     setProgress(0);
     progressElapsedRef.current = 0;
     setMuxPlaybackId(null);
     setMuxStatus(null);
-  }, [post?.id]);
+    setSheetDragY(0);
+    setSheetDragging(false);
+    sheetTouchStartY.current = null;
+    sheetDragYRef.current = 0;
+
+    const count = post?.comment_count ?? 0;
+    setCommentCount(count);
+    if (isDesktopRef.current) {
+      setEngageOpen(true);
+      setMobileSnap("closed");
+    } else {
+      setEngageOpen(false);
+      const isEventPost = post?.post_type === "event" && Boolean(post.event_id);
+      setMobileSnap(!isEventPost && count > 0 ? "peek" : "closed");
+    }
+  }, [post?.id, post?.comment_count, post?.event_id, post?.post_type]);
 
   useEffect(() => {
     setProgress(0);
@@ -206,8 +248,9 @@ export default function CollapsingCircuitViewer({
           target.isContentEditable);
 
       if (e.key === "Escape") {
-        if (engageOpen) {
-          setEngageOpen(false);
+        if (isDesktopRef.current ? engageOpen : mobileSnap !== "closed") {
+          if (isDesktopRef.current) setEngageOpen(false);
+          else setMobileSnap(commentCount > 0 ? "peek" : "closed");
           return;
         }
         if (!typingInField) onClose();
@@ -227,7 +270,7 @@ export default function CollapsingCircuitViewer({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advance, engageOpen, goMedia, goPrev, onClose]);
+  }, [advance, commentCount, engageOpen, goMedia, goPrev, mobileSnap, onClose]);
 
   useEffect(() => {
     if (!post || pauseAdvance) {
@@ -280,17 +323,28 @@ export default function CollapsingCircuitViewer({
   }, [activeMedia?.media_type, mediaIndex, pauseAdvance, post?.id, post?.post_type]);
 
   useEffect(() => {
-    if (!engageOpen) {
+    if (mobileSnap === "closed") {
       setSheetDragY(0);
       setSheetDragging(false);
       sheetTouchStartY.current = null;
+      sheetDragYRef.current = 0;
     }
-  }, [engageOpen]);
+  }, [mobileSnap]);
 
   useEffect(() => {
     return () => {
       if (longPressTimer.current != null) clearTimeout(longPressTimer.current);
     };
+  }, []);
+
+  const mobileSnapRef = useRef(mobileSnap);
+  mobileSnapRef.current = mobileSnap;
+
+  const onCommentCountChange = useCallback((count: number) => {
+    setCommentCount(count);
+    if (!isDesktopRef.current && count > 0 && mobileSnapRef.current === "closed") {
+      setMobileSnap("peek");
+    }
   }, []);
 
   if (!post) return null;
@@ -303,7 +357,7 @@ export default function CollapsingCircuitViewer({
   };
 
   const startLongPressPause = () => {
-    if (engageOpen) return;
+    if (sheetBlocksStage) return;
     clearLongPress();
     longPressTimer.current = setTimeout(() => {
       longPressTimer.current = null;
@@ -317,7 +371,7 @@ export default function CollapsingCircuitViewer({
   };
 
   const onTouchStart = (e: TouchEvent) => {
-    if (engageOpen) return;
+    if (sheetBlocksStage) return;
     const t = e.changedTouches[0];
     if (!t) return;
     touchStart.current = { x: t.clientX, y: t.clientY };
@@ -325,7 +379,7 @@ export default function CollapsingCircuitViewer({
   };
 
   const onTouchMove = (e: TouchEvent) => {
-    if (engageOpen) return;
+    if (sheetBlocksStage) return;
     const start = touchStart.current;
     const t = e.changedTouches[0];
     if (!start || !t) return;
@@ -337,7 +391,7 @@ export default function CollapsingCircuitViewer({
 
   const onTouchEnd = (e: TouchEvent) => {
     endLongPressPause();
-    if (engageOpen) return;
+    if (sheetBlocksStage) return;
     const start = touchStart.current;
     const t = e.changedTouches[0];
     touchStart.current = null;
@@ -354,8 +408,10 @@ export default function CollapsingCircuitViewer({
 
   const onSheetGrabStart = (e: TouchEvent<HTMLDivElement>) => {
     const t = e.changedTouches[0];
-    if (!t) return;
+    if (!t || mobileSnap === "closed") return;
     sheetTouchStartY.current = t.clientY;
+    sheetDragYRef.current = 0;
+    setSheetDragY(0);
     setSheetDragging(true);
   };
 
@@ -363,28 +419,52 @@ export default function CollapsingCircuitViewer({
     if (sheetTouchStartY.current == null) return;
     const t = e.changedTouches[0];
     if (!t) return;
-    const dy = Math.max(0, t.clientY - sheetTouchStartY.current);
+    // Positive = finger down (collapse), negative = finger up (expand).
+    const dy = t.clientY - sheetTouchStartY.current;
+    sheetDragYRef.current = dy;
     setSheetDragY(dy);
   };
 
-  const onSheetGrabEnd = (e: TouchEvent<HTMLDivElement>) => {
-    if (sheetTouchStartY.current == null) return;
-    const t = e.changedTouches[0];
-    const dy = t ? Math.max(0, t.clientY - sheetTouchStartY.current) : sheetDragY;
+  const onSheetGrabEnd = () => {
+    if (sheetTouchStartY.current == null || mobileSnap === "closed") return;
+    const dy = sheetDragYRef.current;
     sheetTouchStartY.current = null;
     setSheetDragging(false);
-    if (dy >= SHEET_DISMISS_DY) {
-      setSheetDragY(0);
-      setEngageOpen(false);
-      return;
-    }
     setSheetDragY(0);
+    sheetDragYRef.current = 0;
+
+    const vh = typeof window !== "undefined" ? window.innerHeight : 700;
+    const base = sheetHeightPx(mobileSnap, vh);
+    const nextHeight = Math.max(SHEET_PEEK_PX * 0.4, base - dy);
+    const preferPeek = commentCount > 0;
+    let next = snapFromHeight(nextHeight, vh, preferPeek);
+    if (Math.abs(dy) < SHEET_SNAP_DY) next = mobileSnap;
+    if (next === "peek" && !preferPeek) next = "closed";
+    setMobileSnap(next);
   };
 
   const onSheetGrabCancel = () => {
     sheetTouchStartY.current = null;
     setSheetDragging(false);
     setSheetDragY(0);
+    sheetDragYRef.current = 0;
+  };
+
+  const toggleEngage = () => {
+    if (isDesktop) {
+      setEngageOpen((v) => !v);
+      return;
+    }
+    if (mobileSnap === "closed" || mobileSnap === "peek") {
+      setMobileSnap("half");
+      return;
+    }
+    setMobileSnap(commentCount > 0 ? "peek" : "closed");
+  };
+
+  const collapseEngageSheet = () => {
+    setSheetDragY(0);
+    setMobileSnap(commentCount > 0 ? "peek" : "closed");
   };
 
   const deleteOwn = async () => {
@@ -441,7 +521,17 @@ export default function CollapsingCircuitViewer({
   const isOwner = post.user_id === currentUserId;
   const isEvent = post.post_type === "event" && Boolean(post.event_id);
   const showEngageRail = isDesktop && engageOpen;
-  const showEngageSheet = !isDesktop && engageOpen;
+  const showEngageSheet = !isDesktop && mobileSnap !== "closed";
+  const engageExpanded = isDesktop ? engageOpen : mobileSnap === "half" || mobileSnap === "full";
+  const vh = typeof window !== "undefined" ? window.innerHeight : 700;
+  const baseSheetH =
+    mobileSnap === "closed" ? 0 : sheetHeightPx(mobileSnap, vh);
+  const liveSheetH = showEngageSheet
+    ? Math.min(
+        Math.min(Math.round(vh * SHEET_FULL_VH), 640),
+        Math.max(SHEET_PEEK_PX * 0.5, baseSheetH - sheetDragY),
+      )
+    : 0;
 
   const engagePanel = isEvent ? (
     post.event_id ? (
@@ -458,7 +548,11 @@ export default function CollapsingCircuitViewer({
       </div>
     ) : null
   ) : (
-    <CircuitEngagePanel postId={post.id} currentUserId={currentUserId} />
+    <CircuitEngagePanel
+      postId={post.id}
+      currentUserId={currentUserId}
+      onCommentCountChange={onCommentCountChange}
+    />
   );
 
   return (
@@ -654,13 +748,23 @@ export default function CollapsingCircuitViewer({
 
           <button
             type="button"
-            className={`circuit-viewer-react-fab${engageOpen ? " active" : ""}`}
-            aria-label={isEvent ? (engageOpen ? "Hide event actions" : "Event actions") : engageOpen ? "Hide reactions and comments" : "React and comment"}
-            aria-expanded={engageOpen}
-            onClick={() => setEngageOpen((v) => !v)}
+            className={`circuit-viewer-react-fab${engageExpanded ? " active" : ""}${
+              mobileSnap === "peek" ? " with-peek" : ""
+            }`}
+            aria-label={
+              isEvent
+                ? engageExpanded
+                  ? "Hide event actions"
+                  : "Event actions"
+                : engageExpanded
+                  ? "Hide reactions and comments"
+                  : "React and comment"
+            }
+            aria-expanded={engageExpanded}
+            onClick={toggleEngage}
           >
             <MessageCircle size={20} strokeWidth={2.25} />
-            <span>{isEvent ? "RSVP" : "React"}</span>
+            <span>{isEvent ? "RSVP" : commentCount > 0 ? `React · ${commentCount}` : "React"}</span>
           </button>
         </div>
 
@@ -688,24 +792,19 @@ export default function CollapsingCircuitViewer({
 
       {showEngageSheet ? (
         <div
-          className="circuit-engage-sheet-backdrop"
+          className={`circuit-engage-sheet-backdrop snap-${mobileSnap}${
+            sheetDragging ? " dragging" : ""
+          }`}
           role="presentation"
-          onClick={() => {
-            setSheetDragY(0);
-            setEngageOpen(false);
-          }}
+          onClick={mobileSnap === "peek" ? undefined : collapseEngageSheet}
         >
           <div
-            className={`circuit-engage-sheet${sheetDragging ? " dragging" : ""}`}
+            className={`circuit-engage-sheet snap-${mobileSnap}${sheetDragging ? " dragging" : ""}`}
             role="dialog"
-            aria-modal="true"
+            aria-modal={mobileSnap !== "peek"}
             aria-label={isEvent ? "Event actions" : "Reactions and comments"}
             onClick={(e) => e.stopPropagation()}
-            style={
-              sheetDragY > 0
-                ? { transform: `translateY(${sheetDragY}px)` }
-                : undefined
-            }
+            style={{ height: `${liveSheetH}px` }}
           >
             <div
               className="circuit-engage-sheet-grab"
@@ -716,18 +815,31 @@ export default function CollapsingCircuitViewer({
             >
               <div className="circuit-engage-sheet-handle" aria-hidden="true" />
               <div className="circuit-engage-sheet-top">
-                <strong>{isEvent ? "Event" : "React & comment"}</strong>
-                <button
-                  type="button"
-                  className="circuit-engage-sheet-close"
-                  aria-label="Close"
-                  onClick={() => {
-                    setSheetDragY(0);
-                    setEngageOpen(false);
-                  }}
-                >
-                  <X size={18} strokeWidth={2.5} />
-                </button>
+                <strong>
+                  {isEvent
+                    ? "Event"
+                    : commentCount > 0
+                      ? `${commentCount} comment${commentCount === 1 ? "" : "s"}`
+                      : "React & comment"}
+                </strong>
+                {mobileSnap !== "peek" ? (
+                  <button
+                    type="button"
+                    className="circuit-engage-sheet-close"
+                    aria-label="Close"
+                    onClick={collapseEngageSheet}
+                  >
+                    <X size={18} strokeWidth={2.5} />
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="circuit-engage-sheet-expand"
+                    onClick={() => setMobileSnap("half")}
+                  >
+                    Pull up
+                  </button>
+                )}
               </div>
             </div>
             {engagePanel}

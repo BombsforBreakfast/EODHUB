@@ -61,6 +61,8 @@ export type CircuitPostDto = {
   media: CircuitMediaDto[];
   /** Whether the current viewer has opened this tile. */
   seen: boolean;
+  /** Live comment count for mobile peek sheet affordance. */
+  comment_count: number;
 };
 
 export type CircuitStripItem =

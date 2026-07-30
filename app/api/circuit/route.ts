@@ -138,12 +138,16 @@ export async function GET(req: NextRequest) {
   }
 
   const mediaByPost = new Map<string, CircuitMediaDto[]>();
+  const commentCountByPost = new Map<string, number>();
   if (postIds.length > 0) {
-    const { data: mediaRows, error: mediaError } = await admin
-      .from("circuit_post_media")
-      .select("id, post_id, sort_order, media_type, public_url, poster_url")
-      .in("post_id", postIds)
-      .order("sort_order", { ascending: true });
+    const [{ data: mediaRows, error: mediaError }, { data: commentRows }] = await Promise.all([
+      admin
+        .from("circuit_post_media")
+        .select("id, post_id, sort_order, media_type, public_url, poster_url")
+        .in("post_id", postIds)
+        .order("sort_order", { ascending: true }),
+      admin.from("circuit_comments").select("post_id").in("post_id", postIds),
+    ]);
     if (mediaError) return NextResponse.json({ error: mediaError.message }, { status: 500 });
     for (const m of mediaRows ?? []) {
       const list = mediaByPost.get(m.post_id) ?? [];
@@ -155,6 +159,10 @@ export async function GET(req: NextRequest) {
         poster_url: m.poster_url ?? null,
       });
       mediaByPost.set(m.post_id, list);
+    }
+    for (const c of commentRows ?? []) {
+      if (!c.post_id) continue;
+      commentCountByPost.set(c.post_id, (commentCountByPost.get(c.post_id) ?? 0) + 1);
     }
   }
 
@@ -286,6 +294,7 @@ export async function GET(req: NextRequest) {
       author_photo_url: p?.photo_url ?? null,
       media: mediaByPost.get(row.id) ?? [],
       seen: seenIds.has(row.id),
+      comment_count: commentCountByPost.get(row.id) ?? 0,
     };
   });
 

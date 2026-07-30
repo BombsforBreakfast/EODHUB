@@ -20,9 +20,10 @@ export type CircuitCommentDto = {
 type Props = {
   postId: string;
   currentUserId?: string;
+  onCommentCountChange?: (count: number) => void;
 };
 
-export default function CircuitEngagePanel({ postId }: Props) {
+export default function CircuitEngagePanel({ postId, onCommentCountChange }: Props) {
   const [loading, setLoading] = useState(true);
   const [myReaction, setMyReaction] = useState<ReactionType | null>(null);
   const [counts, setCounts] = useState<Partial<Record<ReactionType, number>>>({});
@@ -62,6 +63,10 @@ export default function CircuitEngagePanel({ postId }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    onCommentCountChange?.(comments.length);
+  }, [comments.length, onCommentCountChange]);
 
   const react = async (reactionType: ReactionType) => {
     const token = await getAccessToken({ source: "CircuitEngage.react" });
