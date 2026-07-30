@@ -46,6 +46,7 @@ import type { JobModalData } from "../components/jobs/JobDetailsModal";
 import JobCardActions from "../components/jobs/JobCardActions";
 import JobFeedCard from "../components/jobs/JobFeedCard";
 import EventFeedActions from "../components/EventFeedActions";
+import JobFeedActions, { isJobShareFeedPost } from "../components/JobFeedActions";
 import { ExternalSiteLink } from "../components/ExternalSiteEmbedModal";
 import EventAttendeeAvatarRows from "../components/events/EventAttendeeAvatarRows";
 import ExpandableText from "../components/ExpandableText";
@@ -8992,7 +8993,24 @@ export default function HomePage() {
                         return <YouTubeEmbed url={youtubeUrl} title="Post YouTube video" />;
                       })()}
 
+                      {isJobShareFeedPost(post) &&
+                      post.og_url &&
+                      post.image_urls.length === 1 &&
+                      post.image_urls[0] ? (
+                        <JobFeedActions
+                          applyUrl={post.og_url}
+                          ogTitle={post.og_title}
+                          ogDescription={post.og_description}
+                          ogImage={post.admin_manual_image_url || post.og_image}
+                          ogSiteName={post.og_site_name}
+                          userId={userId}
+                          flyerSrc={post.image_urls[0]}
+                          onOpenFlyer={() => openGallery(post.image_urls, 0)}
+                        />
+                      ) : null}
+
                       {post.image_urls.length > 0 &&
+                        !(isJobShareFeedPost(post) && post.image_urls.length === 1) &&
                         (() => {
                           const attachments = attachmentsFromUrls(post.image_urls);
                           const visibleImages = attachments.slice(0, 3);

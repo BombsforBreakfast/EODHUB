@@ -67,6 +67,14 @@ export async function POST(
   const description = job.og_description || job.description || [company, location, job.category].filter(Boolean).join(" · ") || null;
   const content = shareText || `Shared a job: ${title}`;
   const postAsUserId = await resolveListingSharePostAsUserId(adminClient, user, postAsMode);
+  const siteOrigin =
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
+    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+    "https://www.eod-hub.com";
+  const applyUrl =
+    typeof job.apply_url === "string" && job.apply_url.trim()
+      ? job.apply_url.trim()
+      : `${siteOrigin}/job/${job.id}`;
 
   const { data: inserted, error: insertErr } = await userClient
     .from("posts")
@@ -75,9 +83,10 @@ export async function POST(
       post_as_user_id: postAsUserId,
       wall_user_id: null,
       content,
+      content_type: "job_post",
       image_url: null,
       gif_url: null,
-      og_url: job.apply_url,
+      og_url: applyUrl,
       og_title: title,
       og_description: description,
       og_image: job.og_image,
