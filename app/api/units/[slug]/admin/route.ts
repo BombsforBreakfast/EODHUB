@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createNotification } from "../../../../lib/notificationsServer";
-import { assertUnitAdmin } from "../../../../lib/unitAccessServer";
+import { assertUnitAdmin, normalizeUnitVisibility } from "../../../../lib/unitAccessServer";
 import { unitHasFileLibraryTab } from "../../../../lib/unitFileLibraryGroups";
 import { deleteMuxVideosForParent } from "../../../../lib/server/deleteFeedVideos";
 
@@ -33,7 +33,7 @@ async function resolveUnitAndCheckAdmin(req: NextRequest, slug: string) {
 
   const { data: unit, error: unitError } = await db
     .from("units")
-    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at")
+    .select("id, name, slug, description, cover_photo_url, type, created_by, created_at, visibility")
     .eq("slug", slug)
     .single();
 
@@ -301,11 +301,20 @@ export async function PATCH(
   const isOwner = isFounderGod || membership?.role === "owner";
 
   const body = await req.json() as {
-    action: "approve_member" | "deny_member" | "remove_member" | "change_role" | "delete_post" | "approve_photo" | "delete_event";
+    action:
+      | "approve_member"
+      | "deny_member"
+      | "remove_member"
+      | "change_role"
+      | "delete_post"
+      | "approve_photo"
+      | "delete_event"
+      | "set_visibility";
     user_id?: string;
     post_id?: string;
     event_id?: string;
     role?: string;
+    visibility?: string;
   };
 
   const { action } = body;
@@ -407,6 +416,18 @@ export async function PATCH(
     const { error } = await db.from("events").delete().eq("id", event_id).eq("unit_id", unit.id);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
     return NextResponse.json({ success: true });
+  }
+
+  if (action === "set_visibility") {
+    const visibility = normalizeUnitVisibility(body.visibility);
+    const { data: updated, error } = await db
+      .from("units")
+      .update({ visibility })
+      .eq("id", unit.id)
+      .select("id, visibility")
+      .single();
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ success: true, visibility: updated.visibility });
   }
 
   return NextResponse.json({ error: "Unknown action" }, { status: 400 });

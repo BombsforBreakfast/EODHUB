@@ -14,6 +14,7 @@ type UnitInfo = {
   slug: string;
   type: string;
   cover_photo_url: string | null;
+  visibility?: "public" | "private";
 };
 
 type PendingMember = {
@@ -100,7 +101,7 @@ export default function UnitAdminPage() {
   const [data, setData] = useState<AdminData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"requests" | "members" | "photos" | "files" | "events">("requests");
+  const [tab, setTab] = useState<"requests" | "members" | "photos" | "files" | "events" | "settings">("requests");
   const [working, setWorking] = useState<string | null>(null); // id of item being actioned
   const [myRole, setMyRole] = useState<string | null>(null);
 
@@ -147,9 +148,24 @@ export default function UnitAdminPage() {
       if (!res.ok) {
         const json = await res.json();
         alert(json.error ?? "Action failed");
-        return;
+        return false;
       }
-      await load();
+      if (body.action === "set_visibility" && body.visibility) {
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                unit: {
+                  ...prev.unit,
+                  visibility: body.visibility as "public" | "private",
+                },
+              }
+            : prev,
+        );
+      } else {
+        await load();
+      }
+      return true;
     } finally {
       setWorking(null);
     }
@@ -242,7 +258,9 @@ export default function UnitAdminPage() {
         <div style={{ width: 48, height: 48, borderRadius: 10, background: unit.cover_photo_url ? `url(${unit.cover_photo_url}) center/cover` : "#1e3a5f", flexShrink: 0 }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 22, fontWeight: 900, color: t.text }}>{unit.name}</div>
-          <div style={{ fontSize: 13, color: t.textMuted, textTransform: "capitalize" }}>{unit.type.replace(/_/g, " ")} · Unit Admin</div>
+          <div style={{ fontSize: 13, color: t.textMuted, textTransform: "capitalize" }}>
+            {unit.type.replace(/_/g, " ")} · Unit Admin · {(unit.visibility ?? "private") === "public" ? "Public" : "Private"}
+          </div>
         </div>
         <Link
           href={`/units/${slug}`}
@@ -270,6 +288,9 @@ export default function UnitAdminPage() {
         )}
         <button style={tabBtn(tab === "events")} onClick={() => setTab("events")}>
           Events ({events.length})
+        </button>
+        <button style={tabBtn(tab === "settings")} onClick={() => setTab("settings")}>
+          Settings
         </button>
       </div>
 
@@ -638,6 +659,59 @@ export default function UnitAdminPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Settings ── */}
+      {tab === "settings" && (
+        <div style={card}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: t.text, marginBottom: 6 }}>Group visibility</div>
+          <div style={{ fontSize: 13, color: t.textMuted, lineHeight: 1.5, marginBottom: 16 }}>
+            Public groups appear in the Groups directory and anyone can browse the wall. Private groups stay invite-only and hidden from the directory.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {([
+              { value: "private" as const, label: "Private", hint: "Invite-only. Hidden from the directory." },
+              { value: "public" as const, label: "Public", hint: "Listed in Groups. Anyone can browse the wall." },
+            ]).map((opt) => {
+              const selected = (unit.visibility ?? "private") === opt.value;
+              const busy = working === "set_visibility";
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  disabled={busy || selected}
+                  onClick={() => {
+                    const confirmMsg =
+                      opt.value === "public"
+                        ? "Make this group public? It will appear in the Groups directory and non-members can browse the wall."
+                        : "Make this group private? It will be hidden from the directory and only members can see the wall.";
+                    if (!confirm(confirmMsg)) return;
+                    void action({ action: "set_visibility", visibility: opt.value });
+                  }}
+                  style={{
+                    textAlign: "left",
+                    border: `2px solid ${selected ? t.text : t.border}`,
+                    borderRadius: 12,
+                    padding: "12px 14px",
+                    background: selected ? t.bg : t.surface,
+                    cursor: busy || selected ? "default" : "pointer",
+                    color: t.text,
+                    opacity: busy && !selected ? 0.65 : 1,
+                  }}
+                >
+                  <div style={{ fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
+                    {opt.label}
+                    {selected && (
+                      <span style={{ fontSize: 11, fontWeight: 800, color: t.textMuted }}>Current</span>
+                    )}
+                    {busy && !selected && <span className="btn-spinner" />}
+                  </div>
+                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4, lineHeight: 1.45 }}>{opt.hint}</div>
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
       </div>
