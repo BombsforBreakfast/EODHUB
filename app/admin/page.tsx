@@ -24,6 +24,7 @@ import AdminPushCampaignsPanel from "../components/admin/AdminPushCampaignsPanel
 import AdminCircuitPanel from "../components/admin/AdminCircuitPanel";
 import SupabaseUsagePanel from "../components/admin/SupabaseUsagePanel";
 import TrafficByHourChart from "../components/admin/TrafficByHourChart";
+import EmployerPostJobModal from "../components/EmployerPostJobModal";
 import type { TrafficByHourSummary } from "../lib/analyticsTrafficByHour";
 import { usePageTracking } from "../hooks/usePageTracking";
 import { useRequireFullAccess } from "../hooks/useRequireFullAccess";
@@ -883,6 +884,7 @@ export default function AdminPage() {
   const [staleFlagGroups, setStaleFlagGroups] = useState<StaleFlagJobGroup[]>([]);
   const [staleFlagsLoading, setStaleFlagsLoading] = useState(false);
   const [resolvingStaleJobId, setResolvingStaleJobId] = useState<string | null>(null);
+  const [adminPostJobOpen, setAdminPostJobOpen] = useState(false);
   const [userFilter, setUserFilter] = useState<UserStatusFilter>("pending");
   const [userSearch, setUserSearch] = useState("");
   const [userSearchDebounced, setUserSearchDebounced] = useState("");
@@ -4644,7 +4646,7 @@ export default function AdminPage() {
         {activeTab === "jobs" && (
           <div style={{ marginTop: 20 }}>
             {/* Sub-filter: switch between submission queue and stale-report queue */}
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14, alignItems: "center" }}>
               <button
                 type="button"
                 onClick={() => setJobsSubTab("submissions")}
@@ -4678,6 +4680,23 @@ export default function AdminPage() {
               >
                 Reported Stale
                 <span style={{ opacity: 0.7, marginLeft: 6 }}>({staleFlagGroups.filter((g) => g.openCount > 0).length})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminPostJobOpen(true)}
+                style={{
+                  marginLeft: "auto",
+                  padding: "7px 16px",
+                  borderRadius: 10,
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  border: "none",
+                  background: "#7c3aed",
+                  color: "white",
+                }}
+              >
+                + Post Job
               </button>
             </div>
 
@@ -8865,6 +8884,16 @@ export default function AdminPage() {
 
       </div>
     </div>
+
+    <EmployerPostJobModal
+      open={adminPostJobOpen}
+      onClose={() => setAdminPostJobOpen(false)}
+      onSuccess={() => {
+        showToast("Job is live on the board and in the feed.");
+        void loadJobs();
+        void loadPendingCounts();
+      }}
+    />
     </NativeDesktopOnlyGate>
   );
 }

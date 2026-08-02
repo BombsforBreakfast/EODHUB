@@ -65,15 +65,18 @@ export async function POST(req: NextRequest) {
   const adminClient = getAdminClient();
   const { data: profile, error: profileErr } = await adminClient
     .from("profiles")
-    .select("user_id, is_employer, company_name")
+    .select("user_id, is_employer, is_admin, company_name")
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (profileErr) {
     return NextResponse.json({ error: profileErr.message || "Failed to load profile" }, { status: 500 });
   }
-  if (!profile?.is_employer) {
-    return NextResponse.json({ error: "Only verified employers can post jobs this way." }, { status: 403 });
+  if (!profile?.is_employer && !profile?.is_admin) {
+    return NextResponse.json(
+      { error: "Only verified employers or admins can post jobs this way." },
+      { status: 403 },
+    );
   }
 
   const body = await req.json().catch(() => null);
